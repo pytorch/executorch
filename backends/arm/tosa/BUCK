@@ -98,6 +98,30 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "reference_model",
+    srcs = ["reference_model.py"],
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
+        "//caffe2:torch",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/_passes:core",
+        "//executorch/exir:lib",
+        ":compile_spec",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "reference_model_runtime",
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/tosa_tools:tosa_reference_model",
+        ":reference_model",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "partitioner",
     srcs = [
         "backend.py",
