@@ -33,13 +33,6 @@ from executorch.backends.qualcomm.genai_pipeline.graph_names import (
     GRAPH_FORWARD,
     TOK_EMBEDDING_GRAPH_NAMES,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
-from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
-    get_model_specific_kwargs,
-    Mode,
-    next_power_of_two,
-    process_model_args,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +91,14 @@ def get_model_arch_config(model_name: str, control_args: Any) -> Any:
         ValueError: If the model needs a params file that ``control_args`` does
             not name.
     """
+    from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+        ModelArgs,
+    )
+    from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
+        Mode,
+        process_model_args,
+    )
+
     model_name = model_name.lower()
     model_config = get_model_config(model_name)
 
@@ -171,6 +172,15 @@ def get_model_arch(
         TokenEmbedding,
     )
     from executorch.backends.qualcomm.genai_pipeline.models import LLM_VARIANT_ARCHS
+    from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+        ModelArgs,
+    )
+    from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
+        get_model_specific_kwargs,
+        Mode,
+        next_power_of_two,
+        process_model_args,
+    )
 
     model_name = model_name.lower()
     model_config = get_model_config(model_name)
