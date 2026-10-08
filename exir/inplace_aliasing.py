@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+from __future__ import annotations
 
 import logging
-from typing import List, Optional
 
 import torch
 from executorch.exir.error import internal_assert, InternalError
@@ -17,6 +16,9 @@ from executorch.exir.operator.convert import (
     unwrap_op_overload,
 )
 from executorch.exir.tensor import TensorSpec
+
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def is_inplace_node(node: torch.fx.Node) -> bool:
@@ -61,7 +63,7 @@ def alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
     schema = op._schema
     out_to_in = output_to_aliased_input_map(schema)
     if not out_to_in:
-        logging.debug(
+        logger.debug(
             f"alias_inplace_result_specs: schema for {op} declares no "
             f"write-aliased outputs matching an input; skipping."
         )
@@ -74,7 +76,7 @@ def alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
     # surfaces in tests rather than silently disabling aliasing.
     current = node.meta.get("spec")
     if isinstance(current, TensorSpec):
-        out_specs_list: List[Optional[TensorSpec]] = [current]
+        out_specs_list: list[TensorSpec | None] = [current]
         return_container_kind = "scalar"
     elif isinstance(current, (list, tuple)):
         out_specs_list = list(current)
@@ -91,11 +93,11 @@ def alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
     # Mutated inputs are usually positional (the `Tensor(a!)` `self`
     # arg), but custom ops may pass them via kwargs — fall back to
     # `node.kwargs[arg_name]` in that case.
-    replacements: List[Optional[TensorSpec]] = [None] * len(out_specs_list)
+    replacements: list[TensorSpec | None] = [None] * len(out_specs_list)
 
     for out_idx, in_idx in out_to_in.items():
         if out_idx >= len(out_specs_list):
-            logging.debug(
+            logger.debug(
                 f"alias_inplace_result_specs: schema for {op} declares "
                 f"return {out_idx} but spec container has only "
                 f"{len(out_specs_list)} entries; skipping this return."
@@ -136,7 +138,7 @@ def alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
 
 def _resolve_mutated_input(
     node: torch.fx.Node, schema: torch.FunctionSchema, in_idx: int
-) -> Optional[torch.fx.Node]:
+) -> torch.fx.Node | None:
     """Return the node passed as argument ``in_idx`` of an in-place op,
     preferring positional args and falling back to kwargs by name (custom
     ops may pass ``Tensor(a!)`` args via kwargs)."""
@@ -148,7 +150,7 @@ def _resolve_mutated_input(
             schema.arguments[in_idx].name if in_idx < len(schema.arguments) else None
         )
         if arg_name is None or arg_name not in node.kwargs:
-            logging.debug(
+            logger.debug(
                 f"_resolve_mutated_input: schema for {node.target} "
                 f"expects mutated input at position {in_idx} "
                 f"(name={arg_name!r}) but it is supplied neither "

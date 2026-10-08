@@ -472,11 +472,12 @@ def collect_specs_from_nodes(  # noqa: C901
         get_graph_output_tensors(nodes) if ignore_graph_output else set()
     )
 
-    # Collect mutable buffer specs so we can filter them when they appear on
-    # non-placeholder nodes (e.g., aliased on the output node via SpecPropPass).
+    # Mutation outputs alias persistent state, whose allocation is controlled
+    # by ignore_mutable_buffers independently of graph output allocation.
     mutable_buffer_specs: Set[TensorSpec] = set()
-    if ignore_mutable_buffers:
+    if ignore_mutable_buffers or ignore_graph_output:
         mutable_buffer_specs = _get_mutable_buffer_specs(nodes, graph_signature)
+    graph_output_tensors -= mutable_buffer_specs
 
     for node in nodes:
         # ignore the specs from unrelevant Fx ops for now.

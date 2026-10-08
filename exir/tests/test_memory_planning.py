@@ -666,6 +666,44 @@ class TestMisc(unittest.TestCase):
         self.assertEqual(reference_output, actual_output)
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
 
+    @parameterized.expand(itertools.product([greedy, naive], [False, True]))
+    def test_mutable_buffer_allocation_with_unallocated_io(
+        self, algo: Callable[..., MemoryAlgoResult], alloc_mutable_buffers: bool
+    ) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache", torch.ones(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache.add_(x)
+                return self.cache + 1
+
+        program = to_edge(export(Model(), (torch.ones(4),), strict=True)).to_executorch(
+            ExecutorchBackendConfig(
+                emit_mutable_buffer_names=not alloc_mutable_buffers,
+                memory_planning_pass=MemoryPlanningPass(
+                    memory_planning_algo=MemoryPlanningAlgorithmSuite(algo_list=[algo]),
+                    alloc_graph_input=False,
+                    alloc_graph_output=False,
+                    alloc_mutable_buffers=alloc_mutable_buffers,
+                ),
+            )
+        )
+        nodes = list(program.exported_program().graph.nodes)
+        cache = next(node for node in nodes if node.target == "b_cache")
+        copy = next(
+            node for node in nodes if node.target == torch.ops.aten.copy_.default
+        )
+        self.assertIs(copy.meta["spec"], cache.meta["spec"])
+        self.assertEqual(cache.meta["spec"].mem_id is not None, alloc_mutable_buffers)
+        self.assertEqual(
+            cache.meta["spec"].mem_offset is not None, alloc_mutable_buffers
+        )
+        plan = program.executorch_program.execution_plan[0]
+        for value_id in (*plan.inputs, *plan.outputs):
+            self.assertIsNone(plan.values[value_id].val.allocation_info)
+
     def test_mutation_not_double_allocated(self) -> None:
         class Simple(torch.nn.Module):
             def __init__(self) -> None:

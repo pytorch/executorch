@@ -466,6 +466,7 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//caffe2:torch",
+            "//executorch/exir:inplace_aliasing",
             "//executorch/exir:lib",
             "//executorch/exir:memory",
             "//executorch/exir/capture:config",

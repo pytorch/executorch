@@ -177,26 +177,40 @@ class TestVulkanDynamic(unittest.TestCase):
                     ({1: Dim("s", min=2, max=1000)}, {}),
                 )
 
-    def test_dynamic_transformer(self):
+    def _run_dynamic_transformer(self, sdpa):
         torch.manual_seed(0)
-        for sdpa in (False, True):
-            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
-                with self.subTest(sdpa=sdpa, storage=storage):
-                    model = TransformerBlock(sdpa).eval()
-                    inputs = [
-                        (torch.randn(1, s, 64), torch.tensor([length]))
-                        for s, length in (
-                            (16, 16),
-                            (7, 4),
-                            (31, 23),
-                            (2, 1),
-                            (16, 0 if sdpa else 5),
-                        )
-                    ]
-                    edge = self._lower(
-                        model, inputs[0], ({1: Dim("s", min=2, max=32)}, {}), storage
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
+            with self.subTest(storage=storage):
+                model = TransformerBlock(sdpa).eval()
+                inputs = [
+                    (torch.randn(1, s, 64), torch.tensor([length]))
+                    for s, length in (
+                        (16, 16),
+                        (7, 4),
+                        (31, 23),
+                        (2, 1),
+                        (16, 0 if sdpa else 5),
                     )
-                    self._run(edge, model, inputs)
+                ]
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=32)}, {}), storage
+                )
+                self._run(edge, model, inputs)
+
+    def test_dynamic_transformer(self):
+        self._run_dynamic_transformer(False)
+
+    @unittest.skipIf(
+        USING_SWIFTSHADER,
+        "SDPA requires 8-bit storage buffers even with texture preference",
+    )
+    def test_dynamic_sdpa_transformer(self):
+        self._run_dynamic_transformer(True)
 
     def test_partition_any_unsupported_inputs(self):
         class AnyDim(torch.nn.Module):
@@ -434,6 +448,11 @@ class TestVulkanDynamic(unittest.TestCase):
             def forward(self, x):
                 return torch.any(x, dim=self.dim, keepdim=self.keepdim)
 
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
         for dim, keepdim in (
             (-1, True),
             (-1, False),
@@ -441,7 +460,7 @@ class TestVulkanDynamic(unittest.TestCase):
             (1, False),
             (0, False),
         ):
-            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            for storage in storages:
                 with self.subTest(dim=dim, keepdim=keepdim, storage=storage):
                     model = AnyDim(dim, keepdim)
                     inputs = []
@@ -474,7 +493,12 @@ class TestVulkanDynamic(unittest.TestCase):
         inputs = [
             ((torch.arange(3 * s).reshape(3, s) % 3 == 0),) for s in (7, 2, 15, 3, 7)
         ]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(
                     model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
@@ -484,7 +508,12 @@ class TestVulkanDynamic(unittest.TestCase):
     def test_constant_bool_mask(self):
         model = ConstantMask()
         inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self.assertTrue(
@@ -747,7 +776,12 @@ class TestVulkanDynamic(unittest.TestCase):
 
         model = BoolFill()
         inputs = [(torch.zeros(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self._run(edge, model, inputs, atol=0, rtol=0)
@@ -800,10 +834,12 @@ class TestVulkanDynamic(unittest.TestCase):
         )
         unwrap_tensor_subclass(model)
         inputs = [(torch.tensor(indices),) for indices in ([0, 5, 63, 7], [3, 3, 1, 0])]
-        for downcast in (False, True):
+        downcast_modes = [False]
+        # Quantized embedding requires 8-bit storage buffers.
+        if not USING_SWIFTSHADER:
+            downcast_modes.append(True)
+        for downcast in downcast_modes:
             with self.subTest(downcast=downcast):
-                if downcast and USING_SWIFTSHADER:
-                    self.skipTest("Quantized embedding requires 8-bit storage buffers")
                 edge = self._lower(
                     model,
                     inputs[0],
