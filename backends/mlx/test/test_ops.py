@@ -3364,6 +3364,7 @@ class GroupNormTest(OpTestCase):
         shape: Tuple[int, ...] = (2, 32, 8, 8),
         eps: float = 1e-5,
         affine: bool = True,
+        dynamic_spatial: bool = False,
         suffix: str = "",
     ):
         self.num_groups = num_groups
@@ -3371,6 +3372,7 @@ class GroupNormTest(OpTestCase):
         self.shape = shape
         self.eps = eps
         self.affine = affine
+        self.dynamic_spatial = dynamic_spatial
         self.name = f"group_norm{suffix}"
 
     @classmethod
@@ -3385,6 +3387,7 @@ class GroupNormTest(OpTestCase):
             # non-square spatial extent, and a 3D (N, C, L) input
             cls(num_groups=4, num_channels=16, shape=(1, 16, 5, 7), suffix="_odd"),
             cls(num_groups=4, num_channels=12, shape=(2, 12, 7), suffix="_3d"),
+            cls(shape=(1, 32, 8, 8), dynamic_spatial=True, suffix="_dynamic"),
         ]
 
     def create_model(self) -> nn.Module:
@@ -3392,6 +3395,21 @@ class GroupNormTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(*self.shape),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dynamic_spatial:
+            return (torch.randn(self.shape[0], self.shape[1], 12, 16),)
+        return self.create_inputs()
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if self.dynamic_spatial:
+            return {
+                "x": {
+                    2: Dim("height", min=4, max=32),
+                    3: Dim("width", min=4, max=32),
+                }
+            }
+        return None
 
 
 class UpsampleNearest2dModel(nn.Module):
@@ -3425,17 +3443,20 @@ class UpsampleNearest2dTest(OpTestCase):
         shape: Tuple[int, ...] = (1, 3, 4, 4),
         scale_factor: Optional[Tuple[float, float]] = (2.0, 2.0),
         size: Optional[Tuple[int, int]] = None,
+        dynamic_spatial: bool = False,
         suffix: str = "",
     ):
         self.shape = shape
         self.scale_factor = scale_factor
         self.size = size
+        self.dynamic_spatial = dynamic_spatial
         self.name = f"upsample_nearest2d{suffix}"
 
     @classmethod
     def get_test_configs(cls) -> List["UpsampleNearest2dTest"]:
         return [
             cls(),
+            cls(dynamic_spatial=True, suffix="_dynamic"),
             # different scale per axis
             cls(shape=(2, 5, 3, 7), scale_factor=(3.0, 2.0), suffix="_anisotropic"),
             # non-integer ratios, which a repeat-based lowering could not express
@@ -3460,6 +3481,21 @@ class UpsampleNearest2dTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(*self.shape),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dynamic_spatial:
+            return (torch.randn(self.shape[0], self.shape[1], 6, 10),)
+        return self.create_inputs()
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        if self.dynamic_spatial:
+            return {
+                "x": {
+                    2: Dim("height", min=2, max=16),
+                    3: Dim("width", min=2, max=16),
+                }
+            }
+        return None
 
 
 class Conv1dModel(nn.Module):
@@ -7596,6 +7632,53 @@ class CumsumTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return CumsumModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class CummaxModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.cummax(x, dim=self.dim).values
+
+
+@register_test
+class CummaxTest(OpTestCase):
+    name = "cummax"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape) or "scalar"
+        self.name = f"cummax_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CummaxTest"]:
+        return [
+            cls(shape=(8,), dim=0),
+            cls(shape=(3, 4), dim=0),
+            cls(shape=(3, 4), dim=1),
+            cls(shape=(2, 3, 4), dim=-1),
+            cls(shape=(), dim=0),
+            cls(shape=(), dim=-1),
+        ]
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # cummax is not in the core ATen opset. The partitioner preserves it
+        # through ops_to_not_decompose, but exir still runs the core-ATen
+        # verifier over the result, so the op has to be excused explicitly.
+        return exir.EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.cummax.default]
+        )
+
+    def create_model(self) -> nn.Module:
+        return CummaxModel(self.dim)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.shape),)

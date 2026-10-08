@@ -215,6 +215,39 @@ def test_u85_explicit_coverage_attribution() -> None:
         docgen._activate_backend(original)
 
 
+SDPA_OP = "torch.ops.aten.scaled_dot_product_attention.default"
+
+
+def test_sdpa_is_decomposed_with_public_api_alias() -> None:
+    assert SDPA_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(SDPA_OP) == (
+        "torch.nn.functional.scaled_dot_product_attention",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_sdpa_vgf_no_quant", "FP"),
+        ("vgf", "test_sdpa_vgf_quant", "INT"),
+        ("u55", "test_sdpa_u55_INT", "INT"),
+        ("u85", "test_sdpa_u85_INT", "INT"),
+    ],
+)
+def test_sdpa_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[("backends/arm/test/ops/test_sdpa.py", function)][profile] == {
+            SDPA_OP
+        }
+    finally:
+        docgen._activate_backend(original)
+
+
 def test_non_vgf_backend_does_not_collect_vgf_custom_partition_ops() -> None:
     original = docgen.ACTIVE_BACKEND_KEY
     try:
@@ -695,3 +728,14 @@ def test_main_writes_requested_markdown_and_html(
     assert result == 0
     assert (tmp_path / "generated/support.md").read_text(encoding="utf-8") == "md\n"
     assert (tmp_path / "generated/support.html").read_text(encoding="utf-8") == "html\n"
+
+
+ADAPTIVE_AVG_POOL1D_OP = "torch.ops.aten.adaptive_avg_pool1d.default"
+
+
+def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
+    assert ADAPTIVE_AVG_POOL1D_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(ADAPTIVE_AVG_POOL1D_OP) == (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
+    )

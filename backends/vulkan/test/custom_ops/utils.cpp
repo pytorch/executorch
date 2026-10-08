@@ -1499,6 +1499,7 @@ BenchmarkGraph setup_compute_graph(
   // runs propagate_resize() after prepack, exercising the op's resize formula
   // even when input shapes are unchanged.
   config.force_resize = test_case.get_force_resize();
+  config.force_narrow_int4_tile = test_case.get_force_narrow_int4_tile();
   auto graph = std::make_unique<ComputeGraph>(config);
 
   std::vector<ValueRef> input_values;

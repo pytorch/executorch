@@ -1,0 +1,39 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# The legacy worker only needs the pure planner, not serving or batching types.
+fbcode_target(_kind = runtime.cxx_library,
+    name = "prompt_history",
+    exported_headers = ["prompt_history.h"],
+    exported_deps = ["//executorch/runtime/platform:platform"],
+    header_namespace = "executorch/extension/llm/serving",
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.cxx_library,
+    name = "serving_runtime",
+    srcs = ["serving_runtime.cpp"],
+    headers = [
+        "detail/generation_bridge.h",
+        "detail/prompt_preparer.h",
+        "detail/text_output.h",
+    ],
+    exported_headers = [
+        "request_handle.h",
+        "serving_runtime.h",
+        "types.h",
+    ],
+    header_namespace = "executorch/extension/llm/serving",
+    deps = [
+        ":prompt_history",
+        "//executorch/extension/llm/runner:stats",
+        "//executorch/runtime/core:core",
+    ],
+    exported_deps = [
+        "//executorch/extension/llm/batching:batching",
+        "//executorch/extension/llm/runner:multimodal_input",
+    ],
+    visibility = ["PUBLIC"],
+)

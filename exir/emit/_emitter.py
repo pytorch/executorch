@@ -639,8 +639,8 @@ class _Emitter(torch.fx.Interpreter):
         """Given the provided spec constructs the corresponding EValue from it and then emits it.
 
         If `spec` was already emitted earlier (e.g., because two FX
-        nodes share the same TensorSpec object — typically because the
-        planner's `_alias_inplace_result_specs` aliased an in-place
+        nodes share the same TensorSpec object — typically because
+        `alias_inplace_result_specs` aliased an in-place
         op's result onto its mutated input), reuse the existing
         value_id. This keeps the invariant "one TensorSpec ↔ one
         Value" so downstream emit doesn't create duplicate Values for
@@ -2120,7 +2120,7 @@ class _TopLevelEmitter(_Emitter):
 
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
-                spec.dim_order = dim_order_from_stride(spec.stride)
+                spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
             if initialize_buffer and is_mutable_buffer:
                 spec.const = True
@@ -2136,9 +2136,8 @@ class _TopLevelEmitter(_Emitter):
 
         # Populate spec2id_dict so downstream `_emit_spec` calls (e.g.,
         # for in-place op result FX nodes whose spec was aliased onto
-        # this placeholder's spec by the planner's
-        # `_alias_inplace_result_specs`) reuse this placeholder's
-        # value_id rather than creating a new Value.
+        # this placeholder's spec by `alias_inplace_result_specs`) reuse
+        # this placeholder's value_id rather than creating a new Value.
         if isinstance(spec, TensorSpec):
             self.emitter_state.spec2id_dict[spec] = value.id
 

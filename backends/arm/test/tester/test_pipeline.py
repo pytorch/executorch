@@ -11,6 +11,7 @@ from typing import (
     Callable,
     Dict,
     Generic,
+    Iterable,
     List,
     Optional,
     Sequence,
@@ -246,6 +247,20 @@ class BasePipeline(Generic[T]):
                 f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
             )
 
+    def set_quantization_calibration(
+        self,
+        calibration_samples: Iterable[Any],
+        dynamic_shapes: Optional[Tuple[Any, ...]] = None,
+    ):
+        """Calibrates the quantize stage with the given samples instead of the
+        test data.
+        """
+        quantize_stage = self._stages[self.find_pos("quantize")].args[0]
+        quantize_stage.calibration_samples = calibration_samples
+        if dynamic_shapes is not None:
+            quantize_stage.dynamic_shapes = dynamic_shapes
+        return self
+
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos."""
         if isinstance(identifier, int):
@@ -401,7 +416,7 @@ class TOSAPipeline(BasePipeline, Generic[T]):
         # Not all deployments of ET have the TOSA reference model available.
         # Make sure we don't try to use it if it's not available.
         try:
-            import tosa_reference_model  # type: ignore[import-not-found, import-untyped]
+            import tosa_reference_model  # type: ignore[import-untyped]
 
             # Check if the module has content
             return bool(dir(tosa_reference_model))

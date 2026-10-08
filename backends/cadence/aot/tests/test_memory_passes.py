@@ -35,7 +35,12 @@ from executorch.backends.cadence.aot.utils import (
 )
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.backends.test.program_builder import ProgramBuilder
-from executorch.exir import EdgeProgramManager, ExportedProgram
+from executorch.exir import (
+    EdgeProgramManager,
+    ExecutorchBackendConfig,
+    ExportedProgram,
+    to_edge,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     collect_specs_from_nodes,
@@ -124,6 +129,41 @@ class TestMemPlanningPasses(unittest.TestCase):
             hidden_dim * batch_size * 4
         )  # Align data on a 16 byte boundary
         self.assertEqual(peak_usage, expected_peak_usage)
+
+    @parameterized.expand([(0,), (1,)])
+    def test_mutable_buffer_with_unallocated_io(self, mem_algo: int) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache", torch.ones(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache.add_(x)
+                return self.cache + 1
+
+        program = to_edge(
+            torch.export.export(Model(), (torch.ones(4),), strict=True)
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=CadenceMemoryPlanning(
+                    MemoryConfig([0, 0, 0, 1024]),
+                    CompileMode.MINIMAL,
+                    mem_algo=mem_algo,
+                    alloc_graph_input=False,
+                    alloc_graph_output=False,
+                )
+            )
+        )
+        cache = next(
+            node
+            for node in program.exported_program().graph.nodes
+            if node.target == "b_cache"
+        )
+        self.assertEqual(cache.meta["spec"].mem_id, 4)
+        self.assertIsNotNone(cache.meta["spec"].mem_offset)
+        plan = program.executorch_program.execution_plan[0]
+        for value_id in (*plan.inputs, *plan.outputs):
+            self.assertIsNone(plan.values[value_id].val.allocation_info)
 
     def test_zero_memory_when_graph_io_is_not_allocated(self) -> None:
         class ZeroMem(torch.nn.Module):

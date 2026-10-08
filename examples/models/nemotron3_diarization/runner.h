@@ -27,7 +27,10 @@ struct StreamingConfig {
 
 class Runner {
  public:
-  explicit Runner(const std::string& model_path, StreamingConfig config = {});
+  explicit Runner(
+      const std::string& model_path,
+      StreamingConfig config = {},
+      const std::string& data_path = "");
 
   // Returns new 10 ms frames, with num_speakers() probabilities per frame.
   // Audio is mono at sample_rate(). final=true flushes the remaining lookahead.

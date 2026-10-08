@@ -70,10 +70,7 @@ jobs:
         # not run, so setup-vulkan-linux-deps.sh sources those from conda-forge and
         # the system package manager instead. The NVIDIA container runtime mounts
         # the driver's Vulkan library but not its ICD manifest, so the script
-        # synthesizes one and pins the loader to it; if no NVIDIA library is found
-        # it falls back to SwiftShader.
-        # NOTE: first-run check - inspect the vulkaninfo output below to confirm a
-        # real NVIDIA device is selected (not llvmpipe/SwiftShader).
+        # synthesizes one and requires the loader to enumerate a hardware GPU.
         source .ci/scripts/setup-vulkan-linux-deps.sh real-gpu
         vulkaninfo --summary || true
 
@@ -83,6 +80,8 @@ jobs:
         # CMAKE_ARGS enables Vulkan in the pybindings so the model --test runs and
         # the pt2e/torchao e2e tests below execute on the GPU (default is OFF).
         CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" PYTHON_EXECUTABLE=python ./install_executorch.sh
+
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
         # Model coverage (mirrors test-vulkan-models-linux, on real hardware).
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
@@ -100,23 +99,16 @@ jobs:
 
         # Operator coverage (mirrors test-vulkan-operators-linux, on real hardware).
         # The custom-op prototyping binaries are GPU microbenchmarks that rely on
-        # GPU timestamp queries; they need a real device and crash on the
-        # SwiftShader software fallback. Always build them (compile coverage), but
-        # only run them when a real GPU was selected (setup-vulkan-linux-deps.sh
-        # exports ETVK_USING_SWIFTSHADER when it falls back to SwiftShader).
+        # GPU timestamp queries, so they require the hardware selected above.
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh
-        if [ -z "${ETVK_USING_SWIFTSHADER:-}" ]; then
-          ./cmake-out/backends/vulkan/test/custom_ops/test_add
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
-          ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
-        else
-          echo "SwiftShader fallback active: built custom-op benchmarks but skipping execution (they require real-GPU timestamp queries)."
-        fi
+        ./cmake-out/backends/vulkan/test/custom_ops/test_add
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
 

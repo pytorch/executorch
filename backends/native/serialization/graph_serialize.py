@@ -25,6 +25,7 @@ import json
 import operator
 import os
 import tempfile
+from contextvars import ContextVar
 from dataclasses import fields, is_dataclass
 from enum import IntEnum
 from typing import (
@@ -84,9 +85,16 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
+from torch.utils._sympy.value_ranges import bound_sympy
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "1.0"
 _SCHEMA_RESOURCE = "native_graph.fbs"
+# The exported program's range_constraints for the program being serialized. The
+# ShapeEnv raises a declared min of 0 or 1 on a backed symbol to 2, so _dim bounds
+# symbols with these instead.
+_DECLARED_RANGES: ContextVar[dict[Any, Any]] = ContextVar(
+    "_DECLARED_RANGES", default={}
+)
 _FILE_STEM = "native_graph"
 
 _DTYPE_TO_SCALAR_TYPE: dict[torch.dtype, ScalarType] = {
@@ -175,7 +183,10 @@ def _dim(x: object) -> Dim:
         # engine). Unbounded above is max = -1.
         lower, upper = 0, -1
         try:
-            vr = x.node.shape_env.bound_sympy(x.node.expr)
+            shape_env = x.node.shape_env
+            vr = bound_sympy(
+                x.node.expr, {**shape_env.var_to_range, **_DECLARED_RANGES.get()}
+            )
             if vr.lower.is_finite:
                 lower = int(vr.lower)
             if vr.upper.is_finite:
@@ -205,7 +216,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not
@@ -240,6 +251,19 @@ def _packed_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
         sizes=[_dim(int(s)) for s in sizes],
         quant=QuantSpec(scheme=PackedQuant(codec=codec)),
     )
+
+
+def _pack_signed_int4(weight: torch.Tensor) -> torch.Tensor:
+    """Pack signed int4 values as PTN AffineGroup qdata, even elements low."""
+    if weight.dtype != torch.int8 or weight.ndim != 2:
+        raise ValueError("native q4 weights must be rank-2 int8 tensors before packing")
+    if weight.shape[1] % 2 != 0:
+        raise ValueError("native q4 weight inner dimension must be even")
+    if bool(torch.any((weight < -8) | (weight > 7)).item()):
+        raise ValueError("native q4 weight values must be in [-8, 7]")
+    # The uint8 cast wraps [-8, -1] to [248, 255], so + 8 wraps them to [0, 7].
+    shifted = weight.to(torch.uint8) + 8
+    return ((shifted[:, 1::2] << 4) | shifted[:, ::2]).contiguous()
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +390,8 @@ def _node_to_arg_value(
     v: torch.fx.Node,
     subgraph_map: "dict[str, torch.fx.GraphModule] | None",
 ) -> ArgumentValue:
-    # A GGUF weight consumed through dequantize_gguf serializes as the raw packed
-    # constant (see _fold_gguf_dequant), so redirect the reference to it.
+    # A packed weight consumed through a folded dequantize serializes as the packed
+    # constant itself (see _fold_gguf_dequant, _mark_torchao_q4_weights).
     redirect = v.meta.get("native_serialize_as")
     if redirect is not None:
         return TensorArg(name=redirect)
@@ -776,8 +800,8 @@ def _collect_fx_nodes(
             ):
                 continue
 
-        # Folded GGUF dequantize nodes are not emitted; the consuming op references
-        # the packed weight directly (see _fold_gguf_dequant).
+        # Folded dequantize nodes are not emitted; the consuming op references the
+        # packed weight directly.
         if fx_node.meta.get("native_skip_serialize"):
             continue
 
@@ -869,6 +893,13 @@ def _extract_constants_and_mutable_buffers(
     mutable_buffers: list[MutableBufferSpec] = []
     packed_quant = packed_quant or {}
 
+    fqn_by_name = {
+        getattr(getattr(ispec, "arg", None), "name", None): getattr(
+            ispec, "target", None
+        )
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+    }
+
     for ispec in getattr(graph_signature, "input_specs", []) or []:
         if ispec.kind not in _INPUT_KIND_MAP:
             continue
@@ -876,7 +907,7 @@ def _extract_constants_and_mutable_buffers(
         target_fqn = getattr(ispec, "target", None)
         if name is None or target_fqn is None:
             continue
-        if _is_non_persistent_buffer(ispec):
+        if _is_non_persistent_buffer(ispec) and target_fqn in mutated_fqns:
             mutable_buffers.append(MutableBufferSpec(name=name, fqn=target_fqn))
             continue
         tensor = None
@@ -888,11 +919,38 @@ def _extract_constants_and_mutable_buffers(
             continue
         tensor = tensor.contiguous()
         pq = packed_quant.get(name)
-        meta = (
-            _packed_tensor_meta(pq["codec"], pq["sizes"])
-            if pq is not None
-            else _tensor_meta(tensor)
-        )
+        # GGUF entries carry a codec; torchao q4 entries carry scale and
+        # zero-point names.
+        if pq is None:
+            meta = _tensor_meta(tensor)
+        elif "codec" in pq:
+            meta = _packed_tensor_meta(pq["codec"], pq["sizes"])
+        else:
+            scale_data_key = fqn_by_name.get(pq["scale_name"])
+            zero_point_data_key = fqn_by_name.get(pq["zero_point_name"])
+            if not isinstance(scale_data_key, str) or not isinstance(
+                zero_point_data_key, str
+            ):
+                raise ValueError(
+                    "native q4 weight quantization parameters must be lifted "
+                    "constants"
+                )
+            tensor = _pack_signed_int4(tensor)
+            meta = TensorMeta(
+                dtype=ScalarType.BYTE,
+                sizes=[_dim(s) for s in pq["sizes"]],
+                quant=QuantSpec(
+                    scheme=AffineGroup(
+                        scale_data_key=scale_data_key,
+                        scale_dtype=pq["scale_dtype"],
+                        zero_point_data_key=zero_point_data_key,
+                        zero_point_dtype=pq["zero_point_dtype"],
+                        quant_min=-8,
+                        quant_max=7,
+                        group_size=pq["group_size"],
+                    )
+                ),
+            )
         constant_refs.append(
             NamedTensorRef(
                 name=name,
@@ -996,6 +1054,114 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         node.meta["native_skip_serialize"] = True
 
 
+# The argument through which each op reads a foldable weight.
+_WEIGHT_ARG_INDEX = {"aten::linear": 1, "aten::embedding": 0}
+
+
+def _is_weight_use(dequantize: torch.fx.Node, user: torch.fx.Node) -> bool:
+    op = _resolve_op_overload(user.target) if user.op == "call_function" else None
+    index = _WEIGHT_ARG_INDEX.get(op.name()) if op is not None else None
+    return (
+        index is not None
+        and len(user.args) > index
+        and user.args[index] is dequantize
+        and sum(arg is dequantize for arg in user.args) == 1
+        and dequantize not in user.kwargs.values()
+    )
+
+
+def _mark_torchao_q4_weights(
+    graph_module: torch.fx.GraphModule, lifted_constants: set[str] | None
+) -> None:
+    """Mark portable torchao q4 weights for packed PTN storage.
+
+    A weight dequantize read only as the weight of `aten.linear` or
+    `aten.embedding`, whose output dtype matches its scales and whose operands
+    are serialized state inputs, is folded: the op reads the packed `AffineGroup`
+    weight directly and the dequantize is not serialized. A weight is packed only
+    if every one of its readers is such a dequantize with the same parameters.
+    Any other dequantize stays in the graph over the plain int8 weight, with
+    torchao semantics. Activation q/dq nodes are never folded.
+    """
+    if lifted_constants is None:
+        return
+    folds: dict[torch.fx.Node, list[tuple[torch.fx.Node, dict[str, object]]]] = {}
+    for node in graph_module.graph.nodes:
+        op = _resolve_op_overload(node.target) if node.op == "call_function" else None
+        if (
+            op is None
+            or op.name() != "torchao::dequantize_affine"
+            or len(node.args) < 7
+            # input_dtype, quant_min, quant_max
+            or node.args[4] != torch.int8
+            or node.args[5] != -8
+            or node.args[6] != 7
+        ):
+            continue
+        weight, block_size, scale, zero_point = node.args[:4]
+        output = node.meta.get("val")
+        if (
+            not isinstance(weight, torch.fx.Node)
+            or weight.op != "placeholder"
+            or not isinstance(scale, torch.fx.Node)
+            or scale.op != "placeholder"
+            or not isinstance(zero_point, torch.fx.Node)
+            or zero_point.op != "placeholder"
+            or not isinstance(block_size, (list, tuple))
+            or len(block_size) != 2
+            or block_size[0] != 1
+            or not isinstance(block_size[1], int)
+            or block_size[1] <= 0
+            or not isinstance(output, torch.Tensor)
+            or output.ndim != 2
+            or output.shape[1] % block_size[1] != 0
+        ):
+            continue
+        scale_value = scale.meta.get("val")
+        zero_point_value = zero_point.meta.get("val")
+        if not isinstance(scale_value, torch.Tensor) or not isinstance(
+            zero_point_value, torch.Tensor
+        ):
+            continue
+        packed = {
+            "sizes": tuple(int(s) for s in output.shape),
+            "scale_name": scale.name,
+            "scale_dtype": _scalar_type(scale_value.dtype),
+            "zero_point_name": zero_point.name,
+            "zero_point_dtype": _scalar_type(zero_point_value.dtype),
+            "group_size": block_size[1],
+        }
+        if (
+            {weight.name, scale.name, zero_point.name} <= lifted_constants
+            and output.dtype == scale_value.dtype
+            and node.users
+            and all(_is_weight_use(node, user) for user in node.users)
+        ):
+            folds.setdefault(weight, []).append((node, packed))
+
+    for weight, weight_folds in folds.items():
+        packed = weight_folds[0][1]
+        if len(weight.users) != len(weight_folds) or any(
+            p != packed for _, p in weight_folds
+        ):
+            continue
+        weight.meta["native_packed_quant"] = packed
+        for node, _ in weight_folds:
+            node.meta["native_serialize_as"] = weight.name
+            node.meta["native_skip_serialize"] = True
+
+
+def _lifted_constant_names(graph_signature: object | None) -> set[str] | None:
+    if graph_signature is None:
+        return None
+    return {
+        ispec.arg.name
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+        if ispec.kind in _INPUT_KIND_MAP
+        and isinstance(getattr(ispec, "arg", None), TensorArgument)
+    }
+
+
 def _build_graph_body(
     graph_module: torch.fx.GraphModule,
     graph_signature: object | None,
@@ -1009,6 +1175,7 @@ def _build_graph_body(
     dict[str, torch.Tensor],
 ]:
     _fold_gguf_dequant(graph_module)
+    _mark_torchao_q4_weights(graph_module, _lifted_constant_names(graph_signature))
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 
@@ -1140,6 +1307,7 @@ def serialize_program(
             torch.fx.GraphModule, object, dict[str, object], dict[str, object] | None
         ],
     ],
+    range_constraints: dict[Any, Any] | None = None,
 ) -> tuple[bytes, dict[str, torch.Tensor]]:
     """Serialize one or more named methods into a native flatbuffer Program.
 
@@ -1154,7 +1322,25 @@ def serialize_program(
     is validated; if two methods carry the same fqn with different data (constants) or
     different shape/dtype (mutable buffers), this raises rather than silently aliasing
     or clobbering.
+
+    ``range_constraints`` is the exported program's, and sets each dynamic Dim's
+    declared range; without it Dim.min is the traced lower bound, which is at least 2.
     """
+    token = _DECLARED_RANGES.set(dict(range_constraints or {}))
+    try:
+        return _serialize_program(methods)
+    finally:
+        _DECLARED_RANGES.reset(token)
+
+
+def _serialize_program(
+    methods: dict[
+        str,
+        tuple[
+            torch.fx.GraphModule, object, dict[str, object], dict[str, object] | None
+        ],
+    ],
+) -> tuple[bytes, dict[str, torch.Tensor]]:
     method_objs: list[Method] = []
     constant_data: dict[str, torch.Tensor] = {}
     mutable_meta: dict[str, TensorMeta] = {}
@@ -1204,6 +1390,7 @@ def serialize_graph(
     graph_signature: object,
     state_dict: dict[str, object],
     constants: dict[str, object] | None = None,
+    range_constraints: dict[Any, Any] | None = None,
 ) -> tuple[bytes, dict[str, torch.Tensor]]:
     """Serialize a single fx graph as a one-method ("forward") Program.
 
@@ -1211,7 +1398,8 @@ def serialize_graph(
     constant_data) as documented there.
     """
     return serialize_program(
-        {"forward": (graph_module, graph_signature, state_dict, constants)}
+        {"forward": (graph_module, graph_signature, state_dict, constants)},
+        range_constraints,
     )
 
 
@@ -1400,7 +1588,11 @@ def _validate_node(node: Node, defined: set[str], define: Any, check_ref: Any) -
         _define_node_outputs(node, define)
 
 
-def validate_graph(graph: Graph, defined_extra: set[str] | None = None) -> None:
+def validate_graph(
+    graph: Graph,
+    defined_extra: set[str] | None = None,
+    meta_extra: set[str] | None = None,
+) -> None:
     """Assert a (pure) graph body is structurally self-contained: every value
     reference resolves and every input/output has tensor metadata. Recurses into
     every ``GraphArg`` subgraph. Raises ``ValueError`` on the first inconsistency.
@@ -1440,7 +1632,7 @@ def validate_graph(graph: Graph, defined_extra: set[str] | None = None) -> None:
     for name in graph.outputs or []:
         check_ref(name, "output")
 
-    _check_io_meta(graph, meta_names)
+    _check_io_meta(graph, meta_names | (meta_extra or set()))
 
 
 def validate_method(
@@ -1459,7 +1651,12 @@ def validate_method(
     """
     defined_extra: set[str] = {c.name for c in (method.constants or [])}
     defined_extra.update(mb.name for mb in (method.mutable_buffers or []))
-    validate_graph(method.graph, defined_extra=defined_extra)
+    constant_meta = {c.name for c in (method.constants or [])}
+    validate_graph(
+        method.graph,
+        defined_extra=defined_extra,
+        meta_extra=constant_meta,
+    )
 
     meta_names = {tv.name for tv in (method.graph.tensor_values or [])}
     for mb in method.mutable_buffers or []:
