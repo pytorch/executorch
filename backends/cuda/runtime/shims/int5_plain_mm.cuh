@@ -37,8 +37,8 @@
 // uses dp4a for fused int5×int8 dot products with vectorized weight loads and
 // warp-cooperative quantization.
 //
-// Symbol names are suffixed _i5 / distinct from int4/int6/int8_plain_mm.cuh so
-// all translation units can be linked together without ODR conflicts.
+// Symbol names are suffixed _i5 so this translation unit links with the other
+// CUDA shims without ODR conflicts.
 
 #pragma once
 

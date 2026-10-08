@@ -126,6 +126,7 @@ def _quantize_activations_q8_kernel(
     M,
     K: tl.constexpr,
     STORE_SUM: tl.constexpr,
+    NATURAL_ORDER: tl.constexpr,
 ):
     """Quantize one K256 tile into eight packed signed-Q8 K32 blocks."""
     super_block = tl.program_id(0)
@@ -153,7 +154,10 @@ def _quantize_activations_q8_kernel(
     local_group = thread // 32
     lane = thread % 32
     group = super_block * 8 + local_group
-    byte_in_group = tl.where((lane & 1) == 0, lane // 2, 16 + lane // 2)
+    if NATURAL_ORDER:
+        byte_in_group = lane
+    else:
+        byte_in_group = tl.where((lane & 1) == 0, lane // 2, 16 + lane // 2)
     quantized_bytes = tl.reshape(quantized, (256,), can_reorder=False) & 0xFF
     qbytes = qwords.to(tl.pointer_type(tl.uint8))
     tl.store(
@@ -205,13 +209,17 @@ def _splitk_reduce_kernel(
 
 
 def quantize_activations_q8(
-    x: torch.Tensor, store_sum: bool = True
+    x: torch.Tensor,
+    store_sum: bool = True,
+    natural_order: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Quantizes BF16 ``x`` [M, K] (K % 256 == 0) to signed INT8 per K32 block.
 
-    Returns the packed INT8 values as int32 words [M, K/4] (in the byte order
-    the DP4A kernels read), the FP32 block scales [M, K/32], and the INT32 block
-    sums [M, K/32] (a 1-element placeholder when ``store_sum`` is False).
+    Returns the packed INT8 values as int32 words [M, K/4], the FP32 block
+    scales [M, K/32], and the INT32 block sums [M, K/32] (a 1-element
+    placeholder when ``store_sum`` is False). The default byte layout groups
+    even then odd K values for packed sub-byte weights; ``natural_order=True``
+    stores each K32 block in increasing K order.
     """
     M, K = x.shape
     groups = K // Q8_BLOCK
@@ -228,6 +236,7 @@ def quantize_activations_q8(
         M,
         K,
         STORE_SUM=store_sum,
+        NATURAL_ORDER=natural_order,
         num_warps=8,
         num_stages=1,
     )
