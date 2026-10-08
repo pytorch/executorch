@@ -18,7 +18,6 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
-from executorch.backends.qualcomm.export_utils import get_backend_type, make_quantizer
 from executorch.backends.qualcomm.hf_transformers.causal_lm.decoder_model_wrapper import (
     QnnCausalLMExportableModule,
 )
@@ -52,7 +51,7 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from transformers import AutoConfig, AutoTokenizer
 
-from transformers.exporters import ExecutorchQnnConfig, ExecutorchQnnLlmConfig
+from transformers.exporters import ExecutorchQnnConfig
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -71,10 +70,18 @@ HUGGING_FACE_QUANT_RECIPES = {
 
 
 def prepare_for_qnn(model: torch.nn.Module, hf_config: ExecutorchQnnConfig):
-    assert isinstance(
-        hf_config, ExecutorchQnnLlmConfig
-    ), "HF API currently only support LLM models with ExecutorchQnnLlmConfig. Other model types are not yet supported."
-    return QnnCausalLMExportableModule(model, hf_config.max_seq_len)
+    assert hasattr(
+        model, "generation_config"
+    ), "HF API currently only support Generation LLM models"
+    assert hasattr(
+        model.generation_config, "cache_config"
+    ), "Please provide cache_config in generation_config."
+    assert (
+        "max_cache_len" in model.generation_config.cache_config
+    ), "Please provide max_cache_len in cache_config"
+    return QnnCausalLMExportableModule(
+        model, model.generation_config.cache_config["max_cache_len"]
+    )
 
 
 def quantize_for_qnn(
@@ -82,11 +89,8 @@ def quantize_for_qnn(
     hf_config: ExecutorchQnnConfig,
     sample_inputs: dict,
 ):
-    backend_type = get_backend_type(hf_config.backend_hardware)
-    quantizer = make_quantizer(backend=backend_type, soc_model=hf_config.soc_model)
-    quant_recipe = _get_quant_recipe(hf_config.model_id)
-    quantizer.set_recipe(quant_recipe.recipe)
-    quantizer.set_convert_linear_to_conv2d(True)
+    max_seq_len = sample_inputs["atten_mask"].shape[3]
+    quantizer = hf_config.pt2e_quantizer
     graph_module = prepare_pt2e(exported_program.module(), quantizer)
 
     tokenizer = AutoTokenizer.from_pretrained(hf_config.model_id)
@@ -99,7 +103,7 @@ def quantize_for_qnn(
         graph_module=graph_module,
         calibration_dataset=hf_config.calibration_dataset,
         sample_inputs=sample_inputs,
-        max_seq_len=hf_config.max_seq_len,
+        max_seq_len=max_seq_len,
         ar_len=1,
         tokenizer=tokenizer,
     )
@@ -121,7 +125,9 @@ def lower_for_qnn(
     sample_inputs: dict,
 ):
     source_model_config = AutoConfig.from_pretrained(hf_config.model_id)
-    backend_options = generate_htp_compiler_spec(use_fp16=hf_config.use_fp16)
+    backend_options = generate_htp_compiler_spec(
+        use_fp16=hf_config.pt2e_quantizer is None
+    )
     compiler_spec = generate_qnn_executorch_compiler_spec(
         soc_model=get_soc_to_chipset_map()[hf_config.soc_model],
         backend_options=backend_options,
@@ -130,7 +136,7 @@ def lower_for_qnn(
 
     passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
 
-    if not hf_config.use_fp16:
+    if hf_config.pt2e_quantizer:
         fixed_point_type = {}
         quant_recipe = _get_quant_recipe(hf_config.model_id, verbose=False)
         kv_bits = quant_recipe.get_kv_io_bit_width()
@@ -161,7 +167,7 @@ def lower_for_qnn(
         "get_bos_id": source_model_config.bos_token_id,
         "get_eos_ids": source_model_config.eos_token_id,
         "get_vocab_size": source_model_config.vocab_size,
-        "get_max_seq_len": hf_config.max_seq_len,
+        "get_max_seq_len": sample_inputs["atten_mask"].shape[3],
         "get_n_layers": source_model_config.num_hidden_layers,
         "use_kv_cache": source_model_config.use_cache,
     }
