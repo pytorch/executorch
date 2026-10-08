@@ -153,6 +153,26 @@ TEST_F(TensorUtilTest, EmptyTensor) {
   ET_CHECK_SAME_SHAPE_AND_DTYPE3(t, t, t);
 }
 
+TEST_F(TensorUtilTest, CopyEmptyTensorData) {
+  Tensor destination = tf_int_.zeros({3, 0});
+  Tensor source = tf_int_.zeros({3, 0});
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data(
+          destination, source),
+      executorch::runtime::Error::Ok);
+}
+
+TEST_F(TensorUtilTest, CopyEmptyTensorDataToNonEmptyDestinationIsNoOp) {
+  Tensor destination = tf_int_.zeros({1});
+  Tensor source = tf_int_.zeros({0});
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data(
+          destination, source),
+      executorch::runtime::Error::Ok);
+}
+
 TEST_F(TensorUtilTest, GetLeadingDimsSmokeTest) {
   // Create a tensor with some dimensions
   Tensor t = tf_int_.ones({2, 3, 4});
