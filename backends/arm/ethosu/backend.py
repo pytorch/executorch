@@ -13,7 +13,10 @@
 #
 """Ahead-of-time Arm Ethos-U backend built on the shared TOSA pipeline."""
 
+import contextlib
 import logging
+from collections.abc import Callable, Iterator
+from contextvars import ContextVar
 from typing import final, List
 
 from executorch.backends.arm.arm_vela import vela_compile, VelaCompileResult
@@ -27,6 +30,35 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
+
+EthosUPreprocessObserver = Callable[
+    [bytes, tuple[str, ...], VelaCompileResult],
+    object | None,
+]
+
+_PREPROCESS_OBSERVER: ContextVar[EthosUPreprocessObserver | None] = ContextVar(
+    "ethosu_preprocess_observer", default=None
+)
+
+
+@contextlib.contextmanager
+def observe_ethosu_preprocess(
+    observer: EthosUPreprocessObserver,
+) -> Iterator[None]:
+    """Observe exact TOSA-to-Vela compilation in the current execution context.
+
+    Args:
+        observer: Callback receiving the exact TOSA bytes, immutable compiler
+            arguments, and Vela result. It returns optional delegate metadata.
+
+    """
+    if not callable(observer):
+        raise TypeError("Ethos-U preprocess observer must be callable")
+    token = _PREPROCESS_OBSERVER.set(observer)
+    try:
+        yield
+    finally:
+        _PREPROCESS_OBSERVER.reset(token)
 
 
 @final
@@ -85,6 +117,25 @@ class EthosUBackend(BackendDetails):
         )
 
     @staticmethod
+    def _compile_with_observer(
+        tosa_flatbuffer: bytes,
+        compile_spec: EthosUCompileSpec,
+    ) -> tuple[VelaCompileResult, object | None]:
+        compile_result = EthosUBackend._compile_tosa_flatbuffer(
+            tosa_flatbuffer, compile_spec
+        )
+        observer = _PREPROCESS_OBSERVER.get()
+        if observer is None:
+            return compile_result, None
+
+        delegate_metadata = observer(
+            tosa_flatbuffer,
+            tuple(compile_spec.compiler_flags),
+            compile_result,
+        )
+        return compile_result, delegate_metadata
+
+    @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
@@ -114,11 +165,14 @@ class EthosUBackend(BackendDetails):
         # which can be passed on to next compilation step.
         tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
-        compile_result = EthosUBackend._compile_tosa_flatbuffer(
+        compile_result, delegate_metadata = EthosUBackend._compile_with_observer(
             tosa_preprocess.processed_bytes, compile_spec
         )
         if not compile_result.external_blocks:
-            return PreprocessResult(processed_bytes=compile_result.processed_bytes)
+            return PreprocessResult(
+                processed_bytes=compile_result.processed_bytes,
+                _delegate_info_meta=delegate_metadata,
+            )
 
         data_store = NamedDataStore()
         for external_block in compile_result.external_blocks:
@@ -131,4 +185,5 @@ class EthosUBackend(BackendDetails):
         return PreprocessResult(
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
+            _delegate_info_meta=delegate_metadata,
         )

@@ -12,6 +12,7 @@ from typing import Any, cast
 import numpy as np
 import torch
 from executorch.backends.arm.test import runner_utils
+from executorch.backends.arm.tosa import reference_model
 
 
 class _FakeExecutorchProgramManager:
@@ -149,7 +150,7 @@ def test_numpy_to_torch_tensor_converts_dynamic_nhwc_output(monkeypatch) -> None
         dim_order=lambda: runner_utils.NHWC_ORDER,
     )
     monkeypatch.setattr(
-        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
+        reference_model, "get_first_fake_tensor", lambda output_node: output_tensor
     )
     array = np.arange(60, dtype=np.float32).reshape(1, 4, 5, 3)
 
@@ -169,7 +170,7 @@ def test_numpy_to_torch_tensor_converts_concrete_nhwc_output_to_contiguous(
         dim_order=lambda: runner_utils.NHWC_ORDER,
     )
     monkeypatch.setattr(
-        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
+        reference_model, "get_first_fake_tensor", lambda output_node: output_tensor
     )
     array = np.arange(60, dtype=np.int8).reshape(1, 4, 5, 3)
 
@@ -188,7 +189,7 @@ def test_numpy_to_torch_tensor_converts_dynamic_nnhwc_output(monkeypatch) -> Non
         dim_order=lambda: runner_utils.NNHWC_ORDER,
     )
     monkeypatch.setattr(
-        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
+        reference_model, "get_first_fake_tensor", lambda output_node: output_tensor
     )
     array = np.arange(120, dtype=np.float32).reshape(1, 2, 4, 5, 3)
 
@@ -208,7 +209,7 @@ def _program_with_user_input(name: str) -> SimpleNamespace:
 
 def test_user_inputs_need_shape_inference_rejects_static_input(monkeypatch) -> None:
     monkeypatch.setattr(
-        runner_utils,
+        reference_model,
         "get_first_fake_tensor",
         lambda node: SimpleNamespace(shape=(1, 2)),
     )
@@ -221,7 +222,7 @@ def test_user_inputs_need_shape_inference_rejects_static_input(monkeypatch) -> N
 def test_user_inputs_need_shape_inference_accepts_symbolic_input(monkeypatch) -> None:
     symbolic_dim = object()
     monkeypatch.setattr(
-        runner_utils,
+        reference_model,
         "get_first_fake_tensor",
         lambda node: SimpleNamespace(shape=(1, symbolic_dim)),
     )
@@ -247,9 +248,18 @@ def test_user_inputs_need_shape_inference_ignores_non_user_inputs(monkeypatch) -
             return SimpleNamespace(shape=(1, 2))
         return SimpleNamespace(shape=(1, object()))
 
-    monkeypatch.setattr(runner_utils, "get_first_fake_tensor", fake_tensor)
+    monkeypatch.setattr(reference_model, "get_first_fake_tensor", fake_tensor)
 
     assert not runner_utils.user_inputs_need_shape_inference(cast(Any, program))
+
+
+def test_reference_model_names_remain_compatibility_reexports() -> None:
+    assert (
+        runner_utils.TosaReferenceModelDispatch
+        is reference_model.TosaReferenceModelDispatch
+    )
+    assert runner_utils.run_tosa_graph is reference_model.run_tosa_graph
+    assert runner_utils.numpy_to_torch_tensor is reference_model.numpy_to_torch_tensor
 
 
 def test_enable_vulkan_validation_puts_validation_first_and_deduplicates(
