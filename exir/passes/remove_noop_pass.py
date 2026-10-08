@@ -64,23 +64,22 @@ class RemoveNoopPass(ExportPass):
                 continue
 
             if node.target == torch.ops.aten.copy.default and len(node.args) == 2:
-                # copy(self, src) takes self's sizes, strides and dtype and src's
-                # values, so it is src when those already match. Decomposing a
-                # functionalized index_copy leaves such copies between a mutated
-                # input and its update, which keeps the update from being
-                # reinplaced.
-                dst, src = node.args[0].meta["val"], node.args[1].meta["val"]
+                # Decomposing a functionalized index_copy leaves copy(dst,
+                # index_put(dst, ...)) between a mutated input and its update,
+                # which keeps the update from being reinplaced. index_put keeps
+                # its self's representation, quantization included, so copying
+                # its result back into that same tensor is a no-op. Copies of
+                # anything else are kept: their metadata alone cannot show that
+                # two tensors share quantization parameters.
+                dst, src = node.args
                 if (
-                    _is_static(dst)
-                    and _is_static(src)
-                    and (
-                        dst.shape == src.shape
-                        and dst.stride() == src.stride()
-                        and dst.dtype == src.dtype
-                        and dst.device == src.device
-                    )
+                    src.target == torch.ops.aten.index_put.default
+                    and src.args[0] is dst
+                    and _is_static(dst.meta["val"])
+                    and dst.meta["val"].shape == src.meta["val"].shape
+                    and dst.meta["val"].stride() == src.meta["val"].stride()
                 ):
-                    node.replace_all_uses_with(node.args[1])
+                    node.replace_all_uses_with(src)
                 continue
 
             if node.target not in (

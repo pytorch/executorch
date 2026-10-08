@@ -303,11 +303,15 @@ class TestPasses(unittest.TestCase):
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
 
     def test_redundant_copy_removal(self) -> None:
-        class NoopCopy(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                y = torch.empty_like(x)
-                y.copy_(x)
-                return y + 1
+        class IndexUpdate(torch.nn.Module):
+            def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+                x.index_copy_(0, index, torch.ones(1, x.shape[1]))
+                return x + 1
+
+        class PlainCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                x.copy_(y)
+                return x + 1
 
         class CastingCopy(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -315,11 +319,11 @@ class TestPasses(unittest.TestCase):
                 y.copy_(x)
                 return y + 1
 
-        def count(module: torch.nn.Module, x: torch.Tensor, op: str) -> int:
+        def count(module: torch.nn.Module, inputs: tuple, op: str) -> int:
             # Functionalization turns copy_ into copy, which RemoveNoopPass sees
             # while to_edge_transform_and_lower decomposes.
             gm = (
-                to_edge_transform_and_lower(export(module, (x,), strict=True))
+                to_edge_transform_and_lower(export(module, inputs, strict=True))
                 .exported_program()
                 .graph_module
             )
@@ -329,9 +333,11 @@ class TestPasses(unittest.TestCase):
             )
 
         x = torch.randn(3, 4)
-        self.assertEqual(count(NoopCopy(), x, "aten_copy_default"), 0)
-        # A copy that converts the dtype is not a no-op.
-        self.assertEqual(count(CastingCopy(), x, "aten_copy_default"), 1)
+        index = torch.tensor([1])
+        self.assertEqual(count(IndexUpdate(), (x, index), "aten_copy_default"), 0)
+        # Only the copy back of an index update is known to be a no-op.
+        self.assertGreater(count(PlainCopy(), (x, x.clone()), "aten_copy_default"), 0)
+        self.assertEqual(count(CastingCopy(), (x,), "aten_copy_default"), 1)
 
     def test_redundant_slice_copy_removal(self) -> None:
         class FooWithNoSlice(torch.nn.Module):
