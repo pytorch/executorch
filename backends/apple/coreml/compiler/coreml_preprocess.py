@@ -68,6 +68,25 @@ def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
     return shared
 
 
+def _parse_flag(name: str, value: Any) -> bool:
+    """
+    Reads a boolean option that may come from a config file. Accepts a bool, the ints
+    0 and 1, and the strings "true", "false", "1" and "0" in any case. Raises on
+    anything else rather than guessing, since every non-empty string is truthy.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        spelling = value.strip().lower()
+        if spelling in ("true", "1"):
+            return True
+        if spelling in ("false", "0"):
+            return False
+    raise ValueError(f"{name} must be a bool, 0/1 or 'true'/'false', got {value!r}")
+
+
 def _gathers_with_a_float_table(mlmodel: ct.models.MLModel) -> List[str]:
     """
     Names of gather ops whose table is a floating point constant.
@@ -325,7 +344,7 @@ class CoreMLBackend(BackendDetails):
 
     @staticmethod
     def generate_quantize_gather_tables_compile_spec(
-        quantize_gather_tables: bool,
+        quantize_gather_tables: Union[bool, int, str],
     ) -> CompileSpec:
         """
         Returns the compile spec saying whether op_linear_quantizer_config should also
@@ -334,13 +353,13 @@ class CoreMLBackend(BackendDetails):
         This covers every gather whose table is a float constant, not only embedding
         layers. Core ML lowers any constant-table index read to gather, so buffers such
         as a rotary position cache are compressed too.
+
+        The value may be a bool, 0/1 or "true"/"false"; anything else raises.
         """
-        # bool() first: the spec is read back by comparing against "True", so a truthy
-        # value that is not exactly True (1, or "true" from a config file) would spell
-        # something else and read back as False, leaving the flag silently ineffective.
+        flag = _parse_flag("quantize_gather_tables", quantize_gather_tables)
         return CompileSpec(
             COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value,
-            str(bool(quantize_gather_tables)).encode("utf-8"),
+            str(flag).encode("utf-8"),
         )
 
     @staticmethod
@@ -481,7 +500,7 @@ class CoreMLBackend(BackendDetails):
         op_linear_quantizer_config: Optional[Dict] = None,
         pass_names: Optional[List[str]] = None,
         *,
-        quantize_gather_tables: bool = False,
+        quantize_gather_tables: Union[bool, int, str] = False,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
@@ -490,6 +509,9 @@ class CoreMLBackend(BackendDetails):
         took its positional slot, which silently bound a caller's pass list to this flag;
         the marker keeps the next option added here from repeating that.
         """
+        quantize_gather_tables = _parse_flag(
+            "quantize_gather_tables", quantize_gather_tables
+        )
         compile_specs: List[CompileSpec] = []
         compile_specs.append(
             CoreMLBackend.generate_compute_unit_compile_spec(compute_unit)

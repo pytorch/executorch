@@ -555,6 +555,32 @@ class TestCoreMLPartitioner(unittest.TestCase):
             CoreMLBackend.quantize_gather_tables_from_compile_specs(opted_in)
         )
 
+    def test_quantize_gather_tables_parses_config_spellings(self):
+        """
+        Values read from a config file are parsed, not truth-tested: "false" and "0"
+        are non-empty strings and would otherwise turn compression on.
+        """
+        config = {"mode": "linear_symmetric", "dtype": "int8"}
+        for value in (True, 1, "true", "True", "1"):
+            specs = CoreMLBackend.generate_compile_specs(
+                op_linear_quantizer_config=config, quantize_gather_tables=value
+            )
+            self.assertTrue(
+                CoreMLBackend.quantize_gather_tables_from_compile_specs(specs), value
+            )
+        for value in (False, 0, "false", "FALSE", "0"):
+            specs = CoreMLBackend.generate_compile_specs(
+                op_linear_quantizer_config=config, quantize_gather_tables=value
+            )
+            self.assertFalse(
+                CoreMLBackend.quantize_gather_tables_from_compile_specs(specs), value
+            )
+            spec = CoreMLBackend.generate_quantize_gather_tables_compile_spec(value)
+            self.assertEqual(spec.value, b"False")
+        for value in ("yes", "", 2, None):
+            with self.assertRaises(ValueError):
+                CoreMLBackend.generate_compile_specs(quantize_gather_tables=value)
+
     def test_quantize_gather_tables_skips_integer_tables(self):
         """
         The opt-in names only float gather tables. A model that also indexes an integer
