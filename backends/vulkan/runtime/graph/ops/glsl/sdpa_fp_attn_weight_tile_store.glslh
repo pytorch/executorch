@@ -154,9 +154,10 @@ void apply_bias(
 #ifdef HAS_MASK
 /*
  * Adds the LLM SDPA additive attn_mask, a 2D [S, C] tensor shared by every
- * head, to the tile. Requires t_mask and mask_sizes. The mask is read element
- * by element: a buffer-backed mask is not padded along its width, so its rows
- * cannot be addressed in texels unless C is a multiple of 4.
+ * head, to the tile. Requires t_mask and mask_sizes, and a c_idx_start that is
+ * a multiple of 4. A texture mask is read one texel per 4 columns. A buffer
+ * mask is read element by element: its rows are not padded, so they cannot be
+ * addressed in texels unless C is a multiple of 4.
  */
 void apply_attn_mask(
     inout FPOutTile tile,
@@ -170,14 +171,21 @@ void apply_attn_mask(
       continue;
     }
     [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      const int c_idx_base = c_idx_start + mul_4(c4);
+      if (c_idx_base >= mask_C) {
+        continue;
+      }
+#ifndef INPUT_BUFFER
+      const vec4 mask_texel =
+          vec4(texelFetch(t_mask, ivec3(div_4(c_idx_base), s_idx, 0), 0));
+#endif
       [[unroll]] for (int c4i = 0; c4i < 4; ++c4i) {
-        const int c_idx = c_idx_start + mul_4(c4) + c4i;
+        const int c_idx = c_idx_base + c4i;
         if (c_idx < mask_C) {
 #ifdef INPUT_BUFFER
           const float mask_val = float(t_mask[s_idx * mask_C + c_idx]);
 #else
-          const float mask_val = float(texelFetch(
-              t_mask, ivec3(div_4(c_idx), s_idx, 0), 0)[mod_4(c_idx)]);
+          const float mask_val = mask_texel[c4i];
 #endif
           tile.data[s][c4][c4i] += T(mask_val);
         }
