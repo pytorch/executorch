@@ -7618,12 +7618,20 @@ class TestQNNFloatingPointUtils(TestQNN):
                         <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
                         <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "input_0_x@0" [label=<
                         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                         <TR><TD BGCOLOR="lightgreen">name: input_0_x@0</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
-                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "p_conv2_weight@0" [label=<
@@ -7658,12 +7666,13 @@ class TestQNNFloatingPointUtils(TestQNN):
                         <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
                         <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
-            "input_0_x@0" -> "aten_convolution_default@0"
+            "input_0_x@0" -> "aten_permute_copy_default@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default@0"
             "p_conv1_weight@0" -> "aten_convolution_default@0"
             "p_conv1_bias@0" -> "aten_convolution_default@0"
             "aten_convolution_default@0" -> "aten_relu_default@0"
             "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
-            "input_0_x@0" -> "aten_convolution_default_1@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default_1@0"
             "p_conv2_weight@0" -> "aten_convolution_default_1@0"
             "p_conv2_bias@0" -> "aten_convolution_default_1@0"
             "aten_relu_default@0" -> "output_aten_add_tensor@0"
@@ -8751,6 +8760,22 @@ class TestQNNQuantizedUtils(TestQNN):
                         <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
                         <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default_1@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default_1@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "b__frozen_param0@0" [label=<
                         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                         <TR><TD BGCOLOR="lightpink">name: b__frozen_param0@0</TD></TR>
@@ -8801,16 +8826,18 @@ class TestQNNQuantizedUtils(TestQNN):
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "aten_relu_default@0" -> "aten_add_tensor@0"
             "aten_convolution_default@0" -> "aten_relu_default@0"
-            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default@0"
+            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_permute_copy_default@0"
             "input_0_x@0" -> "quantized_decomposed_quantize_per_tensor_default@0"
             "b__frozen_param0@0" -> "aten_convolution_default@0"
             "b__frozen_param1@0" -> "aten_convolution_default@0"
             "aten_relu_default_1@0" -> "aten_add_tensor@0"
             "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
-            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default_1@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default_1@0"
             "b__frozen_param2@0" -> "aten_convolution_default_1@0"
             "b__frozen_param3@0" -> "aten_convolution_default_1@0"
-            "aten_add_tensor@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
+            "aten_add_tensor@0" -> "aten_permute_copy_default_1@0"
+            "aten_permute_copy_default_1@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
         }
         """
         module = DrawGraphModel()  # noqa: F405
