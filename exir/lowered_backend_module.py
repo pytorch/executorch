@@ -25,7 +25,7 @@ from executorch.exir.emit import emit_program
 
 from executorch.exir.graph_module import _get_submodule
 
-from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
+from executorch.exir.passes.delegate_buffer_pass import DelegateBufferSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
@@ -376,7 +376,7 @@ class LoweredBackendModule(torch.nn.Module):
         exported_program = _transform(
             exported_program,
             SpecPropPass(),
-            DelegateScratchSpecPass(),
+            DelegateBufferSpecPass(),
             memory_planning,
         )
         emitted_program = emit_program(

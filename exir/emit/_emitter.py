@@ -1495,7 +1495,7 @@ class _Emitter(torch.fx.Interpreter):
                     f"Backend {lowered_module.backend_id} declared scratch buffers of "
                     f"{declared} bytes but the graph carries "
                     f"{[spec.nbytes() for spec in scratch_specs]}. "
-                    "DelegateScratchSpecPass must run before emission for a backend "
+                    "DelegateBufferSpecPass must run before emission for a backend "
                     "that declares scratch.",
                 )
             )
@@ -1508,7 +1508,7 @@ class _Emitter(torch.fx.Interpreter):
                     f"Backend {lowered_module.backend_id} declared state buffers of "
                     f"{declared_state} bytes but the graph carries "
                     f"{[entry.spec.nbytes() for entry in state]}. "
-                    "DelegateScratchSpecPass must run before emission for a backend "
+                    "DelegateBufferSpecPass must run before emission for a backend "
                     "that declares state.",
                 )
             )

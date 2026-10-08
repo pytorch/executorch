@@ -48,7 +48,7 @@ def _delegate_calls(graph_module: torch.fx.GraphModule) -> List[torch.fx.Node]:
     ]
 
 
-class DelegateScratchSpecPass(PassBase):
+class DelegateBufferSpecPass(PassBase):
     """Materializes the scratch and state buffers a backend asked for in ``preprocess``.
 
     Each ``DelegateScratchSpec`` and ``DelegateStateSpec`` becomes a
@@ -162,7 +162,7 @@ class DelegateScratchSpecPass(PassBase):
         if not delegate_specs:
             raise RuntimeError(
                 f"Delegate call {node.name} has no tensor specs. "
-                "DelegateScratchSpecPass must run after SpecPropPass, and after "
+                "DelegateBufferSpecPass must run after SpecPropPass, and after "
                 "PropagateDevicePass for a delegate that is not on the CPU."
             )
         specs = []

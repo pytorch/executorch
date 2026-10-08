@@ -37,7 +37,7 @@ from executorch.exir.emit import emit_program
 from executorch.exir.error import InternalError
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.memory_planning import get_node_tensor_specs
-from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
+from executorch.exir.passes.delegate_buffer_pass import DelegateBufferSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import print_program
@@ -316,7 +316,7 @@ class TestDelegateState(unittest.TestCase):
     def test_labels_reach_the_planner(self):
         edge = _edge(SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend")
         program = _transform(
-            edge.exported_program(), SpecPropPass(), DelegateScratchSpecPass()
+            edge.exported_program(), SpecPropPass(), DelegateBufferSpecPass()
         )
         call = [
             node
@@ -371,7 +371,7 @@ class TestDelegateState(unittest.TestCase):
         graph_module.recompile()
 
         with self.assertRaisesRegex(RuntimeError, "called from 2 places"):
-            DelegateScratchSpecPass()(graph_module)
+            DelegateBufferSpecPass()(graph_module)
 
     def test_state_on_a_device_delegate_is_rejected(self):
         edge = _edge(

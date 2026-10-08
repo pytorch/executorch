@@ -55,7 +55,7 @@ class PlannedScratch:
 def delegate_scratch(node: torch.fx.Node) -> List[PlannedScratch]:
     """Returns the scratch buffers a delegate call needs while it executes.
 
-    ``DelegateScratchSpecPass`` puts them here, the memory planner places them,
+    ``DelegateBufferSpecPass`` puts them here, the memory planner places them,
     and the emitter serializes the result onto the delegate call. They are not
     values the node produces, so they are kept out of ``meta["spec"]``.
 
