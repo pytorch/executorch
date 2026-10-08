@@ -71,30 +71,39 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx =
+  const TensorIndex4D out_tidx =
       texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
+
+  // Every vector write below uses either a compile-time lane (the loop is
+  // unrolled) or safe_set(): runtime-indexed writes into local vectors have
+  // produced uninitialized lanes on some drivers (PowerVR).
+  const int packed_start = safe_idx(out_tidx.data, out_packed_dim);
+  const int limit = safe_idx(outp.sizes, out_packed_dim) - packed_start;
+
   VEC4_T out_texel = VEC4_T(0);
+  [[unroll]] for (int comp = 0; comp < 4; ++comp) {
+    if (comp < limit) {
+      TensorIndex4D lane_tidx = out_tidx;
+      safe_set(lane_tidx.data, out_packed_dim, packed_start + comp);
 
-  int limit = min(
-      4, safe_idx(outp.sizes, out_packed_dim) - out_tidx.data[out_packed_dim]);
-  for (int comp = 0; comp < limit; comp++) {
-    const int d = out_tidx.data[selected_dim];
-    const int rel = d - start;
+      const int d = safe_idx(lane_tidx.data, selected_dim);
+      const int rel = d - start;
 
-    if (d >= start && d < end && (rel % step) == 0) {
-      TensorIndex4D src_tidx = out_tidx;
-      src_tidx.data[selected_dim] = rel / step;
-      const TextureElementIndex src_elem =
-          tensor4d_idx_to_texture_element_idx_simple(srcp, src_tidx, src_layout);
-      out_texel[comp] = texelFetch(t_src, src_elem.pos, 0)[src_elem.comp];
-    } else {
-      const TextureElementIndex self_elem =
-          tensor4d_idx_to_texture_element_idx_simple(
-              selfp, out_tidx, self_layout);
-      out_texel[comp] = texelFetch(t_self, self_elem.pos, 0)[self_elem.comp];
+      if (d >= start && d < end && (rel % step) == 0) {
+        TensorIndex4D src_tidx = lane_tidx;
+        safe_set(src_tidx.data, selected_dim, rel / step);
+        const TextureElementIndex src_elem =
+            tensor4d_idx_to_texture_element_idx_simple(
+                srcp, src_tidx, src_layout);
+        out_texel[comp] = texelFetch(t_src, src_elem.pos, 0)[src_elem.comp];
+      } else {
+        const TextureElementIndex self_elem =
+            tensor4d_idx_to_texture_element_idx_simple(
+                selfp, lane_tidx, self_layout);
+        out_texel[comp] =
+            texelFetch(t_self, self_elem.pos, 0)[self_elem.comp];
+      }
     }
-
-    out_tidx.data[out_packed_dim]++;
   }
 
   imageStore(t_out, out_pos, out_texel);
