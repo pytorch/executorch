@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 name: pull
 
 on:
@@ -842,6 +847,26 @@ jobs:
 
         # Build QNN backend with Buck
         buck2 build //backends/qualcomm/...
+
+  test-arm-backend-buck-declarations:
+    name: test-arm-backend-buck-declarations
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test declaration entrypoint
+        run: python -m unittest discover -s .ci/scripts/tests -p test_arm_buck_entrypoint.py
+      - name: Check changed Arm Python declarations
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: backends/arm/test/test_arm_backend.sh test_buck_declarations
 
   test-arm-backend-no-driver:
     needs: docker-image
