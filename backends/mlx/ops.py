@@ -2849,7 +2849,7 @@ def _native_group_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.native_group_norm")
     x, weight, bias, N, C, HxW, group, eps = args
 
-    for name, value in (("N", N), ("C", C), ("HxW", HxW), ("group", group)):
+    for name, value in (("N", N), ("C", C), ("group", group)):
         if not isinstance(value, int):
             raise ValueError(
                 f"aten.native_group_norm requires a static {name}, got {value!r}"
@@ -2858,12 +2858,12 @@ def _native_group_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x_meta = n.args[0].meta.get("val")
     if x_meta is None:
         raise ValueError("aten.native_group_norm requires input shape metadata")
-    if any(not isinstance(d, int) for d in x_meta.shape):
-        raise ValueError(
-            f"aten.native_group_norm requires a static input shape, "
-            f"got {tuple(x_meta.shape)}"
-        )
     x_ndim = len(x_meta.shape)
+    orig_shape = emit_shape(P, n.args[0], x)
+    normalized_width = emit_product(
+        P,
+        [IntOrVid.from_literal(C // group), P.to_int_or_vid(HxW)],
+    )
 
     # native_group_norm returns (output, mean, rstd) -- allocate all 3 slots
     output_slots = P.make_or_get_slots(n)
@@ -2876,7 +2876,7 @@ def _native_group_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(flat),
             shape=[
                 IntOrVid.from_literal(N * group),
-                IntOrVid.from_literal((C // group) * HxW),
+                normalized_width,
             ],
         )
     )
@@ -2892,7 +2892,6 @@ def _native_group_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
-    orig_shape = [IntOrVid.from_literal(int(d)) for d in x_meta.shape]
     if weight is None and bias is None:
         P.emit(
             ReshapeNode(
@@ -2980,12 +2979,11 @@ def _nearest_source_indices(in_size: int, out_size: int, scale: Optional[float])
     ]
 )
 def _upsample_nearest2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Nearest-neighbour 2D resampling as two gathers.
+    """Nearest-neighbour 2D resampling as two repeats or gathers.
 
-    Each output position reads a source position that depends only on the static
-    input and output sizes, so both index vectors are constants and the op is
-    ``take(take(x, idx_h, -2), idx_w, -1)``. Expressing it as a gather rather
-    than a repeat also covers non-integer scale factors and downsampling.
+    Integer scale factors use repeats, which also support dynamic spatial
+    dimensions. Other static shapes use gathers to cover non-integer scale
+    factors and downsampling.
     """
     args = P.args(n)
     kwargs = P.kwargs(n)
@@ -3019,10 +3017,35 @@ def _upsample_nearest2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     sizes = (x_meta.shape[-2], x_meta.shape[-1], out_meta.shape[-2], out_meta.shape[-1])
     if any(not isinstance(d, int) for d in sizes):
-        raise ValueError(
-            f"aten.upsample_nearest2d requires static spatial sizes, got "
-            f"{tuple(x_meta.shape)} -> {tuple(out_meta.shape)}"
+        if not all(
+            isinstance(scale, (int, float)) and scale > 0 and float(scale).is_integer()
+            for scale in scales
+        ):
+            raise ValueError(
+                f"aten.upsample_nearest2d requires positive integer scale factors "
+                f"for dynamic spatial sizes, got {scales}"
+            )
+
+        _, rows = P.make_tmp_slot()
+        P.emit(
+            RepeatNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(rows),
+                repeats=IntOrVid.from_literal(int(scales[0])),
+                axis=-2,
+            )
         )
+        out = P.make_or_get_slot(n)
+        P.emit(
+            RepeatNode(
+                x=P.slot_to_tid(rows),
+                out=P.slot_to_tid(out),
+                repeats=IntOrVid.from_literal(int(scales[1])),
+                axis=-1,
+            )
+        )
+        return out
+
     in_h, in_w, out_h, out_w = sizes
 
     index_slots = []

@@ -886,6 +886,34 @@ def _cuda_train() -> str:
     return detected
 
 
+def _windows_cuda_toolkit(cmake_configuration_args: List[str]) -> str:
+    """The CUDA toolkit root a Windows CUDA build compiles with, or "" when CUDA is off.
+
+    Decided with the same conditions the CUDA gate below uses, because the answer picks the
+    generator for the whole configure: a toolkit here with CUDA turned off would still build the
+    CPU wheel with Ninja instead of the Visual Studio ClangCL toolset. The compiler is the one
+    install_utils reports, so the toolkit that compiles is the train packaging declares.
+    """
+    arguments = cmake_configuration_args + [item for item in _cmake_args() if item]
+    if (
+        _is_minimal_build()
+        or _row_is_cpu_only()
+        or not install_utils.is_cmake_option_on(
+            arguments, "EXECUTORCH_BUILD_CUDA", default=True
+        )
+    ):
+        return ""
+    explicit = install_utils.is_cmake_option_on(
+        arguments, "EXECUTORCH_BUILD_CUDA", default=False
+    )
+    if not explicit and not install_utils.is_cuda_available():
+        return ""
+    nvcc = shutil.which(install_utils._selected_nvcc()[0])
+    if not nvcc:
+        return ""
+    return Path(nvcc).resolve().parent.parent.as_posix()
+
+
 def _cuda_libraries_built(cmake_cache_dir: Optional[str]) -> bool:
     """Whether this build produced the CUDA libraries, read from the CMake cache.
 
@@ -952,9 +980,10 @@ def _cuda_dependencies() -> List[str]:
     shared with torch instead of shipping a second one.
     """
     train = _cuda_train()
-    # Marked for Linux, because a CUDA wheel is only built there and these nvidia wheels publish no
-    # distribution for the other platforms, so an unmarked requirement would make a source install
-    # elsewhere fail on a dependency it cannot satisfy and does not need.
+    # Marked for Linux. These nvidia wheels publish no distribution for the other platforms, so an
+    # unmarked requirement would make an install elsewhere fail on a dependency it cannot satisfy.
+    # The Windows CUDA wheel needs none of them: its DLLs load only the driver (nvcuda.dll), and the
+    # CUDA runtime a model's own library imports comes from the CUDA Toolkit install.
     return [
         f"{name}; platform_system == 'Linux'"
         for name in _CUDA_RUNTIME_PACKAGES.get(train, ())
@@ -1368,6 +1397,18 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_backend_xnnpack",
             None,
             ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+        (
+            "backends/cuda/",
+            "executorch_backend_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "extension/cuda/",
+            "executorch_extension_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
         ),
     ]
     return [
@@ -2350,7 +2391,9 @@ class CustomBuildPy(build_py):
                 # they include. The stream helper's library is shared so the process has one copy of the
                 # caller-stream state, and that is a handshake the caller takes part in, so a consumer needs
                 # the declarations to take part at all. The device guard's own definitions are compiled into that
-                # same library, so a consumer needs this header to reach them.
+                # same library, so a consumer needs this header to reach them. The CUDA allocator is compiled into
+                # it too, so another delegate can take the same allocator; its header names CUDA types, so it and
+                # the runtime API header it includes need the CUDA toolkit to compile.
                 #
                 # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
                 # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
@@ -2358,8 +2401,10 @@ class CustomBuildPy(build_py):
                 # header, so a consumer got a component it could link and not include.
                 [
                     "extension/cuda/caller_stream.h",
+                    "extension/cuda/cuda_allocator.h",
                     "extension/cuda/device_guard.h",
                     "extension/cuda/export.h",
+                    "extension/cuda/runtime_api.h",
                 ]
                 if _cuda_libraries_built(cmake_cache_dir)
                 else []
@@ -2637,9 +2682,43 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
-        # Use ClangCL on Windows.
+        # Use ClangCL on Windows. A CUDA build uses Ninja with clang-cl instead in a
+        # Visual Studio developer environment that has ninja: the CUDA toolkit's Visual
+        # Studio integration fails compiler identification under ClangCL on some toolkit
+        # and Visual Studio pairs (MSB4023 in its targets file), and switching the toolset
+        # to cl.exe instead fails on sources cl.exe cannot compile. The multi-config
+        # generator keeps the per-configuration output directories packaging reads. nvcc
+        # still compiles device code with cl.exe as its host compiler. Ninja finds the
+        # compilers only on PATH, which a developer environment provides and a plain shell
+        # does not, so without ninja, clang-cl and cl there the build keeps the Visual
+        # Studio generator it always used.
         if _is_windows():
-            cmake_configuration_args += ["-T ClangCL"]
+            windows_cuda_home = _windows_cuda_toolkit(cmake_configuration_args)
+            if windows_cuda_home and all(
+                shutil.which(tool) for tool in ("ninja", "clang-cl", "cl")
+            ):
+                cmake_configuration_args += [
+                    "-GNinja Multi-Config",
+                    "-DCMAKE_C_COMPILER=clang-cl",
+                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    f"-DCUDAToolkit_ROOT={windows_cuda_home}",
+                ]
+                # CMake reads CUDACXX only when CMAKE_CUDA_COMPILER is unset, so naming
+                # the compiler would drop options a user put there, such as the common
+                # -allow-unsupported-compiler for a newer Visual Studio.
+                if not os.environ.get("CUDACXX"):
+                    cmake_configuration_args += [
+                        f"-DCMAKE_CUDA_COMPILER={windows_cuda_home}/bin/nvcc.exe"
+                    ]
+            else:
+                if windows_cuda_home:
+                    log.warning(
+                        "building the CUDA backend with the Visual Studio generator, "
+                        "because ninja, clang-cl and cl are not all on PATH; run from "
+                        "a Visual Studio developer prompt with ninja for the Ninja "
+                        "build the wheels use"
+                    )
+                cmake_configuration_args += ["-T ClangCL"]
 
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
