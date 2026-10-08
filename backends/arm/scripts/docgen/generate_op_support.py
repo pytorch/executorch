@@ -357,6 +357,7 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.embedding.default",
     "torch.ops.aten.pow.Tensor_Tensor",
     "torch.ops.aten.scaled_dot_product_attention.default",
+    "torch.ops.aten.adaptive_avg_pool1d.default",
 }
 
 
@@ -598,6 +599,7 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.logical_xor.default": ("torch.logical_xor",),
     "torch.ops.aten.logical_not.default": ("torch.logical_not",),
     # Linear algebra and neural-network layers.
+    "torch.ops.aten.softplus.default": ("torch.nn.functional.softplus",),
     "torch.ops.aten.linear.default": ("torch.nn.Linear", "torch.nn.functional.linear"),
     "torch.ops.aten.mm.default": ("torch.mm",),
     "torch.ops.aten.bmm.default": ("torch.bmm",),
@@ -614,6 +616,10 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.avg_pool2d.default": (
         "torch.nn.AvgPool2d",
         "torch.nn.functional.avg_pool2d",
+    ),
+    "torch.ops.aten.adaptive_avg_pool1d.default": (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
     ),
     "torch.ops.aten.adaptive_avg_pool2d.default": (
         "torch.nn.AdaptiveAvgPool2d",
