@@ -13,11 +13,15 @@ import os
 import shutil
 import threading
 import typing
+import weakref
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
+from executorch.backends.cuda.autotune.inputs import autotune_input_scenarios
+from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
@@ -454,6 +458,29 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     return value == "ON"
 
 
+CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
+
+# The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
+# this thread: they can be parked on the CPU when an autotune capture runs out
+# of memory, since AOTI autotunes on random inputs rather than on them. Held
+# weakly, so they live exactly as long as the program (or a decomposed copy
+# sharing them) does.
+_MOVED_TENSORS = threading.local()
+
+
+def _track_moved_tensors(program) -> None:
+    tensors = list(getattr(program, "state_dict", {}).values())
+    tensors += list(getattr(program, "constants", {}).values())
+    _MOVED_TENSORS.refs = [
+        weakref.ref(t) for t in tensors if isinstance(t, torch.Tensor) and t.is_cuda
+    ]
+
+
+def _moved_program_tensors() -> List[torch.Tensor]:
+    live = (ref() for ref in getattr(_MOVED_TENSORS, "refs", ()))
+    return [t for t in live if t is not None]
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -745,14 +772,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_sort_stable": None,
             "aoti_torch_cuda_randint_low_out": None,
-            "executorch_cuda::int4_plain_mm": None,
-            "aoti_torch_cuda_int4_plain_mm": None,
             "executorch_cuda::int5_plain_mm": None,
             "aoti_torch_cuda_int5_plain_mm": None,
-            "executorch_cuda::int6_plain_mm": None,
-            "aoti_torch_cuda_int6_plain_mm": None,
-            "executorch_cuda::int8_plain_mm": None,
-            "aoti_torch_cuda_int8_plain_mm": None,
         }
 
     @staticmethod
@@ -762,26 +783,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         try:
             return {
                 "aot_inductor.custom_ops_to_c_shims": {
-                    torch.ops.executorch_cuda.int4_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int4_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "int64_t, AtenTensorHandle*)"
-                    ],
                     torch.ops.executorch_cuda.int5_plain_mm.default: [
                         "AOTITorchError aoti_torch_cuda_int5_plain_mm("
                         "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int6_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int6_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, int64_t, "
-                        "AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int8_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int8_plain_mm("
                         "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                         "AtenTensorHandle, int64_t, AtenTensorHandle*)"
                     ],
@@ -950,6 +954,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs for low_memory_mode (default OFF). compile_specs
         # may be None when called without specs (parity with base default).
         low_memory_mode = "OFF"
+        cuda_graph_autotune_timing = True
         for spec in compile_specs or []:
             if spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
@@ -958,6 +963,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Invalid low_memory_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 low_memory_mode = mode
+            elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
+                cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
 
         @contextlib.contextmanager
         def _combined():
@@ -985,6 +992,25 @@ class CudaBackend(AotiBackend, BackendDetails):
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
                     trim_host_memory()
+                # Autotune the kernels that declare representative values
+                # for data-dependent arguments (e.g. a KV length) over those
+                # values instead of Inductor's zero-filled integer tensors.
+                # See autotune/inputs.py.
+                stack.enter_context(autotune_input_scenarios())
+                # Pick each @autotune_launch_param value (e.g. a split-K) by
+                # timing its candidates on this device. See
+                # autotune/launch_params.py.
+                stack.enter_context(
+                    autotune_launch_params(offload=_moved_program_tensors)
+                )
+                if cuda_graph_autotune_timing:
+                    # Time every autotune candidate (Inductor kernels, matmul
+                    # templates, our triton.autotune ops) with CUDA-graph
+                    # replays, so a CPU busy compiling does not decide the
+                    # pick. See autotune/cuda_graph_timing.py.
+                    stack.enter_context(
+                        cuda_graph_timing(offload=_moved_program_tensors)
+                    )
                 yield
 
         return _combined()
@@ -1024,8 +1050,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         from torch.export.passes import move_to_device_pass
 
         if not cls._is_low_memory_mode(compile_specs):
-            return move_to_device_pass(edge_program, device)
-        return _move_to_device_resize_kv(edge_program, device)
+            moved = move_to_device_pass(edge_program, device)
+        else:
+            moved = _move_to_device_resize_kv(edge_program, device)
+        _track_moved_tensors(moved)
+        return moved
 
     @classmethod
     def release_moved_tensors(
