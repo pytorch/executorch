@@ -90,6 +90,116 @@ class TestReinplacePass(unittest.TestCase):
             )
         )
 
+    def test_returned_original_is_not_reinplaced(self) -> None:
+        class ReturnsOldAndNew(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, updated
+
+        model = ReturnsOldAndNew()
+        first = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(model, first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 0)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for inputs in (
+            first,
+            (torch.full((5,), 2.0), torch.tensor([3]), torch.tensor([-2.0])),
+        ):
+            with self.subTest(inputs=inputs):
+                for actual, expected in zip(loaded.forward(inputs), model(*inputs)):
+                    torch.testing.assert_close(actual, expected)
+
+    def test_nested_output_keeps_original_live(self) -> None:
+        class ReturnsNested(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, (original, updated)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsNested(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        actual = ep.module()(*inputs)
+        expected = ReturnsNested()(*inputs)
+        for result, reference in zip(
+            (actual[0], *actual[1]), (expected[0], *expected[1])
+        ):
+            torch.testing.assert_close(result, reference)
+
+    def test_output_view_copy_preserves_original(self) -> None:
+        class ReturnsViewAndUpdated(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                view = original.view(-1)
+                updated = original.index_put((indices,), values)
+                return view, updated
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsViewAndUpdated(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        # The view is materialized before the update, so it keeps the old value.
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for actual, expected in zip(
+            loaded.forward(inputs), ReturnsViewAndUpdated()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_later_reader_keeps_original_live(self) -> None:
+        class ReadsOriginalLater(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return updated, original * 2
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReadsOriginalLater(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        for actual, expected in zip(
+            ep.module()(*inputs), ReadsOriginalLater()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_immutable_input_is_not_reinplaced(self) -> None:
+        class UpdatesCopy(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return x.index_put((indices,), values)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(UpdatesCopy(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        torch.testing.assert_close(ep.module()(*inputs), UpdatesCopy()(*inputs))
+        torch.testing.assert_close(inputs[0], torch.zeros(5))
+
+    def test_mutable_buffer_reinplace_across_executions(self) -> None:
+        class UpdatesBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(5))
+
+            def forward(self, indices, values):
+                self.state.index_put_((indices,), values)
+                return self.state
+
+        first = (torch.tensor([0]), torch.tensor([1.0]))
+        edge = to_edge(export(UpdatesBuffer(), first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        reference = UpdatesBuffer()
+        for inputs in (first, (torch.tensor([2]), torch.tensor([3.0]))):
+            with self.subTest(inputs=inputs):
+                torch.testing.assert_close(
+                    loaded.forward(inputs)[0], reference(*inputs)
+                )
+
     def test_cant_reinplace(self) -> None:
         """Test that index_put on a mutable buffer that is viewed later is not safe."""
 
