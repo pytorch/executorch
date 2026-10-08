@@ -1439,6 +1439,52 @@ class Conv(torch.nn.Module):
         )
 
 
+class ConvBackward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(4, 3, 3, 3), requires_grad=False)
+
+    def forward(self, grad_output, x):
+        forward_output = torch.ops.aten.convolution.default(
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+        )
+        grad_input = torch.ops.aten.convolution_backward.default(
+            grad_output,
+            x,
+            self.weight,
+            None,
+            [2, 2],
+            [1, 1],
+            [1, 1],
+            False,
+            [0, 0],
+            1,
+            [True, False, False],
+        )[0]
+        return forward_output, grad_input
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=(torch.randn(1, 4, 5, 5), torch.randn(1, 3, 9, 10)),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
+
 class Cos(torch.nn.Module):
     def __init__(self):
         super().__init__()
