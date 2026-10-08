@@ -799,6 +799,8 @@ def get_native_group_norm_inputs():
             ((3, 7, 13, 11), (7), (7), 3, 7, 13 * 11, 1, 0.001),
             # Each channel is it's own group and prime number sizes
             ((1, 7, 13, 11), (7), (7), 1, 7, 13 * 11, 7, 0.001),
+            # One group per channel at the scale instance norm models reach
+            ((1, 64, 32, 32), (64), (64), 1, 64, 32 * 32, 64, 0.001),
         ]
     )
     test_suite.layouts = [
