@@ -54,6 +54,9 @@ elseif(TEST_CASE STREQUAL "empty_installed_consumer")
     empty_shared_consumer PRIVATE ${SOURCE_INCLUDE_ROOT} ${TORCH_INCLUDE_ROOT}
   )
   target_link_libraries(empty_shared_consumer PRIVATE empty_ops)
+elseif(TEST_CASE STREQUAL "cross_directory")
+  add_subdirectory(cross_directory/producer)
+  add_subdirectory(cross_directory/consumer)
 elseif(TEST_CASE STREQUAL "empty_shared")
   gen_selected_ops(LIB_NAME empty_ops)
   generate_bindings_for_kernels(

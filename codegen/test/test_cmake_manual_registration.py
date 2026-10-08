@@ -89,6 +89,29 @@ class TestCMakeManualRegistration(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_cross_directory_pairing(self) -> None:
+        include_root = self.directory / "cross_directory_include"
+        shutil.copytree(ROOT / "runtime", include_root / "executorch/runtime")
+        build = self.directory / "cross_directory_build"
+        result = self.configure(
+            build,
+            TEST_CASE="cross_directory",
+            SOURCE_INCLUDE_ROOT=str(include_root),
+            TORCH_INCLUDE_ROOT=str(Path(torch.__file__).parent / "include"),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.check_command("cmake", "--build", str(build), "--parallel", "4")
+        self.check_command(
+            str(build / "cross_directory/consumer/cross_directory_consumer")
+        )
+        mismatch = self.configure(
+            self.directory / "cross_directory_mismatch",
+            TEST_CASE="cross_directory",
+            CROSS_OPERATOR_MANUAL="OFF",
+        )
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertIn("matching MANUAL_REGISTRATION", mismatch.stderr)
+
     def test_registration_modes(self) -> None:
         for bindings in ("ON", "OFF"):
             for operators in ("ON", "OFF"):
@@ -146,8 +169,7 @@ class TestCMakeManualRegistration(unittest.TestCase):
             SOURCE_INCLUDE_ROOT=str(include_root),
             TORCH_INCLUDE_ROOT=str(Path(torch.__file__).parent / "include"),
             MANUAL_TARGETS=str(
-                relocated
-                / "lib/cmake/EmptyRegistration/EmptyRegistrationTargets.cmake"
+                relocated / "lib/cmake/EmptyRegistration/EmptyRegistrationTargets.cmake"
             ),
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

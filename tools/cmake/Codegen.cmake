@@ -359,6 +359,36 @@ function(generate_bindings_for_kernels)
             ${GEN_FUNCTIONS_YAML} ${_codegen_templates} ${_torchgen_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
+  # Source-file GENERATED properties and custom commands are directory-scoped.
+  # A separate target lets gen_operators_lib() consume these outputs from a
+  # sibling CMake directory without losing the generation dependency.
+  string(SHA1 _codegen_id "${CMAKE_CURRENT_BINARY_DIR}|${GEN_LIB_NAME}")
+  set(_codegen_target executorch_registration_codegen_${_codegen_id})
+  add_custom_target(${_codegen_target} DEPENDS ${_gen_command_sources})
+  set(_registration_property "EXECUTORCH_REGISTRATION_${GEN_LIB_NAME}")
+  get_property(
+    _registration_defined GLOBAL PROPERTY "${_registration_property}_SOURCE" SET
+  )
+  if(_registration_defined)
+    message(FATAL_ERROR "Kernel bindings for ${GEN_LIB_NAME} were already generated")
+  endif()
+  set_property(
+    GLOBAL PROPERTY "${_registration_property}_SOURCE" "${_registration_source}"
+  )
+  set_property(
+    GLOBAL PROPERTY "${_registration_property}_HEADERS" "${_registration_headers}"
+  )
+  set_property(GLOBAL PROPERTY "${_registration_property}_OUT_DIR" "${_out_dir}")
+  set_property(
+    GLOBAL PROPERTY "${_registration_property}_BUILD_ROOT"
+                    "${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}"
+  )
+  set_property(
+    GLOBAL PROPERTY "${_registration_property}_MANUAL" "${GEN_MANUAL_REGISTRATION}"
+  )
+  set_property(
+    GLOBAL PROPERTY "${_registration_property}_TARGET" "${_codegen_target}"
+  )
   # Make generated file list available in parent scope
   set(gen_command_sources
       ${_gen_command_sources}
@@ -424,26 +454,40 @@ function(gen_operators_lib)
   message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
-  registration_generated_files(
-    "${GEN_LIB_NAME}" "${GEN_MANUAL_REGISTRATION}" _out_dir
-    _registration_source _registration_headers
-  )
   if(GEN_MANUAL_REGISTRATION)
     if(NOT GEN_LIB_NAME)
       message(FATAL_ERROR "Manual registration LIB_NAME is required")
     endif()
   endif()
-  get_source_file_property(
-    _registration_generated "${_registration_source}" GENERATED
+  set(_registration_property "EXECUTORCH_REGISTRATION_${GEN_LIB_NAME}")
+  get_property(
+    _registration_defined GLOBAL PROPERTY "${_registration_property}_SOURCE" SET
   )
-  if(NOT _registration_generated)
+  if(NOT _registration_defined)
     message(
       FATAL_ERROR
         "${GEN_LIB_NAME}: call generate_bindings_for_kernels() before gen_operators_lib() with matching MANUAL_REGISTRATION options on both calls"
     )
   endif()
+  get_property(_registration_manual GLOBAL PROPERTY "${_registration_property}_MANUAL")
+  if(NOT "${_registration_manual}" STREQUAL "${GEN_MANUAL_REGISTRATION}")
+    message(
+      FATAL_ERROR
+        "${GEN_LIB_NAME}: call generate_bindings_for_kernels() before gen_operators_lib() with matching MANUAL_REGISTRATION options on both calls"
+    )
+  endif()
+  get_property(_registration_source GLOBAL PROPERTY "${_registration_property}_SOURCE")
+  get_property(_registration_headers GLOBAL PROPERTY "${_registration_property}_HEADERS")
+  get_property(_out_dir GLOBAL PROPERTY "${_registration_property}_OUT_DIR")
+  get_property(_build_root GLOBAL PROPERTY "${_registration_property}_BUILD_ROOT")
+  get_property(_codegen_target GLOBAL PROPERTY "${_registration_property}_TARGET")
+  # Mark foreign-directory generated files here too: their original source
+  # properties are not visible in the directory creating this library.
+  set_source_files_properties(
+    ${_registration_source} ${_registration_headers} PROPERTIES GENERATED TRUE
+  )
   if(GEN_DTYPE_SELECTIVE_BUILD)
-    set(_opvariant_h ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h)
+    set(_opvariant_h ${_build_root}/selected_op_variants.h)
   endif()
 
   if(GEN_SHARED)
@@ -457,6 +501,7 @@ function(gen_operators_lib)
   else()
     add_library(${GEN_LIB_NAME})
   endif()
+  add_dependencies(${GEN_LIB_NAME} ${_codegen_target})
 
   set(_srcs_list ${_registration_source} ${_registration_headers})
   if(GEN_DTYPE_SELECTIVE_BUILD)
@@ -528,7 +573,7 @@ function(gen_operators_lib)
         )
         target_include_directories(
           selected_portable_kernels
-          PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
+          PRIVATE ${_build_root}/
         )
 
         # Make sure the header is generated before compiling the library
@@ -581,14 +626,14 @@ function(gen_operators_lib)
     include(GNUInstallDirs)
     target_include_directories(
       ${GEN_LIB_NAME}
-      INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}>
+      INTERFACE $<BUILD_INTERFACE:${_build_root}>
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     # A header file set keeps the install decision with install(TARGETS), and
     # preserves executorch/<lib>/ paths for both build and installed consumers.
     target_sources(
       ${GEN_LIB_NAME} PUBLIC FILE_SET HEADERS
-      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}
+      BASE_DIRS ${_build_root}
       FILES ${_registration_headers}
     )
   else()
