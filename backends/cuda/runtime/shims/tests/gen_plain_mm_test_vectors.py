@@ -5,12 +5,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Regenerate the hardcoded INT5/INT6 plain_mm dp4a test vectors.
+"""Regenerate the hardcoded INT5 plain_mm dp4a test vectors.
 
 This script deterministically recreates every ``uint8_t``/``int8_t``/``uint16_t``
 array embedded in the plain_mm gtest files:
   --dtype int5 -> test_aoti_torch_cuda_int5_plain_mm.cpp
-  --dtype int6 -> test_aoti_torch_cuda_int6_plain_mm.cpp
 Each dtype has a fixed seed, so the emitted vectors are reproducible by
 construction: the vectors in the .cpp are exactly this script's output.
 
@@ -20,7 +19,7 @@ math and the array field names:
 
 INT5 (W5A8, asymmetric Q5_K; pack path in dp4a_planar_int5_tensor.py):
   1. torch.manual_seed(INT5_SEED) ONCE, then draw ALL cases in list order
-     (unlike int6, the int5 cases share one RNG stream, so build_int5
+     (the int5 cases share one RNG stream, so build_int5
      replays the earlier cases to stay reproducible per-case).
   2. Per case, draw a scaled fp32 weight ``[N, K]`` (``randn * (0.5 +
      rand[N,1])``) then activation ``[M, K]`` (bf16). Weight-then-activation
@@ -32,22 +31,11 @@ INT5 (W5A8, asymmetric Q5_K; pack path in dp4a_planar_int5_tensor.py):
      zero_point codes [N, K/gs] uint8, zero_point_step [N, K/256] fp16.
   4. expected = F.linear(A, tensor.dequantize(bf16)).
 
-INT6 (W6A8, symmetric Q6_K, NO zero tensor; pack path in
-dp4a_planar_int6_tensor.py):
-  1. torch.manual_seed(case.seed) on CPU.
-  2. Draw symmetric Q6_K values q ``[N, K]`` in [-32, 31], a small positive
-     per-group scale ``[N, K/gs]`` (bf16), then an activation ``A`` ``[M, K]``
-     (bf16). Draw order q -> scale -> A is part of the seed contract.
-  3. pack_int6(q) -> planar ql [N, K/2] uint8, qh [N, K/4] uint8.
-  4. _encode_int8_per_super(scale, gs) -> scale codes [N, K/gs] int8 +
-     per-256-super-block step [N, K/256] fp16 (scale = code * step[:, g//gps]).
-  5. expected = F.linear(A, tensor.dequantize(bf16)).
-
-Both kernels quantize activations to int8, so the .cpp compares with a 0.5 atol.
+The kernel quantizes activations to int8, so the .cpp compares with a 0.5 atol.
 
 Usage (from the executorch repo root, conda env with torch + torchao):
   python backends/cuda/runtime/shims/tests/gen_plain_mm_test_vectors.py \\
-        --dtype {int5,int6} [--case NAME] [--check]
+        --dtype int5 [--case NAME] [--check]
 
 Without ``--check`` it prints the C++ array blocks for each case to stdout; paste
 them into the matching TEST_F body. With ``--check`` it re-derives the vectors
@@ -84,12 +72,6 @@ INT5_CASES: List[Case] = [
     Case("MultiSuperBlock", M=1, K=512, N=4, gs=32, seed=INT5_SEED),
     Case("WideN", M=1, K=256, N=16, gs=32, seed=INT5_SEED),
     Case("PackedShuffleMultiSuper", M=1, K=1024, N=8, gs=32, seed=INT5_SEED),
-]
-
-INT6_CASES: List[Case] = [
-    Case("Q6KSingleSuperBlock", M=2, K=256, N=4, gs=16, seed=0),
-    Case("Q6KMultiSuperBlock", M=1, K=512, N=6, gs=16, seed=1),
-    Case("Q6KWideN", M=1, K=256, N=16, gs=16, seed=2),
 ]
 
 
@@ -205,41 +187,6 @@ def build_int5(case: Case) -> Dict[str, tuple]:
     }
 
 
-def build_int6(case: Case) -> Dict[str, tuple]:
-    """Return {array_name: (ctype, [ints])} for one INT6 case (CPU only)."""
-    from executorch.backends.cuda.dp4a_planar_int6_tensor import (
-        _encode_int8_per_super,
-        CudaDp4aPlanarInt6Tensor,
-        pack_int6,
-    )
-
-    torch.manual_seed(case.seed)
-    # Symmetric q, then scale, then activation: fixed order is part of the seed
-    # contract. Matches test_int6_dispatch._make_int6_tensor's convention.
-    q = torch.randint(-32, 32, (case.N, case.K), dtype=torch.int8)
-    scale = (torch.rand(case.N, case.K // case.gs) * 0.1 + 0.01).to(torch.bfloat16)
-    A = torch.randn(case.M, case.K, dtype=torch.bfloat16)
-
-    ql, qh = pack_int6(q)
-    scale_codes, steps = _encode_int8_per_super(scale.float(), case.gs)
-    tensor = CudaDp4aPlanarInt6Tensor(
-        ql, qh, scale_codes, steps, [1, case.gs], torch.Size([case.N, case.K])
-    )
-
-    # bf16 dequant @ F.linear reference (kernel adds activation-quant noise).
-    w_deq = tensor.dequantize(torch.bfloat16)
-    expected = torch.nn.functional.linear(A, w_deq)
-
-    return {
-        "ql_host": ("uint8_t", _u8(ql)),
-        "qh_host": ("uint8_t", _u8(qh)),
-        "scale_codes": ("int8_t", _i8(scale_codes)),
-        "scale_step": ("uint16_t", _fp16_bits(steps)),
-        "A_host": ("uint16_t", _bf16_bits(A)),
-        "expected": ("uint16_t", _bf16_bits(expected)),
-    }
-
-
 @dataclass(frozen=True)
 class DtypeSpec:
     name: str
@@ -268,14 +215,6 @@ SPECS: Dict[str, DtypeSpec] = {
         test_class="AOTITorchInt5PlainMMTest",
         cpp_name="test_aoti_torch_cuda_int5_plain_mm.cpp",
     ),
-    "int6": DtypeSpec(
-        name="int6",
-        cases=INT6_CASES,
-        order=["ql_host", "qh_host", "scale_codes", "scale_step", "A_host", "expected"],
-        build=build_int6,
-        test_class="AOTITorchInt6PlainMMTest",
-        cpp_name="test_aoti_torch_cuda_int6_plain_mm.cpp",
-    ),
 }
 
 
@@ -286,7 +225,7 @@ def _fmt_array(name: str, ctype: str, values: List[int]) -> str:
     if ctype == "uint8_t":
         per_line, cell = 12, lambda v: f"0x{v & 0xFF:02X}"
     elif ctype == "int8_t":
-        # Signed decimal, right-aligned like the .cpp (Q6_K scale codes).
+        # Signed decimal, right-aligned like the .cpp.
         per_line, cell = 12, lambda v: f"{v:4d}"
     elif ctype == "uint16_t":
         per_line, cell = 8, lambda v: f"0x{v & 0xFFFF:04X}"
@@ -316,7 +255,7 @@ def _parse_cpp_array(text: str, test_class: str, case_name: str, arr: str) -> Li
     """Extract a single array's ints from the given TEST_F body in the .cpp.
 
     Handles both hex cells (e.g. ql/qh/scale_step/A/expected) and signed-decimal
-    cells (int6 scale_codes int8).
+    cells.
     """
     m = re.search(
         rf"TEST_F\({re.escape(test_class)},\s*{re.escape(case_name)}\)",
