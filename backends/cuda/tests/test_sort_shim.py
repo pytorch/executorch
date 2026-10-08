@@ -43,8 +43,6 @@ _CUDA_FALLBACK_KERNELS = frozenset(
         "aoti_torch_cuda_randint_low_out",
         "executorch_cuda::int5_plain_mm",
         "aoti_torch_cuda_int5_plain_mm",
-        "executorch_cuda::int6_plain_mm",
-        "aoti_torch_cuda_int6_plain_mm",
         "executorch_cuda::int8_plain_mm",
         "aoti_torch_cuda_int8_plain_mm",
     }
@@ -154,7 +152,7 @@ class TestSortShim(unittest.TestCase):
         with patch.object(torch.version, "hip", None):
             options = CudaBackend.get_aoti_compile_options([])
 
-        self.assertEqual(len(options["aot_inductor.custom_ops_to_c_shims"]), 3)
+        self.assertEqual(len(options["aot_inductor.custom_ops_to_c_shims"]), 2)
         self.assertNotIn("aot_inductor.precompile_headers", options)
 
     def test_rocm_advertises_no_unbuilt_shims(self):
