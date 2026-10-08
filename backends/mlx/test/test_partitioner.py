@@ -428,5 +428,48 @@ class TestMLXPartitionerMixedSupport(unittest.TestCase):
         self.assertLess(err, 1e-4)
 
 
+class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
+    """index_copy_ into a user input lowers functionally and is written back."""
+
+    class IndexCopyInput(nn.Module):
+        def __init__(self, axis):
+            super().__init__()
+            self.axis = axis
+
+        def forward(self, data, indices, update):
+            data.index_copy_(self.axis, indices, update)
+            return data.sum(self.axis)
+
+    def test_index_copy_into_input_lowers_and_executes(self):
+        # The write-back of the mutated input runs outside the delegate, as a
+        # portable copy_, so this goes through the Python runtime rather than
+        # op_test_runner, which links no portable kernels.
+        for axis, shape, update_shape in (
+            (0, (16, 8), (4, 8)),
+            (1, (8, 16), (8, 4)),
+        ):
+            with self.subTest(axis=axis):
+                model = self.IndexCopyInput(axis).eval()
+                inputs = (
+                    torch.randn(shape),
+                    torch.tensor([1, 5, 9, 12]),
+                    torch.randn(update_shape),
+                )
+                expected = inputs[0].clone()
+                with torch.no_grad():
+                    expected_sum = model(expected, *inputs[1:])
+                program = _lower(model, inputs)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    counts = get_mlx_node_counts(path)
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    data, summed = method.execute(list(inputs))
+                self.assertEqual(_delegate_count(program), 1)
+                self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+                self.assertTrue(torch.allclose(data, expected))
+                self.assertTrue(torch.allclose(summed, expected_sum, atol=1e-5))
+
+
 if __name__ == "__main__":
     unittest.main()

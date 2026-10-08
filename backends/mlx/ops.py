@@ -2420,7 +2420,9 @@ def _index_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.index_copy.default")
     dst, axis, indices, update = args
     if not isinstance(axis, int):
-        raise ValueError(f"aten.index_copy.default requires a literal int dim, got {axis}")
+        raise ValueError(
+            f"aten.index_copy.default requires a literal int dim, got {axis}"
+        )
     out = P.make_or_get_slot(n)
     P.emit(
         IndexCopyNode(
