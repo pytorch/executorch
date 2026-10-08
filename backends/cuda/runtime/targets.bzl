@@ -214,6 +214,7 @@ def define_common_targets(is_fbcode = False):
         srcs = ["test/test_cuda_allocator.cpp"],
         deps = [
             ":cuda_allocator",
+            ":cuda_backend",
             "//executorch/extension/cuda:caller_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
