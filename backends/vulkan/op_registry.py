@@ -1856,12 +1856,56 @@ def register_native_batch_norm_legit_no_training():
     )
 
 
+def can_rewrite_batch_norm_as_group_norm(node: torch.fx.Node) -> bool:
+    """
+    Whether ReplaceInstanceNormPass can rewrite a batch norm node into group norm.
+
+    ``F.instance_norm`` reshapes its input to ``[1, N * C, H, W]`` and lowers to
+    ``_native_batch_norm_legit.no_stats``, which normalizes using statistics taken
+    over the batch and spatial dims. When the batch dim is 1 that is exactly group
+    norm with one group per channel, so the existing group norm kernels cover it.
+    A batch dim above 1 is a different reduction and is left alone.
+    """
+    if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
+        return False
+
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        return False
+
+    val = input_node.meta.get("val")
+    if val is None or val.dim() != 4 or val.shape[0] != 1:
+        return False
+
+    # Group norm always applies an affine transform, so both weight and bias must
+    # be present. add_native_group_norm_node() prepacks them, so both must also
+    # trace back to a constant rather than being computed at runtime.
+    for affine_arg in (node.args[1], node.args[2]):
+        if not isinstance(affine_arg, torch.fx.Node):
+            return False
+        placeholder, _ = utils.trace_args_until_placeholder(affine_arg)
+        if placeholder is None:
+            return False
+
+    # Only the normalized output may be consumed. Group norm returns mean and rstd
+    # shaped [N, group] where batch norm saves them shaped [C], so the saved
+    # statistics are not drop-in replacements.
+    for user in node.users:
+        if user.op != "call_function" or user.target != operator.getitem:
+            return False
+        if user.args[1] != 0:
+            return False
+
+    return True
+
+
 @update_features(exir_ops.edge.aten._native_batch_norm_legit.no_stats)
 def register_native_batch_norm_legit_no_stats():
     """Instance norm, which ReplaceInstanceNormPass rewrites into group norm.
 
     ``F.instance_norm`` lowers to this overload. The pass only handles the cases
-    node_is_instance_norm() accepts, so gate partitioning on the same predicate.
+    can_rewrite_batch_norm_as_group_norm() accepts, so gate partitioning on the
+    same predicate.
     """
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
@@ -1872,7 +1916,7 @@ def register_native_batch_norm_legit_no_stats():
             utils.CONTIGUOUS_BUFFER,
         ],
         supports_prepacking=True,
-        are_node_inputs_supported_fn=utils.node_is_instance_norm,
+        are_node_inputs_supported_fn=can_rewrite_batch_norm_as_group_norm,
     )
 
 
