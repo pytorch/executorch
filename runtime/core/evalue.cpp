@@ -9,7 +9,7 @@
 #include <executorch/runtime/core/evalue.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // Specialize for list of optional tensors, as nullptr is a valid std::nullopt.
 // For non-optional types, nullptr is invalid.
@@ -52,5 +52,5 @@ BoxedEvalueList<std::optional<executorch::aten::Tensor>>::tryGet() const {
   return executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>{
       unwrapped_vals_, wrapped_vals_.size()};
 }
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
