@@ -118,7 +118,7 @@ def define_arm_tests():
         }
         if not runtime.is_oss and _ENABLE_VGF:
             test_env.update({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.11.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
@@ -197,7 +197,7 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "//executorch/runtime/core:core",
-                "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
             ],
