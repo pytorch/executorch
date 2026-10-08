@@ -362,6 +362,57 @@ class TestVulkanDynamic(unittest.TestCase):
                     )
                     self._run(edge, model, inputs, atol=0, rtol=0)
 
+    def test_signed_zero_scalars(self):
+        class SignedZero(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.ops.aten.mul.Scalar(x, -0.0),
+                    torch.full_like(x, -0.0),
+                    torch.scalar_tensor(-0.0, dtype=x.dtype),
+                )
+
+        model = SignedZero()
+        for dtype in (torch.float32, torch.float16):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dtype=dtype, storage=storage):
+                    inputs = [(torch.arange(-7, 14, dtype=dtype).reshape(3, 7),)]
+                    edge = self._lower(
+                        model, inputs[0], storage=storage, fully_delegated=False
+                    )
+                    self.assertTrue(_vulkan_graphs(edge))
+                    self.assertTrue(
+                        all(
+                            node.target
+                            in (
+                                operator.getitem,
+                                torch.ops.higher_order.executorch_call_delegate,
+                            )
+                            for node in edge.exported_program().graph.nodes
+                            if node.op == "call_function"
+                        )
+                    )
+                    self._run(
+                        edge, model, inputs, atol=0, rtol=0, check_signed_zero=True
+                    )
+
+    def test_fp16_chained_mul_scalar(self):
+        class ChainedMul(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten.mul.Scalar(
+                    torch.ops.aten.mul.Scalar(x, 1.0006), 1000
+                )
+
+        model = ChainedMul()
+        x = torch.ones(3, 7, dtype=torch.float16)
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(model, (x,), storage=storage)
+                operators = [
+                    op.name for graph in _vulkan_graphs(edge) for op in graph.chain
+                ]
+                self.assertEqual(operators.count("aten.mul.Scalar"), 2)
+                self._run(edge, model, [(x,)], atol=0, rtol=0)
+
     def test_integer_scalar_range_fallback(self):
         class LargeScalar(torch.nn.Module):
             def __init__(self, kind, value):
