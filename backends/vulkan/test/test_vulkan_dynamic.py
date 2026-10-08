@@ -149,6 +149,27 @@ class TestVulkanDynamic(unittest.TestCase):
                             )
                         )
 
+    def test_partition_any_unsupported_inputs(self):
+        class AnyDim(torch.nn.Module):
+            def forward(self, x):
+                return torch.any(x, dim=0, keepdim=True)
+
+        for x in (
+            torch.tensor(True),
+            torch.tensor([0, 1], dtype=torch.int32),
+            torch.tensor([0, 1], dtype=torch.uint8),
+            torch.tensor([0.0, 1.0]),
+        ):
+            with self.subTest(shape=x.shape, dtype=x.dtype):
+                edge = to_edge_transform_and_lower(
+                    export(AnyDim(), (x,)),
+                    partitioner=[VulkanPartitioner({"require_dynamic_shapes": True})],
+                )
+                self.assertNotIn(
+                    torch.ops.higher_order.executorch_call_delegate,
+                    [node.target for node in edge.exported_program().graph.nodes],
+                )
+
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
@@ -253,6 +274,132 @@ class TestVulkanDynamic(unittest.TestCase):
                     model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_any_without_keepdim_uses_textures(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, keepdim):
+                super().__init__()
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                mask = x > 0
+                if self.keepdim is None:
+                    reduced = torch.any(mask, dim=-1)
+                else:
+                    reduced = torch.any(mask, dim=-1, keepdim=self.keepdim)
+                return torch.logical_not(reduced), torch.any(reduced, dim=-1)
+
+        inputs = [
+            ((torch.arange(2 * s * 5).reshape(2, s, 5) % 17).float() - 14,)
+            for s in (16, 3, 31, 2, 16)
+        ]
+        for keepdim in (None, False):
+            with self.subTest(keepdim=keepdim):
+                model = AnyDim(keepdim)
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=32)},),
+                )
+                for graph in _vulkan_graphs(edge):
+                    for value in graph.values:
+                        tensor = value.value
+                        if isinstance(tensor, VkTensor) and tensor.constant_id < 0:
+                            self.assertEqual(
+                                tensor.storage_type, VkStorageType.TEXTURE_3D
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_any_texture_without_keepdim_shapes(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim)
+
+        for shape, dim, supported in (
+            ((7,), 0, True),
+            ((0,), 0, True),
+            ((3, 5), 0, True),
+            ((3, 5), -1, True),
+            ((0, 3), 0, True),
+            ((2, 0, 3), 1, True),
+            ((2, 0, 3), -1, True),
+            ((1, 3, 5, 7), 1, True),
+            ((1, 3, 5, 7), -2, True),
+            ((2, 3, 5, 7), -1, True),
+            ((2, 3, 5, 7), 2, True),
+            ((1, 3, 1, 7), 1, True),
+            ((1, 3, 5, 7), 0, False),
+            ((2, 3, 5, 7), 1, False),
+        ):
+            with self.subTest(shape=shape, dim=dim):
+                x = torch.zeros(shape, dtype=torch.bool)
+                if x.numel() > 0:
+                    x[tuple(size // 2 for size in shape)] = True
+                model = AnyDim(dim)
+                edge = self._lower(model, (x,), fully_delegated=supported)
+                if not supported:
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                for graph in _vulkan_graphs(edge):
+                    for value_id in graph.input_ids + graph.output_ids:
+                        tensor = graph.values[value_id].value
+                        self.assertEqual(tensor.storage_type, VkStorageType.TEXTURE_3D)
+                self._run(
+                    edge,
+                    model,
+                    [(x,), (torch.zeros_like(x),), (torch.ones_like(x),)],
+                    atol=0,
+                    rtol=0,
+                )
+
+    def test_dynamic_any_dim(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim, keepdim):
+                super().__init__()
+                self.dim = dim
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim, keepdim=self.keepdim)
+
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for dim, keepdim in (
+            (-1, True),
+            (-1, False),
+            (1, True),
+            (1, False),
+            (0, False),
+        ):
+            for storage in storages:
+                with self.subTest(dim=dim, keepdim=keepdim, storage=storage):
+                    model = AnyDim(dim, keepdim)
+                    inputs = []
+                    for s in (16, 3, 31, 2, 0, 16):
+                        x = torch.zeros(2, s, 5, dtype=torch.bool)
+                        if s not in (0, 3):
+                            x[0, s // 2, 1] = True
+                            x[1, -1, 3] = True
+                            x[1, 0, 4] = True
+                        inputs.append((x,))
+                    seq = Dim("s", min=0, max=32)
+                    unsupported = dim != -1 and storage == VkStorageType.BUFFER
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: seq},),
+                        storage,
+                        fully_delegated=not unsupported,
+                    )
+                    if unsupported:
+                        self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_dynamic_logical_not(self):
         class LogicalNot(torch.nn.Module):
@@ -723,7 +870,7 @@ class TestVulkanDynamic(unittest.TestCase):
             def forward(self, x):
                 return self.op(x, dim=self.dim, keepdim=True)
 
-        for op in (torch.sum, torch.mean, torch.amax):
+        for op in (torch.any, torch.sum, torch.mean, torch.amax):
             for batch, dim, supported in (
                 (1, 0, False),
                 (2, 0, False),
@@ -734,7 +881,11 @@ class TestVulkanDynamic(unittest.TestCase):
             ):
                 with self.subTest(op=op, batch=batch, dim=dim):
                     values = torch.arange(batch * 3 * 4 * 5).reshape(batch, 3, 4, 5)
-                    x = -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    x = (
+                        values % 7 == 0
+                        if op == torch.any
+                        else -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    )
                     model = Reduce(op, dim)
                     edge = self._lower(model, (x,), fully_delegated=supported)
                     if not supported:

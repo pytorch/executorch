@@ -730,9 +730,8 @@ def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     if isinstance(dims_reduced, (list, tuple)) and not 1 <= len(dims_reduced) <= 2:
         return False
 
-    keepdim = get_keepdim_setting(node)
-    # keepdim = False is not supported yet for general implementation
-    if isinstance(keepdim, bool) and not keepdim:
+    # any.dim can repack the reduced texture after removing the reduction axis.
+    if not get_keepdim_setting(node) and node.target != exir_ops.edge.aten.any.dim:
         return False
 
     if utils.ndim_of(node.args[0]) == 4:
@@ -818,6 +817,20 @@ def register_reduce_cpp_ops():
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: (
+            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+        ),
         pick_io_storage_fn=pick_storage_for_reduce,
     )
 
