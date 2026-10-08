@@ -194,6 +194,18 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
     )
 
 
+def get_constant_nodes(program: ExportedProgram) -> Set[torch.fx.Node]:
+    """
+    Return the nodes of the exported program that hold constant data:
+    parameters, lifted tensor constants and buffers that are never mutated.
+    """
+    return {
+        node
+        for node in program.graph.nodes
+        if is_param_node(program, node) and not is_mutable_buffer_node(node, program)
+    }
+
+
 def is_mutable_buffer_node(
     node: torch.fx.Node, exported_program: ExportedProgram
 ) -> bool:
