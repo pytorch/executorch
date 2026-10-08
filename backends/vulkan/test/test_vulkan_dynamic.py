@@ -15,6 +15,8 @@ import unittest
 
 import torch
 
+import torch.nn.functional as F
+
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
     parse_compile_options,
     VulkanPartitioner,
@@ -34,6 +36,8 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 
 from executorch.exir.backend.backend_api import to_backend
+
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 
@@ -163,6 +167,44 @@ class TestVulkanDynamic(unittest.TestCase):
                         tolerance = 5e-6 if dtype == torch.float32 else 1e-3
                         self._run(edge, model, inputs, atol=tolerance, rtol=tolerance)
 
+    def test_scalar_tensor_values(self):
+        class WhereScalars(torch.nn.Module):
+            def __init__(self, positive, negative):
+                super().__init__()
+                self.positive = positive
+                self.negative = negative
+
+            def forward(self, x):
+                return torch.where(x, self.positive, self.negative)
+
+        inputs = [(torch.tensor([True, False, True, False]),)]
+        for positive, negative in (
+            (3, -7.0),
+            (3.0, -7),
+            (16777217, -7),
+            (2**31 - 1, -(2**31)),
+        ):
+            with self.subTest(positive=positive, negative=negative):
+                model = WhereScalars(positive, negative)
+                fully_delegated = isinstance(positive, float) or isinstance(
+                    negative, float
+                )
+                edge = self._lower(model, inputs[0], fully_delegated=fully_delegated)
+                if not fully_delegated:
+                    self.assertEqual(
+                        [
+                            node.target
+                            for node in edge.exported_program().graph.nodes
+                            if node.op == "call_function"
+                            and node.target != operator.getitem
+                        ],
+                        [
+                            torch.ops.higher_order.executorch_call_delegate,
+                            exir_ops.edge.aten.where.self,
+                        ],
+                    )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_gelu_with_singleton_dimensions(self):
         for approximate in ("none", "tanh"):
             for shape in ((6, 1, 3), (2, 1, 3, 5)):
@@ -175,6 +217,43 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), storage=storage)
                         self._run(edge, model, [(x,)], atol=5e-6, rtol=5e-6)
 
+    def test_scalar_tensor_dtypes(self):
+        class ScalarTensor(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return torch.scalar_tensor(2.5, dtype=self.dtype)
+
+        inputs = [(torch.ones(1),)]
+        for dtype in (torch.float16, torch.float32, torch.int32):
+            with self.subTest(dtype=dtype):
+                model = ScalarTensor(dtype)
+                edge = self._lower(model, inputs[0])
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_dynamic_full(self):
+        class Full(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.full(x.shape, 2.5),
+                    torch.zeros(x.shape),
+                    torch.ones(x.shape),
+                    torch.full_like(x, -1.5),
+                    torch.zeros_like(x),
+                    torch.ones_like(x),
+                )
+
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                model = Full()
+                inputs = [(torch.randn(2, s, 3),) for s in (16, 3, 31, 2, 16)]
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_dynamic_logical_not(self):
         class LogicalNot(torch.nn.Module):
             def forward(self, x):
@@ -184,7 +263,12 @@ class TestVulkanDynamic(unittest.TestCase):
         inputs = [
             ((torch.arange(3 * s).reshape(3, s) % 3 == 0),) for s in (7, 2, 15, 3, 7)
         ]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(
                     model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
@@ -194,7 +278,12 @@ class TestVulkanDynamic(unittest.TestCase):
     def test_constant_bool_mask(self):
         model = ConstantMask()
         inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self.assertTrue(
@@ -207,6 +296,371 @@ class TestVulkanDynamic(unittest.TestCase):
                     )
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_scalar_types_before_conv_and_view(self):
+        class ScalarTypes(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(1, 2, 3, padding=1)
+
+            def forward(self, x):
+                y = self.conv(torch.where(x > 0, 1.0, 0.5))
+                return y.view(1, 2, x.shape[2], -1)
+
+        torch.manual_seed(0)
+        model = ScalarTypes().eval()
+        inputs = [(torch.randn(1, 1, s, 5),) for s in (7, 2, 15, 7)]
+        edge = self._lower(model, inputs[0], ({2: Dim("s", min=2, max=16)},))
+        self._run(edge, model, inputs)
+
+    def test_nan_scalars_fall_back(self):
+        class NanScalar(torch.nn.Module):
+            def __init__(self, kind):
+                super().__init__()
+                self.kind = kind
+
+            def forward(self, x):
+                if self.kind == "where":
+                    return torch.where(x > 0, x, torch.nan)
+                if self.kind == "masked_fill":
+                    return x.masked_fill(x > 0, torch.nan)
+                if self.kind == "full":
+                    return torch.full_like(x, torch.nan)
+                if self.kind == "scalar_tensor":
+                    return torch.scalar_tensor(torch.nan)
+                if self.kind == "pow":
+                    return x**torch.nan
+                return torch.ops.aten.mul.Scalar(x, torch.nan)
+
+        inputs = [(torch.tensor([-1.0, 0.0, 1.0, 2.0]),)]
+        for kind in ("where", "masked_fill", "full", "scalar_tensor", "pow", "mul"):
+            with self.subTest(kind=kind):
+                model = NanScalar(kind)
+                edge = self._lower(model, inputs[0], fully_delegated=False)
+                self._run(edge, model, inputs, atol=0, rtol=0, equal_nan=True)
+
+    def test_integer_fill_values(self):
+        class IntegerFill(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (
+                    torch.full(x.shape, 16777217, dtype=self.dtype),
+                    torch.full_like(x, -(2**31), dtype=self.dtype),
+                    torch.full(x.shape, 2**31 - 1, dtype=self.dtype),
+                )
+
+        inputs = [(torch.randn(2, s, 3),) for s in (7, 2, 15, 7)]
+        for dtype in (torch.int32, torch.int64):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dtype=dtype, storage=storage):
+                    model = IntegerFill(dtype)
+                    edge = self._lower(
+                        model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
+                    )
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_integer_scalar_range_fallback(self):
+        class LargeScalar(torch.nn.Module):
+            def __init__(self, kind, value):
+                super().__init__()
+                self.kind = kind
+                self.value = value
+
+            def forward(self, x):
+                if self.kind == "scalar_tensor":
+                    return torch.scalar_tensor(self.value, dtype=torch.int64)
+                if self.kind == "full":
+                    return torch.full(x.shape, self.value, dtype=torch.int64)
+                return torch.full_like(x, self.value, dtype=torch.int64)
+
+        inputs = [(torch.zeros(2, 3),)]
+        for kind in ("scalar_tensor", "full", "full_like"):
+            for value in (
+                2**31 - 0.5,
+                -(2**31) - 0.5,
+                2**31,
+                2**40,
+                2**63 - 1,
+                -(2**63),
+            ):
+                with self.subTest(kind=kind, value=value):
+                    model = LargeScalar(kind, value)
+                    edge = self._lower(model, inputs[0], fully_delegated=False)
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_arithmetic_without_downcasting(self):
+        class Arithmetic(torch.nn.Module):
+            def forward(self, x):
+                return x + x, x.to(torch.float32) + 1
+
+        for dtype in (torch.int64, torch.float64):
+            with self.subTest(dtype=dtype):
+                model = Arithmetic()
+                inputs = [
+                    (torch.arange(3 * s, dtype=dtype).reshape(3, s),) for s in (7, 2)
+                ]
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=16)},),
+                    fully_delegated=False,
+                    downcast_64_bit=False,
+                )
+                graphs = _vulkan_graphs(edge)
+                self.assertTrue(graphs)
+                for graph in graphs:
+                    for value in graph.values:
+                        if isinstance(value.value, VkTensor):
+                            self.assertNotIn(
+                                value.value.datatype,
+                                (VkDataType.INT64, VkDataType.FLOAT64),
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_integer_factories_without_downcasting(self):
+        class IntegerFactories(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (
+                    torch.scalar_tensor(16777217, dtype=self.dtype),
+                    torch.full(x.shape, 2**31 - 1, dtype=self.dtype),
+                    torch.full_like(x, -(2**31), dtype=self.dtype),
+                )
+
+        inputs = [(torch.zeros(3, s),) for s in (7, 2, 15, 7)]
+        for dtype in (torch.int32, torch.int64):
+            for downcast in (True, False):
+                with self.subTest(dtype=dtype, downcast=downcast):
+                    model = IntegerFactories(dtype)
+                    delegated = dtype == torch.int32 or downcast
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: Dim("s", min=2, max=16)},),
+                        fully_delegated=delegated,
+                        downcast_64_bit=downcast,
+                    )
+                    self.assertEqual(bool(_vulkan_graphs(edge)), delegated)
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_inputs_without_downcasting(self):
+        class Input64Bit(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    x + x,
+                    torch.full_like(x, 3, dtype=torch.int32),
+                    torch.ones(x.shape, dtype=torch.float32),
+                )
+
+        model = Input64Bit()
+        for dtype in (torch.int64, torch.float64):
+            with self.subTest(dtype=dtype):
+                inputs = [
+                    (torch.arange(3 * s, dtype=dtype).reshape(3, s),)
+                    for s in (7, 2, 15, 7)
+                ]
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=16)},),
+                    fully_delegated=False,
+                    downcast_64_bit=False,
+                )
+                graphs = _vulkan_graphs(edge)
+                self.assertTrue(graphs)
+                for graph in graphs:
+                    for value in graph.values:
+                        if isinstance(value.value, VkTensor):
+                            self.assertNotIn(
+                                value.value.datatype,
+                                (VkDataType.INT64, VkDataType.FLOAT64),
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_bool_fill_values(self):
+        class BoolFill(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.full_like(x, 0.5, dtype=torch.bool),
+                    torch.full_like(x, -1.5, dtype=torch.bool),
+                    torch.full(x.shape, 0, dtype=torch.bool),
+                )
+
+        model = BoolFill()
+        inputs = [(torch.zeros(3, 7),)]
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
+            with self.subTest(storage=storage):
+                edge = self._lower(model, inputs[0], storage=storage)
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_fusion_inputs_without_downcasting(self):
+        class SelectScalar(torch.nn.Module):
+            def __init__(self, narrow):
+                super().__init__()
+                self.narrow = narrow
+
+            def forward(self, x, pos):
+                value = pos[0].item()
+                if self.narrow:
+                    torch._check(value >= 0)
+                    torch._check(value <= 6)
+                    return x.narrow(1, value, 2) + 1
+                return x * value
+
+        inputs = [(torch.randn(2, 8), torch.tensor([pos])) for pos in (3, 5, 0)]
+        for narrow in (False, True):
+            for downcast in (False, True):
+                with self.subTest(narrow=narrow, downcast=downcast):
+                    model = SelectScalar(narrow)
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        fully_delegated=False,
+                        downcast_64_bit=downcast,
+                    )
+                    for graph in _vulkan_graphs(edge):
+                        for value in graph.values:
+                            if isinstance(value.value, VkTensor):
+                                self.assertNotIn(
+                                    value.value.datatype,
+                                    (VkDataType.INT64, VkDataType.FLOAT64),
+                                )
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_quantized_embedding_without_downcasting(self):
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        torch.manual_seed(0)
+        model = torch.nn.Sequential(torch.nn.Embedding(64, 128)).eval()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            filter_fn=lambda module, fqn: isinstance(module, torch.nn.Embedding),
+        )
+        unwrap_tensor_subclass(model)
+        inputs = [(torch.tensor(indices),) for indices in ([0, 5, 63, 7], [3, 3, 1, 0])]
+        downcast_modes = [False]
+        # Quantized embedding requires 8-bit storage buffers.
+        if not USING_SWIFTSHADER:
+            downcast_modes.append(True)
+        for downcast in downcast_modes:
+            with self.subTest(downcast=downcast):
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    fully_delegated=downcast,
+                    downcast_64_bit=downcast,
+                )
+                self.assertEqual(bool(_vulkan_graphs(edge)), downcast)
+                if downcast:
+                    self._run(edge, model, inputs)
+
+    def test_dynamic_scalar_values_fall_back(self):
+        class DynamicScalars(torch.nn.Module):
+            def forward(self, x):
+                n = x.shape[0]
+                value = n * 2
+                return (
+                    x**value,
+                    torch.ops.aten.mul.Scalar(x, value),
+                    torch.full((n,), value),
+                    torch.scalar_tensor(value, dtype=torch.int64),
+                    torch.ops.aten.mul.Scalar(x, n * 0.5),
+                    x + torch.full((n,), n * 0.5),
+                    torch.full((n,), 0.5),
+                    F.gelu(x),
+                    torch.clamp(x, max=n * 0.5),
+                    F.leaky_relu(x, negative_slope=n * 0.1),
+                )
+
+        model = DynamicScalars()
+        inputs = [(torch.linspace(-0.9, 4.1, n),) for n in (4, 2, 7, 3, 4)]
+        edge = self._lower(
+            model, inputs[0], ({0: Dim("n", min=2, max=8)},), fully_delegated=False
+        )
+        self.assertTrue(_vulkan_graphs(edge))
+        self._run(edge, model, inputs)
+
+    def test_dynamic_compare_scalars_fall_back(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, x.shape[1])
+
+        inputs = [
+            (torch.arange(2 * s, dtype=torch.float32).reshape(2, s),)
+            for s in (16, 3, 31, 2, 16)
+        ]
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            with self.subTest(op=op):
+                model = Compare(op)
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=32)},),
+                    fully_delegated=False,
+                )
+                self.assertEqual(_vulkan_graphs(edge), [])
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_compare_scalar_values_fall_back(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op, value):
+                super().__init__()
+                self.op = op
+                self.value = value
+
+            def forward(self, x):
+                return self.op(x, self.value)
+
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            for x, value in (
+                (torch.tensor([-1.0, 0.0, 1.0, 2.0]), torch.nan),
+                (torch.tensor([-3, 0, 1, 7], dtype=torch.int32), 2**40),
+                (torch.tensor([-(2**40), 0, 2**40, 2**40 + 1]), 2**40),
+            ):
+                with self.subTest(op=op, dtype=x.dtype, value=value):
+                    model = Compare(op, value)
+                    inputs = [(x,)]
+                    edge = self._lower(model, inputs[0], fully_delegated=False)
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_compare_scalar_values(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op, value):
+                super().__init__()
+                self.op = op
+                self.value = value
+
+            def forward(self, x):
+                return self.op(x, self.value)
+
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            for dtype in (torch.int32, torch.float32):
+                for value in (2.0, 2.5, -1.5):
+                    with self.subTest(op=op, dtype=dtype, value=value):
+                        x = torch.arange(-7, 14, dtype=dtype).reshape(3, 7)
+                        model = Compare(op, value)
+                        edge = self._lower(model, (x,))
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
 
     def test_4d_reductions(self):
         class Reduce(torch.nn.Module):
@@ -321,6 +775,40 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), fully_delegated=False)
                         self.assertEqual(_vulkan_graphs(edge), [])
                         self._run(edge, model, [(x,)])
+
+    def test_fp16_scalar_rounding(self):
+        class CreateTensor(torch.nn.Module):
+            def __init__(self, value, scalar):
+                super().__init__()
+                self.value = value
+                self.scalar = scalar
+
+            def forward(self, x):
+                if self.scalar:
+                    return torch.scalar_tensor(self.value, dtype=x.dtype)
+                return torch.full_like(x, self.value)
+
+        x = torch.ones(3, 7, dtype=torch.float16)
+        for value in (
+            0.3,
+            -1.00075,
+            2**-24,
+            -(2**-24),
+            2**-25,
+            3 * 2**-25,
+            65519.0,
+            65520.0,
+            1e5,
+            -1e5,
+        ):
+            for scalar in (False, True):
+                if not scalar and abs(value) > 65504:
+                    continue
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(value=value, scalar=scalar, storage=storage):
+                        model = CreateTensor(value, scalar)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
 
     def test_int32_buffer_reduction_shader_range(self):
         from executorch.extension.pybindings.portable_lib import (
