@@ -985,6 +985,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
+  install(
+    DIRECTORY extension/flat_tensor/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/flat_tensor
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
   list(APPEND _executorch_extensions extension_flat_tensor)
 endif()
 
