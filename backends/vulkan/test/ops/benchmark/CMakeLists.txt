@@ -52,6 +52,8 @@ if(TARGET vulkan_backend)
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/cm_utils.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/conv2d_utils.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/framework/device_info.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/framework/registry.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/results.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/runner.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/framework/test_case.cpp
@@ -85,36 +87,24 @@ if(TARGET vulkan_backend)
   executorch_target_link_options_shared_lib(vulkan_backend)
   executorch_target_link_options_shared_lib(operator_implementations)
 
-  # Function to create operator prototype binaries
-  function(add_operator_prototype OPERATOR_NAME SUBDIR)
-    set(TARGET_NAME ${OPERATOR_NAME})
-    set(SOURCE_FILE ${CMAKE_CURRENT_SOURCE_DIR}/${SUBDIR}/${OPERATOR_NAME}.cpp)
+  # gflags is built by the main ExecuTorch build but not installed, so find it
+  # in that build tree, which build_and_run.sh places five levels above this
+  # project's build directory.
+  set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../../../third-party/gflags)
+  find_package(gflags REQUIRED)
 
-    add_executable(${TARGET_NAME} ${SOURCE_FILE} ${PROTOTYPING_UTILS_CPP})
-    target_include_directories(${TARGET_NAME} PRIVATE ${COMMON_INCLUDES})
-    target_link_libraries(
-      ${TARGET_NAME} PRIVATE vulkan_backend executorch_core
-                             prototyping_shaderlib operator_implementations
-    )
-    target_compile_options(${TARGET_NAME} PRIVATE ${VULKAN_CXX_FLAGS})
-    set_property(TARGET ${TARGET_NAME} PROPERTY CXX_STANDARD 17)
-  endfunction()
-
-  # Define operator prototypes
-  add_operator_prototype(test_add cases/add)
-  add_operator_prototype(test_q8csw_linear cases/q8csw_linear)
-  add_operator_prototype(test_q8csw_conv2d cases/q8csw_conv2d)
-  add_operator_prototype(test_q4gsw_linear cases/q4gsw_linear)
-  add_operator_prototype(
-    test_choose_qparams_per_row cases/choose_qparams_per_row
+  file(GLOB_RECURSE ETVK_BENCH_CASES_CPP
+       ${CMAKE_CURRENT_SOURCE_DIR}/cases/*.cpp
   )
-  add_operator_prototype(test_q8ta_qdq cases/q8ta/qdq)
-  add_operator_prototype(test_q8ta_clone cases/q8ta/clone)
-  add_operator_prototype(test_q8ta_binary cases/q8ta/binary)
-  add_operator_prototype(test_q8ta_conv2d cases/q8ta/conv2d)
-  add_operator_prototype(test_q8ta_conv2d_pw cases/q8ta/conv2d)
-  add_operator_prototype(test_q8ta_conv2d_dw cases/q8ta/conv2d)
-  add_operator_prototype(test_mm cases/mm)
-  add_operator_prototype(test_coopmat_probe framework)
-  add_operator_prototype(test_coopmat_linear_bench cases/q4gsw_linear)
+  add_executable(
+    etvk_bench ${CMAKE_CURRENT_SOURCE_DIR}/etvk_bench.cpp
+               ${ETVK_BENCH_CASES_CPP} ${PROTOTYPING_UTILS_CPP}
+  )
+  target_include_directories(etvk_bench PRIVATE ${COMMON_INCLUDES})
+  target_link_libraries(
+    etvk_bench PRIVATE vulkan_backend executorch_core prototyping_shaderlib
+                       operator_implementations gflags
+  )
+  target_compile_options(etvk_bench PRIVATE ${VULKAN_CXX_FLAGS})
+  set_property(TARGET etvk_bench PROPERTY CXX_STANDARD 17)
 endif()

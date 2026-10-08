@@ -479,16 +479,13 @@ BenchmarkResult execute_test_case(
 }
 
 TestResult execute_test_cases(
-    const std::function<std::vector<TestCase>()>& test_case_generator,
+    std::vector<TestCase> test_cases,
     const FlopCalculatorFunc& flop_calculator,
     const std::string& operation_name,
     int warmup_runs,
     int benchmark_runs,
     const ReferenceComputeFunc& reference_compute_func) {
   TestResult results(operation_name);
-
-  // Generate all test cases
-  std::vector<TestCase> test_cases = test_case_generator();
 
   std::cout << "Executing " << test_cases.size() << " test cases for "
             << operation_name << std::endl;
@@ -740,13 +737,13 @@ TestResult execute_test_cases(
 
 // Convenience overload that uses the default FLOP calculator
 TestResult execute_test_cases(
-    const std::function<std::vector<TestCase>()>& test_case_generator,
+    std::vector<TestCase> test_cases,
     const std::string& operation_name,
     int warmup_runs,
     int benchmark_runs,
     const ReferenceComputeFunc& reference_compute_func) {
   return execute_test_cases(
-      test_case_generator,
+      std::move(test_cases),
       default_flop_calculator,
       operation_name,
       warmup_runs,

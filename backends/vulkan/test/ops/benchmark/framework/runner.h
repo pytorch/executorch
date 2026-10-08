@@ -95,7 +95,7 @@ BenchmarkResult execute_test_case(
     bool write_outputs = true);
 
 TestResult execute_test_cases(
-    const std::function<std::vector<TestCase>()>& test_case_generator,
+    std::vector<TestCase> test_cases,
     const FlopCalculatorFunc& flop_calculator,
     const std::string& operation_name = "Operation",
     int warmup_runs = 1,
@@ -103,7 +103,7 @@ TestResult execute_test_cases(
     const ReferenceComputeFunc& reference_compute_func = nullptr);
 
 TestResult execute_test_cases(
-    const std::function<std::vector<TestCase>()>& test_case_generator,
+    std::vector<TestCase> test_cases,
     const std::string& operation_name = "Operation",
     int warmup_runs = 1,
     int benchmark_runs = 1,
