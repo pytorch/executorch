@@ -6,6 +6,7 @@
 """Quantize a trained µYOLO checkpoint for Cortex-M and eager evaluation."""
 
 import argparse
+import copy
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from executorch.backends.cortex_m.edge_compile_config import (
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.devtools import generate_etrecord
 from executorch.exir import save as save_exported_program, to_edge
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 from torch.utils.data import DataLoader
@@ -35,6 +37,7 @@ from utils.artifacts import (  # type: ignore[import-not-found]
 )
 
 CALIBRATION_SAMPLES = 100
+ETRECORD_PATH = EXAMPLE_DIR / "artifacts" / "person_detection.etrecord"
 
 sys.path.insert(0, str(TRAINING_DIR))
 from model import (  # type: ignore[import-not-found]
@@ -87,7 +90,6 @@ def export_cortex_m(model: MicroYolo):
         num_workers=0,
         collate_fn=collate,
     )
-
     for index, (images, _) in enumerate(calibration_loader, start=1):
         prepared(images)
         print(f"Calibrating {index}/{CALIBRATION_SAMPLES}", end="\r", flush=True)
@@ -117,6 +119,13 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--pte", type=Path, default=PTE_PATH)
     parser.add_argument("--eager", type=Path, default=EAGER_PATH)
+    parser.add_argument(
+        "--etrecord",
+        type=Path,
+        nargs="?",
+        const=ETRECORD_PATH,
+        help="write ETRecord metadata, optionally to the given path",
+    )
     args = parser.parse_args()
     input_path = args.input or PRUNED_PATH
     report_input("checkpoint", input_path)
@@ -125,10 +134,20 @@ def main() -> None:
     save_artifact(
         args.eager, lambda path: save_exported_program(edge.exported_program(), path)
     )
-    pte_bytes = edge.to_executorch().buffer
+    # Emission rewrites debug handles; ETRecord needs the original edge graph. See docs/source/tutorials_source/devtools-integration-tutorial.py.
+    edge_for_etrecord = copy.deepcopy(edge) if args.etrecord is not None else edge
+    executorch_program = edge.to_executorch()
+    pte_bytes = executorch_program.buffer
     save_artifact(args.pte, lambda path: path.write_bytes(pte_bytes))
+    if args.etrecord is not None:
+        save_artifact(
+            args.etrecord,
+            lambda path: generate_etrecord(path, edge_for_etrecord, executorch_program),
+        )
     report_output(args.pte)
     report_output(args.eager)
+    if args.etrecord is not None:
+        report_output(args.etrecord)
 
 
 if __name__ == "__main__":
