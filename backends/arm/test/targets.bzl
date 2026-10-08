@@ -208,6 +208,15 @@ def define_arm_tests():
 
     if not runtime.is_oss and _ENABLE_VGF:
         runtime.cxx_test(
+            name = "vgf_shape_utils_test",
+            srcs = ["vgf_shape_utils_test.cpp"],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
             name = "vgf_vulkan_features_test",
             srcs = ["vgf_vulkan_features_test.cpp"],
             compiler_flags = [

@@ -497,6 +497,7 @@ test_runtime_vgf() {
     cmake --build "${ctest_build_dir}" \
     --target \
         vgf_neural_statistics_test \
+        vgf_shape_utils_test \
         vgf_vulkan_features_test \
         vgf_zero_copy_test \
         vgf_execution_stats_enabled_test \
