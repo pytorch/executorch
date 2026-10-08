@@ -56,6 +56,9 @@ option(
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
   or no custom op at all." OFF
 )
+option(TEST_NAMED_MANUAL_REGISTRATION
+       "Build two custom-op libraries with named manual registration." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -129,3 +132,7 @@ target_link_libraries(
 target_compile_options(
   custom_ops_executor_runner PUBLIC ${_common_compile_options}
 )
+
+if(TEST_NAMED_MANUAL_REGISTRATION)
+  include(${CMAKE_CURRENT_LIST_DIR}/named_manual_registration.cmake)
+endif()
