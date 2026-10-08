@@ -6,13 +6,16 @@
 
 # pyre-strict
 
+from typing import Optional
+
+import executorch.backends.vulkan.utils as utils
+
 import torch
-from executorch.backends.vulkan.op_registry import (
-    can_rewrite_batch_norm_as_group_norm,
-)
+from executorch.backends.vulkan.op_registry import can_rewrite_batch_norm_as_group_norm
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+from torch.export import ExportedProgram
 
 
 class ReplaceInstanceNormPass(ExportPass):
@@ -26,11 +29,17 @@ class ReplaceInstanceNormPass(ExportPass):
     more than the normalization itself.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._exported_program: Optional[ExportedProgram] = None
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        assert self._exported_program is not None
+        constant_nodes = utils.get_constant_nodes(self._exported_program)
         modified = False
 
         for node in list(graph_module.graph.nodes):
-            if not can_rewrite_batch_norm_as_group_norm(node):
+            if not can_rewrite_batch_norm_as_group_norm(node, constant_nodes):
                 continue
 
             input_node = node.args[0]

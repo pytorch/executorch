@@ -8,7 +8,7 @@
 
 import math
 import operator
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import AbstractSet, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 import executorch.backends.vulkan.utils as utils
@@ -47,6 +47,10 @@ class OpFeatures:
         # Optional check function used during partitioning to determine if a node's
         # inputs are supported by the operator implementation.
         "are_node_inputs_supported_fn",
+        # Like are_node_inputs_supported_fn, for ops whose support depends on which
+        # inputs are constants. Called with the node and the set of nodes holding
+        # constant data (parameters, unmutated buffers, lifted constants).
+        "are_node_inputs_supported_with_constants_fn",
         # Optional function to determine valid representation sets for input and outputs
         # once a node's actual inputs are known.
         "pick_io_storage_fn",
@@ -66,6 +70,7 @@ class OpFeatures:
         supports_highdim: bool = False,
         supports_prepacking: bool = False,
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
+        are_node_inputs_supported_with_constants_fn: Optional[Callable] = None,
         pick_io_storage_fn: Optional[Callable] = None,
     ):
         # Dtype initialization
@@ -93,6 +98,9 @@ class OpFeatures:
         self.supports_prepacking = supports_prepacking
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
+        self.are_node_inputs_supported_with_constants_fn = (
+            are_node_inputs_supported_with_constants_fn
+        )
         self.pick_io_storage_fn = pick_io_storage_fn
 
     def check_dtypes(self, node: torch.fx.Node) -> Tuple[bool, str]:
@@ -1856,7 +1864,9 @@ def register_native_batch_norm_legit_no_training():
     )
 
 
-def can_rewrite_batch_norm_as_group_norm(node: torch.fx.Node) -> bool:
+def can_rewrite_batch_norm_as_group_norm(
+    node: torch.fx.Node, constant_nodes: AbstractSet[torch.fx.Node]
+) -> bool:
     """
     Whether ReplaceInstanceNormPass can rewrite a batch norm node into group norm.
 
@@ -1864,7 +1874,10 @@ def can_rewrite_batch_norm_as_group_norm(node: torch.fx.Node) -> bool:
     ``_native_batch_norm_legit.no_stats``, which normalizes using statistics taken
     over the batch and spatial dims. When the batch dim is 1 that is exactly group
     norm with one group per channel, so the existing group norm kernels cover it.
-    A batch dim above 1 is a different reduction and is left alone.
+    A batch dim above 1 (only reachable by calling batch norm directly) is a
+    different reduction and is left alone.
+
+    ``constant_nodes`` holds the placeholders whose data is known at export time.
     """
     if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
         return False
@@ -1874,17 +1887,28 @@ def can_rewrite_batch_norm_as_group_norm(node: torch.fx.Node) -> bool:
         return False
 
     val = input_node.meta.get("val")
-    if val is None or val.dim() != 4 or val.shape[0] != 1:
+    if val is None or val.dim() != 4:
+        return False
+    # A symbolic batch dim could be above 1 at runtime.
+    if not isinstance(val.shape[0], int) or val.shape[0] != 1:
         return False
 
     # Group norm always applies an affine transform, so both weight and bias must
-    # be present. add_native_group_norm_node() prepacks them, so both must also
-    # trace back to a constant rather than being computed at runtime.
+    # be present. add_native_group_norm_node() prepacks them, so each must be a
+    # constant by the time group norm sees it. F.instance_norm passes
+    # weight.repeat(N): RemoveRedundantOpsTransform drops that repeat when N is 1,
+    # but for N above 1 it is a runtime tensor, so instance norm over a batch is
+    # rejected here. So are computed affine args and ones fed in as model inputs.
     for affine_arg in (node.args[1], node.args[2]):
         if not isinstance(affine_arg, torch.fx.Node):
             return False
-        placeholder, _ = utils.trace_args_until_placeholder(affine_arg)
-        if placeholder is None:
+        if (
+            affine_arg.target == exir_ops.edge.aten.repeat.default
+            and isinstance(affine_arg.args[0], torch.fx.Node)
+            and affine_arg.args[0].meta["val"].shape == affine_arg.meta["val"].shape
+        ):
+            affine_arg = affine_arg.args[0]
+        if affine_arg not in constant_nodes:
             return False
 
     # Only the normalized output may be consumed. Group norm returns mean and rstd
@@ -1916,7 +1940,7 @@ def register_native_batch_norm_legit_no_stats():
             utils.CONTIGUOUS_BUFFER,
         ],
         supports_prepacking=True,
-        are_node_inputs_supported_fn=can_rewrite_batch_norm_as_group_norm,
+        are_node_inputs_supported_with_constants_fn=can_rewrite_batch_norm_as_group_norm,
     )
 
 
