@@ -76,6 +76,14 @@ static void test_sdpa_impl(
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
   const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
 
+  add_sdpa_compute_attn_weights_with_softmax_node(
+      graph,
+      q_projected,
+      k_cache,
+      input_pos_symint,
+      scale_val,
+      attn_weights_softmax);
+
   add_sdpa_compute_attn_weights_node(
       graph,
       q_projected,
