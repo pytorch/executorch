@@ -11,6 +11,7 @@ function(add_manual_registration_lib lib_name op_name kernel_source)
   generate_bindings_for_kernels(
     LIB_NAME "${lib_name}" CUSTOM_OPS_YAML
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/custom_ops.yaml MANUAL_REGISTRATION
+    REGISTRATION_NAME "${lib_name}"
   )
   add_library(${lib_name}_kernels ${kernel_source})
   target_link_libraries(${lib_name}_kernels PRIVATE executorch)
@@ -27,7 +28,9 @@ function(add_manual_registration_lib lib_name op_name kernel_source)
     TARGETS ${lib_name} ${lib_name}_kernels
     EXPORT ManualRegistrationTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 endfunction()
 
@@ -46,6 +49,7 @@ gen_selected_ops(LIB_NAME manual_ops_overlap_lib ROOT_OPS "my_ops::mul3.out")
 generate_bindings_for_kernels(
   LIB_NAME manual_ops_overlap_lib CUSTOM_OPS_YAML
   ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml MANUAL_REGISTRATION
+  REGISTRATION_NAME manual_ops_overlap_lib
 )
 gen_operators_lib(
   LIB_NAME

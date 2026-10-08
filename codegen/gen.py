@@ -395,6 +395,14 @@ def gen_unboxing(
         base_env={
             "fn_header": header if not items else [],
             "manual_registration_function_name": manual_registration_function_name,
+            "kernel_array_begin": "Kernel kernels_to_register[] = {" if items else "",
+            "kernel_array_end": "};" if items else "",
+            "kernel_data": "kernels_to_register" if items else "nullptr",
+            "kernel_count": (
+                "sizeof(kernels_to_register) / sizeof(Kernel)"
+                if items
+                else "static_cast<size_t>(0)"
+            ),
         },
         env_callable=lambda unbox_kernel_entry: {
             "unboxed_kernels": [

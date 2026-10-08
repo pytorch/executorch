@@ -17,11 +17,13 @@ namespace torch {
 namespace executor {
 
 Error ${manual_registration_function_name}() {
-  Kernel kernels_to_register[] = {
-      ${unboxed_kernels} // Generated kernels
-  };
+  ${kernel_array_begin}
+      ${unboxed_kernels}
+  ${kernel_array_end}
+  Span<const Kernel> kernel_span(
+      ${kernel_data}, ${kernel_count});
   Error success_with_kernel_reg =
-      ::executorch::runtime::register_kernels({kernels_to_register});
+      ::executorch::runtime::register_kernels(kernel_span);
   if (success_with_kernel_reg != Error::Ok) {
     ET_LOG(Error, "Failed to register kernels");
     return success_with_kernel_reg;

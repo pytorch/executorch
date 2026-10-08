@@ -5,12 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import torch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +53,7 @@ class TestCMakeManualRegistration(unittest.TestCase):
 
     def test_invalid_names(self) -> None:
         for function in ("generate_bindings_for_kernels", "gen_operators_lib"):
-            for name in (None, "", "all", "foo-bar", "foo.bar", "1foo", "foo/bar"):
+            for name in (None, ""):
                 with self.subTest(function=function, name=name):
                     result = self.configure(
                         self.directory
@@ -62,6 +65,29 @@ class TestCMakeManualRegistration(unittest.TestCase):
                     )
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("Manual registration LIB_NAME", result.stderr)
+
+        for name in ("all", "foo-bar", "foo.bar", "1foo", "foo/bar"):
+            with self.subTest(registration_name=name):
+                result = self.configure(
+                    self.directory
+                    / f"registration_name_{len(list(self.directory.iterdir()))}",
+                    TEST_CASE="invalid",
+                    TEST_FUNCTION="generate_bindings_for_kernels",
+                    TEST_LIB_NAME="valid_target",
+                    TEST_REGISTRATION_NAME=name,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Manual registration REGISTRATION_NAME", result.stderr)
+
+    def test_cpp_name_does_not_depend_on_target_name(self) -> None:
+        result = self.configure(
+            self.directory / "renamed-target",
+            BINDINGS_MANUAL="ON",
+            OPERATORS_MANUAL="ON",
+            TEST_LIB_NAME="renamed-target",
+            TEST_REGISTRATION_NAME="stable_api",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_registration_modes(self) -> None:
         for bindings in ("ON", "OFF"):
@@ -91,6 +117,43 @@ class TestCMakeManualRegistration(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_empty_shared_library_consumer(self) -> None:
+        build = self.directory / "empty_shared_build"
+        install = self.directory / "empty_shared_install"
+        include_root = self.directory / "source_include"
+        shutil.copytree(ROOT / "runtime", include_root / "executorch/runtime")
+        result = self.configure(
+            build,
+            TEST_CASE="empty_shared",
+            SOURCE_INCLUDE_ROOT=str(include_root),
+            TORCH_INCLUDE_ROOT=str(Path(torch.__file__).parent / "include"),
+            CMAKE_INSTALL_PREFIX=str(install),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.check_command("cmake", "--build", str(build), "--parallel", "4")
+        self.check_command(str(build / "empty_shared_consumer"))
+        self.check_command("cmake", "--install", str(build))
+        self.assertTrue(
+            (install / "include/executorch/empty_ops/RegisterKernels.h").is_file()
+        )
+        relocated = self.directory / "empty_shared_relocated"
+        install.rename(relocated)
+        build.rename(self.directory / "empty_shared_hidden_build")
+        consumer = self.directory / "empty_installed_consumer"
+        result = self.configure(
+            consumer,
+            TEST_CASE="empty_installed_consumer",
+            SOURCE_INCLUDE_ROOT=str(include_root),
+            TORCH_INCLUDE_ROOT=str(Path(torch.__file__).parent / "include"),
+            MANUAL_TARGETS=str(
+                relocated
+                / "lib/cmake/EmptyRegistration/EmptyRegistrationTargets.cmake"
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.check_command("cmake", "--build", str(consumer), "--parallel", "4")
+        self.check_command(str(consumer / "empty_shared_consumer"))
+
     @unittest.skipUnless(
         os.environ.get("EXECUTORCH_TEST_INSTALL_PREFIX"),
         "requires an installed ExecuTorch CMake package",
@@ -117,6 +180,9 @@ class TestCMakeManualRegistration(unittest.TestCase):
         for lib in ("manual_ops_1_lib", "manual_ops_2_lib"):
             header = install / "include/executorch" / lib / "RegisterKernels.h"
             self.assertIn(f"register_{lib}_kernels", header.read_text())
+        self.assertFalse(
+            (install / "include/executorch/manual_ops_overlap_lib").exists()
+        )
         # Relocation and removing the producer build tree catch leaked paths.
         relocated = self.directory / "relocated"
         install.rename(relocated)

@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <manual_ops_1_lib/RegisterKernels.h>
-#include <manual_ops_2_lib/RegisterKernels.h>
+#include <executorch/manual_ops_1_lib/RegisterKernels.h>
+#include <executorch/manual_ops_2_lib/RegisterKernels.h>
 #ifndef INSTALLED_CONSUMER
-#include <manual_ops_overlap_lib/RegisterKernels.h>
+#include <executorch/manual_ops_overlap_lib/RegisterKernels.h>
 #endif
 
 #include <executorch/runtime/kernel/operator_registry.h>

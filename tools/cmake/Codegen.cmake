@@ -230,21 +230,43 @@ endfunction()
 # custom_ops_yaml.
 #
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
-# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml [MANUAL_REGISTRATION] )
-function(validate_manual_registration_lib_name lib_name)
-  if(NOT "${lib_name}" MATCHES "^[A-Za-z_][A-Za-z0-9_]*$" OR "${lib_name}"
-                                                             STREQUAL "all"
+# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml [MANUAL_REGISTRATION]
+# [REGISTRATION_NAME stable_cpp_name] ). When REGISTRATION_NAME is omitted,
+# the existing register_all_kernels() API remains the default.
+function(validate_manual_registration_name registration_name)
+  if(NOT "${registration_name}" MATCHES "^[A-Za-z_][A-Za-z0-9_]*$" OR
+     "${registration_name}" STREQUAL "all"
   )
     message(
       FATAL_ERROR
-        "Manual registration LIB_NAME must be a nonempty C++ identifier other than reserved name 'all': '${lib_name}'"
+        "Manual registration REGISTRATION_NAME must be a nonempty C++ identifier other than reserved name 'all': '${registration_name}'"
     )
   endif()
 endfunction()
 
+# Keep both CMake entry points on the same mapping of registration mode to
+# generated source and headers. A manual target's include root is private to
+# that target, while the installed headers retain their executorch/ prefix.
+function(registration_generated_files lib_name manual_registration out_dir
+         out_source out_headers
+)
+  if(manual_registration)
+    set(_dir ${CMAKE_CURRENT_BINARY_DIR}/${lib_name}/executorch/${lib_name})
+    set(_source ${_dir}/RegisterKernelsEverything.cpp)
+    set(_headers ${_dir}/RegisterKernels.h ${_dir}/Functions.h ${_dir}/NativeFunctions.h)
+  else()
+    set(_dir ${CMAKE_CURRENT_BINARY_DIR}/${lib_name})
+    set(_source ${_dir}/RegisterCodegenUnboxedKernelsEverything.cpp)
+    set(_headers ${_dir}/Functions.h ${_dir}/NativeFunctions.h)
+  endif()
+  set(${out_dir} ${_dir} PARENT_SCOPE)
+  set(${out_source} ${_source} PARENT_SCOPE)
+  set(${out_headers} ${_headers} PARENT_SCOPE)
+endfunction()
+
 function(generate_bindings_for_kernels)
   set(options ADD_EXCEPTION_BOUNDARY MANUAL_REGISTRATION)
-  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
+  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD REGISTRATION_NAME)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
@@ -253,21 +275,35 @@ function(generate_bindings_for_kernels)
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
   message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
+  message(STATUS "  REGISTRATION_NAME: ${GEN_REGISTRATION_NAME}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   if(GEN_MANUAL_REGISTRATION)
-    validate_manual_registration_lib_name("${GEN_LIB_NAME}")
+    if(NOT GEN_LIB_NAME)
+      message(FATAL_ERROR "Manual registration LIB_NAME is required")
+    endif()
+    if("REGISTRATION_NAME" IN_LIST GEN_KEYWORDS_MISSING_VALUES)
+      message(FATAL_ERROR "Manual registration REGISTRATION_NAME must not be empty")
+    endif()
+    if(DEFINED GEN_REGISTRATION_NAME)
+      validate_manual_registration_name("${GEN_REGISTRATION_NAME}")
+    endif()
+  elseif(DEFINED GEN_REGISTRATION_NAME)
+    message(FATAL_ERROR "REGISTRATION_NAME requires MANUAL_REGISTRATION")
   endif()
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 
-  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  registration_generated_files(
+    "${GEN_LIB_NAME}" "${GEN_MANUAL_REGISTRATION}" _out_dir
+    _registration_source _registration_headers
+  )
   # By default selective build output is selected_operators.yaml
-  set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
+  set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
 
   # If dtype selective build is enable, force header file to be preserved
   if(GEN_DTYPE_SELECTIVE_BUILD)
-    set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+    set(_opvariant_h ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h)
   else()
     set(_opvariant_h "")
   endif()
@@ -297,22 +333,13 @@ function(generate_bindings_for_kernels)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
   if(GEN_MANUAL_REGISTRATION)
-    list(APPEND _gen_command --manual-registration
-         --manual-registration-lib-name=${GEN_LIB_NAME}
-    )
+    list(APPEND _gen_command --manual-registration)
+    if(DEFINED GEN_REGISTRATION_NAME)
+      list(APPEND _gen_command --manual-registration-lib-name=${GEN_REGISTRATION_NAME})
+    endif()
   endif()
 
-  if(GEN_MANUAL_REGISTRATION)
-    set(_gen_command_sources
-        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
-        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-    )
-  else()
-    set(_gen_command_sources
-        ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-    )
-  endif()
+  set(_gen_command_sources ${_registration_source} ${_registration_headers})
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
@@ -397,14 +424,14 @@ function(gen_operators_lib)
   message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
-  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  registration_generated_files(
+    "${GEN_LIB_NAME}" "${GEN_MANUAL_REGISTRATION}" _out_dir
+    _registration_source _registration_headers
+  )
   if(GEN_MANUAL_REGISTRATION)
-    validate_manual_registration_lib_name("${GEN_LIB_NAME}")
-    set(_registration_source ${_out_dir}/RegisterKernelsEverything.cpp)
-  else()
-    set(_registration_source
-        ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-    )
+    if(NOT GEN_LIB_NAME)
+      message(FATAL_ERROR "Manual registration LIB_NAME is required")
+    endif()
   endif()
   get_source_file_property(
     _registration_generated "${_registration_source}" GENERATED
@@ -416,7 +443,7 @@ function(gen_operators_lib)
     )
   endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
-    set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+    set(_opvariant_h ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h)
   endif()
 
   if(GEN_SHARED)
@@ -431,16 +458,7 @@ function(gen_operators_lib)
     add_library(${GEN_LIB_NAME})
   endif()
 
-  if(GEN_MANUAL_REGISTRATION)
-    set(_srcs_list
-        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
-        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-    )
-  else()
-    set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-                   ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-    )
-  endif()
+  set(_srcs_list ${_registration_source} ${_registration_headers})
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _srcs_list ${_opvariant_h})
   endif()
@@ -545,9 +563,16 @@ function(gen_operators_lib)
   endif()
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
-  set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  set(_generated_headers ${_registration_headers})
   if(GEN_MANUAL_REGISTRATION)
-    list(APPEND _generated_headers ${_out_dir}/RegisterKernels.h)
+    if(GEN_SHARED)
+      target_compile_definitions(
+        ${GEN_LIB_NAME} PRIVATE EXECUTORCH_MANUAL_REGISTRATION_BUILD_SHARED
+      )
+      target_compile_definitions(
+        ${GEN_LIB_NAME} INTERFACE EXECUTORCH_MANUAL_REGISTRATION_USE_SHARED
+      )
+    endif()
   endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _generated_headers ${_opvariant_h})
@@ -556,13 +581,15 @@ function(gen_operators_lib)
     include(GNUInstallDirs)
     target_include_directories(
       ${GEN_LIB_NAME}
-      INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch>
+      INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    # PUBLIC_HEADER flattens filenames, so two libraries would overwrite each
-    # other's generated headers when installed to the same destination.
-    install(FILES ${_generated_headers}
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/${GEN_LIB_NAME}
+    # A header file set keeps the install decision with install(TARGETS), and
+    # preserves executorch/<lib>/ paths for both build and installed consumers.
+    target_sources(
+      ${GEN_LIB_NAME} PUBLIC FILE_SET HEADERS
+      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}
+      FILES ${_registration_headers}
     )
   else()
     set_target_properties(

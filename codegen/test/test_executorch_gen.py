@@ -352,7 +352,17 @@ class TestManualRegistrationFunctionName(unittest.TestCase):
                         check=False,
                     )
                     self.assertEqual(result.returncode, 2, result.stderr)
-                    self.assertIn("--manual-registration-lib-name", result.stderr)
+                    expected = (
+                        "requires --manual-registration"
+                        if not manual_registration
+                        else (
+                            "is reserved"
+                            if name == "all"
+                            else "must be a valid C++ identifier"
+                        )
+                    )
+                    self.assertIn(expected, result.stderr)
+                    self.assertNotIn("unrecognized arguments", result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
 
     def test_empty_name_is_not_omission(self) -> None:
@@ -472,6 +482,24 @@ class TestManualRegistrationTemplates(unittest.TestCase):
 
         self.assertIn(f"Error {self.function_name}() {{", source)
         self.assertNotIn("Error register_all_kernels() {", source)
+
+    def test_empty_manual_registration_uses_zero_length_span(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            gen_unboxing(
+                native_functions=[],
+                cpu_fm=FileManager(tempdir, self.template_dir, False),
+                selector=SelectiveBuilder.get_nop_selector(),
+                use_aten_lib=False,
+                kernel_index=ETKernelIndex(index={}),  # type: ignore[arg-type]
+                manual_registration=True,
+            )
+            source = (Path(tempdir) / "RegisterKernelsEverything.cpp").read_text()
+
+        self.assertIn(
+            "Span<const Kernel> kernel_span(\n      nullptr, static_cast<size_t>(0));",
+            source,
+        )
+        self.assertNotIn("Kernel kernels_to_register[]", source)
 
 
 class TestGenFunctionsDeclarations(unittest.TestCase):
