@@ -99,6 +99,11 @@ class ModuleAddSingleInput(torch.nn.Module):
         return (torch.ones(2, 2),)
 
 
+class ModuleAddHalf(ModuleAddSingleInput):
+    def get_inputs(self):
+        return (torch.ones(2, 2, dtype=torch.float16),)
+
+
 class ModuleAddEmpty(torch.nn.Module):
     def forward(self, x):
         return x + x
