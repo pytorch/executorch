@@ -110,7 +110,9 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:delegate",
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
+        "//executorch/exir:schema",
         "//executorch/exir:tensor",
+        "//executorch/exir/backend:backend_details",
     ],
 )
 

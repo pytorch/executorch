@@ -15,7 +15,10 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
-from executorch.exir.backend.backend_details import DelegateScratchSpec
+from executorch.exir.backend.backend_details import (
+    DelegateScratchSpec,
+    DelegateStateSpec,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -71,6 +74,9 @@ class LoweredBackendModule(torch.nn.Module):
     _scratch_specs: List[
         DelegateScratchSpec
     ]  # Scratch buffers the backend needs at execute() time
+    _state_specs: List[
+        DelegateStateSpec
+    ]  # Buffers the backend keeps across execute() calls
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -81,6 +87,7 @@ class LoweredBackendModule(torch.nn.Module):
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
         scratch_specs: Optional[List[DelegateScratchSpec]] = None,
+        state_specs: Optional[List[DelegateStateSpec]] = None,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -89,6 +96,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
         self._scratch_specs = scratch_specs or []
+        self._state_specs = state_specs or []
         self.meta = None
 
     # pyre-ignore
@@ -118,6 +126,7 @@ class LoweredBackendModule(torch.nn.Module):
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
             scratch_specs=copy.deepcopy(self._scratch_specs, memo),
+            state_specs=copy.deepcopy(self._state_specs, memo),
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -163,6 +172,13 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the scratch buffers the backend asked for in preprocess
         """
         return self._scratch_specs
+
+    @property
+    def state_specs(self) -> List[DelegateStateSpec]:
+        """
+        Returns the state buffers the backend asked for in preprocess
+        """
+        return self._state_specs
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
