@@ -32,9 +32,7 @@ constexpr size_t kDefaultEdgeItems = 3;
 /// Returns a globally unique "iword" index that we can use to store the current
 /// "edge items" count on arbitrary streams.
 int get_edge_items_xalloc() {
-  // Wrapping this in a function avoids a -Wglobal-constructors warning.
-  static const int xalloc = std::ios_base::xalloc();
-  return xalloc;
+  return internal::evalue_edge_items_xalloc();
 }
 
 /// Returns the number of "edge items" to print at the beginning and end of
@@ -213,15 +211,11 @@ void print_list_optional_tensor(
 
 } // namespace
 
-void evalue_edge_items::set_edge_items(std::ostream& os, long edge_items) {
-  os.iword(get_edge_items_xalloc()) = edge_items;
-}
-
 } // namespace extension
 } // namespace executorch
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // This needs to live in the same namespace as EValue.
 std::ostream& operator<<(std::ostream& os, const EValue& value) {
@@ -273,5 +267,5 @@ std::ostream& operator<<(std::ostream& os, const EValue& value) {
   return os;
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

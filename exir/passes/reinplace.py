@@ -337,7 +337,7 @@ def reinplace_pass(  # noqa: C901
 
     Safety rules:
       * The mutated arg must not be used by any later node in the
-        graph.
+        graph or be returned as an unmodified output.
       * If the mutated arg is a placeholder (program input), it must
         be a *mutable* input — i.e., declared in
         `graph_signature.user_inputs_to_mutate` or
@@ -425,7 +425,7 @@ def reinplace_pass(  # noqa: C901
 
     for node in reversed(ep.graph.nodes):
         if node.op != "call_function" or node.target not in resolved:
-            if node.op == "call_function":
+            if node.op in ("call_function", "output"):
                 seen_nodes.update(node.all_input_nodes)
             continue
 
