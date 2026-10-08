@@ -28,8 +28,11 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 ## Classes
 ### ExecuTorchModule
 - `plan_execute()`: Plan and execute.
-- `run_method()`: Run method.
-- `forward()`: Forward. This takes a pytree-flattend PyTorch-tensor-based input.
+- `run_method()`: Run a method with either PyTorch tensors or objects that
+  implement Python's buffer protocol, such as NumPy arrays. A call must use a
+  single tensor protocol; PyTorch tensors and buffers cannot be mixed.
+- `forward()`: Forward. A single buffer may be passed directly; multiple
+  inputs are passed as a flat sequence.
 - `has_etdump()`: Check if etdump is available.
 - `write_etdump_result_to_file()`: Write etdump result to a file.
 - `__call__()`: Call method.

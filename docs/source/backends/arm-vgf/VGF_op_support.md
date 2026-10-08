@@ -6,7 +6,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **159**.
+Total supported PyTorch APIs: **162**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -73,6 +73,7 @@ Total supported PyTorch APIs: **159**.
 | `torch.isnan` | FP | `FP32` | - |
 | `torch.layer_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.le` / `<=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.linalg.vector_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.linspace` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.log` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.log10` | INT | `INT8` | 8x8 |
@@ -97,6 +98,7 @@ Total supported PyTorch APIs: **159**.
 | `torch.mul` / `*` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.ne` / `!=` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.neg` / `unary -` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.nn.AdaptiveAvgPool1d` / `torch.nn.functional.adaptive_avg_pool1d` | FP | `FP32` | - |
 | `torch.nn.AdaptiveAvgPool2d` / `torch.nn.functional.adaptive_avg_pool2d` | FP | `FP32` | - |
 | `torch.nn.AvgPool2d` / `torch.nn.functional.avg_pool2d` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.nn.BatchNorm2d` / `torch.nn.functional.batch_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
@@ -106,6 +108,7 @@ Total supported PyTorch APIs: **159**.
 | `torch.nn.Embedding` / `torch.nn.functional.embedding` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.functional.pad` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.nn.functional.scaled_dot_product_attention` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.functional.softplus` | INT | `INT8` | 8x8 |
 | `torch.nn.GELU` / `torch.nn.functional.gelu` | FP, INT | `FP32`, `BF16`, `INT8` | 8x8 |
 | `torch.nn.GroupNorm` / `torch.nn.functional.group_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Hardsigmoid` / `torch.nn.functional.hardsigmoid` | FP, INT | `FP32`, `INT8` | 8x8 |

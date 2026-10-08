@@ -367,13 +367,14 @@ class TestPublishedSets(unittest.TestCase):
         )
 
     def test_the_workflows_offer_exactly_the_published_pythons(self):
-        # The filter can only keep a row the generator produced, and these two workflows are what
+        # The filter can only keep a row the generator produced, and the CUDA wheel workflows
         # tell the generator which pythons to produce. A python published here but not offered
         # there does trip the release gate, but only on a release run, well after the change
         # landed. A python offered there and not published here is dropped without a word.
         for name in (
             "build-wheels-cuda-linux.yml",
             "build-wheels-cuda-aarch64-linux.yml",
+            "build-wheels-cuda-windows.yml",
         ):
             with self.subTest(workflow=name):
                 workflow = yaml.safe_load(
