@@ -13,6 +13,7 @@ from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx import Graph, GraphModule, Node
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.utils import _pytree as pytree
 
@@ -439,12 +440,22 @@ def test_canonicalize_symbolic_pixel_shuffle_view_permute_chain() -> None:
     )
     assert _count_node(result.graph_module, exir_ops.edge.aten.view_copy.default) == 2
 
-    compute_nodes = [
-        node for node in result.graph_module.graph.nodes if node.op == "call_function"
+    def shape_values(shape):
+        return [dim.meta["val"] if isinstance(dim, Node) else dim for dim in shape]
+
+    transform_nodes = [
+        node
+        for node in result.graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target
+        in {
+            exir_ops.edge.aten.view_copy.default,
+            exir_ops.edge.aten.permute_copy.default,
+        }
     ]
-    assert compute_nodes[0].args[1] == [batch, 2, 2, 2, 2, 2]
-    assert compute_nodes[1].args[1] == [0, 1, 4, 2, 5, 3]
-    assert compute_nodes[2].args[1] == [batch, 4, 4, 2]
+    assert shape_values(transform_nodes[0].args[1]) == [batch, 2, 2, 2, 2, 2]
+    assert transform_nodes[1].args[1] == [0, 1, 4, 2, 5, 3]
+    assert shape_values(transform_nodes[2].args[1]) == [batch, 4, 4, 2]
 
 
 def test_canonicalize_symbolic_singleton_permute_stays_permute() -> None:
@@ -603,3 +614,41 @@ def test_canonicalize_unsupported_end_view_does_not_block_prefix() -> None:
     )
     assert _count_node(result.graph_module, exir_ops.edge.aten.view_copy.default) == 1
     _validate_numerics(gm_before, result.graph_module, (x_data,))
+
+
+def test_canonicalize_skips_view_map_with_fx_node_shape_arg() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=2)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True) as mode:
+        graph = Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = mode.from_tensor(torch.empty(size=(batch, 1, 1, 3)))
+        permute = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default,
+            (x, [0, 3, 1, 2]),
+        )
+        permute.meta["val"] = mode.from_tensor(torch.empty(size=(batch, 3, 1, 1)))
+        sym_size = graph.call_function(torch.ops.aten.sym_size.int, (x, 0))
+        sym_size.meta["val"] = batch
+        view = graph.call_function(
+            exir_ops.edge.aten.view_copy.default,
+            (permute, [sym_size, 3, 1]),
+        )
+        view.meta["val"] = mode.from_tensor(torch.empty(size=(batch, 3, 1)))
+        graph.output(view)
+
+    graph_module = GraphModule({}, graph)
+    result = cast(PassResult, CanonicalizeViewCopyPermutePass().call(graph_module))
+
+    result.graph_module.graph.lint()
+    view_nodes = [
+        node
+        for node in result.graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target == exir_ops.edge.aten.view_copy.default
+    ]
+    assert len(view_nodes) == 1
+    shape_arg = view_nodes[0].args[1]
+    assert isinstance(shape_arg, list)
+    assert any(isinstance(dim, Node) for dim in shape_arg)
