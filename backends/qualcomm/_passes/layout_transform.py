@@ -47,6 +47,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.avg_pool2d.default,
         exir_ops.edge.aten.avg_pool3d.default,
         exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.convolution_backward.default,
         exir_ops.edge.aten.grid_sampler_2d.default,
         exir_ops.edge.aten.grid_sampler_3d.default,
         exir_ops.edge.aten.instance_norm.default,
@@ -169,8 +170,8 @@ class LayoutTransform(ExportPass):
             getitem_node = list(node.users.keys())[0]
             if getitem_node.target.__name__ != "getitem":
                 raise AssertionError(
-                    "Expected node's user to be getitem, "
-                    f"got {getitem_node.target.__name__}"
+                    f"Expected tuple-output node {node.name} ({node.target}) to have a "
+                    f"getitem user, got {getitem_node.target.__name__}"
                 )
             index = getitem_node.args[1]
             node.meta[self.transformed_tag] = self.get_axis_order(
@@ -226,32 +227,45 @@ class LayoutTransform(ExportPass):
 
         return False
 
-    def insert_node(self, graph_module, node, revert_layout: bool) -> None:
+    def insert_node(
+        self, graph_module, node, revert_layout: bool, layout_node=None
+    ) -> None:
         if not self.insert_permute:
             return
-        with graph_module.graph.inserting_after(node):
-            users = node.users.copy()
-            if isinstance(node.meta["val"], tuple):
-                getitem_node = list(node.users.keys())[0]
+        if layout_node is None:
+            layout_node = node
+        if isinstance(node.meta["val"], tuple):
+            for getitem_node in node.users:
                 if getitem_node.target.__name__ != "getitem":
                     raise AssertionError(
-                        f"Expected bn node's user to be getitem, got {getitem_node.target.__name__}"
+                        f"Expected tuple-output node {node.name} ({node.target}) to have a "
+                        f"getitem user, got {getitem_node.target.__name__}"
                     )
-                index = getitem_node.args[1]
-                tensor = node.meta["val"][index]
-            else:
-                tensor = node.meta["val"]
+                tensor = node.meta["val"][getitem_node.args[1]]
+                if tensor is not None:
+                    self.insert_node(
+                        graph_module,
+                        getitem_node,
+                        revert_layout,
+                        layout_node,
+                    )
+            return
 
+        tensor = node.meta["val"]
+        permute_input = node
+        users = node.users.copy()
+
+        with graph_module.graph.inserting_after(permute_input):
             permute = self.create_call_function_node(
                 graph_module,
                 exir_ops.edge.aten.permute_copy.default,
                 (
-                    node,
+                    permute_input,
                     self.get_axis_order(eval_shape(tensor.shape), revert_layout),
                 ),
             )
             permute.meta["val"] = tensor
-            permute.meta[QCOM_QUANT_ATTRS] = node.meta.get(QCOM_QUANT_ATTRS)
+            permute.meta[QCOM_QUANT_ATTRS] = layout_node.meta.get(QCOM_QUANT_ATTRS)
             # we need this to check the annotation boundary
             permute.meta[QCOM_INSERTED_PERMUTE] = True
 
@@ -264,14 +278,14 @@ class LayoutTransform(ExportPass):
             #               └--------------------------------------> qnn_premute -┙
             # i.e. insert permute by condition between user and current node
             #      if there are multiple users included
-            is_node_transformed = self.is_transformed_node(node)
+            is_node_transformed = self.is_transformed_node(layout_node)
             for user in users:
                 is_user_transformed = (
                     self.is_transformed_node(user) or QCOM_LAYOUT_CHANGE in user.meta
                 )
                 # insert permute only in exclusive condition
                 if is_node_transformed != is_user_transformed:
-                    user.replace_input_with(node, permute)
+                    user.replace_input_with(permute_input, permute)
 
     def create_call_function_node(
         self,
