@@ -21,6 +21,7 @@ import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
 from executorch.backends.cuda.autotune.inputs import autotune_input_scenarios
+from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
@@ -1019,6 +1020,12 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # values instead of Inductor's zero-filled integer tensors.
                 # See autotune/inputs.py.
                 stack.enter_context(autotune_input_scenarios())
+                # Pick each @autotune_launch_param value (e.g. a split-K) by
+                # timing its candidates on this device. See
+                # autotune/launch_params.py.
+                stack.enter_context(
+                    autotune_launch_params(offload=_moved_program_tensors)
+                )
                 if cuda_graph_autotune_timing:
                     # Time every autotune candidate (Inductor kernels, matmul
                     # templates, our triton.autotune ops) with CUDA-graph

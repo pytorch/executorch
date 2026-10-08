@@ -98,6 +98,7 @@ fbcode_target(
         "autotune/__init__.py",
         "autotune/cuda_graph_timing.py",
         "autotune/inputs.py",
+        "autotune/launch_params.py",
     ],
     visibility = [
         "//executorch/...",

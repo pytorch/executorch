@@ -69,6 +69,28 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest_remote_gpu(
+        name = "test_autotune_launch_params",
+        srcs = [
+            "test_autotune_launch_params.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/exir:lib",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
+        ),
+    )
+
+    python_unittest_remote_gpu(
         name = "test_cuda_graph_timing",
         srcs = [
             "test_cuda_graph_timing.py",
