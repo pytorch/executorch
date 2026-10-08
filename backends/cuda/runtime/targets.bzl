@@ -35,7 +35,6 @@ def define_common_targets(is_fbcode = False):
         name = "runtime_shims",
         srcs = [
             "shims/cuda_guard.cpp",
-            "shims/int4_plain_mm.cu",
             "shims/int4mm.cu",
             "shims/int5_plain_mm.cu",
             "shims/int6_plain_mm.cu",
@@ -47,8 +46,6 @@ def define_common_targets(is_fbcode = False):
         ],
         headers = [
             "shims/cuda_guard.h",
-            "shims/int4_plain_mm.cuh",
-            "shims/int4_plain_mm.h",
             "shims/int4mm.cuh",
             "shims/int4mm.h",
             "shims/int5_plain_mm.cuh",
