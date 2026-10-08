@@ -87,6 +87,28 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
         bundle->qnn_logger_ptr = std::make_unique<QnnLogger>(
             bundle->implementation.get(), LoggingCallback, current_log_level);
       }
+      if (backend_type == QnnExecuTorchBackendType::kLpaiBackend) {
+        const auto& custom_prepare_config = options->backend_options()
+                                                ->lpai_options()
+                                                ->custom_prepare_config_file();
+        std::string current_custom_prepare_config =
+            custom_prepare_config ? custom_prepare_config->str() : "";
+        auto* lpai_backend =
+            static_cast<LpaiBackend*>(bundle->qnn_backend_ptr.get());
+        if (current_custom_prepare_config !=
+            lpai_backend->custom_prepare_config_file()) {
+          QNN_EXECUTORCH_LOG_WARN(
+              "Reusing cached LPAI backend bundle for soc_model %s that was "
+              "created with lpai_custom_prepare_config_file=\"%s\"; this "
+              "method's lpai_custom_prepare_config_file=\"%s\" will be "
+              "ignored. Methods sharing a (backend_type, soc_model) bundle "
+              "in the same process cannot have independent depth-first cut "
+              "plans.",
+              EnumNameQcomChipset(options->soc_info()->soc_model()),
+              lpai_backend->custom_prepare_config_file().c_str(),
+              current_custom_prepare_config.c_str());
+        }
+      }
       QNN_EXECUTORCH_LOG_INFO(
           "Use cached backend bundle for current backend: %s",
           EnumNameQnnExecuTorchBackendType(backend_type));

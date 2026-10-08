@@ -36,7 +36,7 @@ QnnLpaiBackend_CustomConfigHwInfo_t* LpaiBackendCustomConfig::AllocHwInfo() {
 }
 
 std::vector<QnnBackend_CustomConfig_t>
-LpaiBackendCustomConfig::CreateBackendCustomConfig() {
+LpaiBackendCustomConfig::CreateBackendCustomConfigCommon() {
   std::vector<QnnBackend_CustomConfig_t> ret;
   QnnLpaiBackend_CustomConfig_t* p_custom_config = nullptr;
 

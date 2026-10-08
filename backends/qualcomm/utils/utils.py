@@ -1155,6 +1155,7 @@ def generate_lpai_compiler_spec(
     affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft,
     core_selection: int = 0,
     target_env: QnnExecuTorchLpaiTargetEnv = QnnExecuTorchLpaiTargetEnv.kArm,
+    lpai_custom_prepare_config_file: str = "",
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN LPAI
@@ -1181,23 +1182,30 @@ def generate_lpai_compiler_spec(
         core_selection:
             A bit mask for core selection. Each bit corresponds to a core, set the bit to use the core
             Note that all zeros and all ones mean any core can be used for the eAI instance
+
+            Example for 2 cores:
+            +--------+--------+---------------+-------------------------------------------------------------------------+
+            | bit 1  | bit 0  | affinity      |                 scheduler behavior                                      |
+            +--------+--------+---------------+-------------------------------------------------------------------------+
+            | 0      |      0 |      any      | Default affinity, scheduler will pick any core based on load            |
+            | 1      |      1 |      any      | Same as default affinity                                                |
+            | 0      |      1 |      hard     | All jobs will only be sent to core 0                                    |
+            | 1      |      0 |      hard     | All jobs will only be sent to core 1                                    |
+            | 0      |      1 |      soft     | Scheduler will attempt to send jobs to core 0                           |
+            | 1      |      0 |      soft     | Scheduler will attempt to send jobs to core 1                           |
+            +--------+--------+---------------+-------+-----------------------------------------------------------------+
         target_env:
             Specifies the target environment for the LPAI execution
             kArm - Targeting ARM architecture
             kX86 - Targeting x86 architecture
             kAdsp - (WIP) Direcltly execute on the DSP instead of FastRPC communication
-
-        Example for 2 cores:
-        +--------+--------+---------------+-------------------------------------------------------------------------+
-        | bit 1  | bit 0  | affinity      |                 scheduler behavior                                      |
-        +--------+--------+---------------+-------------------------------------------------------------------------+
-        | 0      |      0 |      any      | Default affinity, scheduler will pick any core based on load            |
-        | 1      |      1 |      any      | Same as default affinity                                                |
-        | 0      |      1 |      hard     | All jobs will only be sent to core 0                                    |
-        | 1      |      0 |      hard     | All jobs will only be sent to core 1                                    |
-        | 0      |      1 |      soft     | Scheduler will attempt to send jobs to core 0                           |
-        | 1      |      0 |      soft     | Scheduler will attempt to send jobs to core 1                           |
-        +--------+--------+---------------+-------+-----------------------------------------------------------------+
+        lpai_custom_prepare_config_file:
+            Path to a custom prepare config file: a JSON manifest supplying model builder settings for
+            graph preparation. Currently the only supported key is ``cut_plan``, whose value is itself
+            a path to a separate JSON file describing the depth-first cut plan, e.g.
+            ``{"cut_plan": "/path/to/cut_plan_nodes.json"}``. That referenced file holds a list of cut
+            entries, each naming the node(s) to cut and how many branches to split along height/width,
+            e.g. ``[{"nodes": ["aten_convolution_default"], "h_branches": 2, "w_branches": 1}]``.
 
     Returns:
         QnnExecuTorchBackendOptions: backend options for QNN LPAI.
@@ -1209,6 +1217,7 @@ def generate_lpai_compiler_spec(
     lpai_options.affinity = affinity
     lpai_options.core_selection = core_selection
     lpai_options.target_env = target_env
+    lpai_options.custom_prepare_config_file = lpai_custom_prepare_config_file
 
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kLpaiBackend,
@@ -1223,6 +1232,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     saver: bool = False,
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
+    dump_qnn_graph_path: str = "",
     profile_level: int = 0,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
@@ -1255,6 +1265,11 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         dump_intermediate_outputs: If tensor dump is enabled, all intermediate
             tensors output will be dumped. This option exists for debugging
             accuracy issues.
+        dump_qnn_graph_path: If non-empty, additionally export the graph as a
+            DLC file via the Ir backend to this directory. Empty (default)
+            disables this. Combinable with FCB: the DLC graph is
+            backend-agnostic, so one DLC is written using the first target
+            rather than once per target.
         profile_level: Enable profiling the performance of per operator. Note
             that for now only kProfileDetailed and kProfileOptrace are supported.
         shared_buffer: Enables usage of shared buffer between application and
@@ -1416,6 +1431,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
 
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
+    qnn_executorch_options.dump_qnn_graph_path = dump_qnn_graph_path
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
 
     if op_package_options and len(op_package_options.op_package_infos) > 0:

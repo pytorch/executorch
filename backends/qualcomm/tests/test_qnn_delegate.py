@@ -56,6 +56,7 @@ from executorch.backends.qualcomm.tests.utils import (
     QuantDtype,
     TestQNN,
     validate_context_binary,
+    validate_dlc,
 )
 from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
 from executorch.backends.qualcomm.utils.check_qnn_version import (
@@ -103,6 +104,7 @@ from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
     make_fcb_weight_sharing_model,
     make_fcb_weight_sharing_specs,
 )
+from executorch.backends.qualcomm.tests.rework.src.feature import capture_native_output
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
@@ -7222,7 +7224,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -7511,6 +7513,42 @@ class TestQNNFloatingPointUtils(TestQNN):
                 method_index=index,
             )
 
+    def test_qnn_backend_dump_qnn_graph_multi_method(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_weight_sharing=True,
+        )
+        with tempfile.TemporaryDirectory() as dump_dir:
+            compiler_specs = [
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                    dump_qnn_graph_path=dump_dir,
+                )
+            ] * len(graph_names)
+
+            modules_dict = {}
+            sample_inputs_dict = {}
+            compiler_specs_dict = {}
+            for i, graph_name in enumerate(graph_names):
+                modules_dict[graph_name] = modules[i]
+                sample_inputs_dict[graph_name] = sample_inputs[i]
+                compiler_specs_dict[graph_name] = compiler_specs[i]
+            delegated_program = to_edge_transform_and_lower_to_qnn(
+                modules_dict, sample_inputs_dict, compiler_specs_dict
+            )
+            delegated_program.to_executorch()
+            for graph_name in graph_names:
+                validate_dlc(f"{dump_dir}/{graph_name}_0.dlc")
+
     def test_qnn_backend_profile_op(self):
         TestQNN.profile_level = 2
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -7580,7 +7618,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -7628,7 +7666,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -7670,6 +7708,8 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_shared_buffer(self):
+        if self.enable_x86_64:
+            self.skipTest("shared buffer is not supported on host machine")
         TestQNN.shared_buffer = True
         backend_options = generate_htp_compiler_spec(
             use_fp16=True,
@@ -7683,7 +7723,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,
@@ -7705,6 +7745,38 @@ class TestQNNFloatingPointUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_dump_qnn_graph(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        with tempfile.TemporaryDirectory() as dump_dir:
+            TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.soc_model],
+                backend_options=backend_options,
+                dump_qnn_graph_path=dump_dir,
+            )
+            module = SimpleModel()  # noqa: F405
+            sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+            self.lower_module_and_test_output(module, sample_input)
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+
+    def test_qnn_backend_dump_qnn_graph_multi_partition(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        with tempfile.TemporaryDirectory() as dump_dir:
+            TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.soc_model],
+                backend_options=backend_options,
+                dump_qnn_graph_path=dump_dir,
+            )
+            module = SimpleModel()  # noqa: F405
+            sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+            self.lower_module_and_test_output(
+                module,
+                sample_input,
+                expected_partitions=2,
+                skip_node_id_set={"aten_convolution_default_1"},
+            )
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+            validate_dlc(f"{dump_dir}/forward_1.dlc")
 
     @unittest.expectedFailure
     def test_qnn_backend_context_direct(self):
@@ -8019,7 +8091,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -8410,6 +8482,60 @@ class TestQNNQuantizedUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.51"),
+        "depth-first cut requires QNN SDK 2.51 or newer",
+    )
+    def test_qnn_backend_dfcut(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kLpaiBackend:
+            self.skipTest("depth-first cut is only supported on LPAI")
+        torch.manual_seed(8)
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cut_plan_path = f"{tmp_dir}/cut_plan_nodes.json"
+            with open(cut_plan_path, "w") as f:
+                json.dump(
+                    [
+                        {
+                            "nodes": ["aten_convolution_default"],
+                            "h_branches": 2,
+                            "w_branches": 1,
+                        }
+                    ],
+                    f,
+                )
+            lpai_custom_prepare_config_file = f"{tmp_dir}/custom_prepare_config.json"
+            with open(lpai_custom_prepare_config_file, "w") as f:
+                json.dump({"cut_plan": cut_plan_path}, f)
+
+            # backend is guaranteed to be kLpaiBackend by the skipTest() above.
+            backend_options = generate_lpai_compiler_spec(
+                target_env=self.get_lpai_target_env(),
+                lpai_custom_prepare_config_file=lpai_custom_prepare_config_file,
+            )
+            TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.soc_model],
+                backend_options=backend_options,
+            )
+            module = self.get_qdq_module(module, sample_input)
+            with capture_native_output() as captured:
+                self.lower_module_and_test_output(
+                    module,
+                    sample_input,
+                )
+                captured.seek(0)
+                native_output = captured.read().decode(errors="replace")
+                tail = "\n".join(native_output.splitlines()[-20:])
+                self.assertIn(
+                    "Cutting plan provided",
+                    native_output,
+                    "expected the LPAI host compiler to log that the cut plan "
+                    f"was read, not silently ignored; last lines of captured "
+                    f"native output:\n{tail}",
+                )
+
     def test_qnn_backend_skip_node_op_quantizer(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -8642,6 +8768,51 @@ class TestQNNQuantizedUtils(TestQNN):
                 method_index=index,
             )
 
+    def test_qnn_backend_dump_qnn_graph_multi_method(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_weight_sharing=True,
+        )
+        with tempfile.TemporaryDirectory() as dump_dir:
+            compiler_specs = [
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                    dump_qnn_graph_path=dump_dir,
+                )
+            ] * len(graph_names)
+            modules_dict = {}
+            sample_inputs_dict = {}
+            compiler_specs_dict = {}
+            for i, graph_name in enumerate(graph_names):
+                module_exported = torch.export.export(
+                    modules[i], sample_inputs[i]
+                ).module()
+                module_prepared = prepare_pt2e(
+                    module_exported,
+                    make_quantizer(
+                        backend=get_backend_type(self.backend), soc_model=self.soc_model
+                    ),
+                )
+                module_prepared(*sample_inputs[i])
+                modules_dict[graph_name] = convert_pt2e(module_prepared)
+                sample_inputs_dict[graph_name] = sample_inputs[i]
+                compiler_specs_dict[graph_name] = compiler_specs[i]
+            delegated_program = to_edge_transform_and_lower_to_qnn(
+                modules_dict, sample_inputs_dict, compiler_specs_dict
+            )
+            delegated_program.to_executorch()
+            for graph_name in graph_names:
+                validate_dlc(f"{dump_dir}/{graph_name}_0.dlc")
+
     def test_qnn_backend_profile_op(self):
         TestQNN.profile_level = 2
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -8714,7 +8885,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -8763,7 +8934,7 @@ class TestQNNQuantizedUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -8806,6 +8977,8 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_shared_buffer(self):
+        if self.enable_x86_64:
+            self.skipTest("shared buffer is not supported on host machine")
         TestQNN.shared_buffer = True
         backend_options = generate_htp_compiler_spec(
             use_fp16=False,
@@ -8820,7 +8993,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,
@@ -8845,6 +9018,48 @@ class TestQNNQuantizedUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_dump_qnn_graph(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=self.get_lpai_target_env()
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
+        with tempfile.TemporaryDirectory() as dump_dir:
+            TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.soc_model],
+                backend_options=backend_options,
+                dump_qnn_graph_path=dump_dir,
+            )
+            module = SimpleModel()  # noqa: F405
+            sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+
+    def test_qnn_backend_dump_qnn_graph_multi_partition(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        with tempfile.TemporaryDirectory() as dump_dir:
+            TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.soc_model],
+                backend_options=backend_options,
+                dump_qnn_graph_path=dump_dir,
+            )
+            module = SimpleModel()  # noqa: F405
+            sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(
+                module,
+                sample_input,
+                expected_partitions=2,
+                skip_node_id_set={"aten_convolution_default_1"},
+            )
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+            validate_dlc(f"{dump_dir}/forward_1.dlc")
 
     @unittest.expectedFailure
     def test_qnn_backend_context_direct(self):
@@ -12562,6 +12777,25 @@ class TestQNNFcb(TestQNN):
         )
 
         self.verify_output(module, inputs, executorch_program)
+
+    def test_fcb_dump_qnn_graph(self):
+        if is_qnn_sdk_version_less_than("2.48"):
+            self.skipTest("FCB requires QNN SDK 2.48")
+        htp = generate_htp_compiler_spec(use_fp16=True)
+        with tempfile.TemporaryDirectory() as dump_dir:
+            compile_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=[QcomChipset.SM8650, QcomChipset.SM8750],
+                backend_options=[htp, htp],
+                dump_qnn_graph_path=dump_dir,
+            )
+            module = torch.nn.ReLU()
+            inputs = (torch.randn(1, 3, 4, 4),)
+            to_edge_transform_and_lower_to_qnn(
+                module, inputs, compile_specs
+            ).to_executorch()
+            # Backend-agnostic across FCB targets, so only the first target's
+            # compile supplies the dump.
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
 
     def _reset_active_registry(self):
         qnn_manager_lifecycle._current_qnn_managers.active_registry = None

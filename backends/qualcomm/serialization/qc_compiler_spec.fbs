@@ -256,6 +256,14 @@ table QnnExecuTorchLpaiBackendOptions {
 
   /// Specifies the target environment for model execution.
   target_env:QnnExecuTorchLpaiTargetEnv;
+
+  /// Path to a custom prepare config file: a JSON manifest supplying model builder settings for
+  /// graph preparation. Currently the only supported key is `cut_plan`, whose value is itself a
+  /// path to a separate JSON file describing the depth-first cut plan, e.g.
+  /// `{"cut_plan": "/path/to/cut_plan_nodes.json"}`. That referenced file holds a list of cut
+  /// entries, each naming the node(s) to cut and how many branches to split along height/width,
+  /// e.g. `[{"nodes": ["aten_convolution_default"], "h_branches": 2, "w_branches": 1}]`.
+  custom_prepare_config_file:string;
 }
 
 /// Determines the hardware configuration to meet the latency requirement for inference.
@@ -394,6 +402,10 @@ table QnnExecuTorchOptions {
 
   /// Emit a multi-SoC DLC instead of one device context binary.
   target_options:QnnExecuTorchTargetOptions;
+
+  /// If non-empty, additionally export the graph as a DLC file via the Ir
+  /// backend to this directory. Empty (default) disables this.
+  dump_qnn_graph_path:string;
 }
 
 root_type QnnExecuTorchOptions;

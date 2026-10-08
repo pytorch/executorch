@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 from collections import defaultdict
 from typing import Dict, final, List
 
@@ -179,26 +180,36 @@ class QnnBackend(BackendDetails):
                 obj_options.backend_options.backend_type,
             )
 
-            qnn_context_binary = qnn_manager.Compile(
-                qnn_manager.GetGraphNames(),
-                [
-                    [
-                        py_op_wrapper.GetOpWrapper()
-                        for py_op_wrapper in py_op_wrapper_list
-                    ]
-                ],
-            )
+            graph_names = qnn_manager.GetGraphNames()
+            op_wrappers = [
+                [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
+            ]
+            if obj_options.dump_qnn_graph_path:
+                # Done here, not in QnnManager::CompileIrGraph, so the mkdir
+                # stays cross-platform instead of needing a POSIX vs.
+                # Windows branch in C++.
+                os.makedirs(obj_options.dump_qnn_graph_path, exist_ok=True)
+            if obj_options.online_prepare:
+                qnn_model_binary = qnn_manager.CompileDlc(graph_names, op_wrappers)
+            else:
+                qnn_model_binary = qnn_manager.Compile(graph_names, op_wrappers)
+                if obj_options.dump_qnn_graph_path:
+                    dlc_bytes = qnn_manager.CompileDlc(graph_names, op_wrappers)
+                    if not dlc_bytes:
+                        logging.warning(
+                            "CompileDlc produced no bytes; dump_qnn_graph_path "
+                            f"'{obj_options.dump_qnn_graph_path}' may be missing "
+                            "the dumped .dlc for this graph."
+                        )
 
             if obj_options.saver:
                 exit(
                     f"Record all QNN API calls from saver backend at: {obj_options.saver_output_dir}"
                 )
-            assert (
-                len(qnn_context_binary) != 0
-            ), "Failed to generate Qnn context binary."
+            assert len(qnn_model_binary) != 0, "Failed to generate Qnn context binary."
             # For now, debug_handle_map is not used by QNN ExecuTorch
             return PreprocessResult(
-                processed_bytes=qnn_context_binary,
+                processed_bytes=qnn_model_binary,
                 debug_handle_map={},
             )
         finally:
@@ -224,27 +235,40 @@ class QnnBackend(BackendDetails):
                 )
 
     @staticmethod
-    def _get_compile_func(qnn_manager: PyQnnManager.QnnManager):
-        def compile_func(graph_names, op_wrapper_list):
-            init_result = qnn_manager.InitContext(graph_names)
+    def _get_compile_func(qnn_manager: PyQnnManager.QnnManager, option):
+        def compile_func(graph_names, op_wrapper_list, partition_index):
+            init_result = qnn_manager.InitContext(graph_names, partition_index)
             try:
                 if init_result.value != 0:
                     raise RuntimeError(
                         f"Failed to initialize QNN context: {init_result.value}"
                     )
-                qnn_context_binary = qnn_manager.Compile(graph_names, op_wrapper_list)
+                if option.online_prepare:
+                    qnn_model_binary = qnn_manager.CompileDlc(
+                        graph_names, op_wrapper_list
+                    )
+                else:
+                    qnn_model_binary = qnn_manager.Compile(graph_names, op_wrapper_list)
+                    if option.dump_qnn_graph_path:
+                        dlc_bytes = qnn_manager.CompileDlc(graph_names, op_wrapper_list)
+                        if not dlc_bytes:
+                            logging.warning(
+                                "CompileDlc produced no bytes; dump_qnn_graph_path "
+                                f"'{option.dump_qnn_graph_path}' may be missing "
+                                "the dumped .dlc for this graph."
+                            )
             finally:
                 qnn_manager.DestroyContext()
-            return qnn_context_binary
+            return qnn_model_binary
 
         return compile_func
 
     @staticmethod
-    def _get_compile_func_fcb(qnn_managers: List[PyQnnManager.QnnManager]):
-        def compile_func(graph_names, op_wrapper_list):
+    def _get_compile_func_fcb(qnn_managers: List[PyQnnManager.QnnManager], option):
+        def compile_func(graph_names, op_wrapper_list, partition_index):
             with qnn_managers[0].CreateDlc() as dlc_handle:
-                for qnn_manager in qnn_managers:
-                    init_result = qnn_manager.InitContext(graph_names)
+                for i, qnn_manager in enumerate(qnn_managers):
+                    init_result = qnn_manager.InitContext(graph_names, partition_index)
                     try:
                         if init_result.value != 0:
                             raise RuntimeError(
@@ -254,6 +278,19 @@ class QnnBackend(BackendDetails):
                         qnn_manager.CompileToDlc(
                             graph_names, op_wrapper_list, dlc_handle
                         )
+                        if i == 0 and option.dump_qnn_graph_path:
+                            # The graph is backend-agnostic across FCB
+                            # targets, so one supplementary DLC compile from
+                            # the first target covers them all.
+                            dlc_bytes = qnn_manager.CompileDlc(
+                                graph_names, op_wrapper_list
+                            )
+                            if not dlc_bytes:
+                                logging.warning(
+                                    "CompileDlc produced no bytes; "
+                                    f"dump_qnn_graph_path '{option.dump_qnn_graph_path}' "
+                                    "may be missing the dumped .dlc for this graph."
+                                )
                     finally:
                         qnn_manager.DestroyContext()
                 dlc_binary = bytes(qnn_managers[0].GetDlcBinary(dlc_handle))
@@ -273,12 +310,12 @@ class QnnBackend(BackendDetails):
         # Weight sharing compiles the i-th partitions from all methods into one
         # multi-graph context binary. For methods x and y:
         #
-        #   context_binary_0 = compile([x.partition_0, y.partition_0])
-        #   context_binary_1 = compile([x.partition_1, y.partition_1])
-        #   context_binary_2 = compile([x.partition_2, y.partition_2])
+        #   qnn_model_binary_0 = compile([x.partition_0, y.partition_0])
+        #   qnn_model_binary_1 = compile([x.partition_1, y.partition_1])
+        #   qnn_model_binary_2 = compile([x.partition_2, y.partition_2])
         #
         # The returned `all_processed_results: Dict[str, List[PreprocessResult]]`
-        # stores `context_binary_i` for every method at partition index i. This
+        # stores `qnn_model_binary_i` for every method at partition index i. This
         # requires every method to have the same number of partitions.
 
         # TODO: refactor QnnManager to consume multiple compile_spec
@@ -286,6 +323,12 @@ class QnnBackend(BackendDetails):
         graph_names = list(edge_programs.keys())
         compile_spec = list(compile_specs.values())[0][0]
         option = flatbuffer_to_option(compile_spec[0].value)
+
+        if option.dump_qnn_graph_path:
+            # Done here, not in QnnManager::CompileIrGraph, so the mkdir
+            # stays cross-platform instead of needing a POSIX vs. Windows
+            # branch in C++.
+            os.makedirs(option.dump_qnn_graph_path, exist_ok=True)
 
         debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
 
@@ -295,10 +338,10 @@ class QnnBackend(BackendDetails):
                 get_current_qnn_manager(compile_spec, target.soc_info.soc_model)
                 for target in option.target_options.targets
             ]
-            compile_func = QnnBackend._get_compile_func_fcb(qnn_managers)
+            compile_func = QnnBackend._get_compile_func_fcb(qnn_managers, option)
         else:
             qnn_manager = get_current_qnn_manager(compile_spec)
-            compile_func = QnnBackend._get_compile_func(qnn_manager)
+            compile_func = QnnBackend._get_compile_func(qnn_manager, option)
 
         all_processed_results = {key: [] for key in edge_programs}
 
@@ -352,19 +395,19 @@ class QnnBackend(BackendDetails):
                     [wrapper.GetOpWrapper() for wrapper in wrappers]
                     for wrappers in method_to_ith_partition_wrapper.values()
                 ]
-                context_binary = compile_func(graph_names, op_wrapper_list)
+                qnn_model_binary = compile_func(graph_names, op_wrapper_list, i)
                 if option.saver:
                     # TODO: Currently, only the first method is saved. Update this logic if saving multiple methods becomes necessary in the future.
                     exit(
                         f"Record all QNN API calls from saver backend at: {option.saver_output_dir}"
                     )
                 assert (
-                    len(context_binary) != 0
+                    len(qnn_model_binary) != 0
                 ), "Failed to generate Qnn context binary."
                 for key in edge_programs:
                     all_processed_results[key].append(
                         PreprocessResult(
-                            processed_bytes=context_binary,
+                            processed_bytes=qnn_model_binary,
                             debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )

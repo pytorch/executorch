@@ -5,6 +5,7 @@ This directory bundles three independent debugging and profiling flows for the E
 **Table of contents**
 
 - [Executorch QNN HTP Profiling](#executorch-qnn-htp-profiling)
+- [ExecuTorch QNN Dump QNN Graph (DLC)](#executorch-qnn-dump-qnn-graph-dlc)
 - [ExecuTorch QNN Intermediate Output Debugger](#executorch-qnn-intermediate-output-debugger)
 - [ExecuTorch QNN HTP Heap Profiling](#executorch-qnn-htp-heap-profiling)
 
@@ -205,6 +206,59 @@ The example scripts already call QAIRT Visualizer after producing artifacts when
 </figure>
 
 For the viewer package, see [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
+
+
+# ExecuTorch QNN Dump QNN Graph (DLC)
+
+`dump_qnn_graph_path` additionally exports the compiled QNN graph as a `.dlc` file via the QNN Ir backend for inspection, alongside whatever is already produced for the `.pte` (a context binary for offline prepare, or the same DLC bytes for online prepare). It does not change `online_prepare` runtime behavior — use it purely to inspect the compiled graph, e.g. with `qairt-dlc-info` or QAIRT Visualizer.
+
+### Usage
+
+Set a non-empty directory path to enable the dump; an empty string (the default) disables it.
+
+**Via `QnnConfig` / CLI (`export_utils.py`):**
+```bash
+python -m <export_script> --dump_qnn_graph_path /path/to/output_dir ...
+```
+```python
+from executorch.backends.qualcomm.export_utils import QnnConfig
+
+qnn_config = QnnConfig(
+    soc_model=args.soc_model,
+    build_folder=args.build_folder,
+    dump_qnn_graph_path="/path/to/output_dir",
+)
+```
+
+**Via `generate_qnn_executorch_compiler_spec()` directly:**
+```python
+from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_compiler_spec
+
+compile_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=soc_model,
+    backend_options=backend_options,
+    dump_qnn_graph_path="/path/to/output_dir",
+)
+```
+
+### Output file naming
+
+One `.dlc` is written per compiled QNN graph, named `<graph_name>_<partition_index>.dlc`. A single-method, single-partition export (the common case) produces `forward_0.dlc`. For weight sharing (more than one method sharing a partition), each method's graph is dumped separately under its own graph name.
+
+### Notes
+
+- Works with both offline prepare (`online_prepare=False`, the default) and online prepare. For online prepare, the dumped `.dlc` is the same bytes already embedded in the `.pte` — no extra compile is triggered.
+- Combinable with FCB (Flexible Context Binary). Since the graph is backend-agnostic across FCB targets, only one supplementary `.dlc` is written, compiled from the first target — not one per target.
+
+### Inspecting the dump
+
+Use `qairt-dlc-info` from the QNN SDK to print per-op layer info (op types, dims, params):
+```bash
+PYTHONPATH="$QNN_SDK_ROOT/lib/python:$PYTHONPATH" \
+    "$QNN_SDK_ROOT/bin/x86_64-linux-clang/qairt-dlc-info" -i /path/to/output_dir/forward_0.dlc
+```
+`qairt-dlc-info`'s `qti.aisw.dlc_utils` dependency lives under `$QNN_SDK_ROOT/lib/python`, not on the default path — that must be added to `PYTHONPATH` explicitly. The dumped `.dlc` can also be opened directly with QAIRT Visualizer (see [Viewing HTP Analysis Summary](#4-viewing-htp-analysis-summary-qhas-with-qairt-visualizer) above for installation).
+
 
 
 # ExecuTorch QNN Intermediate Output Debugger

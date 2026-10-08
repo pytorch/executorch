@@ -5,8 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import inspect
+import json
 import os
 import tempfile
+from contextlib import contextmanager, nullcontext
 from functools import partial, reduce
 from operator import mul
 from unittest.mock import Mock
@@ -33,6 +35,7 @@ from executorch.backends.qualcomm.export_utils import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchGpuPerformanceMode,
     QnnExecuTorchLpaiClientPerf,
+    QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchProfileLevel,
 )
 
@@ -53,7 +56,11 @@ from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
     make_fcb_weight_sharing_model,
 )
 
+from executorch.backends.qualcomm.tests.utils import validate_dlc
 from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.utils import (
     dump_context_from_pte,
     PyQnnManagerAdaptor,
@@ -61,6 +68,31 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
+
+
+@contextmanager
+def capture_native_output():
+    """Capture fd 1/2 at the OS level, including writes from dlopen'd native
+    libraries that bypass Python's sys.stdout/sys.stderr (and pytest's own
+    capsys/capfd, which only sees output written after it takes over the fd).
+    """
+    import sys
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    with tempfile.TemporaryFile(mode="w+b") as tmp:
+        saved_fds = [os.dup(1), os.dup(2)]
+        try:
+            os.dup2(tmp.fileno(), 1)
+            os.dup2(tmp.fileno(), 2)
+            yield tmp
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(saved_fds[0], 1)
+            os.dup2(saved_fds[1], 2)
+            os.close(saved_fds[0])
+            os.close(saved_fds[1])
 
 
 def unpack_fixtures(func):
@@ -161,6 +193,87 @@ class GraphSplit:
             compile_specs=backend_compile_specs[qnn_config.backend],
             expected=expected,
         )
+
+
+class DepthFirstCut:
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+            self.relu = torch.nn.ReLU()
+
+        def example_inputs(self):
+            return (torch.randn(1, 3, 8, 8),)
+
+        def forward(self, x):
+            return self.relu(self.conv(x))
+
+    @staticmethod
+    def _write_custom_prepare_config(tmp_dir, cut_plan):
+        cut_plan_path = os.path.join(tmp_dir, "cut_plan_nodes.json")
+        with open(cut_plan_path, "w") as f:
+            json.dump(cut_plan, f)
+        lpai_custom_prepare_config_file = os.path.join(
+            tmp_dir, "custom_prepare_config.json"
+        )
+        with open(lpai_custom_prepare_config_file, "w") as f:
+            json.dump({"cut_plan": cut_plan_path}, f)
+        return lpai_custom_prepare_config_file
+
+    # Host-side QNN LPAI prepare library message confirming it actually read
+    # the cut plan, rather than silently ignoring it (e.g. on an older SDK).
+    _CUTTING_PLAN_PROVIDED = "Cutting plan provided"
+    # dfcut_gt rejecting a cut plan surfaces as an empty context binary, which
+    # trips this generic assert; narrow pytest.raises to it so an unrelated
+    # AssertionError elsewhere in the pipeline doesn't get mistaken for that.
+    _FAILED_TO_GENERATE_CONTEXT_BINARY = "Failed to generate Qnn context binary"
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, compile_specs, expected, cut_plan, raises):
+        if is_qnn_sdk_version_less_than("2.51"):
+            pytest.skip("depth-first cut requires QNN SDK 2.51 or newer")
+
+        soc_model = getattr(QcomChipset, qnn_config.soc_model)
+        model = __class__.Model()
+        inputs = model.example_inputs()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            lpai_custom_prepare_config_file = __class__._write_custom_prepare_config(
+                tmp_dir, cut_plan
+            )
+            cs = compile_specs(
+                tuple(
+                    {
+                        "soc_model": soc_model,
+                        "lpai_custom_prepare_config_file": lpai_custom_prepare_config_file,
+                    }.items()
+                )
+            )
+            with capture_native_output() as captured:
+                with (
+                    pytest.raises(
+                        raises, match=__class__._FAILED_TO_GENERATE_CONTEXT_BINARY
+                    )
+                    if raises
+                    else nullcontext()
+                ):
+                    export_and_verify(
+                        module=model,
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=get_quantizer(qnn_config),
+                        compile_specs=cs,
+                        metrics=expected,
+                    )
+                if raises is None:
+                    captured.seek(0)
+                    native_output = captured.read().decode(errors="replace")
+                    tail = "\n".join(native_output.splitlines()[-20:])
+                    assert __class__._CUTTING_PLAN_PROVIDED in native_output, (
+                        "expected the LPAI host compiler to log that the cut "
+                        "plan was read, not silently ignored; last lines of "
+                        f"captured native output:\n{tail}"
+                    )
 
 
 class Logging:
@@ -402,6 +515,123 @@ class OnlinePrepare:
             ),
             metrics=expected,
         )
+
+
+class DumpQnnGraph:
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def example_inputs(self):
+            return (torch.randn(1, 2, 3, 4),)
+
+        def forward(self, x):
+            return torch.nn.ReLU()(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, compile_specs, expected):
+        soc_model = getattr(QcomChipset, qnn_config.soc_model)
+        with tempfile.TemporaryDirectory() as dump_dir:
+            backend_compile_specs = {
+                QnnExecuTorchBackendType.kHtpBackend: {
+                    "soc_model": soc_model,
+                    "dump_qnn_graph_path": dump_dir,
+                    "use_fp16": False,
+                },
+                QnnExecuTorchBackendType.kLpaiBackend: {
+                    "soc_model": soc_model,
+                    "dump_qnn_graph_path": dump_dir,
+                    "target_env": QnnExecuTorchLpaiTargetEnv.kX86,
+                },
+            }
+
+            module = __class__.Model()
+            export_and_verify(
+                module=module,
+                inputs=module.example_inputs(),
+                qnn_config=qnn_config,
+                quantizer=get_quantizer(qnn_config),
+                compile_specs=compile_specs(
+                    tuple(backend_compile_specs[qnn_config.backend].items())
+                ),
+                metrics=expected,
+            )
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+
+    class MultiPartitionModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(2, 2, kernel_size=3, padding=1)
+            self.conv2 = torch.nn.Conv2d(2, 2, kernel_size=3, padding=1)
+            self.conv3 = torch.nn.Conv2d(2, 2, kernel_size=3, padding=1)
+            self.relu = torch.nn.ReLU()
+
+        def example_inputs(self):
+            return (torch.randn(1, 2, 4, 4),)
+
+        def forward(self, x):
+            a = self.relu(self.conv1(x))
+            b = self.relu(self.conv2(a))
+            return self.conv3(b)
+
+    @staticmethod
+    def test_multi_partition(compile_specs):
+        with tempfile.TemporaryDirectory() as dump_dir:
+            cs = compile_specs(
+                (
+                    ("soc_model", QcomChipset.SM8650),
+                    ("use_fp16", True),
+                    ("dump_qnn_graph_path", dump_dir),
+                )
+            )
+            model = DumpQnnGraph.MultiPartitionModel()
+            # The excluded node sits between conv1/conv2, splitting the
+            # sequential chain into two disconnected delegate partitions.
+            to_edge_transform_and_lower_to_qnn(
+                module=model,
+                inputs=model.example_inputs(),
+                compiler_specs=cs,
+                skip_node_id_set={"aten_convolution_default_1"},
+            ).to_executorch()
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
+            validate_dlc(f"{dump_dir}/forward_1.dlc")
+
+    class MultiMethodModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.up_proj = torch.nn.Linear(512, 8192)
+            self.down_proj = torch.nn.Linear(8192, 512)
+
+        def example_inputs(self):
+            return (torch.randn(1, 4, 512),)
+
+        def forward(self, x):
+            return self.down_proj(self.up_proj(x))
+
+    @staticmethod
+    def test_multi_method(compile_specs):
+        with tempfile.TemporaryDirectory() as dump_dir:
+            cs = compile_specs(
+                (
+                    ("soc_model", QcomChipset.SM8650),
+                    ("use_fp16", True),
+                    ("dump_qnn_graph_path", dump_dir),
+                )
+            )
+            model = DumpQnnGraph.MultiMethodModel()
+            inputs = model.example_inputs()
+            graph_names = ["up_down_proj", "up_proj"]
+            modules_dict = {"up_down_proj": model, "up_proj": model.up_proj}
+            sample_inputs_dict = {name: inputs for name in graph_names}
+            compiler_specs_dict = {name: cs for name in graph_names}
+            to_edge_transform_and_lower_to_qnn(
+                module=modules_dict,
+                inputs=sample_inputs_dict,
+                compiler_specs=compiler_specs_dict,
+            ).to_executorch()
+            for graph_name in graph_names:
+                validate_dlc(f"{dump_dir}/{graph_name}_0.dlc")
 
 
 class Performance:
@@ -996,6 +1226,17 @@ class Fcb:
             assert dlc_path.endswith(".dlc")
             with open(dlc_path, "rb") as f:
                 assert f.read() == dlc
+
+    @staticmethod
+    def dump_qnn_graph_writes_supplementary_dlc(fcb_compile_specs):
+        with tempfile.TemporaryDirectory() as dump_dir:
+            compile_specs = fcb_compile_specs(
+                (QcomChipset.SM8650, QcomChipset.SM8750), dump_qnn_graph_path=dump_dir
+            )
+            to_edge_transform_and_lower_to_qnn(
+                torch.nn.ReLU(), (torch.randn(1, 3, 4, 4),), compile_specs
+            ).to_executorch()
+            validate_dlc(f"{dump_dir}/forward_0.dlc")
 
     @staticmethod
     @unpack_fixtures

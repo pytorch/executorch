@@ -10,6 +10,9 @@
 
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackendCustomConfig.h>
+
+#include <string>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -27,6 +30,12 @@ class LpaiBackend : public QnnBackend {
   bool IsProfileEventTypeParentOfNodeTime(
       QnnProfile_EventType_t event_type) override;
 
+  // Stored as a copy, since this instance can outlive the QnnExecuTorchOptions
+  // buffer lpai_options points into.
+  const std::string& custom_prepare_config_file() const {
+    return custom_prepare_config_file_;
+  }
+
  protected:
   executorch::runtime::Error MakeConfig(
       std::vector<const QnnBackend_Config_t*>& config) override;
@@ -34,6 +43,7 @@ class LpaiBackend : public QnnBackend {
  private:
   std::vector<QnnBackend_Config_t> backend_config_;
   std::unique_ptr<LpaiBackendCustomConfig> lpai_backend_custom_config_;
+  std::string custom_prepare_config_file_;
 };
 
 } // namespace qnn

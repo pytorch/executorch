@@ -94,6 +94,71 @@ These examples demonstrate Qualcomm HTP profiling flows:
 * `htp_profiling_on_device_op_trace_offline.py`: on-device OpTrace with `online_prepare=False` and `profile_level=3`.
 * `htp_profiling_on_host_hextimate.py`: host-side Hextimate.
 
+## LPAI Depth-First Cut (DFC)
+
+Depth-first cut is a **model-build-time, memory-fitting** mechanism for the LPAI backend. It
+splits one op's compute (and its working set) into smaller spatial tiles so a graph that
+otherwise wouldn't fit into LPAI's on-chip memory can still be compiled. It is not a speedup
+lever — on a graph that already compiles fine without it, expect comparable or slightly worse
+latency.
+
+Requirements and limitations:
+* QNN SDK >= 2.51
+* Support is limited to specific operations; refer to the qnn sdk document’s lpai backend section for details.
+* A cut entry naming more than one node must enumerate every node on every path from the first to the last listed node.
+* If the node you want to cut is normally fused with a following node by the backend (e.g. conv +
+  activation), include that node in the cut entry too. Cutting only the conv breaks the fusion and
+  can cause an accuracy drop. Check the QNN SDK documentation for which op patterns the backend
+  fuses (super groups) before deciding what to include in a cut entry.
+* Only supports a **fully-delegated** graph (the whole model lowers to a single QNN partition). If the graph is split into multiple partitions, a partition that doesn't contain the named node(s) may fail to
+  compile. The partitioner logs a warning when it detects this combination, but does not
+  block the export.
+* If multiple methods in the same process request different cut plans, only the first one actually takes effect — later ones are silently
+  ignored (a warning is logged). This is a known limitation of the current multi-method design.
+
+Since writing a cut plan requires knowing the exact node names in the QNN graph, use
+`--dump_qnn_graph_path` to dump the graph first and inspect it before deciding on a cut plan.
+
+### Cut plan schema
+
+The feature is configured through two JSON files, threaded in via
+`generate_lpai_compiler_spec(lpai_custom_prepare_config_file=...)`
+(`backends/qualcomm/utils/utils.py`):
+
+* `custom_prepare_config.json` — manifest passed to the LPAI backend. Currently the only
+  supported key is `cut_plan`, pointing at the cut plan file:
+  ```json
+  {"cut_plan": "/path/to/cut_plan_nodes.json"}
+  ```
+* `cut_plan_nodes.json` — a list of cut entries:
+  ```json
+  [{"nodes": ["aten_convolution_default"], "h_branches": 2, "w_branches": 1}]
+  ```
+
+  | Field | Type | Description |
+  |---|---|---|
+  | `nodes` | array of strings | Exported-graph node name(s) forming the cut group (e.g. `aten_convolution_default`, `aten_convolution_default_1`, ...). For more than one node, every node on every path from the first to the last listed node must be included. |
+  | `h_branches` | integer | Number of tiles along the spatial height dimension. |
+  | `w_branches` | integer | Number of tiles along the spatial width dimension. |
+
+### Running the example
+
+`lpai_depth_first_cut.py` builds a tiny single-conv model, writes both JSON files, then lowers
+and runs it on-device once with the cut plan applied, and compares the output against the CPU
+reference:
+
+```bash
+PYTHONPATH=.. python -m examples.qualcomm.util_scripts.lpai_depth_first_cut \
+    --host $HOST_NAME --device $DEVICE_SERIAL --soc_model SM8850 --build_folder build-android \
+    --backend lpai -a cli_example/lpai_dfcut_output \
+    --nodes aten_convolution_default --h_branches 2 --w_branches 1
+```
+
+* Artifacts for the generated cut plan and compiled program:
+  - `cli_example/lpai_dfcut_output/cut_plan_nodes.json`
+  - `cli_example/lpai_dfcut_output/custom_prepare_config.json`
+  - `cli_example/lpai_dfcut_output/lpai_dfcut.pte`
+
 # Generate ET Record
 This section describes how to generate an ET record for a .pte program using the provided script.
   * Generate ET record for .pte using the provided script:
