@@ -12,7 +12,6 @@ from typing import Optional
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.inplace_aliasing import alias_inplace_result_specs, is_inplace_node
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
@@ -101,9 +100,6 @@ class SpecPropPass(ExportPass):
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     else:
                         node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
-                    # Propagate aliases before consumers capture the result spec.
-                    if is_inplace_node(node) and node.meta["spec"] is not None:
-                        alias_inplace_result_specs(node)
         return res
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
