@@ -12,10 +12,9 @@
 #include <executorch/runtime/platform/platform.h>
 
 #if defined(ESP_PLATFORM)
-#include <esp_clk_tree.h>
-#include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #endif
 
 extern "C" {
@@ -45,25 +44,14 @@ ET_NORETURN void et_pal_abort(void) {
 
 et_timestamp_t et_pal_current_ticks(void) {
 #if defined(ESP_PLATFORM)
-  return (et_timestamp_t)esp_cpu_get_cycle_count();
+  return static_cast<et_timestamp_t>(esp_timer_get_time()) * 1000;
 #else
   return 0;
 #endif
 }
 
 et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
-#if defined(ESP_PLATFORM)
-  uint32_t cpu_freq_hz;
-  if (esp_clk_tree_src_get_freq_hz(
-          SOC_MOD_CLK_CPU,
-          ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED,
-          &cpu_freq_hz) == ESP_OK) {
-    return {1000000000u, cpu_freq_hz};
-  }
-#endif
-  return {
-      1000000000u,
-      240000000u}; // Default to 240 MHz if we can't get the actual frequency
+  return {1, 1};
 }
 
 void et_pal_emit_log_message(

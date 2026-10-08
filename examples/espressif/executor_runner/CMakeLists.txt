@@ -24,6 +24,7 @@ if(ESP_PLATFORM)
   # ═══════════════════════════════════════════════════════════════
   # ESP-IDF Component Build
   # ═══════════════════════════════════════════════════════════════
+  # Keep the PAL overrides even though the runtime supplies weak defaults.
   idf_component_register(
     SRCS
     "esp_executor_runner.cpp"
@@ -35,6 +36,7 @@ if(ESP_PLATFORM)
     esp_timer
     esp_system
     spiffs
+    WHOLE_ARCHIVE
   )
 
   # ExecuTorch pre-built library paths
