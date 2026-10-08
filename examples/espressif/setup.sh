@@ -9,15 +9,19 @@ set -euo pipefail
 
 install_idf=true
 install_emulator=true
+minimal=false
 for arg in "$@"; do
     case "${arg}" in
+        --minimal) minimal=true ;;
         --skip-idf) install_idf=false ;;
         --skip-emulator) install_emulator=false ;;
         --help|-h)
             cat <<EOF
-Usage: $0 [--skip-idf] [--skip-emulator]
+Usage: $0 [--minimal] [--skip-idf] [--skip-emulator]
 
 Install ESP-IDF and esp-emulator for ESP32-S3 development.
+By default, install ESP-IDF's standard ESP32-S3 development tools.
+--minimal installs only the Xtensa compiler, SDK Python packages, and emulator.
 ESP-IDF Python dependencies are installed in the active venv or conda environment.
 ESPRESSIF_TOOLS_DIR selects the install directory (default: ~/.cache/executorch-espressif).
 IDF_PATH and IDF_TOOLS_PATH can select an existing checkout of the pinned SDK and tool directory.
@@ -61,9 +65,11 @@ PY
     mkdir -p "${IDF_TOOLS_PATH}"
     IDF_TOOLS_PATH=$(cd "${IDF_TOOLS_PATH}" && pwd)
     python "${IDF_PATH}/tools/python_version_checker.py"
-    python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3 \
-        xtensa-esp-elf xtensa-esp-elf-gdb riscv32-esp-elf esp32ulp-elf \
-        esp-rom-elfs esp-clangd
+    if "${minimal}"; then
+        python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3 xtensa-esp-elf
+    else
+        python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3
+    fi
     python "${IDF_PATH}/tools/idf_tools.py" install-python-env
 fi
 
@@ -82,9 +88,11 @@ if "${install_idf}" || [[ ! -f "${tools_dir}/setup_path.sh" ]]; then
         if "${install_idf}"; then
             printf 'export IDF_PATH=%q\nexport IDF_TOOLS_PATH=%q\nexport IDF_PYTHON_ENV_PATH=%q\n' \
                 "${IDF_PATH}" "${IDF_TOOLS_PATH}" "${IDF_PYTHON_ENV_PATH}"
+            if "${minimal}"; then
+                printf 'IDF_SKIP_TOOLS_CHECK=1 '
+            fi
             cat <<'EOF'
-# OpenOCD is intentionally omitted for emulator builds.
-IDF_SKIP_TOOLS_CHECK=1 source "${IDF_PATH}/export.sh" || return
+source "${IDF_PATH}/export.sh" || return
 export IDF_TARGET=esp32s3
 EOF
         fi

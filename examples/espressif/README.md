@@ -207,9 +207,19 @@ ExecuTorch share the same Python. The generated `setup_path.sh` adds the install
 tools to `PATH` and selects the ESP32-S3 target. In a new shell, activate the same
 Python environment and source this file. Installation only needs to be done once.
 
-Setup omits OpenOCD, the hardware JTAG debugger, so emulator builds do not require
-its USB libraries. If you need JTAG debugging, install OpenOCD separately with
-`python "$IDF_PATH/tools/idf_tools.py" install openocd-esp32`.
+The default install includes ESP-IDF's standard ESP32-S3 development tools,
+including GDB, OpenOCD, and the ULP toolchains. OpenOCD requires your platform's
+USB libraries (`libusb-1.0-0` on Ubuntu).
+
+For the minimal toolset used by CI, run:
+
+```bash
+bash examples/espressif/setup.sh --minimal
+```
+
+This installs only the Xtensa compiler, SDK Python packages, and emulator. It
+does not require libusb. Source the generated `setup_path.sh` as above to activate
+the tools. Rerun setup without `--minimal` to add the full development toolset.
 
 Set `ESPRESSIF_TOOLS_DIR` to choose another installation directory. The installer
 prints the corresponding activation command. It also accepts `IDF_PATH` and

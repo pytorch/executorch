@@ -28,7 +28,7 @@ collect_artifacts() {
 }
 trap collect_artifacts EXIT
 
-bash examples/espressif/setup.sh 2>&1 | tee "${build_dir}/setup.log"
+bash examples/espressif/setup.sh --minimal 2>&1 | tee "${build_dir}/setup.log"
 # shellcheck source=/dev/null
 source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
 
