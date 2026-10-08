@@ -795,3 +795,12 @@ def test_main_backend_all_rejects_custom_output(tmp_path: Path) -> None:
         )
 
     assert exc_info.value.code == 2
+ADAPTIVE_AVG_POOL1D_OP = "torch.ops.aten.adaptive_avg_pool1d.default"
+
+
+def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
+    assert ADAPTIVE_AVG_POOL1D_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(ADAPTIVE_AVG_POOL1D_OP) == (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
+    )

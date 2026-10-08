@@ -360,6 +360,7 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.embedding.default",
     "torch.ops.aten.pow.Tensor_Tensor",
     "torch.ops.aten.scaled_dot_product_attention.default",
+    "torch.ops.aten.adaptive_avg_pool1d.default",
 }
 
 
@@ -618,6 +619,10 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.avg_pool2d.default": (
         "torch.nn.AvgPool2d",
         "torch.nn.functional.avg_pool2d",
+    ),
+    "torch.ops.aten.adaptive_avg_pool1d.default": (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
     ),
     "torch.ops.aten.adaptive_avg_pool2d.default": (
         "torch.nn.AdaptiveAvgPool2d",
