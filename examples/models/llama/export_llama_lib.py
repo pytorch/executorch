@@ -1573,7 +1573,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
             passes_job[SplitGraph] = setting
             dep_table[SplitGraph] = [FoldQDQ]
-            dep_table[TagQuantIO] = [SplitGraph]
+            dep_table.setdefault(TagQuantIO, []).append(SplitGraph)
         pass_manager_cls().transform_for_to_edge_pipeline(
             builder_exported_to_edge.edge_manager.exported_program(),
             dep_table=dep_table,
