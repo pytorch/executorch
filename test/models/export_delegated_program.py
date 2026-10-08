@@ -21,6 +21,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     DelegateScratchSpec,
+    DelegateStateSpec,
     PreprocessResult,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -125,18 +126,35 @@ class StubBackend(BackendDetails):
 
     # Bytes of memory-planned scratch to declare, as decimal ASCII.
     SCRATCH_BYTES_KEY = "scratch_bytes"
+    # Bytes of each of two state buffers to declare, as decimal ASCII. The
+    # first starts from an image whose byte i is (i % 255) + 1, the second
+    # starts zero-filled.
+    STATE_BYTES_KEY = "state_bytes"
 
     @staticmethod
     def preprocess(edge_program, compile_specs) -> PreprocessResult:
         scratch_bytes = 0
+        state_bytes = 0
         for spec in compile_specs:
             if spec.key == StubBackend.SCRATCH_BYTES_KEY:
                 scratch_bytes = int(spec.value)
+            if spec.key == StubBackend.STATE_BYTES_KEY:
+                state_bytes = int(spec.value)
+        state_specs = []
+        if state_bytes:
+            state_specs = [
+                DelegateStateSpec(
+                    nbytes=state_bytes,
+                    initial_data=bytes(i % 255 + 1 for i in range(state_bytes)),
+                ),
+                DelegateStateSpec(nbytes=state_bytes),
+            ]
         return PreprocessResult(
             processed_bytes=b"StubBackend:data",
             scratch_specs=(
                 [DelegateScratchSpec(nbytes=scratch_bytes)] if scratch_bytes else []
             ),
+            state_specs=state_specs,
         )
 
 
@@ -155,6 +173,7 @@ def export_module_to_program(
     method_name: str = "forward",
     external_constants: bool = False,
     scratch_bytes: int = 0,
+    state_bytes: int = 0,
 ) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
@@ -212,6 +231,13 @@ def export_module_to_program(
                 CompileSpec(
                     key=StubBackend.SCRATCH_BYTES_KEY,
                     value=str(scratch_bytes).encode(),
+                )
+            )
+        if state_bytes:
+            compile_specs.append(
+                CompileSpec(
+                    key=StubBackend.STATE_BYTES_KEY,
+                    value=str(state_bytes).encode(),
                 )
             )
         lowered_module = to_backend(  # type: ignore[call-arg]
@@ -284,6 +310,12 @@ def main() -> None:
         help="Bytes of memory-planned scratch for StubBackend to declare.",
     )
     parser.add_argument(
+        "--state_bytes",
+        type=int,
+        default=0,
+        help="Bytes of each of two state buffers for StubBackend to declare.",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -313,6 +345,8 @@ def main() -> None:
             suffix += "-e"
         if args.scratch_bytes:
             suffix += "-scratch"
+        if args.state_bytes:
+            suffix += "-state"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,
@@ -321,6 +355,7 @@ def main() -> None:
             delegate_alignment=args.delegate_alignment,
             external_constants=args.external_constants,
             scratch_bytes=args.scratch_bytes,
+            state_bytes=args.state_bytes,
         )
         with open(outfile, "wb") as fp:
             fp.write(executorch_program.buffer)

@@ -14,6 +14,7 @@
 #include <cinttypes> // @donotremove
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
@@ -116,6 +117,7 @@ class BackendDelegate final {
     out->backend_ = backend;
     out->handle_ = nullptr;
     out->scratch_ = Span<const Span<uint8_t>>();
+    out->state_ = Span<const Span<uint8_t>>();
     // Pass a pointer to this buffer to the backend. It's safe for the backend
     // to point its handle to this object, since it will outlive the backend.
     new (&out->segment_) FreeableBuffer(std::move(processed_data.get()));
@@ -152,6 +154,16 @@ class BackendDelegate final {
 
   void set_scratch(Span<const Span<uint8_t>> scratch) {
     scratch_ = scratch;
+  }
+
+  /// The memory-planned state this delegate's call site declared, resolved
+  /// and initialized at load time. Empty unless it declared any.
+  Span<const Span<uint8_t>> state() const {
+    return state_;
+  }
+
+  void set_state(Span<const Span<uint8_t>> state) {
+    state_ = state;
   }
 
   Error Execute(
@@ -240,6 +252,7 @@ class BackendDelegate final {
   const BackendInterface* backend_;
   DelegateHandle* handle_;
   Span<const Span<uint8_t>> scratch_;
+  Span<const Span<uint8_t>> state_;
 };
 
 /**
@@ -281,45 +294,32 @@ Result<InstructionArgs> gen_instruction_arguments(
 }
 
 /**
- * Resolves the memory-planned scratch a delegate call declared into the byte
- * ranges the backend will see. Done once at load time: planned addresses are
- * fixed for the lifetime of the Method.
+ * Resolves one memory-planned buffer a delegate call declared, scratch or
+ * state, into the byte range the backend will see. Done once at load time:
+ * planned addresses are fixed for the lifetime of the Method.
  */
-Result<Span<const Span<uint8_t>>> gen_delegate_scratch(
-    MemoryAllocator* method_allocator,
+Result<Span<uint8_t>> resolve_delegate_buffer(
     HierarchicalAllocator* planned_memory,
-    const flatbuffers::Vector<
-        flatbuffers::Offset<executorch_flatbuffer::DelegateScratch>>* scratch) {
-  const size_t num_scratch = scratch->size();
-  Span<uint8_t>* buffers =
-      method_allocator->allocateList<Span<uint8_t>>(num_scratch);
-  if (buffers == nullptr) {
-    return Error::MemoryAllocationFailed;
-  }
-  for (size_t i = 0; i < num_scratch; ++i) {
-    const auto* buffer = scratch->Get(i);
+    const executorch_flatbuffer::AllocationDetails* allocation,
+    uint64_t size) {
+  ET_CHECK_OR_RETURN_ERROR(
+      allocation != nullptr,
+      InvalidProgram,
+      "Delegate buffer has no allocation");
+  if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
     ET_CHECK_OR_RETURN_ERROR(
-        buffer->allocation() != nullptr,
-        InvalidProgram,
-        "Delegate scratch %" ET_PRIsize_t " has no allocation",
-        i);
-    if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
-      ET_CHECK_OR_RETURN_ERROR(
-          buffer->size() <= SIZE_MAX,
-          NotSupported,
-          "size_t cannot hold delegate scratch %" ET_PRIsize_t " size %" PRIu64,
-          i,
-          buffer->size());
-    }
-    const size_t nbytes = static_cast<size_t>(buffer->size());
-    Result<void*> data = deserialization::getMemPlannedPtr(
-        buffer->allocation(), nbytes, planned_memory);
-    if (!data.ok()) {
-      return data.error();
-    }
-    buffers[i] = Span<uint8_t>(static_cast<uint8_t*>(data.get()), nbytes);
+        size <= SIZE_MAX,
+        NotSupported,
+        "size_t cannot hold delegate buffer size %" PRIu64,
+        size);
   }
-  return Span<const Span<uint8_t>>(buffers, num_scratch);
+  const size_t nbytes = static_cast<size_t>(size);
+  Result<void*> data =
+      deserialization::getMemPlannedPtr(allocation, nbytes, planned_memory);
+  if (!data.ok()) {
+    return data.error();
+  }
+  return Span<uint8_t>(static_cast<uint8_t*>(data.get()), nbytes);
 }
 
 Result<bool> parse_cond_value(const EValue& cond_value) {
@@ -471,6 +471,87 @@ Error Method::parse_external_constants(const NamedDataMap* external_data_map) {
         FreeableBuffer(std::move(buffer.get()));
 
     n_external_constants_ += 1;
+  }
+  return Error::Ok;
+}
+
+Error Method::init_delegate_buffers(
+    const executorch_flatbuffer::DelegateCall* delegate_call) {
+  const auto* scratch = delegate_call->scratch();
+  const auto* state = delegate_call->state();
+  const size_t num_scratch = scratch == nullptr ? 0 : scratch->size();
+  const size_t num_state = state == nullptr ? 0 : state->size();
+  if (num_scratch == 0 && num_state == 0) {
+    return Error::Ok;
+  }
+
+  // The emitter appends one BackendDelegate per delegate call, so the index
+  // identifies the call site and the buffers can hang off the delegate itself.
+  const auto delegate_index = delegate_call->delegate_index();
+  ET_CHECK_OR_RETURN_ERROR(
+      delegate_index >= 0 && static_cast<size_t>(delegate_index) < n_delegate_,
+      InvalidProgram,
+      "Delegate index %" PRId32 " >= num delegates %" ET_PRIsize_t,
+      delegate_index,
+      n_delegate_);
+  BackendDelegate& delegate = delegates_[delegate_index];
+  MemoryAllocator* method_allocator = memory_manager_->method_allocator();
+  HierarchicalAllocator* planned_memory = memory_manager_->planned_memory();
+
+  if (num_scratch > 0) {
+    Span<uint8_t>* buffers =
+        method_allocator->allocateList<Span<uint8_t>>(num_scratch);
+    if (buffers == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    for (size_t i = 0; i < num_scratch; ++i) {
+      const auto* declared = scratch->Get(i);
+      Result<Span<uint8_t>> buffer = resolve_delegate_buffer(
+          planned_memory, declared->allocation(), declared->size());
+      if (!buffer.ok()) {
+        return buffer.error();
+      }
+      buffers[i] = buffer.get();
+    }
+    delegate.set_scratch(Span<const Span<uint8_t>>(buffers, num_scratch));
+  }
+
+  if (num_state > 0) {
+    Span<uint8_t>* buffers =
+        method_allocator->allocateList<Span<uint8_t>>(num_state);
+    if (buffers == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    const Span<const etensor::Device> devices =
+        memory_manager_->planned_buffer_devices();
+    for (size_t i = 0; i < num_state; ++i) {
+      const auto* declared = state->Get(i);
+      Result<Span<uint8_t>> buffer = resolve_delegate_buffer(
+          planned_memory, declared->allocation(), declared->size());
+      if (!buffer.ok()) {
+        return buffer.error();
+      }
+      // The initial contents are installed by the CPU.
+      if (!devices.empty()) {
+        const size_t memory_id = declared->allocation()->memory_id() - 1;
+        ET_CHECK_OR_RETURN_ERROR(
+            memory_id < devices.size() && devices[memory_id].is_cpu(),
+            NotSupported,
+            "Delegate state %" ET_PRIsize_t " is not in CPU memory",
+            i);
+      }
+      if (declared->initial_data_idx() > 0) {
+        Error err = program_->load_mutable_subsegment_into(
+            0, declared->initial_data_idx(), buffer->size(), buffer->data());
+        if (err != Error::Ok) {
+          return err;
+        }
+      } else {
+        std::memset(buffer->data(), 0, buffer->size());
+      }
+      buffers[i] = buffer.get();
+    }
+    delegate.set_state(Span<const Span<uint8_t>>(buffers, num_state));
   }
   return Error::Ok;
 }
@@ -1143,31 +1224,15 @@ Error Method::init(
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
 
-            const auto scratch = delegate_call->scratch();
-            if (scratch != nullptr && scratch->size() > 0) {
-              // The emitter appends one BackendDelegate per delegate call, so
-              // the index identifies the call site and the buffers can hang
-              // off the delegate itself.
-              const auto delegate_index = delegate_call->delegate_index();
-              ET_CHECK_OR_RETURN_ERROR(
-                  delegate_index >= 0 &&
-                      static_cast<size_t>(delegate_index) < n_delegate_,
-                  InvalidProgram,
-                  "Delegate index %" PRId32 " >= num delegates %" ET_PRIsize_t,
-                  delegate_index,
-                  n_delegate_);
-              Result<Span<const Span<uint8_t>>> buffers = gen_delegate_scratch(
-                  method_allocator, memory_manager_->planned_memory(), scratch);
-              if (!buffers.ok()) {
-                ET_LOG(
-                    Error,
-                    "Failed to resolve delegate scratch for chain %" ET_PRIsize_t
-                    " instruction %" ET_PRIsize_t,
-                    i,
-                    instr_idx);
-                return buffers.error();
-              }
-              delegates_[delegate_index].set_scratch(buffers.get());
+            Error err = init_delegate_buffers(delegate_call);
+            if (err != Error::Ok) {
+              ET_LOG(
+                  Error,
+                  "Failed to resolve delegate buffers for chain %" ET_PRIsize_t
+                  " instruction %" ET_PRIsize_t,
+                  i,
+                  instr_idx);
+              return err;
             }
           } break;
           case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
@@ -1603,7 +1668,8 @@ Error Method::execute_instruction() {
           /*event_tracer=*/event_tracer_,
           /*temp_allocator=*/temp_allocator_,
           /*method_name=*/serialization_plan_->name()->c_str(),
-          /*scratch_buffers=*/delegates_[delegate_idx].scratch());
+          /*scratch_buffers=*/delegates_[delegate_idx].scratch(),
+          /*state_buffers=*/delegates_[delegate_idx].state());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx]);
