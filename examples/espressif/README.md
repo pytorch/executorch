@@ -379,7 +379,7 @@ For larger models, load from the filesystem at runtime:
 | Performance monitor | ARM PMU + Ethos-U PMU | CPU cycle counter + esp_timer |
 | Semihosting | FVP simulator filesystem access | SPIFFS/LittleFS/SD filesystem |
 | Entry point | `main()` bare-metal | `app_main()` via FreeRTOS |
-| Timing | ARM_PMU_Get_CCNTR() | esp_cpu_get_cycle_count() |
+| Timing | ARM_PMU_Get_CCNTR() | esp_timer_get_time() |
 
 ## Troubleshooting
 
