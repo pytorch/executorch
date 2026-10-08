@@ -67,6 +67,15 @@ void add_slice_scatter_node(
   const std::vector<int64_t> self_sizes = graph.sizes_of(self);
   const int64_t dim_size = self_sizes.at(dim);
 
+  // start/end are normalized against dim_size and baked into push constants
+  // below, so they must be fixed for the lifetime of the graph. The
+  // partitioner only delegates nodes whose start/end are constants and whose
+  // scattered dim is static; refuse anything else rather than scatter into a
+  // stale window after a resize.
+  VK_CHECK_COND(
+      !graph.val_is_symint(start_ref) && !graph.val_is_symint(end_ref),
+      "Vulkan slice_scatter requires constant start/end");
+
   const int64_t step = graph.extract_scalar<int64_t>(step_ref);
   VK_CHECK_COND(step > 0, "Vulkan slice_scatter requires step > 0");
 
