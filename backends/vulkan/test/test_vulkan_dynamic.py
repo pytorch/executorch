@@ -553,10 +553,12 @@ class TestVulkanDynamic(unittest.TestCase):
         )
         unwrap_tensor_subclass(model)
         inputs = [(torch.tensor(indices),) for indices in ([0, 5, 63, 7], [3, 3, 1, 0])]
-        for downcast in (False, True):
+        downcast_modes = [False]
+        # Quantized embedding requires 8-bit storage buffers.
+        if not USING_SWIFTSHADER:
+            downcast_modes.append(True)
+        for downcast in downcast_modes:
             with self.subTest(downcast=downcast):
-                if downcast and USING_SWIFTSHADER:
-                    self.skipTest("Quantized embedding requires 8-bit storage buffers")
                 edge = self._lower(
                     model,
                     inputs[0],
