@@ -728,3 +728,14 @@ def test_main_writes_requested_markdown_and_html(
     assert result == 0
     assert (tmp_path / "generated/support.md").read_text(encoding="utf-8") == "md\n"
     assert (tmp_path / "generated/support.html").read_text(encoding="utf-8") == "html\n"
+
+
+ADAPTIVE_AVG_POOL1D_OP = "torch.ops.aten.adaptive_avg_pool1d.default"
+
+
+def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
+    assert ADAPTIVE_AVG_POOL1D_OP in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(ADAPTIVE_AVG_POOL1D_OP) == (
+        "torch.nn.AdaptiveAvgPool1d",
+        "torch.nn.functional.adaptive_avg_pool1d",
+    )

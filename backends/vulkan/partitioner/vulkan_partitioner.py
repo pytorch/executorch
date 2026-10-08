@@ -14,6 +14,7 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
@@ -43,6 +44,7 @@ from torch.export.exported_program import ExportedProgram
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.utils._pytree import tree_leaves
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -67,12 +69,15 @@ class VulkanSupportedOperators(OperatorSupportBase):
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
+        downcast_64_bit: bool = True,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
+        self.downcast_64_bit = downcast_64_bit
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -82,8 +87,22 @@ class VulkanSupportedOperators(OperatorSupportBase):
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
+        self.unsupported_fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
-            self.fusable_nodes.update(match.all_nodes)
+            nodes = {
+                node for node in match.all_nodes if isinstance(node, torch.fx.Node)
+            }
+            self.fusable_nodes.update(nodes)
+            inputs = {arg for node in nodes for arg in node.all_input_nodes}
+            if not downcast_64_bit and any(
+                isinstance(value, torch.Tensor)
+                and value.dtype in (torch.int64, torch.float64)
+                for node in (nodes | inputs) - (constant_nodes or set())
+                for value in tree_leaves(node.meta.get("val"))
+            ):
+                # Keep the whole pattern outside Vulkan instead of splitting a fusion.
+                # Constant quantization parameters may disappear during fusion.
+                self.unsupported_fusable_nodes.update(nodes)
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
@@ -207,7 +226,19 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return self._node_support[node]
 
     def _check_node_support(self, node: torch.fx.Node) -> bool:  # noqa: C901
-        if any(
+        if node in self.unsupported_fusable_nodes:
+            self.log_skip(node, "fusable pattern requires 64-bit tensor downcasting")
+            return False
+
+        # Asserts and the symbolic comparisons feeding them are removed during
+        # preprocessing, so their SymBool values never need to be represented.
+        is_assert_chain = node.target in RemoveAssertsTransform.assert_ops or (
+            len(node.users) > 0
+            and all(
+                user.target in RemoveAssertsTransform.assert_ops for user in node.users
+            )
+        )
+        if not is_assert_chain and any(
             isinstance(arg.meta.get("val"), (torch.SymFloat, torch.SymBool))
             for arg in [node, *node.all_input_nodes]
         ):
@@ -244,6 +275,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # Check if this node is part of a fusable subgraph
             if node in self.fusable_nodes:
                 return True
+
+        if not self.downcast_64_bit:
+            native_dtypes = utils.DtypeSetList(
+                utils.ALL_T - {torch.int64, torch.float64}
+            )
+            dtype_valid, dtype_reason = utils.check_node_dtypes(
+                node, native_dtypes, native_dtypes
+            )
+            if not dtype_valid:
+                self.log_skip(node, f"{dtype_reason} with downcast_64_bit disabled")
+                return False
 
         target = node.target
         if (
@@ -433,6 +475,13 @@ class VulkanPartitioner(Partitioner):
                 fusable_subgraphs=fusable_subgraphs,
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
+                downcast_64_bit=self.options.get("downcast_64_bit", True),
+                constant_nodes={
+                    node
+                    for node in exported_program.graph.nodes
+                    if utils.is_param_node(exported_program, node)
+                    and not utils.is_mutable_buffer_node(node, exported_program)
+                },
             ),
             allows_single_node_partition=True,
         )

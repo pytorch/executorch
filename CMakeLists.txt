@@ -1366,8 +1366,12 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    # CUDA uses SlimTensor-based shims
-    list(APPEND _dep_libs aoti_cuda_backend)
+    # CUDA uses SlimTensor-based shims. Not on Windows: a CUDA program cannot be
+    # lowered there, only run, so the delegate ships for C++ applications and
+    # the Python extension stays free of any CUDA dependency.
+    if(NOT WIN32)
+      list(APPEND _dep_libs aoti_cuda_backend)
+    endif()
   elseif(EXECUTORCH_BUILD_METAL)
     # Metal still uses ETensor-based shims (for now)
     list(APPEND _dep_libs aoti_common)
