@@ -195,6 +195,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "fbsource//third-party/pypi/parameterized:parameterized",
             "//caffe2:torch",
+            "//executorch/exir:inplace_aliasing",
             "//executorch/exir:lib",
             "//executorch/exir:memory_planning",
             "//executorch/exir:pass_base",
