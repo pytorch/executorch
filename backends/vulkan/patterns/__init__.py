@@ -28,6 +28,8 @@ import executorch.backends.vulkan.patterns.sdpa  # noqa
 
 import executorch.backends.vulkan.patterns.select_as_symint  # noqa
 
+import executorch.backends.vulkan.patterns.swiglu  # noqa
+
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
