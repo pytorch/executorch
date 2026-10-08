@@ -20,6 +20,7 @@ from typing import Any, Dict, final, List, Optional
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
+from executorch.backends.cuda.autotune.inputs import autotune_input_scenarios
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
@@ -1013,6 +1014,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
                     trim_host_memory()
+                # Autotune the kernels that declare representative values
+                # for data-dependent arguments (e.g. a KV length) over those
+                # values instead of Inductor's zero-filled integer tensors.
+                # See autotune/inputs.py.
+                stack.enter_context(autotune_input_scenarios())
                 if cuda_graph_autotune_timing:
                     # Time every autotune candidate (Inductor kernels, matmul
                     # templates, our triton.autotune ops) with CUDA-graph
