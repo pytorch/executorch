@@ -124,6 +124,11 @@ GlobalWorkGrid quantized_linear_gwg(
   if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
     N_per_tile = 8;
   }
+  // The narrow-tile variant selected for Mali computes 2 output rows per
+  // invocation instead of 4.
+  if (shader.kernel_name.find("tiledm2") != std::string::npos) {
+    M_per_tile = 2;
+  }
 
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
@@ -263,6 +268,15 @@ vkapi::ShaderInfo pick_linear_qw_shader(
 
   if (weight_is_4bit && is_gemv_case) {
     kernel_name += "_coop";
+  } else if (
+      weight_is_4bit &&
+      (graph->device_is_mali() ||
+       graph->graphconfig().force_narrow_int4_tile)) {
+    // The default 4x8 output tile needs twice the accumulator registers of the
+    // float linear_vec tile (4x4), which Mali cannot afford: the same widening
+    // applied to the float kernel costs 5.4x on a Mali-G76 and only 1.12x on an
+    // Adreno 840. Halving the rows restores the float kernel's register count.
+    kernel_name += "_tiledm2";
   } else {
     kernel_name += "_tiled";
   }
@@ -750,6 +764,7 @@ void quantized_linear_impl(
   // 1. Device does not support int8 dot product
   // 2. Input is not quantized
   if (!graph.can_use_int8_dot_product() ||
+      graph.graphconfig().force_narrow_int4_tile ||
       input_quant_config.granularity == kNoQuantization) {
     add_linear_qw_node(
         graph,
