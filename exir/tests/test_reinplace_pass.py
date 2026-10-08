@@ -10,7 +10,7 @@ import unittest
 from typing import List, Optional
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as edge_ops
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
@@ -772,6 +772,44 @@ class TestReinplacePass(unittest.TestCase):
         # (the in-place rewrite must serialize cleanly into the ET
         # program).
         edge.to_executorch()
+
+    def test_mutated_input_cache_reinplaced_after_transform_and_lower(self) -> None:
+        """A static KV cache passed in as an input and updated with
+        ``index_copy_`` is updated in place, with no copy of the cache.
+
+        ``to_edge_transform_and_lower`` functionalizes before decomposing,
+        which turns the update into ``index_put`` followed by no-op ``copy``
+        nodes into the cache. Those must be removed for the reinplace pass to
+        see that ``index_put`` is the last use of the cache.
+        """
+
+        class CacheUpdate(torch.nn.Module):
+            def forward(
+                self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                k_cache.index_copy_(2, pos, k)
+                return k_cache.sum(-1)
+
+        k, k_cache, pos = (
+            torch.ones(1, 2, 1, 4),
+            torch.zeros(1, 2, 8, 4),
+            torch.tensor([3]),
+        )
+        program = to_edge_transform_and_lower(
+            export(CacheUpdate(), (k, k_cache, pos), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        ep = program.exported_program()
+
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 1)
+        self.assertEqual(len(_find_nodes(ep, "index_put", excludes="index_put_")), 0)
+        self.assertEqual(len(_find_nodes(ep, "copy")), 0)
+
+        expected_cache = k_cache.clone().index_copy_(2, pos, k)
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward(
+            (k, k_cache, pos)
+        )
+        self.assertTrue(torch.equal(outputs[0], expected_cache))
+        self.assertTrue(torch.equal(outputs[1], expected_cache.sum(-1)))
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in

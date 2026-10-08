@@ -302,6 +302,37 @@ class TestPasses(unittest.TestCase):
             if node.op == "call_function":
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
 
+    def test_redundant_copy_removal(self) -> None:
+        class NoopCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.empty_like(x)
+                y.copy_(x)
+                return y + 1
+
+        class CastingCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.empty(x.shape, dtype=torch.float64)
+                y.copy_(x)
+                return y + 1
+
+        def count(module: torch.nn.Module, x: torch.Tensor, op: str) -> int:
+            # Functionalization turns copy_ into copy, which RemoveNoopPass sees
+            # while to_edge_transform_and_lower decomposes.
+            gm = (
+                to_edge_transform_and_lower(export(module, (x,), strict=True))
+                .exported_program()
+                .graph_module
+            )
+            return sum(
+                n.op == "call_function" and n.name.startswith(op)
+                for n in gm.graph.nodes
+            )
+
+        x = torch.randn(3, 4)
+        self.assertEqual(count(NoopCopy(), x, "aten_copy_default"), 0)
+        # A copy that converts the dtype is not a no-op.
+        self.assertEqual(count(CastingCopy(), x, "aten_copy_default"), 1)
+
     def test_redundant_slice_copy_removal(self) -> None:
         class FooWithNoSlice(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
