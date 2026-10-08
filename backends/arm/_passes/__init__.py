@@ -27,9 +27,6 @@ from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
 from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
-from .convert_permute_singleton_to_view_pass import (  # noqa
-    ConvertPermuteSingletonToViewPass,
-)
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa

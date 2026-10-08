@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from executorch.devtools.inspector import Event, EventBlock, Inspector
 from executorch.devtools.inspector.vgf_neural_statistics import (
+    LEGACY_SCHEMA_VERSION,
     parse_vgf_neural_statistics_delegate_metadata,
     parse_vgf_neural_statistics_metadata,
     SCHEMA,
@@ -18,11 +19,13 @@ from executorch.devtools.inspector.vgf_neural_statistics import (
 )
 
 
-def _metadata_payload(data_available: bool = True) -> Dict[str, Any]:
-    """Build a fake VGF neural statistics metadata payload."""
-    return {
+def _metadata_payload(
+    data_available: bool = True, schema_version: int = SCHEMA_VERSION
+) -> Dict[str, Any]:
+    # Build a fake VGF neural statistics metadata payload.
+    payload: Dict[str, Any] = {
         "schema": SCHEMA,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "backend": "VgfBackend",
         "api": "VK_ARM_data_graph",
         "event_name": "VGF_NEURAL_STATISTICS",
@@ -81,6 +84,38 @@ def _metadata_payload(data_available: bool = True) -> Dict[str, Any]:
         ],
     }
 
+    if schema_version == SCHEMA_VERSION:
+        payload.update(
+            {
+                "statistics_mode": {
+                    "executorch_index": 1,
+                    "vulkan_value": 2,
+                    "vulkan_name": (
+                        "VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM"
+                    ),
+                },
+                "target": {
+                    "available": True,
+                    "device_name": "Mali-G2-Pro-NX MC1",
+                    "vendor_id": 5045,
+                    "device_id": 7,
+                    "driver_version": 11,
+                },
+                "counter_layout": {
+                    "available": True,
+                    "schema_id": "arm.mali-g2.neural-statistics.mode1",
+                    "schema_version": 1,
+                    "endianness": "little",
+                    "word_type": "uint32",
+                    "words_per_task": 64,
+                    "leading_block_count": 1,
+                    "reason": "",
+                },
+            }
+        )
+
+    return payload
+
 
 class TestVgfNeuralStatisticsInspector(unittest.TestCase):
     def test_parse_vgf_neural_statistics_metadata(self) -> None:
@@ -92,6 +127,14 @@ class TestVgfNeuralStatisticsInspector(unittest.TestCase):
         self.assertEqual(parsed["schema_version"], SCHEMA_VERSION)
         self.assertTrue(parsed["api_available"])
         self.assertTrue(parsed["data_available"])
+        self.assertEqual(parsed["statistics_mode"]["executorch_index"], 1)
+        self.assertEqual(parsed["statistics_mode"]["vulkan_value"], 2)
+        self.assertEqual(parsed["target"]["device_name"], "Mali-G2-Pro-NX MC1")
+        self.assertEqual(
+            parsed["counter_layout"]["schema_id"],
+            "arm.mali-g2.neural-statistics.mode1",
+        )
+        self.assertEqual(parsed["counter_layout"]["words_per_task"], 64)
 
         segment = parsed["segments"][0]
         self.assertEqual(segment["debug_database"]["raw_data"], b"\x01\x02\x03")
@@ -113,6 +156,27 @@ class TestVgfNeuralStatisticsInspector(unittest.TestCase):
         self.assertEqual(segment["debug_database"]["raw_data"], b"")
         self.assertEqual(segment["statistics_info"]["raw_data"], b"")
         self.assertEqual(segment["statistics_memory"]["raw_data"], b"")
+
+    def test_parse_legacy_v1_metadata_without_guessing_mode(self) -> None:
+        metadata = json.dumps(
+            _metadata_payload(schema_version=LEGACY_SCHEMA_VERSION)
+        ).encode("utf-8")
+
+        parsed = parse_vgf_neural_statistics_metadata(metadata)
+
+        self.assertEqual(parsed["schema_version"], LEGACY_SCHEMA_VERSION)
+        self.assertNotIn("statistics_mode", parsed)
+        self.assertNotIn("counter_layout", parsed)
+        self.assertEqual(
+            parsed["segments"][0]["statistics_memory"]["raw_data"], b"\xde\xad"
+        )
+
+    def test_v2_requires_counter_layout_metadata(self) -> None:
+        payload = _metadata_payload()
+        del payload["counter_layout"]
+
+        with self.assertRaisesRegex(ValueError, "counter_layout"):
+            parse_vgf_neural_statistics_metadata(json.dumps(payload).encode("utf-8"))
 
     def test_parse_rejects_unsupported_schema_version(self) -> None:
         payload = _metadata_payload()
