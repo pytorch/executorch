@@ -170,6 +170,15 @@ endif()
 
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
+  # nvcc compiles host code with cl.exe on Windows, and the CCCL that ships with
+  # CUDA 13.2 and newer stops with an #error under cl.exe's traditional
+  # preprocessor. The standard one is what CCCL asks for, and older toolkits
+  # accept it too.
+  if(WIN32)
+    add_compile_options(
+      "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>"
+    )
+  endif()
 endif()
 
 # Centralize Windows/MSVC checks used throughout this file.
@@ -334,7 +343,22 @@ endif()
 # appends to any INSTALL_RPATH the caller set rather than replacing it, so a
 # source install keeps its own paths.
 if(EXECUTORCH_BUILD_SHARED)
+  if(_cuda_is_windows_msvc)
+    # In the shared layout the delegate is its own DLL and imports the stream
+    # guard functions (get/set/peek/clearCurrentCUDAStream) from this one. They
+    # carry no AOTI_SHIM_EXPORT, so the annotations alone would not export them;
+    # export everything, as every other shipped DLL does.
+    set_target_properties(
+      aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+  endif()
   executorch_target_shipped_runtime_path(aoti_cuda_shims)
+  if(_cuda_is_msvc_toolchain)
+    # cuda_platform already resolves the runtime from the shared library here;
+    # the helper also puts it first on the link line, as the delegate and
+    # extension_cuda do.
+    executorch_target_link_shared_runtime(aoti_cuda_shims)
+  endif()
 endif()
 
 install(
@@ -474,4 +498,13 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+  # sort.cu and rand.cu are compiled only under this condition (see
+  # _aoti_cuda_shim_sources), so the test that calls them is too.
+  if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
+    et_cxx_test(
+      test_cuda_sort_rand SOURCES runtime/test/test_cuda_sort_rand.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
 endif()
