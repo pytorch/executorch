@@ -145,9 +145,10 @@ class Executor : public batching::testing::FakeExecutor {
     }
     for (std::size_t i = 0; i < input.inputs.size(); ++i) {
       const auto& slice = input.inputs[i];
+      const auto& source = *std::get<batching::TokenInputPtr>(slice.payload);
       fed.emplace_back(
-          slice.tokens->begin() + slice.offset,
-          slice.tokens->begin() + slice.offset + slice.size);
+          source.begin() + slice.offset,
+          source.begin() + slice.offset + slice.size);
       if (output.outputs[i]) {
         auto& tokens = output.outputs[i]->tokens;
         tokens.clear();
