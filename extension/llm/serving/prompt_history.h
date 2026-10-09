@@ -33,7 +33,8 @@ struct ET_EXPERIMENTAL PrefillPlan {
   } action;
   size_t suffix_start; // index in prompt_ids where prefill begins (0 for kFull)
   // Reported as session_reset_reason: "new" (no resident), "exact_prefix"
-  // (suffix reuse), "dirty", "mismatch", "equal" (prompt == resident).
+  // (suffix reuse), "dirty", "mismatch", "equal" (prompt == resident),
+  // "suffix_unavailable" (runtime cold fallback after optional reuse refusal).
   std::string reason;
 };
 

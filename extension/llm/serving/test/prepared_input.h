@@ -31,7 +31,7 @@ class TestPreparedInput : public batching::PreparedInput {
   std::size_t size() const override {
     return positions_;
   }
-  batching::Token last_prompt_token() const override {
+  std::optional<batching::Token> initial_detokenization_token() const override {
     return previous;
   }
   batching::PreparedInputPtr suffix(std::size_t start) const override {
@@ -65,7 +65,7 @@ class TestPreparedInput : public batching::PreparedInput {
     return identity;
   }
   batching::PrefixIdentityPtr identity;
-  batching::Token previous = 42;
+  std::optional<batching::Token> previous = 42;
   std::size_t offset = 0;
   bool refuse_suffix = false;
   bool invalid_suffix = false;

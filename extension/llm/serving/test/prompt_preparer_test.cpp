@@ -91,6 +91,9 @@ TEST(PromptPreparerTest, PreservesSegmentBoundariesAndExactIds) {
 }
 
 TEST(PromptPreparerTest, RejectsEmptyPreparedPrompts) {
+  EXPECT_EQ(
+      std::get<ServingError>(serving::make_token_prepared_input({})).code,
+      ErrorCode::InvalidArgument);
   RecordingTokenizer tokenizer;
   tokenizer.encodings = {{"", {}}};
   EXPECT_EQ(
@@ -190,6 +193,7 @@ TEST(PromptPreparerTest, NormalizesAndValidatesDirectAndDeferredRawPrompts) {
       } else {
         ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
         const auto& prepared = std::get<batching::PreparedInputPtr>(result);
+        EXPECT_EQ(prepared->initial_detokenization_token(), expected.back());
         EXPECT_EQ(
             static_cast<const serving::detail::TokenPreparedInput&>(*prepared)
                 .tokens(),
@@ -200,21 +204,42 @@ TEST(PromptPreparerTest, NormalizesAndValidatesDirectAndDeferredRawPrompts) {
 }
 
 TEST(PromptPreparerTest, MovesOpaqueBackingPreservingTagAndPreviousToken) {
+  struct Backing {
+    Image image;
+    TestPreparedInput prepared;
+  };
   RecordingTokenizer tokenizer;
   const auto position_limit =
       static_cast<std::size_t>(std::numeric_limits<batching::Position>::max());
   for (bool deferred : {false, true}) {
-    for (auto size : {std::size_t{3}, position_limit}) {
+    for (const auto& [size, cancel_after] :
+         std::vector<std::pair<std::size_t, bool>>{
+             {3, false}, {position_limit, false}, {3, true}}) {
       SCOPED_TRACE(deferred);
-      const PromptPreparationContext context{tokenizer, size, {}};
-      auto backing = std::make_shared<TestPreparedInput>(size);
-      std::weak_ptr<const batching::PreparedInput> weak = backing;
+      SCOPED_TRACE(cancel_after);
+      bool cancelled = false;
+      const PromptPreparationContext context{
+          tokenizer, size, [&] { return cancelled; }};
+      std::weak_ptr<Backing> weak;
       const auto previous = std::numeric_limits<batching::Token>::max();
-      backing->previous = previous;
+      std::vector<uint8_t> pixels{1, 2, 3, 4, 5, 6};
+      const auto* address = pixels.data();
       PromptInput input;
-      ModelPreparer model = [backing = std::move(backing)](
-                                const auto&, const auto&) mutable {
-        return batching::PreparedInputPtr{std::exchange(backing, nullptr)};
+      input.segments.emplace_back(
+          make_image_input(Image(std::move(pixels), 2, 1, 3)));
+      int calls = 0;
+      ModelPreparer model = [&, positions = size, cancel = cancel_after](
+                                const auto&, PromptInput source) {
+        ++calls;
+        auto backing = std::make_shared<Backing>(Backing{
+            std::move(source.segments[0]).get_image(),
+            TestPreparedInput(positions)});
+        backing->prepared.previous = previous;
+        EXPECT_EQ(backing->image.get_uint8_data().data(), address);
+        weak = backing;
+        cancelled = cancel;
+        // The prepared pointer shares ownership of the moved image storage.
+        return batching::PreparedInputPtr{backing, &backing->prepared};
       };
       std::optional<PromptPreparation> prepare;
       if (deferred) {
@@ -227,12 +252,21 @@ TEST(PromptPreparerTest, MovesOpaqueBackingPreservingTagAndPreviousToken) {
         auto result =
             serving::detail::prepare_prompt(context, input, prepare, model);
         EXPECT_FALSE(prepare.has_value());
+        EXPECT_EQ(calls, 1);
+        if (cancel_after) {
+          EXPECT_TRUE(std::holds_alternative<std::monostate>(result));
+          EXPECT_TRUE(weak.expired());
+          continue;
+        }
         ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
         const auto& opaque = std::get<batching::PreparedInputPtr>(result);
         ASSERT_NE(opaque, nullptr);
-        EXPECT_EQ(opaque, weak.lock());
+        ASSERT_FALSE(weak.expired());
+        EXPECT_EQ(opaque.get(), &weak.lock()->prepared);
+        EXPECT_EQ(weak.lock()->image.get_uint8_data().data(), address);
+        EXPECT_EQ(opaque->kind(), &TestPreparedInput::tag);
         EXPECT_EQ(opaque->size(), size);
-        EXPECT_EQ(opaque->last_prompt_token(), previous);
+        EXPECT_EQ(opaque->initial_detokenization_token(), previous);
         EXPECT_FALSE(weak.expired());
       }
       EXPECT_TRUE(weak.expired());
@@ -354,13 +388,12 @@ TEST(PromptPreparerTest, ReleasesCallbackCapturesBeforeTextEncoding) {
         EXPECT_FALSE(prepare.has_value());
         auto tokens =
             serving::detail::prepare_text_prompt(actual.tokenizer, source);
-        return batching::PreparedInputPtr{
-            std::make_shared<serving::detail::TokenPreparedInput>(
-                std::make_shared<const std::vector<Token>>(
-                    std::move(*tokens)))};
+        return serving::make_token_prepared_input(std::move(*tokens));
       });
   ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
   EXPECT_EQ(
-      std::get<batching::PreparedInputPtr>(result)->last_prompt_token(), 9u);
+      std::get<batching::PreparedInputPtr>(result)
+          ->initial_detokenization_token(),
+      9u);
   EXPECT_EQ(tokenizer.calls.size(), 1u);
 }

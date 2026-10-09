@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <functional>
 
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 
 #include <executorch/extension/llm/serving/serving_runtime.h>
 #include <executorch/runtime/platform/compiler.h>

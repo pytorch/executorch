@@ -38,6 +38,13 @@ using Position ET_EXPERIMENTAL = std::int32_t;
 using TaskId ET_EXPERIMENTAL = std::int64_t;
 
 using TokenInputPtr ET_EXPERIMENTAL = std::shared_ptr<const std::vector<Token>>;
+// Equality asserts execution-equivalent prepared content under the same
+// immutable model/configuration and matching preceding prefix. Use a
+// collision-resistant digest (e.g. SHA-256) of canonical content, including all
+// varying preprocessing properties (dimensions, grid, dtype, layout, etc.).
+// Omit configuration only if immutable throughout the reuse domain; pointers,
+// filenames, or dimensions alone are insufficient. Omit prefix_identity() when
+// this guarantee cannot be met, so serving replays the full prompt.
 using ContentKey ET_EXPERIMENTAL = std::array<std::uint8_t, 32>;
 
 struct ET_EXPERIMENTAL TokenSpan {
@@ -45,6 +52,8 @@ struct ET_EXPERIMENTAL TokenSpan {
   std::size_t offset;
   std::size_t size;
 };
+// Offset and size count decoder positions relative to the keyed content.
+// Equal keys match only at equal content-relative offsets.
 struct ET_EXPERIMENTAL OpaqueSpan {
   ContentKey key;
   std::size_t offset;
@@ -154,10 +163,17 @@ class ET_EXPERIMENTAL PreparedInput {
   virtual const void* kind() const = 0;
   // Number of decoder positions in this view, not bytes.
   virtual std::size_t size() const = 0;
-  virtual Token last_prompt_token() const = 0;
+  // Previous-token seed for output detokenization, not necessarily the token
+  // at the final prepared position. Nullopt promises the output tokenizer does
+  // not need an initial seed; tokenizers that require one must receive a value.
+  virtual std::optional<Token> initial_detokenization_token() const {
+    return std::nullopt;
+  }
   // Same concrete type, shared backing, view-relative executor offsets.
-  // The view ends at the original end and keeps last_prompt_token unchanged.
-  // Invalid or empty suffixes return null.
+  // The view ends at the original end and keeps the detokenization seed
+  // unchanged. Invalid, empty, or unsupported suffixes return null. Serving
+  // treats a null suffix at a valid boundary as unavailable reuse and replays
+  // the full input.
   virtual std::shared_ptr<const PreparedInput> suffix(
       std::size_t start) const = 0;
   // Optional; when supplied, must cover exactly size() positions.

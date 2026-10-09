@@ -273,9 +273,11 @@ class TextGenerationTest : public ::testing::Test {
   Executor executor;
   Tokenizer tokenizer;
   batching::PreparedInputPtr next_prepared;
-  PromptInput opaque(std::size_t positions = 5) {
+  PromptInput opaque(
+      std::size_t positions = 5,
+      std::optional<Token> seed = 777) {
     auto prepared = std::make_shared<TestPreparedInput>(positions);
-    prepared->previous = 777;
+    prepared->previous = seed;
     next_prepared = std::move(prepared);
     return PromptInput{{make_image_input(Image{})}};
   }
@@ -327,9 +329,8 @@ class TextGenerationTest : public ::testing::Test {
         batching::DecodeFirstScheduler::create(batch, decodes, chunk),
         tokenizer,
         config,
-        [this](
-            const PromptPreparationContext& context,
-            const PromptInput& input) -> ModelPreparationResult {
+        [this](const PromptPreparationContext& context, PromptInput input)
+            -> ModelPreparationResult {
           if (input.segments.size() == 1 && input.segments[0].is_image()) {
             return std::exchange(next_prepared, nullptr);
           }
@@ -338,10 +339,7 @@ class TextGenerationTest : public ::testing::Test {
           if (!result.ok()) {
             return ServingError{ErrorCode::InvalidArgument, "invalid text"};
           }
-          return batching::PreparedInputPtr{
-              std::make_shared<detail::TokenPreparedInput>(
-                  std::make_shared<const std::vector<Token>>(
-                      std::move(*result)))};
+          return make_token_prepared_input(std::move(*result));
         });
   }
   void TearDown() override {
@@ -428,6 +426,8 @@ TEST_F(
     EXPECT_NE(preparation_thread, event->sink_thread);
     if (!prepared) {
       EXPECT_EQ(preparation_thread, tokenizer.encoder_thread);
+      EXPECT_EQ(executor.accepts_calls.load(), 0);
+      EXPECT_TRUE(executor.opaque_slices.empty());
     }
     ASSERT_TRUE(event->terminal);
     EXPECT_EQ(event->terminals, 1u);
@@ -622,6 +622,30 @@ TEST_F(
   std::get<RequestHandle>(result).wait();
   EXPECT_EQ(small_sink_state.calls.load(), 1);
   EXPECT_GT(small_sink_state.destructions.load(), before);
+}
+
+TEST_F(TextGenerationTest, OptionalDetokenizationSeedOnlyInitializesOutput) {
+  executor.accept_opaque = true;
+  start();
+  for (auto seed :
+       {std::optional<Token>{},
+        std::optional<Token>{0},
+        std::optional<Token>{777}}) {
+    auto event = output();
+    GenerationOptions options;
+    options.max_new_tokens = 2;
+    auto handle = submit(event, opaque(5, seed), options, std::nullopt);
+    handle.wait();
+    ASSERT_FALSE(handle.error());
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->text, "AB");
+    EXPECT_EQ(
+        tokenizer.decode_previous, (std::vector<Token>{seed.value_or(0), 100}));
+    ASSERT_GE(executor.fed.size(), 2u);
+    EXPECT_EQ(executor.fed[executor.fed.size() - 2], std::vector<Token>(5, 42));
+    EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100}));
+    tokenizer.decode_previous.clear();
+  }
 }
 
 TEST_F(TextGenerationTest, OpaquePositionsUseExplicitDecodeContextAndBudgets) {

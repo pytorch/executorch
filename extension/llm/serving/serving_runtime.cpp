@@ -32,6 +32,15 @@ namespace extension {
 namespace llm {
 namespace serving {
 
+ModelPreparationResult make_token_prepared_input(
+    std::vector<batching::Token> tokens) {
+  if (tokens.empty()) {
+    return ServingError{ErrorCode::InvalidArgument, "empty token prompt"};
+  }
+  return std::make_shared<detail::TokenPreparedInput>(
+      std::make_shared<const std::vector<batching::Token>>(std::move(tokens)));
+}
+
 namespace detail {
 
 struct TextRequest {
@@ -643,17 +652,27 @@ struct ServingRuntime::Impl {
         };
   }
 
-  LifecycleResult select_input(const Request& request, std::size_t start) {
+  enum class Selection { Selected, Unavailable, Cancelled };
+  using SelectionResult = std::variant<Selection, ServingError>;
+
+  SelectionResult select_input(const Request& request, std::size_t start) {
     if (request->cancelled.load()) {
-      return std::nullopt;
+      return Selection::Cancelled;
     }
     const auto& prepared = request->text->prepared;
+    if (start >= prepared->size()) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "invalid prepared suffix boundary"};
+    }
     auto view = start == 0 ? prepared : prepared->suffix(start);
-    const auto identity = view ? view->prefix_identity() : nullptr;
-    if (start >= prepared->size() || !view ||
-        view->size() != prepared->size() - start ||
+    if (!view) {
+      return Selection::Unavailable;
+    }
+    const auto identity = view->prefix_identity();
+    if (view->size() != prepared->size() - start ||
         view->kind() != prepared->kind() ||
-        view->last_prompt_token() != prepared->last_prompt_token() ||
+        view->initial_detokenization_token() !=
+            prepared->initial_detokenization_token() ||
         (identity && identity->size() != view->size())) {
       return ServingError{
           ErrorCode::InvalidArgument, "invalid prepared suffix"};
@@ -661,13 +680,13 @@ struct ServingRuntime::Impl {
     if (view->kind() == detail::TokenPreparedInput::type()) {
       request->request.delta =
           static_cast<const detail::TokenPreparedInput&>(*view).tokens();
-      return std::nullopt;
+      return Selection::Selected;
     }
     const auto acceptance = runner_->accepts_async(view).get();
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
-        return std::nullopt;
+        return Selection::Cancelled;
       }
     }
     if (const auto* error =
@@ -679,12 +698,15 @@ struct ServingRuntime::Impl {
           "prepared input acceptance check failed"};
     }
     if (!std::get<bool>(acceptance)) {
+      if (start != 0) {
+        return Selection::Unavailable;
+      }
       return ServingError{
           ErrorCode::InvalidArgument,
           "executor does not accept prepared input"};
     }
     request->request.delta = std::move(view);
-    return std::nullopt;
+    return Selection::Selected;
   }
 
   LifecycleResult prepare_text(const Request& request) {
@@ -743,7 +765,8 @@ struct ServingRuntime::Impl {
     text.input = PromptInput{};
     text.prompt = text.prepared->prefix_identity();
     text.terminal.stats.prompt_tokens = text.prepared->size();
-    const auto previous_token = text.prepared->last_prompt_token();
+    const auto detokenization_token =
+        text.prepared->initial_detokenization_token();
     const auto available = context_limit - text.terminal.stats.prompt_tokens;
     const auto wanted = options.max_new_tokens.value_or(
         config_.max_context_length
@@ -766,7 +789,8 @@ struct ServingRuntime::Impl {
         options.stop_tokens.end());
     text.output = std::make_unique<detail::TextOutput>(
         *tokenizer_,
-        previous_token,
+        // An omitted seed promises this argument is ignored, not that BOS is 0.
+        detokenization_token.value_or(0),
         config.stop_tokens,
         options.stop_strings,
         [state = &text](const std::string& piece) {
@@ -793,8 +817,18 @@ struct ServingRuntime::Impl {
         }
       }
     }
-    if (auto error = select_input(request, plan.suffix_start)) {
-      return error;
+    auto selection = select_input(request, plan.suffix_start);
+    if (auto* outcome = std::get_if<Selection>(&selection);
+        outcome && *outcome == Selection::Unavailable) {
+      selection = select_input(request, 0);
+      plan = {PrefillPlan::kFull, 0, "suffix_unavailable"};
+      reset = true;
+    }
+    if (auto* error = std::get_if<ServingError>(&selection)) {
+      return std::move(*error);
+    }
+    if (std::get<Selection>(selection) == Selection::Cancelled) {
+      return std::nullopt;
     }
     text.terminal.stats.session_reset_reason = plan.reason;
     // All fallible preparation precedes destructive cold replacement.
@@ -907,13 +941,24 @@ struct ServingRuntime::Impl {
       try {
 #endif
         auto match = lookup_prefix(request);
+        Selection outcome = Selection::Selected;
         if (match) {
           opened = std::move(match->session);
           // Snapshot positions are committed; named history also includes
-          // pending.
-          preparation_error = select_input(request, match->matched_tokens);
+          // pending. Keep the accepted full delta until suffix success.
+          auto selection = select_input(request, match->matched_tokens);
+          if (auto* error = std::get_if<ServingError>(&selection)) {
+            preparation_error = std::move(*error);
+          } else {
+            outcome = std::get<Selection>(selection);
+            if (outcome == Selection::Unavailable) {
+              // Queue clone closure outside mutex_ before the cold open.
+              opened.reset();
+            }
+          }
         }
-        if (!opened && !request->cancelled.load()) {
+        if (!opened && !preparation_error && outcome != Selection::Cancelled &&
+            !request->cancelled.load()) {
           opened = runner_->open_session_async().get();
         }
 #if ET_HAS_EXCEPTIONS

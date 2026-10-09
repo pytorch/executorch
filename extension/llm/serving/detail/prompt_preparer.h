@@ -72,7 +72,7 @@ class TokenPreparedInput final : public batching::PreparedInput {
   std::size_t size() const override {
     return tokens_->size() - offset_;
   }
-  batching::Token last_prompt_token() const override {
+  std::optional<batching::Token> initial_detokenization_token() const override {
     return tokens_->back();
   }
   batching::PreparedInputPtr suffix(std::size_t start) const override {
@@ -132,23 +132,21 @@ inline PreparedPromptResult prepare_prompt(
   const auto limit = std::min(
       context.max_prompt_positions,
       static_cast<std::size_t>(std::numeric_limits<batching::Position>::max()));
-  batching::PreparedInputPtr prepared;
+  ModelPreparationResult result;
   if (model_preparer) {
-    auto result = model_preparer(context, input);
-    if (auto* error = std::get_if<ServingError>(&result)) {
-      return std::move(*error);
-    }
-    prepared = std::get<batching::PreparedInputPtr>(std::move(result));
+    result = model_preparer(context, std::move(input));
   } else {
-    auto result = prepare_text_prompt(context.tokenizer, input, limit);
-    if (!result.ok()) {
+    auto tokens = prepare_text_prompt(context.tokenizer, input, limit);
+    if (!tokens.ok()) {
       return ServingError{
           ErrorCode::InvalidArgument, "prompt preparation failed"};
     }
-    prepared = std::make_shared<TokenPreparedInput>(
-        std::make_shared<const std::vector<batching::Token>>(
-            std::move(*result)));
+    result = make_token_prepared_input(std::move(*tokens));
   }
+  if (auto* error = std::get_if<ServingError>(&result)) {
+    return std::move(*error);
+  }
+  auto prepared = std::get<batching::PreparedInputPtr>(std::move(result));
   if (context.cancelled && context.cancelled()) {
     return std::monostate{};
   }

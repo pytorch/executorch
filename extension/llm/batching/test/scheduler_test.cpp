@@ -372,9 +372,6 @@ TEST(PayloadTest, OpaqueChunksKeepSharedBackingAndSlices) {
     std::size_t size() const override {
       return positions;
     }
-    Token last_prompt_token() const override {
-      return 0;
-    }
     PreparedInputPtr suffix(std::size_t start) const override {
       if (start >= size()) {
         return nullptr;

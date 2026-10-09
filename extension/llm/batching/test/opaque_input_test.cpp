@@ -30,7 +30,7 @@ struct Payload final : PreparedInput {
   TokenInputPtr values;
   std::size_t count;
   std::size_t offset = 0;
-  Token last_prompt_token() const override {
+  std::optional<Token> initial_detokenization_token() const override {
     return values->back();
   }
   PreparedInputPtr suffix(std::size_t start) const override {
@@ -58,9 +58,6 @@ struct WrongPayload final : PreparedInput {
   }
   std::size_t size() const override {
     return 1;
-  }
-  Token last_prompt_token() const override {
-    return 0;
   }
   PreparedInputPtr suffix(std::size_t start) const override {
     return start == 0 ? std::make_shared<WrongPayload>() : nullptr;
@@ -138,6 +135,12 @@ GenConfig config(int tokens = 1) {
   return result;
 }
 
+TEST(OpaqueInputTest, DetokenizationSeedDefaultsToAbsent) {
+  const WrongPayload input;
+  EXPECT_EQ(input.initial_detokenization_token(), std::nullopt);
+  EXPECT_EQ(input.suffix(0)->initial_detokenization_token(), std::nullopt);
+}
+
 TEST(OpaqueInputTest, WarmOpaqueChunksAndOrdinaryRawText) {
   for (bool chunked : {false, true}) {
     SCOPED_TRACE(chunked);
@@ -206,7 +209,9 @@ TEST(OpaqueInputTest, SuffixSharesBackingAndUsesViewRelativeOffsets) {
   const auto view = full->suffix(2);
   ASSERT_TRUE(view);
   EXPECT_EQ(view->kind(), full->kind());
-  EXPECT_EQ(view->last_prompt_token(), full->last_prompt_token());
+  EXPECT_EQ(
+      view->initial_detokenization_token(),
+      full->initial_detokenization_token());
   EXPECT_EQ(static_cast<const Payload&>(*view).values, full->values);
   EXPECT_FALSE(full->suffix(full->size()));
   EXPECT_FALSE(full->suffix(std::numeric_limits<std::size_t>::max()));

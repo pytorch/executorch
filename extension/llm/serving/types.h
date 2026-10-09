@@ -95,10 +95,16 @@ using PromptPreparation ET_EXPERIMENTAL =
 
 using ModelPreparationResult ET_EXPERIMENTAL =
     std::variant<batching::PreparedInputPtr, ServingError>;
-// Runtime-owned; runs on control after deferred source captures are destroyed.
-using ModelPreparer ET_EXPERIMENTAL = std::function<ModelPreparationResult(
-    const PromptPreparationContext&,
-    const PromptInput&)>;
+// Runtime-owned; consumes source storage on control after deferred source
+// captures are destroyed.
+using ModelPreparer ET_EXPERIMENTAL = std::function<
+    ModelPreparationResult(const PromptPreparationContext&, PromptInput)>;
+
+// Canonical token fast path for already-normalized owned tokens. Empty input
+// is InvalidArgument. Tokenization/BOS policy belongs to the caller; context
+// bounds remain enforced by the serving preparation pipeline.
+ModelPreparationResult make_token_prepared_input(
+    std::vector<batching::Token> tokens);
 
 struct ET_EXPERIMENTAL GenerationStats {
   // Full prompt size in decoder positions, including any reused prefix.

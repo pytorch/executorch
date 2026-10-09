@@ -124,9 +124,14 @@ class Executor : public batching::testing::FakeExecutor {
   bool reject_after_decode = false;
   bool accept_prepared = false;
   bool reject_views = false;
+  mutable std::size_t full_accepts = 0;
   std::size_t burst = 1;
 
   bool accepts(const batching::PreparedInput& input) const override {
+    if (input.kind() == &TestPreparedInput::tag &&
+        !static_cast<const TestPreparedInput&>(input).offset) {
+      ++full_accepts;
+    }
     return accept_prepared && input.kind() == &TestPreparedInput::tag &&
         !(reject_views && static_cast<const TestPreparedInput&>(input).offset);
   }
@@ -290,11 +295,12 @@ class PrefixReuseTest : public ::testing::Test {
   batching::ContentKey image_key{7};
   bool refuse_suffix = false;
   bool invalid_suffix = false;
+  std::size_t prepare_calls = 0;
   void use_mixed_preparer() {
     executor.accept_prepared = true;
-    model_preparer = [this](
-                         const auto&,
-                         const PromptInput& input) -> ModelPreparationResult {
+    model_preparer =
+        [this](const auto&, PromptInput input) -> ModelPreparationResult {
+      ++prepare_calls;
       const auto& rows = input.segments[0].get_tokens();
       auto prepared = std::make_shared<TestPreparedInput>(rows);
       auto tokens = std::make_shared<const std::vector<Token>>(rows);
@@ -495,9 +501,7 @@ TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
           std::make_shared<TestPreparedInput>(input.segments[1].get_tokens())};
     }
     auto result = detail::prepare_text_prompt(context.tokenizer, input);
-    return batching::PreparedInputPtr{
-        std::make_shared<detail::TokenPreparedInput>(
-            std::make_shared<const std::vector<Token>>(std::move(*result)))};
+    return make_token_prepared_input(std::move(*result));
   };
   start();
   std::vector<Token> raw(40);
@@ -602,18 +606,35 @@ TEST_F(PrefixReuseTest, MixedNamedHistoryIncludesPendingHiddenStopToken) {
   ASSERT_TRUE(first->terminal);
   EXPECT_EQ(
       first->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
-  refuse_suffix = true;
+  invalid_suffix = true;
   auto failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
   failed.wait();
   ASSERT_TRUE(failed.error());
+  EXPECT_EQ(failed.error()->code, ErrorCode::InvalidArgument);
   EXPECT_EQ(executor.opened().size(), 1u);
+  invalid_suffix = false;
+  refuse_suffix = true;
+  prepare_calls = 0;
+  executor.accept_prepared = false;
+  failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
+  failed.wait();
+  ASSERT_TRUE(failed.error());
+  EXPECT_EQ(failed.error()->code, ErrorCode::InvalidArgument);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  EXPECT_EQ(executor.feeds().size(), 1u);
+  EXPECT_EQ(prepare_calls, 1u);
+  EXPECT_EQ(executor.full_accepts, 3u); // Seed twice, refused fallback once.
   refuse_suffix = false;
+  executor.accept_prepared = true;
+  executor.full_accepts = 0;
   auto continued = output();
   submit(continued, {1, 7, 7, 7, 2, 100, 101, 3}).wait();
   ASSERT_TRUE(continued->terminal);
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 6u);
   EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
+  EXPECT_EQ(executor.full_accepts, 0u);
   const auto feeds = executor.feeds();
   ASSERT_GE(feeds.size(), 3u);
   EXPECT_EQ(feeds[feeds.size() - 2].tokens, (std::vector<Token>{101}));
@@ -627,35 +648,119 @@ TEST_F(PrefixReuseTest, MixedNamedHistoryIncludesPendingHiddenStopToken) {
   EXPECT_EQ(changed->terminal->stats.reused_prompt_tokens, 0u);
 }
 
-TEST_F(PrefixReuseTest, MixedSnapshotPartialOpaqueMatchAndViewFailureCleanup) {
-  config.prefix_cache_capacity = 1;
+class MixedNamedFallbackTest : public PrefixReuseTest,
+                               public ::testing::WithParamInterface<bool> {};
+
+TEST_P(MixedNamedFallbackTest, ColdReplayDoesNotDuplicatePendingHiddenStop) {
+  config.prefix_cache_capacity = 0;
+  config.default_stop_tokens = {101};
+  executor.burst = 2;
   use_mixed_preparer();
   start();
-  submit(output(), {1, 7, 7, 7, 2}, std::nullopt).wait();
+  submit(output(), {1, 7, 7, 7, 2}, "s", 2).wait();
+  executor.clear_feeds();
+  prepare_calls = 0;
+  executor.full_accepts = 0;
+  refuse_suffix = GetParam();
+  executor.reject_views = !GetParam();
+  auto event = output();
+  const std::vector<Token> prompt{1, 7, 7, 7, 2, 100, 101, 3};
+  auto handle = submit(event, prompt);
+  handle.wait();
+  ASSERT_FALSE(handle.error());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.session_reset_reason, "suffix_unavailable");
+  EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 8u);
+  EXPECT_EQ(prepare_calls, 1u);
+  EXPECT_EQ(executor.full_accepts, 2u); // Preflight and Runner admission.
+  const auto feeds = executor.feeds();
+  ASSERT_EQ(feeds.size(), 1u);
+  EXPECT_EQ(feeds.front().tokens, prompt);
+  EXPECT_EQ(feeds.front().position, 0);
+  EXPECT_EQ(feeds.front().original.offset, 0u);
+  EXPECT_EQ(executor.opened().size(), 2u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NullAndRefused,
+    MixedNamedFallbackTest,
+    ::testing::Bool());
+
+class MixedSnapshotViewTest
+    : public PrefixReuseTest,
+      public ::testing::WithParamInterface<std::pair<int, bool>> {};
+
+TEST_P(
+    MixedSnapshotViewTest,
+    MixedSnapshotPartialOpaqueMatchAndViewFailureCleanup) {
+  const auto [mode, named] = GetParam();
+  config.max_sessions = 1;
+  config.prefix_cache_capacity = 1;
+  executor.capacity = 2; // Cached snapshot and one working row, no spare clone.
+  use_mixed_preparer();
+  start(false);
+  auto seeded = submit(output(), {1, 7, 7, 7, 2}, std::nullopt);
+  seeded.wait();
+  ASSERT_FALSE(seeded.error());
+  ASSERT_EQ(executor.clones().size(), 1u);
   image_positions = 2;
-  for (int mode = 0; mode < 4; ++mode) {
-    refuse_suffix = mode == 0;
-    executor.reject_views = mode == 1;
-    invalid_suffix = mode == 2;
-    auto event = output();
-    const auto handle = submit(event, {1, 7, 7, 9}, std::nullopt);
-    handle.wait();
-    ASSERT_TRUE(event->terminal);
-    EXPECT_EQ(runtime->info().active_sessions, 0u);
-    if (mode < 3) {
-      ASSERT_TRUE(handle.error());
-      EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
-      EXPECT_EQ(executor.feeds().size(), 1u);
-    } else {
-      EXPECT_FALSE(handle.error());
-      EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
-      EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 1u);
-      EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{9}));
-      EXPECT_EQ(executor.feeds().back().position, 3);
-      EXPECT_EQ(executor.feeds().back().original.offset, 0u);
-    }
+  refuse_suffix = mode == 0;
+  executor.reject_views = mode == 1;
+  invalid_suffix = mode == 2;
+  prepare_calls = 0;
+  executor.full_accepts = 0;
+  auto event = output();
+  const auto handle = submit(
+      event,
+      {1, 7, 7, 9},
+      named ? std::optional<std::string>{"new"} : std::nullopt);
+  handle.wait();
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(prepare_calls, 1u);
+  EXPECT_EQ(executor.full_accepts, mode < 2 ? 2u : 1u);
+  EXPECT_EQ(runtime->info().active_sessions, named && mode != 2 ? 1u : 0u);
+  const auto clones = executor.clones();
+  ASSERT_EQ(clones.size(), 2u);
+  EXPECT_EQ(clones.back().prefix, (std::vector<Token>{1, 7, 7}));
+  EXPECT_LE(executor.peak_rows.load(), 2);
+  if (mode == 2) {
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(executor.feeds().size(), 1u);
+  } else {
+    ASSERT_FALSE(handle.error());
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, mode == 3 ? 3u : 0u);
+    EXPECT_EQ(
+        event->terminal->stats.prefilled_prompt_tokens, mode == 3 ? 1u : 4u);
+    ASSERT_EQ(executor.feeds().size(), 2u);
+    EXPECT_EQ(
+        executor.feeds().back().tokens,
+        (mode == 3 ? std::vector<Token>{9} : std::vector<Token>{1, 7, 7, 9}));
+    EXPECT_EQ(executor.feeds().back().position, mode == 3 ? 3 : 0);
+    EXPECT_EQ(executor.feeds().back().original.offset, 0u);
+  }
+  if (mode != 3) {
+    const auto closed = executor.closed();
+    EXPECT_NE(
+        std::find(closed.begin(), closed.end(), clones.back().destination),
+        closed.end());
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    FreshSeeds,
+    MixedSnapshotViewTest,
+    ::testing::Values(
+        std::make_pair(0, false),
+        std::make_pair(1, false),
+        std::make_pair(2, false),
+        std::make_pair(3, false),
+        std::make_pair(0, true),
+        std::make_pair(1, true),
+        std::make_pair(2, true),
+        std::make_pair(3, true)));
 
 TEST_F(
     PrefixReuseTest,

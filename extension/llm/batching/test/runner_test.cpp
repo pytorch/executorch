@@ -3150,9 +3150,6 @@ class AcceptanceInput : public PreparedInput {
     return 1;
   }
 
-  Token last_prompt_token() const override {
-    return 0;
-  }
   PreparedInputPtr suffix(std::size_t start) const override {
     return start == 0 ? std::make_shared<AcceptanceInput>(compatible) : nullptr;
   }
