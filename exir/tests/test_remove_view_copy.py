@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from executorch.exir import memory, to_edge
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.exir.inplace_aliasing import is_inplace_node
+from executorch.exir.memory_planning import _is_inplace_node
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
@@ -296,7 +296,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         self.assertTrue(any(n.target == memory.view for n in graph_module.graph.nodes))
         self.assertTrue(torch.equal(expected, actual[0]))
 
-    def test_reinplaced_view_alias_survives_memory_planning(self) -> None:
+    def test_existing_view_aliases_survive_memory_planning(self) -> None:
         class TestModel(nn.Module):
             def forward(self, x, indices, values):
                 base = torch.relu(x)
@@ -308,16 +308,26 @@ class TestRemoveViewCopy(unittest.TestCase):
             torch.tensor([0]),
             torch.tensor([[100.0, 101.0, 102.0]]),
         )
-        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        ep = to_edge(
+            torch.export.export(TestModel().eval(), inputs, strict=True)
+        ).exported_program()
+        reinplace_pass(ep)
+        graph_module = SpecPropPass()(ep.graph_module).graph_module
+        inplace_node = next(
+            node for node in graph_module.graph.nodes if _is_inplace_node(node)
+        )
+        view_node = inplace_node.args[0]
+
+        # Model a pipeline that has already propagated in-place aliases.
+        inplace_node.meta["spec"] = view_node.meta["spec"]
+        graph_module.graph.output_node().meta["spec"] = (view_node.meta["spec"],)
+
+        NormalizeViewCopyBasePass()(graph_module)
+        ReplaceViewCopyWithViewPass()(graph_module)
+        self.assertIs(view_node.target, memory.view)
         ToOutVarPass()(graph_module)
         MemoryPlanningPass()(graph_module)
 
-        view_node = next(
-            node for node in graph_module.graph.nodes if node.target == memory.view
-        )
-        inplace_node = next(
-            node for node in graph_module.graph.nodes if is_inplace_node(node)
-        )
         self.assertIs(inplace_node.args[0], view_node)
         self.assertIs(inplace_node.meta["spec"], view_node.meta["spec"])
         self.assertIs(

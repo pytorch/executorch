@@ -461,21 +461,22 @@ class ReplaceViewCopyWithViewPass(PassBase):
                     # the shape is not the same as node.args[1] because node.args[1]
                     # can have an inferred sizes (-1).
                     shape = node.meta["val"].shape
-                    old_spec = node.meta["spec"]
-                    assert isinstance(old_spec, TensorSpec)
+                    old_spec = node.meta.get("spec")
                     view_spec = _ViewSpec(base.meta["spec"], shape)
+                    node.meta["spec"] = view_spec
 
-                    # SpecPropPass may have propagated this spec to results of
-                    # in-place consumers, getitems, and outputs. Preserve those
-                    # aliases when replacing the view node's spec object.
-                    for other_node in module.graph.nodes:
-                        if "spec" in other_node.meta:
-                            other_node.meta["spec"] = pytree.tree_map(
-                                lambda spec, old=old_spec, new=view_spec: (
-                                    new if spec is old else spec
-                                ),
-                                other_node.meta["spec"],
-                            )
+                    if old_spec is not None:
+                        # SpecPropPass may have propagated this spec to results of
+                        # in-place consumers, getitems, and outputs. Preserve those
+                        # aliases when replacing the view node's spec object.
+                        for other_node in module.graph.nodes:
+                            if "spec" in other_node.meta:
+                                other_node.meta["spec"] = pytree.tree_map(
+                                    lambda spec, old=old_spec, new=view_spec: (
+                                        new if spec is old else spec
+                                    ),
+                                    other_node.meta["spec"],
+                                )
 
                     n_replaced += 1
 
