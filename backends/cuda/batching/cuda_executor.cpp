@@ -9,12 +9,14 @@
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cinttypes>
 #include <limits>
+#include <set>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-#include <executorch/backends/cuda/batching/step_plan.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -42,10 +44,6 @@ using llm_batching::Token;
 namespace metadata = ::executorch::extension::llm;
 
 namespace {
-
-// The least a prefill forward may carry when the program names no bound: one
-// token is decode's.
-constexpr int kMinPrefillTokens = 2;
 
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
   using ScalarType = ::executorch::aten::ScalarType;
@@ -127,13 +125,44 @@ Result<std::string> backend_of(const MethodMeta& meta, const char* method) {
   return backend_id;
 }
 
-Error set_backend_options(const CudaExecutorOptions& options) {
+// The token count a static method's name carries: N for forward_{N}.
+std::optional<int> static_method_width(std::string_view name) {
+  const std::string_view prefix = kStaticMethodPrefix;
+  if (name.size() <= prefix.size() || name.substr(0, prefix.size()) != prefix) {
+    return std::nullopt;
+  }
+  int width = 0;
+  for (const char c : name.substr(prefix.size())) {
+    if (!std::isdigit(static_cast<unsigned char>(c)) ||
+        width > (std::numeric_limits<int>::max() - 9) / 10) {
+      return std::nullopt;
+    }
+    width = width * 10 + (c - '0');
+  }
+  return width > 0 ? std::optional<int>(width) : std::nullopt;
+}
+
+Error set_backend_options(
+    const CudaExecutorOptions& options,
+    const std::vector<ForwardMethod>& methods) {
+  // The backend matches a comma-separated list of method names.
+  std::string graph_methods;
+  if (options.cuda_graph_for_static_methods) {
+    for (const ForwardMethod& method : methods) {
+      if (method.is_static) {
+        graph_methods += (graph_methods.empty() ? "" : ",") + method.name;
+      }
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_methods.size() < ::executorch::runtime::kMaxOptionValueLength,
+      InvalidArgument,
+      "CudaExecutor: too many static methods to name in one backend option");
   ::executorch::runtime::BackendOptions<2> backend_options;
   ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
       "weight_sharing_across_methods", options.weight_sharing_across_methods));
   ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
-      "enable_cuda_graph_for_method",
-      options.cuda_graph_for_decode ? kDecodeMethod : ""));
+      "enable_cuda_graph_for_method", graph_methods.c_str()));
   return ::executorch::runtime::set_option(
       kCudaBackendId, backend_options.view());
 }
@@ -147,16 +176,17 @@ CudaExecutor::CudaExecutor(
     int max_session_tokens,
     std::string backend_id,
     std::int32_t vocab_size,
-    int max_step_tokens,
-    int min_prefill_tokens)
+    std::vector<ForwardMethod> methods,
+    int min_selected_rows)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
       kv_(cache->as<CudaKVCache>()),
       backend_id_(std::move(backend_id)),
       vocab_size_(vocab_size),
-      max_step_tokens_(max_step_tokens),
-      min_prefill_tokens_(min_prefill_tokens),
+      methods_(std::move(methods)),
+      calls_(methods_.size(), 0),
+      min_selected_rows_(min_selected_rows),
       sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size) {}
 
 CudaExecutor::~CudaExecutor() = default;
@@ -188,6 +218,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_ASSIGN_OR_RETURN(logits_mode, metadata::read_logits_to_keep_mode(*module));
   // decode's selector is static at one row, so only a program whose logits
   // are selected per input fits.
+  // Static methods select one row per token, so only a program whose logits
+  // are selected per input fits.
   ET_CHECK_OR_RETURN_ERROR(
       logits_mode == LogitsToKeepMode::Selected,
       NotSupported,
@@ -197,51 +229,97 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_cells,
       metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
 
-  ET_ASSIGN_OR_RETURN(decode_meta, module->method_meta(kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(prefill_meta, module->method_meta(kPrefillMethod));
-  ET_ASSIGN_OR_RETURN(decode_width, step_width(decode_meta, kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      max_step_tokens, step_width(prefill_meta, kPrefillMethod));
-  // A program may export prefill from more than two tokens -- one whose
-  // kernels switch at a small width cannot trace narrower -- and say so here.
-  ET_ASSIGN_OR_RETURN(
-      declared_min_prefill,
-      metadata::detail::read_int_method(*module, kMinPrefillTokensMethod));
-  const int min_prefill_tokens =
-      static_cast<int>(declared_min_prefill.value_or(kMinPrefillTokens));
+  // Every forward_{N} and forward_others the program exports, narrowest first.
+  ET_ASSIGN_OR_RETURN(names, module->method_names());
+  std::vector<ForwardMethod> methods;
+  std::string backend_id;
+  std::int64_t method_vocab = 0;
+  std::set<int> static_widths;
+  for (const std::string& name : names) {
+    const std::optional<int> declared = static_method_width(name);
+    const bool dynamic = name == kDynamicMethod;
+    if (!declared && !dynamic) {
+      continue;
+    }
+    ET_ASSIGN_OR_RETURN(meta, module->method_meta(name.c_str()));
+    ET_ASSIGN_OR_RETURN(width, step_width(meta, name.c_str()));
+    ET_ASSIGN_OR_RETURN(vocab, logits_width(meta, name.c_str()));
+    ET_ASSIGN_OR_RETURN(backend, backend_of(meta, name.c_str()));
+    ET_CHECK_OR_RETURN_ERROR(
+        !declared || width == *declared,
+        InvalidProgram,
+        "CudaExecutor: %s takes %d tokens",
+        name.c_str(),
+        width);
+    ET_CHECK_OR_RETURN_ERROR(
+        method_vocab == 0 || vocab == method_vocab,
+        InvalidProgram,
+        "CudaExecutor: the forward methods disagree on the vocabulary");
+    method_vocab = vocab;
+    backend_id = backend;
+    if (declared) {
+      static_widths.insert(width);
+    }
+    methods.push_back({name, width, !dynamic});
+  }
   ET_CHECK_OR_RETURN_ERROR(
-      decode_width == 1 && min_prefill_tokens >= kMinPrefillTokens &&
-          min_prefill_tokens <= max_step_tokens && max_step_tokens <= max_cells,
+      !static_widths.empty(),
       InvalidProgram,
-      "CudaExecutor: decode must take one token and prefill [%d, max_cells] "
-      "tokens from at least %d; got %d, and [%d, %d]",
-      kMinPrefillTokens,
-      kMinPrefillTokens,
-      decode_width,
-      min_prefill_tokens,
-      max_step_tokens);
-  ET_ASSIGN_OR_RETURN(decode_vocab, logits_width(decode_meta, kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      prefill_vocab, logits_width(prefill_meta, kPrefillMethod));
+      "CudaExecutor: the program exports no %sN method",
+      kStaticMethodPrefix);
+  std::sort(
+      methods.begin(),
+      methods.end(),
+      [](const ForwardMethod& a, const ForwardMethod& b) {
+        return a.max_tokens < b.max_tokens;
+      });
+  // The dynamic method serves only what no static method holds, so it must be
+  // the widest.
+  const bool has_dynamic = !methods.back().is_static;
+  const int widest_static = *static_widths.rbegin();
   ET_CHECK_OR_RETURN_ERROR(
-      decode_vocab == prefill_vocab,
+      !has_dynamic || methods.back().max_tokens > widest_static,
       InvalidProgram,
-      "CudaExecutor: decode and prefill disagree on the vocabulary");
+      "CudaExecutor: %s must be wider than every static method",
+      kDynamicMethod);
+  ET_CHECK_OR_RETURN_ERROR(
+      std::count_if(
+          methods.begin(),
+          methods.end(),
+          [](const ForwardMethod& m) { return !m.is_static; }) <= 1,
+      InvalidProgram,
+      "CudaExecutor: more than one dynamic method");
+  const int max_step_tokens = methods.back().max_tokens;
+  ET_CHECK_OR_RETURN_ERROR(
+      max_step_tokens < max_cells,
+      InvalidProgram,
+      "CudaExecutor: a %d-token step does not fit %" PRId64 " cells",
+      max_step_tokens,
+      max_cells);
+  // A dynamic method whose kernels switch at a small width is exported from
+  // more selected rows than one; its selector is padded up to that.
+  ET_ASSIGN_OR_RETURN(
+      declared_min_rows,
+      metadata::detail::read_int_method(*module, kMinSelectedRowsMethod));
+  const int min_selected_rows = static_cast<int>(
+      std::max<std::int64_t>(1, declared_min_rows.value_or(1)));
+  ET_CHECK_OR_RETURN_ERROR(
+      min_selected_rows <= max_step_tokens,
+      InvalidProgram,
+      "CudaExecutor: %d selected rows exceed the widest step",
+      min_selected_rows);
   ET_ASSIGN_OR_RETURN(published_vocab, metadata::read_vocab_size(*module));
   ET_ASSIGN_OR_RETURN(
-      vocab_size, metadata::check_vocab_size(published_vocab, decode_vocab));
-  ET_ASSIGN_OR_RETURN(backend_id, backend_of(decode_meta, kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      prefill_backend, backend_of(prefill_meta, kPrefillMethod));
-  (void)prefill_backend;
+      vocab_size, metadata::check_vocab_size(published_vocab, method_vocab));
 
   // Every resident session may fill its budget at once; the pool must hold
-  // them all, or a step could find no free cell mid-generation.
+  // them all, or a step could find no free cell mid-generation. One of the
+  // program's cells is the padding scratch row, never handed out.
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<std::int64_t>(max_sessions) * max_session_tokens <= max_cells,
+      static_cast<std::int64_t>(max_sessions) * max_session_tokens < max_cells,
       InvalidArgument,
       "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
-      " cells",
+      " cells, one of which is reserved",
       max_sessions,
       max_session_tokens,
       max_cells);
@@ -276,7 +354,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_sessions,
       seq_limit.value_or(0));
 
-  ET_CHECK_OK_OR_RETURN_ERROR(set_backend_options(options));
+  ET_CHECK_OK_OR_RETURN_ERROR(set_backend_options(options, methods));
   return std::unique_ptr<CudaExecutor>(new CudaExecutor(
       std::move(module),
       std::move(cache),
@@ -284,8 +362,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_session_tokens,
       std::move(backend_id),
       vocab_size,
-      max_step_tokens,
-      min_prefill_tokens));
+      std::move(methods),
+      min_selected_rows));
 }
 
 bool CudaExecutor::initialize() {
@@ -298,13 +376,13 @@ bool CudaExecutor::initialize() {
     ET_LOG(Error, "CudaExecutor: could not name the cache to the backend");
     return false;
   }
-  for (const char* method : {kDecodeMethod, kPrefillMethod}) {
+  for (const ForwardMethod& method : methods_) {
     if (module_->load_method(
-            method,
+            method.name,
             /*planned_memory=*/nullptr,
             /*event_tracer=*/nullptr,
             &options_map) != Error::Ok) {
-      ET_LOG(Error, "CudaExecutor: could not load %s", method);
+      ET_LOG(Error, "CudaExecutor: could not load %s", method.name.c_str());
       return false;
     }
   }
@@ -342,52 +420,55 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   // In order, so a slice attends the cells its predecessors wrote. Each
   // input's logits row falls in exactly one slice.
   const int total = static_cast<int>(step->tokens.size());
-  for (const StepSlice& slice :
-       plan_slices(total, max_step_tokens_, min_prefill_tokens_)) {
+  for (const StepSlice& slice : plan_slices(total, methods_)) {
     const int off = slice.offset;
     const int n = slice.length;
-    const char* method =
-        slice.method == StepMethod::Decode ? kDecodeMethod : kPrefillMethod;
-    // Placement checks the forward's token count against the declaration, so
-    // each slice declares its own.
+    const ForwardMethod& method = methods_[slice.method];
+    // Only the real tokens are declared; the cache sends a static method's
+    // padding rows to its scratch row.
     if (!ctl_->declare_step(std::vector<std::int32_t>(
             step->seq_ids.begin() + off, step->seq_ids.begin() + off + n))) {
       ET_LOG(Error, "CudaExecutor: the cache refused a slice of %d", n);
       return false;
     }
-    auto tokens = make_tensor_ptr(
-        {1, n},
-        std::vector<std::int64_t>(
-            step->tokens.begin() + off, step->tokens.begin() + off + n));
-    auto positions = make_tensor_ptr(
-        {n},
-        std::vector<std::int64_t>(
-            step->positions.begin() + off, step->positions.begin() + off + n));
+    // Padding tokens are token 0 at position 0: valid inputs whose rows
+    // nothing reads.
+    std::vector<std::int64_t> token_values(
+        step->tokens.begin() + off, step->tokens.begin() + off + n);
+    std::vector<std::int64_t> position_values(
+        step->positions.begin() + off, step->positions.begin() + off + n);
+    token_values.resize(slice.width, 0);
+    position_values.resize(slice.width, 0);
+    auto tokens = make_tensor_ptr({1, slice.width}, std::move(token_values));
+    auto positions = make_tensor_ptr({slice.width}, std::move(position_values));
+
+    // A static method selects exactly its width in rows, and the dynamic one
+    // at least its exported minimum. Extra rows repeat the last real one (or
+    // row 0 when the slice finishes no input); nothing reads them.
     auto selected = llm_batching::util::select_rows(*step, off, n);
-    if (slice.method == StepMethod::Prefill) {
-      // The selected-rows dimension shares the tokens' lower bound: the LM
-      // head runs over those rows. Extra rows repeat the last; nothing reads
-      // them.
-      selected.selector.resize(
-          std::max<std::size_t>(
+    const std::size_t rows_needed = method.is_static
+        ? static_cast<std::size_t>(slice.width)
+        : std::max<std::size_t>(
               selected.selector.size(),
-              static_cast<std::size_t>(min_prefill_tokens_)),
-          selected.selector.back());
-    }
+              static_cast<std::size_t>(min_selected_rows_));
+    const std::int64_t fill =
+        selected.selector.empty() ? 0 : selected.selector.back();
+    selected.selector.resize(rows_needed, fill);
     const int rows = static_cast<int>(selected.selector.size());
     auto selector = make_tensor_ptr({rows}, std::move(selected.selector));
 
-    auto result = module_->execute(method, {tokens, positions, selector});
+    auto result = module_->execute(method.name, {tokens, positions, selector});
     if (!result.ok()) {
       ET_LOG(
           Error,
           "CudaExecutor: %s failed with 0x%x",
-          method,
+          method.name.c_str(),
           static_cast<unsigned>(result.error()));
       return false;
     }
+    ++calls_[slice.method];
     if (result->empty() || !result->at(0).isTensor()) {
-      ET_LOG(Error, "CudaExecutor: %s returned no logits", method);
+      ET_LOG(Error, "CudaExecutor: %s returned no logits", method.name.c_str());
       return false;
     }
     auto logits = result->at(0).toTensor();
@@ -396,7 +477,7 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
       ET_LOG(
           Error,
           "CudaExecutor: %s returned logits that are not [%d, %d]",
-          method,
+          method.name.c_str(),
           rows,
           vocab_size_);
       return false;
@@ -417,6 +498,15 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
 
 OffGraphKVMetrics CudaExecutor::kv_metrics() const {
   return kv_->metrics();
+}
+
+std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {
+  std::vector<ForwardMethodCalls> calls;
+  calls.reserve(methods_.size());
+  for (std::size_t i = 0; i < methods_.size(); ++i) {
+    calls.push_back({methods_[i].name, calls_[i]});
+  }
+  return calls;
 }
 
 } // namespace executorch::backends::cuda::batching

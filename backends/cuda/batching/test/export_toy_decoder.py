@@ -6,14 +6,18 @@
 
 """Export the toy decoder the CudaExecutor GPU test runs.
 
-Writes two artifacts, ``min2/`` and ``min5/``, each ``model.pte`` and
-``aoti_cuda_blob.ptd`` -- a two-layer decoder (one full-history layer, one
-sliding-window layer) exported as the ``decode`` and ``prefill`` methods
-CudaExecutor drives, lowered in the cell layout. ``min2`` exports prefill from
-two tokens; ``min5`` from five, as a model whose kernels switch at a small
-width must, and publishes that bound. Each has ``expected.txt``: one
-``prompt;continuation`` line per prompt, the greedy continuation computed
-eagerly with the neutral reference cache.
+Writes two artifacts, each ``model.pte`` and ``aoti_cuda_blob.ptd`` -- a
+two-layer decoder (one full-history layer, one sliding-window layer) exported
+as the static ``forward_{N}`` methods and the dynamic ``forward_others``
+CudaExecutor drives, lowered in the cell layout:
+
+- ``dense/``: forward_{1,2,4,8}, and forward_others over [8, 32] tokens;
+- ``sparse/``: forward_{1,4}, and forward_others over [4, 32] tokens selecting
+  at least five rows, as a model whose kernels switch at a small width must,
+  publishing that bound. Steps of 2..3 tokens pad across the gap to 4.
+
+Each has ``expected.txt``: one ``prompt;continuation`` line per prompt, the
+greedy continuation computed eagerly with the neutral reference cache.
 
 The residual stream carries each token's embedding at a large scale and the
 LM head maps it to a fixed successor, while attention adds a smaller term. The
@@ -38,7 +42,7 @@ N_KV_HEADS = 2
 HEAD_DIM = 16
 WINDOWS = (0, 4)  # layer 0 keeps its whole history, layer 1 a window of 4
 MAX_CONTEXT = 64
-MAX_STEP = 8  # prefill's widest step: longer prompts slice
+MAX_STEP = 32  # forward_others' widest step: longer batches slice
 MAX_CELLS = 256
 EMBED_SCALE = 4.0
 
@@ -145,7 +149,13 @@ def _greedy(model: ToyDecoder, prompt) -> list:
         REGISTRY.uninstall(key)
 
 
-def export(output_dir: str, min_prefill: int) -> None:
+ARTIFACTS = {
+    "dense": {"static": (1, 2, 4, 8), "min_rows": 1},
+    "sparse": {"static": (1, 4), "min_rows": 5},
+}
+
+
+def export(output_dir: str, static_widths, min_rows: int) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -175,31 +185,30 @@ def export(output_dir: str, min_prefill: int) -> None:
     expected = [_greedy(model, prompt) for prompt in PROMPTS]
 
     model = model.to(dtype=torch.bfloat16)
-    width = Dim("width", min=min_prefill, max=MAX_STEP)
-    rows = Dim("rows", min=1 if min_prefill == 2 else min_prefill, max=MAX_STEP)
     long = {"dtype": torch.long}
+
+    def inputs(width: int):
+        return (
+            torch.zeros(1, width, **long),
+            torch.arange(width, **long),
+            torch.zeros(width, **long),
+        )
+
+    widest_static = max(static_widths)
+    width = Dim("width", min=widest_static, max=MAX_STEP)
+    rows = Dim("rows", min=min_rows, max=MAX_STEP)
+    programs = {}
     with torch.no_grad():
-        programs = {
-            "decode": torch.export.export(
-                model,
-                (
-                    torch.zeros(1, 1, **long),
-                    torch.zeros(1, **long),
-                    torch.zeros(1, **long),
-                ),
-                strict=True,
-            ),
-            "prefill": torch.export.export(
-                model,
-                (
-                    torch.zeros(1, MAX_STEP, **long),
-                    torch.arange(MAX_STEP, **long),
-                    torch.zeros(MAX_STEP, **long),
-                ),
-                dynamic_shapes=({1: width}, {0: width}, {0: rows}),
-                strict=True,
-            ),
-        }
+        for n in static_widths:
+            programs[f"forward_{n}"] = torch.export.export(
+                model, inputs(n), strict=True
+            )
+        programs["forward_others"] = torch.export.export(
+            model,
+            inputs(MAX_STEP),
+            dynamic_shapes=({1: width}, {0: width}, {0: rows}),
+            strict=True,
+        )
 
     def partitioner(name: str) -> CudaPartitioner:
         return CudaPartitioner(
@@ -221,8 +230,8 @@ def export(output_dir: str, min_prefill: int) -> None:
         ),
         "get_offgraph_kv_max_cells": MAX_CELLS,
     }
-    if min_prefill != 2:
-        constant_methods["get_min_prefill_chunk"] = min_prefill
+    if min_rows > 1:
+        constant_methods["get_min_prefill_chunk"] = min_rows
     program = to_edge_transform_and_lower(
         programs,
         partitioner={name: [partitioner(name)] for name in programs},
@@ -256,8 +265,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     output_dir = parser.parse_args().output_dir
-    for min_prefill in (2, 5):
-        export(os.path.join(output_dir, f"min{min_prefill}"), min_prefill)
+    for name, artifact in ARTIFACTS.items():
+        export(os.path.join(output_dir, name), artifact["static"], artifact["min_rows"])
 
 
 if __name__ == "__main__":
