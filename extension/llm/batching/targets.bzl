@@ -60,9 +60,8 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
         ],
         deps = [
+            ":executor_utils",
             "//executorch/extension/llm/sampler:sampler",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/platform:platform",
         ],
     )

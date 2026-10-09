@@ -53,7 +53,7 @@ add_library(extension_llm_batching_util util/session_table.cpp)
 target_link_libraries(
   extension_llm_batching_util
   PUBLIC extension_llm_batching extension_llm_cache executorch_core
-  PRIVATE extension_llm_sampler extension_tensor
+  PRIVATE extension_llm_batching_executor_utils extension_llm_sampler
 )
 target_include_directories(
   extension_llm_batching_util PUBLIC ${_common_include_directories}
