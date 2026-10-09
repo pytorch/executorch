@@ -564,6 +564,36 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
+  static bool supports_activation(
+      const Kernel& node,
+      const ptn::Graph& graph) {
+    if (node.inputs.size() != 1 || node.outputs.size() != 1 ||
+        arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+        !fp32(node, graph)) {
+      return false;
+    }
+    const auto& input =
+        graph.value(arg(node, 0).as_tensor().id).tensor_meta();
+    const auto& output =
+        graph.value(node.outputs[0].value_id).tensor_meta();
+    return !input.quant && !output.quant && input.sizes == output.sizes;
+  }
+
+  Error relu(const Kernel& node) {
+    xnn_unary_params params{};
+    params.clamp.min = 0.0f;
+    params.clamp.max = std::numeric_limits<float>::infinity();
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_clamp,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
   static bool supports_linear(const Kernel& node, const ptn::Graph& graph) {
     if (!fp32(node, graph) || node.inputs.size() != 3 ||
         node.outputs.size() != 1) {
@@ -852,6 +882,10 @@ const XNNOp* find_op(std::string_view target) {
       {"torch.ops.aten.permute_copy.default",
        &E::supports_shape_copy,
        &E::permute},
+      {"torch.ops.aten.relu.default", &E::supports_activation, &E::relu},
+      {"torch.ops.aten.sigmoid.default",
+       &E::supports_activation,
+       &E::unary<xnn_unary_sigmoid>},
       {"torch.ops.aten.view_copy.default",
        &E::supports_shape_copy,
        &E::static_reshape},

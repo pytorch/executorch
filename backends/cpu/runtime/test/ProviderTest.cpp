@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -145,6 +146,99 @@ TEST_F(ProviderTest, ProvidersHandleNonVectorMultipleAndPointerReplacement) {
     EXPECT_NEAR(static_cast<float*>(output.buffer.data)[10], 1.95449974f, 1e-6);
   }
 }
+
+class XNNActivationTest : public ProviderTest,
+                          public ::testing::WithParamInterface<const char*> {
+ protected:
+  void activation_graph(size_t count) {
+    gelu_graph(count);
+    graph.nodes[0].name = "activation";
+    graph.nodes[0].target = GetParam();
+    graph.nodes[0].inputs.resize(1);
+  }
+};
+
+TEST_P(XNNActivationTest, MatchesReferenceAndRebindsNonVectorMultiple) {
+  const float infinity = std::numeric_limits<float>::infinity();
+  const std::array<float, 13> input{
+      -infinity, -100, -10, -1, -0.0f, 0, 1e-6f, 1, 10, 100, infinity,
+      std::numeric_limits<float>::quiet_NaN(), -0.125f};
+  activation_graph(input.size());
+  GuardedBuffer first(sizeof(input)), second(sizeof(input)), output(sizeof(input));
+  std::copy(input.begin(), input.end(), static_cast<float*>(first.buffer.data));
+  std::reverse_copy(
+      input.begin(), input.end(), static_cast<float*>(second.buffer.data));
+  bind_value(0, first.buffer);
+  bind_value(1, output.buffer);
+  PreparationContext context{
+      graph, buffers, allocator, private_bytes, execution_context};
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  ASSERT_TRUE(
+      implementation->supports(graph.node(0), graph, execution_context).supported);
+  auto executable = implementation->compile({{0}, {0}, {1}}, context);
+  ASSERT_TRUE(executable.ok());
+  ASSERT_EQ(provider->finish(), Error::Ok);
+  ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+  const bool relu = graph.nodes[0].target == "torch.ops.aten.relu.default";
+  for (const auto& source : {first.buffer, second.buffer}) {
+    buffers[0] = source;
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+    const auto* data = static_cast<const float*>(source.data);
+    const auto* result = static_cast<const float*>(output.buffer.data);
+    for (size_t index = 0; index < input.size(); ++index) {
+      SCOPED_TRACE(index);
+      if (std::isnan(data[index])) {
+        EXPECT_TRUE(std::isnan(result[index]));
+      } else if (relu) {
+        EXPECT_FLOAT_EQ(result[index], data[index] < 0 ? 0 : data[index]);
+      } else {
+        EXPECT_NEAR(
+            result[index], 1.0 / (1.0 + std::exp(-double(data[index]))), 1e-6);
+      }
+    }
+  }
+  buffers[0].readable_bytes = sizeof(input);
+  EXPECT_EQ(executable.get()->bind(), Error::InvalidArgument);
+}
+
+TEST_P(XNNActivationTest, RejectsUnsupportedDtypesShapesAndSchemas) {
+  activation_graph(13);
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  const auto supported = [&] {
+    return implementation->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  ASSERT_TRUE(supported());
+  for (auto dtype : {ptn::ScalarType::Half, ptn::ScalarType::Char}) {
+    graph.values[0] = ptn::Value("input", dtype, {13});
+    EXPECT_FALSE(supported());
+    graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {13});
+    graph.values[1] = ptn::Value("output", dtype, {13});
+    EXPECT_FALSE(supported());
+    graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {13});
+  }
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 13});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {13});
+  auto& node = graph.nodes[0];
+  node.inputs[0].arg = ptn::IntArg{0};
+  EXPECT_FALSE(supported());
+  node.inputs.clear();
+  EXPECT_FALSE(supported());
+  node.inputs = {{"self", ptn::TensorArg{0}}, {"extra", ptn::IntArg{0}}};
+  EXPECT_FALSE(supported());
+  node.inputs.resize(1);
+  node.outputs.clear();
+  EXPECT_FALSE(supported());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReluAndSigmoid,
+    XNNActivationTest,
+    ::testing::Values("torch.ops.aten.relu.default", "torch.ops.aten.sigmoid.default"));
 
 TEST_F(ProviderTest, XNNPACKValidatesFinalConstantBeforePacking) {
   graph.values.emplace_back(

@@ -148,6 +148,50 @@ TEST_F(CPUPlanTest, ConnectedRegionsExposeIntermediateModelOutputs) {
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 5);
 }
 
+TEST_F(CPUPlanTest, ActivationsStayInXNNPACKRegionAndPreserveFanout) {
+  value("x", true);
+  value("y", true);
+  for (const auto* name : {"sum", "relu", "sigmoid", "out"}) {
+    value(name);
+  }
+  add("sum", 0, 1, 2);
+  for (const auto* target : {
+           "torch.ops.aten.relu.default", "torch.ops.aten.sigmoid.default"}) {
+    const ptn::ValueId input = graph.nodes.size() + 1;
+    ptn::Node node;
+    node.name = target;
+    node.target = target;
+    node.inputs = {{"self", ptn::TensorArg{input}}};
+    node.outputs = {{ptn::OutputValueKind::Tensor, input + 1}};
+    graph.nodes.push_back(std::move(node));
+  }
+  add("out", 2, 4, 5);
+  finish({2, 3, 5});
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  EXPECT_EQ(plan.steps()[0].region.nodes, (std::vector<KernelId>{0, 1, 2, 3}));
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (float shift : {-1.0f, 1.0f}) {
+    for (size_t index = 0; index < 11; ++index) {
+      static_cast<float*>(buffers[0].data)[index] = float(index) - 5;
+      static_cast<float*>(buffers[1].data)[index] = shift;
+    }
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+    for (size_t index = 0; index < 11; ++index) {
+      const float sum = float(index) - 5 + shift;
+      const float relu = std::max(0.0f, sum);
+      EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[index], sum);
+      EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[index], relu);
+      EXPECT_NEAR(
+          static_cast<float*>(buffers[5].data)[index],
+          sum + 1.0f / (1.0f + std::exp(-relu)),
+          1e-6);
+    }
+  }
+}
+
 TEST_F(CPUPlanTest, BatchedMatrixMultiplyUsesXNNPACKForDynamicOperands) {
   graph.values.emplace_back(
       "lhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
