@@ -29,7 +29,11 @@ from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import wrap_triton
 from triton.language.extra import libdevice
-from triton.language.target_info import is_hip
+
+# Fixed when this module is imported, never by querying the driver while a
+# kernel compiles: Inductor compiles in forked subprocesses that cannot
+# initialize CUDA. Inductor inlines the value into the kernel source it builds.
+_IS_HIP = tl.constexpr(torch.version.hip is not None)
 
 # Activation quantization granularity: one INT8 scale per K32 block, launched in
 # K256 tiles.
@@ -120,8 +124,8 @@ def _warp_sum_f32_ptx(value):
     return value + shuffled
 
 
-# ROCm versions of the PTX helpers above. is_hip() is resolved when the kernel
-# is compiled, so CUDA builds see exactly the PTX helpers.
+# ROCm versions of the PTX helpers above. _IS_HIP is a compile-time constant,
+# so CUDA builds see exactly the PTX helpers.
 
 
 @triton.jit
@@ -154,7 +158,7 @@ def _warp_sum_f32_portable(value):
 
 @triton.jit
 def _round_nearest_even_s32(value):
-    if is_hip():
+    if _IS_HIP:
         return _round_nearest_even_s32_portable(value)
     else:
         return _round_nearest_even_s32_ptx(value)
@@ -162,7 +166,7 @@ def _round_nearest_even_s32(value):
 
 @triton.jit
 def _dp4a_u8_s8(a, b, acc):
-    if is_hip():
+    if _IS_HIP:
         return _dp4a_u8_s8_portable(a, b, acc)
     else:
         return _dp4a_u8_s8_ptx(a, b, acc)
@@ -170,7 +174,7 @@ def _dp4a_u8_s8(a, b, acc):
 
 @triton.jit
 def _warp_sum_f32(value):
-    if is_hip():
+    if _IS_HIP:
         return _warp_sum_f32_portable(value)
     else:
         return _warp_sum_f32_ptx(value)
