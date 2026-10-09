@@ -29,6 +29,7 @@ CLOSE_COMMENT = (
     + "If you still need help, feel free to re-open or comment again!"
 )
 
+
 def aware(dt):
     """PyGithub < 2.0 returns naive UTC datetimes."""
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
@@ -103,7 +104,7 @@ def pushed_since(pr, since, author):
     return False
 
 
-def process_issue(issue, now):
+def process(issue, now):
     number = issue.number
     is_pr = issue.pull_request is not None
     pr = issue.as_pull_request() if is_pr else None
@@ -131,12 +132,21 @@ def process_issue(issue, now):
     if not reminders:
         age = (now - labeled_at).days
         if age < DAYS_BEFORE_REMINDER:
-            print(f"  #{number}: {age}d since label (reminder at {DAYS_BEFORE_REMINDER}d)", flush=True)
+            print(
+                f"  #{number}: {age}d since label (reminder at {DAYS_BEFORE_REMINDER}d)", 
+                flush=True,
+            )
             return 0
         if author is None:
-            print(f"  #{number}: author account unavailable, skipping", flush=True)
+            print(
+                f"  #{number}: author account unavailable, skipping", 
+                flush=True,
+            )
             return 0
-        print(f"  #{number}: first reminder to @{author} ({age}d)", flush=True)
+        print(
+            f"  #{number}: first reminder to @{author} ({age}d)", 
+            flush=True,
+        )
         if DRY_RUN:
             return 0
         issue.create_comment(REMINDER_COMMENT.format(user=author))
@@ -145,7 +155,10 @@ def process_issue(issue, now):
     # --- reminder exists: close, nudge again, or wait ---
     since_first = (now - reminders[0][0]).days
     if since_first >= DAYS_BEFORE_CLOSE:
-        print(f"  #{number}: closing ({since_first}d after first reminder)", flush=True)
+        print(
+            f"  #{number}: closing ({since_first}d after first reminder)", 
+            flush=True,
+        )
         if DRY_RUN:
             return 0
         if not any(CLOSE_MARKER in body_of(obj) for _, obj in cycle):
@@ -193,7 +206,7 @@ def main():
         print(f"Processing {kind} #{issue.number}: {issue.title}", flush=True)
         try:
             actions += process_issue(issue, now)
-        except Exception as exc:                      # one bad item must not abort the run
+        except Exception as exc:
             failures += 1
             print(f"  #{issue.number}: failed: {exc!r}", flush=True)
 
