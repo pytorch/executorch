@@ -529,6 +529,22 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
 
+    def test_index_copy_accepts_int32_indices(self):
+        # Export accepts int32 indices for index_copy, so the delegate must too.
+        # Eager ATen does not, so the reference uses int64 indices.
+        model = self.IndexCopyInput(0).eval()
+        data, update = torch.randn(16, 8), torch.randn(2, 8)
+        indices = torch.tensor([2, 9], dtype=torch.int32)
+        expected = data.clone().index_copy_(0, indices.long(), update)
+        program = _lower(model, (data.clone(), indices, update))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            result, summed = method.execute([data.clone(), indices, update])
+        self.assertTrue(torch.equal(result, expected))
+        self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
+
     def test_index_copy_rejects_negative_index(self):
         # ATen raises on negative indices, so the delegate must not wrap them.
         model = self.IndexCopyInput(0).eval()

@@ -1321,17 +1321,20 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   const size_t uaxis = static_cast<size_t>(axis);
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
-  // Like ATen, negative indices are rejected rather than wrapped.
-  // Note: PyTorch uses int64 for indices, so we read as int64_t
-  eval(indices); // Ensure indices are materialized before accessing data
-  if (indices.dtype() != ::mlx::core::int64) {
+  // Like ATen, negative indices are rejected rather than wrapped. Export
+  // accepts int32 indices too, so they are widened rather than rejected.
+  const array idx_arr = indices.dtype() == ::mlx::core::int32
+      ? astype(indices, ::mlx::core::int64, s)
+      : indices;
+  eval(idx_arr); // Ensure indices are materialized before accessing data
+  if (idx_arr.dtype() != ::mlx::core::int64) {
     throw std::invalid_argument(
-        std::string("IndexCopyNode: expected int64 indices, got ") +
+        std::string("IndexCopyNode: expected int64 or int32 indices, got ") +
         ExecutionState::dtype_str(indices.dtype()));
   }
-  std::vector<int32_t> idx_vec(indices.size());
-  auto idx_data = indices.data<int64_t>();
-  for (size_t i = 0; i < indices.size(); ++i) {
+  std::vector<int32_t> idx_vec(idx_arr.size());
+  auto idx_data = idx_arr.data<int64_t>();
+  for (size_t i = 0; i < idx_arr.size(); ++i) {
     const int64_t idx = idx_data[i];
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
