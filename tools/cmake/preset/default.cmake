@@ -186,6 +186,10 @@ define_overridable_option(
 )
 define_overridable_option(EXECUTORCH_USE_DL "Use libdl library" BOOL ON)
 define_overridable_option(
+  EXECUTORCH_USE_GENERIC_JNI
+  "Use generic JNI for Android runtime and Tensor bindings" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" BOOL OFF
 )
 define_overridable_option(
