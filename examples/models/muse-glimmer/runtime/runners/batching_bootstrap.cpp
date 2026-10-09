@@ -25,7 +25,7 @@ DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
     prefix_cache_entries,
     0,
-    "Text-only prefix snapshots; zero disables");
+    "Text/image prefix snapshots; zero disables");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
@@ -121,7 +121,12 @@ create_muse_glimmer_batching_runtime() {
       *result->backend.executor,
       std::move(scheduler),
       *result->tokenizer,
-      serving);
+      serving,
+      [spec = result->backend.preparation](
+          const serving::PromptPreparationContext& context,
+          const serving::PromptInput& input) {
+        return prepare_muse_glimmer_input(context, input, spec);
+      });
   return result;
 }
 } // namespace executorch::extension::llm

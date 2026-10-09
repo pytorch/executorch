@@ -12,6 +12,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace executorch::extension::llm {
@@ -49,36 +50,54 @@ class MuseGlimmerPreparedInput final : public batching::PreparedInput {
 
   const void* kind() const override;
   size_t size() const override {
-    return tokens_.size();
+    return backing_->tokens_->size() - start_;
   }
   static const void* kind_tag();
   bool compatible(const MuseGlimmerPreparationSpec& spec) const;
-  batching::Token previous_token() const {
-    return tokens_.back();
+  batching::Token last_prompt_token() const override {
+    return backing_->tokens_->empty() ? 0 : backing_->tokens_->back();
   }
-  const MuseGlimmerImageSpan& image_span() const {
-    return image_span_;
-  }
+  batching::PreparedInputPtr suffix(size_t start) const override;
+  batching::PrefixIdentityPtr prefix_identity() const override;
+  // Intersection with this view, in view-relative positions; {0, 0} if absent.
+  MuseGlimmerImageSpan image_span() const;
 
  private:
   friend class MuseGlimmerMaterializer;
-  bool validate_structure() const;
+  struct Backing {
+    Backing(
+        std::shared_ptr<const MuseGlimmerPreparationSpec> spec,
+        std::vector<batching::Token> tokens,
+        MuseGlimmerRGBImage image,
+        MuseGlimmerImageGrid grid,
+        MuseGlimmerImageSpan image_span);
+    bool validate_structure() const;
 
-  const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
-  const std::vector<batching::Token> tokens_;
-  // Validated at construction; unchanged until reset after cache commit.
-  mutable std::optional<MuseGlimmerRGBImage> image_;
-  const MuseGlimmerImageGrid grid_;
-  const MuseGlimmerImageSpan image_span_;
-  const bool valid_;
-  // Only the bound executor's engine thread may access the mutable image/cache.
-  // Their destruction is independent of Module, delegates, and engine lifetime.
-  mutable std::vector<uint16_t> image_embeddings_;
+    const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
+    // Independently owned: retained identity must not retain image backing.
+    const batching::TokenInputPtr tokens_;
+    mutable std::optional<MuseGlimmerRGBImage> image_;
+    const MuseGlimmerImageGrid grid_;
+    const MuseGlimmerImageSpan image_span_;
+    const bool valid_;
+    const batching::ContentKey image_key_;
+    // Only the bound executor's engine thread accesses the lazy image/cache.
+    mutable std::vector<uint16_t> image_embeddings_;
+  };
+  MuseGlimmerPreparedInput(std::shared_ptr<const Backing> backing, size_t start)
+      : backing_(std::move(backing)), start_(start) {}
+  const std::shared_ptr<const Backing> backing_;
+  const size_t start_ = 0;
 };
 
 serving::PromptPreparationResult prepare_muse_glimmer_prompt(
     const nlohmann::json& request,
     const serving::PromptPreparationContext& context,
+    std::shared_ptr<const MuseGlimmerPreparationSpec> spec);
+
+serving::ModelPreparationResult prepare_muse_glimmer_input(
+    const serving::PromptPreparationContext& context,
+    const serving::PromptInput& input,
     std::shared_ptr<const MuseGlimmerPreparationSpec> spec);
 
 } // namespace executorch::extension::llm

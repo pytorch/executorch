@@ -73,31 +73,32 @@ runtime::Result<TensorPtr> MuseGlimmerMaterializer::materialize(
         ? nullptr
         : static_cast<const MuseGlimmerPreparedInput*>(
               std::get<batching::PreparedInputPtr>(input.payload).get());
+    const auto* backing = prepared ? prepared->backing_.get() : nullptr;
     for (size_t offset = input.offset; offset < input.offset + input.size;
          ++offset, ++row) {
-      const bool image_row = prepared &&
-          offset >= prepared->image_span_.offset &&
-          offset - prepared->image_span_.offset < prepared->image_span_.size;
+      const size_t index = prepared ? prepared->start_ + offset : offset;
+      const bool image_row = backing && index >= backing->image_span_.offset &&
+          index - backing->image_span_.offset < backing->image_span_.size;
       if (image_row) {
-        if (prepared->image_embeddings_.empty()) {
-          if (!prepared->image_)
+        if (backing->image_embeddings_.empty()) {
+          if (!backing->image_)
             return Error::InvalidProgram;
-          ET_ASSIGN_OR_RETURN(image, encode_image(*prepared->image_));
+          ET_ASSIGN_OR_RETURN(image, encode_image(*backing->image_));
           if (image.hidden_dim != spec_->hidden_dim ||
-              image.num_soft_tokens != prepared->grid_.soft_tokens ||
-              image.embeddings.size() != prepared->image_span_.size * hidden) {
+              image.num_soft_tokens != backing->grid_.soft_tokens ||
+              image.embeddings.size() != backing->image_span_.size * hidden) {
             return Error::InvalidProgram;
           }
-          prepared->image_embeddings_ = std::move(image.embeddings);
-          prepared->image_.reset();
+          backing->image_embeddings_ = std::move(image.embeddings);
+          backing->image_.reset();
         }
-        const size_t source_row = offset - prepared->image_span_.offset;
+        const size_t source_row = index - backing->image_span_.offset;
         std::memcpy(
             destination + row * hidden,
-            prepared->image_embeddings_.data() + source_row * hidden,
+            backing->image_embeddings_.data() + source_row * hidden,
             hidden * sizeof(uint16_t));
       } else {
-        const auto token = raw ? (**raw)[offset] : prepared->tokens_[offset];
+        const auto token = raw ? (**raw)[index] : (*backing->tokens_)[index];
         if (token >= static_cast<uint64_t>(spec_->vocab_size))
           return Error::InvalidArgument;
         text_tokens.push_back(static_cast<int64_t>(token));

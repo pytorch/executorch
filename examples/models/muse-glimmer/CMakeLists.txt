@@ -296,11 +296,14 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
   endif()
 
   if(MUSE_GLIMMER_BUILD_BATCHING_TESTS)
+    if(NOT TARGET extension_llm_serving)
+      message(FATAL_ERROR "MG batching tests require extension_llm_serving")
+    endif()
     enable_testing()
     add_executable(muse_glimmer_batching_test tests/batching_runtime_test.cpp)
     target_link_libraries(
       muse_glimmer_batching_test PRIVATE muse_glimmer_batching_preparation
-                                         Threads::Threads
+                                         extension_llm_serving Threads::Threads
     )
     add_test(NAME muse_glimmer_batching COMMAND muse_glimmer_batching_test)
   endif()

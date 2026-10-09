@@ -126,16 +126,22 @@ submitted history; server-side image references are not supported.
 
 The base64/framing check does not guarantee that an arbitrarily long text history
 fits. Whole-frame, decoded-pixel, vision-patch, and model context limits still
-apply. Text prefix snapshots are opt-in via `--prefix-cache-entries` (default 0).
+apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
+(default 0).
 
 ## Session Behavior
 
-- Text-only prompts use the shared batching token-history and prefix-reuse path.
-- Image prompts count image rows as decoder positions. They replace the session
-  context and bypass prompt-prefix caching instead of appending image bytes to a
-  warm text prefix.
-- A subsequent text-only prompt replays its context after image execution. KV
-  cache state remains active within each generation.
+- Text and image prompts use the shared prefix-reuse path. Image rows count as
+  decoder positions; matching uses token IDs and an image-content digest with
+  content-relative row offsets, not patch token IDs alone.
+- Resubmit the complete history, including the image, on every turn. A clean
+  named session whose history is an exact prefix reuses its KV and executes only
+  the remaining prepared suffix. Pending generated tokens are handled by Runner.
+- Opt-in snapshots can also reuse mixed prefixes across requests. Existing
+  policies remain: equal, shorter, mismatched, or dirty named histories replay;
+  snapshots leave at least one fresh prompt position to execute.
+- Omitting an earlier image changes the supplied context; serving does not
+  implicitly retain omitted image or text history.
 - Metadata, options, and prompt preparation are validated before context
   replacement. A later engine or vision failure does not restore replaced state
   and follows the shared batching failure contract: a runtime vision-encode error
@@ -148,9 +154,20 @@ execution, MLX cache/sequence state, packing, sampling, and embedding
 materialization. The worker reuses the shared batching, serving, and multiplexed
 transport infrastructure.
 
-CPU prompt preparation runs after admission on the control thread. Vision
-encoding, text embeddings, and decoder calls run on the engine thread, so vision
-encoding delays other co-batched requests. Prepared image inputs are validated
-once at construction. Image embeddings are computed once per prepared input and
-can be sliced across model forwards or replayed. Decoded RGB is released after
-validated embeddings are cached; failed encoding retains it for retry.
+CPU source decoding and model preparation run after admission on the control
+thread. The source adapter produces ordered `PromptInput` segments; the
+runtime-owned MG model preparer tokenizes text, expands image rows, and supplies
+prepared backing and prefix identity. Image identity hashes decoded RGB,
+dimensions, and the computed vision grid within one immutable model runtime.
+
+Vision encoding, text embeddings, and decoder calls run on the engine thread,
+so vision encoding delays other co-batched requests. Prepared image inputs are
+validated once at construction. Suffix views share the same backing and lazy
+image embeddings, including views created after encoding. Decoded RGB is released
+after validated embeddings are cached; failed encoding retains it for retry.
+
+KV-prefix reuse is not a cross-request image-embedding cache. Independently
+prepared requests retain independent backing. If the uncached suffix skips the
+image entirely, it needs no vision encoding; if it intersects the image, that
+backing may still encode the full image before selecting the remaining rows.
+Prefix identity does not retain RGB or embedding buffers.
