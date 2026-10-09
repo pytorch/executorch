@@ -225,22 +225,24 @@ class CudaBackendExportTest(unittest.TestCase):
 
         x = torch.randn(1 << 16, device="cuda")
         program = torch.export.export(_ToyModel(), (x,))
-        to_edge_transform_and_lower(
-            program,
-            partitioner=[
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
-                )
-            ],
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        )
+        # The measured time of each split, so a wrong pick shows why.
+        with self.assertLogs(launch_params.logger, "INFO") as logs:
+            to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
         measured = [split for fake, active, split in _TRACED if not fake and active]
         traced_in_compile = [
             split for fake, active, split in _TRACED if fake and active
         ]
         self.assertEqual(sorted(set(measured)), [1, 2, 4, 8, 16], _TRACED)
         self.assertTrue(traced_in_compile, _TRACED)
-        self.assertEqual(set(traced_in_compile), {4}, _TRACED)
+        self.assertEqual(set(traced_in_compile), {4}, logs.output)
 
 
 if __name__ == "__main__":
