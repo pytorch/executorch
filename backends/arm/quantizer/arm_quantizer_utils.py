@@ -511,13 +511,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.while_loop,
         torch.ops.higher_order.cond,
     ]
-    _UINT8_IO_BRIDGE_OPS: set[Callable[..., object]] = {
-        torch.ops.aten.cat.default,
-        torch.ops.aten.concatenate.default,
-        torch.ops.aten.stack.default,
-        torch.ops.aten.pixel_shuffle.default,
-        torch.ops.aten.slice.Tensor,
-    }
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
@@ -747,15 +740,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
-        if touches_uint8_quantized_io and any(
-            node.target in self._UINT8_IO_BRIDGE_OPS for node in shared_nodes
-        ):
-            self.report_reject(
-                ordered_nodes,
-                "Shared-qspec bridge cluster touches uint8 model IO.",
-            )
-            return
-
         if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return
 
@@ -794,10 +778,29 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         )
         return
 
+    def _annotate_graph_outputs(self, model: torch.fx.GraphModule) -> None:
+        for output_node in model.graph.nodes:
+            if output_node.op != "output" or self._is_annotated(output_node):
+                continue
+
+            input_qspec_map = {
+                input_node: input_node.meta[Q_ANNOTATION_KEY].output_qspec
+                for input_node in output_node.all_input_nodes
+                if is_output_annotated(input_node)
+            }
+            if input_qspec_map:
+                _mark_node_as_quantized(
+                    output_node,
+                    input_qspec_map,
+                    None,
+                    is_quantized=True,
+                )
+
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
+        self._annotate_graph_outputs(model)
 
     def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True

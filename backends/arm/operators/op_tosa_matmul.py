@@ -13,6 +13,7 @@ import tosa_serializer as ts
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
 )
+from executorch.backends.arm.constants import ARM_DYNAMIC_W8A8_LINEAR_META_KEY
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -67,7 +68,14 @@ class MatmulVisitor(NodeVisitor):
         )
 
         # We need to get the zero points and add an intermediate tensor for INT16 case
-        if inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):
+        dynamic_meta = node.meta.get(ARM_DYNAMIC_W8A8_LINEAR_META_KEY)
+        if (
+            inputs[0].dtype == ts.DType.INT8
+            and isinstance(dynamic_meta, dict)
+            and dynamic_meta.get("symmetric_zero_points") is True
+        ):
+            input0_zp, input1_zp = 0, 0
+        elif inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):
             input_qparams = get_input_qparams(node)
             input0_zp = input_qparams[0].get_zp_per_tensor()
             input1_zp = input_qparams[1].get_zp_per_tensor()

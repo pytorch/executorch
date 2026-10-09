@@ -81,6 +81,7 @@ class EthosUBackend(BackendDetails):
             block_placements=(
                 compile_spec.external_block_placements.to_block_placements()
             ),
+            max_scratch_size=compile_spec.max_scratch_size,
         )
 
     @staticmethod

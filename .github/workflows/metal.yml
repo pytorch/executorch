@@ -201,8 +201,8 @@ jobs:
         echo "Success: prefill ($PROMPT_TOKENS tokens) + decode completed"
         echo "::endgroup::"
 
-  export-model-metal-artifact:
-    name: export-model-metal-artifact
+  test-model-metal-e2e:
+    name: test-model-metal-e2e
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch metal-relevant paths skip
@@ -251,9 +251,32 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
       script: |
         set -eux
+
+        echo "::group::Print machine info"
+        uname -a
+        if [ $(uname -s) == Darwin ]; then
+          sw_vers
+          # Print RAM in GB
+          RAM_BYTES=$(sysctl -n hw.memsize)
+          RAM_GB=$(echo "scale=2; $RAM_BYTES/1024/1024/1024" | bc)
+          echo "Available RAM (GB): $RAM_GB"
+          sysctl machdep.cpu.brand_string
+          sysctl machdep.cpu.core_count
+          # Print number of GPU cores (Apple Silicon)
+          if command -v system_profiler &> /dev/null; then
+            GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Total Number of Cores/ {print $5; exit}')
+            if [ -z "$GPU_CORES" ]; then
+              # Fallback: try to parse "Core Count" from Apple GPU section
+              GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Core Count/ {print $3; exit}')
+            fi
+            echo "GPU Cores: ${GPU_CORES:-Unknown}"
+          else
+            echo "system_profiler not available, cannot determine GPU cores."
+          fi
+        fi
+        echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
         ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
@@ -284,87 +307,7 @@ jobs:
         if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
           VR_MODE="vr-offline"
         fi
-        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
-
-  test-model-metal-e2e:
-    name: test-model-metal-e2e
-    # Same path filter as export-model-metal-artifact above. Also
-    # explicitly gated on the export job succeeding — when needs: jobs
-    # are *skipped* (e.g. fork PR), GitHub still evaluates this if:,
-    # so without the explicit success-check this job would run and then
-    # fail trying to download an artifact that was never produced.
-    needs: [changed-files, export-model-metal-artifact, run-decision]
-    if: |
-      needs.export-model-metal-artifact.result == 'success' &&
-      (
-        contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
-        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-        contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
-        contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
-        needs.run-decision.outputs.is-full-run == 'true'
-      )
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      fail-fast: false
-      matrix:
-        model:
-          - repo: "mistralai"
-            name: "Voxtral-Mini-3B-2507"
-          - repo: "mistralai"
-            name: "Voxtral-Mini-4B-Realtime-2602"
-          - repo: "openai"
-            name: "whisper-small"
-          - repo: "openai"
-            name: "whisper-large-v3-turbo"
-          - repo: "nvidia"
-            name: "parakeet-tdt"
-        quant:
-          - "non-quantized"
-          - "quantized-int4-metal"
-        exclude:
-          # Exclude non-quantized for Voxtral Realtime (too large)
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "non-quantized"
-    with:
-      default-packages: ""
-      runner: macos-m2-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
-      script: |
-        set -eux
-
-        echo "::group::Print machine info"
-        uname -a
-        if [ $(uname -s) == Darwin ]; then
-          sw_vers
-          # Print RAM in GB
-          RAM_BYTES=$(sysctl -n hw.memsize)
-          RAM_GB=$(echo "scale=2; $RAM_BYTES/1024/1024/1024" | bc)
-          echo "Available RAM (GB): $RAM_GB"
-          sysctl machdep.cpu.brand_string
-          sysctl machdep.cpu.core_count
-          # Print number of GPU cores (Apple Silicon)
-          if command -v system_profiler &> /dev/null; then
-            GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Total Number of Cores/ {print $5; exit}')
-            if [ -z "$GPU_CORES" ]; then
-              # Fallback: try to parse "Core Count" from Apple GPU section
-              GPU_CORES=$(system_profiler SPDisplaysDataType | awk '/Core Count/ {print $3; exit}')
-            fi
-            echo "GPU Cores: ${GPU_CORES:-Unknown}"
-          else
-            echo "system_profiler not available, cannot determine GPU cores."
-          fi
-        fi
-        echo "::endgroup::"
-
-        VR_MODE=""
-        if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
-          VR_MODE="vr-offline"
-        fi
-        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        # Export and test in the same job so the model never leaves the runner
+        # (no GitHub Actions artifact upload/download).
+        MODEL_DIR="$(mktemp -d "${RUNNER_TEMP}/metal_model_XXXXXX")"
+        ${CONDA_RUN} RUN_EXPORT=1 bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${MODEL_DIR}" "${VR_MODE}"

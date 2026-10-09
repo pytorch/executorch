@@ -328,6 +328,7 @@ jobs:
           - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_run_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_runtime_vgf
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
@@ -367,18 +368,25 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-conda.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
+        set -eux
+        # Pinned PyTorch's MPS build requires the Metal 4 SDK.
+        export DEVELOPER_DIR=/Applications/Xcode_26.0.1.app/Contents/Developer
+        xcodebuild -version
+
         BUILD_TOOL=cmake
 
         bash .ci/scripts/setup-conda.sh
@@ -994,12 +1002,22 @@ jobs:
   llm-server:
     needs: [changed-files, run-decision]
     if: |
-      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
-      needs.run-decision.outputs.is-full-run == 'true'
+      github.event_name != 'pull_request' && (
+        contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_ci-run-decision.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: ./.github/workflows/_llm_server.yml
     permissions:
       id-token: write
@@ -1133,4 +1151,10 @@ jobs:
         # Test models
         # TODO: Switch to run_tests.py once CI device provisioning is stable
         # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
+        # accelerate is for test_mobilebert_qat, whose TrainingArguments needs it;
+        # transformers reports the same error when it is absent and when it is too old.
+        pip install evaluate 'accelerate>=1.1.0'
+        pip install --upgrade-strategy only-if-needed \
+          --extra-index-url https://download.pytorch.org/whl/cpu \
+          -r examples/models/yolo26/requirements.txt
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"

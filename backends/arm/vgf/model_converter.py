@@ -17,7 +17,7 @@ from packaging.version import InvalidVersion, Version
 
 MODEL_CONVERTER_BINARY = "model-converter"
 _MODEL_CONVERTER_FALLBACK_BINARY = "model_converter"
-MIN_MODEL_CONVERTER_VERSION = Version("0.10.0")
+MIN_MODEL_CONVERTER_VERSION = Version("0.11.0")
 # Keep the old name as an alias while tests/callers migrate.
 MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS = MIN_MODEL_CONVERTER_VERSION
 _MODEL_CONVERTER_VERSION_PATTERN = re.compile(r"\b\d+\.\d+\.\d+(?:[A-Za-z0-9_.+-]*)?\b")
@@ -287,7 +287,7 @@ def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
             "MLSDK model converter",
             STATUS_FAIL,
             f"Found model-converter {version}, but ExecuTorch VGF requires "
-            f">={MIN_MODEL_CONVERTER_VERSION} after the ML SDK 0.10 upgrade.",
+            f">={MIN_MODEL_CONVERTER_VERSION} for the pinned VGF toolchain.",
             "Install the VGF dependencies from this ExecuTorch checkout with "
             "python -m pip install -r backends/arm/requirements-arm-vgf.txt, "
             "or reinstall the matching executorch[vgf] extra.",

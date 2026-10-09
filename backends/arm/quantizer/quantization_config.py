@@ -276,6 +276,15 @@ class QuantizationConfig:
         if self.bias is None or node is None:
             return None
 
+        # A runtime activation scale cannot be multiplied into a static
+        # derived INT32 bias scale at AOT time. Keep the bias in floating
+        # point and add it after dynamic accumulator rescaling.
+        if (
+            isinstance(self.input_activation, QuantizationSpec)
+            and self.input_activation.is_dynamic
+        ):
+            return None
+
         def _derive_qparams_fn(
             obs_or_fqs: list[ObserverOrFakeQuantize],
         ) -> tuple[torch.Tensor, torch.Tensor]:

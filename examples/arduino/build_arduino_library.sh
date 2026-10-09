@@ -11,53 +11,53 @@
 # Usage:
 #   ./build_arduino_library.sh                # build the library
 #   ./build_arduino_library.sh --clean        # remove generated output
-#   ./build_arduino_library.sh --bump patch   # 0.1.0 → 0.1.1
-#   ./build_arduino_library.sh --bump minor   # 0.1.0 → 0.2.0
-#   ./build_arduino_library.sh --bump major   # 0.1.0 → 1.0.0
+#   ./build_arduino_library.sh --version      # print the ExecuTorch version
 #
 # Output: arduino_lib/ExecuTorch/ (self-contained, installable)
 #
 # NOTE: This script is coupled to the ExecuTorch source tree layout.
 # Long-term, we should use cmake query APIs to deduce required sources
 # for a given target. Short-term, a CI smoke test will catch breakage.
-# When we set up the separate pytorch/executorch-arduino repo for
-# Library Manager publishing, this script may move there with ET as a
-# submodule.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ET_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUT_DIR="$SCRIPT_DIR/arduino_lib/ExecuTorch"
-PROPS="$SCRIPT_DIR/library.properties"
 PYTHON="${PYTHON:-python3}"
 
-if [ "${1:-}" = "--clean" ]; then
-  echo "Cleaning generated library..."
-  rm -rf "$SCRIPT_DIR/arduino_lib"
-  echo "Done."
-  exit 0
+case "$*" in
+  ""|--version) ;;
+  --clean)
+    echo "Cleaning generated library..."
+    rm -rf "$SCRIPT_DIR/arduino_lib"
+    echo "Done."
+    exit 0
+    ;;
+  --bump*)
+    echo "ERROR: The generator reads version.txt; --bump is no longer supported." >&2
+    exit 1
+    ;;
+  *)
+    echo "Usage: $0 [--clean|--version]" >&2
+    exit 1
+    ;;
+esac
+
+ET_VERSION=$(cat "$ET_ROOT/version.txt")
+if [[ ! "$ET_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "ERROR: version.txt must contain an ExecuTorch version in X.Y.Z form." >&2
+  exit 1
 fi
 
-if [ "${1:-}" = "--bump" ]; then
-  PART="${2:-patch}"
-  CURRENT=$(grep "^version=" "$PROPS" | cut -d= -f2)
-  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-  case "$PART" in
-    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-    patch) PATCH=$((PATCH + 1)) ;;
-    *) echo "Usage: $0 --bump [major|minor|patch]"; exit 1 ;;
-  esac
-  NEW="$MAJOR.$MINOR.$PATCH"
-  sed -i '' "s/^version=.*/version=$NEW/" "$PROPS" 2>/dev/null || \
-    sed -i "s/^version=.*/version=$NEW/" "$PROPS"
-  echo "Version: $CURRENT → $NEW"
+if [ "${1:-}" = "--version" ]; then
+  echo "$ET_VERSION"
   exit 0
 fi
 
 echo "=== Building ExecuTorch Arduino Library ==="
 echo "  ET repo:  $ET_ROOT"
+echo "  Version:  $ET_VERSION"
 echo "  Output:   $OUT_DIR"
 
 rm -rf "$OUT_DIR"
@@ -66,7 +66,8 @@ mkdir -p "$OUT_DIR/src" "$OUT_DIR/examples"
 # ─────────────────────────────────────────────────────────
 # 1. Copy library metadata, wrapper header, and stubs
 # ─────────────────────────────────────────────────────────
-cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
+sed "s/@EXECUTORCH_VERSION@/$ET_VERSION/" "$SCRIPT_DIR/library.properties.in" \
+  > "$OUT_DIR/library.properties"
 cp "$SCRIPT_DIR/ExecuTorch.h" "$SCRIPT_DIR/ETModel.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
@@ -318,8 +319,8 @@ done
 # it with FetchContent at cmake time -- so fetch it at the revision that backend
 # pins. Without it the Cortex-M ops compile against headers that are not there.
 if [ -z "$CMSIS_NN" ]; then
-  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/p' \
-    "$ET_ROOT/backends/cortex_m/CMakeLists.txt" | grep -oE '"[0-9a-f]{40}"' | tr -d '"')
+  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/s/^[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$ET_ROOT/backends/cortex_m/CMakeLists.txt")
   if [ -z "$CMSIS_NN_PIN" ]; then
     echo "ERROR: could not read CMSIS_NN_VERSION from backends/cortex_m/CMakeLists.txt"
     exit 1
@@ -466,6 +467,7 @@ model.h in each example was converted from a .pte exported by that same
 checkout. Do not edit either by hand; regenerate instead.
 
 executorch:  https://github.com/pytorch/executorch
+version:     $ET_VERSION
 commit:      $ET_SHA${ET_DIRTY:+ (tree had uncommitted changes under examples/arduino)}
 CMSIS-NN:    $CMSIS_NN_REV
 op set:      $([ "${ALL_OPS:-0}" = "1" ] && echo "all portable ops" || echo "$ROOT_OPS")

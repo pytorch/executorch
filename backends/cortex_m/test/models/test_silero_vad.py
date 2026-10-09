@@ -36,8 +36,9 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 16,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 15,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 11,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 24,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 22,
 }
 # The final `sigmoid(final_conv(x))` and the STFT magnitude's sqrt now lower to
 # cortex_m.quantized_activation. The 3 remaining sigmoids and 2 tanhs are LSTMCell gates: PyTorch export
@@ -53,27 +54,24 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_add_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
     "executorch_exir_dialects_edge__ops_aten_cat_default": 1,
-    "executorch_exir_dialects_edge__ops_aten_convolution_default": 6,
     "executorch_exir_dialects_edge__ops_aten_index_Tensor": 1,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 2,
     "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
     "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 3,
     "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
-    "executorch_exir_dialects_edge__ops_aten_relu_default": 5,
+    "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
     "executorch_exir_dialects_edge__ops_aten_select_copy_int": 2,
     "executorch_exir_dialects_edge__ops_aten_sigmoid_default": 3,
     "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_aten_sqrt_default": 0,
-    "executorch_exir_dialects_edge__ops_aten_squeeze_copy_dims": 2,
     "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
-    "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
-    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 7,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 7,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 9,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 6,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 5,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 6,
 }
 
 
@@ -94,11 +92,12 @@ test_cases = {
 
 @parametrize("test_case", test_cases)
 def test_dialect_silero_vad_16k(test_case):
-    """This model currently does largely not lower to accelerated kernels due to missing LSTM and conv1d support, this test is to track development progress."""
+    """This model currently does largely not lower to accelerated kernels due to missing LSTM support, this test is to track development progress."""
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
         ops_before_transforms,
         ops_after_transforms,
         qtol=10,
+        use_explicit_layout=True,
     )

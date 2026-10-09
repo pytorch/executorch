@@ -37,6 +37,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -90,6 +91,9 @@ struct ET_EXPERIMENTAL GenerationUpdate {
 // that generation as Failed.
 using GenerationCallback = std::function<void(const GenerationUpdate&)>;
 
+using GenerationInput ET_EXPERIMENTAL =
+    std::variant<std::vector<Token>, PreparedInputPtr>;
+
 struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
   SamplingParams sampling;
@@ -130,13 +134,14 @@ class ET_EXPERIMENTAL GenerationHandle {
   // handle.
   void cancel() const;
 
-  // Becomes true after the terminal callback returns or throws. False for an
-  // invalid handle.
+  // Becomes true after the terminal callback returns or throws, without
+  // waiting for on_settled to return. False for an invalid handle.
   bool done() const;
 
   // Blocks until the generation and its terminal callback have ended. Returns
-  // immediately if both already have or the handle is invalid. Must not be
-  // called from a callback serviced by the same runner.
+  // immediately if both already have or the handle is invalid. Does not wait
+  // for on_settled to return. Must not be called from a callback serviced by
+  // the same runner.
   void wait() const;
 
   // The terminal reason once done. nullopt for an invalid or unfinished
@@ -196,27 +201,61 @@ class ET_EXPERIMENTAL Session {
   // the next generation. Returns 0 for a default or moved-from Session.
   Position position() const noexcept;
 
+  // An independent, idle session holding committed [0, upto), with no pending
+  // prediction, generation, or sampling policy. The source may be generating;
+  // upto is checked against its accepted committed position on the engine
+  // thread. Speculative or pending tokens beyond that position are excluded.
+  //
+  // nullopt = invalid/poisoned source or boundary, unavailable retained state,
+  // unsupported cloning, capacity pressure, or shutdown. An empty prefix may
+  // be refused. Failure leaves the source unchanged. Once queued, a clone
+  // survives source destruction queued after it, but shutdown may refuse it.
+  //
+  // A model-output callback may enqueue a clone before the next model forward.
+  // Never wait for the returned future in a callback serviced by this runner.
+  std::future<std::optional<Session>> clone_async(Position upto) const;
+
   // `delta` is the caller-resolved suffix to append. The session tracks its
   // committed position and any pending generated token, so consecutive
   // generations continue where prior executor work left them. Retain this
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
+  // Opaque backing must pass this Runner's Executor::accepts() check and have
+  // a stable logical size and layout. A pending prediction is submitted as
+  // separate raw prefill before the opaque chunks.
+  //
   // The delta must be non-empty and its exclusive end must fit in Position.
   // Invalid input and a second concurrent generation end as Failed. A default
   // or moved-from Session also completes synchronously as Failed; a retained
   // shutdown-closed Session completes synchronously as Cancelled.
+  //
+  // Optional on_settled runs exactly once after the handle's final outcome,
+  // diagnostic, metrics, and done state are published, even if on_update
+  // throws. It runs on the engine thread or inline for synchronous rejection,
+  // and may precede generate_async returning. Exceptions are contained without
+  // changing the outcome; its captures are released after invocation. It must
+  // not block, invoke user output, destroy Runner, or wait for Runner work.
+  // This signals generation settlement, not Runner idleness or physical
+  // session-close completion. Handle wait/done do not wait for it to return.
   GenerationHandle generate_async(
-      std::vector<Token> delta,
+      GenerationInput delta,
       GenConfig config,
-      GenerationCallback on_update) const;
+      GenerationCallback on_update,
+      std::function<void()> on_settled = {}) const;
 
  private:
   friend class RunnerImpl;
+  friend class PrefixCache;
   explicit Session(std::unique_ptr<SessionState> state);
+
+  std::function<std::future<std::optional<Session>>()> make_clone_request(
+      Position upto) const;
 
   std::unique_ptr<SessionState> state_;
 };
+
+enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
 
 class ET_EXPERIMENTAL Runner {
  public:
@@ -233,6 +272,11 @@ class ET_EXPERIMENTAL Runner {
 
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
+
+  // Any thread. Pending until executor initialization returns; Failed if it
+  // returns false or throws. The result is retained after shutdown, so Ready
+  // describes successful initialization, not whether work is still accepted.
+  InitializationState initialization_state() const noexcept;
 
   // Any thread; queued to the engine thread and acked.
   //

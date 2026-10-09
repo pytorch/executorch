@@ -13,6 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   apple:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -34,7 +38,11 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
   zephyr:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -42,8 +50,8 @@ jobs:
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-zephyr-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       timeout: 90
       script: |
@@ -73,26 +81,30 @@ jobs:
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         preset: [linux, pybind, llm]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        #   - Excluding the ARM64 gcc image on the x86 runner
+        #   - Excluding the x86 clang image on the ARM64 runner
         exclude:
-          - runner: linux.2xlarge
+          - runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
+          - runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-clang12
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       timeout: 90
       script: |

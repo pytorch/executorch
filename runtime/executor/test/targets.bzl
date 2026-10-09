@@ -102,6 +102,15 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "method_meta_factory_test",
+        srcs = ["method_meta_factory_test.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -177,7 +186,9 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
             ],
             env = dict(
                 modules_env,
@@ -207,7 +218,9 @@ def define_common_targets(is_fbcode = False):
                 "program_validation_test.cpp",
             ],
             deps = [
+                ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
@@ -268,6 +281,7 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments-da1024.pte])",
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments.pte])",
                 "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
+                "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-scratch.pte])",
             },
         )
 

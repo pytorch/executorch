@@ -90,6 +90,26 @@ class FuseViewCopyTransform(ExportPass):
 
         return view_nodes
 
+    @staticmethod
+    def _shape_is_available_at(
+        shape: object,
+        node: torch.fx.Node,
+        order: dict[torch.fx.Node, int],
+    ) -> bool:
+        """Whether every element of ``shape`` is already defined before ``node``.
+
+        A view's shape is not always a list of ints: under dynamic shapes a
+        dimension is a node computing a symbolic size. Giving ``node`` the shape
+        of a later view moves that shape's arguments backwards in the graph, so
+        it is only valid when they are available at ``node`` to begin with.
+        """
+        if not isinstance(shape, (list, tuple)):
+            return True
+        node_pos = order[node]
+        return all(
+            order[dim] < node_pos for dim in shape if isinstance(dim, torch.fx.Node)
+        )
+
     def _merge_view_copy_chains(
         self, graph: torch.fx.Graph
     ) -> tuple[torch.fx.Graph, bool]:
@@ -110,8 +130,19 @@ class FuseViewCopyTransform(ExportPass):
         """
         modified = False
         ops: list[EdgeOpOverload] = self.UNARY_ELEMENTWISE_OPS + [self.VIEW_OP]
+        # Nothing below inserts or moves nodes, so a single ordering snapshot
+        # stays valid for the whole sweep.
+        order = {n: i for i, n in enumerate(graph.nodes)}
         for node in graph.find_nodes(op="call_function", target=self.VIEW_OP):
             view_nodes_to_remove = self._find_view_copy_chain(node, ops)
+
+            # Fuse the longest prefix of the chain whose shape `node` can
+            # actually take on; a later view whose shape is computed after
+            # `node` has to stay where it is.
+            while view_nodes_to_remove and not self._shape_is_available_at(
+                view_nodes_to_remove[-1].args[1], node, order
+            ):
+                view_nodes_to_remove.pop()
 
             if len(view_nodes_to_remove) > 0:
                 modified = True

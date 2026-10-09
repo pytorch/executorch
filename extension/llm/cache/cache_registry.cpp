@@ -62,6 +62,7 @@ Error CacheFactory::register_builder(
 Result<std::shared_ptr<Cache>> CacheFactory::build(
     const std::string& backend_id,
     const std::string& kind,
+    const CacheGeometry& geometry,
     const CacheConfig& cfg) const {
   CacheBuilder builder;
   {
@@ -90,17 +91,15 @@ Result<std::shared_ptr<Cache>> CacheFactory::build(
     }
     builder = it->second;
   }
-  // Checked here rather than in each cache: `layers` is indexed directly, so a
-  // list that is neither size 1 nor n_layers reads past the end.
   ET_CHECK_OR_RETURN_ERROR(
-      valid(cfg),
+      valid(geometry, cfg),
       InvalidArgument,
-      "cache: invalid CacheConfig for %s:%s",
+      "cache: invalid geometry or config for %s:%s",
       backend_id.c_str(),
       kind.c_str());
   // A builder that hands back null would otherwise travel as an ok() Result
   // and be dereferenced by the caller.
-  auto cache = builder(cfg);
+  auto cache = builder(geometry, cfg);
   ET_CHECK_OR_RETURN_ERROR(
       cache != nullptr,
       Internal,

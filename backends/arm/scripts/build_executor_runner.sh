@@ -146,10 +146,6 @@ ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
 ethos_u_root_dir="${ethosu_tools_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
 ethos_u_root_dir=$(realpath ${ethos_u_root_dir})
-cmsis_nn_local_path=""
-if [[ -d "${ethos_u_root_dir}/core_software/cmsis-nn" ]]; then
-    cmsis_nn_local_path=$(realpath "${ethos_u_root_dir}/core_software/cmsis-nn")
-fi
 
 if [[ ${system_config} == "" ]]
 then
@@ -246,7 +242,6 @@ cmake \
     ${flatc_flags}                             \
     -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}" \
     -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}  \
-    ${cmsis_nn_local_path:+-DCMSIS_NN_LOCAL_PATH:PATH=${cmsis_nn_local_path}} \
     ${extra_build_flags}
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"

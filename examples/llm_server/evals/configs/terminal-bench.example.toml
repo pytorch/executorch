@@ -1,0 +1,24 @@
+[server]
+python = "/path/to/model-env/bin/python"
+module = "executorch.examples.models.muse_glimmer.serving.serve"
+worker_bin = "/path/to/executorch/cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
+model_path = "/path/to/muse-glimmer-k-quant-17G-128K-text-dflash-metal.pte"
+# Keep tokenizer.json, tokenizer_config.json, and chat_template.jinja together.
+tokenizer_path = "/path/to/tokenizer/tokenizer.json"
+hf_tokenizer = "/path/to/tokenizer"
+model_id = "muse-glimmer-30b"
+max_context = 131072
+max_sessions = 2 # One scratch session and one named session for cross-turn KV reuse.
+tool_parser = "atem"
+artifact_mode = "dflash"
+# host = "0.0.0.0" # Exposes the server on all network interfaces.
+# port = 8000
+
+[terminal_bench]
+tasks = ["fix-git"]
+max_output_tokens = 4096
+temperature = 0.8
+step_limit = 100
+attempts = 1
+session_affinity = "glimmer-terminal-bench"
+# agent_host = "host.lima.internal" # Override automatic Docker host detection.

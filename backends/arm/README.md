@@ -64,7 +64,9 @@ backends/arm/
 │   └── quantization_annotator.py  # Defines how operators are annotated for quantization
 │
 ├── runtime/                       # Backends for running inference on target devices
-│   ├── EthosUBackend.cpp
+│   ├── EthosUBackend.cpp          # Common Ethos-U backend implementation
+│   ├── EthosUBackend_CoreDriver.cpp
+│   ├── EthosUBackend_LinuxDriver.cpp
 │   └── VGFBackend.cpp
 │
 ├── scripts/                       # Auxiliary build, dependency installation and utility scripts
@@ -78,6 +80,21 @@ backends/arm/
 │
 └── vgf/                           # Implementations of VgfPartitioner and VgfBackend
 ```
+
+### Ethos-U runtime drivers
+
+The common `EthosUBackend.cpp` runtime is paired with one driver-specific
+implementation:
+
+- `EthosUBackend_CoreDriver.cpp` calls the Ethos-U core driver directly for
+  bare-metal (no-OS) and RTOS targets. CMake selects it when
+  `EXECUTORCH_BUILD_ARM_BAREMETAL` is enabled.
+- `EthosUBackend_LinuxDriver.cpp` uses the Ethos-U Linux userspace and kernel
+  driver stack. CMake selects it when `EXECUTORCH_BUILD_ARM_ETHOSU_LINUX` is
+  enabled.
+
+The two implementations provide the same internal platform hooks and are
+mutually exclusive in a build.
 
 ## Building
 
@@ -156,6 +173,62 @@ compile specs, see:
 
 Additional examples are available in `examples/arm`.
 
+#### Fast model operator-support pre-check
+
+For a quick pre-backend operator-list comparison before running the full Arm
+export and backend toolchain, use `backends/arm/scripts/check_model_support.py`.
+The script exports the model to ATen and compares operators visible in the
+`torch.export` graph with the generated support table committed in the
+**current checkout**.
+
+It uses the same external-model convention as `aot_arm_compiler.py`: the model
+file defines `ModelUnderTest` and `ModelInputs`, with optional `ModelKwargs`.
+Choose the backend with `--backend vgf`, `--backend u55`, or `--backend u85`:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model examples/arm/example_modules/add.py
+```
+
+The backend tables used by the checker are:
+
+- VGF: `docs/source/backends/arm-vgf/VGF_op_support.md`
+- Ethos-U55: `docs/source/backends/arm-ethos-u/U55_op_support.md`
+- Ethos-U85: `docs/source/backends/arm-ethos-u/U85_op_support.md`
+
+A small demo deliberately combines table-matched operators with `torch.sort`,
+which is not in these support lists at the time the example is added:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model backends/arm/scripts/examples/fast_model_support_demo.py
+```
+
+The expected result is inconclusive rather than a hard backend rejection:
+
+```text
+Unmatched pre-backend export operators (1):
+  - torch.sort [torch.ops.aten.sort.default]
+
+Result: INCONCLUSIVE
+```
+
+**Important:** A `PASS` only means that no operator-list gap was found in the
+pre-backend export graph. It does **not** guarantee that the model is supported
+end to end: the fast checker does not validate shapes, ranks, dtypes,
+quantization configuration, operator attributes, partitioning constraints,
+backend compiler constraints, memory requirements, or runtime behavior.
+
+`INCONCLUSIVE` means that one or more operators visible in the pre-backend
+`torch.export` graph are absent from the generated support table. This is not a
+definitive unsupported result because normal ExecuTorch/Arm lowering may
+decompose, rewrite, canonicalize, or remove those operators before backend
+support checking. Known export-only infrastructure operators, such as
+`aten._assert_tensor_metadata.default`, are ignored when they are known to be
+removed before backend lowering.
+
 #### Export recipes
 
 An `ExportRecipe` bundles those steps for a target, so a standard export needs
@@ -198,6 +271,24 @@ compilation.
 
 Reach for the step-by-step flow above when a recipe does not fit -- a custom
 quantization scheme, extra passes, or a compile spec the recipe does not expose.
+
+#### TopK support
+
+The `to_edge_transform_and_lower` flow handles supported `torch.topk` calls
+automatically. Supported configurations are:
+
+- FP16 or FP32 input with positive static shape `[T, E]`, where
+  `E <= 2^31 - 1`.
+- Constant `1 <= K <= min(4, E)`, `dim=-1` or `dim=1`, `largest=True`, and
+  `sorted=True`.
+- The TOSA FP profile for K=1, or FP+INT for K>1. The scores remain
+  floating-point in both cases.
+
+**Input scores must be finite.** This condition is not checked at runtime;
+non-finite scores can produce incorrect results without triggering automatic
+fallback. Equal scores are selected in increasing index order, so tied indices
+may differ from PyTorch's results. Dynamic shapes or K, BF16, and quantized TopK
+are unsupported.
 
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
@@ -413,6 +504,19 @@ List of model specific and optional passes:
          - exir_ops.edge.aten.argmax.default
          - torch.ops.aten.argmin.default
          - exir_ops.edge.aten.argmin.default
+    3. Post-process TopK indices:
+       - Applies the same range-safe path conversion to `getitem(topk, 1)`.
+       - Leaves `getitem(topk, 0)` values and unsafe direct consumers unchanged.
+       - Inserts int64 boundary casts where converted paths reach unsafe
+         consumers or model outputs.
+       - Keeps gather indices int64 so an undelegated gather remains valid.
+       - Prepares supported static TopK for delegation with int32 indices,
+         preserving int64 model outputs and consumers that require int64.
+       - For TopK configurations that cannot be delegated, downstream index
+         operations can still use int32 where range analysis proves it safe.
+       - Supported Ops:
+         - torch.ops.aten.topk.default
+         - exir_ops.edge.aten.topk.default
   - Example usage:
     - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
     - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
@@ -478,3 +582,8 @@ EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
 
 If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
 to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.
+
+## Further documentation
+
+See [Generating operator support documentation](scripts/docgen/README.md)
+for generation commands, coverage checks, and CI troubleshooting.
