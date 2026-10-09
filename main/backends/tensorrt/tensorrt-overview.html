@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>NXP eIQ Neutron Kernel Selective Kernel Registration &#8212; ExecuTorch main documentation</title>
+    <title>TensorRT Backend &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -50,19 +50,19 @@
     <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../../_static/copybutton.js?v=f281be69"></script>
     <script src="../../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/nxp/nxp-kernel-selection';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/tensorrt/tensorrt-overview';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/nxp/nxp-kernel-selection.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/tensorrt/tensorrt-overview.html" />
     <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="NXP eIQ Profiling Support" href="nxp-profiling.html" />
-    <link rel="prev" title="NXP eIQ Dim Order Support" href="nxp-dim-order.html" />
+    <link rel="next" title="Vulkan Backend" href="../vulkan/vulkan-overview.html" />
+    <link rel="prev" title="CUDA Backend" href="../cuda/cuda-overview.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -670,7 +670,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../tensorrt/tensorrt-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="#">
                   TensorRT Backend
                 </a>
               </li>
@@ -736,7 +736,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../nxp/nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
@@ -1281,7 +1281,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../tensorrt/tensorrt-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="#">
                   TensorRT Backend
                 </a>
               </li>
@@ -1347,7 +1347,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../nxp/nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
@@ -1783,7 +1783,7 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../cuda/cuda-overview.html">CUDA Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../tensorrt/tensorrt-overview.html">TensorRT Backend</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">TensorRT Backend</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../coreml/coreml-partitioner.html">Partitioner API</a></li>
@@ -1836,17 +1836,17 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">OpenVINO Backend</a></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="nxp-overview.html">NXP eIQ Neutron Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="nxp-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nxp/nxp-overview.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-partitioner.html">Partitioner API</a></li>
 
-<li class="toctree-l2"><a class="reference internal" href="nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="tutorials/nxp-basic-tutorial.html">Getting started with eIQ Neutron NPU ExecuTorch backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../nxp/tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../nxp/tutorials/nxp-basic-tutorial.html">Getting started with eIQ Neutron NPU ExecuTorch backend</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
-<li class="toctree-l2 current active"><a class="current reference internal" href="#">NXP eIQ Neutron Kernel Selective Kernel Registration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="nxp-profiling.html">NXP eIQ Profiling Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-kernel-selection.html">NXP eIQ Neutron Kernel Selective Kernel Registration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-profiling.html">NXP eIQ Profiling Support</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -1896,10 +1896,7 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
     
-    
-    <li class="breadcrumb-item"><a href="nxp-overview.html" class="nav-link">NXP eIQ Neutron Backend</a></li>
-    
-    <li class="breadcrumb-item active" aria-current="page">NXP eIQ...</li>
+    <li class="breadcrumb-item active" aria-current="page">TensorRT Backend</li>
   </ul>
 </nav>
 </div>
@@ -1947,14 +1944,8 @@ document.write(`
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="nxp-overview.html">
-      <meta itemprop="name" content="NXP eIQ Neutron Backend">
+      <meta itemprop="name" content="TensorRT Backend">
       <meta itemprop="position" content="2">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="NXP eIQ Neutron Kernel Selective Kernel Registration">
-      <meta itemprop="position" content="3">
     </div>
   </div>
 
@@ -1967,60 +1958,454 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="nxp-eiq-neutron-kernel-selective-kernel-registration">
-<h1>NXP eIQ Neutron Kernel Selective Kernel Registration<a class="headerlink" href="#nxp-eiq-neutron-kernel-selective-kernel-registration" title="Link to this heading">#</a></h1>
-<p>The NXP ExecuTorch backend supports selective Neutron kernel registration for <code class="docutils literal notranslate"><span class="pre">Neutron-C</span></code> targets, which reduces the
-size of the Neutron Firmware. During the backend’s conversion to the Neutron representation by the Neutron Compiler,
-microcode for the Neutron accelerator is generated.
-The microcode consists of kernel calls executed by the Neutron Driver. The code for kernel call functions is
-distributed in the Neutron Firmware.</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">eiq_neutron_sdk.neutron_compiler</span></code> optionally generates a <code class="docutils literal notranslate"><span class="pre">*_kernel_selection.c</span></code> file, registering
-only kernels that are required for a particular model or, in the case of ExecuTorch, a delegated subgraph. This
-<code class="docutils literal notranslate"><span class="pre">*_kernel_selection.c</span></code>, when used during application linking, takes precedence over the default list of registered
-kernels in the Neutron Firmware, and allows the linker to include only the necessary Neutron kernels.
-The Neutron Firmware is required for deployment on an edge device (e.g. <code class="docutils literal notranslate"><span class="pre">i.MX</span> <span class="pre">RT700</span></code>) and is
-distributed via the MCUXpresso SDK. The MCUXpresso SDK enables the building of a final application that is then flashed on
-the edge device. For more details about this process, see
-<a class="reference external" href="https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/ugindex.html">eIQ ExecuTorch Library User Guide</a>.</p>
-<p>By default, for Neutron-C targets like <code class="docutils literal notranslate"><span class="pre">i.MX</span> <span class="pre">RT700</span></code>, all kernel implementations are present in the Neutron Firmware, which
-is linked to the final application. This enables an easy build process for any model, but increases the size of the
-final application with unused code. In memory-constrained environments, you can link only the kernels required by the
-deployed models. This way you can reduce the size of the final application by linking only selected kernels, used in one
-or more models.</p>
-<p>The feature works as follows: The Neutron Compiler with the appropriate flag exports a kernel selection file for each
-converted subgraph, the kernel selection files are then merged and ready to be included in the MCUXpresso SDK to use for
-a selection-only build.</p>
-<blockquote>
-<div><p><strong>Note:</strong> This feature applies only to <code class="docutils literal notranslate"><span class="pre">Neutron-C</span></code> targets. <code class="docutils literal notranslate"><span class="pre">Neutron-S</span></code> has a different implementation and links only
-kernel calls included in the model’s microcode by default.</p>
-</div></blockquote>
-<section id="export-kernel-selection-file">
-<h2>Export kernel selection file<a class="headerlink" href="#export-kernel-selection-file" title="Link to this heading">#</a></h2>
-<p>To enable this feature in the NXP ExecuTorch backend, use the parameter <code class="docutils literal notranslate"><span class="pre">--dump_kernel_selection_code</span></code> in
-<code class="docutils literal notranslate"><span class="pre">aot_neutron_compile.py</span></code>. An example with the CifarNet model:</p>
-<div class="highlight-commandline notranslate"><div class="highlight"><pre><span></span>python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate -m cifar10 \
-    --dump_kernel_selection_code
+  <section id="tensorrt-backend">
+<h1>TensorRT Backend<a class="headerlink" href="#tensorrt-backend" title="Link to this heading">#</a></h1>
+<p>The TensorRT backend runs ExecuTorch models on NVIDIA GPUs with
+<a class="reference external" href="https://developer.nvidia.com/tensorrt">TensorRT</a>, NVIDIA’s inference library. At export
+time the model graph is compiled into TensorRT engines. The engines are stored inside the
+<code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, and at run time the delegate hands each one back to TensorRT.</p>
+<p>The delegate is built and shipped by the <a class="reference external" href="https://github.com/pytorch/TensorRT">Torch-TensorRT</a>
+project, so it comes from its wheel and not from the ExecuTorch wheel. Everything after
+installation is the normal ExecuTorch API: the same <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, the same <code class="docutils literal notranslate"><span class="pre">Module</span></code> class, the
+same runtime.</p>
+<section id="features">
+<h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>TensorRT engines inside a <code class="docutils literal notranslate"><span class="pre">.pte</span></code>.</strong> One file holds the program and its engines, so the
+runtime loads a model the usual way.</p></li>
+<li><p><strong>Works with the CUDA backend in one program.</strong> Operators TensorRT cannot convert can be
+compiled by the ExecuTorch <a class="reference internal" href="../cuda/cuda-overview.html"><span class="std std-doc">CUDA backend</span></a> instead of falling back
+to the CPU. Both delegates live in the same <code class="docutils literal notranslate"><span class="pre">.pte</span></code> and run in the same method.</p></li>
+<li><p><strong>GPU resident inputs and outputs.</strong> The copies around the method boundary can be turned
+off, so a pipeline that already holds its data on the GPU does not pay for them.</p></li>
+<li><p><strong>CUDA graph replay.</strong> An engine can be recorded once and replayed with a single launch,
+which helps models that launch many short kernels. This needs a Torch-TensorRT build newer
+than the 2026-10-06 nightly, see <a class="reference internal" href="#feature-availability">Feature availability</a>.</p></li>
+<li><p><strong>Shared activation scratch.</strong> Many engines in one program can share one scratch buffer
+instead of each keeping its own.</p></li>
+<li><p><strong>Shared engines.</strong> Loading the same program twice keeps one copy of the engine weights in
+GPU memory. This also needs a build newer than the 2026-10-06 nightly.</p></li>
+<li><p><strong>Caller-owned CUDA stream.</strong> The application can give every delegate the same stream,
+including a CUDA green context stream, so the model stays inside one part of the GPU.</p></li>
+</ul>
+</section>
+<section id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>Hardware</strong>: NVIDIA GPU.</p></li>
+<li><p><strong>Operating system</strong>: Linux, on x86_64 and on aarch64.</p></li>
+<li><p><strong>CUDA</strong>: 13.x. The delegate links CUDA 13, so a CUDA 12 build is not supported.</p></li>
+<li><p><strong>Drivers</strong>: an NVIDIA driver that matches the CUDA version.</p></li>
+</ul>
+<p>TensorRT itself and the CUDA runtime arrive as dependencies of the wheels, so a system
+install of either is not required.</p>
+</section>
+<section id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Link to this heading">#</a></h2>
+<p>One command installs everything needed to export a model. The <code class="docutils literal notranslate"><span class="pre">executorch</span></code> extra pulls in a
+CUDA build of ExecuTorch, the delegate wheel, Torch-TensorRT, and PyTorch:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>--pre<span class="w"> </span><span class="s2">"torch-tensorrt[executorch]"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/nightly/cu132<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--extra-index-url<span class="w"> </span>https://pypi.org/simple<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--extra-index-url<span class="w"> </span>https://pypi.nvidia.com
 </pre></div>
 </div>
-<p>This command will create a <code class="docutils literal notranslate"><span class="pre">*_kernel_selection.c</span></code> file alongside the converted PTE file in the working directory.</p>
+<p>Swap <code class="docutils literal notranslate"><span class="pre">cu132</span></code> for the channel that matches your CUDA, for example <code class="docutils literal notranslate"><span class="pre">cu134</span></code> for CUDA 13.4. Keep
+PyTorch, ExecuTorch, and Torch-TensorRT on the same channel.</p>
+<p>All three indexes matter. Without <code class="docutils literal notranslate"><span class="pre">--pre</span></code> pip takes the latest stable Torch-TensorRT from the
+public index, which pairs with an older ExecuTorch release than this page describes. Without
+NVIDIA’s index the TensorRT package resolves to a source build that takes about twenty
+minutes and then fails.</p>
+<p>A CUDA build of ExecuTorch is required, not only to build against. The delegate needs a
+library that only the CUDA wheels carry, so a CPU-only build installs and then fails on
+import.</p>
+<p>If you also want the CUDA backend to pick up the operators TensorRT rejects, install a CUDA
+toolkit as well. That backend compiles those operators at export time with <code class="docutils literal notranslate"><span class="pre">nvcc</span></code>.</p>
+<section id="feature-availability">
+<h3>Feature availability<a class="headerlink" href="#feature-availability" title="Link to this heading">#</a></h3>
+<p>Two features on this page are newer than the 2026-10-06 Linux nightly of Torch-TensorRT and
+its delegate package, which was the newest one when this page was written:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#cuda-graph-replay">CUDA graph replay</a>. With the 2026-10-06 build, <code class="docutils literal notranslate"><span class="pre">torch_tensorrt.save</span></code>
+rejects <code class="docutils literal notranslate"><span class="pre">use_cuda_graphs</span></code> with a <code class="docutils literal notranslate"><span class="pre">TypeError</span></code>.</p></li>
+<li><p><a class="reference internal" href="#shared-engines">Shared engines</a>. The 2026-10-06 delegate keeps every engine private, so
+loading a program twice still holds two copies of its weights.</p></li>
+</ul>
+<p>Both are on the Torch-TensorRT main branch and in its 2.15 release branch. To use them,
+install a wheel newer than 2026-10-06 once one is published, or build Torch-TensorRT from
+source. Everything else on this page works with the 2026-10-06 build.</p>
 </section>
-<section id="kernel-registration-for-multiple-models">
-<h2>Kernel Registration for Multiple Models<a class="headerlink" href="#kernel-registration-for-multiple-models" title="Link to this heading">#</a></h2>
-<p>If you want to use or experiment with multiple models in one application while having a reduced kernel set, you can
-create one kernel selection file with the script <code class="docutils literal notranslate"><span class="pre">merge_kernel_selection_code.py</span></code>:</p>
-<div class="highlight-commandline notranslate"><div class="highlight"><pre><span></span>python -m eiq_neutron_sdk.neutron_library_utils.merge_kernel_selection_code \
-    -input-files model1_kernel_selection.c model2_kernel_selection.c [modelX_kernel_selection.c ...] \ 
-    -output-file merged_kernel_selection.c
+</section>
+<section id="using-the-tensorrt-backend">
+<h2>Using the TensorRT Backend<a class="headerlink" href="#using-the-tensorrt-backend" title="Link to this heading">#</a></h2>
+<section id="exporting-a-model">
+<h3>Exporting a model<a class="headerlink" href="#exporting-a-model" title="Link to this heading">#</a></h3>
+<p>Compile the model with Torch-TensorRT, then save it in ExecuTorch format:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch_tensorrt</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="mi">1</span>
+
+
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">MyModel</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+    <span class="n">example_input</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">cuda</span><span class="p">(),)</span>
+
+    <span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_input</span><span class="p">)</span>
+    <span class="n">trt_gm</span> <span class="o">=</span> <span class="n">torch_tensorrt</span><span class="o">.</span><span class="n">dynamo</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+        <span class="n">exported_program</span><span class="p">,</span>
+        <span class="n">arg_inputs</span><span class="o">=</span><span class="n">example_input</span><span class="p">,</span>
+        <span class="n">min_block_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">torch_tensorrt</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+        <span class="n">trt_gm</span><span class="p">,</span>
+        <span class="s2">"model.pte"</span><span class="p">,</span>
+        <span class="n">output_format</span><span class="o">=</span><span class="s2">"executorch"</span><span class="p">,</span>
+        <span class="n">arg_inputs</span><span class="o">=</span><span class="n">example_input</span><span class="p">,</span>
+        <span class="n">retrace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
 </pre></div>
 </div>
-<p>Each particular model must be compiled by the same Neutron Compiler version, so the <code class="docutils literal notranslate"><span class="pre">*_kernel_selection.c</span></code> files
-share the same version.</p>
+<p><code class="docutils literal notranslate"><span class="pre">retrace=False</span></code> is required. Re-exporting the compiled graph drops the engine, and the error
+only shows up much later when the program is loaded.</p>
 </section>
-<section id="mcuxpresso-sdk-build-with-kernel-selection">
-<h2>MCUXpresso SDK build with kernel selection<a class="headerlink" href="#mcuxpresso-sdk-build-with-kernel-selection" title="Link to this heading">#</a></h2>
-<p>Copy your model PTE file and kernel selection file into the MCUXpresso SDK and follow its
-<a class="reference external" href="https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/ugindex.html">documentation</a>.</p>
+<section id="letting-the-cuda-backend-take-what-tensorrt-rejects">
+<h3>Letting the CUDA backend take what TensorRT rejects<a class="headerlink" href="#letting-the-cuda-backend-take-what-tensorrt-rejects" title="Link to this heading">#</a></h3>
+<p>TensorRT has no converter for every ATen operator. By default the leftover operators run on
+the CPU, which costs a copy in each direction. Pass a <code class="docutils literal notranslate"><span class="pre">CudaPartitioner</span></code> and they are compiled
+by the ExecuTorch CUDA backend instead, so the whole model stays on the GPU:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.cuda.cuda_backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">CudaBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.cuda.cuda_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">CudaPartitioner</span>
+
+<span class="n">torch_tensorrt</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+    <span class="n">trt_gm</span><span class="p">,</span>
+    <span class="s2">"coalesced.pte"</span><span class="p">,</span>
+    <span class="n">output_format</span><span class="o">=</span><span class="s2">"executorch"</span><span class="p">,</span>
+    <span class="n">arg_inputs</span><span class="o">=</span><span class="n">example_input</span><span class="p">,</span>
+    <span class="n">retrace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">partitioners</span><span class="o">=</span><span class="p">[</span>
+        <span class="n">CudaPartitioner</span><span class="p">([</span><span class="n">CudaBackend</span><span class="o">.</span><span class="n">generate_method_name_compile_spec</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)])</span>
+    <span class="p">],</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The TensorRT partitioner always runs first, and the <code class="docutils literal notranslate"><span class="pre">CudaPartitioner</span></code> picks up the rest. For
+a model such as <code class="docutils literal notranslate"><span class="pre">cos(erfinv(tanh(x)))</span></code>, where TensorRT cannot take <code class="docutils literal notranslate"><span class="pre">erfinv</span></code>, the result is one
+<code class="docutils literal notranslate"><span class="pre">.pte</span></code> whose delegate list reads <code class="docutils literal notranslate"><span class="pre">['TensorRTBackend',</span> <span class="pre">'CudaBackend',</span> <span class="pre">'TensorRTBackend']</span></code>.</p>
+<p>The CUDA backend writes its external weights to a <code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file beside the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> under a fixed
+name. Save each coalesced model into its own directory. A second export into the same
+directory overwrites the first model’s weights, and the first model then still loads and
+returns a wrong answer with no error.</p>
+</section>
+<section id="keeping-inputs-and-outputs-on-the-gpu">
+<h3>Keeping inputs and outputs on the GPU<a class="headerlink" href="#keeping-inputs-and-outputs-on-the-gpu" title="Link to this heading">#</a></h3>
+<p>By default ExecuTorch inserts a host to device copy before the first delegate and a device to
+host copy after the last one, so a method is safe to call with CPU tensors. If your data is
+already on the GPU, turn those copies off:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryPlanningPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.propagate_device_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">PropagateDeviceConfig</span>
+
+<span class="n">torch_tensorrt</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+    <span class="n">trt_gm</span><span class="p">,</span>
+    <span class="s2">"device_resident.pte"</span><span class="p">,</span>
+    <span class="n">output_format</span><span class="o">=</span><span class="s2">"executorch"</span><span class="p">,</span>
+    <span class="n">arg_inputs</span><span class="o">=</span><span class="n">example_input</span><span class="p">,</span>
+    <span class="n">retrace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">backend_config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
+        <span class="n">propagate_device_config</span><span class="o">=</span><span class="n">PropagateDeviceConfig</span><span class="p">(</span>
+            <span class="n">skip_h2d_for_method_inputs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">skip_d2h_for_method_outputs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">enable_non_cpu_memory_planning</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">MemoryPlanningPass</span><span class="p">(</span><span class="n">alloc_graph_input</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Three points are easy to miss:</p>
+<ul class="simple">
+<li><p><strong>Both skip flags need <code class="docutils literal notranslate"><span class="pre">enable_non_cpu_memory_planning=True</span></code>.</strong> Copy insertion happens
+during device aware memory planning. Setting it to <code class="docutils literal notranslate"><span class="pre">False</span></code> raises a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code>.</p></li>
+<li><p><strong>Inputs must be unplanned</strong>, with <code class="docutils literal notranslate"><span class="pre">MemoryPlanningPass(alloc_graph_input=False)</span></code>. Without
+it the program reserves its own input buffer and the runtime copies the caller’s memory
+into it, which puts the copy straight back.</p></li>
+<li><p><strong>Leave the outputs planned when Python runs the program.</strong> The program’s own device arena
+then holds the output, and Python returns a copy of it as a CUDA tensor. With
+<code class="docutils literal notranslate"><span class="pre">alloc_graph_output=False</span></code> the caller provides the output memory instead. A C++ caller does
+that with <code class="docutils literal notranslate"><span class="pre">Module::set_output</span></code>. The Python bindings do it correctly starting with ExecuTorch
+1.6.0.dev20261008, but the 2026-10-06 delegate wheel pins ExecuTorch 1.6.0.dev20260925, so
+with that wheel keep the outputs planned.</p></li>
+</ul>
+<p>The choice is baked into the <code class="docutils literal notranslate"><span class="pre">.pte</span></code>. A program exported this way wants CUDA tensors, so pass
+CUDA tensors. A host tensor works only when TensorRT is the first to read that input. On most
+GPUs it then stages a copy on every call, which is the cost the export existed to remove. When
+the CUDA backend reads it first, as it can in a coalesced program, it refuses the host memory
+and the call fails.</p>
+</section>
+</section>
+<section id="runtime-integration">
+<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
+<section id="python">
+<h3>Python<a class="headerlink" href="#python" title="Link to this heading">#</a></h3>
+<p>Import the delegate package once, anywhere before a program is loaded. The import is what
+registers the backend. Nothing else about your code changes:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch_tensorrt_executorch_runtime</span>  <span class="c1"># noqa: F401</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="n">program</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">))</span>
+<span class="n">forward</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">((</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),))</span>
+</pre></div>
+</div>
+<p>If the delegate cannot be loaded, that import raises straight away instead of leaving the
+failure to show up later as a program that will not load.</p>
+<p>A coalesced program needs no extra registration. Both backends are registered, and the
+program records which parts go where. Its weights are a different matter. If the part the
+CUDA backend compiled has weights, they are in the <code class="docutils literal notranslate"><span class="pre">aoti_cuda_blob.ptd</span></code> file saved beside the
+<code class="docutils literal notranslate"><span class="pre">.pte</span></code>, and the runtime does not look for that file on its own. Pass it when you load:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">program</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">"coalesced.pte"</span><span class="p">),</span> <span class="n">data_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"aoti_cuda_blob.ptd"</span><span class="p">)</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Without it, loading a program whose CUDA part has weights fails.</p>
+</section>
+<section id="c-against-the-installed-wheels">
+<h3>C++ against the installed wheels<a class="headerlink" href="#c-against-the-installed-wheels" title="Link to this heading">#</a></h3>
+<p>The wheels ship a prebuilt delegate and a CMake package, so a C++ application can link them
+without building anything from source:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">backend_cuda</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="p">)</span>
+<span class="nb">find_package</span><span class="p">(</span><span class="s">executorch_backend_tensorrt</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">my_app</span><span class="w"> </span><span class="s">PRIVATE</span>
+<span class="w">  </span><span class="s">executorch::runtime</span>
+<span class="w">  </span><span class="s">executorch::backend_cuda</span>
+<span class="w">  </span><span class="s">executorch::backend_tensorrt</span>
+<span class="w">  </span><span class="s">executorch::kernels_optimized</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> supplies the <code class="docutils literal notranslate"><span class="pre">et_copy</span></code> operators that move data across the method
+boundary. <code class="docutils literal notranslate"><span class="pre">backend_cuda</span></code> is needed by any coalesced program, and also by a TensorRT only
+program that still has those boundary copies, because it registers the device allocator they
+use.</p>
+<p>The two packages live in two distributions, so point CMake at both. ExecuTorch is a namespace
+package, so its path has to come from its distribution metadata:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">"</span><span class="k">$(</span><span class="nv">TORCH_TENSORRT_SKIP_DELEGATE_REGISTRATION</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import importlib.metadata as m, torch_tensorrt_executorch_runtime as r, pathlib; print(str(pathlib.Path(str(m.distribution("executorch").locate_file("executorch"))) / "share" / "cmake") + ";" + str(pathlib.Path(r.__file__).parent))'</span><span class="k">)</span><span class="s2">"</span><span class="w"> </span>...
+</pre></div>
+</div>
+<p>CMake 3.28 or newer is needed for the form above, because the <code class="docutils literal notranslate"><span class="pre">backend_cuda</span></code> component
+rejects older versions. CMake is not part of the wheels, so install it yourself.</p>
+<p>There is no header to include. The delegate registers itself with the backend registry from a
+static initializer inside the shared library, and everything after that is the ordinary
+ExecuTorch C++ API:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;cstdio&gt;</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"model.pte"</span><span class="p">);</span>
+
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">data</span><span class="p">(</span><span class="mi">2</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">);</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">},</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">data</span><span class="p">));</span>
+
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">outputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">input</span><span class="p">);</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">outputs</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">"forward failed</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="n">printf</span><span class="p">(</span><span class="s">"first output value: %f</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+<span class="w">         </span><span class="n">outputs</span><span class="o">-&gt;</span><span class="n">at</span><span class="p">(</span><span class="mi">0</span><span class="p">).</span><span class="n">toTensor</span><span class="p">().</span><span class="n">const_data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()[</span><span class="mi">0</span><span class="p">]);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>For a coalesced program whose CUDA part has weights, pass the data file to the constructor
+as well, for the same reason as in Python:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"coalesced.pte"</span><span class="p">,</span><span class="w"> </span><span class="s">"aoti_cuda_blob.ptd"</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Linking the target also records the wheel’s own library directory in your binary, which is
+right for an application built against an installed wheel and wrong for anything you plan to
+redistribute. Turn it off with <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BACKEND_TENSORRT_EMBED_RUNPATH</span></code> and
+<code class="docutils literal notranslate"><span class="pre">CMAKE_SKIP_BUILD_RPATH</span></code>, both set before <code class="docutils literal notranslate"><span class="pre">find_package</span></code>.</p>
+</section>
+<section id="building-from-source">
+<h3>Building from source<a class="headerlink" href="#building-from-source" title="Link to this heading">#</a></h3>
+<p>The delegate source ships inside <code class="docutils literal notranslate"><span class="pre">libtorchtrt.tar.gz</span></code> as
+<code class="docutils literal notranslate"><span class="pre">torch_tensorrt/src/torch_tensorrt/executorch/</span></code>. Turn on ExecuTorch’s CUDA backend and the
+extensions a <code class="docutils literal notranslate"><span class="pre">Module</span></code> app uses, add the delegate next to ExecuTorch, and link the target it
+provides:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_CUDA</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_EXTENSION_TENSOR</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+<span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_EXTENSION_MODULE</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+
+<span class="nb">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
+<span class="nb">add_subdirectory</span><span class="p">(</span><span class="s2">"torch_tensorrt/src/torch_tensorrt/executorch"</span><span class="p">)</span>
+
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">my_runner</span><span class="w"> </span><span class="s">PRIVATE</span>
+<span class="w">  </span><span class="s">executorch</span>
+<span class="w">  </span><span class="s">executorch::backends</span>
+<span class="w">  </span><span class="s">executorch::extensions</span>
+<span class="w">  </span><span class="s">executorch::kernels</span>
+<span class="w">  </span><span class="s">executorch::backend_tensorrt</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Turn on the CUDA backend even for a program that only uses TensorRT. It builds the shared
+<code class="docutils literal notranslate"><span class="pre">extension_cuda</span></code> library the delegate links, and it registers the device allocator the
+boundary copies use. Without it the delegate stops at configure time. It also needs PyTorch
+installed in the Python environment that CMake finds. The other options are the extensions
+the CUDA backend and the <code class="docutils literal notranslate"><span class="pre">Module</span></code> class depend on, and CMake stops with an error if one of
+them is missing.</p>
+<p>Building the delegate needs CUDA Toolkit 12.5 or newer. <code class="docutils literal notranslate"><span class="pre">libextension_cuda</span></code> stays a shared
+library on purpose, so that every CUDA-capable delegate in the process reads the same caller
+stream.</p>
+</section>
+</section>
+<section id="performance-options">
+<h2>Performance Options<a class="headerlink" href="#performance-options" title="Link to this heading">#</a></h2>
+<section id="choosing-the-cuda-stream">
+<h3>Choosing the CUDA stream<a class="headerlink" href="#choosing-the-cuda-stream" title="Link to this heading">#</a></h3>
+<p>With no stream chosen, both delegates run on <code class="docutils literal notranslate"><span class="pre">cudaStreamPerThread</span></code>, the default stream of the
+calling thread. A coalesced program run from one thread is therefore ordered correctly as it
+is, with nothing to add.</p>
+<p>To run every delegate on a stream of your own, for example a green context stream, scope a
+guard over the whole execution:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/cuda/caller_stream.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="n">cuda</span><span class="o">::</span><span class="n">CallerStreamGuard</span><span class="w"> </span><span class="nf">guard</span><span class="p">(</span><span class="n">stream</span><span class="p">);</span>
+<span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">input</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The guard lives in the <code class="docutils literal notranslate"><span class="pre">extension_cuda</span></code> library, so add it to the link recipe above:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">backend_cuda</span><span class="w"> </span><span class="s">extension_cuda</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="p">)</span>
+
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">my_app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">executorch::extension_cuda</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>One guard reaches every CUDA-capable delegate, because they all resolve the same shared
+<code class="docutils literal notranslate"><span class="pre">libextension_cuda</span></code>. The stream must be on the same device as the engine. The CUDA backend
+refuses a caller stream for a method that uses its own CUDA graphs.</p>
+</section>
+<section id="green-contexts">
+<h3>Green contexts<a class="headerlink" href="#green-contexts" title="Link to this heading">#</a></h3>
+<p>Because both delegates honor the caller’s stream, that stream can be a CUDA green context
+stream. A green context holds a fixed number of streaming multiprocessors, so the whole model
+is confined to that part of the GPU and the rest stays free for other work. Create the stream
+with <code class="docutils literal notranslate"><span class="pre">cuGreenCtxStreamCreate</span></code> and scope the same guard over it.</p>
+<p>This has been exercised on a 108 SM card with a green context holding 8 of them, running a
+program split across the TensorRT delegate and the CUDA backend.</p>
+</section>
+<section id="cuda-graph-replay">
+<h3>CUDA graph replay<a class="headerlink" href="#cuda-graph-replay" title="Link to this heading">#</a></h3>
+<p>This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see
+<a class="reference internal" href="#feature-availability">Feature availability</a>.</p>
+<p>Replay is off by default. When it is on, the delegate records an engine’s kernel launches
+once as a CUDA graph and then replays the whole engine with one launch. It helps engines with
+fixed shapes that launch many short kernels, where the CPU launch work is a large part of
+each call.</p>
+<p>Turn it on at export time:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">torch_tensorrt</span><span class="o">.</span><span class="n">save</span><span class="p">(</span>
+    <span class="n">trt_gm</span><span class="p">,</span>
+    <span class="s2">"model.pte"</span><span class="p">,</span>
+    <span class="n">output_format</span><span class="o">=</span><span class="s2">"executorch"</span><span class="p">,</span>
+    <span class="n">arg_inputs</span><span class="o">=</span><span class="n">example_input</span><span class="p">,</span>
+    <span class="n">retrace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">use_cuda_graphs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>It is not free. Each engine keeps one stable device buffer per input and output, and every
+call copies each input in and each output out. For an engine with few kernels, or with large
+inputs and outputs, those copies can cost more than the launches they save. Shapes that
+change on every call never replay and still pay the copies.</p>
+<p>Some engines never replay, even with replay on. An engine on the shared activation scratch
+below always takes the ordinary path, so turning on both options gives no replay. Engines
+with aliased outputs, GPUs without stream-ordered memory, and drivers older than CUDA 12.5
+also keep the ordinary path, as does a call on a green context stream. The delegate logs the
+reason once.</p>
+<p>Recording is also not safe next to every kind of work. While a recording is running, creating
+or destroying a TensorRT engine elsewhere in the process is unsafe, and so is a whole device
+sync such as <code class="docutils literal notranslate"><span class="pre">cudaDeviceSynchronize</span></code> or <code class="docutils literal notranslate"><span class="pre">torch.cuda.synchronize()</span></code>. Leave replay off when
+other threads may do any of that. A C++ host can refuse a program’s saved request for one
+load:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">runtime</span><span class="p">;</span>
+
+<span class="n">BackendOptions</span><span class="o">&lt;</span><span class="mi">1</span><span class="o">&gt;</span><span class="w"> </span><span class="n">options</span><span class="p">;</span>
+<span class="n">options</span><span class="p">.</span><span class="n">set_option</span><span class="p">(</span><span class="s">"use_cuda_graphs"</span><span class="p">,</span><span class="w"> </span><span class="nb">false</span><span class="p">);</span>
+<span class="n">LoadBackendOptionsMap</span><span class="w"> </span><span class="n">by_backend</span><span class="p">;</span>
+<span class="n">by_backend</span><span class="p">.</span><span class="n">set_options</span><span class="p">(</span><span class="s">"TensorRTBackend"</span><span class="p">,</span><span class="w"> </span><span class="n">options</span><span class="p">.</span><span class="n">view</span><span class="p">());</span>
+<span class="k">module</span><span class="p">.</span><span class="n">load</span><span class="p">(</span><span class="n">by_backend</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="shared-activation-scratch">
+<h3>Shared activation scratch<a class="headerlink" href="#shared-activation-scratch" title="Link to this heading">#</a></h3>
+<p>A TensorRT execution context allocates its own activation scratch and holds it for as long as
+the context lives. A model lowered to many small engines pays that cost many times over, and
+can run out of GPU memory on the engine count alone. This option backs all of a device’s
+contexts from one buffer instead, grown to the largest size any call has asked for:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/backend/interface.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">runtime</span><span class="p">;</span>
+
+<span class="n">BackendOptions</span><span class="o">&lt;</span><span class="mi">1</span><span class="o">&gt;</span><span class="w"> </span><span class="n">options</span><span class="p">;</span>
+<span class="n">options</span><span class="p">.</span><span class="n">set_option</span><span class="p">(</span><span class="s">"use_shared_activation_scratch"</span><span class="p">,</span><span class="w"> </span><span class="nb">true</span><span class="p">);</span>
+<span class="n">set_option</span><span class="p">(</span><span class="s">"TensorRTBackend"</span><span class="p">,</span><span class="w"> </span><span class="n">options</span><span class="p">.</span><span class="n">view</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>Set it before loading the methods whose contexts should use the pool. The memory saved is the
+sum of the separate scratch sizes less the largest of them.</p>
+<p>The cost is parallelism. Contexts that share one buffer do not run at the same time on the
+device. The backend holds a per device lock from the claim on the buffer through the enqueue,
+so two calls on one device are serialized at submission. The pool also never shrinks, and a
+device that has run a pooled engine must not be reset with <code class="docutils literal notranslate"><span class="pre">cudaDeviceReset()</span></code>.</p>
+</section>
+<section id="shared-engines">
+<h3>Shared engines<a class="headerlink" href="#shared-engines" title="Link to this heading">#</a></h3>
+<p>This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see
+<a class="reference internal" href="#feature-availability">Feature availability</a>.</p>
+<p>When the same program is loaded twice, for example once per robot arm, handles loaded from
+the same engine bytes, for the same device and the same weight streaming request, share one
+engine. The engine weights are in GPU memory once. Each handle still gets its own execution
+context and buffers.</p>
+<p>This is on by default. Measured on an 8 GB Jetson Orin Nano, loading one robot policy a second
+time grew GPU memory by 806 MiB without sharing and by 122 MiB with it. Those numbers are the
+cost of the second load, not the total. Finding a match means hashing the engine bytes on
+every load, which costs roughly 0.15 s per GB on a Jetson AGX Thor. Pass the
+<code class="docutils literal notranslate"><span class="pre">use_shared_engines</span></code> load option as <code class="docutils literal notranslate"><span class="pre">false</span></code> to keep one module’s engines private.</p>
+</section>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_static_shape.py">Export a static shape model</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_coalesced.py">Export a coalesced TensorRT and CUDA model</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_device_resident.py">Export a model that keeps its data on the GPU</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/TensorRT/tree/main/examples/executorch_reference_runner">C++ reference runner, including the green context option</a></p></li>
+</ul>
+<p>The Torch-TensorRT documentation covers the export options in more detail, including dynamic
+shapes, programs with more than one method, and a zero copy KV cache for decoder models.</p>
 </section>
 </section>
 
@@ -2067,20 +2452,20 @@ share the same version.</p>
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="nxp-dim-order.html"
+       href="../cuda/cuda-overview.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">NXP eIQ Dim Order Support</p>
+        <p class="prev-next-title">CUDA Backend</p>
       </div>
     </a>
     <a class="right-next"
-       href="nxp-profiling.html"
+       href="../vulkan/vulkan-overview.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">NXP eIQ Profiling Support</p>
+        <p class="prev-next-title">Vulkan Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2106,20 +2491,20 @@ share the same version.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="nxp-dim-order.html"
+       href="../cuda/cuda-overview.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">NXP eIQ Dim Order Support</p>
+        <p class="prev-next-title">CUDA Backend</p>
       </div>
     </a>
     <a class="right-next"
-       href="nxp-profiling.html"
+       href="../vulkan/vulkan-overview.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">NXP eIQ Profiling Support</p>
+        <p class="prev-next-title">Vulkan Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2141,9 +2526,33 @@ share the same version.</p>
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#export-kernel-selection-file">Export kernel selection file</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel-registration-for-multiple-models">Kernel Registration for Multiple Models</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mcuxpresso-sdk-build-with-kernel-selection">MCUXpresso SDK build with kernel selection</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#target-requirements">Target Requirements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-requirements">Development Requirements</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#feature-availability">Feature availability</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-tensorrt-backend">Using the TensorRT Backend</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#exporting-a-model">Exporting a model</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#letting-the-cuda-backend-take-what-tensorrt-rejects">Letting the CUDA backend take what TensorRT rejects</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#keeping-inputs-and-outputs-on-the-gpu">Keeping inputs and outputs on the GPU</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime Integration</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#python">Python</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#c-against-the-installed-wheels">C++ against the installed wheels</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building-from-source">Building from source</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#performance-options">Performance Options</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#choosing-the-cuda-stream">Choosing the CUDA stream</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#green-contexts">Green contexts</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#cuda-graph-replay">CUDA graph replay</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#shared-activation-scratch">Shared activation scratch</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#shared-engines">Shared engines</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
 </ul>
   </nav></div>
     
@@ -2151,7 +2560,7 @@ share the same version.</p>
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/nxp/nxp-kernel-selection.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/tensorrt/tensorrt-overview.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2165,7 +2574,7 @@ share the same version.</p>
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="../../_sources/backends/nxp/nxp-kernel-selection.md.txt">
+      <a href="../../_sources/backends/tensorrt/tensorrt-overview.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2365,11 +2774,11 @@ share the same version.</p>
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "NXP eIQ Neutron Kernel Selective Kernel Registration",
-       "headline": "NXP eIQ Neutron Kernel Selective Kernel Registration",
+       "name": "TensorRT Backend",
+       "headline": "TensorRT Backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/backends/nxp/nxp-kernel-selection.html",
-       "articleBody": "NXP eIQ Neutron Kernel Selective Kernel Registration# The NXP ExecuTorch backend supports selective Neutron kernel registration for Neutron-C targets, which reduces the size of the Neutron Firmware. During the backend\u2019s conversion to the Neutron representation by the Neutron Compiler, microcode for the Neutron accelerator is generated. The microcode consists of kernel calls executed by the Neutron Driver. The code for kernel call functions is distributed in the Neutron Firmware. The eiq_neutron_sdk.neutron_compiler optionally generates a *_kernel_selection.c file, registering only kernels that are required for a particular model or, in the case of ExecuTorch, a delegated subgraph. This *_kernel_selection.c, when used during application linking, takes precedence over the default list of registered kernels in the Neutron Firmware, and allows the linker to include only the necessary Neutron kernels. The Neutron Firmware is required for deployment on an edge device (e.g. i.MX RT700) and is distributed via the MCUXpresso SDK. The MCUXpresso SDK enables the building of a final application that is then flashed on the edge device. For more details about this process, see eIQ ExecuTorch Library User Guide. By default, for Neutron-C targets like i.MX RT700, all kernel implementations are present in the Neutron Firmware, which is linked to the final application. This enables an easy build process for any model, but increases the size of the final application with unused code. In memory-constrained environments, you can link only the kernels required by the deployed models. This way you can reduce the size of the final application by linking only selected kernels, used in one or more models. The feature works as follows: The Neutron Compiler with the appropriate flag exports a kernel selection file for each converted subgraph, the kernel selection files are then merged and ready to be included in the MCUXpresso SDK to use for a selection-only build. Note: This feature applies only to Neutron-C targets. Neutron-S has a different implementation and links only kernel calls included in the model\u2019s microcode by default. Export kernel selection file# To enable this feature in the NXP ExecuTorch backend, use the parameter --dump_kernel_selection_code in aot_neutron_compile.py. An example with the CifarNet model: python -m examples.nxp.aot_neutron_compile --quantize \\ --delegate -m cifar10 \\ --dump_kernel_selection_code This command will create a *_kernel_selection.c file alongside the converted PTE file in the working directory. Kernel Registration for Multiple Models# If you want to use or experiment with multiple models in one application while having a reduced kernel set, you can create one kernel selection file with the script merge_kernel_selection_code.py: python -m eiq_neutron_sdk.neutron_library_utils.merge_kernel_selection_code \\ -input-files model1_kernel_selection.c model2_kernel_selection.c [modelX_kernel_selection.c ...] \\ -output-file merged_kernel_selection.c Each particular model must be compiled by the same Neutron Compiler version, so the *_kernel_selection.c files share the same version. MCUXpresso SDK build with kernel selection# Copy your model PTE file and kernel selection file into the MCUXpresso SDK and follow its documentation.",
+       "url": "/backends/tensorrt/tensorrt-overview.html",
+       "articleBody": "TensorRT Backend# The TensorRT backend runs ExecuTorch models on NVIDIA GPUs with TensorRT, NVIDIA\u2019s inference library. At export time the model graph is compiled into TensorRT engines. The engines are stored inside the .pte file, and at run time the delegate hands each one back to TensorRT. The delegate is built and shipped by the Torch-TensorRT project, so it comes from its wheel and not from the ExecuTorch wheel. Everything after installation is the normal ExecuTorch API: the same .pte file, the same Module class, the same runtime. Features# TensorRT engines inside a .pte. One file holds the program and its engines, so the runtime loads a model the usual way. Works with the CUDA backend in one program. Operators TensorRT cannot convert can be compiled by the ExecuTorch CUDA backend instead of falling back to the CPU. Both delegates live in the same .pte and run in the same method. GPU resident inputs and outputs. The copies around the method boundary can be turned off, so a pipeline that already holds its data on the GPU does not pay for them. CUDA graph replay. An engine can be recorded once and replayed with a single launch, which helps models that launch many short kernels. This needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see Feature availability. Shared activation scratch. Many engines in one program can share one scratch buffer instead of each keeping its own. Shared engines. Loading the same program twice keeps one copy of the engine weights in GPU memory. This also needs a build newer than the 2026-10-06 nightly. Caller-owned CUDA stream. The application can give every delegate the same stream, including a CUDA green context stream, so the model stays inside one part of the GPU. Target Requirements# Hardware: NVIDIA GPU. Operating system: Linux, on x86_64 and on aarch64. CUDA: 13.x. The delegate links CUDA 13, so a CUDA 12 build is not supported. Drivers: an NVIDIA driver that matches the CUDA version. TensorRT itself and the CUDA runtime arrive as dependencies of the wheels, so a system install of either is not required. Development Requirements# One command installs everything needed to export a model. The executorch extra pulls in a CUDA build of ExecuTorch, the delegate wheel, Torch-TensorRT, and PyTorch: pip install --pre \"torch-tensorrt[executorch]\" \\ --index-url https://download.pytorch.org/whl/nightly/cu132 \\ --extra-index-url https://pypi.org/simple \\ --extra-index-url https://pypi.nvidia.com Swap cu132 for the channel that matches your CUDA, for example cu134 for CUDA 13.4. Keep PyTorch, ExecuTorch, and Torch-TensorRT on the same channel. All three indexes matter. Without --pre pip takes the latest stable Torch-TensorRT from the public index, which pairs with an older ExecuTorch release than this page describes. Without NVIDIA\u2019s index the TensorRT package resolves to a source build that takes about twenty minutes and then fails. A CUDA build of ExecuTorch is required, not only to build against. The delegate needs a library that only the CUDA wheels carry, so a CPU-only build installs and then fails on import. If you also want the CUDA backend to pick up the operators TensorRT rejects, install a CUDA toolkit as well. That backend compiles those operators at export time with nvcc. Feature availability# Two features on this page are newer than the 2026-10-06 Linux nightly of Torch-TensorRT and its delegate package, which was the newest one when this page was written: CUDA graph replay. With the 2026-10-06 build, torch_tensorrt.save rejects use_cuda_graphs with a TypeError. Shared engines. The 2026-10-06 delegate keeps every engine private, so loading a program twice still holds two copies of its weights. Both are on the Torch-TensorRT main branch and in its 2.15 release branch. To use them, install a wheel newer than 2026-10-06 once one is published, or build Torch-TensorRT from source. Everything else on this page works with the 2026-10-06 build. Using the TensorRT Backend# Exporting a model# Compile the model with Torch-TensorRT, then save it in ExecuTorch format: import torch import torch_tensorrt class MyModel(torch.nn.Module): def forward(self, x): return x + 1 with torch.no_grad(): model = MyModel().eval().cuda() example_input = (torch.randn(2, 3, 4, 4).cuda(),) exported_program = torch.export.export(model, example_input) trt_gm = torch_tensorrt.dynamo.compile( exported_program, arg_inputs=example_input, min_block_size=1, ) torch_tensorrt.save( trt_gm, \"model.pte\", output_format=\"executorch\", arg_inputs=example_input, retrace=False, ) retrace=False is required. Re-exporting the compiled graph drops the engine, and the error only shows up much later when the program is loaded. Letting the CUDA backend take what TensorRT rejects# TensorRT has no converter for every ATen operator. By default the leftover operators run on the CPU, which costs a copy in each direction. Pass a CudaPartitioner and they are compiled by the ExecuTorch CUDA backend instead, so the whole model stays on the GPU: from executorch.backends.cuda.cuda_backend import CudaBackend from executorch.backends.cuda.cuda_partitioner import CudaPartitioner torch_tensorrt.save( trt_gm, \"coalesced.pte\", output_format=\"executorch\", arg_inputs=example_input, retrace=False, partitioners=[ CudaPartitioner([CudaBackend.generate_method_name_compile_spec(\"forward\")]) ], ) The TensorRT partitioner always runs first, and the CudaPartitioner picks up the rest. For a model such as cos(erfinv(tanh(x))), where TensorRT cannot take erfinv, the result is one .pte whose delegate list reads [\u0027TensorRTBackend\u0027, \u0027CudaBackend\u0027, \u0027TensorRTBackend\u0027]. The CUDA backend writes its external weights to a .ptd file beside the .pte under a fixed name. Save each coalesced model into its own directory. A second export into the same directory overwrites the first model\u2019s weights, and the first model then still loads and returns a wrong answer with no error. Keeping inputs and outputs on the GPU# By default ExecuTorch inserts a host to device copy before the first delegate and a device to host copy after the last one, so a method is safe to call with CPU tensors. If your data is already on the GPU, turn those copies off: from executorch.exir import ExecutorchBackendConfig from executorch.exir.passes import MemoryPlanningPass from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig torch_tensorrt.save( trt_gm, \"device_resident.pte\", output_format=\"executorch\", arg_inputs=example_input, retrace=False, backend_config=ExecutorchBackendConfig( propagate_device_config=PropagateDeviceConfig( skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True, ), enable_non_cpu_memory_planning=True, memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False), ), ) Three points are easy to miss: Both skip flags need enable_non_cpu_memory_planning=True. Copy insertion happens during device aware memory planning. Setting it to False raises a ValueError. Inputs must be unplanned, with MemoryPlanningPass(alloc_graph_input=False). Without it the program reserves its own input buffer and the runtime copies the caller\u2019s memory into it, which puts the copy straight back. Leave the outputs planned when Python runs the program. The program\u2019s own device arena then holds the output, and Python returns a copy of it as a CUDA tensor. With alloc_graph_output=False the caller provides the output memory instead. A C++ caller does that with Module::set_output. The Python bindings do it correctly starting with ExecuTorch 1.6.0.dev20261008, but the 2026-10-06 delegate wheel pins ExecuTorch 1.6.0.dev20260925, so with that wheel keep the outputs planned. The choice is baked into the .pte. A program exported this way wants CUDA tensors, so pass CUDA tensors. A host tensor works only when TensorRT is the first to read that input. On most GPUs it then stages a copy on every call, which is the cost the export existed to remove. When the CUDA backend reads it first, as it can in a coalesced program, it refuses the host memory and the call fails. Runtime Integration# Python# Import the delegate package once, anywhere before a program is loaded. The import is what registers the backend. Nothing else about your code changes: from pathlib import Path import torch import torch_tensorrt_executorch_runtime # noqa: F401 from executorch.runtime import Runtime program = Runtime.get().load_program(Path(\"model.pte\")) forward = program.load_method(\"forward\") outputs = forward.execute((torch.ones(2, 3, 4, 4),)) If the delegate cannot be loaded, that import raises straight away instead of leaving the failure to show up later as a program that will not load. A coalesced program needs no extra registration. Both backends are registered, and the program records which parts go where. Its weights are a different matter. If the part the CUDA backend compiled has weights, they are in the aoti_cuda_blob.ptd file saved beside the .pte, and the runtime does not look for that file on its own. Pass it when you load: program = Runtime.get().load_program( Path(\"coalesced.pte\"), data_path=Path(\"aoti_cuda_blob.ptd\") ) Without it, loading a program whose CUDA part has weights fails. C++ against the installed wheels# The wheels ship a prebuilt delegate and a CMake package, so a C++ application can link them without building anything from source: find_package(executorch REQUIRED COMPONENTS backend_cuda kernels_optimized) find_package(executorch_backend_tensorrt REQUIRED) target_link_libraries(my_app PRIVATE executorch::runtime executorch::backend_cuda executorch::backend_tensorrt executorch::kernels_optimized ) kernels_optimized supplies the et_copy operators that move data across the method boundary. backend_cuda is needed by any coalesced program, and also by a TensorRT only program that still has those boundary copies, because it registers the device allocator they use. The two packages live in two distributions, so point CMake at both. ExecuTorch is a namespace package, so its path has to come from its distribution metadata: cmake -DCMAKE_PREFIX_PATH=\"$(TORCH_TENSORRT_SKIP_DELEGATE_REGISTRATION=1 python -c \u0027import importlib.metadata as m, torch_tensorrt_executorch_runtime as r, pathlib; print(str(pathlib.Path(str(m.distribution(\"executorch\").locate_file(\"executorch\"))) / \"share\" / \"cmake\") + \";\" + str(pathlib.Path(r.__file__).parent))\u0027)\" ... CMake 3.28 or newer is needed for the form above, because the backend_cuda component rejects older versions. CMake is not part of the wheels, so install it yourself. There is no header to include. The delegate registers itself with the backend registry from a static initializer inside the shared library, and everything after that is the ordinary ExecuTorch C++ API: #include \u003ccstdio\u003e #include \u003cexecutorch/extension/module/module.h\u003e #include \u003cexecutorch/extension/tensor/tensor.h\u003e using namespace executorch::extension; int main() { Module module(\"model.pte\"); std::vector\u003cfloat\u003e data(2 * 3 * 4 * 4, 1.0f); auto input = make_tensor_ptr({2, 3, 4, 4}, std::move(data)); const auto outputs = module.forward(input); if (!outputs.ok()) { printf(\"forward failed\\n\"); return 1; } printf(\"first output value: %f\\n\", outputs-\u003eat(0).toTensor().const_data_ptr\u003cfloat\u003e()[0]); return 0; } For a coalesced program whose CUDA part has weights, pass the data file to the constructor as well, for the same reason as in Python: Module module(\"coalesced.pte\", \"aoti_cuda_blob.ptd\"); Linking the target also records the wheel\u2019s own library directory in your binary, which is right for an application built against an installed wheel and wrong for anything you plan to redistribute. Turn it off with EXECUTORCH_BACKEND_TENSORRT_EMBED_RUNPATH and CMAKE_SKIP_BUILD_RPATH, both set before find_package. Building from source# The delegate source ships inside libtorchtrt.tar.gz as torch_tensorrt/src/torch_tensorrt/executorch/. Turn on ExecuTorch\u2019s CUDA backend and the extensions a Module app uses, add the delegate next to ExecuTorch, and link the target it provides: set(EXECUTORCH_BUILD_CUDA ON) set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON) set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON) set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON) set(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON) set(EXECUTORCH_BUILD_EXTENSION_MODULE ON) add_subdirectory(\"executorch\") add_subdirectory(\"torch_tensorrt/src/torch_tensorrt/executorch\") target_link_libraries(my_runner PRIVATE executorch executorch::backends executorch::extensions executorch::kernels executorch::backend_tensorrt ) Turn on the CUDA backend even for a program that only uses TensorRT. It builds the shared extension_cuda library the delegate links, and it registers the device allocator the boundary copies use. Without it the delegate stops at configure time. It also needs PyTorch installed in the Python environment that CMake finds. The other options are the extensions the CUDA backend and the Module class depend on, and CMake stops with an error if one of them is missing. Building the delegate needs CUDA Toolkit 12.5 or newer. libextension_cuda stays a shared library on purpose, so that every CUDA-capable delegate in the process reads the same caller stream. Performance Options# Choosing the CUDA stream# With no stream chosen, both delegates run on cudaStreamPerThread, the default stream of the calling thread. A coalesced program run from one thread is therefore ordered correctly as it is, with nothing to add. To run every delegate on a stream of your own, for example a green context stream, scope a guard over the whole execution: #include \u003cexecutorch/extension/cuda/caller_stream.h\u003e using namespace executorch::extension; cuda::CallerStreamGuard guard(stream); module.forward(input); The guard lives in the extension_cuda library, so add it to the link recipe above: find_package(executorch REQUIRED COMPONENTS backend_cuda extension_cuda kernels_optimized) target_link_libraries(my_app PRIVATE executorch::extension_cuda) One guard reaches every CUDA-capable delegate, because they all resolve the same shared libextension_cuda. The stream must be on the same device as the engine. The CUDA backend refuses a caller stream for a method that uses its own CUDA graphs. Green contexts# Because both delegates honor the caller\u2019s stream, that stream can be a CUDA green context stream. A green context holds a fixed number of streaming multiprocessors, so the whole model is confined to that part of the GPU and the rest stays free for other work. Create the stream with cuGreenCtxStreamCreate and scope the same guard over it. This has been exercised on a 108 SM card with a green context holding 8 of them, running a program split across the TensorRT delegate and the CUDA backend. CUDA graph replay# This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see Feature availability. Replay is off by default. When it is on, the delegate records an engine\u2019s kernel launches once as a CUDA graph and then replays the whole engine with one launch. It helps engines with fixed shapes that launch many short kernels, where the CPU launch work is a large part of each call. Turn it on at export time: torch_tensorrt.save( trt_gm, \"model.pte\", output_format=\"executorch\", arg_inputs=example_input, retrace=False, use_cuda_graphs=True, ) It is not free. Each engine keeps one stable device buffer per input and output, and every call copies each input in and each output out. For an engine with few kernels, or with large inputs and outputs, those copies can cost more than the launches they save. Shapes that change on every call never replay and still pay the copies. Some engines never replay, even with replay on. An engine on the shared activation scratch below always takes the ordinary path, so turning on both options gives no replay. Engines with aliased outputs, GPUs without stream-ordered memory, and drivers older than CUDA 12.5 also keep the ordinary path, as does a call on a green context stream. The delegate logs the reason once. Recording is also not safe next to every kind of work. While a recording is running, creating or destroying a TensorRT engine elsewhere in the process is unsafe, and so is a whole device sync such as cudaDeviceSynchronize or torch.cuda.synchronize(). Leave replay off when other threads may do any of that. A C++ host can refuse a program\u2019s saved request for one load: #include \u003cexecutorch/extension/module/module.h\u003e using namespace executorch::extension; using namespace executorch::runtime; BackendOptions\u003c1\u003e options; options.set_option(\"use_cuda_graphs\", false); LoadBackendOptionsMap by_backend; by_backend.set_options(\"TensorRTBackend\", options.view()); module.load(by_backend); Shared activation scratch# A TensorRT execution context allocates its own activation scratch and holds it for as long as the context lives. A model lowered to many small engines pays that cost many times over, and can run out of GPU memory on the engine count alone. This option backs all of a device\u2019s contexts from one buffer instead, grown to the largest size any call has asked for: #include \u003cexecutorch/runtime/backend/interface.h\u003e using namespace executorch::runtime; BackendOptions\u003c1\u003e options; options.set_option(\"use_shared_activation_scratch\", true); set_option(\"TensorRTBackend\", options.view()); Set it before loading the methods whose contexts should use the pool. The memory saved is the sum of the separate scratch sizes less the largest of them. The cost is parallelism. Contexts that share one buffer do not run at the same time on the device. The backend holds a per device lock from the claim on the buffer through the enqueue, so two calls on one device are serialized at submission. The pool also never shrinks, and a device that has run a pooled engine must not be reset with cudaDeviceReset(). Shared engines# This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see Feature availability. When the same program is loaded twice, for example once per robot arm, handles loaded from the same engine bytes, for the same device and the same weight streaming request, share one engine. The engine weights are in GPU memory once. Each handle still gets its own execution context and buffers. This is on by default. Measured on an 8 GB Jetson Orin Nano, loading one robot policy a second time grew GPU memory by 806 MiB without sharing and by 122 MiB with it. Those numbers are the cost of the second load, not the total. Finding a match means hashing the engine bytes on every load, which costs roughly 0.15 s per GB on a Jetson AGX Thor. Pass the use_shared_engines load option as false to keep one module\u2019s engines private. Examples# Export a static shape model Export a coalesced TensorRT and CUDA model Export a model that keeps its data on the GPU C++ reference runner, including the green context option The Torch-TensorRT documentation covers the export options in more detail, including dynamic shapes, programs with more than one method, and a zero copy KV cache for decoder models.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2378,7 +2787,7 @@ share the same version.</p>
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backends/nxp/nxp-kernel-selection.html"
+         "@id": "/backends/tensorrt/tensorrt-overview.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
