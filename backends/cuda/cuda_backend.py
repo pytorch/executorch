@@ -944,6 +944,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
                 cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
+        cell_layout = any(
+            spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            for spec in compile_specs or []
+        )
 
         @contextlib.contextmanager
         def _combined():
@@ -989,6 +994,19 @@ class CudaBackend(AotiBackend, BackendDetails):
                     # pick. See autotune/cuda_graph_timing.py.
                     stack.enter_context(
                         cuda_graph_timing(offload=_moved_program_tensors)
+                    )
+                if cell_layout:
+                    # The cell layout's step buffers are constants the graph
+                    # only reads, while the runtime rewrites them before every
+                    # forward. Folding them, or inlining a small one as a
+                    # literal, would evaluate them at compile time -- on
+                    # storage that does not exist yet -- and bake the result
+                    # into the program.
+                    stack.enter_context(
+                        torch._inductor.config.patch(
+                            joint_graph_constant_folding=False,
+                            always_keep_tensor_constants=True,
+                        )
                     )
                 yield
 
