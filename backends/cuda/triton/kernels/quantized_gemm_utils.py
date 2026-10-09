@@ -6,7 +6,8 @@
 
 """Pieces shared by the decode-sized quantized GEMM kernels (INT4/5/6/8).
 
-* inline-PTX ``@triton.jit`` helpers (DP4A, warp sum, round-to-nearest-even);
+* ``@triton.jit`` helpers (DP4A, warp sum, round-to-nearest-even): inline PTX
+  on CUDA, portable Triton on ROCm;
 * BF16 -> signed INT8 activation quantization in K32 blocks, the
   W*A8 formats' first kernel, and its launcher;
 * the deterministic split-K reduce kernel, the split-K candidates the launch
@@ -27,6 +28,12 @@ import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import wrap_triton
+from triton.language.extra import libdevice
+
+# Fixed when this module is imported, never by querying the driver while a
+# kernel compiles: Inductor compiles in forked subprocesses that cannot
+# initialize CUDA. Inductor inlines the value into the kernel source it builds.
+_IS_HIP = tl.constexpr(torch.version.hip is not None)
 
 # Activation quantization granularity: one INT8 scale per K32 block, launched in
 # K256 tiles.
@@ -45,7 +52,7 @@ PIPELINE_STAGE_CHOICES = (1, 2, 3)
 
 
 @triton.jit
-def _round_nearest_even_s32(value):
+def _round_nearest_even_s32_ptx(value):
     return tl.inline_asm_elementwise(
         asm="cvt.rni.s32.f32 $0, $1;",
         constraints="=r,f",
@@ -57,7 +64,7 @@ def _round_nearest_even_s32(value):
 
 
 @triton.jit
-def _dp4a_u8_s8(a, b, acc):
+def _dp4a_u8_s8_ptx(a, b, acc):
     return tl.inline_asm_elementwise(
         asm="dp4a.u32.s32 $0, $1, $2, $3;",
         constraints="=r,r,r,r",
@@ -69,7 +76,7 @@ def _dp4a_u8_s8(a, b, acc):
 
 
 @triton.jit
-def _warp_sum_f32(value):
+def _warp_sum_f32_ptx(value):
     shuffled = tl.inline_asm_elementwise(
         asm="shfl.sync.bfly.b32 $0, $1, 16, 0x1f, 0xffffffff;",
         constraints="=f,f",
@@ -115,6 +122,62 @@ def _warp_sum_f32(value):
         pack=1,
     )
     return value + shuffled
+
+
+# ROCm versions of the PTX helpers above. _IS_HIP is a compile-time constant,
+# so CUDA builds see exactly the PTX helpers.
+
+
+@triton.jit
+def _round_nearest_even_s32_portable(value):
+    return libdevice.rint(value).to(tl.int32)
+
+
+@triton.jit
+def _dp4a_u8_s8_portable(a, b, acc):
+    """acc + sum over the four bytes of unsigned(a) * signed(b), like dp4a.u32.s32."""
+    a = a.to(tl.uint32, bitcast=True)
+    b = b.to(tl.int32, bitcast=True)
+    acc += (a & 0xFF).to(tl.int32) * ((b << 24) >> 24)
+    acc += ((a >> 8) & 0xFF).to(tl.int32) * ((b << 16) >> 24)
+    acc += ((a >> 16) & 0xFF).to(tl.int32) * ((b << 8) >> 24)
+    acc += (a >> 24).to(tl.int32) * (b >> 24)
+    return acc
+
+
+@triton.jit
+def _warp_sum_f32_portable(value):
+    """Sum of each run of 32 consecutive elements of a 1-D ``value``, broadcast
+    back to all 32: what the PTX butterfly computes when element i is lane
+    i % 32, without depending on the warp size or the layout."""
+    n: tl.constexpr = value.shape[0]
+    groups = tl.reshape(value, (n // 32, 32), can_reorder=False)
+    sums = tl.broadcast_to(tl.sum(groups, axis=1)[:, None], (n // 32, 32))
+    return tl.reshape(sums, (n,), can_reorder=False)
+
+
+@triton.jit
+def _round_nearest_even_s32(value):
+    if _IS_HIP:
+        return _round_nearest_even_s32_portable(value)
+    else:
+        return _round_nearest_even_s32_ptx(value)
+
+
+@triton.jit
+def _dp4a_u8_s8(a, b, acc):
+    if _IS_HIP:
+        return _dp4a_u8_s8_portable(a, b, acc)
+    else:
+        return _dp4a_u8_s8_ptx(a, b, acc)
+
+
+@triton.jit
+def _warp_sum_f32(value):
+    if _IS_HIP:
+        return _warp_sum_f32_portable(value)
+    else:
+        return _warp_sum_f32_ptx(value)
 
 
 @triton.jit
