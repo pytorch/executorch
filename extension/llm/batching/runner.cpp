@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <thread>
@@ -302,7 +303,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
-      std::vector<Token> delta,
+      GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled);
@@ -337,7 +338,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   // admission. Scheduler tasks own the delta after submission.
   struct GenerationRequest {
     SessionId session = 0;
-    std::shared_ptr<const std::vector<Token>> delta;
+    InputPayload delta;
+    std::size_t size = 0;
     SamplingParams sampling;
     std::optional<std::uint64_t> seed;
     Generation generation;
@@ -453,11 +455,12 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::optional<TerminalOutcome> validate_generation_start_(
       const GenerationRequest& request,
       const SessionRecord& record) const;
-  std::shared_ptr<const std::vector<Token>> build_initial_delta_(
+  // Merge a pending token into raw input, or return it as a separate prefix.
+  std::optional<Token> carry_pending_(
       GenerationRequest& request,
       const SessionRecord& record) const;
 
-  // Split `tokens` into chunks, the last of which produces output.
+  // Split `payload` into chunks, the last of which may produce output.
   //
   // `is_continuation` distinguishes what the executor handed back from the
   // caller's opening delta. Only a continuation of exactly one token is a
@@ -465,9 +468,11 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   // continuation is re-fed as prefill too.
   std::vector<Task> create_tasks_(
       SessionId session,
-      std::shared_ptr<const std::vector<Token>> tokens,
+      InputPayload payload,
+      std::size_t size,
       Position position,
-      bool is_continuation);
+      bool is_continuation,
+      bool produce_output = true);
   InterpretedOutput interpret_output_(
       const Generation& generation,
       const Output& output) const;
@@ -619,7 +624,7 @@ Session::make_clone_request(Position upto) const {
 }
 
 GenerationHandle Session::generate_async(
-    std::vector<Token> delta,
+    GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) const {
@@ -1307,7 +1312,7 @@ void RunnerImpl::request_close(SessionId session) noexcept {
 
 GenerationHandle RunnerImpl::generate_async(
     SessionId session,
-    std::vector<Token> delta,
+    GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) {
@@ -1315,7 +1320,14 @@ GenerationHandle RunnerImpl::generate_async(
   state->on_settled = std::move(on_settled);
   GenerationRequest request;
   request.session = session;
-  request.delta = std::make_shared<const std::vector<Token>>(std::move(delta));
+  request.delta = std::visit(
+      Overloaded{
+          [](std::vector<Token> tokens) -> InputPayload {
+            return std::make_shared<const std::vector<Token>>(
+                std::move(tokens));
+          },
+          [](PreparedInputPtr prepared) -> InputPayload { return prepared; }},
+      std::move(delta));
   request.seed = config.seed;
   request.sampling = std::move(config.sampling);
   request.generation.remaining_tokens = config.max_new_tokens;
@@ -1353,7 +1365,7 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   if (request.generation.remaining_tokens <= 0) {
     return TerminalOutcome::failed("max_new_tokens must be greater than zero");
   }
-  if (!request.delta || request.delta->empty()) {
+  if (request.size == 0) {
     return TerminalOutcome::failed("generation delta must not be empty");
   }
 
@@ -1364,7 +1376,7 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   const auto room = static_cast<std::size_t>(
       std::numeric_limits<Position>::max() - start_position);
   const auto pending_tokens = record.pending ? 1u : 0u;
-  if (pending_tokens > room || request.delta->size() > room - pending_tokens) {
+  if (pending_tokens > room || request.size > room - pending_tokens) {
     return TerminalOutcome::failed(
         "generation delta exceeds the session position range");
   }
@@ -1375,22 +1387,33 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   if (record.active_generation) {
     return TerminalOutcome::failed("session already has an active generation");
   }
+  if (const auto* prepared = std::get_if<PreparedInputPtr>(&request.delta);
+      prepared && !executor_.accepts(**prepared)) {
+    return TerminalOutcome::failed("executor does not accept prepared input");
+  }
   return std::nullopt;
 }
 
-std::shared_ptr<const std::vector<Token>> RunnerImpl::build_initial_delta_(
+std::optional<Token> RunnerImpl::carry_pending_(
     GenerationRequest& request,
     const SessionRecord& record) const {
-  auto delta = std::move(request.delta);
   if (!record.pending) {
-    return delta;
+    return std::nullopt;
+  }
+  const auto* tokens = std::get_if<TokenInputPtr>(&request.delta);
+  if (!tokens) {
+    // Opaque backing cannot be prepended to: send a separate raw prefill.
+    return record.pending;
   }
 
   std::vector<Token> carried;
-  carried.reserve(delta->size() + 1);
+  carried.reserve((*tokens)->size() + 1);
   carried.push_back(*record.pending);
-  carried.insert(carried.end(), delta->begin(), delta->end());
-  return std::make_shared<const std::vector<Token>>(std::move(carried));
+  carried.insert(carried.end(), (*tokens)->begin(), (*tokens)->end());
+  ++request.size;
+  request.delta =
+      std::make_shared<const std::vector<Token>>(std::move(carried));
+  return std::nullopt;
 }
 
 void RunnerImpl::start_generation_(GenerationRequest request) {
@@ -1415,20 +1438,23 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
     return;
   }
   auto& record = session->second;
+  request.size = std::visit(
+      [](const auto& payload) -> std::size_t {
+        return payload ? payload->size() : 0;
+      },
+      request.delta);
   if (auto rejection = validate_generation_start_(request, record)) {
     complete_request_(
         std::move(request), std::move(*rejection), /*on_engine_thread=*/true);
     return;
   }
 
-  const auto start_position = record.position();
-  // The caller's own delta, captured before build_initial_delta_ moves it and
-  // before any carried token is prepended. The generation tier counts what
-  // callers gave; tokens actually fed to the model are EngineMetrics'
-  // model_input_tokens().
+  auto start_position = record.position();
+  // Count the caller's own delta before adding a carried token. EngineMetrics'
+  // model_input_tokens() counts all positions actually fed to the model.
   request.generation.m.n_prompt_tokens =
-      static_cast<std::int64_t>(request.delta->size());
-  auto delta = build_initial_delta_(request, record);
+      static_cast<std::int64_t>(request.size);
+  const auto prefix = carry_pending_(request, record);
   if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
       request.generation.state->cancelled.load()) {
     complete_request_(
@@ -1458,22 +1484,38 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
     return;
   }
 
-  // advance() clears a carried token only after the input holding it runs.
-  submit_(
+  std::vector<Task> tasks;
+  if (prefix) {
+    tasks = create_tasks_(
+        request.session,
+        std::make_shared<const std::vector<Token>>(1, *prefix),
+        1,
+        start_position++,
+        /*is_continuation=*/false,
+        /*produce_output=*/false);
+  }
+  auto suffix = create_tasks_(
       request.session,
-      create_tasks_(
-          request.session,
-          std::move(delta),
-          start_position,
-          /*is_continuation=*/false));
+      std::move(request.delta),
+      request.size,
+      start_position,
+      /*is_continuation=*/false);
+  tasks.insert(
+      tasks.end(),
+      std::make_move_iterator(suffix.begin()),
+      std::make_move_iterator(suffix.end()));
+  // advance() clears a carried token only after the input holding it runs.
+  submit_(request.session, std::move(tasks));
 }
 
 std::vector<Task> RunnerImpl::create_tasks_(
     SessionId session,
-    std::shared_ptr<const std::vector<Token>> tokens,
+    InputPayload payload,
+    std::size_t size,
     Position position,
-    bool is_continuation) {
-  const auto total = static_cast<std::int32_t>(tokens->size());
+    bool is_continuation,
+    bool produce_output) {
+  const auto total = static_cast<std::int32_t>(size);
   // The scheduler owns this limit, so the runner cannot split a prompt into
   // chunks the scheduler would then refuse. It is non-zero and clamped to the
   // token count, so the loop below always advances.
@@ -1495,10 +1537,10 @@ std::vector<Task> RunnerImpl::create_tasks_(
     t.cancelled = false;
     t.is_decode = decode;
     t.input.sid = session;
-    t.input.produce_output = last;
+    t.input.produce_output = produce_output && last;
     t.input.offset = static_cast<size_t>(i);
     t.input.size = static_cast<size_t>(n);
-    t.input.tokens = tokens;
+    t.input.payload = payload;
     t.input.position = position;
     tasks.push_back(std::move(t));
   }
@@ -1707,6 +1749,7 @@ void RunnerImpl::resume_generation_(
       create_tasks_(
           session_id,
           std::move(input),
+          1,
           position,
           /*is_continuation=*/true));
 }

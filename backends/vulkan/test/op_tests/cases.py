@@ -892,10 +892,12 @@ def get_scalar_tensor_inputs():
     test_suite = VkTestSuite(
         [
             (42.0,),
+            (42,),
             (3.14,),
             (2.72,),
             (0.0,),
             (-1.0,),
+            (-7,),
             (100.0,),
         ]
     )
@@ -2269,8 +2271,8 @@ def get_index_tensor_inputs():
     return test_suite
 
 
-@register_test_suite("aten.pow.Tensor_Scalar")
-def get_pow_tensor_scalar_inputs():
+@register_test_suite(["aten.pow.Tensor_Scalar", "aten.mul.Scalar"])
+def get_binary_scalar_inputs():
     test_suite = VkTestSuite(
         [
             ((M1,), 2.0),
