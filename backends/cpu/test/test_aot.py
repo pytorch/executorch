@@ -142,6 +142,57 @@ class CPUAOTTest(unittest.TestCase):
                             "CPU payload layout must match the tensor passed to the delegate",
                         )
 
+    def test_linear_preservation_is_selective_in_mixed_shape_graph(self):
+        class MixedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 3)
+
+            def forward(self, dynamic, static):
+                return self.linear(dynamic), self.linear(static)
+
+        model = MixedLinear().eval()
+        static = torch.randn(1, 4)
+        ep = torch.export.export(
+            model,
+            (torch.randn(2, 4), static),
+            dynamic_shapes=({0: torch.export.Dim("batch", min=1, max=4)}, None),
+        )
+        edge = to_edge_transform_and_lower(ep, partitioner=[CPUPartitioner()])
+        exported = edge.exported_program()
+        targets = [node.target for node in exported.graph.nodes]
+        self.assertNotIn(exir_ops.edge.aten.linear.default, targets)
+        self.assertIn(exir_ops.edge.aten.addmm.default, targets)
+
+        for batch in (1, 2, 4):
+            inputs = (torch.randn(batch, 4), static)
+            torch.testing.assert_close(exported.module()(*inputs), model(*inputs))
+
+        program = edge.to_executorch()
+        delegate_targets = [
+            node.target
+            for data in program.executorch_program.backend_delegate_data
+            for node in deserialize_graph(bytes(data.data)).nodes
+        ]
+        self.assertEqual(delegate_targets.count("torch.ops.aten.linear.default"), 1)
+        self.assertGreater(len(program.buffer), 0)
+
+    def test_non_fp32_linear_decomposes(self):
+        model = torch.nn.Linear(4, 3, bias=False).double().eval()
+        inputs = (torch.randn(2, 4, dtype=torch.float64),)
+        edge = to_edge_transform_and_lower(
+            torch.export.export(model, inputs), partitioner=[CPUPartitioner()]
+        )
+        targets = [node.target for node in edge.exported_program().graph.nodes]
+        self.assertNotIn(exir_ops.edge.aten.linear.default, targets)
+        self.assertIn(exir_ops.edge.aten.mm.default, targets)
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), model(*inputs)
+        )
+        program = edge.to_executorch()
+        self.assertEqual(program.executorch_program.execution_plan[0].delegates, [])
+        self.assertGreater(len(program.buffer), 0)
+
     def test_preprocess_reverts_dim_order_ops(self):
         class AllocateAndClone(torch.nn.Module):
             def forward(self, x):

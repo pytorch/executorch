@@ -77,7 +77,10 @@ class CPUPartitioner(Partitioner):
     """Retain the static FP32 semantic graph for runtime provider selection."""
 
     def ops_to_not_decompose(self, ep: torch.export.ExportedProgram):
-        return [torch.ops.aten.linear.default], None
+        support = CPUSemanticOperators()
+        return [torch.ops.aten.linear.default], lambda node: support.is_node_supported(
+            {}, node
+        )
 
     def partition(
         self, exported_program: torch.export.ExportedProgram
