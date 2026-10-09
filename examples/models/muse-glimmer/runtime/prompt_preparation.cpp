@@ -128,14 +128,6 @@ batching::PreparedInputPtr MuseGlimmerPreparedInput::suffix(
       : nullptr;
 }
 
-MuseGlimmerImageSpan MuseGlimmerPreparedInput::image_span() const {
-  const auto& span = backing_->image_span_;
-  if (!backing_->valid_ || start_ >= span.offset + span.size)
-    return {0, 0};
-  const size_t begin = std::max(start_, span.offset);
-  return {begin - start_, span.offset + span.size - begin};
-}
-
 batching::PrefixIdentityPtr MuseGlimmerPreparedInput::prefix_identity() const {
   if (!backing_->valid_)
     return nullptr;
@@ -408,10 +400,6 @@ serving::ModelPreparationResult prepare_muse_glimmer_input(
         "prompt exceeds context/vocabulary or preparation cancelled");
   }
   if (!span.size) {
-    if (std::find(tokens.begin(), tokens.end(), spec->patch_id) !=
-        tokens.end()) {
-      return invalid("patch tokens require an image");
-    }
     return batching::PreparedInputPtr(
         std::make_shared<serving::detail::TokenPreparedInput>(
             std::make_shared<const std::vector<batching::Token>>(

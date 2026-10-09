@@ -46,9 +46,18 @@ class CheckpointContextTest(unittest.TestCase):
 
     def write_gguf(self, fields, architecture="muse-glimmer"):
         path = self.root / "metadata.gguf"
-        writer = _require_gguf(self).GGUFWriter(path, architecture)
+        gguf = _require_gguf(self)
+        writer = gguf.GGUFWriter(path, architecture)
+        add_value = {
+            gguf.GGUFValueType.UINT32: writer.add_uint32,
+            gguf.GGUFValueType.INT32: writer.add_int32,
+            gguf.GGUFValueType.BOOL: writer.add_bool,
+            gguf.GGUFValueType.FLOAT32: writer.add_float32,
+            gguf.GGUFValueType.STRING: writer.add_string,
+            gguf.GGUFValueType.ARRAY: writer.add_array,
+        }
         for key, value, value_type in fields:
-            getattr(writer, f"add_{value_type.name.lower()}")(key, value)
+            add_value[value_type](key, value)
         writer.write_header_to_file()
         writer.write_kv_data_to_file()
         writer.close()
@@ -175,7 +184,15 @@ class BatchingExportContextTest(unittest.TestCase):
             patch.object(export_solo, "export_and_lower")
         )
 
-    def run_cli(self, source, *, offgraph=True, prefill=128, max_seq_len=32):
+    def run_cli(
+        self,
+        source,
+        *,
+        offgraph=True,
+        prefill=128,
+        max_seq_len=32,
+        activation_dtype=None,
+    ):
         argv = [
             "export_solo",
             source,
@@ -185,6 +202,8 @@ class BatchingExportContextTest(unittest.TestCase):
             "--max-prefill-chunk",
             str(prefill),
         ]
+        if activation_dtype is not None:
+            argv.extend(["--activation-dtype", activation_dtype])
         if max_seq_len is not None:
             argv.extend(["--max-seq-len", str(max_seq_len)])
         if offgraph:
@@ -222,6 +241,43 @@ class BatchingExportContextTest(unittest.TestCase):
                 self.assertIsNone(
                     self.loaders["load_gguf_model"].call_args.kwargs["max_seq_len"]
                 )
+
+    def test_offgraph_dtype_rejected_before_loading(self):
+        for source, _ in self.SOURCES:
+            with self.subTest(source=source):
+                with self.assertRaises(SystemExit) as error:
+                    self.run_cli(source, activation_dtype="float32", max_seq_len=None)
+                self.assertEqual(error.exception.code, 2)
+        self.assertIn(
+            "argument --activation-dtype: invalid choice: 'float32'",
+            self.stderr.getvalue(),
+        )
+        for loader in self.loaders.values():
+            loader.assert_not_called()
+        self.export.assert_not_called()
+
+    def test_supported_activation_dtypes(self):
+        for source, name in self.SOURCES:
+            for offgraph, dtype, expected in (
+                (True, None, export_solo.torch.float16),
+                (True, "float16", export_solo.torch.float16),
+                (True, "bfloat16", export_solo.torch.bfloat16),
+                (False, "bfloat16", export_solo.torch.bfloat16),
+            ):
+                with self.subTest(source=source, offgraph=offgraph, dtype=dtype):
+                    self.loaders[name].reset_mock()
+                    self.export.reset_mock()
+                    self.run_cli(
+                        source,
+                        offgraph=offgraph,
+                        activation_dtype=dtype,
+                        max_seq_len=None,
+                    )
+                    self.loaders[name].assert_called_once()
+                    self.export.assert_called_once()
+                    self.assertEqual(
+                        self.export.call_args.kwargs["activation_dtype"], expected
+                    )
 
     def test_invalid_prefill_stops_export(self):
         for prefill, message in (

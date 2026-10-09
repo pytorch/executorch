@@ -54,13 +54,8 @@ class MuseGlimmerPreparedInput final : public batching::PreparedInput {
   }
   static const void* kind_tag();
   bool compatible(const MuseGlimmerPreparationSpec& spec) const;
-  batching::Token last_prompt_token() const override {
-    return backing_->tokens_->empty() ? 0 : backing_->tokens_->back();
-  }
   batching::PreparedInputPtr suffix(size_t start) const override;
   batching::PrefixIdentityPtr prefix_identity() const override;
-  // Intersection with this view, in view-relative positions; {0, 0} if absent.
-  MuseGlimmerImageSpan image_span() const;
 
  private:
   friend class MuseGlimmerMaterializer;

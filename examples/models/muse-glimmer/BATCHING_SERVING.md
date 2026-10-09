@@ -146,6 +146,8 @@ apply. Text/image prefix snapshots are opt-in via `--prefix-cache-entries`
   replacement. A later engine or vision failure does not restore replaced state
   and follows the shared batching failure contract: a runtime vision-encode error
   fails every request in that execution batch, including text-only requests.
+- Vision encoding runs inside `execute()`. Cancelling an image request does not
+  interrupt that encoding or immediately unblock co-batched text requests.
 
 ## Implementation
 

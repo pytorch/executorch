@@ -213,9 +213,9 @@ void materialization() {
     for (const auto& view : {before, inside, after, nested, late}) {
       require(
           view->kind() == llm::MuseGlimmerPreparedInput::kind_tag() &&
-              view->last_prompt_token() == 12 && view->prefix_identity() &&
+              view->prefix_identity() &&
               view->prefix_identity()->size() == view->size(),
-          "suffix type, tail, or identity changed");
+          "suffix type or identity changed");
     }
     auto slices = materializer.materialize(
         {{1, false, 1, 1, before, 30},
@@ -258,15 +258,20 @@ void preparation() {
   auto prepared =
       prepare({{"prompt", "a<img>b"}, {"image", image}}, context, identity);
   auto opaque = std::get<batch::PreparedInputPtr>(prepared);
+  const auto tail =
+      std::get<batch::TokenSpan>(opaque->prefix_identity()->spans.back());
   require(
-      opaque->last_prompt_token() == 98 && opaque->size() == 4,
-      "decoder layout/previous token incorrect");
+      opaque->size() == 4 && tail.size == 1 &&
+          (*tail.tokens)[tail.offset] == 98,
+      "decoder layout/text tail incorrect");
   auto end_image =
       prepare({{"prompt", "a<img>"}, {"image", image}}, context, identity);
+  const auto image_tail = std::get<batch::PreparedInputPtr>(end_image);
   require(
-      std::get<batch::PreparedInputPtr>(end_image)->last_prompt_token() ==
-          200092,
-      "image tail must preserve the real patch layout token");
+      image_tail->size() == 3 &&
+          std::holds_alternative<batch::OpaqueSpan>(
+              image_tail->prefix_identity()->spans.back()),
+      "image tail must remain an opaque position");
   context.max_prompt_positions = 3;
   require(
       std::holds_alternative<serving::ServingError>(prepare(
@@ -458,7 +463,7 @@ class ServingExecutor final : public batch::testing::FakeExecutor {
  public:
   std::shared_ptr<const llm::MuseGlimmerPreparationSpec> identity = spec();
   std::atomic<size_t> last_size{0}, clones{0};
-  std::atomic<batch::Token> last_token{0};
+  std::atomic<batch::Token> last_text_token{0};
   bool accepts(const batch::PreparedInput& input) const override {
     return input.kind() == llm::MuseGlimmerPreparedInput::kind_tag() &&
         static_cast<const llm::MuseGlimmerPreparedInput&>(input).compatible(
@@ -480,7 +485,9 @@ class ServingExecutor final : public batch::testing::FakeExecutor {
             slice.offset + slice.size > prepared->size())
           return false;
         last_size = prepared->size();
-        last_token = prepared->last_prompt_token();
+        const auto tail = std::get<batch::TokenSpan>(
+            prepared->prefix_identity()->spans.back());
+        last_text_token = (*tail.tokens)[tail.offset + tail.size - 1];
       }
     }
     return FakeExecutor::execute(input, output);
@@ -548,13 +555,13 @@ void serving_reuse() {
   require(
       next.reused_prompt_tokens == 5 && next.prefilled_prompt_tokens == 2 &&
           next.session_reset_reason == "exact_prefix" && executor.clones == 1 &&
-          executor.last_size == 1 && executor.last_token == 99,
+          executor.last_size == 1 && executor.last_text_token == 99,
       "named mixed continuation did not execute MG suffix");
   auto hit = generate("snapshot", prompt);
   require(
       hit.reused_prompt_tokens == 4 && hit.prefilled_prompt_tokens == 1 &&
           executor.clones == 3 && executor.last_size == 1 &&
-          executor.last_token == 98,
+          executor.last_text_token == 98,
       "mixed snapshot did not reuse image identity and execute MG suffix");
 }
 

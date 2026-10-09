@@ -179,10 +179,6 @@ def _solo_constant_methods(
         )
 
         dtype_names = {torch.float16: "fp16", torch.bfloat16: "bf16"}
-        if activation_dtype not in dtype_names:
-            raise ValueError(
-                "off-graph MLX export requires float16 or bfloat16 activations"
-            )
         constant_methods.update(write_activation_dtype(dtype_names[activation_dtype]))
         constant_methods.update(write_max_context_len(config.max_seq_len))
         constant_methods.update(write_max_seq_len(max_prefill))
