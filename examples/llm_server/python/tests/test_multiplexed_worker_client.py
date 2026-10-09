@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     MultiplexedWorkerClient,
     spawn_multiplexed_worker,
@@ -29,7 +28,6 @@ from executorch.examples.llm_server.python.worker_client import (
     WorkerError,
     WorkerStats,
 )
-
 
 _PREAMBLE = """
 import json, os, sys
