@@ -500,6 +500,35 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
 
+    class ReadThenIndexCopy(nn.Module):
+        def forward(self, data, indices, update):
+            before = data.sum(0)
+            data.index_copy_(0, indices, update)
+            return before, data.sum(0)
+
+    def test_read_before_index_copy_with_reinplace(self):
+        # A value read from the input before it is updated in place must be
+        # computed from the old contents, not race the write into the input.
+        model = self.ReadThenIndexCopy().eval()
+        cache = torch.randn(16, 8)
+        program = to_edge_transform_and_lower(
+            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[0], plan.inputs[0])
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected_before = expected.sum(0)
+            expected.index_copy_(0, indices, update)
+            cache, before, after = method.execute([cache, indices, update])
+            self.assertTrue(torch.allclose(before, expected_before, atol=1e-5))
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
+
     def test_index_copy_rejects_negative_index(self):
         # ATen raises on negative indices, so the delegate must not wrap them.
         model = self.IndexCopyInput(0).eval()

@@ -18,7 +18,11 @@ from executorch.exir.backend.canonical_partitioners.all_node_partitioner import 
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as edge_ops
-from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
+from executorch.exir.passes.reinplace import (
+    DEFAULT_INPLACEABLE_OPS,
+    reinplace_delegate_input_mutations,
+    reinplace_pass,
+)
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
 )
@@ -57,6 +61,14 @@ class _CopyingDemoBackend(BackendDetails):
     @staticmethod
     def preprocess(edge_program, compile_specs) -> PreprocessResult:
         return PreprocessResult(processed_bytes=b"")
+
+
+class _CacheUpdate(torch.nn.Module):
+    def forward(
+        self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+    ) -> torch.Tensor:
+        k_cache.index_copy_(2, pos, k)
+        return k_cache.sum(-1)
 
 
 class TestReinplacePass(unittest.TestCase):
@@ -796,14 +808,6 @@ class TestReinplacePass(unittest.TestCase):
         """A delegate that mutates one of its inputs writes it in place when
         its backend opts in: its output shares the input's spec and the
         write-back copy_ is gone. Other backends keep the copy_."""
-
-        class CacheUpdate(torch.nn.Module):
-            def forward(
-                self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
-            ) -> torch.Tensor:
-                k_cache.index_copy_(2, pos, k)
-                return k_cache.sum(-1)
-
         inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
         for backend, in_place in (
             ("_InPlaceDemoBackend", True),
@@ -811,7 +815,7 @@ class TestReinplacePass(unittest.TestCase):
         ):
             with self.subTest(backend=backend):
                 program = to_edge_transform_and_lower(
-                    export(CacheUpdate(), inputs, strict=True),
+                    export(_CacheUpdate(), inputs, strict=True),
                     partitioner=[AllNodePartitioner(backend, [])],
                 ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
                 graph = program.exported_program().graph
@@ -827,6 +831,31 @@ class TestReinplacePass(unittest.TestCase):
                     any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"]),
                     in_place,
                 )
+
+    def test_delegate_input_mutation_kept_when_read_before_write_back(
+        self,
+    ) -> None:
+        """Writing the input in place moves its mutation from the copy_ to the
+        delegate, so anything reading the input in between would see the new
+        values. The copy_ then stays and the specs stay separate."""
+        inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
+        program = to_edge_transform_and_lower(
+            export(_CacheUpdate(), inputs, strict=True),
+            partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
+        ).to_executorch()
+        ep = program.exported_program()
+        graph = ep.graph
+        k_cache = next(n for n in graph.nodes if n.name == "k_cache")
+        delegate = next(n for n in graph.nodes if n.target == executorch_call_delegate)
+        with graph.inserting_after(delegate):
+            graph.call_function(torch.ops.aten.clone.default, (k_cache,))
+
+        reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
+
+        self.assertEqual(len(_find_nodes(ep, "copy_")), 1)
+        self.assertFalse(
+            any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"])
+        )
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in
