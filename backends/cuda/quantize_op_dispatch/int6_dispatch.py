@@ -14,17 +14,16 @@ packed-int6 path; genuine INT8 weights stay on the int8 path. The code here runs
 during eager inference and AOTI export tracing — it does NOT run at .pte runtime.
 
 At .pte runtime, the captured graph is executed by the AOTI-generated .so:
-  - ``triton::int6_quantized_gemm_m{M}`` is a Triton W6A8 DP4A kernel compiled
-    into it (see triton/kernels/int6_quantized_gemm.py).
+  - ``triton::int6_quantized_gemm_m{M}`` is a Triton W6A8 DP4A or W6A16
+    tensor-core kernel compiled into it (see triton/kernels/int6_quantized_gemm.py).
   - The inline dequant + F.linear is compiled by inductor into fused Triton
     dequant + matmul kernels.
 
 Dispatch (``_gemm_family_dispatch.quantized_linear``): when a Triton kernel can
 run, the smallest bucket of ``INT6_QUANTIZED_GEMM`` that supports the inputs
-(static M <= 4 takes its own bucket; a dynamic M provably within [1, 4] takes
-the smallest bucket that holds it). Everything else (prefill, an unbounded
-dynamic M, other group sizes or dtypes, CPU eager) uses inline dequant +
-F.linear, never an error.
+(static M <= 64 takes the smallest bucket that holds it; a dynamic M provably
+within [1, 64] does the same). Larger M, an unbounded dynamic M, other group
+sizes or dtypes, and CPU eager use inline dequant + F.linear, never an error.
 
 The packed-int6 weight is symmetric (no zero point): ``w = q * scale`` with
 ``q`` in ``[-32, 31]`` stored as the ql/qh planes.
