@@ -165,7 +165,7 @@ class Int6QuantizedGemmLegalityTest(unittest.TestCase):
         self._expect_unsupported(1, args, "group_size must be 16")
 
         args = self._args(m=2)
-        self._expect_unsupported(1, args, "static M must equal")
+        self._expect_unsupported(1, args, "static M must be within")
 
     def test_k_must_be_positive_static_multiple_of_256(self) -> None:
         n, k = 32, 384
@@ -259,7 +259,7 @@ class Int6QuantizedGemmLegalityTest(unittest.TestCase):
 
     def test_op_validates_before_launching(self) -> None:
         args = self._args(m=2)
-        with self.assertRaisesRegex(RuntimeError, "static M must equal"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT6_QUANTIZED_GEMM.op(1)(*args)
 
 
