@@ -41,17 +41,10 @@ jobs:
       contents: read
     with:
       backend: coreml
-      # The heavier coreml_static_int8 macOS matrix saturates the shared
-      # macOS runner pool, so run it only on the nightly schedule. Every-commit
-      # events (push, pull_request) run the lighter coreml flow only.
-      flows: >-
-        ${{ github.event_name == 'schedule'
-            && '["coreml", "coreml_static_int8"]'
-            || '["coreml"]' }}
-      # The operators suite under coreml_static_int8 has never finished inside the
-      # 180 minute limit, so it is cancelled every night after burning about three
-      # macOS runner hours for no result. See issue #21623.
-      exclude: '[{"flow": "coreml_static_int8", "suite": "operators"}]'
+      # TEMPORARY: measure static-int8 operator runtime for PR #23323 / issue #21623.
+      # Remove this override before landing; retain the normal coreml jobs.
+      flows: '["coreml", "coreml_static_int8"]'
+      exclude: '[{"flow": "coreml_static_int8", "suite": "models"}]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       run-macos: true
