@@ -5,20 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 # Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
 
-"""Decode-sized (M <= 4) INT6 GEMM on planar GGUF Q6_K weights.
+"""INT6 GEMM for M <= 64 on planar GGUF Q6_K weights.
 
 The kernels consume ``CudaDp4aPlanarInt6Tensor`` storage directly: ``ql`` holds
 nibble-packed low bits, ``qh`` holds the two high bits in K32 even/odd planes,
 ``scale`` holds signed K16 scale codes, and ``steps`` holds FP16 K256 scale
-steps. Activations are quantized once per K32 block to signed INT8. The GEMM
-reconstructs unsigned six-bit weights, uses DP4A, applies the constant -32 and
-both scales in FP32, accumulates in FP32, and returns BF16.
+steps. Buckets 1-4 retain W6A8 DP4A with FP32 scaling and accumulation. Buckets
+8-64 decode K256 weight tiles to BF16 and use tensor-core W6A16 with FP32
+accumulation. Outputs are BF16.
 
-One op is registered for each bucket in M={1,2,3,4}. Each bucket autotunes the
-generic configuration space over explicit-row K16 and K32 implementations,
-1/2/4/8 output warps, and 1/2/3 pipeline stages. Split-K is shape/device derived
-and reduced deterministically. Dynamic buckets branch uniformly to the explicit
-kernel with exactly the runtime row count.
+One op is registered for every bucket in M={1,2,3,4,8,16,32,64}. Every kernel
+masks rows at or above runtime M. Small buckets keep their existing generic
+W6A8 configuration space and split rule. Large buckets independently autotune
+generic BLOCK_M/BLOCK_N/warp/stage tiles with M in the key and K-loop-trip
+pruning; split-K is selected outside autotune, writes disjoint FP32 partials,
+and uses the shared deterministic reduction. Phase 1 defaults large buckets to
+split 1.
 """
 
 from typing import Optional
@@ -45,14 +47,21 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
     prune_by_main_loop_trips,
     quantize_activations_q8,
     SPLIT_K_CANDIDATES,
+    tile_autotune_configs,
 )
 
 _GROUP_SIZE = 16
 _SUPER_BLOCK = 256
 _TL_GROUP_SIZE = tl.constexpr(16)
 _TL_Q8_BLOCK = tl.constexpr(32)
+_TL_SUPER_BLOCK = tl.constexpr(256)
 
-SUPPORTED_BUCKETS = (1, 2, 3, 4)
+_SMALL_BUCKETS = (1, 2, 3, 4)
+_LARGE_BUCKETS = (8, 16, 32, 64)
+# The tile kernels split K in 256-wide super-blocks and keep gaining from more
+# splits on narrow N (e.g. N = 256), so they try one more power of two.
+TILE_SPLIT_K_CANDIDATES = (*SPLIT_K_CANDIDATES, 32)
+SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *_LARGE_BUCKETS)
 
 
 @triton.jit
@@ -972,6 +981,7 @@ def _int6_w6a8_bucket_kernel(
     stride_om: tl.constexpr,
     stride_on: tl.constexpr,
     BUCKET: tl.constexpr,
+    BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     SPLIT_K: tl.constexpr,
     PIPELINE_STAGES: tl.constexpr,
@@ -1040,6 +1050,153 @@ def _int6_w6a8_bucket_kernel(
         )
 
 
+@triton.jit
+def _decode_int6_w6a16_superblock(
+    ql,
+    qh,
+    scale,
+    steps,
+    offs_n,
+    n_mask,
+    super_block,
+    stride_qln: tl.constexpr,
+    stride_qlk: tl.constexpr,
+    stride_qhn: tl.constexpr,
+    stride_qhk: tl.constexpr,
+    stride_sn: tl.constexpr,
+    stride_sk: tl.constexpr,
+    stride_stn: tl.constexpr,
+    stride_stk: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """Decode one planar Q6_K K256 tile to BF16."""
+    offs_k = tl.arange(0, 256)
+    packed_low = tl.load(
+        ql
+        + offs_n[:, None] * stride_qln
+        + (super_block * 128 + offs_k[None, :] // 2) * stride_qlk,
+        mask=n_mask[:, None],
+        other=0,
+    ).to(tl.uint32)
+    low = (packed_low >> ((offs_k[None, :] & 1) * 4)) & 0xF
+
+    k_in_chunk = offs_k % 32
+    qh_byte = (
+        super_block * 64 + (offs_k // 32) * 8 + (k_in_chunk % 2) * 4 + k_in_chunk // 8
+    )
+    high_shift = ((k_in_chunk % 8) // 2) * 2
+    packed_high = tl.load(
+        qh + offs_n[:, None] * stride_qhn + qh_byte[None, :] * stride_qhk,
+        mask=n_mask[:, None],
+        other=0,
+    ).to(tl.uint32)
+    high = (packed_high >> high_shift[None, :]) & 0x3
+    q = (low | (high << 4)).to(tl.int32) - 32
+
+    offs_group = tl.arange(0, 16)
+    group = super_block * 16 + offs_group
+    scale_code = tl.load(
+        scale + offs_n[:, None] * stride_sn + group[None, :] * stride_sk,
+        mask=n_mask[:, None],
+        other=0,
+    )
+    scale_code = _signed_byte_to_f32(scale_code).to(tl.bfloat16)
+    step = tl.load(
+        steps + offs_n * stride_stn + super_block * stride_stk,
+        mask=n_mask,
+        other=0.0,
+    ).to(tl.bfloat16)
+    group_scale = (scale_code * step[:, None]).to(tl.bfloat16)
+    expanded_scale = tl.reshape(
+        tl.broadcast_to(group_scale[:, :, None], (BLOCK_N, 16, 16)),
+        (BLOCK_N, 256),
+        can_reorder=False,
+    )
+    return (q.to(tl.bfloat16) * expanded_scale).to(tl.bfloat16)
+
+
+@triton.jit
+def _int6_w6a16_tile_kernel(
+    x,
+    ql,
+    qh,
+    scale,
+    steps,
+    out,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    stride_xm: tl.constexpr,
+    stride_xk: tl.constexpr,
+    stride_qln: tl.constexpr,
+    stride_qlk: tl.constexpr,
+    stride_qhn: tl.constexpr,
+    stride_qhk: tl.constexpr,
+    stride_sn: tl.constexpr,
+    stride_sk: tl.constexpr,
+    stride_stn: tl.constexpr,
+    stride_stk: tl.constexpr,
+    stride_os: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    PIPELINE_STAGES: tl.constexpr,
+):
+    """W6A16 K256 tiles with direct or disjoint deterministic split output."""
+    pid_n = tl.program_id(0)
+    pid_m = tl.program_id(1)
+    split_id = tl.program_id(2)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    n_mask = offs_n < N
+    m_mask = offs_m < M
+    offs_k = tl.arange(0, 256)
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    num_super_blocks: tl.constexpr = K // _TL_SUPER_BLOCK
+    super_blocks_per_split: tl.constexpr = tl.cdiv(num_super_blocks, SPLIT_K)
+    first_super = split_id * super_blocks_per_split
+    last_super = tl.minimum(first_super + super_blocks_per_split, num_super_blocks)
+    for super_block in tl.range(first_super, last_super, num_stages=PIPELINE_STAGES):
+        weight = _decode_int6_w6a16_superblock(
+            ql,
+            qh,
+            scale,
+            steps,
+            offs_n,
+            n_mask,
+            super_block,
+            stride_qln,
+            stride_qlk,
+            stride_qhn,
+            stride_qhk,
+            stride_sn,
+            stride_sk,
+            stride_stn,
+            stride_stk,
+            BLOCK_N,
+        )
+        activation = tl.load(
+            x
+            + offs_m[:, None] * stride_xm
+            + (super_block * 256 + offs_k[None, :]) * stride_xk,
+            mask=m_mask[:, None],
+            other=0.0,
+        ).to(tl.bfloat16)
+        acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
+
+    tl.store(
+        out
+        + split_id * stride_os
+        + offs_m[:, None] * stride_om
+        + offs_n[None, :] * stride_on,
+        acc.to(tl.float32) if SPLIT_K > 1 else acc.to(tl.bfloat16),
+        mask=m_mask[:, None] & n_mask[None, :],
+    )
+
+
 def _main_loop_trips(args) -> int:
     """K_TILE units are consumed by 32 lanes per main-loop trip."""
     units_per_split = triton.cdiv(
@@ -1069,14 +1226,40 @@ def _prune(configs, named_args, **kwargs):
     return kept
 
 
+def _tile_main_loop_trips(args) -> int:
+    return max(
+        1,
+        triton.cdiv(
+            int(args["K"]) // _SUPER_BLOCK,
+            int(args["SPLIT_K"]),
+        ),
+    )
+
+
+def _prune_tiles(configs, named_args, **kwargs):
+    return prune_by_main_loop_trips(
+        _tile_main_loop_trips, configs, named_args, **kwargs
+    )
+
+
 _BUCKET_KERNELS = {
     bucket: triton.autotune(
         configs=int6_autotune_configs(),
         key=["N", "K", "SPLIT_K", "DYNAMIC_M"],
         prune_configs_by={"early_config_prune": _prune},
     )(_int6_w6a8_bucket_kernel)
-    for bucket in SUPPORTED_BUCKETS
+    for bucket in _SMALL_BUCKETS
 }
+_BUCKET_KERNELS.update(
+    {
+        bucket: triton.autotune(
+            configs=tile_autotune_configs(bucket),
+            key=["M", "N", "K", "SPLIT_K"],
+            prune_configs_by={"early_config_prune": _prune_tiles},
+        )(_int6_w6a16_tile_kernel)
+        for bucket in _LARGE_BUCKETS
+    }
+)
 
 
 def _unsupported_reason(
@@ -1128,7 +1311,7 @@ def _unsupported_reason(
     return None
 
 
-def _launch(
+def _launch_w6a8(
     bucket: int,
     x: torch.Tensor,
     ql: torch.Tensor,
@@ -1167,6 +1350,7 @@ def _launch_rows(
     *,
     split_k: int,
 ) -> torch.Tensor:
+    del group_size
     M, K = x.shape
     N = ql.shape[0]
     check_split_k(split_k, int(K), _SUPER_BLOCK)
@@ -1195,8 +1379,78 @@ def _launch_rows(
             steps.stride(1),
         ),
         BUCKET=bucket,
+        BLOCK_M=block_m,
         DYNAMIC_M=dynamic_m,
     )
+
+
+@autotune_launch_param("split_k", TILE_SPLIT_K_CANDIDATES)
+def _launch_w6a16(
+    bucket: int,
+    x: torch.Tensor,
+    ql: torch.Tensor,
+    qh: torch.Tensor,
+    scale: torch.Tensor,
+    steps: torch.Tensor,
+    group_size: int,
+    *,
+    split_k: int,
+    config: Optional[triton.Config] = None,
+) -> torch.Tensor:
+    del group_size
+    M, K = x.shape
+    N = ql.shape[0]
+    check_split_k(split_k, int(K), _SUPER_BLOCK)
+    if config is None:
+        kernel = _BUCKET_KERNELS[bucket]
+        launch_options = {}
+    else:
+        kernel = _int6_w6a16_tile_kernel
+        launch_options = {
+            **config.kwargs,
+            "num_warps": config.num_warps,
+            "num_stages": config.num_stages,
+        }
+    return launch_split_k_gemm(
+        kernel,
+        bucket=bucket,
+        m=M,
+        n=N,
+        device=x.device,
+        split_k=split_k,
+        block_m=min(bucket, 32),
+        inputs=(x, ql, qh, scale, steps),
+        shape_args=(
+            M,
+            N,
+            K,
+            x.stride(0),
+            x.stride(1),
+            ql.stride(0),
+            ql.stride(1),
+            qh.stride(0),
+            qh.stride(1),
+            scale.stride(0),
+            scale.stride(1),
+            steps.stride(0),
+            steps.stride(1),
+        ),
+        **launch_options,
+    )
+
+
+def _launch(
+    bucket: int,
+    x: torch.Tensor,
+    ql: torch.Tensor,
+    qh: torch.Tensor,
+    scale: torch.Tensor,
+    steps: torch.Tensor,
+    group_size: int,
+    **launch_params,
+) -> torch.Tensor:
+    launch = _launch_w6a8 if bucket in _SMALL_BUCKETS else _launch_w6a16
+    return launch(bucket, x, ql, qh, scale, steps, group_size, **launch_params)
 
 
 def _prototype(
