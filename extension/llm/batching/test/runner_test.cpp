@@ -49,6 +49,7 @@ using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::stamped;
 using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::Token;
+using executorch::extension::llm::batching::TokenInputPtr;
 using executorch::extension::llm::batching::testing::FakeExecutor;
 
 namespace {
@@ -225,8 +226,9 @@ class CloneExecutor : public FakeExecutor {
       history.resize(start);
       history.insert(
           history.end(),
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset,
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset +
+              input.size);
       const auto& output = out.outputs[i];
       if (output && !output->tokens.empty()) {
         history.insert(
