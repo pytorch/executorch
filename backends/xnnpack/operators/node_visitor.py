@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,18 +8,14 @@
 import ctypes
 import hashlib
 import logging
-
 from typing import cast, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.transforms import get_shape
-
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
-
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
-
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
     PerChannelGroupQuant,
@@ -39,7 +36,6 @@ from executorch.backends.xnnpack.utils.utils import (
     is_param_node,
     PERM_NCHW_TO_NHWC,
 )
-
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
     UINT64_MAX,
     XNN_INVALID_VALUE_ID,
@@ -78,6 +74,17 @@ def get_tensor_value(xvalue: XValue) -> XNNTensorValue:
         # it is XNNQuantizedTensorValue
         q_tensor = val_union
         return q_tensor.tensor_value
+
+
+def _tensor_bytes(value: torch.Tensor) -> bytes:
+    """Return the tensor's contiguous physical storage as bytes."""
+
+    assert value.is_contiguous() or value.is_contiguous(
+        memory_format=torch.channels_last
+    ), "Tensor must have contiguous storage"
+
+    # data_ptr() accounts for storage_offset(), limiting the read to this tensor.
+    return ctypes.string_at(value.data_ptr(), value.numel() * value.element_size())
 
 
 class NodeVisitor:
@@ -288,12 +295,9 @@ class NodeVisitor:
             if quant_params.per_channel_group:
                 scale = scale.to(torch.bfloat16)
 
-            num_bytes = scale.untyped_storage().nbytes()
-            scale_array = ctypes.cast(
-                scale.untyped_storage().data_ptr(),
-                ctypes.POINTER(ctypes.c_char * num_bytes),
-            ).contents
-            scale_name = hashlib.sha256(bytes(scale_array)).hexdigest()
+            scale_data = _tensor_bytes(scale.contiguous())
+            num_bytes = len(scale_data)
+            scale_name = hashlib.sha256(scale_data).hexdigest()
             scale_name = "scale_" + scale_name
             xnn_graph.constant_data.append(
                 ConstantDataOffset(
@@ -305,7 +309,7 @@ class NodeVisitor:
                     f"Adding constant data with name, key {scale_name} and external_tag {external_tag} to named_data_store"
                 )
             self._named_data_store.add_named_data(
-                scale_name, bytes(scale_array), CONSTANT_TENSOR_ALIGNMENT, external_tag
+                scale_name, scale_data, CONSTANT_TENSOR_ALIGNMENT, external_tag
             )
 
             if quant_params.per_channel_group:
@@ -616,21 +620,16 @@ class NodeVisitor:
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
 
-        size = const_val.untyped_storage().nbytes()
-        array_type = ctypes.c_char * size
-        array = ctypes.cast(
-            const_val.untyped_storage().data_ptr(),
-            ctypes.POINTER(array_type),
-        ).contents
+        data = _tensor_bytes(const_val)
+        size = len(data)
 
         check_or_raise(
             size > 0,
             f"Serializing constant data node {tensor} but tensor value has no bytes",
         )
-        sha256_hash = hashlib.sha256(bytes(array))
+        sha256_hash = hashlib.sha256(data)
         named_key = sha256_hash.hexdigest()
 
-        size = const_val.untyped_storage().nbytes()
         xnn_graph.constant_data.append(
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
@@ -645,7 +644,7 @@ class NodeVisitor:
             )
         self._named_data_store.add_named_data(
             named_key,
-            bytes(array),
+            data,
             alignment=CONSTANT_TENSOR_ALIGNMENT,
             external_tag=external_tag,
         )
