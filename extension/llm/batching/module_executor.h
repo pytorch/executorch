@@ -17,10 +17,10 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/util/session_table.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
@@ -31,9 +31,6 @@
 namespace executorch {
 namespace extension {
 namespace llm {
-
-class Sampler;
-
 namespace batching {
 
 namespace cache = ::executorch::extension::llm::cache;
@@ -90,23 +87,6 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   bool execute(const BatchInput& batch, BatchOutput& out) override;
 
  private:
-  struct SessionState {
-    std::int32_t seq_id;
-    std::unique_ptr<Sampler> sampler;
-  };
-
-  struct Step {
-    std::vector<std::int64_t> tokens;
-    std::vector<std::int64_t> positions;
-    std::vector<std::int32_t> seq_ids;
-    std::vector<int> logit_indices;
-  };
-
-  ::executorch::runtime::Result<Step> build_step(const BatchInput& batch);
-  std::optional<SessionId> publish_session(
-      std::int32_t seq_id,
-      Position position);
-
   ModuleExecutor(
       std::unique_ptr<Module> module,
       std::shared_ptr<cache::Cache> cache,
@@ -118,27 +98,18 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       int max_step_tokens,
       LogitsToKeepMode logits_to_keep_mode);
 
-  // Draw the token an input produced from its row of `logits`, which the
-  // session's sampler consumes in place.
-  std::optional<Token>
-  sample_row(::executorch::aten::Tensor& logits, int row, SessionId session);
-
   // Ordered so the module dies first, releasing the delegate that resolved the
   // cache before the registry entry naming it goes.
   cache::InstallGuard install_guard_;
   std::unique_ptr<Module> module_;
   cache::BatchControl* const ctl_;
-  int max_sessions_;
-  int max_session_tokens_;
   std::string backend_id_;
   std::string method_;
   // The method's logits width, so a sampler can be built by its policy.
   std::int32_t vocab_size_;
   int max_step_tokens_;
   LogitsToKeepMode logits_to_keep_mode_;
-
-  SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
-  std::unordered_map<SessionId, SessionState> sessions_;
+  util::SessionTable sessions_;
 };
 
 } // namespace batching

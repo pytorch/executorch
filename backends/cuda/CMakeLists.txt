@@ -255,16 +255,8 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
-  list(
-    APPEND
-    _aoti_cuda_shim_sources
-    runtime/shims/int4mm.cu
-    runtime/shims/int4_plain_mm.cu
-    runtime/shims/int5_plain_mm.cu
-    runtime/shims/int6_plain_mm.cu
-    runtime/shims/int8_plain_mm.cu
-    runtime/shims/sort.cu
-    runtime/shims/rand.cu
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
+       runtime/shims/sort.cu runtime/shims/rand.cu
   )
 endif()
 
@@ -375,7 +367,9 @@ set(_aoti_cuda_backend_sources
 )
 # The off-graph KV cache builds on the LLM extension's neutral cache.
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
+       runtime/cuda_kv_pool.cpp
+  )
 endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
@@ -507,5 +501,13 @@ if(BUILD_TESTING)
       EXTRA_LIBS aoti_cuda_backend
     )
     target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
+
+  if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    et_cxx_test(
+      test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
   endif()
 endif()

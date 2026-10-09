@@ -55,6 +55,25 @@ def _vulkan_graphs(edge):
     ]
 
 
+class TransformerBlock(torch.nn.Module):
+    def __init__(self, sdpa):
+        super().__init__()
+        self.sdpa = sdpa
+        self.qkv = torch.nn.Linear(64, 192)
+        self.ff = torch.nn.Linear(64, 64)
+
+    def forward(self, x, lengths):
+        b, s, _ = x.shape
+        mask = (torch.arange(s)[None, :] < lengths[:, None])[:, None, None, :]
+        q, k, v = self.qkv(x).view(b, s, 3, 2, 32).permute(2, 0, 3, 1, 4)
+        if self.sdpa:
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        else:
+            bias = torch.where(mask, 0.0, -torch.inf)
+            y = torch.softmax(q @ k.transpose(-1, -2) * 32**-0.5 + bias, -1) @ v
+        return F.gelu(self.ff(y.transpose(1, 2).reshape(b, s, 64)))
+
+
 class ConstantMask(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -149,6 +168,71 @@ class TestVulkanDynamic(unittest.TestCase):
                             )
                         )
 
+    def test_partition_transformer(self):
+        for sdpa in (False, True):
+            with self.subTest(sdpa=sdpa):
+                self._lower(
+                    TransformerBlock(sdpa),
+                    (torch.randn(1, 16, 64), torch.tensor([16])),
+                    ({1: Dim("s", min=2, max=1000)}, {}),
+                )
+
+    def _run_dynamic_transformer(self, sdpa):
+        torch.manual_seed(0)
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
+            with self.subTest(storage=storage):
+                model = TransformerBlock(sdpa).eval()
+                inputs = [
+                    (torch.randn(1, s, 64), torch.tensor([length]))
+                    for s, length in (
+                        (16, 16),
+                        (7, 4),
+                        (31, 23),
+                        (2, 1),
+                        (16, 0 if sdpa else 5),
+                    )
+                ]
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=32)}, {}), storage
+                )
+                self._run(edge, model, inputs)
+
+    def test_dynamic_transformer(self):
+        self._run_dynamic_transformer(False)
+
+    @unittest.skipIf(
+        USING_SWIFTSHADER,
+        "SDPA requires 8-bit storage buffers even with texture preference",
+    )
+    def test_dynamic_sdpa_transformer(self):
+        self._run_dynamic_transformer(True)
+
+    def test_partition_any_unsupported_inputs(self):
+        class AnyDim(torch.nn.Module):
+            def forward(self, x):
+                return torch.any(x, dim=0, keepdim=True)
+
+        for x in (
+            torch.tensor(True),
+            torch.tensor([0, 1], dtype=torch.int32),
+            torch.tensor([0, 1], dtype=torch.uint8),
+            torch.tensor([0.0, 1.0]),
+        ):
+            with self.subTest(shape=x.shape, dtype=x.dtype):
+                edge = to_edge_transform_and_lower(
+                    export(AnyDim(), (x,)),
+                    partitioner=[VulkanPartitioner({"require_dynamic_shapes": True})],
+                )
+                self.assertNotIn(
+                    torch.ops.higher_order.executorch_call_delegate,
+                    [node.target for node in edge.exported_program().graph.nodes],
+                )
+
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
@@ -233,6 +317,26 @@ class TestVulkanDynamic(unittest.TestCase):
                 edge = self._lower(model, inputs[0])
                 self._run(edge, model, inputs, atol=0, rtol=0)
 
+    def test_dynamic_expand(self):
+        class Expand(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "offset", torch.arange(4, dtype=torch.float32)[None, :]
+                )
+
+            def forward(self, x):
+                return x.expand(2, x.shape[1], 4) + self.offset.expand(2, 4)[:, None, :]
+
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                model = Expand()
+                inputs = [(torch.randn(1, s, 1),) for s in (16, 3, 31, 2, 16)]
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_dynamic_full(self):
         class Full(torch.nn.Module):
             def forward(self, x):
@@ -253,6 +357,132 @@ class TestVulkanDynamic(unittest.TestCase):
                     model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_any_without_keepdim_uses_textures(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, keepdim):
+                super().__init__()
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                mask = x > 0
+                if self.keepdim is None:
+                    reduced = torch.any(mask, dim=-1)
+                else:
+                    reduced = torch.any(mask, dim=-1, keepdim=self.keepdim)
+                return torch.logical_not(reduced), torch.any(reduced, dim=-1)
+
+        inputs = [
+            ((torch.arange(2 * s * 5).reshape(2, s, 5) % 17).float() - 14,)
+            for s in (16, 3, 31, 2, 16)
+        ]
+        for keepdim in (None, False):
+            with self.subTest(keepdim=keepdim):
+                model = AnyDim(keepdim)
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=32)},),
+                )
+                for graph in _vulkan_graphs(edge):
+                    for value in graph.values:
+                        tensor = value.value
+                        if isinstance(tensor, VkTensor) and tensor.constant_id < 0:
+                            self.assertEqual(
+                                tensor.storage_type, VkStorageType.TEXTURE_3D
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_any_texture_without_keepdim_shapes(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim)
+
+        for shape, dim, supported in (
+            ((7,), 0, True),
+            ((0,), 0, True),
+            ((3, 5), 0, True),
+            ((3, 5), -1, True),
+            ((0, 3), 0, True),
+            ((2, 0, 3), 1, True),
+            ((2, 0, 3), -1, True),
+            ((1, 3, 5, 7), 1, True),
+            ((1, 3, 5, 7), -2, True),
+            ((2, 3, 5, 7), -1, True),
+            ((2, 3, 5, 7), 2, True),
+            ((1, 3, 1, 7), 1, True),
+            ((1, 3, 5, 7), 0, False),
+            ((2, 3, 5, 7), 1, False),
+        ):
+            with self.subTest(shape=shape, dim=dim):
+                x = torch.zeros(shape, dtype=torch.bool)
+                if x.numel() > 0:
+                    x[tuple(size // 2 for size in shape)] = True
+                model = AnyDim(dim)
+                edge = self._lower(model, (x,), fully_delegated=supported)
+                if not supported:
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                for graph in _vulkan_graphs(edge):
+                    for value_id in graph.input_ids + graph.output_ids:
+                        tensor = graph.values[value_id].value
+                        self.assertEqual(tensor.storage_type, VkStorageType.TEXTURE_3D)
+                self._run(
+                    edge,
+                    model,
+                    [(x,), (torch.zeros_like(x),), (torch.ones_like(x),)],
+                    atol=0,
+                    rtol=0,
+                )
+
+    def test_dynamic_any_dim(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim, keepdim):
+                super().__init__()
+                self.dim = dim
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim, keepdim=self.keepdim)
+
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for dim, keepdim in (
+            (-1, True),
+            (-1, False),
+            (1, True),
+            (1, False),
+            (0, False),
+        ):
+            for storage in storages:
+                with self.subTest(dim=dim, keepdim=keepdim, storage=storage):
+                    model = AnyDim(dim, keepdim)
+                    inputs = []
+                    for s in (16, 3, 31, 2, 0, 16):
+                        x = torch.zeros(2, s, 5, dtype=torch.bool)
+                        if s not in (0, 3):
+                            x[0, s // 2, 1] = True
+                            x[1, -1, 3] = True
+                            x[1, 0, 4] = True
+                        inputs.append((x,))
+                    seq = Dim("s", min=0, max=32)
+                    unsupported = dim != -1 and storage == VkStorageType.BUFFER
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: seq},),
+                        storage,
+                        fully_delegated=not unsupported,
+                    )
+                    if unsupported:
+                        self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_dynamic_logical_not(self):
         class LogicalNot(torch.nn.Module):
@@ -361,6 +591,57 @@ class TestVulkanDynamic(unittest.TestCase):
                         model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
                     )
                     self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_signed_zero_scalars(self):
+        class SignedZero(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.ops.aten.mul.Scalar(x, -0.0),
+                    torch.full_like(x, -0.0),
+                    torch.scalar_tensor(-0.0, dtype=x.dtype),
+                )
+
+        model = SignedZero()
+        for dtype in (torch.float32, torch.float16):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dtype=dtype, storage=storage):
+                    inputs = [(torch.arange(-7, 14, dtype=dtype).reshape(3, 7),)]
+                    edge = self._lower(
+                        model, inputs[0], storage=storage, fully_delegated=False
+                    )
+                    self.assertTrue(_vulkan_graphs(edge))
+                    self.assertTrue(
+                        all(
+                            node.target
+                            in (
+                                operator.getitem,
+                                torch.ops.higher_order.executorch_call_delegate,
+                            )
+                            for node in edge.exported_program().graph.nodes
+                            if node.op == "call_function"
+                        )
+                    )
+                    self._run(
+                        edge, model, inputs, atol=0, rtol=0, check_signed_zero=True
+                    )
+
+    def test_fp16_chained_mul_scalar(self):
+        class ChainedMul(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten.mul.Scalar(
+                    torch.ops.aten.mul.Scalar(x, 1.0006), 1000
+                )
+
+        model = ChainedMul()
+        x = torch.ones(3, 7, dtype=torch.float16)
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(model, (x,), storage=storage)
+                operators = [
+                    op.name for graph in _vulkan_graphs(edge) for op in graph.chain
+                ]
+                self.assertEqual(operators.count("aten.mul.Scalar"), 2)
+                self._run(edge, model, [(x,)], atol=0, rtol=0)
 
     def test_integer_scalar_range_fallback(self):
         class LargeScalar(torch.nn.Module):
@@ -672,7 +953,7 @@ class TestVulkanDynamic(unittest.TestCase):
             def forward(self, x):
                 return self.op(x, dim=self.dim, keepdim=True)
 
-        for op in (torch.sum, torch.mean, torch.amax):
+        for op in (torch.any, torch.sum, torch.mean, torch.amax):
             for batch, dim, supported in (
                 (1, 0, False),
                 (2, 0, False),
@@ -683,7 +964,11 @@ class TestVulkanDynamic(unittest.TestCase):
             ):
                 with self.subTest(op=op, batch=batch, dim=dim):
                     values = torch.arange(batch * 3 * 4 * 5).reshape(batch, 3, 4, 5)
-                    x = -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    x = (
+                        values % 7 == 0
+                        if op == torch.any
+                        else -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    )
                     model = Reduce(op, dim)
                     edge = self._lower(model, (x,), fully_delegated=supported)
                     if not supported:
@@ -775,6 +1060,40 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), fully_delegated=False)
                         self.assertEqual(_vulkan_graphs(edge), [])
                         self._run(edge, model, [(x,)])
+
+    def test_power_special_values(self):
+        class Power(torch.nn.Module):
+            def __init__(self, exponent):
+                super().__init__()
+                self.exponent = exponent
+
+            def forward(self, x):
+                return torch.pow(x, self.exponent)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [-torch.inf, -10000, -4, -0.0, 0.0, 1, 10000, torch.inf, torch.nan],
+                dtype=dtype,
+            ).repeat(3, 1)
+            for exponent in (
+                -3,
+                -0.5,
+                0,
+                0.5,
+                2,
+                2.0001,
+                3,
+                2049,
+                torch.inf,
+                -torch.inf,
+            ):
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(dtype=dtype, exponent=exponent, storage=storage):
+                        model = Power(exponent)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(
+                            edge, model, [(x,)], equal_nan=True, check_signed_zero=True
+                        )
 
     def test_fp16_scalar_rounding(self):
         class CreateTensor(torch.nn.Module):
