@@ -45,9 +45,11 @@ def main():
             (
                 e.created_at
                 for e in issue.get_events()
-                if e.event == "labeled"
-                and e.label
-                and e.label.name == LABEL
+                if (
+                    e.event == "labeled"
+                    and e.label
+                    and e.label.name == LABEL
+                )
             ),
             default=issue.created_at,
         )
@@ -56,7 +58,7 @@ def main():
 
         # ---- AUTOMATION LOGIC ----
         if any(
-            c.user.login == issue.user.login #check only for author reply
+            c.user.login == issue.user.login # check only for author reply
             for c in cycle
             if REMINDER_MARKER not in (c.body or "")
         ):
