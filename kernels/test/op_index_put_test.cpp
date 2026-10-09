@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <sys/types.h>
 #include <tuple>
+#include <vector>
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;

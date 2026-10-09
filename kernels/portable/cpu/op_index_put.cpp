@@ -317,13 +317,13 @@ Tensor& index_put_(
             VALUE_T* dest = in.mutable_data_ptr<VALUE_T>();
             for (const auto i : c10::irange(leading_dims)) {
               for (const auto j : c10::irange(values_dim_length)) {
-                const auto index = index_arr[j] < 0
+                const auto ix = index_arr[j] < 0
                     ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
                     : index_arr[j];
                 const size_t src_offset =
                     (i * values_dim_length + j) * trailing_dims;
                 const size_t dest_offset =
-                    (i * in_dim_length + index) * trailing_dims;
+                    (i * in_dim_length + ix) * trailing_dims;
                 for (const auto k : c10::irange(trailing_dims)) {
                   dest[dest_offset + k] += src[src_offset + k];
                 }
@@ -335,11 +335,11 @@ Tensor& index_put_(
         const char* src = values_data + i * values_dim_length * length_per_step;
         char* dest = in_data + i * in_dim_length * length_per_step;
         for (const auto j : c10::irange(values_dim_length)) {
-          const auto index = index_arr[j] < 0
+          const auto ix = index_arr[j] < 0
               ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
               : index_arr[j];
           const char* copy_src = src + j * length_per_step;
-          char* copy_dest = dest + index * length_per_step;
+          char* copy_dest = dest + ix * length_per_step;
           memcpy(copy_dest, copy_src, length_per_step);
         }
       }
