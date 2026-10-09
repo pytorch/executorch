@@ -24,9 +24,9 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
 
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.inception_v3.model import InceptionV3Model
@@ -76,14 +76,14 @@ def main(args):
     inputs = [inputs[0]]
     targets = [targets[0]]
 
-    # Please ensure that dump_intermediate_outputs are set to true when creating SimpleADB
-    adb = SimpleADB(
+    # Please ensure that dump_intermediate_outputs are set to true when creating Device
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -147,11 +147,11 @@ def main(args):
             comparator=sqnr_comparator,
         )
 
-    adb.pull_debug_output(
+    device.pull_debug_output(
         args.artifact, args.artifact, callback=validate_intermediate_tensor
     )
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []
