@@ -1123,6 +1123,7 @@ class SPVGenerator:
                 ]
                 included_file_path = next(
                     (path for path in candidate_paths if path in gen_file_meta),
+                    # Untracked includes must disable the cache.
                     candidate_paths[-1],
                 )
                 if any_sources_changed(included_file_path, output_dir, visited):
