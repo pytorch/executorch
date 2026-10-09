@@ -32,15 +32,14 @@ def define_common_targets(is_fbcode = False):
             ":step_plan",
             "//executorch/backends/cuda/runtime:cuda_backend",
             "//executorch/extension/llm/batching:batching",
+            "//executorch/extension/llm/batching:session_table",
             "//executorch/extension/llm/cache:kv_cache",
             "//executorch/extension/module:module",
         ],
         deps = [
             "//executorch/extension/llm/runner:stats",
-            "//executorch/extension/llm/sampler:sampler",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/platform:platform",
         ],
         external_deps = [
