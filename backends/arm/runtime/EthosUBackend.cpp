@@ -8,14 +8,17 @@
  */
 
 /*
- * Common Arm backend for Ethos-U. Please see
- * EthosUBackend_Cortex_*.cpp for specific backends.
+ * Common Arm backend for Ethos-U. The driver-specific platform implementations
+ * live in EthosUBackend_CoreDriver.cpp and EthosUBackend_LinuxDriver.cpp.
  */
 
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <iterator>
+#include <limits>
 #include <new>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -27,8 +30,8 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-// Overridable memcpy used by the EthosU backend for input/output scratch
-// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// Overridable memcpy for copying inputs and outputs to and from scratch.
+// Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
 // std::memcpy. Firmware targets can supply a strong override (e.g. routing
 // through a DMA engine) to reduce CPU memcpy load on the host MCU.
 extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
@@ -52,6 +55,41 @@ using executorch::runtime::Span;
 namespace executorch {
 namespace backends {
 namespace arm {
+
+namespace {
+
+using printf_size_t = unsigned long;
+
+Error validate_et_and_vela_tensors(
+    const executorch::aten::Tensor& tensor,
+    const VelaIO& io) {
+  if (io.elem_size != tensor.element_size()) {
+    ET_LOG(
+        Error,
+        "Element size mismatch: tensor %lu, Vela %d",
+        static_cast<printf_size_t>(tensor.element_size()),
+        io.elem_size);
+    return Error::InvalidProgram;
+  }
+
+  // init() validates the dimensions and rules out byte-count overflow.
+  const size_t io_bytes = std::accumulate(
+      std::begin(io.shape),
+      std::end(io.shape),
+      static_cast<size_t>(io.elem_size),
+      std::multiplies<size_t>{});
+  if (io_bytes != tensor.nbytes()) {
+    ET_LOG(
+        Error,
+        "Byte size mismatch: tensor %lu, Vela %lu",
+        static_cast<printf_size_t>(tensor.nbytes()),
+        static_cast<printf_size_t>(io_bytes));
+    return Error::InvalidProgram;
+  }
+  return Error::Ok;
+}
+
+} // namespace
 
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
@@ -143,10 +181,33 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return read_status;
     }
 
+    const VelaIOs* outputs = handle->handles.outputs;
+    const int output_count = outputs ? outputs->count : 0;
+    for (int i = 0; i < output_count; ++i) {
+      const VelaIO& output_io = outputs->io[i];
+      if (output_io.elem_size <= 0) {
+        ET_LOG(Error, "Ethos-U output %d has an invalid element size", i);
+        handle->~ExecutionHandle();
+        return Error::InvalidProgram;
+      }
+      size_t io_bytes = static_cast<size_t>(output_io.elem_size);
+      for (int dim : output_io.shape) {
+        if (dim < 0 ||
+            (dim > 0 &&
+             io_bytes > std::numeric_limits<size_t>::max() /
+                     static_cast<size_t>(dim))) {
+          ET_LOG(Error, "Ethos-U output %d has an invalid shape", i);
+          handle->~ExecutionHandle();
+          return Error::InvalidProgram;
+        }
+        io_bytes *= static_cast<size_t>(dim);
+      }
+    }
+
     const Error platform_status =
         platform_init(compile_specs, allocator, handle);
     if (platform_status != Error::Ok) {
-      delete handle;
+      handle->~ExecutionHandle();
       return platform_status;
     }
 
@@ -189,6 +250,17 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     const int input_count = handles.inputs ? handles.inputs->count : 0;
     const int output_count = handles.outputs ? handles.outputs->count : 0;
 
+    // Output buffers must match Vela's element sizes and byte counts.
+    for (int i = 0; i < output_count; ++i) {
+      const Error status = validate_et_and_vela_tensors(
+          args[input_count + i]->toTensor(), handles.outputs->io[i]);
+      if (status != Error::Ok) {
+        ET_LOG(
+            Error, "Ethos-U output %d does not match its Vela descriptor", i);
+        return status;
+      }
+    }
+
     char* ethosu_scratch = nullptr;
     if (needs_scratch_allocation()) {
       MemoryAllocator* temp_allocator = context.get_temp_allocator();
@@ -201,23 +273,23 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       if (ethosu_scratch == nullptr) {
         ET_LOG(
             Error,
-            "Failed to allocate scratch buffer of %zu bytes from temp_allocator",
-            handles.scratch_data_size);
+            "Failed to allocate scratch buffer of %lu bytes from temp_allocator",
+            static_cast<printf_size_t>(handles.scratch_data_size));
         return Error::MemoryAllocationFailed;
       }
     }
 
     ET_LOG(
         Debug,
-        "Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n  fast scratch %p %zu\n",
+        "Running program data:\n  cmd %p %lu\n  weight %p %lu\n  scratch %p %lu\n  fast scratch %p %lu\n",
         handles.cmd_data,
-        handles.cmd_data_size,
+        static_cast<printf_size_t>(handles.cmd_data_size),
         handles.weight_data,
-        handles.weight_data_size,
+        static_cast<printf_size_t>(handles.weight_data_size),
         ethosu_scratch,
-        handles.scratch_data_size,
+        static_cast<printf_size_t>(handles.scratch_data_size),
         ethosu_fast_scratch,
-        ethosu_fast_scratch_size);
+        static_cast<printf_size_t>(ethosu_fast_scratch_size));
 
     // Write argument values (from EValue tensor) into Ethos-U scratch
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
@@ -337,114 +409,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   // No platform-specific members.
 };
 
-// cppcheck-suppress unusedFunction
-Error copy_with_layout_adjustment(
-    const VelaIO& output_io,
-    int output_index,
-    const char* src,
-    executorch::aten::Tensor& tensor_out,
-    size_t tensor_bytes) {
-  const int elem_size = output_io.elem_size;
-  if (elem_size == 0) {
-    ET_LOG(Error, "Ethos-U output %d reports zero element size", output_index);
-    return Error::InvalidProgram;
-  }
-
-  size_t chunk_count = 1;
-  for (int dim = 0; dim < shapeDim - 1; ++dim) {
-    const int vela_dim = output_io.shape[dim];
-    chunk_count *= static_cast<size_t>(vela_dim == 0 ? 1 : vela_dim);
-  }
-  const int last_dim = output_io.shape[shapeDim - 1];
-  const size_t vela_chunk_elems =
-      static_cast<size_t>(last_dim == 0 ? 1 : last_dim);
-  const size_t vela_chunk_size =
-      vela_chunk_elems * static_cast<size_t>(elem_size);
-
-  if (tensor_bytes % chunk_count != 0) {
-    ET_LOG(
-        Error,
-        "Ethos-U output %d tensor bytes %zu not divisible by chunk count %zu",
-        output_index,
-        tensor_bytes,
-        chunk_count);
-    return Error::InvalidProgram;
-  }
-
-  const size_t chunk_size = tensor_bytes / chunk_count;
-
-  // If Vela writes fewer bytes than the tensor expects we may need to
-  // expand 4-bit data to 8-bit. Ethos-U outputs may be
-  // packed 4-bit values but ExecuTorch tensors are at least 8-bit.
-  if (vela_chunk_size < chunk_size) {
-    if (chunk_size % vela_chunk_size != 0) {
-      ET_LOG(
-          Error,
-          "Ethos-U output %d chunk bytes %zu not divisible by vela chunk bytes %zu",
-          output_index,
-          chunk_size,
-          vela_chunk_size);
-      return Error::InvalidProgram;
-    }
-
-    const size_t expand_factor = chunk_size / vela_chunk_size;
-    if (expand_factor == 2 && elem_size == 1 &&
-        tensor_out.scalar_type() == ScalarType::Char) {
-      const uint8_t* src_bytes = reinterpret_cast<const uint8_t*>(src);
-      int8_t* dest = tensor_out.mutable_data_ptr<int8_t>();
-      const uint8_t* chunk_src = src_bytes;
-      int8_t* chunk_dest = dest;
-      for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
-        for (size_t byte_idx = 0; byte_idx < vela_chunk_size; ++byte_idx) {
-          const uint8_t packed = chunk_src[byte_idx];
-          int8_t low = static_cast<int8_t>(packed & 0x0F);
-          int8_t high = static_cast<int8_t>((packed >> 4) & 0x0F);
-          if (low >= 8) {
-            low -= 16;
-          }
-          if (high >= 8) {
-            high -= 16;
-          }
-          chunk_dest[2 * byte_idx] = low;
-          chunk_dest[2 * byte_idx + 1] = high;
-        }
-        chunk_src += vela_chunk_size;
-        chunk_dest += chunk_size;
-      }
-      return Error::Ok;
-    }
-
-    ET_LOG(
-        Error,
-        "Ethos-U output %d expansion factor %zu with element size %d not supported",
-        output_index,
-        expand_factor,
-        elem_size);
-    return Error::InvalidProgram;
-  }
-
-  if (src == nullptr) {
-    ET_LOG(Error, "Ethos-U padded copy received null buffer");
-    return Error::InvalidState;
-  }
-  char* dest = tensor_out.mutable_data_ptr<char>();
-  if (dest == nullptr) {
-    ET_LOG(Error, "Ethos-U padded copy received null destination");
-    return Error::InvalidState;
-  }
-  const char* src_bytes = src;
-  for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
-    // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
-#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
-    EthosUBackend_output_memcpy(chunk_size);
-#endif
-    arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
-    src_bytes += vela_chunk_size;
-    dest += chunk_size;
-  }
-  return Error::Ok;
-}
-
 void calculate_dimensions(
     const executorch::aten::Tensor tensor,
     VelaIO* io,
@@ -465,15 +429,6 @@ auto EthosUBackend_backend = EthosUBackend();
 Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
 static executorch::runtime::Error EthosUBackend_registered =
     register_backend(EthosUBackend_id);
-
-// DEPRECATED in Executorch 1.2
-// Remove it from your code and make sure to add this to your CMAKE rules
-// instead:
-//   executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
-extern "C" ET_DEPRECATED executorch::runtime::Error
-executorch_delegate_EthosUBackend_registered() {
-  return EthosUBackend_registered;
-}
 
 } // namespace
 

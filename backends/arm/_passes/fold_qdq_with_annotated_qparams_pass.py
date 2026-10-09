@@ -437,6 +437,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             for i, user in enumerate(users_copy):
                 if user.target not in Q_OPS:
                     continue
+                # A Q node may consume ``n`` as scale or zero point. It is an
+                # output quantizer only when ``n`` is its data input.
+                if not user.args or user.args[0] is not n:
+                    continue
 
                 # quantization node found here, store the quantization parameters in meta value
                 n.meta["output_qparams"][i] = QuantArgs.from_operator(

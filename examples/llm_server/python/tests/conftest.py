@@ -51,7 +51,7 @@ class FakeRunner:
         self._tokens = list(tokens)
         self._fail = fail
         self._finish_reason = finish_reason  # worker-reported stop reason, if any
-        self._gen_ids = list(gen_ids or [])  # ids reported per turn
+        self._gen_ids = list(gen_ids) if gen_ids is not None else None
         self._reuse = reuse  # reused_prompt_tokens reported in done stats
         self.captured_config = None
         self.stopped = False
@@ -95,7 +95,9 @@ class FakeRunner:
             stats = _FakeStats()
             stats.num_generated_tokens = len(self._tokens)
             stats.finish_reason = self._finish_reason
-            stats.generated_token_ids = list(self._gen_ids)
+            stats.generated_token_ids = (
+                list(self._gen_ids) if self._gen_ids is not None else None
+            )
             stats.reused_prompt_tokens = self._reuse
             stats_callback(stats)
 
@@ -128,6 +130,7 @@ def make_client():
         max_named_sessions=0,
         gen_ids=None,
         reuse=0,
+        reasoning_extractor=None,
     ):
         fake = FakeRunner(
             tokens,
@@ -147,6 +150,7 @@ def make_client():
             "test-model",
             max_context=max_context,
             tool_detector_cls=HermesDetector,
+            reasoning_extractor=reasoning_extractor,
         )
         return TestClient(build_app(serving, "test-model")), fake
 

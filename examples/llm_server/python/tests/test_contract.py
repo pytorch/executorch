@@ -134,6 +134,86 @@ def test_chat_streaming_protocol(make_client):
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "options,returns_reasoning",
+    [
+        ({}, True),
+        ({"chat_template_kwargs": {}}, True),
+        ({"chat_template_kwargs": {"return_reasoning": True}}, True),
+        ({"chat_template_kwargs": {"return_reasoning": False}}, False),
+    ],
+    ids=["default", "empty-kwargs", "enabled", "disabled"],
+)
+def test_reasoning_response_contract(make_client, stream, options, returns_reasoning):
+    def split_reasoning(text):
+        reasoning, _, content = text.partition("ANSWER:")
+        return reasoning, content
+
+    client, _ = make_client(
+        tokens=["my plan", "ANSWER:", "visible text"],
+        reasoning_extractor=split_reasoning,
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": stream,
+            **options,
+        },
+    )
+    assert response.status_code == 200
+    if stream:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        chunks, done = _sse_chunks(response.text)
+        assert done
+        messages = [chunk["choices"][0]["delta"] for chunk in chunks]
+        assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    else:
+        choice = response.json()["choices"][0]
+        messages = [choice["message"]]
+        assert choice["finish_reason"] == "stop"
+    assert "".join(message.get("content", "") for message in messages) == "visible text"
+    if returns_reasoning:
+        assert (
+            "".join(message.get("reasoning_content", "") for message in messages)
+            == "my plan"
+        )
+    else:
+        assert all("reasoning_content" not in message for message in messages)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("has_extractor", [False, True])
+@pytest.mark.parametrize("value", ["true", "false", 0, 1, 1.0, None, [], {}])
+def test_return_reasoning_rejects_non_boolean_before_generation(
+    make_client, stream, has_extractor, value
+):
+    client, fake = make_client(
+        max_named_sessions=1,
+        reasoning_extractor=(lambda text: (None, text)) if has_extractor else None,
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "session_id": "validation",
+            "stream": stream,
+            "chat_template_kwargs": {"return_reasoning": value},
+        },
+    )
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/json")
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["code"] == "invalid_value"
+    assert "chat_template_kwargs.return_reasoning" in error["message"]
+    assert fake.opened_log == []
+    assert fake.captured_config is None
+
+
 def test_request_params_forwarded_to_generation(make_client):
     # Contract behavior: the server must honor all supported sampling controls.
     client, fake = make_client()

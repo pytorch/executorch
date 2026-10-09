@@ -10,35 +10,75 @@ on:
     tags:
       - ciflow/nightly/*
   pull_request:
+  # Fork PRs, Meta exports from personal forks included. pull_request_target
+  # always runs this file from the default branch, so the paths filter below only
+  # affects fork PRs.
   pull_request_target:
-    types: [labeled]
+    types: [opened, synchronize, reopened]
+    paths:
+      - backends/cadence/**
+      - examples/cadence/**
+      - .ci/scripts/setup-xtensa-tools.sh
+      - .ci/scripts/build-cadence-xtensa.sh
+      - .ci/scripts/test-cadence-xtensa.sh
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}
   cancel-in-progress: true
 
+# Every job runs on the same paths. Same-repo PRs use pull_request, which reads
+# the PR's own workflow AND code -- so CI changes, new test jobs, code, and tests
+# are all validated pre-merge. Fork PRs can't get credentials (OIDC) there, so
+# fork PRs whose author has contributed before (CONTRIBUTOR or above) run on
+# pull_request_target instead. The CPU jobs hold no AWS credentials on any path
+# (contents: read only), so linux_job_v3's role/arc never reaches fork code; only
+# the Xtensa jobs assume a role, the Cadence artifacts one. The run condition is
+# inlined per job (GitHub Actions has no YAML anchors and env is unavailable in
+# job-level if), so keep the copies in sync.
 jobs:
-  # Same-repo PRs run on pull_request, which reads the PR's own workflow AND code
-  # -- so CI changes, new test jobs, code, and tests are all validated pre-merge.
-  # Fork PRs can't get credentials (OIDC) on pull_request, so Meta-exported forks
-  # (labeled CLA Signed + meta-exported) run on pull_request_target instead. The
-  # run condition is inlined per job (GitHub Actions has no YAML anchors and env
-  # is unavailable in job-level if), so keep the copies in sync.
-  cpu-build:
+  # Resolves the image inline rather than through the shared _docker-image.yml,
+  # which checks out the PR head: actions/checkout refuses that for fork code on
+  # pull_request_target. There the image comes from the base branch (github.sha),
+  # which also keeps a fork from picking the image it runs in. Same-repo PRs read
+  # their own head, as _docker-image.yml does, so .ci/docker changes are tested.
+  docker-image:
+    name: Resolve CI docker image
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
+    runs-on: ubuntu-latest
     permissions:
-      id-token: write
+      contents: read
+    outputs:
+      image: ${{ steps.hash.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - id: hash
+        run: |
+          set -eu
+          CI_DOCKER_HASH="$(git rev-parse HEAD:.ci/docker)"
+          echo "image=308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-clang12-${CI_DOCKER_HASH}" >> "$GITHUB_OUTPUT"
+
+  cpu-build:
+    needs: docker-image
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
       contents: read
     with:
       job-name: build
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.image }}
       submodules: recursive
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -56,17 +96,17 @@ jobs:
         cp cmake-out/backends/cadence/cadence_runner "${RUNNER_ARTIFACT_DIR}/"
 
   cpu-test:
-    needs: cpu-build
+    needs: [docker-image, cpu-build]
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
     permissions:
-      id-token: write
       contents: read
     uses: ./.github/workflows/_test_cadence.yml
     with:
+      docker-image: ${{ needs.docker-image.outputs.image }}
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
   # Cross-compile cadence_executor_runner for each Cadence Xtensa core, one job
@@ -74,11 +114,12 @@ jobs:
   # lives in _xtensa_build.yml. fusion_g3 is omitted until the upstream fusion_g3
   # <-> nnlib-FusionG3 API skew is fixed (its runner does not link).
   hifi-build:
+    needs: docker-image
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
     permissions:
       id-token: write
       contents: read
@@ -86,18 +127,20 @@ jobs:
     with:
       backend: hifi4
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      docker-image: ${{ needs.docker-image.outputs.image }}
+      allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
 
   # Op-level gtest tests on the Xtensa ISS, mirroring cpu-build -> cpu-test. The
   # op tests are a self-contained cross-compile (the gtests need exceptions and
   # RTTI that the runner build disables), so this does not consume hifi-build's
   # artifact; needs: hifi-build only to fail fast when the backend cannot build.
   hifi-op-test:
-    needs: hifi-build
+    needs: [docker-image, hifi-build]
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
     permissions:
       id-token: write
       contents: read
@@ -105,13 +148,16 @@ jobs:
     with:
       backend: hifi4
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      docker-image: ${{ needs.docker-image.outputs.image }}
+      allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
 
   vision-build:
+    needs: docker-image
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
     permissions:
       id-token: write
       contents: read
@@ -119,3 +165,5 @@ jobs:
     with:
       backend: vision
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      docker-image: ${{ needs.docker-image.outputs.image }}
+      allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}

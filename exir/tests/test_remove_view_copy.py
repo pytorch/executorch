@@ -11,7 +11,16 @@ import torch
 import torch.nn as nn
 from executorch.exir import memory, to_edge
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.inplace_aliasing import is_inplace_node
+from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
+from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.replace_view_copy_with_view_pass import (
+    ReplaceViewCopyWithViewPass,
+)
+from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
 
 class TestModel1(nn.Module):
@@ -42,6 +51,18 @@ class TestModel1(nn.Module):
 
 
 class TestRemoveViewCopy(unittest.TestCase):
+    def _run_view_and_reinplace_passes(
+        self, model: nn.Module, example_inputs: tuple
+    ) -> torch.fx.GraphModule:
+        ep = to_edge(
+            torch.export.export(model.eval(), example_inputs, strict=True)
+        ).exported_program()
+        reinplace_pass(ep)
+        graph_module = SpecPropPass()(ep.graph_module).graph_module
+        NormalizeViewCopyBasePass()(graph_module)
+        ReplaceViewCopyWithViewPass()(graph_module)
+        return graph_module
+
     def test_disable(self) -> None:
         model = TestModel1()
         model.eval()
@@ -234,3 +255,115 @@ class TestRemoveViewCopy(unittest.TestCase):
         plan = etpm.executorch_program.execution_plan[0]
         op_names = [op.name for op in plan.operators]
         self.assertTrue("executorch_prim::et_view" in op_names)
+
+    def test_mutated_view_with_live_base_is_not_replaced(self) -> None:
+        class TestModel(nn.Module):
+            def forward(self, x, indices, values):
+                base = torch.relu(x)
+                viewed = base.view(4, 3)
+                changed = torch.ops.aten.index_put.default(viewed, [indices], values)
+                return base, changed
+
+        inputs = (
+            torch.arange(12, dtype=torch.float32).reshape(4, 3),
+            torch.tensor([0]),
+            torch.tensor([[100.0, 101.0, 102.0]]),
+        )
+        expected = TestModel()(*copy.deepcopy(inputs))
+        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        actual = graph_module(*copy.deepcopy(inputs))
+
+        self.assertFalse(any(n.target == memory.view for n in graph_module.graph.nodes))
+        self.assertTrue(torch.equal(expected[0], actual[0]))
+        self.assertTrue(torch.equal(expected[1], actual[1]))
+
+    def test_mutated_view_with_dead_base_is_replaced(self) -> None:
+        class TestModel(nn.Module):
+            def forward(self, x, indices, values):
+                base = torch.relu(x)
+                viewed = base.view(4, 3)
+                return torch.ops.aten.index_put.default(viewed, [indices], values)
+
+        inputs = (
+            torch.arange(12, dtype=torch.float32).reshape(4, 3),
+            torch.tensor([0]),
+            torch.tensor([[100.0, 101.0, 102.0]]),
+        )
+        expected = TestModel()(*copy.deepcopy(inputs))
+        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        actual = graph_module(*copy.deepcopy(inputs))
+
+        self.assertTrue(any(n.target == memory.view for n in graph_module.graph.nodes))
+        self.assertTrue(torch.equal(expected, actual[0]))
+
+    def test_reinplaced_view_alias_survives_memory_planning(self) -> None:
+        class TestModel(nn.Module):
+            def forward(self, x, indices, values):
+                base = torch.relu(x)
+                viewed = base.view(4, 3)
+                return torch.ops.aten.index_put.default(viewed, [indices], values)
+
+        inputs = (
+            torch.arange(12, dtype=torch.float32).reshape(4, 3),
+            torch.tensor([0]),
+            torch.tensor([[100.0, 101.0, 102.0]]),
+        )
+        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        ToOutVarPass()(graph_module)
+        MemoryPlanningPass()(graph_module)
+
+        view_node = next(
+            node for node in graph_module.graph.nodes if node.target == memory.view
+        )
+        inplace_node = next(
+            node for node in graph_module.graph.nodes if is_inplace_node(node)
+        )
+        self.assertIs(inplace_node.args[0], view_node)
+        self.assertIs(inplace_node.meta["spec"], view_node.meta["spec"])
+        self.assertIs(
+            graph_module.graph.output_node().meta["spec"][0], view_node.meta["spec"]
+        )
+
+    def test_base_mutation_after_last_view_read_allows_replacement(self) -> None:
+        class TestModel(nn.Module):
+            def forward(self, x, indices, values):
+                base = torch.relu(x)
+                viewed = base.view(4, 3)
+                observed = viewed.clone()
+                changed = torch.ops.aten.index_put.default(base, [indices], values)
+                return observed, changed
+
+        inputs = (
+            torch.arange(12, dtype=torch.float32).reshape(4, 3),
+            torch.tensor([0]),
+            torch.tensor([[100.0, 101.0, 102.0]]),
+        )
+        expected = TestModel()(*copy.deepcopy(inputs))
+        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        actual = graph_module(*copy.deepcopy(inputs))
+
+        self.assertTrue(any(n.target == memory.view for n in graph_module.graph.nodes))
+        self.assertTrue(torch.equal(expected[0], actual[0]))
+        self.assertTrue(torch.equal(expected[1], actual[1]))
+
+    def test_base_mutation_before_view_read_prevents_replacement(self) -> None:
+        class TestModel(nn.Module):
+            def forward(self, x, indices, values):
+                base = torch.relu(x)
+                viewed = base.view(4, 3)
+                changed = torch.ops.aten.index_put.default(base, [indices], values)
+                observed = viewed.clone()
+                return changed, observed
+
+        inputs = (
+            torch.arange(12, dtype=torch.float32).reshape(4, 3),
+            torch.tensor([0]),
+            torch.tensor([[100.0, 101.0, 102.0]]),
+        )
+        expected = TestModel()(*copy.deepcopy(inputs))
+        graph_module = self._run_view_and_reinplace_passes(TestModel(), inputs)
+        actual = graph_module(*copy.deepcopy(inputs))
+
+        self.assertFalse(any(n.target == memory.view for n in graph_module.graph.nodes))
+        self.assertTrue(torch.equal(expected[0], actual[0]))
+        self.assertTrue(torch.equal(expected[1], actual[1]))

@@ -273,7 +273,9 @@ TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
       kMLXBackendId, cache::kind::kBatchedCell, args.geometry, args.config);
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::Cache>& c = *built;
-  EXPECT_NE(c->as<cache::BatchControl>(), nullptr);
+  ASSERT_NE(c->as<cache::BatchControl>(), nullptr);
+  EXPECT_EQ(
+      c->as<cache::BatchControl>()->max_seqs(), cache::CellCache::kMaxSeqs);
   EXPECT_NE(c->as<MLXCache>(), nullptr) << "the backend face comes back too";
   // A cell layout is multi-sequence, so it offers no single-sequence face.
   EXPECT_EQ(c->as<cache::SequenceControl>(), nullptr);

@@ -24,10 +24,10 @@ export TORCHINDUCTOR_COMPILE_THREADS=1
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import TORCHAO_NIGHTLY_VERSION
+from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
 from torch_pin import TORCH_VERSION
 
-print(TORCH_VERSION, TORCHAO_NIGHTLY_VERSION)
+print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
@@ -147,6 +147,9 @@ ROCM_EXCLUDED_TESTS=(
   --ignore=backends/cuda/tests/test_triton_sdpa_splitk.py
   # This test process core-dumps on ROCm instead of reporting a failure.
   --ignore=backends/cuda/tests/test_triton_sdpa_nan.py
+  # CUDA-graph autotune timing is NVIDIA-only; the CUDA backend turns it off
+  # on ROCm.
+  --ignore=backends/cuda/tests/test_cuda_graph_timing.py
 )
 python -m pytest -v -o 'addopts=' \
   "${ROCM_EXCLUDED_TESTS[@]}" \

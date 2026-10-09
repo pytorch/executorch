@@ -194,7 +194,7 @@ def test_stop_trimmed_turn_not_spliced(make_client):
     # P1/P2 guard: a stop-trimmed turn (worker omits generated_token_ids ->
     # recorded ids=None) is never spliced, even when the turn fingerprint matches,
     # so unseen post-stop tokens can't be injected into a later prompt.
-    client, fake = make_client(max_named_sessions=2, gen_ids=[])  # [] => ids None
+    client, fake = make_client(max_named_sessions=2, gen_ids=None)
     _chat_msgs(client, [{"role": "user", "content": "hi"}], "s")
     turn2 = [
         {"role": "user", "content": "hi"},
@@ -307,7 +307,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
         generated_token_ids=[2],
         prior_turns=1,
     )
-    assert [r["ids"] for r in t._turns["s"]] == [[1], [2]]
+    assert [r["ids"] for r in t._turns["s"].values()] == [[1], [2]]
     # regenerate turn 2 (same prior_turns) -> replaces stale [2], no stale tail
     t.record_assistant_turn(
         session_id="s",
@@ -316,7 +316,7 @@ def test_record_assistant_turn_replaces_stale_at_position():
         generated_token_ids=[3],
         prior_turns=1,
     )
-    assert [r["ids"] for r in t._turns["s"]] == [[1], [3]]
+    assert [r["ids"] for r in t._turns["s"].values()] == [[1], [3]]
 
 
 def test_divergence_truncates_stale_tail():
@@ -357,7 +357,7 @@ def test_divergence_truncates_stale_tail():
         template_kwargs=None,
     )
     assert out.text == "X"  # diverged -> plain text fallback
-    assert t._turns["s"] == []  # stale tail pruned from the first mismatch
+    assert t._turns["s"] == {}  # stale tail pruned from the first mismatch
 
 
 class _HFToolSpecials:

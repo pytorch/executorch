@@ -8,6 +8,7 @@
 
 import ctypes
 import functools
+import operator
 import unittest
 from typing import Tuple
 
@@ -16,6 +17,10 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+    get_symmetric_quantization_config as get_vulkan_quantization_config,
+    VulkanQuantizer,
+)
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -63,9 +68,12 @@ def disable_test(reason):
 
 
 def lower_module(
-    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    dynamic_shapes=None,
+    compile_options=None,
 ) -> EdgeProgramManager:
-    compile_options = {}
+    compile_options = dict(compile_options or {})
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
@@ -251,6 +259,7 @@ class TestVulkanBackend(unittest.TestCase):
         test_inputs=None,
         first_output_only=False,
         expect_no_delegates=False,
+        compile_options=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -262,7 +271,12 @@ class TestVulkanBackend(unittest.TestCase):
         model.eval()
         model(*sample_inputs)
 
-        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
+        edge_program = lower_module(
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            compile_options=compile_options,
+        )
 
         et_program = edge_program.to_executorch()
 
@@ -1094,6 +1108,33 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.randn(size=(64,), dtype=torch.float32),),
         )
 
+    def test_vulkan_backend_conv1d_as_conv2d(self):
+        # Eligible for Conv1dAsConv2dPass: groups 1, unit dilation, kernel > 1,
+        # batch 1 and out_channels >= the im2col threshold, so this lowers via
+        # the conv2d im2col + GEMM path rather than conv1d.glsl.
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=32,
+                    out_channels=128,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv1d_module = Conv1dModule()
+        sample_inputs = (torch.randn(size=(1, 32, 64), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv1d_module,
+            sample_inputs,
+        )
+
     @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
@@ -1239,6 +1280,48 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_grid_sampler_2d(self):
+        class GridSampler2d(torch.nn.Module):
+            def __init__(self, padding_mode, align_corners):
+                super().__init__()
+                self.padding_mode = padding_mode
+                self.align_corners = align_corners
+
+            def forward(self, x, grid):
+                return torch.nn.functional.grid_sample(
+                    x,
+                    grid,
+                    mode="bilinear",
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                )
+
+        # Deliberately push the grid past [-1, 1] on every side so the zeros
+        # and border paths actually diverge; an in-range grid is identical
+        # under both and would pass even with the padding branch broken.
+        grid = torch.stack(
+            torch.meshgrid(
+                torch.linspace(-1.6, 1.6, 7),
+                torch.linspace(-1.6, 1.6, 5),
+                indexing="ij",
+            )[::-1],
+            dim=-1,
+        ).unsqueeze(0)
+        sample_inputs = (
+            torch.rand(size=(1, 4, 6, 8), dtype=torch.float32),
+            grid.contiguous(),
+        )
+
+        for padding_mode in ("zeros", "border"):
+            for align_corners in (True, False):
+                with self.subTest(
+                    padding_mode=padding_mode, align_corners=align_corners
+                ):
+                    self.lower_module_and_test_output(
+                        GridSampler2d(padding_mode, align_corners),
+                        sample_inputs,
+                    )
+
     def test_vulkan_backend_minimum(self):
         class MinimumModule(torch.nn.Module):
             def __init__(self):
@@ -1284,6 +1367,84 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(
             ViewModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_redundant_view_to_output(self):
+        # Returning a value and a redundant view of it: once the view is
+        # removed, both outputs are the same node. The serializer must still
+        # emit two output ids, or the runtime's argument count check fails.
+        class RedundantViewToOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y.view(2, 48)
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            RedundantViewToOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_duplicate_output(self):
+        # The same guarantee without any view involved: `all_input_nodes`
+        # de-duplicates, so this loses an output slot too.
+        class DuplicateOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            DuplicateOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_buffer_mutation_aliasing_user_output(self):
+        # A mutated buffer returned through a redundant view, with the mutation
+        # aliased onto its input. Once the view is removed the buffer-mutation
+        # slot and the user output are the same node, but only the user output
+        # gets a slot in the delegate call, so keeping both would leave the
+        # serialized graph expecting one argument more than the call provides.
+        #
+        # Run it twice: the state has to carry over, which is what says the
+        # mutation is really being applied in place rather than quietly
+        # dropped along with its output slot.
+        class MutationAliasModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 48))
+
+            def forward(self, x):
+                self.state.add_(x)
+                return self.state.view(2, 48)
+
+        sample_inputs = (torch.ones(size=(2, 48), dtype=torch.float32),)
+        test_inputs = [(torch.ones(size=(2, 48), dtype=torch.float32),)]
+
+        self.lower_module_and_test_output(
+            MutationAliasModule(),
+            sample_inputs,
+            test_inputs=test_inputs,
+            compile_options={"alias_buffer_mutations": True},
+        )
+
+    def test_vulkan_backend_view_chain_collapsing_to_input_shape(self):
+        # A chain of views whose net effect is the original shape. Fusing the
+        # chain leaves a view onto the shape it started from, which the
+        # redundant-op sweep then removes; the output count must survive both
+        # rewrites.
+        class ViewChainModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                z = y.view(4, 24).view(8, 12).view(2, 48)
+                return y, z
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ViewChainModule(),
             sample_inputs,
         )
 
@@ -1446,6 +1607,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             TestModule(),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_split_with_sizes_dynamic(self):
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.split(x, (3, 6, 1, 3), dim=-1)
+
+        sample_inputs = (torch.randn(size=(1, 8, 13), dtype=torch.float32),)
+        seq_len = Dim("seq_len", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq_len}},
+            test_inputs=[
+                (torch.randn(size=(1, 3, 13), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 13), dtype=torch.float32),),
+            ],
         )
 
     def test_vulkan_backend_split_tensor(self):
@@ -1968,6 +2146,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[0, 1, 0], [4, 2, 0]]),),
+        )
+
+    def test_vulkan_backend_embedding_large_vocab(self):
+        # Past 16384 entries the output of the embedding is laid out as a height
+        # packed texture, so each texel holds 4 different weight rows instead of
+        # 4 elements of the same row. See #22333.
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(16385, 4)),
+            (torch.tensor([[0, 1, 16384], [7, 16000, 12345]]),),
         )
 
     def test_vulkan_backend_embedding_3d(self):
@@ -2639,6 +2834,43 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
+
+    def test_vulkan_backend_pt2e_quantized_linear_without_downcasting(self):
+        torch.manual_seed(0)
+        sample_inputs = (torch.randn(4, 64),)
+        quantizer = VulkanQuantizer().set_global(get_vulkan_quantization_config())
+        model = prepare_pt2e(
+            export(torch.nn.Linear(64, 32).eval(), sample_inputs, strict=True).module(),
+            quantizer,
+        )
+        model(*sample_inputs)
+        model = convert_pt2e(model)
+        self.assertTrue(any(buffer.dtype == torch.int64 for buffer in model.buffers()))
+
+        for downcast in (False, True):
+            with self.subTest(downcast=downcast):
+                edge = lower_module(
+                    model,
+                    sample_inputs,
+                    compile_options={"downcast_64_bit": downcast},
+                )
+                self.assertEqual(
+                    [
+                        node.target
+                        for node in edge.exported_program().graph.nodes
+                        if node.op == "call_function"
+                        and node.target != operator.getitem
+                    ],
+                    [torch.ops.higher_order.executorch_call_delegate],
+                )
+                program_buffer = edge.to_executorch().buffer
+                module = _load_for_executorch_from_buffer(program_buffer)
+                self.assert_outputs_equal(
+                    module.run_method("forward", sample_inputs),
+                    model(*sample_inputs),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
 
     @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):

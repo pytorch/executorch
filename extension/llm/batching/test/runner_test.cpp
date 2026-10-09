@@ -9,13 +9,17 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
+#include <future>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -35,14 +39,17 @@ using executorch::extension::llm::batching::FinishReason;
 using executorch::extension::llm::batching::GenConfig;
 using executorch::extension::llm::batching::GenerationHandle;
 using executorch::extension::llm::batching::GenerationUpdate;
+using executorch::extension::llm::batching::InitializationState;
 using executorch::extension::llm::batching::Position;
 using executorch::extension::llm::batching::Runner;
 using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::Session;
 using executorch::extension::llm::batching::SessionId;
+using executorch::extension::llm::batching::stamped;
 using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::Token;
+using executorch::extension::llm::batching::TokenInputPtr;
 using executorch::extension::llm::batching::testing::FakeExecutor;
 
 namespace {
@@ -134,6 +141,147 @@ struct Fixture {
 
   Runner runner;
 };
+
+class CloneExecutor : public FakeExecutor {
+ public:
+  struct CloneCall {
+    SessionId source;
+    Position upto;
+    std::size_t inputs_before_clone;
+    std::thread::id thread;
+  };
+
+  std::optional<SessionId> open_session() override {
+    auto sid = FakeExecutor::open_session();
+    if (sid) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.emplace(*sid, std::vector<Token>{});
+    }
+    return sid;
+  }
+
+  void close_session(SessionId sid) override {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.erase(sid);
+    }
+    FakeExecutor::close_session(sid);
+  }
+
+  std::optional<SessionId> clone(SessionId source, Position upto) override {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      clones_.push_back(
+          {source, upto, seen().size(), std::this_thread::get_id()});
+    }
+    {
+      std::unique_lock<std::mutex> lock(gate_mutex_);
+      in_clone_ = true;
+      gate_cv_.notify_all();
+      gate_cv_.wait(lock, [this] { return !held_; });
+      in_clone_ = false;
+    }
+#if ET_HAS_EXCEPTIONS
+    if (throw_clone) {
+      throw std::runtime_error("clone failed");
+    }
+#endif
+    if (refuse_clone) {
+      return std::nullopt;
+    }
+    std::vector<Token> prefix;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      const auto source_history = history_.find(source);
+      if (source_history == history_.end() || upto < 0 ||
+          static_cast<std::size_t>(upto) > source_history->second.size()) {
+        return std::nullopt;
+      }
+      prefix.assign(
+          source_history->second.begin(),
+          source_history->second.begin() + upto);
+    }
+    auto sid = open_session();
+    if (sid) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.at(*sid) = std::move(prefix);
+    }
+    return sid;
+  }
+
+  bool execute(
+      const executorch::extension::llm::batching::BatchInput& batch,
+      executorch::extension::llm::batching::BatchOutput& out) override {
+    if (!FakeExecutor::execute(batch, out)) {
+      return false;
+    }
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+      const auto& input = batch.inputs[i];
+      auto& history = history_.at(input.sid);
+      const auto start = input.position + static_cast<Position>(input.offset);
+      if (start < 0 || static_cast<std::size_t>(start) > history.size()) {
+        return false;
+      }
+      history.resize(start);
+      history.insert(
+          history.end(),
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset,
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset +
+              input.size);
+      const auto& output = out.outputs[i];
+      if (output && !output->tokens.empty()) {
+        history.insert(
+            history.end(), output->tokens.begin(), output->tokens.end() - 1);
+      }
+    }
+    return true;
+  }
+
+  std::vector<Token> history(SessionId sid) const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return history_.at(sid);
+  }
+
+  std::vector<CloneCall> clones() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return clones_;
+  }
+
+  void hold_clone() {
+    std::lock_guard<std::mutex> lock(gate_mutex_);
+    held_ = true;
+  }
+
+  void release_clone() {
+    {
+      std::lock_guard<std::mutex> lock(gate_mutex_);
+      held_ = false;
+    }
+    gate_cv_.notify_all();
+  }
+
+  bool wait_for_clone() {
+    std::unique_lock<std::mutex> lock(gate_mutex_);
+    return gate_cv_.wait_for(lock, kTimeout, [this] { return in_clone_; });
+  }
+
+  bool refuse_clone = false;
+  bool throw_clone = false;
+
+ private:
+  mutable std::mutex state_mutex_;
+  std::map<SessionId, std::vector<Token>> history_;
+  std::vector<CloneCall> clones_;
+  std::mutex gate_mutex_;
+  std::condition_variable gate_cv_;
+  bool held_ = false;
+  bool in_clone_ = false;
+};
+
+enum class CloneStop { Cancel, Close, Shutdown };
+
+class CloneStopTest : public ::testing::TestWithParam<CloneStop> {};
 
 Session open(Runner& runner) {
   auto future = runner.open_session_async();
@@ -243,6 +391,322 @@ TEST(GenerationHandleTest, MoveTransfersValidity) {
   moved.wait();
   EXPECT_TRUE(moved.done());
 }
+
+TEST(SettlementTest, PublishesBeforeNotificationAndReleasesCaptures) {
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto capture = std::make_shared<int>(42);
+  std::weak_ptr<int> retained = capture;
+  std::atomic<int> settled_calls{0};
+  bool terminal_returned = false;
+  std::promise<void> entered;
+  auto notified = entered.get_future();
+  std::promise<void> release;
+  auto released = release.get_future();
+  GenerationHandle handle = session.generate_async(
+      tokens(2),
+      config(1),
+      [&](const GenerationUpdate& update) {
+        EXPECT_TRUE(update.finish_reason.has_value());
+        EXPECT_FALSE(handle.done());
+        terminal_returned = true;
+      },
+      [&, capture = std::move(capture)] {
+        ++settled_calls;
+        EXPECT_EQ(*capture, 42);
+        EXPECT_TRUE(terminal_returned);
+        EXPECT_TRUE(handle.done());
+        EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+        EXPECT_TRUE(handle.error_message().empty());
+        const auto metrics = handle.metrics();
+        EXPECT_EQ(metrics.n_prompt_tokens, 2);
+        EXPECT_EQ(metrics.n_generated_tokens, 1);
+        EXPECT_EQ(metrics.n_prefill_steps, 1);
+        EXPECT_GE(metrics.t_end, metrics.t_first_token);
+        entered.set_value();
+        // Deliberately hold notification to test the weaker handle boundary.
+        EXPECT_EQ(released.wait_for(kTimeout), std::future_status::ready);
+      });
+  auto waiter = std::async(std::launch::async, [&] { handle.wait(); });
+  executor.release();
+
+  EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_TRUE(handle.done());
+  EXPECT_EQ(waiter.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(retained.expired());
+  release.set_value();
+  fixture.runner.shutdown();
+  EXPECT_EQ(settled_calls.load(), 1);
+  EXPECT_TRUE(retained.expired());
+  EXPECT_TRUE(handle.valid());
+}
+
+TEST(SettlementTest, SmallCallbackDestructionCanReenterDone) {
+  executorch::runtime::runtime_init();
+  struct Watchdog {
+    std::promise<void> finished;
+    std::thread thread{[done = finished.get_future()]() mutable {
+      if (done.wait_for(kTimeout * 6) != std::future_status::ready) {
+        ADD_FAILURE() << "settlement callback test or teardown deadlocked";
+        std::abort();
+      }
+    }};
+
+    ~Watchdog() {
+      finished.set_value();
+      thread.join();
+    }
+  } watchdog;
+  struct State {
+    GenerationHandle handle;
+    std::atomic<bool> armed{false};
+    std::atomic<int> destructions{0};
+    int destructions_at_call = 0;
+    int calls = 0;
+    std::promise<void> settled;
+  } state;
+  auto notified = state.settled.get_future();
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  ASSERT_TRUE(session.valid());
+
+  // Destroy every callable copy, not just a final shared_ptr capture. libc++
+  // keeps this nothrow-copyable target inline and destroys a copy during swap.
+  struct SmallCallback {
+    State* state;
+
+    ~SmallCallback() {
+      if (state->armed.load()) {
+        EXPECT_TRUE(state->handle.done());
+        ++state->destructions;
+      }
+    }
+
+    void operator()() const {
+      EXPECT_TRUE(state->handle.done());
+      state->destructions_at_call = state->destructions.load();
+      ++state->calls;
+      state->settled.set_value();
+    }
+  };
+  static_assert(sizeof(SmallCallback) == sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<SmallCallback>::value);
+  state.handle =
+      session.generate_async(tokens(2), config(1), {}, SmallCallback{&state});
+  // Submission's temporary copies are gone and the handle is initialized
+  // before the held executor can reach generation completion.
+  state.armed.store(true);
+  executor.release();
+  EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+  fixture.runner.shutdown();
+  EXPECT_EQ(state.calls, 1);
+  EXPECT_GT(state.destructions.load(), 0);
+#if defined(_LIBCPP_VERSION) && !defined(_LIBCPP_ABI_OPTIMIZED_FUNCTION)
+  EXPECT_GT(state.destructions_at_call, 0)
+      << "the inline callable copy must be destroyed before invocation";
+#endif
+  EXPECT_EQ(state.handle.finish_reason(), FinishReason::NewTokenLimit);
+}
+
+TEST(SettlementTest, SynchronousRejectionsNotifyInlineAndReleaseCaptures) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session closed = open(fixture.runner);
+  Session empty;
+  fixture.runner.shutdown();
+  for (const Session* session : {&empty, &closed}) {
+    auto capture = std::make_shared<int>(42);
+    std::weak_ptr<int> retained = capture;
+    int update_calls = 0;
+    int settled_calls = 0;
+    const auto caller = std::this_thread::get_id();
+    auto handle = session->generate_async(
+        tokens(1),
+        config(1),
+        [&](const GenerationUpdate&) { ++update_calls; },
+        [&, capture = std::move(capture)] {
+          ++settled_calls;
+          EXPECT_EQ(*capture, 42);
+          EXPECT_EQ(update_calls, 1);
+          EXPECT_EQ(std::this_thread::get_id(), caller);
+        });
+    EXPECT_EQ(settled_calls, 1);
+    EXPECT_TRUE(handle.done());
+    EXPECT_EQ(
+        handle.finish_reason(),
+        session == &empty ? FinishReason::Failed : FinishReason::Cancelled);
+    EXPECT_EQ(
+        handle.error_message(),
+        session == &empty ? "session is not initialized" : "");
+    EXPECT_EQ(handle.metrics().n_generated_tokens, 0);
+    EXPECT_TRUE(retained.expired());
+  }
+}
+
+TEST(SettlementTest, ReportsStopAndExecutorFailureAfterPublication) {
+  for (bool fail : {false, true}) {
+    FakeExecutor executor;
+    executor.hold();
+    executor.fail_batches_from = fail ? 0 : -1;
+    executor.stop_token = 999;
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    auto generation_config = config(2);
+    generation_config.stop_tokens = {999};
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle =
+        session.generate_async(tokens(2), generation_config, {}, [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(
+              handle.finish_reason(),
+              fail ? FinishReason::Failed : FinishReason::StopToken);
+          EXPECT_EQ(
+              handle.error_message(),
+              fail ? "executor failed to execute the batch" : "");
+          EXPECT_EQ(handle.metrics().n_generated_tokens, fail ? 0 : 1);
+          EXPECT_TRUE(stamped(handle.metrics().t_end));
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+TEST(SettlementTest, CancellationClosureAndShutdownNotifyExactlyOnce) {
+  for (CloneStop stop :
+       {CloneStop::Cancel, CloneStop::Close, CloneStop::Shutdown}) {
+    FakeExecutor executor;
+    executor.hold();
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle = session.generate_async(
+        tokens(2),
+        config(2),
+        [&](const GenerationUpdate& update) {
+          if (!update.finish_reason) {
+            if (stop == CloneStop::Cancel) {
+              handle.cancel();
+            } else if (stop == CloneStop::Close) {
+              session = Session{};
+            } else {
+              fixture.runner.shutdown();
+            }
+          }
+        },
+        [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+          EXPECT_TRUE(handle.error_message().empty());
+          EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+          EXPECT_GE(handle.metrics().t_end, handle.metrics().t_first_token);
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(SettlementTest, UpdateExceptionsPublishFailureBeforeNotification) {
+  for (int budget : {1, 2}) {
+    FakeExecutor executor;
+    executor.hold();
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    std::atomic<int> update_calls{0};
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle = session.generate_async(
+        tokens(2),
+        config(budget),
+        [&](const GenerationUpdate& update) {
+          ++update_calls;
+          EXPECT_EQ(update.finish_reason.has_value(), budget == 1);
+          throw std::runtime_error("update failed");
+        },
+        [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(handle.finish_reason(), FinishReason::Failed);
+          EXPECT_EQ(handle.error_message(), "update failed");
+          EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+          EXPECT_GE(handle.metrics().t_end, handle.metrics().t_first_token);
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(update_calls.load(), 1);
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+TEST(SettlementTest, NotificationExceptionsAreContainedAndCapturesReleased) {
+  for (bool standard_exception : {false, true}) {
+    FakeExecutor executor;
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    auto capture = std::make_shared<int>(42);
+    std::weak_ptr<int> retained = capture;
+    std::atomic<int> settled_calls{0};
+    auto handle = session.generate_async(
+        tokens(2), config(1), {}, [&, capture = std::move(capture)] {
+          ++settled_calls;
+          EXPECT_EQ(*capture, 42);
+          if (standard_exception) {
+            throw std::runtime_error("notification failed");
+          }
+          throw 7;
+        });
+    handle.wait();
+    auto updates = std::make_shared<Updates>();
+    auto next = generate(session, tokens(1), config(1), updates);
+    EXPECT_TRUE(updates->wait());
+    fixture.runner.shutdown();
+    EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_TRUE(handle.error_message().empty());
+    EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+    EXPECT_EQ(next.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(settled_calls.load(), 1);
+    EXPECT_TRUE(retained.expired());
+  }
+
+  Session empty;
+  int settled_calls = 0;
+  GenerationHandle rejected;
+  EXPECT_NO_THROW(
+      rejected = empty.generate_async(
+          tokens(1),
+          config(1),
+          [](const GenerationUpdate&) {
+            throw std::runtime_error("inline update failed");
+          },
+          [&] {
+            ++settled_calls;
+            throw std::runtime_error("inline notification failed");
+          }));
+  EXPECT_EQ(settled_calls, 1);
+  EXPECT_TRUE(rejected.done());
+  EXPECT_EQ(rejected.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(rejected.error_message(), "inline update failed");
+}
+#endif
 
 TEST(SessionTest, DefaultSessionRejectsGenerationSynchronously) {
   Session session;
@@ -706,8 +1170,503 @@ TEST(GenerationTest, ANewGenerationReseedsTheExistingSession) {
   EXPECT_EQ(second_tokens[0], session_id * 1000 + second_rng() % 1000);
 }
 
-// A session opens at position 0 and the caller never names a position, so the
-// first slice of a fresh session always lands there.
+TEST(CloneTest, DefaultMovedFromAndClosedSessionsRefuseSynchronously) {
+  Session empty;
+  auto invalid = empty.clone_async(0);
+  ASSERT_EQ(
+      invalid.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(invalid.get());
+
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  Session owner = std::move(source);
+  auto moved = source.clone_async(0);
+  ASSERT_EQ(moved.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(moved.get());
+
+  fixture.runner.shutdown();
+  auto closed = owner.clone_async(0);
+  ASSERT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(closed.get());
+  EXPECT_TRUE(executor.clones().empty());
+}
+
+TEST(CloneTest, DefaultExecutorRefusesWithoutPoisoningSource) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto first = std::make_shared<Updates>();
+  auto generation = generate(source, tokens(3), config(1), first);
+  ASSERT_TRUE(first->wait());
+  generation.wait();
+
+  auto unsupported = source.clone_async(3);
+  ASSERT_EQ(unsupported.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(unsupported.get());
+  EXPECT_EQ(source.position(), 3);
+  auto next = std::make_shared<Updates>();
+  auto continued = generate(source, tokens(2), config(1), next);
+  ASSERT_TRUE(next->wait());
+  continued.wait();
+  EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(executor.open_count(), 1);
+}
+
+TEST(CloneTest, CopiesOnlyCommittedPrefixAndStartsIdleWithoutSampling) {
+  CloneExecutor executor;
+  Fixture fixture(executor, 1, 3);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  auto source_updates = std::make_shared<Updates>();
+  auto initial_config = config(1);
+  initial_config.seed = 11;
+  auto initial = generate(source, tokens(6), initial_config, source_updates);
+  ASSERT_TRUE(source_updates->wait());
+  initial.wait();
+  ASSERT_EQ(source.position(), 6);
+
+  auto future = source.clone_async(3);
+  ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+  auto child = future.get();
+  ASSERT_TRUE(child);
+  const auto child_id = last_opened(executor);
+  EXPECT_NE(child_id, source_id);
+  EXPECT_EQ(child->position(), 3);
+  EXPECT_EQ(executor.history(child_id), tokens(3));
+  EXPECT_FALSE(executor.has_sampling_state(child_id));
+  EXPECT_EQ(executor.sampling_seed(source_id), 11u);
+
+  auto child_updates = std::make_shared<Updates>();
+  auto child_config = config(1);
+  child_config.seed = 29;
+  auto branch = generate(*child, tokens(5, 200), child_config, child_updates);
+  ASSERT_TRUE(child_updates->wait());
+  branch.wait();
+  EXPECT_EQ(branch.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(child->position(), 8);
+  EXPECT_EQ(branch.metrics().n_prompt_tokens, 5);
+  EXPECT_EQ(branch.metrics().n_prefilled_tokens, 5);
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 4u);
+  EXPECT_EQ(seen[2].session, child_id);
+  EXPECT_EQ(seen[2].effective_position(), 3);
+  EXPECT_EQ(seen[2].size, 3u);
+  EXPECT_EQ(seen[3].effective_position(), 6);
+  EXPECT_EQ(seen[3].size, 2u);
+  auto expected = tokens(3);
+  const auto suffix = tokens(5, 200);
+  expected.insert(expected.end(), suffix.begin(), suffix.end());
+  EXPECT_EQ(executor.history(child_id), expected);
+  EXPECT_EQ(executor.history(source_id), tokens(6));
+  EXPECT_EQ(source.position(), 6);
+
+  auto continued_updates = std::make_shared<Updates>();
+  auto continued =
+      generate(source, tokens(1, 300), config(1), continued_updates);
+  ASSERT_TRUE(continued_updates->wait());
+  continued.wait();
+  EXPECT_EQ(executor.seen().back().effective_position(), 6);
+  EXPECT_EQ(executor.seen().back().size, 2u);
+  EXPECT_EQ(executor.history(source_id)[6], source_updates->tokens().back());
+  EXPECT_EQ(executor.history(child_id), expected);
+}
+
+TEST(CloneTest, EmptyBoundaryIsDelegatedAndCloneCanBeCloned) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto first = source.clone_async(0);
+  ASSERT_EQ(first.wait_for(kTimeout), std::future_status::ready);
+  auto child = first.get();
+  ASSERT_TRUE(child);
+  EXPECT_EQ(child->position(), 0);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(*child, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+
+  auto second = child->clone_async(2);
+  ASSERT_EQ(second.wait_for(kTimeout), std::future_status::ready);
+  auto grandchild = second.get();
+  ASSERT_TRUE(grandchild);
+  const auto grandchild_id = last_opened(executor);
+  child.reset();
+  source = Session{};
+  ASSERT_TRUE(wait_for_open_count(executor, 1));
+  EXPECT_EQ(grandchild->position(), 2);
+  EXPECT_EQ(executor.history(grandchild_id), tokens(2));
+}
+
+TEST(CloneTest, RejectsNegativeFutureAndPendingTokenBoundaries) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(source.position(), 3);
+  ASSERT_EQ(updates->tokens().size(), 1u);
+
+  for (Position upto :
+       {Position{-1}, Position{4}, std::numeric_limits<Position>::max()}) {
+    auto refused = source.clone_async(upto);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+  }
+  EXPECT_TRUE(executor.clones().empty());
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(3));
+}
+
+TEST(CloneTest, FirstOutputCallbackClonesBeforeNextForward) {
+  CloneExecutor executor;
+  Fixture fixture(executor, 1, 3);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(9), config(3), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty() && !snapshot.valid()) {
+          snapshot = source.clone_async(9);
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  ASSERT_TRUE(child);
+  const auto calls = executor.clones();
+  ASSERT_EQ(calls.size(), 1u);
+  EXPECT_EQ(calls[0].source, source_id);
+  EXPECT_EQ(calls[0].upto, 9);
+  EXPECT_EQ(calls[0].inputs_before_clone, 3u);
+  EXPECT_NE(calls[0].thread, std::this_thread::get_id());
+  EXPECT_EQ(executor.seen().size(), 5u);
+  EXPECT_EQ(source.position(), 11);
+  EXPECT_EQ(child->position(), 9);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(9));
+}
+
+TEST(CloneTest, TerminalCallbackCloneSurvivesImmediateSourceDestruction) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(3), config(1), [&](const GenerationUpdate& update) {
+        if (update.finish_reason == FinishReason::NewTokenLimit) {
+          snapshot = source.clone_async(3);
+          source = Session{};
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  ASSERT_TRUE(child);
+  ASSERT_TRUE(wait_for_open_count(executor, 1));
+  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{source_id}));
+  EXPECT_EQ(child->position(), 3);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(3));
+}
+
+TEST(CloneTest, SpeculativeStatePastAcceptedPositionCannotBeCloned) {
+  CloneExecutor executor;
+  executor.tokens_per_prefill = 4;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(4), config(2), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(source.position(), 6);
+  ASSERT_EQ(executor.history(source_id).size(), 7u);
+
+  auto refused = source.clone_async(7);
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_TRUE(executor.clones().empty());
+
+  auto prompt_future = source.clone_async(4);
+  ASSERT_EQ(prompt_future.wait_for(kTimeout), std::future_status::ready);
+  auto prompt = prompt_future.get();
+  ASSERT_TRUE(prompt);
+  const auto prompt_id = last_opened(executor);
+  EXPECT_EQ(executor.history(prompt_id), tokens(4));
+
+  auto accepted_future = source.clone_async(6);
+  ASSERT_EQ(accepted_future.wait_for(kTimeout), std::future_status::ready);
+  auto accepted = accepted_future.get();
+  ASSERT_TRUE(accepted);
+  auto expected = tokens(4);
+  const auto emitted = updates->tokens();
+  expected.insert(expected.end(), emitted.begin(), emitted.end());
+  EXPECT_EQ(executor.history(last_opened(executor)), expected);
+  EXPECT_EQ(accepted->position(), 6);
+  EXPECT_EQ(executor.history(source_id).size(), 7u);
+}
+
+TEST(CloneTest, RefusalAndCapacityPressureLeaveSourceUsable) {
+  for (bool capacity_refusal : {false, true}) {
+    CloneExecutor executor;
+    executor.refuse_clone = !capacity_refusal;
+    executor.capacity = capacity_refusal ? 1 : 8;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(3), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+
+    auto refused = source.clone_async(2);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+    EXPECT_EQ(executor.open_count(), 1);
+    EXPECT_EQ(source.position(), 3);
+    auto next = std::make_shared<Updates>();
+    auto continued = generate(source, tokens(1), config(1), next);
+    ASSERT_TRUE(next->wait());
+    continued.wait();
+    EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(source.position(), 5);
+  }
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(CloneTest, ExecutorExceptionSettlesFutureAndKeepsEngineRunning) {
+  CloneExecutor executor;
+  executor.throw_clone = true;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto refused = source.clone_async(0);
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_EQ(executor.open_count(), 1);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+}
+#endif
+
+TEST(CloneTest, FailedOrMalformedExecutorStateIsNotCloned) {
+  for (int failure = 0; failure < 3; ++failure) {
+    CloneExecutor executor;
+    executor.fail_batches_from = failure == 0 ? 0 : -1;
+    executor.empty_tokens = failure == 1;
+    executor.wrong_sid = failure == 2;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(3), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+    ASSERT_EQ(handle.finish_reason(), FinishReason::Failed);
+    auto refused = source.clone_async(0);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+    EXPECT_TRUE(executor.clones().empty());
+  }
+}
+
+TEST(CloneTest, CancelledPrefillExposesOnlyItsConsumedPrefix) {
+  CloneExecutor executor;
+  executor.hold();
+  Fixture fixture(executor, 1, 2);
+  Session source = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(8), config(1), updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  const bool executing = executor.in_execute();
+  handle.cancel();
+  auto consumed = source.clone_async(4);
+  auto unconsumed = source.clone_async(8);
+  executor.release();
+  ASSERT_TRUE(executing);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(source.position(), 4);
+  ASSERT_EQ(consumed.wait_for(kTimeout), std::future_status::ready);
+  auto child = consumed.get();
+  ASSERT_TRUE(child);
+  EXPECT_EQ(child->position(), 4);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(4));
+  ASSERT_EQ(unconsumed.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(unconsumed.get());
+  EXPECT_EQ(executor.clones().size(), 1u);
+}
+
+TEST_P(CloneStopTest, CloneCompletesIndependentlyUnlessRunnerStops) {
+  CloneExecutor executor;
+  executor.hold_clone();
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(4), config(2), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty() && !snapshot.valid()) {
+          snapshot = source.clone_async(4);
+        }
+        (*updates)(update);
+      });
+  const bool cloning = executor.wait_for_clone();
+  if (!cloning) {
+    executor.release_clone();
+    fixture.runner.shutdown();
+  }
+  ASSERT_TRUE(cloning);
+  std::thread stopping;
+  bool stopped_admission = false;
+  switch (GetParam()) {
+    case CloneStop::Cancel:
+      handle.cancel();
+      break;
+    case CloneStop::Close:
+      source = Session{};
+      break;
+    case CloneStop::Shutdown:
+      stopping = std::thread([&] { fixture.runner.shutdown(); });
+      const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+      while (std::chrono::steady_clock::now() < deadline) {
+        auto probe = fixture.runner.open_session_async();
+        if (probe.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+          stopped_admission = !probe.get();
+          if (stopped_admission) {
+            break;
+          }
+        }
+        std::this_thread::yield();
+      }
+      break;
+  }
+  executor.release_clone();
+  if (stopping.joinable()) {
+    stopping.join();
+  }
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(updates->tokens().size(), 1u);
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  if (GetParam() == CloneStop::Shutdown) {
+    EXPECT_TRUE(stopped_admission);
+    EXPECT_FALSE(child);
+    EXPECT_EQ(executor.opened().size(), 2u);
+    EXPECT_EQ(executor.closed().size(), 2u);
+    EXPECT_EQ(executor.open_count(), 0);
+  } else {
+    ASSERT_TRUE(child);
+    EXPECT_EQ(child->position(), 4);
+    EXPECT_EQ(executor.history(last_opened(executor)), tokens(4));
+  }
+  EXPECT_EQ(executor.seen().size(), 1u);
+  if (GetParam() == CloneStop::Cancel) {
+    auto next = std::make_shared<Updates>();
+    auto continued = generate(source, tokens(1), config(1), next);
+    ASSERT_TRUE(next->wait());
+    continued.wait();
+    EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(executor.seen().back().effective_position(), 4);
+    EXPECT_EQ(executor.seen().back().size, 2u);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CloneTest,
+    CloneStopTest,
+    ::testing::Values(CloneStop::Cancel, CloneStop::Close, CloneStop::Shutdown),
+    [](const ::testing::TestParamInfo<CloneStop>& info) {
+      switch (info.param) {
+        case CloneStop::Cancel:
+          return "Cancel";
+        case CloneStop::Close:
+          return "Close";
+        case CloneStop::Shutdown:
+          return "Shutdown";
+      }
+      return "Unknown";
+    });
+
+TEST(CloneTest, CallbackShutdownSettlesQueuedCloneWithoutCallingExecutor) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(4), config(2), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty()) {
+          snapshot = source.clone_async(4);
+          fixture.runner.shutdown();
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  fixture.runner.shutdown();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(snapshot.get());
+  EXPECT_TRUE(executor.clones().empty());
+  EXPECT_EQ(executor.open_count(), 0);
+}
+
+TEST(CloneTest, AbandonedFutureReleasesItsOwnedSession) {
+  for (bool abandon_before_completion : {false, true}) {
+    CloneExecutor executor;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(4), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+    if (abandon_before_completion) {
+      executor.hold_clone();
+    }
+    auto future = source.clone_async(3);
+    if (abandon_before_completion) {
+      const bool cloning = executor.wait_for_clone();
+      future = {};
+      executor.release_clone();
+      ASSERT_TRUE(cloning);
+    } else {
+      ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+      future = {};
+    }
+    // The barrier is processed after the clone, so an open_count of one below
+    // cannot pass before the abandoned clone has actually been created.
+    Session barrier = open(fixture.runner);
+    barrier = Session{};
+    ASSERT_TRUE(wait_for_open_count(executor, 1));
+    EXPECT_EQ(executor.opened().size(), 3u);
+    EXPECT_EQ(executor.closed().size(), 2u);
+    EXPECT_TRUE(source.valid());
+    EXPECT_EQ(source.position(), 4);
+    fixture.runner.shutdown();
+    EXPECT_EQ(executor.closed().size(), executor.opened().size());
+  }
+}
+
 TEST(DeltaTest, FreshSessionStartsAtZero) {
   FakeExecutor executor;
   Fixture fixture(executor);
@@ -750,6 +1709,7 @@ TEST(DeltaTest, ChunksUseDeltaBasePlusOffset) {
   EXPECT_EQ(seen[2].offset, 8u);
   EXPECT_EQ(seen[2].size, 2u);
   EXPECT_EQ(seen[2].effective_position(), 8);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 10);
 }
 
 // The session owns its position, so a later turn appends rather than
@@ -780,6 +1740,12 @@ TEST(DeltaTest, SecondTurnContinuesWhereTheFirstEnded) {
   EXPECT_GT(seen.back().effective_position(), 0);
   EXPECT_EQ(seen.back().size, 2u)
       << "the delta carries the token the first turn emitted but never fed";
+  first.wait();
+  second.wait();
+  EXPECT_EQ(first.metrics().n_prefilled_tokens, 3);
+  EXPECT_EQ(first.metrics().n_decode_steps, 1);
+  EXPECT_EQ(second.metrics().n_prompt_tokens, 1);
+  EXPECT_EQ(second.metrics().n_prefilled_tokens, 2);
 }
 
 // Each open_session_async() gets its own position, so one session's progress
@@ -1189,6 +2155,8 @@ TEST(FailureTest, FailureOnLeadingPrefillChunksEndsGeneration) {
   ASSERT_EQ(seen.size(), 2u);
   EXPECT_EQ(seen[0].size, 4u);
   EXPECT_EQ(seen[1].size, 4u);
+  EXPECT_EQ(handle.metrics().n_prompt_tokens, 10);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 0);
 }
 
 TEST(FailureTest, ExecutorFailurePoisonsTheSession) {
@@ -1261,6 +2229,64 @@ TEST(CancelTest, CompletionObservesAllConsumedChunksInBatch) {
   EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
   EXPECT_EQ(position_in_terminal_callback, 4);
   EXPECT_EQ(session.position(), 4);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 4);
+}
+
+TEST(CancelTest, InterleavedPrefillCountsAllExecutedChunksBeforeCancellation) {
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor, 4, 2);
+  Session barrier = open(fixture.runner);
+  Session first = open(fixture.runner);
+  const auto first_id = last_opened(executor);
+  Session second = open(fixture.runner);
+  const auto second_id = last_opened(executor);
+  auto barrier_updates = std::make_shared<Updates>();
+  auto first_updates = std::make_shared<Updates>();
+  auto second_updates = std::make_shared<Updates>();
+  auto barrier_handle =
+      generate(barrier, tokens(2), config(1), barrier_updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_TRUE(executor.in_execute());
+
+  // Queue both prompts behind the barrier to force A, B, A, B in one batch.
+  GenerationHandle second_handle;
+  auto first_handle = first.generate_async(
+      tokens(4), config(1), [&](const GenerationUpdate& update) {
+        second_handle.cancel();
+        (*first_updates)(update);
+      });
+  second_handle = generate(second, tokens(6), config(1), second_updates);
+  executor.release();
+
+  ASSERT_TRUE(first_updates->wait());
+  ASSERT_TRUE(second_updates->wait());
+  first_handle.wait();
+  second_handle.wait();
+  EXPECT_EQ(first_handle.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(second_handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(first_handle.metrics().n_prefilled_tokens, 4);
+  EXPECT_EQ(second_handle.metrics().n_prompt_tokens, 6);
+  EXPECT_EQ(second_handle.metrics().n_prefilled_tokens, 4);
+  EXPECT_EQ(second_handle.metrics().n_generated_tokens, 0);
+  EXPECT_EQ(first_handle.metrics().n_prefill_steps, 1);
+  EXPECT_EQ(second_handle.metrics().n_prefill_steps, 1);
+  EXPECT_EQ(second.position(), 4);
+  EXPECT_TRUE(second_updates->tokens().empty());
+  EXPECT_EQ(second_updates->terminal_calls(), 1);
+  EXPECT_EQ(executor.batch_sizes(), (std::vector<int>{1, 4}));
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 5u);
+  EXPECT_EQ(seen[1].session, first_id);
+  EXPECT_EQ(seen[2].session, second_id);
+  EXPECT_EQ(seen[3].session, first_id);
+  EXPECT_EQ(seen[4].session, second_id);
+  EXPECT_EQ(seen[2].offset, 0u);
+  EXPECT_EQ(seen[4].offset, 2u);
 }
 
 // The callback runs on the engine thread while handle_output_ still holds a
@@ -1504,6 +2530,10 @@ TEST(ShutdownTest, DiscardsInFlightOutputAndCancelsGeneration) {
   EXPECT_EQ(updates->terminal_calls(), 1);
   EXPECT_EQ(executor.seen().size(), 1u);
   EXPECT_EQ(executor.open_count(), 0);
+  handle.wait();
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(handle.metrics().n_generated_tokens, 0);
+  EXPECT_EQ(session.position(), 0);
 }
 
 TEST(ShutdownTest, ConcurrentCallersWaitForFullStop) {
@@ -1598,6 +2628,10 @@ TEST(ShutdownTest, CallbackShutdownStopsLaterOutputsInTheSameBatch) {
   EXPECT_EQ(first_updates->terminal_calls(), 1);
   EXPECT_EQ(second_updates->terminal_calls(), 1);
   EXPECT_EQ(executor.batch_sizes(), (std::vector<int>{1, 2}));
+  EXPECT_EQ(first_handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(second_handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(first_handle.metrics().n_generated_tokens, 1);
+  EXPECT_EQ(second_handle.metrics().n_generated_tokens, 0);
 }
 
 TEST(ShutdownTest, CallbackCanRequestShutdown) {
@@ -1738,6 +2772,7 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   // The prompt plus the tokens fed back. The last token delivered is still
   // pending, so it was never an input.
   EXPECT_EQ(m.model_input_tokens(), 12u);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 10);
   EXPECT_EQ(m.total_prompt_tokens, 10);
   EXPECT_EQ(m.total_generated_tokens, 3);
   EXPECT_EQ(m.ttft_count, 1u);
@@ -2033,19 +3068,189 @@ TEST(InitializeTest, FailureStopsTheRunnerAndRefusesSessions) {
       << "a session must not be opened on an executor that failed to start";
 }
 
-// Opens queued while the engine was starting still have to be answered, or a
-// caller blocked on the future would hang.
-TEST(InitializeTest, FailureDoesNotStrandAQueuedOpen) {
-  FakeExecutor executor;
-  executor.fail_initialize = true;
+namespace {
+
+enum class InitializeOutcome {
+  Success,
+  Failure,
+#if ET_HAS_EXCEPTIONS
+  Exception,
+  NonStandardException,
+#endif
+};
+
+class GatedInitializeExecutor : public FakeExecutor {
+ public:
+  explicit GatedInitializeExecutor(InitializeOutcome outcome)
+      : outcome_(outcome) {
+    fail_initialize = outcome_ == InitializeOutcome::Failure;
+  }
+
+  bool initialize() override {
+    const bool ready = FakeExecutor::initialize();
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      entered_ = true;
+      cv_.notify_all();
+      cv_.wait(lock, [this] { return released_; });
+    }
+#if ET_HAS_EXCEPTIONS
+    if (outcome_ == InitializeOutcome::Exception) {
+      throw std::runtime_error("initialize failed");
+    }
+    if (outcome_ == InitializeOutcome::NonStandardException) {
+      throw 7;
+    }
+#endif
+    return ready;
+  }
+
+  bool wait_for_initialize() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return cv_.wait_for(lock, kTimeout, [this] { return entered_; });
+  }
+
+  void release_initialize() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      released_ = true;
+    }
+    cv_.notify_all();
+  }
+
+ private:
+  const InitializeOutcome outcome_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool entered_ = false;
+  bool released_ = false;
+};
+
+class InitializeStateTest : public ::testing::TestWithParam<InitializeOutcome> {
+};
+
+} // namespace
+
+TEST_P(InitializeStateTest, PendingSettlesQueuedOpensAndRetainsResult) {
+  GatedInitializeExecutor executor(GetParam());
   Fixture fixture(executor);
+  // Keep assertions nonfatal until the gate is released so teardown can join.
+  EXPECT_TRUE(executor.wait_for_initialize());
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
 
   std::vector<std::future<std::optional<Session>>> opens;
   for (int i = 0; i < 4; ++i) {
     opens.push_back(fixture.runner.open_session_async());
+    EXPECT_EQ(
+        opens.back().wait_for(std::chrono::seconds(0)),
+        std::future_status::timeout);
   }
+  EXPECT_TRUE(executor.opened().empty());
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
+  executor.release_initialize();
+
+  const bool succeeds = GetParam() == InitializeOutcome::Success;
+  const auto expected =
+      succeeds ? InitializationState::Ready : InitializationState::Failed;
   for (auto& opened : opens) {
     ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
-    EXPECT_FALSE(opened.get().has_value());
+    auto session = opened.get();
+    EXPECT_EQ(session.has_value(), succeeds);
+    EXPECT_EQ(fixture.runner.initialization_state(), expected);
+    if (session) {
+      EXPECT_TRUE(session->valid());
+    }
   }
+  if (!succeeds) {
+    auto refused = fixture.runner.open_session_async();
+    ASSERT_EQ(
+        refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+  }
+
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.initialization_state(), expected);
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.initialization_state(), expected);
+  auto refused = fixture.runner.open_session_async();
+  ASSERT_EQ(
+      refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_FALSE(executor.called_before_initialize());
+  EXPECT_EQ(executor.opened().size(), succeeds ? 4u : 0u);
+  EXPECT_EQ(executor.closed().size(), executor.opened().size());
+  EXPECT_EQ(executor.open_count(), 0);
+  EXPECT_EQ(fixture.runner.metrics().steps, 0u);
 }
+
+TEST_P(
+    InitializeStateTest,
+    ShutdownWhilePendingStillRetainsInitializationResult) {
+  GatedInitializeExecutor executor(GetParam());
+  Fixture fixture(executor);
+  EXPECT_TRUE(executor.wait_for_initialize());
+  std::vector<std::future<std::optional<Session>>> opens;
+  opens.push_back(fixture.runner.open_session_async());
+  EXPECT_EQ(
+      opens.back().wait_for(std::chrono::seconds(0)),
+      std::future_status::timeout);
+
+  std::thread stopping([&] { fixture.runner.shutdown(); });
+  bool stopped_admission = false;
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    auto probe = fixture.runner.open_session_async();
+    if (probe.wait_for(std::chrono::milliseconds(1)) ==
+        std::future_status::ready) {
+      stopped_admission = !probe.get();
+      break;
+    }
+    opens.push_back(std::move(probe));
+  }
+  EXPECT_TRUE(stopped_admission);
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
+  executor.release_initialize();
+  stopping.join();
+
+  for (auto& opened : opens) {
+    ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(opened.get());
+  }
+  EXPECT_EQ(
+      fixture.runner.initialization_state(),
+      GetParam() == InitializeOutcome::Success ? InitializationState::Ready
+                                               : InitializationState::Failed);
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_TRUE(executor.opened().empty());
+  EXPECT_EQ(fixture.runner.metrics().steps, 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InitializeTest,
+    InitializeStateTest,
+    ::testing::Values(
+        InitializeOutcome::Success,
+#if ET_HAS_EXCEPTIONS
+        InitializeOutcome::Exception,
+        InitializeOutcome::NonStandardException,
+#endif
+        InitializeOutcome::Failure),
+    [](const ::testing::TestParamInfo<InitializeOutcome>& info) {
+      switch (info.param) {
+        case InitializeOutcome::Success:
+          return "Success";
+        case InitializeOutcome::Failure:
+          return "Failure";
+#if ET_HAS_EXCEPTIONS
+        case InitializeOutcome::Exception:
+          return "Exception";
+        case InitializeOutcome::NonStandardException:
+          return "NonStandardException";
+#endif
+      }
+      return "Unknown";
+    });

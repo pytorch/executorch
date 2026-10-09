@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 """Provide TOSA support checks for ``aten.index.Tensor``.
 
-Reject unsupported indexing layouts, zero-sized tensors, and cases that exceed
-``int32`` element limits.
+Reject unsupported indexing layouts, symbolic shapes, zero-sized tensors,
+and cases that exceed ``int32`` element limits.
 
 """
 
@@ -53,6 +53,10 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
     3. Usages where the value or an index tensor is zero-sized, because TOSA
         requires every tensor dimension to be at least one.
+
+    4. Usages with symbolic value or index shapes. These are rejected even
+        when the TOSA shape extension is enabled, because the current gather
+        decomposition still assumes static shapes.
 
     Extra information regarding #1:
         Pytorch decomposes slice and None usages before they reach aten.
@@ -102,6 +106,40 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.index.Tensor]
 
+    def _are_shapes_supported(
+        self,
+        node: fx.Node,
+        input_val: torch.Tensor,
+        index_vals: Sequence[torch.Tensor],
+    ) -> bool:
+        if any(
+            isinstance(dim, torch.SymInt)
+            for value in [input_val, *index_vals]
+            for dim in value.shape
+        ):
+            self.reporter.report_reject(
+                node, "Symbolic value or index shapes are not supported."
+            )
+            return False
+
+        total_vals = math.prod(input_val.shape)
+        has_zero_sized_index = any(math.prod(index.shape) == 0 for index in index_vals)
+        if total_vals == 0 or has_zero_sized_index:
+            self.reporter.report_reject(
+                node,
+                "Zero-sized value or index tensors are not supported by TOSA.",
+            )
+            return False
+
+        if total_vals > torch.iinfo(torch.int32).max:
+            self.reporter.report_reject(
+                node,
+                "Value size exceeds int32 range; would overflow flattened indexing.",
+            )
+            return False
+
+        return True
+
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
@@ -111,6 +149,7 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
         - ``None`` entries may only form a leading run before all tensor indices.
         - At least one tensor index is present.
         - Value and index tensors must not be zero-sized.
+        - Value and index shapes must not contain symbolic dimensions.
         - Boolean and byte mask indices are not supported.
         - The value tensor element count fits in ``int32``.
 
@@ -123,12 +162,12 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
             )
             return False
 
-        if any(
-            get_first_fake_tensor(ensure_type(fx.Node, index)).dtype
-            in (torch.bool, torch.uint8)
+        index_vals = [
+            get_first_fake_tensor(ensure_type(fx.Node, index))
             for index in indices
             if index is not None
-        ):
+        ]
+        if any(index.dtype in (torch.bool, torch.uint8) for index in index_vals):
             self.reporter.report_reject(
                 node, "Boolean and byte mask indices are not supported."
             )
@@ -136,24 +175,7 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
         input_node = ensure_type(torch.fx.Node, node.args[0])
         input_val = get_first_fake_tensor(input_node)
-        total_vals = math.prod(input_val.shape)
-        has_zero_sized_index = any(
-            math.prod(get_first_fake_tensor(ensure_type(fx.Node, index)).shape) == 0
-            for index in indices
-            if index is not None
-        )
-        if total_vals == 0 or has_zero_sized_index:
-            self.reporter.report_reject(
-                node,
-                "Zero-sized value or index tensors are not supported by TOSA.",
-            )
-            return False
-
-        if total_vals > torch.iinfo(torch.int32).max:
-            self.reporter.report_reject(
-                node,
-                ("Value size exceeds int32 range; would overflow flattened indexing."),
-            )
+        if not self._are_shapes_supported(node, input_val, index_vals):
             return False
 
         values_dtype = input_val.dtype

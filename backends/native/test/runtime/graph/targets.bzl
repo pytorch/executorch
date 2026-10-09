@@ -1,0 +1,34 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def define_common_targets():
+    runtime.cxx_test(
+        name = "graph_test",
+        srcs = ["test_graph.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:graph",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "graph_utils_test",
+        srcs = ["test_graph_utils.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:graph_utils",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "memory_planning_test",
+        srcs = ["test_memory_planning.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:memory_planning",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "tensor_meta_test",
+        srcs = ["test_tensor_meta.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:tensor_meta",
+        ],
+    )
