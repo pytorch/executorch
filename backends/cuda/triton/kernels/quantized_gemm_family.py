@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Decode-sized quantized GEMMs: one kernel implementation per row count M.
+"""Bucketed quantized GEMM custom ops and shared launch infrastructure.
 
 A quantized weight format (INT4, INT5, INT6, INT8, ...) describes its GEMM to
 ``QuantizedGemmFamily``: the op signature, a launcher, a fake implementation,
@@ -137,14 +137,21 @@ def launch_split_k_gemm(
     block_m: int,
     inputs: Sequence,
     shape_args: Sequence,
+    split_k_on_axis_1: bool = False,
+    reduce_block_n: int = 64,
     **constexprs,
 ) -> torch.Tensor:
     """Runs a format's main kernel and returns the BF16 [m, n] output.
 
     The kernel is called as ``kernel(*inputs, out, *shape_args, stride_os,
     stride_om, stride_on, SPLIT_K=split_k, **constexprs)`` on a grid of
-    ``(cdiv(n, BLOCK_N), 1, split_k)``, ``BLOCK_N`` coming from its config. With
-    split-K it writes FP32 partials to a ``(split_k, bucket, n)`` workspace,
+    ``(cdiv(n, BLOCK_N), cdiv(bucket, BLOCK_M), split_k)``, both blocks coming
+    from its config or launch constexprs. Kernels without a ``BLOCK_M``
+    constexpr retain a size-one M grid. Tile kernels may instead request
+    ``(cdiv(n, BLOCK_N), split_k, cdiv(bucket, BLOCK_M))`` to keep split CTAs
+    adjacent in launch order. With split-K it writes FP32 partials
+    to a ``(split_k, bucket, n)`` workspace and reduces with fixed
+    ``block_m`` x ``reduce_block_n`` tiles,
     reduced deterministically afterwards. The workspace is sized by the bucket,
     not the runtime M, so its strides (constexprs) stay static under a dynamic
     M; rows at or above M are never read. Without split-K the split stride is
@@ -159,7 +166,15 @@ def launch_split_k_gemm(
         stride_os = 0
 
     def grid(meta):
-        return (triton.cdiv(n, meta["BLOCK_N"]), 1, split_k)
+        n_tiles = triton.cdiv(n, meta["BLOCK_N"])
+        m_tiles = triton.cdiv(bucket, meta["BLOCK_M"]) if "BLOCK_M" in meta else 1
+        if split_k_on_axis_1:
+            if m_tiles == 1:
+                return (n_tiles, split_k) if split_k > 1 else (n_tiles,)
+            if split_k > 1:
+                return (n_tiles, split_k, m_tiles)
+            return (n_tiles, m_tiles)
+        return (n_tiles, m_tiles, split_k)
 
     wrap_triton(kernel)[grid](
         *inputs,
@@ -172,7 +187,7 @@ def launch_split_k_gemm(
         **constexprs,
     )
     if split_k > 1:
-        splitk_reduce(partial, out, block_m)
+        splitk_reduce(partial, out, block_m, reduce_block_n)
     return out
 
 
