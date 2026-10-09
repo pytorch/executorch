@@ -24,6 +24,7 @@ import importlib.resources
 import json
 import operator
 import os
+import re
 import tempfile
 from contextvars import ContextVar
 from dataclasses import fields, is_dataclass
@@ -1403,6 +1404,28 @@ def serialize_graph(
     )
 
 
+# flatc emits non-finite doubles as bare `inf`, `-inf`, and `nan`, which are
+# not valid JSON and which Python's json module does not accept (it only
+# recognizes `Infinity`, `-Infinity`, and `NaN`). Match only unquoted values in
+# value position (after `:`, `[`, or `,`) so quoted string fields containing
+# these words are left untouched.
+_NON_FINITE_JSON_RE = re.compile(
+    r"([:\[,]\s*)([-+]?(?:inf|nan))(?=[\s,\]\}])", re.IGNORECASE
+)
+
+
+def _loads_flatc_json(text: str) -> object:
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(2).lower()
+        if "nan" in token:
+            return match.group(1) + "NaN"
+        if token.startswith("-"):
+            return match.group(1) + "-Infinity"
+        return match.group(1) + "Infinity"
+
+    return json.loads(_NON_FINITE_JSON_RE.sub(_replace, text))
+
+
 def deserialize_program(data: bytes) -> Program:
     """Deserialize native flatbuffer bytes back into a Program dataclass."""
     with tempfile.TemporaryDirectory() as td:
@@ -1413,7 +1436,7 @@ def deserialize_program(data: bytes) -> Program:
         _flatc_decompile(td, schema_path, bin_path)
         json_path = os.path.join(td, _FILE_STEM + ".json")
         with open(json_path) as f:
-            obj = json.load(f)
+            obj = _loads_flatc_json(f.read())
     return _json_to_dataclass(obj, Program)
 
 
