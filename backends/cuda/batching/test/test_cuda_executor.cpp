@@ -99,8 +99,10 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
     auto created = cb::CudaExecutor::create(
         module(),
         max_sessions,
-        kMaxCells / max_sessions > kMaxContext ? kMaxContext
-                                               : kMaxCells / max_sessions,
+        // One cell is the padding scratch row.
+        (kMaxCells - 1) / max_sessions > kMaxContext
+            ? kMaxContext
+            : (kMaxCells - 1) / max_sessions,
         kBFloat16,
         /*initial_capacity=*/16,
         options);
