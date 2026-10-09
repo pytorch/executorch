@@ -21,24 +21,15 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/util/session_table.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
-
-namespace executorch {
-namespace extension {
-namespace llm {
-class Sampler;
-} // namespace llm
-} // namespace extension
-} // namespace executorch
 
 namespace executorch::backends::cuda::batching {
 
@@ -108,18 +99,6 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   OffGraphKVMetrics kv_metrics() const;
 
  private:
-  struct SessionState {
-    std::int32_t seq_id;
-    std::unique_ptr<::executorch::extension::llm::Sampler> sampler;
-  };
-
-  struct Step {
-    std::vector<std::int64_t> tokens;
-    std::vector<std::int64_t> positions;
-    std::vector<std::int32_t> seq_ids;
-    std::vector<int> logit_indices;
-  };
-
   CudaExecutor(
       std::unique_ptr<::executorch::extension::Module> module,
       std::shared_ptr<llm_cache::Cache> cache,
@@ -129,30 +108,16 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::int32_t vocab_size,
       int max_step_tokens);
 
-  ::executorch::runtime::Result<Step> build_step(
-      const llm_batching::BatchInput& batch);
-  std::optional<llm_batching::SessionId> publish_session(
-      std::int32_t seq_id,
-      llm_batching::Position position);
-  std::optional<llm_batching::Token> sample_row(
-      ::executorch::aten::Tensor& logits,
-      int row,
-      llm_batching::SessionId session);
-
   // Ordered so the module dies first, releasing the delegates that resolved
   // the cache before the registry entry naming it goes.
   llm_cache::InstallGuard install_guard_;
   std::unique_ptr<::executorch::extension::Module> module_;
   llm_cache::BatchControl* const ctl_;
   const CudaKVCache* const kv_;
-  int max_sessions_;
-  int max_session_tokens_;
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_step_tokens_;
-
-  llm_batching::SessionId next_session_ = 1;
-  std::unordered_map<llm_batching::SessionId, SessionState> sessions_;
+  llm_batching::util::SessionTable sessions_;
 };
 
 } // namespace executorch::backends::cuda::batching
