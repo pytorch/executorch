@@ -7,6 +7,7 @@ import logging
 import multiprocessing
 import os
 import warnings
+from multiprocessing.connection import wait
 
 try:
     from eiq_neutron_sdk import neutron_compiler, neutron_library_utils
@@ -57,19 +58,28 @@ def _build_compilation_context(compilation_opts):
     return cctx
 
 
-def compile_unsafe(tflite_model, compilation_opts, queue):
+def compile_unsafe(tflite_model, compilation_opts, send_conn):
     """
-    Run neutron_compiler on given tflite_model with the provided compilation options.
-    This routine is supposed to run in a separate process.
-    If properly finished, the output queue contains the compiled model,
-    otherwise the neutron_compiler exits and the output queue is empty.
+    Run neutron_compiler on the given tflite_model in a separate process.
+    On success the compiled model is sent through send_conn.
+    On a compiler crash (SIGSEGV / C-level exit()) the process dies without
+    sending anything, which the parent detects via the subprocess timeout.
     """
     cctx = _build_compilation_context(compilation_opts)
     if _USING_NEUTRON_COMPILER:
         model_compiled = neutron_compiler.compileModel(list(tflite_model), cctx)
     else:
         model_compiled = neutron_compiler.convertModel(list(tflite_model), cctx)
-    queue.put(model_compiled)
+    send_conn.send(model_compiled)
+    send_conn.close()
+
+
+# Maximum seconds to wait for the compiler subprocess to send its result.
+# Set conservatively large so that slow but valid compilations are never killed.
+# The timeout only fires when the child is stuck (e.g. a native crash handler
+# that does not terminate), which would otherwise hang the caller indefinitely
+# when tests are run in parallel.
+_COMPILER_SUBPROCESS_TIMEOUT_S = 300  # 5 minutes.
 
 
 class NeutronCompilerManager:
@@ -127,7 +137,6 @@ class NeutronCompilerManager:
 
         :return: TFLite model with Neutron microcode as bytes.
         """
-        # Neutron compiler crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
         compilation_opts = {
@@ -139,30 +148,53 @@ class NeutronCompilerManager:
             "useProfiling": use_profiling,
         }
 
-        # Try to use multiprocessing for isolation, but fall back to direct execution
-        # if the environment doesn't support it (e.g., in sandcastle/build environments)
+        # Run the compiler in a subprocess to isolate crashes (the Neutron SDK can
+        # call exit() or segfault). A raw Pipe is used so that closing send_conn in
+        # the parent after fork makes the child the sole writer; a clean crash then
+        # produces EOF on recv_conn. For crashes where the native signal handler
+        # hangs, the subprocess timeout detects the stuck child and kills it.
         try:
             logger = multiprocessing.log_to_stderr()
             logger.setLevel(logging.WARNING)
-            queue = multiprocessing.Manager().Queue()
 
+            recv_conn, send_conn = multiprocessing.Pipe(duplex=False)
             process = multiprocessing.Process(
                 target=compile_unsafe,
-                args=(tflite_model, compilation_opts, queue),
+                args=(tflite_model, compilation_opts, send_conn),
             )
             process.start()
-            process.join()  # waits until the subprocess is complete
+            send_conn.close()  # child is now the sole writer
 
-            if queue.empty():  # signals the unsafe task did not run till the end
+            ready = wait([recv_conn], timeout=_COMPILER_SUBPROCESS_TIMEOUT_S)
+            if not ready:
+                if process.is_alive():
+                    process.kill()
+                process.join()
+                recv_conn.close()
+                raise RuntimeError(
+                    f"Neutron compiler subprocess did not respond within "
+                    f"{_COMPILER_SUBPROCESS_TIMEOUT_S} s and was killed "
+                    f"(exit code {process.exitcode})"
+                )
+
+            try:
+                model_compiled = recv_conn.recv()
+            except EOFError:
+                model_compiled = None
+            finally:
+                recv_conn.close()
+
+            process.join()
+
+            if model_compiled is None or process.exitcode != 0:
                 raise RuntimeError(
                     f"Neutron compiler module terminated unexpectedly with exit code {process.exitcode}"
                 )
 
-            model_compiled = queue.get()
             process.close()
-        except (EOFError, OSError, TypeError) as e:
-            # Multiprocessing failed (likely due to environment restrictions)
-            # Fall back to direct execution
+        except (OSError, TypeError) as e:
+            # Multiprocessing not available (e.g. restricted sandbox environment);
+            # fall back to running the compiler directly in the current process.
             logging.warning(
                 f"Multiprocessing not available ({e}), running neutron compiler directly"
             )
@@ -171,6 +203,7 @@ class NeutronCompilerManager:
                 model_compiled = neutron_compiler.compileModel(list(tflite_model), cctx)
             else:
                 model_compiled = neutron_compiler.convertModel(list(tflite_model), cctx)
+
         if self.dump_kernel_selection_code:
             self._rename_partition_kernel_selection_file(delegation_tag)
 
