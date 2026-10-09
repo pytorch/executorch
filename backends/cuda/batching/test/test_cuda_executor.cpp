@@ -6,9 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Drives CudaExecutor through the batching Runner on the toy decoder that
-// export_toy_decoder.py writes to $ET_CUDA_BATCHING_TOY_DIR, and checks every
-// generation against the eager greedy continuation it recorded.
+// Drives CudaExecutor through the batching Runner on the toy decoders that
+// export_toy_decoder.py writes under $ET_CUDA_BATCHING_TOY_DIR, and checks
+// every generation against the eager greedy continuation it recorded. Runs
+// once per artifact: prefill exported from two tokens, and from five, where
+// narrower slices must run as decodes and prefill's selector is padded.
 
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
@@ -54,7 +56,7 @@ std::vector<batching::Token> parse_tokens(const std::string& text) {
   return tokens;
 }
 
-class CudaExecutorTest : public ::testing::Test {
+class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
  protected:
   void SetUp() override {
     int devices = 0;
@@ -66,7 +68,7 @@ class CudaExecutorTest : public ::testing::Test {
       GTEST_SKIP() << "ET_CUDA_BATCHING_TOY_DIR is not set; run "
                       "export_toy_decoder.py first";
     }
-    dir_ = dir;
+    dir_ = std::string(dir) + "/" + GetParam();
     std::ifstream in(dir_ + "/expected.txt");
     ASSERT_TRUE(in.is_open()) << dir_ << "/expected.txt";
     std::string line;
@@ -165,7 +167,7 @@ class CudaExecutorTest : public ::testing::Test {
 
 } // namespace
 
-TEST_F(CudaExecutorTest, ConcurrentGenerationsMatchEagerGreedy) {
+TEST_P(CudaExecutorTest, ConcurrentGenerationsMatchEagerGreedy) {
   auto exec = executor();
   ASSERT_NE(exec, nullptr);
   EXPECT_EQ(exec->preferred_batch_tokens(), static_cast<size_t>(kMaxStep));
@@ -195,7 +197,7 @@ TEST_F(CudaExecutorTest, ConcurrentGenerationsMatchEagerGreedy) {
   EXPECT_GT(engine.decode_sessions_total, engine.steps / 2);
 }
 
-TEST_F(CudaExecutorTest, EagerDecodeMatchesTheCapturedGraph) {
+TEST_P(CudaExecutorTest, EagerDecodeMatchesTheCapturedGraph) {
   cb::CudaExecutorOptions options;
   options.cuda_graph_for_decode = false;
   auto exec = executor(options);
@@ -208,7 +210,7 @@ TEST_F(CudaExecutorTest, EagerDecodeMatchesTheCapturedGraph) {
   }
 }
 
-TEST_F(CudaExecutorTest, SamePromptTwiceInOneBatchGeneratesTheSame) {
+TEST_P(CudaExecutorTest, SamePromptTwiceInOneBatchGeneratesTheSame) {
   auto exec = executor();
   ASSERT_NE(exec, nullptr);
   batching::Runner runner(*exec, scheduler());
@@ -219,7 +221,7 @@ TEST_F(CudaExecutorTest, SamePromptTwiceInOneBatchGeneratesTheSame) {
   EXPECT_EQ(generations[1].tokens, c.expected);
 }
 
-TEST_F(CudaExecutorTest, SessionsReuseCellsAcrossRounds) {
+TEST_P(CudaExecutorTest, SessionsReuseCellsAcrossRounds) {
   auto exec = executor();
   ASSERT_NE(exec, nullptr);
   batching::Runner runner(*exec, scheduler());
@@ -235,7 +237,7 @@ TEST_F(CudaExecutorTest, SessionsReuseCellsAcrossRounds) {
   runner.shutdown();
 }
 
-TEST_F(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
+TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
   // 8 sessions of the full 64-token context need 512 cells; the program has
   // 256.
   EXPECT_EQ(
@@ -248,3 +250,8 @@ TEST_F(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
           .error(),
       Error::InvalidArgument);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    Toy,
+    CudaExecutorTest,
+    ::testing::Values("min2", "min5"));
