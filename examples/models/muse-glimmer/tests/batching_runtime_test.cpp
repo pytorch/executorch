@@ -53,7 +53,9 @@ std::shared_ptr<llm::MuseGlimmerPreparedInput> image_input(
       std::move(identity),
       std::vector<batch::Token>{200000, 11, 200092, 200092, 12},
       llm::MuseGlimmerRGBImage{
-          std::vector<uint8_t>(width * height * 3, pixel), width, height},
+          std::vector<uint8_t>(static_cast<size_t>(width) * height * 3, pixel),
+          width,
+          height},
       llm::MuseGlimmerImageGrid{height, width, 2},
       llm::MuseGlimmerImageSpan{2, 2});
 }
