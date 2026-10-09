@@ -25,9 +25,6 @@
 #endif
 
 #include <vgf/decoder.hpp>
-#if __has_include(<vgf/version.h>)
-#include <vgf/version.h>
-#endif
 #include <vgf/vulkan_helpers.generated.hpp>
 
 #include <algorithm>
@@ -44,16 +41,6 @@
 #include <unordered_set>
 
 using namespace mlsdk;
-
-#if defined(MLSDK_VGF_LIBRARY_API_VERSION_MAJOR) && \
-    defined(MLSDK_VGF_LIBRARY_API_VERSION_MINOR)
-#define EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS \
-  ((MLSDK_VGF_LIBRARY_API_VERSION_MAJOR > 0) || \
-   (MLSDK_VGF_LIBRARY_API_VERSION_MAJOR == 0 && \
-    MLSDK_VGF_LIBRARY_API_VERSION_MINOR >= 10))
-#else
-#define EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS 0
-#endif
 
 namespace executorch {
 namespace backends {
@@ -1285,17 +1272,11 @@ VkResult allocate_sampler(
 static std::optional<uint32_t> get_resource_alias_group_id(
     const unique_ptr<vgflib::ModelResourceTableDecoder>& resource_decoder,
     uint32_t resource_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
   auto alias_group = resource_decoder->getAliasGroupId(resource_index);
   if (!alias_group.has_value()) {
     return std::nullopt;
   }
   return static_cast<uint32_t>(*alias_group);
-#else
-  (void)resource_decoder;
-  (void)resource_index;
-  return std::nullopt;
-#endif
 }
 
 static bool allocate_resource_sampler(
@@ -1303,7 +1284,6 @@ static bool allocate_resource_sampler(
     uint32_t resource_index,
     VkDevice device,
     VkSampler* sampler_out) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
   auto sampler_config =
       resource_decoder->getSamplerConfigHandle(resource_index);
   if (sampler_config == nullptr) {
@@ -1327,17 +1307,6 @@ static bool allocate_resource_sampler(
       static_cast<VkBorderColor>(
           resource_decoder->getSamplerConfigBorderColor(sampler_config)),
       sampler_out);
-#else
-  (void)resource_decoder;
-  auto result = allocate_sampler(
-      device,
-      VK_FILTER_LINEAR,
-      VK_FILTER_LINEAR,
-      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
-      sampler_out);
-#endif
   if (result != VK_SUCCESS) {
     ET_LOG(
         Error,
@@ -1347,30 +1316,6 @@ static bool allocate_resource_sampler(
     return false;
   }
   return true;
-}
-
-static auto get_module_spirv_code(
-    unique_ptr<vgflib::ModuleTableDecoder>& module_decoder,
-    uint32_t module_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
-  return module_decoder->getSPIRVModuleCode(module_index);
-#else
-  return module_decoder->getModuleCode(module_index);
-#endif
-}
-
-static uint32_t get_segment_descriptor_set_index(
-    const unique_ptr<vgflib::ModelSequenceTableDecoder>& sequence_decoder,
-    uint32_t segment_index,
-    uint32_t descriptor_index) {
-#if EXECUTORCH_ARM_VGF_HAS_DECODER_V10_APIS
-  return sequence_decoder->getSegmentDescriptorSetIndex(
-      segment_index, descriptor_index);
-#else
-  (void)sequence_decoder;
-  (void)segment_index;
-  return descriptor_index;
-#endif
 }
 
 VkResult transition_image_layout(
@@ -3227,8 +3172,7 @@ bool VgfRepr::process_vgf(
         ET_LOG(Error, "Module %d does not contain SPIR-V code", segment_module);
         return false;
       }
-      auto segment_m_spirv =
-          get_module_spirv_code(module_decoder, segment_module);
+      auto segment_m_spirv = module_decoder->getSPIRVModuleCode(segment_module);
       ET_LOG(Debug, "SPIR-V code size (words) %zu", segment_m_spirv.size());
 
       VkShaderModuleCreateInfo smci{
@@ -3434,8 +3378,8 @@ bool VgfRepr::process_vgf(
       }
 
       for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-        const auto set_index = get_segment_descriptor_set_index(
-            sequence_decoder, segment_id, d_idx);
+        const auto set_index =
+            sequence_decoder->getSegmentDescriptorSetIndex(segment_id, d_idx);
         if (set_index != d_idx) {
           ET_LOG(
               Error,
