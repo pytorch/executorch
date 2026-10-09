@@ -21,6 +21,17 @@ TEST(ScalarTest, ToScalarType) {
   EXPECT_EQ(s_b.to<bool>(), true);
 }
 
+TEST(ScalarTest, ToFloatMatchesC10ScalarConversions) {
+  Scalar s_d((double)3.25);
+  EXPECT_FLOAT_EQ(s_d.to<float>(), 3.25f);
+
+  Scalar s_i((int64_t)3);
+  EXPECT_FLOAT_EQ(s_i.to<float>(), 3.0f);
+
+  Scalar s_b(true);
+  EXPECT_FLOAT_EQ(s_b.to<float>(), 1.0f);
+}
+
 TEST(ScalarTest, ToIntForFalseScalarPasses) {
   Scalar s_b(false);
   EXPECT_FALSE(s_b.isIntegral(/*includeBool=*/false));

@@ -75,6 +75,18 @@ class Scalar {
     }
   }
 
+  float toFloat() const {
+    if (isFloatingPoint()) {
+      return static_cast<float>(v.as_double);
+    } else if (isIntegral(/*includeBool=*/false)) {
+      return static_cast<float>(v.as_int);
+    } else if (isBoolean()) {
+      return static_cast<float>(v.as_bool);
+    } else {
+      ET_CHECK_MSG(false, "Scalar cannot be converted to float.");
+    }
+  }
+
   double toFloatingPoint() const {
     ET_CHECK_MSG(isFloatingPoint(), "Scalar is not a Double.");
     return v.as_double;
@@ -106,6 +118,7 @@ class Scalar {
   }
 
 ET_DEFINE_SCALAR_TO_METHOD(double, Double)
+ET_DEFINE_SCALAR_TO_METHOD(float, Float)
 ET_DEFINE_SCALAR_TO_METHOD(int64_t, Int)
 ET_DEFINE_SCALAR_TO_METHOD(bool, Bool)
 #undef ET_DEFINE_SCALAR_TO_METHOD
