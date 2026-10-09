@@ -99,6 +99,27 @@ class TestTensor(unittest.TestCase):
             )
             self.compare_tensors(normal_tensor, flatbuffer_tensor)
 
+    def test_const_tensor_preserve_layout(self) -> None:
+        tensor = (
+            torch.arange(3 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(3, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )[1:3]
+
+        default_spec = TensorSpec.from_tensor(tensor, const=True)
+        self.assertEqual(default_spec.dim_order, (0, 1, 2, 3))
+
+        spec = TensorSpec.from_tensor(tensor, const=True, preserve_layout=True)
+        self.assertEqual(spec.dim_order, (0, 2, 3, 1))
+        self.assertEqual(spec.stride, (60, 1, 15, 3))
+        self.assertTrue(spec.const)
+        assert spec.storage is not None
+        self.assertEqual(spec.storage.nbytes(), tensor.nbytes)
+        self.assertEqual(
+            bytes(spec.storage),
+            tensor.permute(0, 2, 3, 1).contiguous().numpy().tobytes(),
+        )
+
     def test_allocation_info_succeeds(self) -> None:
         test_cases = (
             (

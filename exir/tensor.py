@@ -50,7 +50,7 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
 
 
 def dim_order_from_stride(
-    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
 ) -> Tuple[bytes]:
     """
     Dimension order represents how dimensions are laid out in memory,
@@ -207,10 +207,18 @@ class TensorSpec:
         return num_bytes_from_shape_and_dtype(self.shape, self.dtype)
 
     @classmethod
-    def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
+    def from_tensor(
+        cls,
+        tensor: torch.Tensor,
+        const: bool = False,
+        preserve_layout: bool = False,
+    ) -> TensorSpec:
         if const:
-            # for non-contigous tensors, convert to a contiguous one
-            tensor = tensor.contiguous()
+            tensor = (
+                tensor.clone(memory_format=torch.preserve_format)
+                if preserve_layout
+                else tensor.contiguous()
+            )
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
                 tensor = tensor.clone()

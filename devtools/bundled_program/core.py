@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -110,7 +111,9 @@ class BundledProgram:
                 for input_val in cur_plan_test_inputs:
                     if type(input_val) is torch.Tensor:
                         self._emit_bundled_tensor(
-                            TensorSpec.from_tensor(input_val, const=True),
+                            TensorSpec.from_tensor(
+                                input_val, const=True, preserve_layout=True
+                            ),
                             inputs,
                         )
                     else:
@@ -123,7 +126,9 @@ class BundledProgram:
                         type(expected_output_tensor) is torch.Tensor
                     ), "Only tensor outputs are currently supported."
                     self._emit_bundled_tensor(
-                        TensorSpec.from_tensor(expected_output_tensor, const=True),
+                        TensorSpec.from_tensor(
+                            expected_output_tensor, const=True, preserve_layout=True
+                        ),
                         expected_outputs,
                     )
                 bundled_test_cases.append(
