@@ -9,8 +9,9 @@
 Shared by the per-format dispatchers (``int{4,5,6,8}_dispatch.py``):
 
 1. ``can_launch_triton``: is a Triton kernel possible here at all?
-2. ``select_bucket``: the first bucket, in ascending order, whose op supports
-   the arguments (the family decides, through its ``supports``).
+2. ``select_bucket``: the first bucket through M=64, in ascending order, whose
+   op supports the arguments (the family decides through ``supports``). Static
+   and provably bounded dynamic M therefore take the smallest covering bucket.
 3. Otherwise the format's dequantize + ``F.linear`` fallback, chunked along N
    by ``chunked_dequant_linear`` so huge weights (an lm_head) never build one
    full-size dequantized copy.
@@ -44,9 +45,23 @@ def can_launch_triton(x: torch.Tensor) -> bool:
     return x.device.type == "cuda" or is_fake(x)
 
 
+# Quantized families may serve decode and small static batching through M=64.
+DEFAULT_MAX_BUCKET = 64
+
+
 def select_bucket(family, *args) -> Optional[int]:
-    """The smallest bucket whose op supports ``args``, or None."""
-    return next((b for b in family.buckets if family.supports(b, *args)), None)
+    """The bucket whose op serves ``args``, or None.
+
+    Returns the smallest supported bucket through ``DEFAULT_MAX_BUCKET``.
+    """
+    return next(
+        (
+            b
+            for b in family.buckets
+            if b <= DEFAULT_MAX_BUCKET and family.supports(b, *args)
+        ),
+        None,
+    )
 
 
 def chunked_dequant_linear(
@@ -95,6 +110,7 @@ def quantized_linear(
 
 
 __all__ = [
+    "DEFAULT_MAX_BUCKET",
     "can_launch_triton",
     "chunked_dequant_linear",
     "quantized_linear",

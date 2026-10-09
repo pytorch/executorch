@@ -309,12 +309,11 @@ class Int5QuantizedGemmLegalityTest(unittest.TestCase):
 
     def test_check_rows_static_and_symbolic_behavior(self) -> None:
         for bucket in SUPPORTED_BUCKETS:
-            mismatch = 2 if bucket == 1 else 1
-            with self.subTest(bucket=bucket, static_m=mismatch):
+            with self.subTest(bucket=bucket, static_m=bucket + 1):
                 self._expect_unsupported(
                     bucket,
-                    self._args(m=mismatch),
-                    "static M must equal the bucket",
+                    self._args(m=bucket + 1),
+                    "static M must be within",
                 )
 
         from torch._subclasses.fake_tensor import FakeTensorMode
@@ -418,7 +417,7 @@ class Int5QuantizedGemmLegalityTest(unittest.TestCase):
         INT5_QUANTIZED_GEMM.validate(1, *fake)
 
     def test_op_validates_before_launching(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "static M must equal"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT5_QUANTIZED_GEMM.op(1)(*self._args(m=2))
 
 
