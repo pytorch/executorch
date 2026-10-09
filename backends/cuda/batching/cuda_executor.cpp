@@ -8,16 +8,20 @@
 
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 
+#include <cuda_runtime.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cinttypes>
 #include <limits>
 #include <set>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <executorch/backends/cuda/runtime/backend_options.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -142,6 +146,44 @@ std::optional<int> static_method_width(std::string_view name) {
   return width > 0 ? std::optional<int>(width) : std::nullopt;
 }
 
+bool is_long_vector(const MethodMeta& meta, std::size_t output) {
+  const auto tensor = meta.output_tensor_meta(output);
+  return tensor.ok() &&
+      tensor->scalar_type() == ::executorch::aten::ScalarType::Long &&
+      tensor->sizes().size() == 1;
+}
+
+// Validates an optional device sampler; false when the program lacks it.
+Result<bool> check_sampler(
+    Module& module,
+    const std::unordered_set<std::string>& names,
+    const char* method,
+    std::size_t num_inputs,
+    std::int64_t vocab_size) {
+  if (names.count(method) == 0) {
+    return false;
+  }
+  ET_ASSIGN_OR_RETURN(meta, module.method_meta(method));
+  bool valid = meta.num_inputs() == num_inputs && meta.num_outputs() == 1 &&
+      is_long_vector(meta, 0);
+  for (std::size_t i = 0; valid && i < num_inputs; ++i) {
+    const auto input = meta.input_tensor_meta(i);
+    valid = input.ok() && input->sizes().size() == 2 &&
+        (i == 0
+             ? is_supported_logits_type(input->scalar_type()) &&
+                 input->sizes()[1] == vocab_size
+             : input->scalar_type() == ::executorch::aten::ScalarType::Float &&
+                 input->sizes()[1] == 4);
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      valid,
+      InvalidProgram,
+      "CudaExecutor: %s must map [R, vocab] logits%s to Long [R] tokens",
+      method,
+      num_inputs == 2 ? " and Float [R, 4] params" : "");
+  return true;
+}
+
 Error set_backend_options(
     const CudaExecutorOptions& options,
     const std::vector<ForwardMethod>& methods) {
@@ -177,7 +219,9 @@ CudaExecutor::CudaExecutor(
     std::string backend_id,
     std::int32_t vocab_size,
     std::vector<ForwardMethod> methods,
-    int min_selected_rows)
+    int min_selected_rows,
+    bool has_sampler,
+    bool has_argmax)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
@@ -187,9 +231,15 @@ CudaExecutor::CudaExecutor(
       methods_(std::move(methods)),
       calls_(methods_.size(), 0),
       min_selected_rows_(min_selected_rows),
-      sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size) {}
+      sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size),
+      has_sampler_(has_sampler),
+      has_argmax_(has_argmax) {}
 
-CudaExecutor::~CudaExecutor() = default;
+CudaExecutor::~CudaExecutor() {
+  if (device_params_ != nullptr) {
+    (void)cudaFree(device_params_);
+  }
+}
 
 Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     std::unique_ptr<Module> module,
@@ -317,6 +367,16 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_ASSIGN_OR_RETURN(published_vocab, metadata::read_vocab_size(*module));
   ET_ASSIGN_OR_RETURN(
       vocab_size, metadata::check_vocab_size(published_vocab, method_vocab));
+  ET_ASSIGN_OR_RETURN(
+      has_sampler, check_sampler(*module, names, kSampleMethod, 2, vocab_size));
+  ET_ASSIGN_OR_RETURN(
+      has_argmax, check_sampler(*module, names, kArgmaxMethod, 1, vocab_size));
+  ET_CHECK_OR_RETURN_ERROR(
+      has_sampler || !has_argmax,
+      InvalidProgram,
+      "CudaExecutor: %s needs %s for non-greedy rows",
+      kArgmaxMethod,
+      kSampleMethod);
 
   // Every resident session may fill its budget at once; the pool must hold
   // them all, or a step could find no free cell mid-generation. One of the
@@ -369,7 +429,9 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       std::move(backend_id),
       vocab_size,
       std::move(methods),
-      min_selected_rows));
+      min_selected_rows,
+      has_sampler,
+      has_argmax));
 }
 
 bool CudaExecutor::initialize() {
@@ -389,6 +451,14 @@ bool CudaExecutor::initialize() {
             /*event_tracer=*/nullptr,
             &options_map) != Error::Ok) {
       ET_LOG(Error, "CudaExecutor: could not load %s", method.name.c_str());
+      return false;
+    }
+  }
+  for (const auto& [present, name] :
+       {std::pair{has_sampler_, kSampleMethod},
+        std::pair{has_argmax_, kArgmaxMethod}}) {
+    if (present && module_->load_method(name) != Error::Ok) {
+      ET_LOG(Error, "CudaExecutor: could not load %s", name);
       return false;
     }
   }
@@ -488,18 +558,153 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
           vocab_size_);
       return false;
     }
-    for (std::size_t row = 0; row < selected.inputs.size(); ++row) {
-      const std::size_t input_index = selected.inputs[row];
-      const SessionId session = batch.inputs[input_index].sid;
-      const std::optional<Token> token =
-          sessions_.sample(session, logits, static_cast<int>(row));
-      if (!token) {
+    if (selected.inputs.empty()) {
+      continue;
+    }
+    std::vector<SessionId> row_sessions;
+    row_sessions.reserve(selected.inputs.size());
+    for (const std::size_t input_index : selected.inputs) {
+      row_sessions.push_back(batch.inputs[input_index].sid);
+    }
+    std::vector<Token> tokens_out;
+    const bool device_logits =
+        logits.device_type() == ::executorch::aten::DeviceType::CUDA;
+    if (device_logits_.value_or(device_logits) != device_logits) {
+      ET_LOG(
+          Error,
+          "CudaExecutor: %s returns %s logits, unlike the forwards before it",
+          method.name.c_str(),
+          device_logits ? "device" : "host");
+      return false;
+    }
+    device_logits_ = device_logits;
+    if (device_logits) {
+      if (!has_sampler_) {
+        ET_LOG(
+            Error,
+            "CudaExecutor: %s returns device logits but the program has no %s",
+            method.name.c_str(),
+            kSampleMethod);
         return false;
       }
-      out.outputs[input_index] = Output{session, {*token}};
+      auto sampled = sample_on_device(logits, row_sessions);
+      if (!sampled) {
+        return false;
+      }
+      tokens_out = std::move(*sampled);
+    } else {
+      for (std::size_t row = 0; row < row_sessions.size(); ++row) {
+        const std::optional<Token> token =
+            sessions_.sample(row_sessions[row], logits, static_cast<int>(row));
+        if (!token) {
+          return false;
+        }
+        tokens_out.push_back(*token);
+      }
+    }
+    for (std::size_t row = 0; row < selected.inputs.size(); ++row) {
+      out.outputs[selected.inputs[row]] =
+          Output{row_sessions[row], {tokens_out[row]}};
     }
   }
   return true;
+}
+
+std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
+    const ::executorch::aten::Tensor& logits,
+    const std::vector<SessionId>& sessions) {
+  using ::executorch::aten::ScalarType;
+  using ::executorch::aten::SizesType;
+  const ::executorch::aten::Device cuda(
+      ::executorch::aten::DeviceType::CUDA, logits.device_index());
+  const auto rows = static_cast<SizesType>(sessions.size());
+  // The rows that sample lead the logits; the rest are padding.
+  auto row_logits = make_tensor_ptr(
+      {rows, static_cast<SizesType>(vocab_size_)},
+      logits.mutable_data_ptr(),
+      logits.scalar_type(),
+      cuda);
+
+  const bool all_greedy =
+      std::all_of(sessions.begin(), sessions.end(), [this](SessionId session) {
+        return sessions_.greedy(session);
+      });
+  // Every row's generator advances whichever method runs, as on the host.
+  std::vector<float> params;
+  params.reserve(sessions.size() * 4);
+  for (const SessionId session : sessions) {
+    const auto row = sessions_.device_sampling(session);
+    if (!row) {
+      return std::nullopt;
+    }
+    params.insert(
+        params.end(), {row->temperature, row->top_p, row->top_k, row->coin});
+  }
+
+  const cudaStream_t stream =
+      ::executorch::extension::cuda::getCallerStream().value_or(
+          cudaStreamPerThread);
+  auto run_sampler =
+      [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
+    if (all_greedy && has_argmax_) {
+      return module_->execute(
+          kArgmaxMethod,
+          std::vector<::executorch::runtime::EValue>{row_logits});
+    }
+    if (sessions.size() > device_params_rows_) {
+      if (device_params_ != nullptr) {
+        (void)cudaFree(device_params_);
+        device_params_ = nullptr;
+        device_params_rows_ = 0;
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMalloc(&device_params_, sessions.size() * 4 * sizeof(float)) ==
+              cudaSuccess,
+          MemoryAllocationFailed,
+          "CudaExecutor: could not stage the sampler's params");
+      device_params_rows_ = sessions.size();
+    }
+    // The backend runs every method on the caller's stream if one is set,
+    // else the per-thread stream; ordering the upload there puts it ahead of
+    // the sampler.
+    ET_CHECK_OR_RETURN_ERROR(
+        cudaMemcpyAsync(
+            device_params_,
+            params.data(),
+            params.size() * sizeof(float),
+            cudaMemcpyHostToDevice,
+            stream) == cudaSuccess,
+        Internal,
+        "CudaExecutor: could not upload the sampler's params");
+    auto device_params =
+        make_tensor_ptr({rows, 4}, device_params_, ScalarType::Float, cuda);
+    return module_->execute(kSampleMethod, {row_logits, device_params});
+  };
+  const auto result = run_sampler();
+  if (!result.ok() || result->empty() || !result->at(0).isTensor()) {
+    ET_LOG(Error, "CudaExecutor: the device sampler failed");
+    return std::nullopt;
+  }
+  const auto& tokens = result->at(0).toTensor();
+  if (tokens.numel() != rows || tokens.scalar_type() != ScalarType::Long) {
+    ET_LOG(Error, "CudaExecutor: the device sampler returned a bad shape");
+    return std::nullopt;
+  }
+  std::vector<std::int64_t> host(sessions.size());
+  const auto kind = tokens.device_type() == ::executorch::aten::DeviceType::CUDA
+      ? cudaMemcpyDeviceToHost
+      : cudaMemcpyHostToHost;
+  if (cudaMemcpyAsync(
+          host.data(),
+          tokens.const_data_ptr(),
+          host.size() * sizeof(std::int64_t),
+          kind,
+          stream) != cudaSuccess ||
+      cudaStreamSynchronize(stream) != cudaSuccess) {
+    ET_LOG(Error, "CudaExecutor: could not read the sampled tokens");
+    return std::nullopt;
+  }
+  return std::vector<Token>(host.begin(), host.end());
 }
 
 OffGraphKVMetrics CudaExecutor::kv_metrics() const {

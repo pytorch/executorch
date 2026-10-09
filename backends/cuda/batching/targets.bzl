@@ -37,6 +37,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/module:module",
         ],
         deps = [
+            "//executorch/extension/cuda:caller_stream",
             "//executorch/extension/llm/runner:stats",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
@@ -77,6 +78,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/exir/passes:lib",
+            "//executorch/extension/llm/batching:sampler",
             "//executorch/extension/llm/cache:cache",
             "//executorch/extension/llm/export:model_metadata",
         ],
