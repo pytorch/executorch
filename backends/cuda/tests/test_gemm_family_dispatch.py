@@ -43,14 +43,19 @@ def _fake(bucket: int, x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
 def _rows_fit(bucket: int, x: torch.Tensor, weight: torch.Tensor):
     m = x.shape[0]
     if isinstance(m, int):
-        return None if m == bucket else "static M must equal the bucket"
+        return None if 1 <= m <= bucket else "static M must be within the bucket"
     if statically_known_true(m >= 1) and statically_known_true(m <= bucket):
         return None
     return "dynamic M is not provably within the bucket"
 
 
 _TOY = QuantizedGemmFamily(
-    "gemm_family_dispatch_test_toy", (1, 2, 4), _prototype, _launch, _fake, _rows_fit
+    "gemm_family_dispatch_test_toy",
+    (1, 2, 4, 8, 16),
+    _prototype,
+    _launch,
+    _fake,
+    _rows_fit,
 )
 
 
@@ -79,12 +84,13 @@ def _toy_ops(program) -> set[str]:
 
 
 class SelectBucketTest(unittest.TestCase):
-    def test_static_m_takes_its_own_bucket(self) -> None:
+    def test_static_m_takes_the_smallest_covering_bucket(self) -> None:
         w = torch.randn(8, 16)
-        self.assertEqual(select_bucket(_TOY, torch.randn(1, 16), w), 1)
-        self.assertEqual(select_bucket(_TOY, torch.randn(4, 16), w), 4)
-        self.assertIsNone(select_bucket(_TOY, torch.randn(3, 16), w))
-        self.assertIsNone(select_bucket(_TOY, torch.randn(8, 16), w))
+        expected = {1: 1, 2: 2, 3: 4, 4: 4, 5: 8, 8: 8, 9: 16, 16: 16}
+        for m, bucket in expected.items():
+            with self.subTest(m=m):
+                self.assertEqual(select_bucket(_TOY, torch.randn(m, 16), w), bucket)
+        self.assertIsNone(select_bucket(_TOY, torch.randn(17, 16), w))
 
     def test_first_supporting_bucket_in_ascending_order(self) -> None:
         w, x = torch.randn(8, 16), torch.randn(2, 16)
@@ -97,7 +103,7 @@ class SelectBucketTest(unittest.TestCase):
             self.assertIsNone(select_bucket(_TOY, x, w))
 
     def test_exported_dynamic_m_takes_the_smallest_covering_bucket(self) -> None:
-        cases = {(1, 2): "m2", (2, 3): "m4", (1, 4): "m4", (2, 5): None}
+        cases = {(1, 2): "m2", (2, 3): "m4", (1, 4): "m4", (2, 5): "m8"}
         for (low, high), expected in cases.items():
             x = torch.randn(high, 16)
             program = torch.export.export(
@@ -112,6 +118,25 @@ class SelectBucketTest(unittest.TestCase):
                     {f"triton.gemm_family_dispatch_test_toy_{expected}.default"},
                     (low, high),
                 )
+
+
+class LargeBucketsTest(unittest.TestCase):
+    def test_large_static_bucket_needs_no_context(self) -> None:
+        program = torch.export.export(_Routed(), (torch.randn(16, 16),))
+        self.assertEqual(
+            _toy_ops(program),
+            {"triton.gemm_family_dispatch_test_toy_m16.default"},
+        )
+
+    def test_dynamic_m_uses_the_smallest_proven_cover(self) -> None:
+        x = torch.randn(8, 16)
+        program = torch.export.export(
+            _Routed(), (x,), dynamic_shapes=({0: Dim("m", min=5, max=8)},)
+        )
+        self.assertEqual(
+            _toy_ops(program),
+            {"triton.gemm_family_dispatch_test_toy_m8.default"},
+        )
 
 
 class QuantizedLinearTest(unittest.TestCase):

@@ -20,7 +20,8 @@ std::vector<TestCase> generate_test_cases(
     const std::vector<LinearConfig>& configs,
     const std::vector<utils::StorageType>& storage_types,
     const std::vector<vkapi::ScalarType>& input_dtypes,
-    const std::vector<std::string>& ops) {
+    const std::vector<std::string>& ops,
+    bool include_narrow_tile_cases = false) {
   std::vector<TestCase> test_cases;
 
   const bool supports_int8_dot_product =
@@ -51,6 +52,32 @@ std::vector<TestCase> generate_test_cases(
           op_config.op_name = op;
           test_cases.push_back(create_test_case_from_config(
               op_config, storage_type, input_dtype));
+        }
+      }
+    }
+  }
+
+  if (include_narrow_tile_cases) {
+    for (int64_t M : {2, 3, 5}) {
+      for (bool has_bias : {true, false}) {
+        LinearConfig config;
+        config.M = M;
+        config.K = 64;
+        config.N = 32;
+        config.group_size = 32;
+        config.has_bias = has_bias;
+        config.op_name = "linear_dq8ca_q4gsw";
+        config.test_case_name = "correctness_tiledm2_M" + std::to_string(M) +
+            (has_bias ? "" : "_no_bias");
+
+        for (const auto& storage_type : storage_types) {
+          for (const auto& input_dtype : input_dtypes) {
+            TestCase test_case = create_test_case_from_config(
+                config, storage_type, input_dtype);
+            test_case.set_name(test_case.name() + " [tiledm2]");
+            test_case.set_force_narrow_int4_tile(true);
+            test_cases.push_back(test_case);
+          }
         }
       }
     }
@@ -104,7 +131,8 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "correctness") {
           // variants are the ones we actually hit in production.
           /*input_dtypes=*/{vkapi::kFloat, vkapi::kHalf},
           // Activation+weight quantized and weight-only quantized.
-          /*ops=*/{"linear_dq8ca_q4gsw", "linear_q4gsw"}),
+          /*ops=*/{"linear_dq8ca_q4gsw", "linear_q4gsw"},
+          /*include_narrow_tile_cases=*/true),
       reference_impl,
       quantized_linear_flop_calculator};
 }

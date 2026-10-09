@@ -7,7 +7,8 @@
 #include <executorch/backends/vulkan/test/ops/benchmark/cases/q8ta/conv2d/conv2d.h>
 #include <executorch/backends/vulkan/test/ops/benchmark/framework/registry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dPW.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/im2col/Q8taConv2dIm2Col.h>
 
 namespace executorch {
 namespace vulkan {

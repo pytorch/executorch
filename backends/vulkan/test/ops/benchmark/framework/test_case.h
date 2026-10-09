@@ -158,6 +158,16 @@ class TestCase {
     return force_resize_;
   }
 
+  // When true, the ComputeGraph sets GraphConfig::force_narrow_int4_tile, so
+  // the int4 linear picks its narrow (2-row) output tile on any GPU. That
+  // variant is otherwise reachable only on Mali, which no CI runner has.
+  void set_force_narrow_int4_tile(bool force) {
+    force_narrow_int4_tile_ = force;
+  }
+  bool get_force_narrow_int4_tile() const {
+    return force_narrow_int4_tile_;
+  }
+
   void add_input_spec(const ValueSpec& spec) {
     inputs_.push_back(spec);
   }
@@ -204,6 +214,7 @@ class TestCase {
     op_invocations_per_execute_ = 0;
     target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
     force_resize_ = true;
+    force_narrow_int4_tile_ = false;
   }
 
  private:
@@ -217,6 +228,7 @@ class TestCase {
   int op_invocations_per_execute_ = 0; // 0 = adaptive
   int target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
   bool force_resize_ = true;
+  bool force_narrow_int4_tile_ = false;
 };
 
 } // namespace prototyping

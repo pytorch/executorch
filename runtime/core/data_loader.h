@@ -130,10 +130,10 @@ class DataLoader {
    */
   ET_NODISCARD virtual Result<size_t> size() const = 0;
 
-  /** Loads data from a 64-bit source offset. */
+  /** Loads data using a 64-bit source offset and size. */
   ET_NODISCARD virtual Result<FreeableBuffer> load_at_offset(
       uint64_t offset,
-      size_t size,
+      uint64_t size,
       const SegmentInfo& segment_info) const {
 #if SIZE_MAX < UINT64_MAX
     if (offset > std::numeric_limits<size_t>::max()) {
@@ -143,14 +143,15 @@ class DataLoader {
       return Error::NotSupported;
     }
 #endif
-    if (static_cast<uint64_t>(size) >
+    if (size >
         static_cast<uint64_t>(std::numeric_limits<size_t>::max()) - offset) {
       ET_LOG(
           Error,
           "load_at_offset() source range cannot be represented by this data loader.");
       return Error::NotSupported;
     }
-    return load(static_cast<size_t>(offset), size, segment_info);
+    return load(
+        static_cast<size_t>(offset), static_cast<size_t>(size), segment_info);
   }
 
   /** Loads data from a 64-bit source offset into the provided buffer. */

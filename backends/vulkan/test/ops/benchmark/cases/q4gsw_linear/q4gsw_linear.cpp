@@ -654,10 +654,62 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   }
 }
 
+void linear_dq8ca_q4gsw_weight_only_reference_impl(TestCase& test_case) {
+  const ValueSpec& input_spec = test_case.inputs()[0];
+  const ValueSpec& weight_spec = test_case.inputs()[3];
+  const ValueSpec& weight_scales_spec = test_case.inputs()[5];
+  const ValueSpec& group_size_spec = test_case.inputs()[6];
+  const ValueSpec& bias_spec = test_case.inputs()[7];
+  ValueSpec& output_spec = test_case.outputs()[0];
+
+  const auto input_sizes = input_spec.get_tensor_sizes();
+  const auto output_sizes = output_spec.get_tensor_sizes();
+  const int64_t batch_size = input_sizes[0];
+  const int64_t in_features = input_sizes[1];
+  const int64_t out_features = output_sizes[1];
+  const int64_t group_size = group_size_spec.get_int_value();
+
+  if (batch_size > kRefDimSizeLimit || in_features > kRefDimSizeLimit ||
+      out_features > kRefDimSizeLimit) {
+    throw std::invalid_argument(
+        "One or more dimensions exceed the allowed limit for reference implementation.");
+  }
+  if (input_spec.dtype != vkapi::kFloat && input_spec.dtype != vkapi::kHalf) {
+    throw std::invalid_argument("Unsupported dtype");
+  }
+
+  const auto& weight_data = weight_spec.get_uint8_data();
+  auto& ref_data = output_spec.get_ref_float_data();
+  ref_data.resize(batch_size * out_features);
+
+  for (int64_t b = 0; b < batch_size; ++b) {
+    for (int64_t out_f = 0; out_f < out_features; ++out_f) {
+      float sum = 0.0f;
+      for (int64_t in_f = 0; in_f < in_features; ++in_f) {
+        const float input_val = input_spec.get_element(b * in_features + in_f);
+        const int64_t group_idx = in_f / group_size;
+        const int64_t scales_idx = group_idx * out_features + out_f;
+        const int64_t weight_idx = out_f * (in_features / 2) + (in_f / 2);
+        const auto unpacked = unpack_4bit(weight_data[weight_idx]);
+        const int8_t weight =
+            (in_f % 2 == 0) ? unpacked.first : unpacked.second;
+        sum += input_val * static_cast<float>(weight) *
+            weight_scales_spec.get_element(scales_idx);
+      }
+      if (!bias_spec.is_none()) {
+        sum += bias_spec.get_element(out_f);
+      }
+      ref_data[b * out_features + out_f] = sum;
+    }
+  }
+}
+
 } // namespace
 
 void reference_impl(TestCase& test_case) {
-  if (test_case.operator_name().find("dq8ca") != std::string::npos) {
+  if (test_case.name().find("tiledm2") != std::string::npos) {
+    linear_dq8ca_q4gsw_weight_only_reference_impl(test_case);
+  } else if (test_case.operator_name().find("dq8ca") != std::string::npos) {
     linear_dq8ca_q4gsw_reference_impl(test_case);
   } else {
     linear_q4gsw_reference_impl(test_case);

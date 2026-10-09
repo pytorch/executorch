@@ -146,7 +146,7 @@ REGISTER_TEST_CASE_SET("conv2d", "correctness") {
   //   ""       -> heuristic-routed (should_use_conv2d_im2col picks direct on
   //               Adreno for small c_out, im2col on Mali)
   //   "im2col" -> forced im2col/GEMM path
-  //   "direct" -> forced direct sliding-window path (force_direct=true)
+  //   "direct" -> forced direct sliding-window path (conv2d_direct_impl)
   // Including "direct" guarantees the direct shader gets reference-checked on
   // BOTH devices — without it, Mali would always route "" to im2col and never
   // exercise the direct path.
