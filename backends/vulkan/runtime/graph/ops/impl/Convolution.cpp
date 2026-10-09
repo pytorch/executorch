@@ -312,15 +312,24 @@ Conv2dMethod get_conv2d_method(
 //   - groups == 1
 //   - dilation == 1 (all dims)
 //
-// Selection rule: use im2col on Mali universally, or once the output channel
-// count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+// Selection rule: use im2col once the output channel count is large enough to
+// amortize the fixed ~N*K_total im2col gather cost.
 constexpr int64_t kIm2colMinCOut = 128;
+
+// A cheap gather is a second, independent reason to take im2col. The gather
+// materializes an N x K_total matrix before the GEMM runs, and a large gather
+// is fine when c_out is large because the GEMM reads it back c_out times. When
+// c_out is small it is only worth paying if the matrix is small outright, which
+// is where the direct shader on Mali loses badly: an 80x80 3x3 conv wants ~4M
+// elements, a 640x640 9x9 conv wants ~100M.
+constexpr int64_t kIm2colMaxCheapGatherElements = 32 * 1024 * 1024;
 
 bool should_use_conv2d_im2col(
     ComputeGraph& graph,
     const ValueRef weight_data,
     const int64_t groups_val,
-    const Kernel2dParams& kernel_params) {
+    const Kernel2dParams& kernel_params,
+    const ValueRef out) {
   if (groups_val != 1) {
     return false;
   }
@@ -329,7 +338,14 @@ bool should_use_conv2d_im2col(
   }
   const auto weight_sizes = graph.sizes_of(weight_data);
   const int64_t c_out = weight_sizes.at(0);
-  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
+  const int64_t k_total =
+      weight_sizes.at(1) * weight_sizes.at(2) * weight_sizes.at(3);
+
+  const auto out_sizes = graph.sizes_of(out);
+  const size_t ndim = out_sizes.size();
+  const int64_t n = out_sizes.at(ndim - 1) * out_sizes.at(ndim - 2);
+  return c_out >= kIm2colMinCOut ||
+      (graph.device_is_mali() && n * k_total <= kIm2colMaxCheapGatherElements);
 }
 
 GlobalWorkGrid create_conv2d_gwg(
@@ -350,6 +366,38 @@ GlobalWorkGrid create_conv2d_gwg(
   }
 }
 
+// Determines which convolution method a dispatch uses.
+//
+// Depthwise and transposed convolutions have shader names of their own, but
+// the name alone cannot separate pointwise from sliding window: the sliding
+// window shader is itself named "conv2d", and a pointwise convolution also
+// takes that name when its weights are prepacked. Those two are therefore
+// separated by the weight's spatial extent. Shared by the global and local
+// workgroup size functions below so that the two cannot disagree about the
+// same dispatch.
+Conv2dMethod infer_conv2d_method_from_shader(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const ValueRef weight_data) {
+  const std::string& kernel_name = shader.kernel_name;
+  // Checked before the plain "conv2d" test below, which "conv2d_dw" and
+  // "conv2d_pw" would otherwise match too.
+  if (kernel_name.find("conv2d_dw") != std::string::npos) {
+    return Conv2dMethod::Depthwise;
+  }
+  if (kernel_name.find("conv2d_pw") != std::string::npos) {
+    return Conv2dMethod::Pointwise;
+  }
+  if (kernel_name.find("conv_transpose2d") != std::string::npos) {
+    return Conv2dMethod::Transposed;
+  }
+  const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
+  if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
+    return Conv2dMethod::Pointwise;
+  }
+  return Conv2dMethod::SlidingWindow;
+}
+
 // Custom global workgroup size function for conv2d
 GlobalWorkGrid conv2d_gwg(
     ComputeGraph* graph,
@@ -359,23 +407,8 @@ GlobalWorkGrid conv2d_gwg(
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef weight_data = resize_args.at(0);
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    // Check if it's pointwise by examining weight sizes
-    const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
-    if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
-      method = Conv2dMethod::Pointwise;
-    } else {
-      method = Conv2dMethod::SlidingWindow;
-    }
-  } else if (shader.kernel_name.find("conv_transpose2d") != std::string::npos) {
-    method = Conv2dMethod::Transposed;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const Conv2dMethod method =
+      infer_conv2d_method_from_shader(graph, shader, weight_data);
 
   // Determine stride_equals_dilation from shader name
   bool stride_equals_dilation =
@@ -404,17 +437,10 @@ LocalWorkGroup conv2d_lwg(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)args;
-  (void)resize_args;
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    method = Conv2dMethod::Pointwise;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const ValueRef weight_data = resize_args.at(0);
+  const Conv2dMethod method =
+      infer_conv2d_method_from_shader(graph, shader, weight_data);
 
   if (method == Conv2dMethod::Pointwise) {
     uint32_t lwg_y = 1;
@@ -529,7 +555,8 @@ void add_conv2d_node(
   // device); the default (false) reproduces the production routing exactly.
   const bool use_im2col = !force_direct &&
       method == Conv2dMethod::SlidingWindow &&
-      should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
+      should_use_conv2d_im2col(
+          graph, weight_data, groups_val, kernel_params, out);
   if (use_im2col) {
     return conv2d_gemm_impl(
         graph,

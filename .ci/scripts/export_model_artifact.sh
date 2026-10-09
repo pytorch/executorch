@@ -44,6 +44,7 @@ Arguments:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
                  - solo-text: Muse Glimmer solo text mode
+                 - solo-text-offgraph: Muse Glimmer solo text, runtime-owned KV cache
                  - dflash-image: Muse Glimmer DFlash vision mode
 
 Examples:
@@ -95,7 +96,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|dflash-image)
+    solo-text|solo-text-offgraph|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -104,7 +105,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, dflash-image"
       exit 1
       ;;
   esac
@@ -288,11 +289,31 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
     echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
     exit 1
   fi
-  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image" ]; then
-    echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "solo-text-offgraph" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
     exit 1
   fi
 fi
+
+# Downloads and compiler caches go in scratch dirs outside OUTPUT_DIR because the CI job
+# templates upload OUTPUT_DIR even when the job fails. A failed export also empties
+# OUTPUT_DIR, but only if it started out empty, so a local run with output_dir=. cannot
+# delete the checkout. Scratch goes under RUNNER_TEMP, which the runner wipes between
+# jobs, with a fallback for containers where RUNNER_TEMP is not writable.
+LOCAL_MODEL_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/model_XXXXXX" 2>/dev/null || mktemp -d)
+SCRATCH_DIRS=("$LOCAL_MODEL_DIR")
+OUTPUT_DIR_WAS_EMPTY=0
+[ -n "$(ls -A -- "$OUTPUT_DIR" 2>/dev/null)" ] || OUTPUT_DIR_WAS_EMPTY=1
+cleanup() {
+  local rc=$?
+  set +e
+  rm -rf "${SCRATCH_DIRS[@]}"
+  if [ "$rc" -ne 0 ] && [ "$OUTPUT_DIR_WAS_EMPTY" = 1 ] && [ -d "$OUTPUT_DIR" ]; then
+    echo "Export failed with exit code $rc; removing partial output from ${OUTPUT_DIR}"
+    (cd -- "$OUTPUT_DIR" && find . -mindepth 1 -delete)
+  fi
+}
+trap cleanup EXIT
 
 echo "::group::Export $MODEL_NAME"
 
@@ -386,8 +407,7 @@ fi
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
 
-  # Download model weights from HuggingFace (requires HF_TOKEN for gated model)
-  LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
+  # Download model weights outside OUTPUT_DIR to avoid uploading on failure (requires HF_TOKEN for gated model)
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
   # Per-component quantization flags
@@ -437,7 +457,6 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
-  rm -rf "$LOCAL_MODEL_DIR"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
   exit 0
@@ -448,12 +467,11 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   pip install safetensors huggingface_hub
   pip install -r examples/models/qwen3_5_moe/requirements.txt
 
-  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
-  LOCAL_MODEL_DIR=$(mktemp -d)
   INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
   INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
 
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
   # Sanity check: run inference on the prequantized model
@@ -521,10 +539,9 @@ fi
 if [ "$MODEL_NAME" = "muse_glimmer" ]; then
   pip install safetensors huggingface_hub gguf
 
-  LOCAL_MODEL_DIR=$(mktemp -d)
   INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
   INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
 
   case "$QUANT_NAME" in
     kquant-17gb)
@@ -549,6 +566,16 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --backend cuda \
           --output-dir "${OUTPUT_DIR}"
       ;;
+    solo-text-offgraph)
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_solo \
+          --gguf "$TARGET_GGUF_PATH" \
+          --backend cuda \
+          --use-offgraph-kv-cache \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
     dflash-image)
       DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
       MMPROJ_GGUF_FILE="mmproj-Muse-Glimmer-30B-Q4_K_M.gguf"
@@ -565,7 +592,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --output-dir "${OUTPUT_DIR}"
       ;;
     *)
-      echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+      echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
       exit 1
       ;;
   esac
@@ -588,14 +615,13 @@ fi
 if [ "$MODEL_NAME" = "gemma4_31b" ]; then
   pip install safetensors huggingface_hub gguf
 
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
+
   # Download GGUF + tokenizer outside OUTPUT_DIR to avoid uploading on failure.
   # The unsloth GGUF repo ships the .gguf but no tokenizer.json, so the tokenizer
   # is fetched from the (non-GGUF) unsloth/gemma-4-31B-it repo.
-  LOCAL_MODEL_DIR=$(mktemp -d)
-  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
-  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
-
   GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf"
   python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it-GGUF', '${GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
   python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it', 'tokenizer.json', local_dir='${LOCAL_MODEL_DIR}')"

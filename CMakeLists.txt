@@ -114,7 +114,18 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  # The vendored c10 is mirrored byte for byte from PyTorch, which builds at
+  # C++20, so it is free to use C++20 in headers we compile. safe_numerics.h
+  # reaches std::countl_zero and std::bit_width on the branch taken when
+  # __builtin_*_overflow is unavailable, which is MSVC only -- every other
+  # toolchain takes the builtin path and stays within C++17. Raising the
+  # standard on Windows alone keeps the embedded targets, where C++20 support is
+  # not a given, on C++17.
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
@@ -217,29 +228,34 @@ if(EXECUTORCH_BUILD_SHARED)
     )
   endif()
   # Said here rather than left to fail somewhere downstream, where packaging
-  # looked for a library the build never emitted. Windows is still refused:
-  # there the runtime carries no export annotations, so a DLL would link against
-  # nothing, which is a missing capability rather than a different spelling of
-  # one.
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT APPLE)
+  # looked for a library the build never emitted. The runtime carries no export
+  # annotations, so on Windows each shipped component DLL exports all of its
+  # symbols instead; see executorch_target_shipped_runtime_path.
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux"
+     AND NOT APPLE
+     AND NOT (WIN32 AND MSVC)
+  )
     message(
       FATAL_ERROR
-        "EXECUTORCH_BUILD_SHARED is supported on Linux and macOS only, not "
+        "EXECUTORCH_BUILD_SHARED is supported on Linux, macOS and Windows (MSVC) only, not "
         "${CMAKE_SYSTEM_NAME}."
+    )
+  endif()
+  # The Windows DLLs take their components as objects through $<COMPILE_ONLY>,
+  # which CMake added in 3.27. Older versions fail at generate time with an
+  # expression error that does not name the cause.
+  if(MSVC AND CMAKE_VERSION VERSION_LESS 3.27)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_SHARED on Windows needs CMake 3.27 or newer, found "
+        "${CMAKE_VERSION}. Upgrade CMake (pip install 'cmake>=3.27,<4') or "
+        "build with -DEXECUTORCH_BUILD_SHARED=OFF."
     )
   endif()
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
-# Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache found and enabled for faster builds")
-else()
-  message(STATUS "ccache not found, builds will not be cached")
-endif()
+executorch_try_enabling_ccache()
 announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -652,6 +668,15 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
 endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+if(WIN32)
+  # This target carries the vendored c10 headers, and safe_numerics.h reaches
+  # std::countl_zero on the branch MSVC takes. Stating it as a compile feature
+  # rather than relying on CMAKE_CXX_STANDARD is what makes it reach every
+  # consumer: features raise a target's standard even where CMAKE_CXX_STANDARD
+  # says 17, and install(EXPORT) carries them into ExecuTorchTargets.cmake, so
+  # projects configured separately from this one pick it up too.
+  target_compile_features(executorch_core PUBLIC cxx_std_20)
+endif()
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -820,6 +845,9 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
+endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
@@ -997,7 +1025,16 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
   list(APPEND _executorch_extensions extension_llm_cache)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
-  list(APPEND _executorch_extensions extension_llm_batching)
+  list(APPEND _executorch_extensions extension_llm_batching
+       extension_llm_batching_util extension_llm_batching_module
+  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/serving)
+  list(APPEND _executorch_extensions extension_llm_serving)
+  if(EXECUTORCH_BUILD_CUDA)
+    # The CUDA batching executor implements extension/llm/batching's seam, so it
+    # builds here rather than with backends/cuda.
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda/batching)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -1047,14 +1084,35 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
   )
 
-  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
-  # (from executorch_target_link_options_shared_lib) already force
+  # Outside MSVC, link executorch without WHOLE_ARCHIVE because its INTERFACE
+  # link options (from executorch_target_link_options_shared_lib) already force
   # whole-archive. Everything else is pulled in through link options rather than
   # the WHOLE_ARCHIVE link feature, because these archives also reference each
   # other plainly and CMake before 3.29 refuses to mix a feature with a plain
   # reference to the same item.
-  target_link_libraries(executorch_shared PRIVATE executorch)
-  set(_executorch_shared_whole_archive executorch_core)
+  if(MSVC)
+    # Bundled as objects like the rest; linking it would bring its interface
+    # /WHOLEARCHIVE, which lld-link processes ahead of the bundled objects.
+    set(_executorch_shared_whole_archive executorch executorch_core)
+    # The objects come through $<COMPILE_ONLY>, which does not pass on
+    # executorch_core's cxx_std_20. The public headers need it on Windows (the
+    # vendored c10 reaches std::countl_zero on the MSVC branch), so a consumer
+    # linking this target directly has to be told.
+    target_compile_features(executorch_shared PUBLIC cxx_std_20)
+    # A DLL resolves its own references at link time, so a weak PAL cannot be
+    # overridden through it anyway, and the export list
+    # WINDOWS_EXPORT_ALL_SYMBOLS generates skips weak symbols: without this the
+    # runtime DLL exports none of the et_pal_* functions, and the public
+    # clock.h, whose inline ticks_to_ns() calls et_pal_ticks_to_ns_multiplier(),
+    # fails to link against it.
+    set_source_files_properties(
+      ${EXECUTORCH_PAL_DEFAULT_FILE_PATH} PROPERTIES COMPILE_DEFINITIONS
+                                                     ET_PAL_STRONG_SYMBOLS
+    )
+  else()
+    target_link_libraries(executorch_shared PRIVATE executorch)
+    set(_executorch_shared_whole_archive executorch_core)
+  endif()
   foreach(_ext_target
           extension_data_loader extension_flat_tensor extension_named_data_map
           extension_module_static extension_tensor
@@ -1064,7 +1122,8 @@ if(EXECUTORCH_BUILD_SHARED)
     endif()
   endforeach()
   foreach(_whole_target ${_executorch_shared_whole_archive})
-    executorch_target_whole_archive(executorch_shared ${_whole_target})
+    # EXPORTED: this is the runtime API every other component links.
+    executorch_target_whole_archive(executorch_shared ${_whole_target} EXPORTED)
   endforeach()
   configure_file(
     tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
@@ -1073,6 +1132,33 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+  # pip decides where the wheel lands, so the wheel's copy of this file locates
+  # everything relative to its own location. Not on Windows: its link flags are
+  # GNU-style (-Wl,-rpath) and a DLL records no search path to point them at.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE AND NOT WIN32)
+    set(_executorch_pc_definitions "-DC10_USING_CUSTOM_GENERATED_MACROS")
+    if(EXECUTORCH_ENABLE_EVENT_TRACER)
+      string(APPEND _executorch_pc_definitions " -DET_EVENT_TRACER_ENABLED")
+    endif()
+    # Matches the CMake package, which adds both to the runtime whenever the
+    # thread pool ships. Without the definition, parallel_for runs serially.
+    set(_executorch_pc_libs "-lexecutorch")
+    if(TARGET extension_threadpool)
+      string(APPEND _executorch_pc_definitions " -DET_USE_THREADPOOL")
+      string(APPEND _executorch_pc_libs " -lexecutorch_threadpool")
+    endif()
+    # Separate arguments, because Meson only keeps a dependency's rpath at
+    # install when the argument starts with -Wl,-rpath.
+    if(APPLE)
+      set(_executorch_pc_rpath "-Wl,-rpath,\${libdir}")
+    else()
+      set(_executorch_pc_rpath "-Wl,--enable-new-dtags -Wl,-rpath,\${libdir}")
+    endif()
+    configure_file(
+      tools/cmake/executorch-wheel.pc.in
+      ${CMAKE_CURRENT_BINARY_DIR}/executorch-wheel.pc @ONLY
+    )
+  endif()
 endif()
 
 # The macro changes the layout of the tracer scope objects, so a consumer
@@ -1173,6 +1259,22 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 
 endif()
 
+if(TARGET cpublas
+   AND TARGET kleidiai
+   AND TARGET cpuinfo
+)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+     OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"
+  )
+    target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+    endif()
+    target_link_libraries(cpublas PRIVATE kleidiai)
+  endif()
+endif()
+
 # The shared build ships the profiler as one of its libraries, and the Python
 # extension records a hard dependency on it, and the Apple ETDump extension
 # links it, so the target has to exist whenever any of those is being built
@@ -1269,8 +1371,12 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    # CUDA uses SlimTensor-based shims
-    list(APPEND _dep_libs aoti_cuda_backend)
+    # CUDA uses SlimTensor-based shims. Not on Windows: a CUDA program cannot be
+    # lowered there, only run, so the delegate ships for C++ applications and
+    # the Python extension stays free of any CUDA dependency.
+    if(NOT WIN32)
+      list(APPEND _dep_libs aoti_cuda_backend)
+    endif()
   elseif(EXECUTORCH_BUILD_METAL)
     # Metal still uses ETensor-based shims (for now)
     list(APPEND _dep_libs aoti_common)
@@ -1497,7 +1603,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # The static target force-links every registration object, which would give
   # this module its own operator registry alongside the one in the shared
   # runtime, so resolve against the shared runtime instead when there is one.
-  if(TARGET executorch_shared)
+  if(TARGET executorch_shared AND MSVC)
+    # Compile settings only. Linking would add the runtime's /INCLUDE anchor,
+    # the module's one import from executorch.dll, and nothing on this module's
+    # import path registers lib/ for the Windows loader, so importing it first
+    # failed to load. A runtime call added later fails to link instead.
+    target_link_libraries(data_loader PRIVATE $<COMPILE_ONLY:executorch_shared>)
+  elseif(TARGET executorch_shared)
     target_link_libraries(data_loader PRIVATE executorch_shared)
     executorch_target_shared_runtime_path(
       data_loader "extension/pybindings" "executorch/extension/pybindings"

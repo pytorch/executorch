@@ -27,14 +27,14 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
         in_shape = get_shape(input)
-        output_size = cast(List[int], node.args[1])
+        out_shape = get_shape(node)
         scale_factor = [
-            output_size[0] * 1.0 / in_shape[-2],
-            output_size[1] * 1.0 / in_shape[-1],
+            out_shape[-2] * 1.0 / in_shape[-2],
+            out_shape[-1] * 1.0 / in_shape[-1],
         ]
 
         if len(node.args) > 2 and node.args[2]:
@@ -50,3 +50,5 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "RESIZE_NEAREST_NEIGHBOR", [input_id], [output_id], params
         )
+
+        return True

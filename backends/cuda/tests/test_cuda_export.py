@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import threading
 import unittest
 from typing import Tuple
 from unittest import mock
@@ -132,6 +133,108 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                     self.assertEqual(triton_compiler.max_shared_mem(0), 4096)
 
                 self.assertIs(triton_compiler.max_shared_mem, local_max_shared_mem)
+
+    def test_triton_templates_allowed_on_small_gpus_during_compile(self):
+        from torch._inductor import utils as inductor_utils
+        from torch._inductor.ir import FixedLayout
+
+        layout = FixedLayout(torch.device("cuda", 0), torch.float32, [64, 64])
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu, mock.patch.object(torch.version, "hip", None):
+            self.assertFalse(
+                inductor_utils._use_template_for_gpu(layout, [torch.float32])
+            )
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertTrue(
+                    inductor_utils._use_template_for_gpu(layout, [torch.float32])
+                )
+            self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
+    def test_small_gpu_override_is_skipped_on_rocm(self):
+        from torch._inductor import utils as inductor_utils
+
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu, mock.patch.object(torch.version, "hip", "6.4.0"):
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
+    def test_small_gpu_override_is_restored_when_a_compile_fails(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+        )
+        from torch._inductor import utils as inductor_utils
+
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu:
+            with self.assertRaises(RuntimeError):
+                with _allow_triton_templates_on_small_gpus():
+                    raise RuntimeError("compile failed")
+            self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+            with _allow_triton_templates_on_small_gpus():
+                held = inductor_utils.is_big_gpu
+            self.assertFalse(held(0))
+
+    def test_small_gpu_override_survives_a_nested_compile(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+        )
+        from torch._inductor import utils as inductor_utils
+
+        with mock.patch.object(
+            inductor_utils, "is_big_gpu", return_value=False
+        ) as is_big_gpu:
+            with _allow_triton_templates_on_small_gpus():
+                with _allow_triton_templates_on_small_gpus():
+                    pass
+                self.assertTrue(inductor_utils.is_big_gpu(0))
+            self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
+
+    def test_small_gpu_override_answers_only_its_own_thread(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+        )
+        from torch._inductor import utils as inductor_utils
+
+        seen = {}
+        with mock.patch.object(inductor_utils, "is_big_gpu", return_value=False):
+            with _allow_triton_templates_on_small_gpus():
+                other = threading.Thread(
+                    target=lambda: seen.update(other=inductor_utils.is_big_gpu(0))
+                )
+                other.start()
+                other.join(timeout=10)
+                seen["inside"] = inductor_utils.is_big_gpu(0)
+        self.assertEqual({"inside": True, "other": False}, seen)
+
+    def test_cuda_include_ptx_compile_spec(self):
+        with mock.patch.object(
+            CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True
+        ):
+            options = CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"ON")]
+            )
+
+        self.assertTrue(options["aot_inductor.emit_multi_arch_kernel"])
+
+    def test_cuda_include_ptx_off_disables_multi_arch_kernel(self):
+        with mock.patch.object(
+            CudaBackend, "_setup_cuda_environment_for_fatbin"
+        ) as setup_fatbin:
+            options = CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"OFF")]
+            )
+
+        setup_fatbin.assert_not_called()
+        self.assertFalse(options["aot_inductor.emit_multi_arch_kernel"])
+
+    def test_invalid_cuda_include_ptx_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid cuda_include_ptx"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
+            )
 
 
 class TestCudaExport(unittest.TestCase):

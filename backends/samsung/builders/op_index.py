@@ -23,21 +23,17 @@ class IndexVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
-        axis = 0
-        valid_indices_node_count = 0
-        target_indices_node = None
-        for indices_node in node.args[1]:
-            if indices_node is not None:
-                target_indices_node = indices_node
-                valid_indices_node_count += 1
-                if valid_indices_node_count > 1:
-                    raise NotImplementedError("Not support multi indices node.")
-            if target_indices_node is None:
-                axis += 1
+        indices = node.args[1]
+        indexed_axes = [axis for axis, index in enumerate(indices) if index is not None]
+        if len(indexed_axes) != 1:
+            return False
+
+        axis = indexed_axes[0]
+        target_indices_node = indices[axis]
 
         indices_id = self.define_tensor(target_indices_node, enn_graph, vals_to_ids)
 
@@ -47,3 +43,5 @@ class IndexVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "GATHER", [input_id, indices_id], [output_id], params
         )
+
+        return True

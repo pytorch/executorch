@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict
+from typing import cast, Dict, List, Tuple
 
 import torch
 from executorch.backends.samsung.builders.node_visitor import (
@@ -19,56 +19,78 @@ from executorch.backends.transforms import get_shape
 class TopKVisitor(NodeVisitor):
     target = "aten.topk.default"
 
+    @staticmethod
+    def _resolve_dim(node: torch.fx.Node) -> int:
+        """Resolve and validate the `dim` argument.
+
+        Defaults to the last dimension; normalises negatives; requires
+        the last dimension.
+        """
+        in_shape_len = len(get_shape(node.args[0]))
+        dim = cast(int, node.args[2]) if len(node.args) > 2 else in_shape_len - 1
+        if dim < 0:
+            dim += in_shape_len
+        if dim != in_shape_len - 1:
+            raise AssertionError("Not supported dim not being last dimension!")
+        return dim
+
+    @staticmethod
+    def _validate_flags(node: torch.fx.Node) -> None:
+        """Validate the optional ``largest`` and ``sorted`` arguments."""
+        if len(node.args) > 3 and not cast(bool, node.args[3]):
+            raise AssertionError("Not supported largest = False.")
+        if len(node.args) > 4 and not cast(bool, node.args[4]):
+            raise AssertionError("Not supported sorted = False.")
+
+    def _process_getitem_users(
+        self,
+        node: torch.fx.Node,
+        enn_graph: EnnGraph,
+        vals_to_ids: Dict[torch.Tensor, int],
+    ) -> Tuple[str, List[int]]:
+        """Inspect getitem users of the TopK node to determine outputs.
+
+        Returns ``(output_type, tensor_ids)`` where *output_type* is one
+        of ``"value"``, ``"index"``, or ``"both"``.
+        """
+        output_ids: Dict[int, int] = {}
+        output_type = "both"
+        num_users = len(node.users)
+
+        for user in node.users.keys():
+            if user.target.__name__ != "getitem" or len(user.args) <= 1:
+                continue
+            idx = user.args[1]
+            if idx not in (0, 1):
+                continue
+            output_ids[idx] = self.define_tensor(user, enn_graph, vals_to_ids)
+            vals_to_ids[user] = output_ids[idx]
+            if num_users == 1:
+                output_type = "value" if idx == 0 else "index"
+
+        # Order by getitem index; node.users iteration order is unspecified.
+        return output_type, [output_ids[idx] for idx in sorted(output_ids)]
+
     def define_node(
         self,
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
-        input = node.args[0]
-        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
+    ) -> bool:
+        input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
-        k = cast(int, node.args[1])
-        params = {"k_dims": k}
-        in_shape_len = len(get_shape(input))
-        dim = cast(int, node.args[2]) if len(node.args) > 2 else in_shape_len - 1
-        if dim < 0:
-            dim = dim + in_shape_len
-        if dim != in_shape_len - 1:
-            raise AssertionError("Not supported dim not being last dimension!")
-
-        all_output_tensors = []
-        users = list(node.users.keys())
-        output_val_idx = 0
-        output_val_id = self.define_tensor(
-            node,
-            enn_graph,
-            vals_to_ids,
-            output_idx=output_val_idx,
+        dim = self._resolve_dim(node)
+        self._validate_flags(node)
+        output_type, all_output_tensors = self._process_getitem_users(
+            node, enn_graph, vals_to_ids
         )
-        if len(users) > 0 and users[0].target.__name__ == "getitem":
-            vals_to_ids[users[0]] = output_val_id
-        all_output_tensors.append(output_val_id)
 
-        output_indices_idx = 1
-        output_indices_id = self.define_tensor(
-            node,
-            enn_graph,
-            vals_to_ids,
-            output_idx=output_indices_idx,
-        )
-        if len(users) > 1 and users[1].target.__name__ == "getitem":
-            vals_to_ids[users[1]] = output_indices_id
-        all_output_tensors.append(output_indices_id)
-
-        if len(node.args) > 3:
-            largest = cast(bool, node.args[3])
-            if not largest:
-                raise AssertionError("Not supported largest = False.")
-
-        if len(node.args) > 4:
-            is_sorted = cast(bool, node.args[4])
-            if not is_sorted:
-                raise AssertionError("Not supported sorted = False.")
-
+        params = {
+            "k_dims": cast(int, node.args[1]),
+            "output": output_type,
+            "axis": dim,
+        }
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "TopK", [input_id], all_output_tensors, params)
+
+        return True

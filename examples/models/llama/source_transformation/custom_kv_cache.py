@@ -265,6 +265,7 @@ class StaticQuantizedKVCache(nn.Module):
         scale: float = 1.0 / 127.0,
         use_custom_update_cache_op: bool = True,
         return_float_values: bool = True,
+        use_per_channel: bool = True,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
@@ -276,9 +277,12 @@ class StaticQuantizedKVCache(nn.Module):
         self.quantized_cache_dtype = torch.int8
         self.return_float_values = return_float_values
         self.max_context_length = max_context_length
+        self.use_per_channel = use_per_channel
+        self.k_cache_scale = scale
+        self.v_cache_scale = scale
         self.calibration_enabled = False
         cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
-        scale_shape = (1, 1, 1, head_dim)
+        scale_shape = (1, 1, 1, head_dim) if use_per_channel else (1,)
         self.register_buffer(
             "k_cache",
             torch.zeros(cache_shape, dtype=self.quantized_cache_dtype),
@@ -324,9 +328,11 @@ class StaticQuantizedKVCache(nn.Module):
         k_scales = self.k_observed_max.to(self.k_cache_scales.dtype) / 127.0
         v_scales = self.v_observed_max.to(self.v_cache_scales.dtype) / 127.0
         if torch.any(k_scales == 0) or torch.any(v_scales == 0):
+            qparam_scope = "channel" if self.use_per_channel else "cache"
             logging.warning(
-                "Static KV cache calibration observed an all-zero K/V channel; "
-                "using the smallest positive scale for that channel."
+                "Static KV cache calibration observed an all-zero K/V %s; "
+                "using the smallest positive scale.",
+                qparam_scope,
             )
         # This floor prevents division by zero; it is not an accuracy threshold.
         self.k_cache_scales.copy_(
@@ -335,6 +341,9 @@ class StaticQuantizedKVCache(nn.Module):
         self.v_cache_scales.copy_(
             v_scales.clamp_min(torch.finfo(self.v_cache_scales.dtype).tiny)
         )
+        if not self.use_per_channel:
+            self.k_cache_scale = self.k_cache_scales.item()
+            self.v_cache_scale = self.v_cache_scales.item()
         self.calibration_enabled = False
         self.k_calibration_cache = None
         self.v_calibration_cache = None
@@ -347,30 +356,54 @@ class StaticQuantizedKVCache(nn.Module):
         self.k_observed_max.copy_(
             torch.maximum(
                 self.k_observed_max,
-                k_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True),
+                (
+                    k_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True)
+                    if self.use_per_channel
+                    else k_val.detach().abs().amax().reshape_as(self.k_observed_max)
+                ),
             )
         )
         self.v_observed_max.copy_(
             torch.maximum(
                 self.v_observed_max,
-                v_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True),
+                (
+                    v_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True)
+                    if self.use_per_channel
+                    else v_val.detach().abs().amax().reshape_as(self.v_observed_max)
+                ),
             )
         )
         self.k_calibration_cache[:, input_pos] = k_val
         self.v_calibration_cache[:, input_pos] = v_val
         return self.k_calibration_cache, self.v_calibration_cache
 
-    def _quantize(self, value, scales):
-        # torchao affine custom ops do not yet have the required Arm/TOSA
-        # lowering and ExecuTorch out-variant runtime support.
-        qmin = torch.iinfo(self.quantized_cache_dtype).min
-        qmax = torch.iinfo(self.quantized_cache_dtype).max
-        return torch.clamp(torch.round(value / scales), qmin, qmax).to(
-            self.quantized_cache_dtype
+    def _quantize(self, value, scale):
+        if self.use_per_channel:
+            qmin = torch.iinfo(self.quantized_cache_dtype).min
+            qmax = torch.iinfo(self.quantized_cache_dtype).max
+            return torch.clamp(torch.round(value / scale), qmin, qmax).to(
+                self.quantized_cache_dtype
+            )
+        return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+            value,
+            scale,
+            0,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
+            self.quantized_cache_dtype,
         )
 
-    def _dequantize(self, value, scales, dtype):
-        return value.to(dtype) * scales.to(dtype)
+    def _dequantize(self, value, scale, dtype):
+        if self.use_per_channel:
+            return value.to(dtype) * scale.to(dtype)
+        return torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+            value,
+            scale,
+            0,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
+            self.quantized_cache_dtype,
+        ).to(dtype)
 
     def _update_cache(self, value, cache, input_pos, indices=None):
         start_pos = input_pos[0].item()
@@ -386,8 +419,10 @@ class StaticQuantizedKVCache(nn.Module):
             cache[:, input_pos] = value
 
     def _quantize_and_update(self, input_pos, k_val, v_val, indices=None):
-        quantized_k_val = self._quantize(k_val, self.k_cache_scales)
-        quantized_v_val = self._quantize(v_val, self.v_cache_scales)
+        k_scale = self.k_cache_scales if self.use_per_channel else self.k_cache_scale
+        v_scale = self.v_cache_scales if self.use_per_channel else self.v_cache_scale
+        quantized_k_val = self._quantize(k_val, k_scale)
+        quantized_v_val = self._quantize(v_val, v_scale)
 
         self._update_cache(quantized_k_val, self.k_cache, input_pos, indices)
         self._update_cache(quantized_v_val, self.v_cache, input_pos, indices)
@@ -395,8 +430,10 @@ class StaticQuantizedKVCache(nn.Module):
     def _update_and_return_float_values(self, input_pos, k_val, v_val, indices=None):
         self._quantize_and_update(input_pos, k_val, v_val, indices)
 
-        k_out = self._dequantize(self.k_cache, self.k_cache_scales, k_val.dtype)
-        v_out = self._dequantize(self.v_cache, self.v_cache_scales, v_val.dtype)
+        k_scale = self.k_cache_scales if self.use_per_channel else self.k_cache_scale
+        v_scale = self.v_cache_scales if self.use_per_channel else self.v_cache_scale
+        k_out = self._dequantize(self.k_cache, k_scale, k_val.dtype)
+        v_out = self._dequantize(self.v_cache, v_scale, v_val.dtype)
 
         self._update_cache(k_val, k_out, input_pos, indices)
         self._update_cache(v_val, v_out, input_pos, indices)
@@ -414,7 +451,7 @@ class StaticQuantizedKVCache(nn.Module):
         """
         k_val, v_val: [B, H, S, D]
         return: [B, H, S, D]
-        Storage is [B, S, H, D], with static per-head-dim qparams.
+        Storage is [B, S, H, D], with static per-head-dim or per-tensor qparams.
         """
 
         k_val = k_val.transpose(1, 2)
@@ -440,6 +477,7 @@ class StaticQuantizedKVCache(nn.Module):
         kv_cache,
         scale: float = 1.0 / 127.0,
         use_custom_update_cache_op: bool = True,
+        use_per_channel: bool = True,
     ):
         if isinstance(kv_cache, CustomKVCache):
             max_batch_size, max_context_length, n_heads, head_dim = (
@@ -456,6 +494,7 @@ class StaticQuantizedKVCache(nn.Module):
             head_dim,
             scale=scale,
             use_custom_update_cache_op=use_custom_update_cache_op,
+            use_per_channel=use_per_channel,
             dtype=kv_cache.k_cache.dtype,
         )
 

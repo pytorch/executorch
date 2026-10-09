@@ -40,14 +40,6 @@ set(ETHOS_SDK_PATH
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
-# Set default value of FETCH_ETHOS_U_CONTENT depending on whether ethos sdk is
-# available in $ETHOS_SDK_PATH.
-arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads"
-       ${_fetch_ethos_u_default}
-)
-
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
     FATAL_ERROR
@@ -78,17 +70,19 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    arm_ensure_ethos_u_content(
-      "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
-    )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
+    # Leave the fetch default to the runner when the backend's driver is
+    # present.
     if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
-      message(
-        FATAL_ERROR
-          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
-          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      option(FETCH_ETHOS_U_CONTENT
+             "Fetch ethos_u dependencies instead of relying on pre-downloads"
+             ON
+      )
+      arm_ensure_ethos_u_content(
+        "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+        DRIVER_ONLY
       )
     endif()
     target_include_directories(
@@ -245,44 +239,27 @@ if(EXECUTORCH_BUILD_VGF)
       set(LIBVGF_PATH "${_vgf_site_pure}")
     endif()
 
-    if(EXECUTORCH_BUILD_TESTS)
-      add_executable(
-        vgf_neural_statistics_test
-        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
-        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
-      )
-      target_include_directories(
-        vgf_neural_statistics_test
-        PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
-                ${VOLK_HEADERS_PATH}
-      )
-      target_compile_options(
-        vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER
-                                           -DUSE_VULKAN_VOLK
-      )
-      target_link_libraries(vgf_neural_statistics_test PRIVATE executorch_core)
-      if(TARGET GTest::gtest_main)
-        target_link_libraries(
-          vgf_neural_statistics_test PRIVATE GTest::gtest_main
-        )
-      else()
-        target_link_libraries(
-          vgf_neural_statistics_test PRIVATE gtest gtest_main
-        )
-      endif()
-      add_test(NAME vgf_neural_statistics_test
-               COMMAND vgf_neural_statistics_test
-      )
-    endif()
+    find_package(
+      VGF
+      CONFIG
+      REQUIRED
+      HINTS
+      "${LIBVGF_PATH}"
+      PATH_SUFFIXES
+      lib64/cmake/VGF
+      lib/cmake/VGF
+      NO_DEFAULT_PATH
+    )
 
-    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
   endif()
 
-  set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
-
-  add_library(vgf STATIC IMPORTED)
-  set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
-  target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
+  if(TARGET VGF::vgf)
+    add_library(vgf ALIAS VGF::vgf)
+  else()
+    add_library(vgf STATIC IMPORTED)
+    set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
+    target_include_directories(vgf INTERFACE "${LIBVGF_PATH}/include/")
+  endif()
 
   # Add backend delegate for VGF
   set(_vgf_backend_sources
@@ -296,6 +273,45 @@ if(EXECUTORCH_BUILD_VGF)
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
+
+  # Should be absent in ordinary production builds.
+  option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
+         OFF
+  )
+  if(EXECUTORCH_VGF_IO_STATS)
+    target_sources(
+      vgf_backend
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFExecutionStats.cpp
+    )
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_IO_STATS=1)
+  endif()
+  if(EXECUTORCH_BUILD_TESTS)
+    find_package(Threads REQUIRED)
+    foreach(_stats_mode IN ITEMS enabled disabled)
+      set(_stats_target vgf_execution_stats_${_stats_mode}_test)
+      add_executable(
+        ${_stats_target}
+        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_execution_stats_test.cpp
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFExecutionStats.cpp
+      )
+      target_include_directories(
+        ${_stats_target} PRIVATE ${_common_include_directories}
+      )
+      target_compile_features(${_stats_target} PRIVATE cxx_std_17)
+      target_link_libraries(${_stats_target} PRIVATE Threads::Threads)
+      if(_stats_mode STREQUAL "enabled")
+        target_compile_definitions(
+          ${_stats_target} PRIVATE EXECUTORCH_VGF_IO_STATS=1
+        )
+      else()
+        target_compile_definitions(
+          ${_stats_target} PRIVATE EXECUTORCH_VGF_IO_STATS=0
+        )
+      endif()
+      add_test(NAME ${_stats_target} COMMAND ${_stats_target})
+    endforeach()
+  endif()
+
   install(TARGETS vgf_backend EXPORT ExecuTorchTargets)
   target_include_directories(
     vgf_backend PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
@@ -314,6 +330,53 @@ if(EXECUTORCH_BUILD_VGF)
   endif()
 
   executorch_target_link_options_shared_lib(vgf_backend)
+
+  if(EXECUTORCH_BUILD_TESTS)
+    add_executable(
+      vgf_neural_statistics_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
+      ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
+      ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk/volk.c
+    )
+    target_include_directories(
+      vgf_neural_statistics_test
+      PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+              ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    target_link_libraries(
+      vgf_neural_statistics_test PRIVATE executorch_core ${CMAKE_DL_LIBS}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(
+        vgf_neural_statistics_test PRIVATE GTest::gtest_main
+      )
+    else()
+      target_link_libraries(vgf_neural_statistics_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
+
+    add_executable(
+      vgf_vulkan_features_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_vulkan_features_test.cpp
+    )
+    target_include_directories(
+      vgf_vulkan_features_test
+      PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+              ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_vulkan_features_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_vulkan_features_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_vulkan_features_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_vulkan_features_test COMMAND vgf_vulkan_features_test)
+  endif()
 
   # end config for VGF builds
 endif()

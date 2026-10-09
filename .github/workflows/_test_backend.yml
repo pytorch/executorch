@@ -46,6 +46,11 @@ on:
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
+      save-goldens:
+        description: 'Write golden .pte/.bin files in the models suite and package them; only for regenerating the Android test fixture'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   docker-image:
@@ -77,12 +82,21 @@ jobs:
       script: |
         set -eux
 
+        if [[ "${{ inputs.save-goldens }}" == "true" && "${{ matrix.suite }}" == "models" ]]; then
+          export GOLDEN_ARTIFACTS_DIR="${RUNNER_ARTIFACT_DIR}/golden-artifacts"
+        fi
         source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
   package-golden-artifacts:
-    if: ${{ inputs.run-linux }}
+    if: ${{ inputs.run-linux && inputs.save-goldens }}
     needs: test-backend-linux
-    runs-on: linux.2xlarge
+    # Repackaging artifacts needs no ExecuTorch toolchain, so this runs on a
+    # GitHub-hosted runner rather than moving to OSDC; the S3 upload that used
+    # to ride on the EC2 instance role assumes role/arc through OIDC instead.
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Download model test artifacts
         uses: actions/download-artifact@v4
@@ -116,12 +130,12 @@ jobs:
             echo "No golden artifacts found."
           fi
 
-      - name: Upload combined golden artifacts
-        uses: actions/upload-artifact@v4
+      - name: Configure AWS credentials
+        if: ${{ hashFiles('golden_artifacts_*.zip') != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: golden-artifacts-${{ inputs.backend }}
-          path: golden_artifacts_*.zip
-          if-no-files-found: ignore
+          role-to-assume: arn:aws:iam::308535385114:role/arc
+          aws-region: us-east-1
 
       - name: Upload golden artifacts to S3
         uses: seemethere/upload-artifact-s3@v5

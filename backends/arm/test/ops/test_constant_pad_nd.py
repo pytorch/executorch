@@ -18,6 +18,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -344,6 +346,17 @@ def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
     pipeline.run()
 
 
+@common.XfailIfNoCorstone300
+def test_constant_pad_nd_u55_INT():
+    inp, padding, value, mode = test_data_suite["4dim_last2dim"]()
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantPadND(padding, value, mode),
+        (inp,),
+        aten_op,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
 )
@@ -387,4 +400,34 @@ def test_constant_pad_nd_vgf_quant_a16w8(test_data: Tuple):
         tosa_extensions=["int16"],
     )
     pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_pad_u85_INT():
+    input_tensor = torch.rand(1, 1, 16, 16)
+    padding = (1, 0, 1, 0)
+    pipeline = EthosU85PipelineINT[input_t1](
+        ConstantPadND(padding, value=2, mode="constant"),
+        (input_tensor,),
+        aten_op,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_constant_pad_nd_u85_INT():
+    class AtenConstantPadND(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            return torch.ops.aten.constant_pad_nd.default(
+                x,
+                (1, 0, 1, 0),
+                1.0,
+            )
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        AtenConstantPadND(),
+        (torch.rand(1, 1, 16, 16),),
+        "torch.ops.aten.constant_pad_nd.default",
+    )
     pipeline.run()

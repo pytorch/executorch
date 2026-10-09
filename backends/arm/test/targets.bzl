@@ -19,6 +19,8 @@ def define_arm_tests():
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
         "ops/test_conv2d.py",
+        "ops/test_isinf.py",
+        "ops/test_isnan.py",
         "ops/test_linear.py",
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
@@ -30,12 +32,14 @@ def define_arm_tests():
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_softmax.py",
+        "ops/test_softplus.py",
         "ops/test_sub.py",
         "ops/test_sum.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
         "ops/test_to_copy.py",
+        "ops/test_topk.py",
         "ops/test_exp.py",
         "ops/test_fft.py",
         "ops/test_flip.py",
@@ -46,6 +50,11 @@ def define_arm_tests():
         "ops/test_gelu.py",
         "ops/test_bmm.py",
         "ops/test_split.py",
+    ]
+
+    # Modules
+    test_files += [
+        "modules/test_qwen_delta_gate.py",
     ]
 
     # Export recipes
@@ -62,10 +71,13 @@ def define_arm_tests():
 
     # Misc tests
     test_files += [
+        "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_tosa_constant_pool.py",
+        "misc/test_tosa_operator_support.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
@@ -78,6 +90,7 @@ def define_arm_tests():
         "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
+        "misc/test_vulkan_validation_layer.py",
         "misc/test_vgf_backend.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
@@ -105,7 +118,7 @@ def define_arm_tests():
         }
         if not runtime.is_oss and _ENABLE_VGF:
             test_env.update({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.11.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
@@ -147,6 +160,7 @@ def define_arm_tests():
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
                 "fbsource//third-party/tosa_tools:serializer",
+                "fbsource//third-party/tosa_tools:tosa",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
                 # Needed only by the OSS-only public API manifest tests above.
@@ -155,8 +169,11 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []) + ([
-                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
-            ] if test_file == "misc/test_docgen_op_support.py" else []),
+                "//executorch/backends/arm/scripts/docgen:generate_op_support",
+            ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
+                "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+                "fbsource//third-party/pypi/packaging:packaging",
+            ] if test_file == "misc/test_version_xfail.py" else []),
         )
 
     runtime.cxx_test(
@@ -180,7 +197,22 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "//executorch/runtime/core:core",
-                "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_vulkan_features_test",
+            srcs = ["vgf_vulkan_features_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
             ],

@@ -76,14 +76,13 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
     multiplication by 1/N, which works on any axis without layout
     constraints (unlike AVG_POOL2D which only pools over spatial H×W).
 
-    For rank < 4, the input is reshaped to 4D by padding with dim=1 from the
-    left.
+    For rank > 4, the input is flattened down to 4D. Rank four and below is
+    left as it is.
 
     Example:
         x = mean_dim(x, (0,2), keepdim=False) # x = (c,h,w)
     Becomes:
-        x = view_copy.default(x, new_shape=(1,c,h,w)) # Reshape to 4D
-        x = sum.dim_IntList(x, dim=(1,3), keepdims=True) # Reduce c,w with sum
+        x = sum.dim_IntList(x, dim=(0,2), keepdims=True) # Reduce c,w with sum
         x = mul.Tensor(x, 1/(c*w)) # Divide by number of elements to get mean
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
 
@@ -135,13 +134,14 @@ class DecomposeMeanDimPass(ArmOpTargetedPass):
             # for static shapes we should ensure that we only keep non 1 dimensions.
             dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
-        # Reshape to 4D
-        if len(input_shape) != 4:
+        # Flatten anything above 4D down to 4D. Ranks at or below four are left
+        # alone: REDUCE_SUM reduces any axis at any rank, so padding up to 4D
+        # only introduced a rank-four island around the reduction -- a rank
+        # change is opaque to pattern matching, and here it wrapped every mean
+        # in a promote/demote pair. The normalisation is a leftover from the
+        # AVG_POOL2D lowering, which did require NHWC.
+        if len(input_shape) > 4:
             new_shape = copy(input_shape)
-
-            while len(new_shape) < 4:
-                new_shape.insert(0, 1)
-                dims_to_reduce = [dim + 1 for dim in dims_to_reduce]
 
             while len(new_shape) > 4:
                 i = new_shape.pop(0)

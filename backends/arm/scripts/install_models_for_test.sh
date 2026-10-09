@@ -8,7 +8,8 @@ set -e
 pip install -r backends/arm/requirements-arm-models-test.txt
 
 # Install model gym repository
-MODEL_GYM_REF="${MODEL_GYM_REF:-v0.3.0}"
+MODEL_GYM_REF="${MODEL_GYM_REF:-main}"
+rm -rf neural-graphics-model-gym
 git clone --depth 1 --branch "$MODEL_GYM_REF" https://github.com/arm/neural-graphics-model-gym.git
 cd neural-graphics-model-gym
 # Remove model-converter installation from model-gym repository (to prevent overwriting executorch version)
@@ -20,3 +21,11 @@ fi
 pip install . --no-deps
 cd ..
 rm -rf neural-graphics-model-gym
+
+# Prepare fixed neural-graphics artifacts before pytest. NFRU calibration and
+# evaluation retain the native autoencoder input resolution.
+python3 -c '
+from executorch.backends.arm.scripts.generate_neural_graphics_test_data import generate_nfru_test_datasets_from_scratch, generate_test_datasets_from_scratch
+generate_test_datasets_from_scratch()
+generate_nfru_test_datasets_from_scratch()
+'

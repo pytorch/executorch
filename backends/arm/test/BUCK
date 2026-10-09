@@ -45,6 +45,8 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":runner_utils",
         "//executorch/backends/arm/tosa:tosa",
+        "//executorch/backends/arm:vgf",
+        "fbsource//third-party/pypi/packaging:packaging",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )

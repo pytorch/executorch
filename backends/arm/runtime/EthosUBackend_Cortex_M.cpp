@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <new>
 
 #include <ethosu_driver.h>
 
@@ -42,8 +41,8 @@ extern "C" __attribute__((weak)) struct ethosu_driver* ethosu_reserve_driver_ex(
   return ethosu_reserve_driver();
 }
 
-// Overridable memcpy used by the EthosU backend for output scratch
-// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// Overridable memcpy for copying outputs from scratch.
+// Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
 // std::memcpy. Firmware targets can supply a strong override (e.g. routing
 // through a DMA engine) to reduce CPU memcpy load on the host MCU.
 extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
@@ -54,15 +53,14 @@ namespace arm {
 
 struct PlatformState {};
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
-    executorch::runtime::MemoryAllocator* /*allocator*/) {
-  return nullptr;
+    executorch::runtime::MemoryAllocator* /*allocator*/,
+    ExecutionHandle* /*handle*/) {
+  return executorch::runtime::Error::Ok;
 }
 
-void platform_destroy(PlatformState* state) {
-  delete state;
-}
+void platform_destroy(PlatformState* /*state*/) {}
 
 bool needs_scratch_allocation() {
   return true;
@@ -126,51 +124,18 @@ Error platform_execute(
     return Error::InvalidProgram;
   }
 
-  size_t tensor_bytes_total = 0;
-  size_t io_bytes_total = 0;
-  // Write outputs from scratch into EValue pointers
+  // Write outputs from scratch into EValue pointers.
   for (int i = 0; i < output_count; i++) {
-    int tensor_count = 1, io_count = 1;
     const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
-    // Process input EValue into scratch
-    // Outputs are in the index immediately after inputs
     auto tensor_out = args[input_count + i]->toTensor();
+    const size_t tensor_bytes = tensor_out.nbytes();
 
-    calculate_dimensions(
-        tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
-
-    size_t tensor_bytes = tensor_out.nbytes();
-    size_t io_bytes = static_cast<size_t>(io_count) *
-        static_cast<size_t>(handles.outputs->io[i].elem_size);
-
-    if (tensor_bytes != io_bytes) {
-      Error status = copy_with_layout_adjustment(
-          handles.outputs->io[i], i, output_addr, tensor_out, tensor_bytes);
-      if (status != Error::Ok) {
-        return status;
-      }
-      io_bytes_total += tensor_bytes;
-    } else {
-      // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
-      arm_ethos_io_memcpy(
-          tensor_out.mutable_data_ptr<char>(),
-          static_cast<const char*>(output_addr),
-          tensor_bytes);
-      io_bytes_total += io_bytes;
-    }
-
-    // At times the topological order of the outputs may change.
-    // Lets instead ensure that the sum of output bytes match.
-    tensor_bytes_total += tensor_bytes;
-  }
-  if (tensor_bytes_total != io_bytes_total) {
-    ET_LOG(Error, "Total output tensor sizes do not match");
-    ET_LOG(
-        Error,
-        "Program expects %zu bytes but got %zu",
-        io_bytes_total,
-        tensor_bytes_total);
-    return Error::InvalidProgram;
+    // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    EthosUBackend_output_memcpy(tensor_bytes);
+#endif
+    arm_ethos_io_memcpy(
+        tensor_out.mutable_data_ptr<char>(), output_addr, tensor_bytes);
   }
   return Error::Ok;
 }

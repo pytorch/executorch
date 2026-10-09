@@ -4,6 +4,17 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 fbcode_target(_kind = python_unittest,
+    name = "test_eager_eval",
+    srcs = [
+        "test_eager_eval.py",
+    ],
+    deps = [
+        "//executorch/examples/models/llama:eval_library",
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_simple_sdpa",
     srcs = [
         "test_simple_sdpa.py",
@@ -26,6 +37,18 @@ fbcode_target(_kind = python_unittest,
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_lfm2_short_conv",
+    srcs = [
+        "test_lfm2_short_conv.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/lfm2:lfm2",
         "//executorch/examples/models/llama:llama_transformer",
     ],
 )

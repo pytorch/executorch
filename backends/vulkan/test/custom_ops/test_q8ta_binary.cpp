@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <utility>
 #include <vector>
 #include "utils.h"
 
@@ -21,7 +22,45 @@ struct Q8taBinaryConfig {
   std::vector<int64_t> shape; // Tensor shape (can be any dimensionality)
   std::string test_case_name = "placeholder";
   std::string op_name = "q8ta_add";
+  // Shape of input B; empty means same as `shape`. Inputs are broadcast
+  // against each other.
+  std::vector<int64_t> other_shape = {};
 };
+
+std::vector<int64_t> broadcast_sizes(
+    const std::vector<int64_t>& a,
+    const std::vector<int64_t>& b) {
+  std::vector<int64_t> out(std::max(a.size(), b.size()), 1);
+  for (size_t i = 0; i < out.size(); ++i) {
+    const int64_t a_size = i < a.size() ? a[a.size() - 1 - i] : 1;
+    const int64_t b_size = i < b.size() ? b[b.size() - 1 - i] : 1;
+    out[out.size() - 1 - i] = std::max(a_size, b_size);
+  }
+  return out;
+}
+
+// Maps a contiguous index into a tensor of out_sizes to the contiguous index
+// of the element it reads from a tensor of `sizes` broadcast to out_sizes.
+int64_t broadcast_src_idx(
+    int64_t out_idx,
+    const std::vector<int64_t>& out_sizes,
+    const std::vector<int64_t>& sizes) {
+  int64_t src_idx = 0;
+  int64_t stride = 1;
+  int64_t d = static_cast<int64_t>(sizes.size()) - 1;
+  for (int64_t od = static_cast<int64_t>(out_sizes.size()) - 1; od >= 0;
+       --od, --d) {
+    const int64_t coord = out_idx % out_sizes[od];
+    out_idx /= out_sizes[od];
+    if (d >= 0) {
+      if (sizes[d] != 1) {
+        src_idx += coord * stride;
+      }
+      stride *= sizes[d];
+    }
+  }
+  return src_idx;
+}
 
 // Utility function to create a test case from a Q8taBinaryConfig
 TestCase create_test_case_from_config(
@@ -33,11 +72,16 @@ TestCase create_test_case_from_config(
     bool const_b = false) {
   TestCase test_case;
 
+  const std::vector<int64_t>& other_shape =
+      config.other_shape.empty() ? config.shape : config.other_shape;
+  const std::vector<int64_t> out_shape =
+      broadcast_sizes(config.shape, other_shape);
+
   // Create a descriptive name for the test case
-  // q8ta binary: i8->i8, two inputs added together (same shape)
+  // q8ta binary: i8->i8, two inputs added together
   std::string prefix = config.test_case_name; // "ACCU" or "PERF"
-  std::string shape_bracket_str = shape_bracket(config.shape);
-  std::string shape_str = shape_bracket_str + "+" + shape_bracket_str;
+  std::string shape_str =
+      shape_bracket(config.shape) + "+" + shape_bracket(other_shape);
   std::string storage_str = repr_str(utils::kBuffer, quant_layout);
   std::string suffix = const_b ? "[const_b]" : "";
   std::string test_name = make_test_label(
@@ -63,7 +107,7 @@ TestCase create_test_case_from_config(
 
   // Input tensor B (float/half, or pre-quantized int8 for const_b)
   ValueSpec input_b(
-      config.shape,
+      other_shape,
       const_b ? vkapi::kChar : input_dtype,
       storage_type,
       fp_memory_layout,
@@ -103,7 +147,7 @@ TestCase create_test_case_from_config(
 
   // Output tensor (float/half)
   ValueSpec output(
-      config.shape,
+      out_shape,
       input_dtype,
       storage_type,
       fp_memory_layout,
@@ -232,7 +276,7 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
       utils::kPackedInt8_4C1W,
   };
 
-  // Generate all combinations
+  std::vector<Q8taBinaryConfig> configs;
   for (const auto& shape : shapes) {
     // Generate test case name prefix from shape dimensions
     std::string prefix = "ACCU";
@@ -242,10 +286,35 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
         break;
       }
     }
-
     Q8taBinaryConfig config;
     config.shape = shape;
     config.test_case_name = prefix;
+    configs.push_back(config);
+  }
+
+  // Broadcast cases: {input A shape, input B shape}
+  std::vector<std::pair<std::vector<int64_t>, std::vector<int64_t>>>
+      broadcast_shapes = {
+          // Per-video context row added to every frame row
+          {{1, 60, 512}, {1, 1, 512}},
+          {{1, 1, 512}, {1, 60, 512}},
+          {{1, 16, 32}, {1, 16, 1}},
+          {{1, 16, 32}, {32}},
+          {{1, 8, 16, 16}, {1, 8, 1, 1}},
+          {{1, 8, 16, 16}, {1, 1, 16, 16}},
+          {{2, 8, 6, 6}, {1, 8, 6, 6}},
+          {{1, 13, 7, 9}, {1, 1, 7, 1}},
+      };
+  for (const auto& [shape, other_shape] : broadcast_shapes) {
+    Q8taBinaryConfig config;
+    config.shape = shape;
+    config.test_case_name = "ACCU";
+    config.other_shape = other_shape;
+    configs.push_back(config);
+  }
+
+  // Generate all combinations
+  for (const auto& config : configs) {
     for (const auto& quant_layout : quant_layouts) {
       test_cases.push_back(create_test_case_from_config(
           config,
@@ -285,16 +354,18 @@ void q8ta_add_reference_impl(TestCase& test_case) {
   ValueSpec& output_spec = test_case.outputs()[0];
 
   // Get tensor dimensions
-  auto input_sizes = input_a_spec.get_tensor_sizes();
+  const auto input_a_sizes = input_a_spec.get_tensor_sizes();
+  const auto input_b_sizes = input_b_spec.get_tensor_sizes();
+  const auto output_sizes = output_spec.get_tensor_sizes();
 
   // Calculate total number of elements
   int64_t num_elements = 1;
-  for (const auto& dim : input_sizes) {
+  for (const auto& dim : output_sizes) {
     num_elements *= dim;
   }
 
   // Skip for large tensors since computation time will be extremely slow
-  for (const auto& dim : input_sizes) {
+  for (const auto& dim : output_sizes) {
     if (dim > kRefDimSizeLimit) {
       throw std::invalid_argument(
           "One or more dimensions exceed the allowed limit for reference "
@@ -324,19 +395,22 @@ void q8ta_add_reference_impl(TestCase& test_case) {
 
   // Perform quantized add operation
   for (int64_t i = 0; i < num_elements; ++i) {
+    const int64_t a_idx = broadcast_src_idx(i, output_sizes, input_a_sizes);
+    const int64_t b_idx = broadcast_src_idx(i, output_sizes, input_b_sizes);
+
     // Quantize input A to int8
     float quant_a_f =
-        std::round(input_a_data[i] / input_a_scale) + input_a_zero_point;
+        std::round(input_a_data[a_idx] / input_a_scale) + input_a_zero_point;
     quant_a_f = std::min(std::max(quant_a_f, -128.0f), 127.0f);
     int8_t quantized_a = static_cast<int8_t>(quant_a_f);
 
     // Get quantized input B (either from pre-quantized int8 or by quantizing)
     int8_t quantized_b;
     if (input_b_is_int8) {
-      quantized_b = input_b_spec.get_int8_data()[i];
+      quantized_b = input_b_spec.get_int8_data()[b_idx];
     } else {
       float quant_b_f =
-          std::round(input_b_spec.get_float_data()[i] / input_b_scale) +
+          std::round(input_b_spec.get_float_data()[b_idx] / input_b_scale) +
           input_b_zero_point;
       quant_b_f = std::min(std::max(quant_b_f, -128.0f), 127.0f);
       quantized_b = static_cast<int8_t>(quant_b_f);

@@ -34,6 +34,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.utils import is_shape_dynamic, WhyNoPartition
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import free_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -407,6 +408,29 @@ class SigmoidConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class SiluConfig(GenericNodePartitionerConfig):
+    target_name = "silu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.silu.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        input_value = node.args[0].meta.get("val")
+        output_value = node.meta.get("val")
+        return (
+            isinstance(input_value, torch.Tensor)
+            and input_value.dtype == torch.float16
+            and isinstance(output_value, torch.Tensor)
+            and output_value.dtype == torch.float16
+        )
 
 
 class MulConfig(GenericNodePartitionerConfig):
@@ -875,6 +899,10 @@ class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
         input_rank = len(node.args[0].meta["val"].shape)
         if dim != -1 and dim != input_rank:
             why(node, reason="unsqueeze_copy only supported on the trailing dimension")
+            return False
+
+        if sum(bool(free_symbols(d)) for d in node.meta["val"].shape) > 1:
+            why(node, reason="XNNPACK reshape only supports one dynamic dimension")
             return False
 
         return True

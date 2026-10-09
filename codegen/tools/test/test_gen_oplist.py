@@ -255,6 +255,42 @@ class TestGenOpList(unittest.TestCase):
             "default",
         )
 
+    @patch("executorch.codegen.tools.gen_oplist._get_kernel_metadata_for_model")
+    @patch("executorch.codegen.tools.gen_oplist._get_operators")
+    @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
+    def test_gen_op_list_with_model_and_root_ops(
+        self,
+        mock_dump_yaml,
+        mock_get_operators,
+        mock_get_kernel_metadata_for_model,
+    ) -> None:
+        mock_get_operators.return_value = ["aten::sub"]
+        mock_get_kernel_metadata_for_model.return_value = {"aten::sub": ["v1/6;"]}
+
+        output_path = os.path.join(self.temp_dir.name, "output.yaml")
+        temp_file = tempfile.NamedTemporaryFile()
+
+        args = [
+            f"--output_path={output_path}",
+            "--root_ops=aten::add",
+            f"--model_file_path={temp_file.name}",
+        ]
+
+        gen_oplist.main(args)
+
+        # Verify that gen_oplist combined BOTH operators into the final output
+        mock_dump_yaml.assert_called_once_with(
+            ["aten::add", "aten::sub"],
+            Path(output_path),
+            temp_file.name,
+            {
+                "aten::add": ["default"],
+                "aten::sub": ["v1/6;"],
+            },
+            False,
+        )
+        temp_file.close()
+
     def tearDown(self):
         self.temp_dir.cleanup()
 

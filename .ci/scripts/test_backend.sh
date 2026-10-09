@@ -54,15 +54,8 @@ if [[ "$FLOW" == *qnn* ]]; then
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup the Vulkan SDK and select an ICD: use the real system GPU ICD when one
-    # is present (real-GPU runner), otherwise fall back to SwiftShader (CPU
-    # runner). The Vulkan loader searches both standard ICD directories.
-    if ls /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json \
-        >/dev/null 2>&1; then
-        source .ci/scripts/setup-vulkan-linux-deps.sh "real-gpu"
-    else
-        source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
-    fi
+    # CPU runners can have Mesa ICDs installed without a usable hardware GPU.
+    source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
@@ -153,9 +146,6 @@ if [[ "$FLOW" == *nxp* ]]; then
 
     export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
 fi
-
-GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
-export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
 
 EXIT_CODE=0
 # An Ethos-U failure captures a few hundred thousand lines of Vela operator

@@ -264,7 +264,8 @@ test_data_conv1d_INT = {
 def _get_dtype_count(model: torch.nn.Module):
     nbr_convs: int = model.nbr_convs  # noqa
     return {
-        "CONST": {"INT4": nbr_convs * 2},
+        # Each convolution has a distinct weight and shares the symmetric zero point.
+        "CONST": {"INT4": nbr_convs + 1},
         "DEPTHWISE_CONV2D": {"INT32": nbr_convs},
         "RESCALE": {"INT8": nbr_convs},
     }

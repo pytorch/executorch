@@ -123,16 +123,16 @@ TmpTensor::~TmpTensor() {
 }
 
 int64_t TmpTensor::get_sobj_idx() {
-  int64_t sobj_idx;
+  int64_t idx;
   // If no available temporary shared objects, request a new one to be created
   if (graph_p->tmp_shared_object_idxs_.empty()) {
-    sobj_idx = graph_p->shared_objects_.size();
+    idx = graph_p->shared_objects_.size();
   } else {
     // Get the first available shared object idx
-    sobj_idx = graph_p->tmp_shared_object_idxs_.top();
+    idx = graph_p->tmp_shared_object_idxs_.top();
     graph_p->tmp_shared_object_idxs_.pop();
   }
-  return sobj_idx;
+  return idx;
 }
 
 //
@@ -1212,9 +1212,9 @@ void ComputeGraph::prepack() {
     shared_object.bind_users(this);
   }
   // Make sure all remaining tensors have allocations
-  for (int i = 0; i < values_.size(); i++) {
-    if (values_.at(i).isTensor()) {
-      create_dedicated_allocation_for(i);
+  for (int value_idx = 0; value_idx < values_.size(); value_idx++) {
+    if (values_.at(value_idx).isTensor()) {
+      create_dedicated_allocation_for(value_idx);
     }
   }
 }

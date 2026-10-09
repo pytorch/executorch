@@ -78,13 +78,18 @@ void EthosUBackend_execute_end();
 void EthosUBackend_delegate_begin(const void* handle);
 void EthosUBackend_delegate_end();
 #endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size);
+void EthosUBackend_output_memcpy(size_t size);
+#endif
 extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
-    executorch::runtime::MemoryAllocator* allocator);
+    executorch::runtime::MemoryAllocator* allocator,
+    ExecutionHandle* handle);
 
 void platform_destroy(PlatformState* state);
 
@@ -98,13 +103,6 @@ executorch::runtime::Error platform_execute(
     int output_count,
     executorch::runtime::Span<executorch::runtime::EValue*> args,
     char* ethosu_scratch);
-
-executorch::runtime::Error copy_with_layout_adjustment(
-    const VelaIO& output_io,
-    int output_index,
-    const char* src,
-    executorch::aten::Tensor& tensor_out,
-    size_t tensor_bytes);
 
 void calculate_dimensions(
     const executorch::aten::Tensor tensor,

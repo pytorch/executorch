@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2dRoute.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
@@ -42,52 +43,6 @@ bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
       info.outer_packed_dim_block_size == 4;
 }
 
-namespace {
-
-uint64_t q8ta_conv2d_im2col_scratch_limit(ComputeGraph& graph) {
-  constexpr uint64_t kMaxBatchedIm2ColScratchBytes = 32ULL * 1024ULL * 1024ULL;
-  const uint64_t device_scratch_limit =
-      graph.context()->adapter_ptr()->max_buffer_numel();
-  return device_scratch_limit < kMaxBatchedIm2ColScratchBytes
-      ? device_scratch_limit
-      : kMaxBatchedIm2ColScratchBytes;
-}
-
-bool should_use_q8ta_conv2d_im2col(
-    ComputeGraph& graph,
-    const int64_t batch,
-    const int64_t groups,
-    const int64_t in_channels_per_group,
-    const int64_t flattened_kernel_size,
-    const int64_t out_height,
-    const int64_t out_width) {
-  const bool im2col_eligible = in_channels_per_group % 4 == 0;
-  if (!im2col_eligible) {
-    return false;
-  }
-
-  const int64_t spatial_out = out_height * out_width;
-  if (batch > 1) {
-    constexpr int64_t kMinFlattenedKernelSize = 1024;
-    constexpr int64_t kMaxSpatialOutput = 64;
-    const uint64_t scratch_bytes = static_cast<uint64_t>(batch) *
-        static_cast<uint64_t>(flattened_kernel_size) *
-        static_cast<uint64_t>(out_height) *
-        static_cast<uint64_t>(utils::align_up_4(out_width));
-    return groups == 1 && flattened_kernel_size >= kMinFlattenedKernelSize &&
-        spatial_out <= kMaxSpatialOutput &&
-        scratch_bytes <= q8ta_conv2d_im2col_scratch_limit(graph);
-  }
-
-  if (graph.device_is_mali()) {
-    return true;
-  }
-
-  return groups == 1 && (in_channels_per_group >= 32 || spatial_out <= 4096);
-}
-
-} // namespace
-
 //
 // Workgroup size selection functions
 //
@@ -111,6 +66,7 @@ GlobalWorkGrid pick_q8ta_conv2d_gwg(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
 
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
@@ -133,6 +89,7 @@ GlobalWorkGrid pick_q8ta_conv2d_gwg(
  * tensor dimensions. Uses experimentation results:
  *   - {4, 2, 8} for medium tensors: +57% improvement on 81x81
  *   - {8, 1, 8} for very large tensors: best baseline performance
+ *   - {2, 1, 32} or {4, 1, 16} for narrow output widths
  *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
  */
 LocalWorkGroup pick_q8ta_conv2d_lwg(
@@ -144,14 +101,13 @@ LocalWorkGroup pick_q8ta_conv2d_lwg(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
-
-  // Get actual tensor dimensions for adaptive sizing
-  const uint32_t H = graph->size_at<uint32_t>(-2, output);
+  const uint32_t output_height = graph->size_at<uint32_t>(-2, output);
 
   // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
   // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
+  if (output_height >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
     return LocalWorkGroup(8u, 1u, 8u);
   }
 
@@ -159,6 +115,16 @@ LocalWorkGroup pick_q8ta_conv2d_lwg(
   // This configuration showed +57% improvement on 81x81 tensors
   if (gwg[0u] >= 4 && gwg[1u] >= 2 && gwg[2u] >= 8) {
     return LocalWorkGroup(4u, 2u, 8u);
+  }
+
+  if (gwg[0u] == 2u && gwg[2u] >= 32u) {
+    return LocalWorkGroup(2u, 1u, 32u);
+  }
+
+  // LWG x oversubscribes the 3 global groups here; safe only because the
+  // shader early-returns out-of-bounds invocations.
+  if (gwg[0u] == 3u && gwg[2u] >= 16u) {
+    return LocalWorkGroup(4u, 1u, 16u);
   }
 
   // For tensors with sufficient x and z dimensions, use square configuration
@@ -520,27 +486,38 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef output = args.at(15);
 
   const int64_t groups = graph.extract_scalar<int64_t>(groups_ref);
+  // Valid models always carry groups >= 1; fail fast on corrupt input
+  // instead of dividing channel counts by zero downstream (both this
+  // dispatcher and q8ta_conv2d_general divide by groups).
+  VK_CHECK_COND(groups > 0, "q8ta_conv2d requires groups >= 1");
   const int64_t in_channels = graph.size_at<int64_t>(-3, input);
   const int64_t in_channels_per_group = in_channels / groups;
   const int64_t batch = graph.size_at<int64_t>(-4, input);
 
   const int64_t H_out = graph.size_at<int64_t>(-2, output);
   const int64_t W_out = graph.size_at<int64_t>(-1, output);
-  int64_t flattened_kernel_size;
+  const int64_t out_channels = graph.size_at<int64_t>(-3, output);
+  int64_t kernel_height;
+  int64_t kernel_width;
   {
     const auto kernel_size = graph.get_int_list(kernel_size_ref);
-    flattened_kernel_size = utils::align_up_4(
-        in_channels_per_group * kernel_size->at(0) * kernel_size->at(1));
+    kernel_height = kernel_size->at(0);
+    kernel_width = kernel_size->at(1);
   }
 
-  const bool use_im2col = should_use_q8ta_conv2d_im2col(
-      graph,
+  const bool use_im2col = should_use_q8ta_conv2d_im2col({
+      graph.device_is_mali(),
+      graph.can_use_int8_dot_product(),
+      static_cast<uint64_t>(graph.max_buffer_numel()),
       batch,
       groups,
       in_channels_per_group,
-      flattened_kernel_size,
+      out_channels,
+      kernel_height,
+      kernel_width,
       H_out,
-      W_out);
+      W_out,
+  });
 
   if (use_im2col) {
     q8ta_conv2d_im2col(graph, args);

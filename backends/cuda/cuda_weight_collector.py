@@ -16,13 +16,14 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import torch
+from executorch.backends.cuda.passes.lower_offgraph_kv import OFFGRAPH_KV_FQN_PREFIX
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.tensor import scalar_type_enum
 
 
-CUDA_WEIGHT_CACHE_MAGIC = b"ETCUDAFQN3"
+CUDA_AOTI_METADATA_MAGIC = b"ETCUDAFQN0"
 
 AOTI_DEVICE_TYPE_CPU = 0
 AOTI_DEVICE_TYPE_CUDA = 1
@@ -44,6 +45,24 @@ class CudaWeightEntry:
 class CudaWeightArtifact:
     entries: List[CudaWeightEntry]
     storages: Dict[str, FileBackedData]
+
+
+@dataclass(frozen=True)
+class CudaAotiVariant:
+    """One AOTI shared library and its CUDA runtime-selection metadata."""
+
+    target_sm: int
+    ptx_compute: int
+    so_blob_key: str
+    fallback_only: bool = False
+
+
+@dataclass(frozen=True)
+class CudaAotiMetadata:
+    """CUDA AOTI native and fallback variants sharing one weight manifest."""
+
+    variants: List[CudaAotiVariant]
+    entries: List[CudaWeightEntry]
 
 
 @dataclass
@@ -93,6 +112,42 @@ def _write_tensor_storage(tensor: torch.Tensor, path: str) -> bytes:
     return digest.digest()
 
 
+def _materialize_storage(tensor: torch.Tensor, directory: str) -> FileBackedData:
+    fd, storage_path = tempfile.mkstemp(
+        prefix=".cuda_weight_", suffix=".storage", dir=directory
+    )
+    os.close(fd)
+    try:
+        digest = _write_tensor_storage(tensor, storage_path)
+        return FileBackedData.move_from(storage_path, sha256=digest)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.remove(storage_path)
+        raise
+
+
+def _required_view_nbytes(
+    fqn: str,
+    sizes: Tuple[int, ...],
+    strides: Tuple[int, ...],
+    storage_offset: int,
+    element_size: int,
+) -> int:
+    if (
+        len(sizes) != len(strides)
+        or storage_offset < 0
+        or any(size < 0 for size in sizes)
+        or any(stride < 0 for stride in strides)
+    ):
+        raise RuntimeError(f"AOTI view {fqn!r} has invalid tensor metadata")
+    if any(size == 0 for size in sizes):
+        return 0
+    last_element = storage_offset + sum(
+        stride * (size - 1) for size, stride in zip(sizes, strides)
+    )
+    return (last_element + 1) * element_size
+
+
 def _storage_key(
     fqn: str, device_type: int, aoti_library_key: Optional[str] = None
 ) -> str:
@@ -114,18 +169,79 @@ def _is_aoti_library_local_fqn(fqn: str) -> bool:
     return fqn.startswith("_tensor_constant")
 
 
-def encode_cuda_weight_metadata(
-    so_blob_key: str, entries: List[CudaWeightEntry]
+def _is_offgraph_kv_fqn(fqn: str) -> bool:
+    return fqn.startswith(OFFGRAPH_KV_FQN_PREFIX)
+
+
+def _validate_cuda_aoti_variant(
+    variant: CudaAotiVariant, has_fallback: bool, regular_sms: set[int]
+) -> None:
+    if variant.target_sm < 0:
+        raise ValueError(f"Invalid CUDA target SM: {variant.target_sm}")
+    if variant.ptx_compute < 0 or variant.ptx_compute > variant.target_sm:
+        raise ValueError(
+            f"Invalid PTX compute target {variant.ptx_compute} for sm{variant.target_sm}"
+        )
+    if not variant.so_blob_key:
+        raise ValueError("CUDA AOTI variant is missing its shared-object key")
+    if variant.fallback_only:
+        if variant.ptx_compute == 0:
+            raise ValueError("CUDA fallback variant must contain PTX")
+        return
+    if variant.target_sm in regular_sms:
+        raise ValueError(f"Duplicate CUDA target SM: {variant.target_sm}")
+    regular_sms.add(variant.target_sm)
+    if has_fallback and variant.ptx_compute != 0:
+        raise ValueError("Regular CUDA variants cannot advertise PTX fallback")
+
+
+def _validate_cuda_aoti_variants(
+    variants: List[CudaAotiVariant], has_fallback: bool
+) -> None:
+    untargeted = [variant for variant in variants if variant.target_sm == 0]
+    if untargeted:
+        if len(variants) != 1 or untargeted[0].ptx_compute or has_fallback:
+            raise ValueError(
+                "Untargeted CUDA AOTI metadata requires one non-fallback variant"
+            )
+        if not untargeted[0].so_blob_key:
+            raise ValueError("CUDA AOTI variant is missing its shared-object key")
+        return
+    if sum(variant.fallback_only for variant in variants) > 1:
+        raise ValueError("CUDA AOTI metadata supports only one fallback variant")
+    if len(variants) > 1 and any(
+        variant.ptx_compute and not variant.fallback_only for variant in variants
+    ):
+        raise ValueError(
+            "Multi-variant CUDA AOTI metadata requires an explicit PTX fallback"
+        )
+    regular_sms: set[int] = set()
+    for variant in variants:
+        _validate_cuda_aoti_variant(variant, has_fallback, regular_sms)
+
+
+def encode_cuda_aoti_metadata(
+    variants: List[CudaAotiVariant], entries: List[CudaWeightEntry]
 ) -> bytes:
-    """Encode the per-method FQN-to-tensor metadata consumed by CUDA runtime."""
-    output = bytearray(CUDA_WEIGHT_CACHE_MAGIC)
+    """Encode CUDA AOTI variants followed by one shared weight manifest."""
+    if not variants:
+        raise ValueError("CUDA AOTI metadata requires at least one variant")
+
+    has_fallback = any(variant.fallback_only for variant in variants)
+    _validate_cuda_aoti_variants(variants, has_fallback)
+    output = bytearray(CUDA_AOTI_METADATA_MAGIC)
 
     def write_string(value: str) -> None:
         encoded = value.encode("utf-8")
         output.extend(struct.pack("<I", len(encoded)))
         output.extend(encoded)
 
-    write_string(so_blob_key)
+    output.extend(struct.pack("<I", len(variants)))
+    for variant in variants:
+        output.extend(struct.pack("<II", variant.target_sm, variant.ptx_compute))
+        output.extend(struct.pack("<I", int(variant.fallback_only)))
+        write_string(variant.so_blob_key)
+
     output.extend(struct.pack("<I", len(entries)))
     for entry in entries:
         write_string(entry.fqn)
@@ -143,6 +259,102 @@ def encode_cuda_weight_metadata(
         output.extend(struct.pack(f"<{len(entry.sizes)}q", *entry.sizes))
         output.extend(struct.pack(f"<{len(entry.strides)}q", *entry.strides))
     return bytes(output)
+
+
+class _MetadataReader:
+    def __init__(self, data: bytes) -> None:
+        self._data = memoryview(data)
+        self._offset = 0
+
+    def read(self, size: int) -> memoryview:
+        end = self._offset + size
+        if size < 0 or end > len(self._data):
+            raise ValueError("Truncated CUDA AOTI metadata")
+        value = self._data[self._offset : end]
+        self._offset = end
+        return value
+
+    def unpack(self, format: str) -> Tuple[Any, ...]:
+        size = struct.calcsize(format)
+        return struct.unpack(format, self.read(size))
+
+    def read_string(self) -> str:
+        (size,) = self.unpack("<I")
+        try:
+            return bytes(self.read(size)).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("CUDA AOTI metadata contains invalid UTF-8") from error
+
+    def finish(self) -> None:
+        if self._offset != len(self._data):
+            raise ValueError("CUDA AOTI metadata contains trailing bytes")
+
+
+def _decode_weight_entries(reader: _MetadataReader) -> List[CudaWeightEntry]:
+    (num_entries,) = reader.unpack("<I")
+    if num_entries > 1 << 20:
+        raise ValueError(f"CUDA AOTI metadata has too many weights: {num_entries}")
+
+    entries = []
+    for _ in range(num_entries):
+        fqn = reader.read_string()
+        storage_key = reader.read_string()
+        storage_nbytes, dtype, device_type, storage_offset, ndim = reader.unpack(
+            "<QiiqI"
+        )
+        if not fqn or not storage_key or ndim > 64:
+            raise ValueError("CUDA AOTI metadata contains an invalid weight entry")
+        sizes = reader.unpack(f"<{ndim}q") if ndim else ()
+        strides = reader.unpack(f"<{ndim}q") if ndim else ()
+        if storage_offset < 0 or any(value < 0 for value in sizes + strides):
+            raise ValueError("CUDA AOTI metadata contains invalid tensor metadata")
+        entries.append(
+            CudaWeightEntry(
+                fqn=fqn,
+                storage_key=storage_key,
+                storage_nbytes=storage_nbytes,
+                dtype=dtype,
+                device_type=device_type,
+                storage_offset=storage_offset,
+                sizes=tuple(sizes),
+                strides=tuple(strides),
+            )
+        )
+    return entries
+
+
+def decode_cuda_aoti_metadata(data: bytes) -> CudaAotiMetadata:
+    """Decode CUDA AOTI variant and shared-weight metadata."""
+    reader = _MetadataReader(data)
+    magic = bytes(reader.read(len(CUDA_AOTI_METADATA_MAGIC)))
+    if magic != CUDA_AOTI_METADATA_MAGIC:
+        raise ValueError("Unrecognized CUDA AOTI metadata")
+
+    variants = []
+    (num_variants,) = reader.unpack("<I")
+    if num_variants == 0 or num_variants > 256:
+        raise ValueError(
+            f"CUDA AOTI metadata has invalid variant count: {num_variants}"
+        )
+    for _ in range(num_variants):
+        target_sm, ptx_compute, flags = reader.unpack("<III")
+        if flags & ~1:
+            raise ValueError("CUDA AOTI metadata contains invalid variant flags")
+        variants.append(
+            CudaAotiVariant(
+                target_sm=target_sm,
+                ptx_compute=ptx_compute,
+                so_blob_key=reader.read_string(),
+                fallback_only=bool(flags & 1),
+            )
+        )
+    _validate_cuda_aoti_variants(
+        variants, any(variant.fallback_only for variant in variants)
+    )
+
+    entries = _decode_weight_entries(reader)
+    reader.finish()
+    return CudaAotiMetadata(variants=variants, entries=entries)
 
 
 class CudaWeightCollector:
@@ -187,38 +399,41 @@ class CudaWeightCollector:
         storages: Dict[str, FileBackedData] = {}
 
         for fqn, (tensor, properties) in weights.items():
+            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             storage = tensor.untyped_storage()
             storage_nbytes = storage.nbytes()
+            # AOTI clones buffers into compact storage that starts at the view,
+            # with the same shape and strides, so the original storage size and
+            # offset do not describe it.
+            is_compact_clone = (
+                not is_offgraph_kv
+                and getattr(properties, "storage_ptr", None)
+                not in (None, storage.data_ptr())
+                and tuple(tensor.shape) == tuple(getattr(properties, "shape", ()))
+                and tuple(tensor.stride()) == tuple(getattr(properties, "stride", ()))
+            )
             del storage
             device_type = device_type_for_weight(tensor)
             expected_storage_nbytes = int(
                 getattr(properties, "storage_size", None) or 0
             )
-            if storage_nbytes < expected_storage_nbytes:
+            if (
+                not is_offgraph_kv
+                and not is_compact_clone
+                and storage_nbytes < expected_storage_nbytes
+            ):
                 raise RuntimeError(
                     "AOTI cloned storage is smaller than its TensorProperties "
                     f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
                 )
 
-            fd, storage_path = tempfile.mkstemp(
-                prefix=".cuda_weight_", suffix=".storage", dir=directory
-            )
-            os.close(fd)
-            try:
-                digest = _write_tensor_storage(tensor, storage_path)
-                data = FileBackedData.move_from(storage_path, sha256=digest)
-            except Exception:
-                try:
-                    os.remove(storage_path)
-                except OSError:
-                    pass
-                raise
-
             storage_key = _storage_key(fqn, device_type)
-            if storage_key in storages:
-                data.close()
-                raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
-            storages[storage_key] = data
+            if not is_offgraph_kv:
+                data = _materialize_storage(tensor, directory)
+                if storage_key in storages:
+                    data.close()
+                    raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
+                storages[storage_key] = data
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -226,24 +441,28 @@ class CudaWeightCollector:
             strides = tuple(
                 int(stride) for stride in getattr(properties, "stride", tensor.stride())
             )
-            storage_offset = int(getattr(properties, "offset", tensor.storage_offset()))
-            if (
-                len(sizes) != len(strides)
-                or storage_offset < 0
-                or any(size < 0 for size in sizes)
-                or any(stride < 0 for stride in strides)
-            ):
-                raise RuntimeError(f"AOTI view {fqn!r} has invalid tensor metadata")
-            required_nbytes = 0
-            if all(size != 0 for size in sizes):
-                last_element = storage_offset + sum(
-                    stride * (size - 1) for size, stride in zip(sizes, strides)
-                )
-                required_nbytes = (last_element + 1) * tensor.element_size()
-            if required_nbytes > storage_nbytes:
+            storage_offset = (
+                tensor.storage_offset()
+                if is_compact_clone
+                else int(getattr(properties, "offset", tensor.storage_offset()))
+            )
+            required_nbytes = _required_view_nbytes(
+                fqn, sizes, strides, storage_offset, tensor.element_size()
+            )
+            if not is_offgraph_kv and required_nbytes > storage_nbytes:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "
                     f"{storage_nbytes}-byte cloned storage"
+                )
+            if is_compact_clone and required_nbytes != storage_nbytes:
+                raise RuntimeError(
+                    f"AOTI compact clone of {fqn!r} should span exactly its "
+                    f"{storage_nbytes}-byte storage, but its view needs {required_nbytes}"
+                )
+            if is_offgraph_kv:
+                # Preserve the AOTI view contract; the runtime supplies storage.
+                storage_nbytes = max(
+                    storage_nbytes, expected_storage_nbytes, required_nbytes
                 )
             entries.append(
                 CudaWeightEntry(
@@ -311,6 +530,8 @@ class CudaWeightCollector:
         result: PreprocessResult,
         artifact: CudaWeightArtifact,
         device_name: str,
+        target_sm: Optional[int] = None,
+        ptx_compute: int = 0,
     ) -> None:
         if result.data_store_output is None:
             raise RuntimeError("CUDA AOTI preprocess returned no named data")
@@ -327,13 +548,13 @@ class CudaWeightCollector:
         self._merge_aoti_data(
             parent_store,
             compatibility_blob_key,
-            keep_compatibility_blob=not artifact.storages,
+            keep_compatibility_blob=not artifact.entries,
         )
 
         external_tag = f"aoti_{device_name}_blob"
         serialized_entries = []
         for entry in artifact.entries:
-            data = artifact.storages[entry.storage_key]
+            data = artifact.storages.get(entry.storage_key)
             if _is_aoti_library_local_fqn(entry.fqn):
                 entry = replace(
                     entry,
@@ -341,11 +562,15 @@ class CudaWeightCollector:
                         entry.fqn, entry.device_type, aoti_library_key=so_blob_key
                     ),
                 )
-            self._add_weight(entry, data, external_tag)
+            if data is not None:
+                self._add_weight(entry, data, external_tag)
+            elif not _is_offgraph_kv_fqn(entry.fqn):
+                raise RuntimeError(f"Missing CUDA FQN weight storage for {entry.fqn!r}")
             serialized_entries.append(entry)
 
-        result.processed_bytes = encode_cuda_weight_metadata(
-            so_blob_key, serialized_entries
+        result.processed_bytes = encode_cuda_aoti_metadata(
+            [CudaAotiVariant(target_sm or 0, ptx_compute, so_blob_key)],
+            serialized_entries,
         )
         self._results.append(result)
 

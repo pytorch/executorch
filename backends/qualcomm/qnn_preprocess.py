@@ -23,10 +23,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_AXIS_ORDER,
-    QCOM_TENSOR_NAME,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_TENSOR_NAME
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
@@ -100,10 +97,6 @@ class QnnBackend(BackendDetails):
         use_mha2sha: bool,
         backend_type: QnnExecuTorchBackendType,
     ):
-        for node in edge_program.graph_module.graph.nodes:
-            if hasattr(node, "meta"):
-                # pop certain keys in meta for not affecting the passes in compilation
-                node.meta.pop(QCOM_AXIS_ORDER, "")
         # QNN Delegate Specific Passes
         graph_module = get_qnn_pass_manager_cls(
             backend_type
@@ -138,7 +131,7 @@ class QnnBackend(BackendDetails):
                         op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
                             f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
-                            globals().update(torch.__dict__),
+                            {"torch": torch},
                         )
                         assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
@@ -243,6 +236,7 @@ class QnnBackend(BackendDetails):
                             (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
                             and QCOM_TENSOR_NAME in node.meta
                             and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                            and node.op == "call_function"
                         ):
                             debug_handle_builder.insert_delegate_mapping_entry(
                                 handles=handle_id,

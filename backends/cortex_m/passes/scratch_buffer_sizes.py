@@ -219,7 +219,7 @@ def cmsis_nn_transpose_conv_buffer_size(
     filter_nhwc = [c_out, kernel_h, kernel_w, kernel_c_in]
     padding_offsets_hw = [int(output_padding[0]), int(output_padding[1])]
 
-    return [
+    buffer_bytes, reverse_buffer_bytes = (
         int(
             cmsis_nn.transpose_conv_buffer_size(
                 backend,
@@ -253,7 +253,19 @@ def cmsis_nn_transpose_conv_buffer_size(
                 activation_max=output_qmax,
             )
         ),
-    ]
+    )
+
+    # A zero reverse buffer means CMSIS-NN selected its rolling-buffer path.
+    if reverse_buffer_bytes == 0:
+        # The sizing API uses stride.h where the kernel uses stride.w. Preserve
+        # the API's requirement while ensuring enough space for the kernel.
+        # TODO: Remove this correction once our CMSIS-NN pin includes
+        # https://github.com/ARM-software/CMSIS-NN/pull/243.
+        buffer_w = (input_nhwc[2] - 1) * stride_hw[1] + max(kernel_w, stride_hw[1])
+        buffer_h = max(kernel_h, stride_hw[0])
+        buffer_bytes = max(buffer_bytes, buffer_w * buffer_h * c_out * 4)
+
+    return [buffer_bytes, reverse_buffer_bytes]
 
 
 def cmsis_nn_avgpool_buffer_size(

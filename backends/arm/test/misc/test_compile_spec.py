@@ -15,7 +15,7 @@ from executorch.backends.arm.ethosu import (
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
-from pytest import raises, warns
+from pytest import mark, raises, warns
 
 
 def test_compile_spec_u55_INT():
@@ -127,6 +127,16 @@ def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
     assert roundtripped.tosa_dev_mode is True
 
 
+def test_emit_debug_info_roundtrip_vgf_FP_INT():
+    disabled = VgfCompileSpec()
+    disabled_roundtripped = VgfCompileSpec._from_list(disabled._to_list())
+    assert disabled_roundtripped.emit_debug_info is False
+
+    enabled = VgfCompileSpec(emit_debug_info=True)
+    enabled_roundtripped = VgfCompileSpec._from_list(enabled._to_list())
+    assert enabled_roundtripped.emit_debug_info is True
+
+
 def test_preserve_io_quantization_warns_for_u55_INT():
     with warns(
         UserWarning,
@@ -140,3 +150,17 @@ def test_preserve_io_quantization_no_warn_for_vgf_FP_INT():
         warnings.simplefilter("always")
         VgfCompileSpec()._set_preserve_io_quantization(True)
     assert len(recorded_warnings) == 0
+
+
+@mark.parametrize("max_scratch_size", [None, 2097152, 4194304])
+def test_ethosu_scratch_capacity_roundtrip(max_scratch_size):
+    compile_spec = EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.max_scratch_size == max_scratch_size
+    assert all("max_scratch_size" not in flag for flag in roundtripped.compiler_flags)
+
+
+@mark.parametrize("max_scratch_size", [0, -1, 1.5, True, "2097152"])
+def test_ethosu_scratch_capacity_rejects_invalid_values(max_scratch_size):
+    with raises(ValueError, match="max_scratch_size must be a positive integer"):
+        EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)

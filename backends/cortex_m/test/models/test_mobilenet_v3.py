@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize
 
@@ -23,26 +24,45 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_add_Tensor": 6,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 2,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 104,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 120,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 101,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 119,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 100,
 }
 
 ops_after_transforms: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 6,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 41,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 11,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 28,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 10,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
 }
 
 # Use bigger sample set for calibration.
-calibration_samples = [
-    (torch.randn(1, 3, 232, 232).to(memory_format=torch.channels_last),)
-    for i in (range(100))
-]
+calibration_samples = [(torch.randn(1, 3, 232, 232),) for _ in range(100)]
+
+ops_before_explicit_layout: dict[str, int] = {
+    **ops_before_transforms,
+    "executorch_exir_dialects_edge__ops_aten_clamp_default": 19,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+}
+
+ops_after_explicit_layout: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 19,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 10,
+    "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 9,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 19,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 6,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_nhwc_default": 10,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_nhwc_default": 41,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_nhwc_default": 11,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 19,
+    "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
+}
+
 
 test_cases = {
     "mobilenet_v3_small": McuTestCase(
@@ -56,47 +76,49 @@ test_cases = {
 }
 
 
-@parametrize(
-    "test_case",
-    test_cases,
-    xfails={
-        "mobilenet_v3_small": "MLETORCH-1821 - Investigate mobilenet_v3_small flakyness"
-    },
-    strict=False,
-)
-def test_dialect_mv3(test_case):
-    inputs = test_case.get_example_inputs()
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
+@parametrize("test_case", test_cases)
+def test_dialect_mv3(test_case, use_explicit_layout):
+    inputs = test_case.get_example_inputs(use_explicit_layout=use_explicit_layout)
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
-        ops_before_transforms,
-        ops_after_transforms,
+        ops_before_explicit_layout if use_explicit_layout else ops_before_transforms,
+        ops_after_explicit_layout if use_explicit_layout else ops_after_transforms,
         qtol=20,
         calibration_samples=calibration_samples,
+        use_explicit_layout=use_explicit_layout,
+        compare_outputs=False,
     )
 
-    # Since qtol is high, also assert that top 1 output matches between reference quantized model and lowered model
-    ref = tester.get_artifact(StageType.EXPORT).module()(*inputs)
+    ref, scale = tester._calculate_reference_output(
+        tester.get_artifact(StageType.EXPORT), inputs
+    )
     result = tester.stages[StageType.RUN_PASSES].run_artifact(inputs)
-    assert torch.argmax(ref) == torch.argmax(result), "Mismatch in model outputs"
+    try:
+        tester._compare_outputs(ref, result, scale, qtol=20)
+        assert torch.argmax(ref) == torch.argmax(result), "Mismatch in model outputs"
+    except AssertionError:
+        pytest.xfail("MLETORCH-1821 - Investigate mobilenet_v3_small flakyness")
 
 
-@parametrize(
-    "test_case",
-    test_cases,
-    xfails={
-        "mobilenet_v3_small": "MLETORCH-1821 - Investigate mobilenet_v3_small flakyness"
-    },
-    strict=False,
-)
-def test_implementation_mv3(test_case):
-    inputs = test_case.get_example_inputs()
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
+@parametrize("test_case", test_cases)
+def test_implementation_mv3(test_case, use_explicit_layout):
+    inputs = test_case.get_example_inputs(use_explicit_layout=use_explicit_layout)
     tester = CortexMTester(test_case.model, inputs)
     tester.test_implementation(
         qtol=20,
         calibration_samples=calibration_samples,
+        use_explicit_layout=use_explicit_layout,
+        compare_outputs=False,
     )
 
-    # Since qtol is high, also assert that top 1 output matches between reference quantized model and lowered model
-    ref = tester.get_artifact(StageType.EXPORT).module()(*inputs)
+    ref, scale = tester._calculate_reference_output(
+        tester.get_artifact(StageType.EXPORT), inputs
+    )
     result = tester.stages[StageType.SERIALIZE].run_artifact(inputs)
-    assert torch.argmax(ref) == torch.argmax(result[0]), "Mismatch in model outputs"
+    try:
+        tester._compare_outputs(ref, result, scale, qtol=20)
+        assert torch.argmax(ref) == torch.argmax(result[0]), "Mismatch in model outputs"
+    except AssertionError:
+        pytest.xfail("MLETORCH-1821 - Investigate mobilenet_v3_small flakyness")

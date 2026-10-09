@@ -124,6 +124,11 @@ GlobalWorkGrid quantized_linear_gwg(
   if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
     N_per_tile = 8;
   }
+  // The narrow-tile variant selected for Mali computes 2 output rows per
+  // invocation instead of 4.
+  if (shader.kernel_name.find("tiledm2") != std::string::npos) {
+    M_per_tile = 2;
+  }
 
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
@@ -263,6 +268,15 @@ vkapi::ShaderInfo pick_linear_qw_shader(
 
   if (weight_is_4bit && is_gemv_case) {
     kernel_name += "_coop";
+  } else if (
+      weight_is_4bit &&
+      (graph->device_is_mali() ||
+       graph->graphconfig().force_narrow_int4_tile)) {
+    // The default 4x8 output tile needs twice the accumulator registers of the
+    // float linear_vec tile (4x4), which Mali cannot afford: the same widening
+    // applied to the float kernel costs 5.4x on a Mali-G76 and only 1.12x on an
+    // Adreno 840. Halving the rows restores the float kernel's register count.
+    kernel_name += "_tiledm2";
   } else {
     kernel_name += "_tiled";
   }
@@ -750,6 +764,7 @@ void quantized_linear_impl(
   // 1. Device does not support int8 dot product
   // 2. Input is not quantized
   if (!graph.can_use_int8_dot_product() ||
+      graph.graphconfig().force_narrow_int4_tile ||
       input_quant_config.granularity == kNoQuantization) {
     add_linear_qw_node(
         graph,
@@ -944,6 +959,40 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output);
 }
 
+// aten._weight_int8pack_mm is what the AOT weight-only int8 fusion
+// (FuseQuantizedOpsTransform) emits. It carries the same operands as
+// et_vk.linear_q8csw minus the bias, so it runs through the same
+// implementation.
+void weight_int8pack_mm(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef fp_input = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef output = args.at(idx++);
+
+  const int64_t K = graph.size_at<int64_t>(-1, fp_input);
+
+  QuantizationConfig input_quant_config(32, kNoQuantization, {});
+  QuantizationConfig weight_quant_config(8, kPerChannel, {K});
+
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      kDummyValueRef, // input scale
+      kDummyValueRef, // input zp
+      weight_data,
+      kDummyValueRef, // weight sums
+      weight_scales_data,
+      kDummyValueRef, // weight zeros
+      kDummyValueRef, // group size
+      kDummyValueRef, // bias
+      output);
+}
+
 void linear_dq8ca_q4gsw(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -982,6 +1031,7 @@ void linear_dq8ca_q4gsw(
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
+  VK_REGISTER_OP(aten._weight_int8pack_mm.default, weight_int8pack_mm);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
 }
 

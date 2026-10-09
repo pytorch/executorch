@@ -129,6 +129,10 @@ define_overridable_option(
 )
 define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
+  EXECUTORCH_MLX_SWIFTPM_RESOURCES
+  "Load the MLX metallib from the ExecuTorch SwiftPM resource bundle" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
 )
 define_overridable_option(
@@ -236,7 +240,8 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_SHARED
-  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
+  "Build a consolidated ExecuTorch shared library (Linux, macOS and Windows)"
+  BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default

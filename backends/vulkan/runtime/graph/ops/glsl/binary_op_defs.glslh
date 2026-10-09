@@ -9,16 +9,6 @@
 #ifndef BINARY_OP_DEFS_GLSLH
 #define BINARY_OP_DEFS_GLSLH
 
-//
-// Power operation that handles negative and zero bases
-//
-// In GLSL, pow(x, y) is undefined for x < 0. This function provides
-// a safe implementation that:
-// - Handles x == 0 (returns 0 for y > 0, returns 1 for y == 0)
-// - Handles x < 0 by using absolute value and preserving sign for odd integer exponents
-// - Uses standard pow() for x > 0
-//
-
 // Operands are evaluated in the promoted compute type COMPUTE_T (and its vector
 // form COMPUTE_VEC4_T), which the including shader sets from
 // get_higher_precision_dtype(DTYPE, SCALAR_VALUE_TYPE) so mixed tensor/scalar
@@ -27,23 +17,61 @@
 
 // Scalar overload
 COMPUTE_T power_of(COMPUTE_T x, COMPUTE_T y) {
-  if (x == 0.0) {
-    // Handle 0^y: 0^0 = 1, 0^y = 0 for y > 0
-    return (y == 0.0) ? COMPUTE_T(1.0) : COMPUTE_T(0.0);
+  const float base = float(x);
+  float exponent = float(y);
+  const float infinity = uintBitsToFloat(0x7f800000u);
+  const float nan = uintBitsToFloat(0x7fc00000u);
+
+  if (input_is_half) {
+    exponent = round_to_half_rte(exponent);
   }
 
-  // Use absolute value to avoid undefined behavior
-  float result = pow(abs(float(x)), float(y));
+  if (exponent == 0.0 || base == 1.0) {
+    return COMPUTE_T(1.0);
+  }
+  if (isnan(base) || isnan(exponent)) {
+    return COMPUTE_T(nan);
+  }
 
-  // For negative bases with odd integer exponents, preserve the negative sign
-  if (x < 0.0) {
-    float int_y = round(float(y));
-    if (abs(float(y) - int_y) < 1e-5 && int(int_y) % 2 == 1) {
-      result = -result;
+  if (!input_is_half) {
+    // ATen uses sqrt/rsqrt for FP32 scalar exponents, but generic pow for half.
+    if (abs(exponent) == 0.5) {
+      if (base < 0.0) {
+        return COMPUTE_T(nan);
+      }
+      if (base == 0.0) {
+        const bool negative_zero = (floatBitsToUint(base) & 0x80000000u) != 0u;
+        return exponent > 0.0 ? x : COMPUTE_T(negative_zero ? -infinity : infinity);
+      }
+      return COMPUTE_T(exponent > 0.0 ? sqrt(base) : 1.0 / sqrt(base));
     }
   }
 
-  return COMPUTE_T(result);
+  const float magnitude = abs(base);
+  if (isinf(exponent)) {
+    if (magnitude == 1.0) {
+      return COMPUTE_T(1.0);
+    }
+    return COMPUTE_T((magnitude > 1.0) == (exponent > 0.0) ? infinity : 0.0);
+  }
+
+  const bool integral_exponent = trunc(exponent) == exponent;
+  const bool odd_exponent = integral_exponent && mod(abs(exponent), 2.0) == 1.0;
+  const bool negative = (floatBitsToUint(base) & 0x80000000u) != 0u && odd_exponent;
+
+  float result;
+  if (base == 0.0) {
+    result = exponent > 0.0 ? 0.0 : infinity;
+  } else if (isinf(base)) {
+    result = exponent > 0.0 ? infinity : 0.0;
+  } else if (base < 0.0 && !integral_exponent) {
+    result = nan;
+  } else {
+    // GLSL pow requires a positive base.
+    result = pow(magnitude, exponent);
+  }
+
+  return COMPUTE_T(negative ? -result : result);
 }
 
 #ifdef COMPUTE_VEC4_T

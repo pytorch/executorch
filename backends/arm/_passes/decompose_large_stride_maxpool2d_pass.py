@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -120,7 +121,7 @@ class DecomposeLargeStrideMaxPool2dForU55Pass(ArmOpTargetedPass):
 
         x = args[0]
         kernel = args[1]
-        stride = args[2] if len(args) >= 3 else kernel
+        stride = args[2] if len(args) >= 3 and args[2] else kernel
         padding = args[3] if len(args) >= 4 else (0, 0)
         dilation = args[4] if len(args) >= 5 else (1, 1)
         ceil_mode = args[5] if len(args) >= 6 else False

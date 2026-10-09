@@ -31,6 +31,7 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.arm.tosa.mapping import (
     TOSA_CONTROL_FLOW_REGION_NAME_META,
     TOSA_CONTROL_FLOW_SOURCE_NODE_META,
@@ -152,7 +153,7 @@ class TOSABackend(BackendDetails):
             artifact_path = ""
 
         version = tosa_spec.version
-        tosa_graph = ts.TosaSerializer(
+        tosa_graph = TosaSerializerWithConstantPool(
             artifact_path,
             targetMajor=version.major,
             targetMinor=version.minor,
@@ -251,7 +252,7 @@ class TOSABackend(BackendDetails):
         graph_module: GraphModule,
         edge_program: ExportedProgram,
         compile_spec: TosaCompileSpec,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: TosaSerializerWithConstantPool,
         debug_hook: DebugHook | None,
         submodule_name: str | None = None,
         containing_graph_module: GraphModule | None = None,
@@ -262,9 +263,12 @@ class TOSABackend(BackendDetails):
             graph_module (GraphModule): Module to lower recursively.
             edge_program (ExportedProgram): Original exported program.
             compile_spec (TosaCompileSpec): Backend options with TOSA settings.
-            tosa_graph (ts.TosaSerializer): Serializer receiving operators.
+            tosa_graph (TosaSerializerWithConstantPool): Serializer receiving
+                operators.
             debug_hook (DebugHook | None): Optional debug instrumentation.
             submodule_name (str | None): Name used when visiting nested blocks.
+            containing_graph_module (GraphModule | None): Parent graph module for
+                nested control flow.
 
         Raises:
             RuntimeError: If an FX node with an unsupported op kind is found.

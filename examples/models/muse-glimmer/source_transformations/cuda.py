@@ -12,6 +12,7 @@ TurboQuant KV cache. Sliding-window RoPE layers retain their ring buffers.
 
 from __future__ import annotations
 
+import json
 import types
 
 # Register the length-aware global-attention operator.
@@ -19,6 +20,7 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
+import executorch.extension.llm.cache.update_and_attend  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -30,11 +32,16 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
     rotate_half,
 )
-from executorch.examples.models.muse_glimmer.model.model import FlatKVCache, RingKVCache
+from executorch.examples.models.muse_glimmer.model.model import (
+    apply_rotary_emb,
+    FlatKVCache,
+    RingKVCache,
+)
 from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
     sample,
 )
-from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
+
+from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.library import triton_op, wrap_triton
 
 
@@ -504,6 +511,9 @@ def _lenaware_attention_forward(
     routes L_q==1 decode through the length-aware split-K flash-decoding kernel.
     Sliding-window layers are not patched (they already use a bounded ring
     buffer).
+
+    The global mask is standard causal, so reconstruct it analytically inside
+    SDPA from ``kv_len`` and avoid materializing/reading the dense mask.
     """
     B, T, _ = x.shape
 
@@ -536,14 +546,15 @@ def _lenaware_attention_forward(
 
     # scale=self.attn_scale absorbs the muP query scaling and 1/sqrt(D).
     # enable_gqa=True lets the kernel handle the 16:1 head ratio without
-    # materializing expanded K/V.
+    # materializing expanded K/V. With kv_len, is_causal uses bottom-right
+    # alignment for chunked prefill and decode.
     y = torch.ops.triton.sdpa(
         xq,
         k,
         v,
-        attn_mask,
+        None,
         0.0,  # dropout_p
-        False,  # is_causal: attn_mask already encodes causal masking
+        True,
         self.attn_scale,
         True,  # enable_gqa
         kv_len,
@@ -558,6 +569,99 @@ def _lenaware_attention_forward(
 
     y = y.reshape(B, T, -1)
     return self.o_proj(y)
+
+
+def _offgraph_attention_forward(
+    self,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    attn_mask: torch.Tensor,
+) -> torch.Tensor:
+    B, T, _ = x.shape
+    h = self.qkv_proj_norm(x)
+    xq, xk, xv, og = _project_qkvo(self, h)
+    xq = xq.view(B, T, self.n_heads, self.head_dim)
+    xk = xk.view(B, T, self.n_kv_heads, self.head_dim)
+    xv = xv.view(B, T, self.n_kv_heads, self.head_dim)
+
+    if self.q_norm is not None:
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
+
+    xq = xq.transpose(1, 2)
+    xk = xk.transpose(1, 2)
+    xv = xv.transpose(1, 2)
+    if self.use_rope:
+        freqs = torch.outer(input_pos.float(), self.inv_freq)
+        cos = torch.cos(freqs).unsqueeze(0).unsqueeze(0)
+        sin = torch.sin(freqs).unsqueeze(0).unsqueeze(0)
+        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+
+    # The neutral op takes per-token positions as [q_len, n_dims].
+    y = torch.ops.kvcache.update_and_attend(
+        xq,
+        xk,
+        xv,
+        input_pos.reshape(-1, 1),
+        self.layer_idx,
+        self.attn_scale,
+        xq.dtype,
+    )
+    y = y.transpose(1, 2).contiguous()
+    if self.use_o_gate and og is not None:
+        og = og.view(B, T, self.n_heads, self.head_dim)
+        y = torch.sigmoid(og) * y
+    return self.o_proj(y.reshape(B, T, -1))
+
+
+def enable_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
+    """Replace graph-owned caches and return the CUDA lowering manifest.
+
+    ``max_write`` is the largest number of tokens one forward writes, which is
+    what a ring layer sizes its slots from.
+    """
+    layers = []
+    for layer in model.layers:
+        attn = layer.self_attn
+        # Only what the graph cannot express: head counts, head dim and dtype
+        # are read off the step's K tensor by the lowering pass.
+        layers.append(
+            {
+                "layer_id": attn.layer_idx,
+                "policy": "ring" if attn.is_sliding else "flat",
+                "window": attn.window_size if attn.is_sliding else 0,
+            }
+        )
+        del attn.kv_cache
+        attn.forward = types.MethodType(_offgraph_attention_forward, attn)
+
+    return json.dumps(
+        {
+            "version": 1,
+            "maximum_capacity": model.config.max_seq_len,
+            "max_write": max_write,
+            "layers": layers,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def offgraph_kv_cache_geometry(model: nn.Module) -> dict[str, object]:
+    """Neutral cache-geometry constant methods for the off-graph runtime.
+
+    The runtime reads these through read_cache_geometry() rather than parsing
+    the lowering manifest, so CUDA and MLX describe a cache the same way.
+    """
+    kv_heads = []
+    head_dims = []
+    windows = []
+    for layer in model.layers:
+        attn = layer.self_attn
+        kv_heads.append(attn.n_kv_heads)
+        head_dims.append(attn.head_dim)
+        windows.append(attn.window_size if attn.is_sliding else 0)
+    return write_cache_geometry(kv_heads, head_dims, windows)
 
 
 def cuda_source_transformations(
@@ -595,11 +699,14 @@ def cuda_source_transformations(
             n_bounded += 1
         print(
             f"[muse_glimmer cuda] length-aware SDPA: bounded {n_bounded} global-attention "
-            f"layers to runtime kv_len (O(context) attention)"
+            "layers to runtime kv_len (O(context) attention); "
+            "in-kernel causal mask (dense mask dropped)"
         )
         return
 
     config = model.config
+    from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
+
     n_swapped = 0
     for layer in model.layers:
         attn = layer.self_attn

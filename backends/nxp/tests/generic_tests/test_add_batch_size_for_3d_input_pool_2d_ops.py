@@ -15,6 +15,13 @@ from executorch.backends.nxp.aten_passes.add_batch_size_for_3d_input_pool_2d_ops
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
+from executorch.backends.nxp.backend.ops_aliases import (
+    AdaptiveAvgPool2D,
+    AvgPool2D,
+    GetItem,
+    MaxPool2DWithIndices,
+    ViewCopy,
+)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -22,18 +29,11 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
     AdaptiveAvgPool2dModule,
     AvgPool2dModule,
     MaxPool2dModule,
-)
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    AdaptiveAvgPool2D,
-    AvgPool2D,
-    GetItem,
-    MaxPool2DWithIndices,
-    ViewCopy,
 )
 
 

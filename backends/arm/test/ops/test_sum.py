@@ -8,6 +8,7 @@ from typing import Callable, Tuple
 import pytest
 
 import torch
+
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -77,6 +78,16 @@ def test_sum_dim_intlist_scalar_input_tosa_FP_not_delegated():
         {
             "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
         },
+    )
+    pipeline.run()
+
+
+def test_sum_bool_tosa_INT() -> None:
+    pipeline = TosaPipelineINT(
+        Sum(),
+        (torch.ones(1, dtype=torch.bool), [], False),
+        aten_op,
+        exir_op=[],
     )
     pipeline.run()
 

@@ -22,6 +22,8 @@ using executorch::runtime::CompileSpec;
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+#include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
 namespace executorch {
 namespace backends {
@@ -108,7 +110,8 @@ class VgfRepr {
       uint32_t queue_family_index = UINT32_MAX,
       bool neural_statistics_requested = false,
       bool neural_statistics_device_enabled = false,
-      int neural_statistics_mode_index = 1)
+      int neural_statistics_mode_index = 1,
+      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {})
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
@@ -117,7 +120,8 @@ class VgfRepr {
         vk_queue_family_index(queue_family_index),
         neural_statistics_requested_(neural_statistics_requested),
         neural_statistics_device_enabled_(neural_statistics_device_enabled),
-        neural_statistics_mode_index_(neural_statistics_mode_index) {}
+        neural_statistics_mode_index_(neural_statistics_mode_index),
+        host_memory_import_capabilities_(host_memory_import_capabilities) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -150,6 +154,11 @@ class VgfRepr {
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
 
+  // Metadata for each IO entry. The ExecuTorch argument index is assigned
+  // later from the model boundary mapping and
+  // must not be assumed from the IO index.
+  std::vector<VgfZeroCopyIoMetadata> zero_copy_io_metadata;
+
   // Mapping to persistent IO memory
   static bool map_io(IO* io, void** handle) {
     if (io->persistent_memory == nullptr) {
@@ -175,8 +184,31 @@ class VgfRepr {
     return neural_statistics_requested_;
   }
 
+  bool host_memory_import_advertised() const {
+    return host_memory_import_capabilities_.physical_device_advertised;
+  }
+
+  bool host_memory_import_enabled() const {
+    return host_memory_import_capabilities_.logical_device_enabled;
+  }
+
+  VkDeviceSize min_imported_host_pointer_alignment() const {
+    return host_memory_import_capabilities_.min_imported_host_pointer_alignment;
+  }
+
+  const VgfHostMemoryImportCapabilities& host_memory_import_capabilities()
+      const {
+    return host_memory_import_capabilities_;
+  }
+
   ~VgfRepr() {
     free_vgf();
+    if (vk_pipeline_cache != VK_NULL_HANDLE) {
+      // The cache is private to this VgfRepr, so no other delegate instance can
+      // be accessing it while this object is being destroyed.
+      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    }
   }
 
  private:
@@ -188,9 +220,16 @@ class VgfRepr {
   VkCommandPool vk_command_pool;
   uint32_t vk_queue_family_index = UINT32_MAX;
 
+  // Owned by this VgfRepr. One cache is reused across all graph and compute
+  // segments in this loaded VGF, but is not shared with independent VgfRepr
+  // instances. flags=0 uses Vulkan's default internally synchronized cache
+  // mode.
+  VkPipelineCache vk_pipeline_cache = VK_NULL_HANDLE;
+
   bool neural_statistics_requested_ = false;
   bool neural_statistics_device_enabled_ = false;
   int neural_statistics_mode_index_ = 1;
+  VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;

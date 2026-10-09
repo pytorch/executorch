@@ -9,6 +9,11 @@
 # scheduler and the executor seam are header-only and free of ExecuTorch runtime
 # types; the runner owns a thread, so this is a static library rather than an
 # INTERFACE target.
+#
+# extension_llm_batching_util is what every executor over a multi-sequence cache
+# shares: the session table, batch packing and per-session sampling.
+# extension_llm_batching_module implements the seam against a program and a KV
+# cache, and so carries the runtime types the seam itself is kept clear of.
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -26,8 +31,35 @@ target_compile_options(extension_llm_batching PUBLIC ${_common_compile_options})
 find_package(Threads REQUIRED)
 target_link_libraries(extension_llm_batching PUBLIC Threads::Threads)
 
+add_library(extension_llm_batching_util util/session_table.cpp)
+target_link_libraries(
+  extension_llm_batching_util
+  PUBLIC extension_llm_batching extension_llm_cache executorch_core
+  PRIVATE extension_llm_sampler extension_tensor
+)
+target_include_directories(
+  extension_llm_batching_util PUBLIC ${_common_include_directories}
+)
+target_compile_options(
+  extension_llm_batching_util PUBLIC ${_common_compile_options}
+)
+
+add_library(extension_llm_batching_module module_executor.cpp)
+target_link_libraries(
+  extension_llm_batching_module
+  PUBLIC extension_llm_batching extension_llm_batching_util extension_llm_cache
+         extension_module extension_tensor
+)
+target_include_directories(
+  extension_llm_batching_module PUBLIC ${_common_include_directories}
+)
+target_compile_options(
+  extension_llm_batching_module PUBLIC ${_common_compile_options}
+)
+
 install(
-  TARGETS extension_llm_batching
+  TARGETS extension_llm_batching extension_llm_batching_util
+          extension_llm_batching_module
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES

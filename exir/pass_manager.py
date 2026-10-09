@@ -1,12 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 import copy
-import inspect
 import logging
 import operator
 from typing import Callable, List, Optional, Type, TypeAlias, Union
@@ -34,9 +34,11 @@ PassType: TypeAlias = Union[
 ]
 
 
-def _get_pass_name(fn: PassType) -> str:
+def _get_pass_name(fn: object) -> str:
     """Returns a human-readable name for a pass."""
-    return fn.__name__ if inspect.isfunction(fn) else type(fn).__name__
+    if hasattr(fn, "__name__"):
+        return fn.__name__
+    return type(fn).__name__
 
 
 def _can_eliminate_common_getitems(gm: torch.fx.GraphModule) -> bool:
@@ -238,7 +240,10 @@ class ExportedProgramPassManager(fx.PassManager):
                             exported_program._graph_module = res.graph_module
                             exported_program._graph_signature = new_graph_signature
                             exported_program._range_constraints = (
-                                _get_updated_range_constraints(res.graph_module)
+                                _get_updated_range_constraints(
+                                    res.graph_module,
+                                    exported_program.range_constraints,
+                                )
                             )
                             pass_modified = True
 
