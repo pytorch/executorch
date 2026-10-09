@@ -14,7 +14,7 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
 
 REMINDER_COMMENT = (
     REMINDER_MARKER
-    + f"This issue/PR has been marked as 'need-user-input'. "
+    + f"\nHi @{0}, this issue/PR has been marked as 'need-user-input'. "
     + f"Please respond or provide input. If we don't hear back in {DAYS_BEFORE_REMINDER} days, this will be closed."
 )
 CLOSE_COMMENT = (
@@ -56,7 +56,7 @@ def main():
 
         # ---- AUTOMATION LOGIC ----
         if any(
-            c.user.login == issue.user.login
+            c.user.login == issue.user.login #check only for author reply
             for c in cycle
             if REMINDER_MARKER not in (c.body or "")
         ):
@@ -64,12 +64,6 @@ def main():
             if not DRY_RUN:
                 issue.remove_from_labels(LABEL)
             continue
-        elif (now - reminders[0].created_at).days >= DAYS_BEFORE_CLOSE:
-            print(f"Close issue/PR due to inactivity")
-            if not DRY_RUN:
-                issue.create_comment(CLOSE_COMMENT)
-                issue.edit(state="closed")
-                issue.remove_from_labels(LABEL)
         elif not reminders:
             if (now - labeled_at).days >= DAYS_BEFORE_REMINDER:
                 user = issue.user.login
@@ -77,13 +71,18 @@ def main():
                 message = REMINDER_COMMENT.format(user)
                 if not DRY_RUN:
                     issue.create_comment(message)
+        elif (now - reminders[0].created_at).days >= DAYS_BEFORE_CLOSE:
+            print("Close issue/PR due to inactivity")
+            if not DRY_RUN:
+                issue.create_comment(CLOSE_COMMENT)
+                issue.edit(state="closed")
+                issue.remove_from_labels(LABEL)
         elif (now - reminders[-1].created_at).days >= REMINDER_COOLDOWN_DAYS:
             user = issue.user.login
             message = REMINDER_COMMENT.format(user)
             print(f"Posting follow-up reminder for {user}")
             if not DRY_RUN:
                 issue.create_comment(message)
-        
 
 
 if __name__ == "__main__":
