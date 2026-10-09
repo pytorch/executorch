@@ -13,11 +13,15 @@ import os
 import shutil
 import threading
 import typing
+import weakref
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
+from executorch.backends.cuda.autotune.inputs import autotune_input_scenarios
+from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
@@ -111,6 +115,40 @@ def _keep_triton_reduction_loads_loop_scoped():
         yield
     finally:
         IndexingOptions.has_rmask = orig_has_rmask
+
+
+_SMALL_GPU_GUARD = threading.local()
+
+
+@contextlib.contextmanager
+def _allow_triton_templates_on_small_gpus():
+    """Let Inductor use Triton templates on GPUs below its 68-SM floor. This
+    backend autotunes with Triton only, so otherwise a matmul or convolution
+    has no Triton choices left.
+
+    Only threads inside this context get the override; other threads get the
+    original answer.
+
+    TODO: remove once Inductor skips the floor when ATen is not an allowed
+    backend (https://github.com/pytorch/pytorch/issues/141690).
+    """
+    from torch._inductor import utils as inductor_utils
+
+    orig_is_big_gpu = inductor_utils.is_big_gpu
+
+    def _is_big_gpu(index_or_device=0) -> bool:
+        return getattr(_SMALL_GPU_GUARD, "active", False) or orig_is_big_gpu(
+            index_or_device
+        )
+
+    prev_active = getattr(_SMALL_GPU_GUARD, "active", False)
+    inductor_utils.is_big_gpu = _is_big_gpu
+    _SMALL_GPU_GUARD.active = True
+    try:
+        yield
+    finally:
+        _SMALL_GPU_GUARD.active = prev_active
+        inductor_utils.is_big_gpu = orig_is_big_gpu
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
@@ -420,6 +458,29 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     return value == "ON"
 
 
+CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
+
+# The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
+# this thread: they can be parked on the CPU when an autotune capture runs out
+# of memory, since AOTI autotunes on random inputs rather than on them. Held
+# weakly, so they live exactly as long as the program (or a decomposed copy
+# sharing them) does.
+_MOVED_TENSORS = threading.local()
+
+
+def _track_moved_tensors(program) -> None:
+    tensors = list(getattr(program, "state_dict", {}).values())
+    tensors += list(getattr(program, "constants", {}).values())
+    _MOVED_TENSORS.refs = [
+        weakref.ref(t) for t in tensors if isinstance(t, torch.Tensor) and t.is_cuda
+    ]
+
+
+def _moved_program_tensors() -> List[torch.Tensor]:
+    live = (ref() for ref in getattr(_MOVED_TENSORS, "refs", ()))
+    return [t for t in live if t is not None]
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -711,51 +772,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_sort_stable": None,
             "aoti_torch_cuda_randint_low_out": None,
-            "executorch_cuda::int4_plain_mm": None,
-            "aoti_torch_cuda_int4_plain_mm": None,
-            "executorch_cuda::int5_plain_mm": None,
-            "aoti_torch_cuda_int5_plain_mm": None,
-            "executorch_cuda::int6_plain_mm": None,
-            "aoti_torch_cuda_int6_plain_mm": None,
-            "executorch_cuda::int8_plain_mm": None,
-            "aoti_torch_cuda_int8_plain_mm": None,
         }
-
-    @staticmethod
-    def _get_custom_ops_to_c_shim_options() -> Dict[str, Any]:
-        if torch.version.hip is not None:
-            return {}
-        try:
-            return {
-                "aot_inductor.custom_ops_to_c_shims": {
-                    torch.ops.executorch_cuda.int4_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int4_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "int64_t, AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int5_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int5_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int6_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int6_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, int64_t, "
-                        "AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int8_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int8_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                    ],
-                }
-            }
-        except AttributeError:
-            # Custom ops may not be registered in this process.
-            return {}
 
     @classmethod
     def get_decomposition_table(cls) -> Dict[Any, Any]:
@@ -769,7 +786,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
 
         The Triton kernel replacement behavior can be controlled via compile_specs:
-        - triton_kernel_mode="ON": Always use Triton kernels
+        - triton_kernel_mode="ON": Use Triton kernels for the calls they support; other calls use the regular lowering
         - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
         """
         # Parse compile_specs for triton_kernel_mode
@@ -837,8 +854,6 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
-        options.update(cls._get_custom_ops_to_c_shim_options())
-
         # Parse compile_specs to check for platform
 
         platform = "linux"
@@ -904,8 +919,10 @@ class CudaBackend(AotiBackend, BackendDetails):
         compilation for the CUDA backend. Each manager is documented at
         its own `enter_context` call site below.
 
-        The optional shared-memory target applies to every CUDA compilation.
-        The low-memory export monkey-patch (CPU clones for mutated buffers)
+        The optional shared-memory target applies to every CUDA compilation,
+        and so does the small-GPU override that lets Inductor use Triton
+        templates below 68 SMs (skipped on ROCm). The low-memory export
+        monkey-patch (CPU clones for mutated buffers)
         is gated on the ``low_memory_mode`` compile spec — only models that
         explicitly opt in (currently Qwen3.5 MoE) get it. Other models go
         through the unmodified AOTI codepath, which avoids regressions in
@@ -914,6 +931,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs for low_memory_mode (default OFF). compile_specs
         # may be None when called without specs (parity with base default).
         low_memory_mode = "OFF"
+        # On ROCm a failed capture invalidates the stream the rest of the
+        # compile runs on (hipErrorStreamCaptureInvalidated).
+        cuda_graph_autotune_timing = torch.version.hip is None
         for spec in compile_specs or []:
             if spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
@@ -922,6 +942,13 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Invalid low_memory_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 low_memory_mode = mode
+            elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
+                cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
+        cell_layout = any(
+            spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            for spec in compile_specs or []
+        )
 
         @contextlib.contextmanager
         def _combined():
@@ -929,10 +956,12 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # Force any remaining PyTorch SDPA ops to use the MATH
                 # backend during compilation so AOTI can lower / decompose
                 # them. SDPA ops already replaced by Triton kernels via
-                # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
-                # only the fallback for the `triton_kernel_mode="OFF"` path.
+                # `ReplaceEdgeOpWithTritonOpPass` are unaffected.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(target_smem_context())
+                # On ROCm, is_big_gpu gates on architecture, not SM count.
+                if torch.version.hip is None:
+                    stack.enter_context(_allow_triton_templates_on_small_gpus())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.
@@ -947,6 +976,38 @@ class CudaBackend(AotiBackend, BackendDetails):
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
                     trim_host_memory()
+                # Autotune the kernels that declare representative values
+                # for data-dependent arguments (e.g. a KV length) over those
+                # values instead of Inductor's zero-filled integer tensors.
+                # See autotune/inputs.py.
+                stack.enter_context(autotune_input_scenarios())
+                # Pick each @autotune_launch_param value (e.g. a split-K) by
+                # timing its candidates on this device. See
+                # autotune/launch_params.py.
+                stack.enter_context(
+                    autotune_launch_params(offload=_moved_program_tensors)
+                )
+                if cuda_graph_autotune_timing:
+                    # Time every autotune candidate (Inductor kernels, matmul
+                    # templates, our triton.autotune ops) with CUDA-graph
+                    # replays, so a CPU busy compiling does not decide the
+                    # pick. See autotune/cuda_graph_timing.py.
+                    stack.enter_context(
+                        cuda_graph_timing(offload=_moved_program_tensors)
+                    )
+                if cell_layout:
+                    # The cell layout's step buffers are constants the graph
+                    # only reads, while the runtime rewrites them before every
+                    # forward. Folding them, or inlining a small one as a
+                    # literal, would evaluate them at compile time -- on
+                    # storage that does not exist yet -- and bake the result
+                    # into the program.
+                    stack.enter_context(
+                        torch._inductor.config.patch(
+                            joint_graph_constant_folding=False,
+                            always_keep_tensor_constants=True,
+                        )
+                    )
                 yield
 
         return _combined()
@@ -986,8 +1047,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         from torch.export.passes import move_to_device_pass
 
         if not cls._is_low_memory_mode(compile_specs):
-            return move_to_device_pass(edge_program, device)
-        return _move_to_device_resize_kv(edge_program, device)
+            moved = move_to_device_pass(edge_program, device)
+        else:
+            moved = _move_to_device_resize_kv(edge_program, device)
+        _track_moved_tensors(moved)
+        return moved
 
     @classmethod
     def release_moved_tensors(

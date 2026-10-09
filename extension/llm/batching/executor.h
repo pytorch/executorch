@@ -9,8 +9,8 @@
 #pragma once
 
 // The seam between the batched runner and whatever actually runs a forward.
-// The interface is expressed in plain tokens and positions, so a fake needs
-// neither a .pte nor a GPU.
+// Execution carries raw tokens or opaque inputs and logical positions, so a
+// fake needs neither a .pte nor a GPU.
 //
 // Sessions live here because the cache owns their identity. Until a batched
 // cache exists an implementation may number them however it likes.
@@ -22,7 +22,7 @@
 //
 // -- Session state ----------------------------------------------------------
 //
-// A session's state is a sequence of committed tokens, and its length is the
+// A session's state is a sequence of committed positions, and its length is the
 // session's position: the absolute position the next token will occupy. A
 // freshly opened session has length 0. Nothing here says the state is
 // positionally addressable -- a KV cache and a recurrent state both satisfy
@@ -72,7 +72,8 @@ class ET_EXPERIMENTAL Executor {
   // Optional one-time setup, called on the engine thread before any other
   // method.
   //
-  // false = the runner admits no work, so open_session_async() reports nullopt.
+  // false or an exception = the runner admits no work, so
+  // open_session_async() reports nullopt.
   virtual bool initialize() {
     return true;
   }
@@ -119,8 +120,26 @@ class ET_EXPERIMENTAL Executor {
       const SamplingParams& params,
       std::optional<std::uint64_t> seed) = 0;
 
+  // Metadata-only compatibility check on the engine thread after initialize().
+  // Stable and repeatable for an initialized executor and input, independent of
+  // transient capacity or session state; must not open or mutate sessions.
+  // Preflight and generation admission may both call this. False rejects the
+  // input before any tasks are queued. Raw tokens bypass this check.
+  virtual bool accepts(const PreparedInput& /*input*/) const {
+    return false;
+  }
+
   // Run one batch. `out.outputs` is resized to batch.inputs.size() and filled
-  // position-wise: outputs[i] answers inputs[i].
+  // position-wise: outputs[i] answers inputs[i]. Opaque backing must be
+  // compatible with this executor and have stable logical size and layout.
+  // Lazy cache mutation is engine-thread-only and must preserve logical
+  // contents. Backing can outlive this executor and be released on another
+  // thread, so its destruction must be thread-safe and must not depend on this
+  // executor's life.
+  //
+  // Cancellation does not interrupt an in-progress execute() call. Work already
+  // submitted in that batch may run to completion before cancellation takes
+  // effect.
   //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or
@@ -142,7 +161,9 @@ class ET_EXPERIMENTAL Executor {
   //
   // A session may appear in more than one input of a batch when consecutive
   // prefill chunks of its prompt land together. They arrive in order, with
-  // contiguous ranges, and at most one has produce_output set.
+  // contiguous ranges, and at most one has produce_output set. Their payload
+  // alternatives may differ: raw pending-token prefill can immediately precede
+  // prepared chunks for the same session, including within one batch.
   //
   // false = the batch failed as a whole; there is no partial success. The
   // runner completes every task in it as Failed and poisons their sessions,

@@ -44,6 +44,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_ne.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_permute_copy.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_pow.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_relu.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_remainder.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_rsqrt.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_select_copy.cpp"
@@ -62,6 +63,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_layer_norm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_neg.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_relu.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
@@ -108,6 +110,7 @@ set(_generic_custom_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv2d.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_max_pool2d.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_matmul.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_fully_connected_packed.cpp"
 )
 
 # Custom ops that are needed to run the test model.

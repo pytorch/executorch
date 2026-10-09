@@ -2421,7 +2421,8 @@ INCLUDE_FILE_PATTERNS  =
 # This tag requires that the tag ENABLE_PREPROCESSING is set to YES.
 
 PREDEFINED             = ET_MODULE_NAMESPACE=module \
-                         ET_BUNDLED_MODULE_NAMESPACE=bundled_module
+                         ET_BUNDLED_MODULE_NAMESPACE=bundled_module \
+                         ET_RUNTIME_NAMESPACE=runtime
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then this
 # tag can be used to specify a list of macro names that should be expanded. The

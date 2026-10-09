@@ -123,6 +123,46 @@ or all ExecuTorch and delegate overhead. Use
 [ETDump](https://docs.pytorch.org/executorch/stable/etdump.html) when the total
 runtime behavior is the metric of interest.
 
+## Visualize VGF quantization quality
+
+The VGF graph-wide quantization assessment can also be opened in Model
+Explorer. The visualization uses the FP32 exported graph as the stable source
+structure and overlays the quantized counterpart's metrics using module FQN
+identity.
+
+Install the existing Arm Model Explorer dependencies with
+`examples/arm/setup.sh --enable-model-explorer`. If the setup script installed
+them into the default scratch directory, make the isolated packages visible to
+the Python process:
+
+```bash
+export PYTHONPATH="$PWD/examples/arm/arm-scratch/model-explorer:${PYTHONPATH:-}"
+```
+
+Then run the toy end-to-end flow:
+
+```bash
+python -m examples.arm.vgf_quantization_assessment_example \
+  --model-explorer \
+  --include-metadata
+```
+
+Model Explorer exposes three selectable node-data views:
+
+- `Error (MSE)`: low error is green and the largest model-relative error is red.
+- `SNR (dB)`: low SNR is red and high SNR is green.
+- `Saturation (%)`: low saturation is green and high saturation is red.
+
+Assessed FX nodes are grouped by module FQN. Selecting either a leaf node or
+its FQN group shows the module identity and the corresponding precision, MSE,
+SNR, cosine similarity, and saturation percentage. Parent groups retain Model
+Explorer's aggregated node-data summaries, making it possible to collapse the
+graph and still locate error-heavy regions.
+
+This first visualization intentionally stops at the exported/PT2E graph. It
+does not claim provenance through TOSA, Model Converter, or VGF runtime
+operations; those correlations require the later stable debug/provenance work.
+
 ## Current limitations
 
 - Performance overlays are supported for the TOSA view, not the PTE view.

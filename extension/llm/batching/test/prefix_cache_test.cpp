@@ -110,8 +110,9 @@ class HistoryExecutor final : public Executor {
       }
       state.tokens.resize(static_cast<std::size_t>(start));
       Tokens supplied(
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset,
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset +
+              input.size);
       state.tokens.insert(state.tokens.end(), supplied.begin(), supplied.end());
       state.written =
           std::max(state.written, static_cast<Position>(state.tokens.size()));
@@ -305,6 +306,44 @@ class PrefixCacheTest : public ::testing::Test {
   HistoryExecutor executor;
   std::unique_ptr<Runner> runner;
 };
+
+TEST_F(PrefixCacheTest, MixedIdentityComparisonIgnoresSpanPartitioning) {
+  const auto tokens = std::make_shared<const Tokens>(Tokens{1, 2, 3});
+  const ContentKey image{7};
+  const PrefixIdentity full{
+      {TokenSpan{tokens, 0, 2},
+       OpaqueSpan{image, 0, 4},
+       TokenSpan{tokens, 2, 1}}};
+  const PrefixIdentity split{
+      {TokenSpan{tokens, 0, 1},
+       TokenSpan{tokens, 1, 1},
+       OpaqueSpan{image, 0, 2},
+       OpaqueSpan{image, 2, 2},
+       TokenSpan{tokens, 2, 1}}};
+  const auto max = std::numeric_limits<std::size_t>::max();
+  for (const auto& item : std::vector<std::pair<PrefixIdentity, std::size_t>>{
+           {split, 7},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{ContentKey{8}, 0, 4}}}, 2},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{image, 1, 4}}}, 2},
+           {{{TokenSpan{tokens, 0, 2}, OpaqueSpan{image, 0, 2}}}, 4},
+           {{{TokenSpan{tokens, 0, 3}}}, 2},
+           {{{TokenSpan{nullptr, 0, 1}}}, 0},
+           {{{TokenSpan{tokens, 2, 2}}}, 0},
+           {{{OpaqueSpan{image, max, 1}}}, 0},
+           {{{OpaqueSpan{image, 0, max}, OpaqueSpan{image, 0, 1}}}, 0},
+           {{{TokenSpan{tokens, 0, 0}}}, 0},
+           {{}, 0}}) {
+    EXPECT_EQ(common_prefix(full, item.first), item.second);
+    EXPECT_EQ(common_prefix(item.first, full), item.second);
+  }
+  PrefixCache cache(1);
+  ASSERT_TRUE(cache.insert_identity(full, snapshot({1, 2, 7, 7, 7, 7, 3})));
+  ASSERT_TRUE(cache.insert_identity(split, snapshot({1, 2, 7, 7, 7, 7, 3})));
+  EXPECT_EQ(cache.size(), 1u);
+  auto hit = cache.lookup_identity(split);
+  ASSERT_TRUE(hit);
+  EXPECT_EQ(hit->matched_tokens, 6u);
+}
 
 TEST_F(PrefixCacheTest, EqualShorterAndExtendedPromptsReplayTheFinalToken) {
   PrefixCache cache(2);

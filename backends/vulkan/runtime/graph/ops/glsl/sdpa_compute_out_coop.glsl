@@ -67,7 +67,11 @@ $if GQA:
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "sdpa_fp_out_tile_store.glslh"
 
+#ifdef GQA
+shared FPOutTile grouped_sums[group_size][NUM_WORKERS_PER_OUT];
+#else
 shared FPOutTile partial_sums[NUM_WORKERS_PER_OUT];
+#endif
 
 #ifdef GQA
 
@@ -207,31 +211,33 @@ void main() {
     }
   }
 
-  // Combine the per-worker partial sums for each group with a shared-memory tree
-  // reduction. partial_sums is reused across groups; no trailing barrier is
-  // needed because each worker only writes its own slot and the next group's
-  // leading barrier orders those writes after this group's reduction reads
-  // (worker 0's store reads only slot 0, which only worker 0 writes).
   [[unroll]] for (int g = 0; g < MAX_GROUP_SIZE; ++g) {
     if (g >= G) {
       break;
     }
-    partial_sums[worker_id] = out_tile[g];
-
+    grouped_sums[g][worker_id] = out_tile[g];
+  }
+  memoryBarrierShared();
+  barrier();
+  for (int i = NUM_WORKERS_PER_OUT / 2; i > 0; i /= 2) {
+    if (worker_id < i) {
+      [[unroll]] for (int g = 0; g < MAX_GROUP_SIZE; ++g) {
+        if (g >= G) {
+          break;
+        }
+        accumulate_out_tile_with_out_tile(
+            grouped_sums[g][worker_id], grouped_sums[g][worker_id + i]);
+      }
+    }
     memoryBarrierShared();
     barrier();
-
-    for (int i = NUM_WORKERS_PER_OUT / 2; i > 0; i /= 2) {
-      if (worker_id < i) {
-        accumulate_out_tile_with_out_tile(
-            partial_sums[worker_id], partial_sums[worker_id + i]);
+  }
+  if (worker_id == 0) {
+    [[unroll]] for (int g = 0; g < MAX_GROUP_SIZE; ++g) {
+      if (g >= G) {
+        break;
       }
-      memoryBarrierShared();
-      barrier();
-    }
-
-    if (worker_id == 0) {
-      out_tile[g] = partial_sums[0];
+      out_tile[g] = grouped_sums[g][0];
       store_sdpa_out_tile_with_checks(
           out_tile[g], d4, s, q_h_base + g, D4, S, Q_H);
     }

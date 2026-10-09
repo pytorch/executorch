@@ -19,3 +19,14 @@ fbcode_target(_kind = runtime.cxx_library,
     external_deps = ["nlohmann_json"],
     visibility = ["PUBLIC"],
 )
+
+fbcode_target(_kind = runtime.cxx_library,
+    name = "multiplexed_worker",
+    srcs = ["multiplexed_worker.cpp"],
+    headers = ["multiplexed_worker_test.h"],
+    exported_headers = ["multiplexed_worker.h"],
+    header_namespace = "executorch/examples/llm_server/cpp",
+    exported_deps = ["//executorch/extension/llm/serving:serving_runtime"],
+    external_deps = ["nlohmann_json"],
+    visibility = ["PUBLIC"],
+)

@@ -26,6 +26,8 @@ class ZipReader {
   struct Entry {
     uint64_t index = 0;
     size_t size = 0;
+    // Where the member's data starts in a memory-backed archive, when known.
+    std::optional<size_t> data_offset;
   };
 
   struct StringHash {
@@ -43,6 +45,7 @@ class ZipReader {
   std::vector<std::string> names_;
 
   explicit ZipReader(std::unique_ptr<Impl> impl);
+  void locate_member_data();
   const Entry* find_entry(std::string_view name) const;
   void read_entry_into(
       std::string_view name,
@@ -68,6 +71,11 @@ class ZipReader {
 
   // Member size, or nullopt when the member is absent.
   std::optional<size_t> member_size(std::string_view name) const;
+
+  // A member's bytes in place within a memory-backed archive. nullopt when the
+  // member is absent, the reader is file-backed, or the archive's local headers
+  // are not laid out back to back in central-directory order.
+  std::optional<ByteSpan> member_bytes(std::string_view name) const;
 
   // Copies one complete member.
   std::vector<uint8_t> read(std::string_view name) const;

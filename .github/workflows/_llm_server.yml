@@ -44,7 +44,9 @@ jobs:
 
         python -m pytest -q \
           examples/llm_server/python/tests \
-          examples/models/muse-glimmer/tests/test_serve.py
+          examples/models/muse-glimmer/tests/test_serve.py \
+          examples/models/muse-glimmer/tests/test_serve_batching.py \
+          examples/models/muse-glimmer/tests/test_stream_parser.py
 
         cmake -S . -B cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
@@ -56,6 +58,10 @@ jobs:
         cmake -S examples/llm_server/cpp -B cmake-out/examples/llm_server/cpp \
           -DCMAKE_PREFIX_PATH="${PWD}/cmake-out"
         cmake --build cmake-out/examples/llm_server/cpp \
-          --target test_worker_prefill_plan test_worker_loop \
+          --target test_worker_prefill_plan test_worker_loop test_multiplexed_worker test_batching_worker \
           -j "$(nproc)"
         ctest --test-dir cmake-out/examples/llm_server/cpp --output-on-failure
+
+        export EXECUTORCH_BATCHING_TEST_WORKER="${PWD}/cmake-out/examples/llm_server/cpp/test_batching_worker"
+        test -x "${EXECUTORCH_BATCHING_TEST_WORKER}"
+        python -m pytest -q examples/llm_server/python/tests/test_batching_end_to_end.py

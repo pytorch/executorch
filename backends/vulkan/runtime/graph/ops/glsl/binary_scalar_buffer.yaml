@@ -21,6 +21,8 @@ binary_scalar_buffer:
        - parameter_values: [int32, float]
   shader_variants:
     - NAME: pow_scalar_buffer
+    - NAME: mul_scalar_buffer
+      OPERATOR: X * Y
     - NAME: eq_scalar_buffer
       OPERATOR: X == Y
       IS_COMPARISON_OP: true
