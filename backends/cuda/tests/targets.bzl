@@ -212,6 +212,7 @@ def define_common_targets(is_fbcode = False):
         name = "test_int6_quantized_gemm",
         srcs = [
             "test_int6_dispatch.py",
+            "test_int6_large_quantized_gemm.py",
             "test_int6_quantized_gemm.py",
         ],
         visibility = [
