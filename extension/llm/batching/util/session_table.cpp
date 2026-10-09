@@ -52,6 +52,16 @@ std::uint64_t nondeterministic_seed() {
   return device();
 }
 
+// extension/llm/sampler/sampler.cpp's random_f32: one coin in [0, 1).
+float next_coin(std::uint64_t& state) {
+  state ^= state >> 12;
+  state ^= state << 25;
+  state ^= state >> 27;
+  const auto bits =
+      static_cast<std::uint32_t>((state * 0x2545F4914F6CDD1Dull) >> 32);
+  return static_cast<float>(bits >> 8) / 16777216.0f;
+}
+
 } // namespace
 
 SliceRows select_rows(const PackedStep& step, int offset, int length) {
@@ -155,12 +165,34 @@ void SessionTable::set_sampling(
     return;
   }
   // One sampler per generation, carrying its own generator state from here on.
+  const std::uint64_t rng_seed = seed.value_or(nondeterministic_seed());
   it->second.sampler = std::make_unique<Sampler>(
-      vocab_size_,
-      params.temperature,
-      params.top_p,
-      seed.value_or(nondeterministic_seed()));
+      vocab_size_, params.temperature, params.top_p, rng_seed);
   it->second.sampler->set_topk(params.top_k);
+  it->second.params = params;
+  it->second.rng_state = rng_seed;
+}
+
+std::optional<DeviceSamplingRow> SessionTable::device_sampling(
+    SessionId session) {
+  const auto it = sessions_.find(session);
+  if (it == sessions_.end() || it->second.sampler == nullptr) {
+    ET_LOG(
+        Error, "sample: session %" PRId64 " has no sampling policy", session);
+    return std::nullopt;
+  }
+  const SamplingParams& params = it->second.params;
+  // Sampler resets a negative temperature to 0.
+  const float temperature = params.temperature > 0.0f ? params.temperature : 0.0f;
+  const float coin =
+      temperature > 0.0f ? next_coin(it->second.rng_state) : 0.0f;
+  return DeviceSamplingRow{
+      temperature, params.top_p, static_cast<float>(params.top_k), coin};
+}
+
+bool SessionTable::greedy(SessionId session) const {
+  const auto it = sessions_.find(session);
+  return it != sessions_.end() && !(it->second.params.temperature > 0.0f);
 }
 
 Result<PackedStep> SessionTable::pack(const BatchInput& batch) {

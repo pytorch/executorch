@@ -49,6 +49,12 @@ inline constexpr char kMaxCellsMethod[] = "get_offgraph_kv_max_cells";
 // Optional: the fewest selected rows forward_others was exported for. Its
 // selector is padded up to it. Defaults to 1.
 inline constexpr char kMinSelectedRowsMethod[] = "get_min_prefill_chunk";
+// Optional device samplers (extension/llm/batching/sampler.py). With them the
+// forward methods may return device-resident logits: kSampleMethod takes
+// (logits [R, V], params [R, 4] float32) and kArgmaxMethod (logits [R, V]),
+// both returning Long [R], and only the tokens come back to the host.
+inline constexpr char kSampleMethod[] = "sample";
+inline constexpr char kArgmaxMethod[] = "sample_argmax";
 
 // Process-wide CUDA backend options create() sets before the methods load.
 struct CudaExecutorOptions {
@@ -117,6 +123,11 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // between executes, not while one runs.
   std::vector<ForwardMethodCalls> method_calls() const;
 
+  // Whether tokens are sampled on the device rather than on the host.
+  bool samples_on_device() const {
+    return has_sampler_;
+  }
+
  private:
   CudaExecutor(
       std::unique_ptr<::executorch::extension::Module> module,
@@ -126,7 +137,15 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::string backend_id,
       std::int32_t vocab_size,
       std::vector<ForwardMethod> methods,
-      int min_selected_rows);
+      int min_selected_rows,
+      bool has_sampler,
+      bool has_argmax);
+
+  // Draws one token per row of `logits`, rows [0, sessions.size()), on the
+  // device; returns them in row order.
+  std::optional<std::vector<llm_batching::Token>> sample_on_device(
+      const ::executorch::aten::Tensor& logits,
+      const std::vector<llm_batching::SessionId>& sessions);
 
   // Ordered so the module dies first, releasing the delegates that resolved
   // the cache before the registry entry naming it goes.
@@ -141,6 +160,11 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::vector<std::uint64_t> calls_;
   int min_selected_rows_;
   llm_batching::util::SessionTable sessions_;
+  bool has_sampler_;
+  bool has_argmax_;
+  // Device staging for the sampler's params, grown to the widest row count.
+  void* device_params_ = nullptr;
+  std::size_t device_params_rows_ = 0;
 };
 
 } // namespace executorch::backends::cuda::batching

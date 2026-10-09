@@ -196,6 +196,47 @@ TEST_F(SessionTableTest, SamplesEachSessionsRowWithItsOwnPolicy) {
   EXPECT_FALSE(table_->sample(a, *logits, 2).has_value());
 }
 
+TEST_F(SessionTableTest, DeviceRowsCarryThePolicyAndTheHostsCoins) {
+  const auto a = *table_->open();
+  const auto b = *table_->open();
+  const auto c = *table_->open();
+  EXPECT_FALSE(table_->device_sampling(a).has_value());
+  batching::SamplingParams stochastic;
+  stochastic.temperature = 0.7f;
+  stochastic.top_p = 0.9f;
+  stochastic.top_k = 5;
+  table_->set_sampling(a, stochastic, 42);
+  table_->set_sampling(b, stochastic, 42);
+  batching::SamplingParams greedy;
+  table_->set_sampling(c, greedy, 42);
+  EXPECT_FALSE(table_->greedy(a));
+  EXPECT_TRUE(table_->greedy(c));
+
+  // Sampler's xorshift from the same seed: the host draws these coins.
+  std::uint64_t state = 42;
+  auto coin = [&state]() {
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    const auto bits =
+        static_cast<std::uint32_t>((state * 0x2545F4914F6CDD1Dull) >> 32);
+    return static_cast<float>(bits >> 8) / 16777216.0f;
+  };
+  for (int step = 0; step < 4; ++step) {
+    const auto row = table_->device_sampling(a);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_FLOAT_EQ(row->temperature, 0.7f);
+    EXPECT_FLOAT_EQ(row->top_p, 0.9f);
+    EXPECT_FLOAT_EQ(row->top_k, 5.0f);
+    EXPECT_EQ(row->coin, coin()) << step;
+    // One seed, one sequence of coins, whatever else runs.
+    EXPECT_EQ(table_->device_sampling(b)->coin, row->coin) << step;
+    // A greedy row draws none.
+    EXPECT_EQ(table_->device_sampling(c)->coin, 0.0f);
+    EXPECT_EQ(table_->device_sampling(c)->temperature, 0.0f);
+  }
+}
+
 TEST(SelectRowsTest, KeepsOnlyTheSlicesWantedRows) {
   util::PackedStep step;
   step.logit_indices = {2, -1, 5, 9};

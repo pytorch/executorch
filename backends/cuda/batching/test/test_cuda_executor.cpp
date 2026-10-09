@@ -84,9 +84,13 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
   }
 
   std::unique_ptr<Module> module() const {
+    return module_at(dir_);
+  }
+
+  static std::unique_ptr<Module> module_at(const std::string& dir) {
     return std::make_unique<Module>(
-        dir_ + "/model.pte",
-        std::vector<std::string>{dir_ + "/aoti_cuda_blob.ptd"},
+        dir + "/model.pte",
+        std::vector<std::string>{dir + "/aoti_cuda_blob.ptd"},
         Module::LoadMode::File,
         /*event_tracer=*/nullptr,
         /*memory_allocator=*/nullptr,
@@ -97,8 +101,15 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
   std::unique_ptr<cb::CudaExecutor> executor(
       cb::CudaExecutorOptions options = {},
       int max_sessions = 4) const {
+    return executor_for(module(), options, max_sessions);
+  }
+
+  static std::unique_ptr<cb::CudaExecutor> executor_for(
+      std::unique_ptr<Module> program,
+      cb::CudaExecutorOptions options = {},
+      int max_sessions = 4) {
     auto created = cb::CudaExecutor::create(
-        module(),
+        std::move(program),
         max_sessions,
         // One cell is the padding scratch row.
         (kMaxCells - 1) / max_sessions > kMaxContext
@@ -168,23 +179,22 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
   using Step = std::vector<std::pair<int, int>>;
 
   // Drives the executor directly through `schedule`, then decodes every
-  // unfinished generation together until each has kNewTokens. Returns each
-  // generation.
+  // unfinished generation together until each has kNewTokens. Session i
+  // samples with `sampling` and seed i. Returns each generation.
   std::vector<std::vector<batching::Token>> run_schedule(
       cb::CudaExecutor& exec,
-      const std::vector<Step>& schedule) const {
+      const std::vector<Step>& schedule,
+      const batching::SamplingParams& sampling = {}) const {
     const size_t n = cases_.size();
     std::vector<batching::SessionId> sids(n);
     std::vector<std::vector<batching::Token>> history(n);
     std::vector<size_t> fed(n, 0);
     std::vector<std::vector<batching::Token>> generated(n);
-    batching::SamplingParams greedy;
-    greedy.temperature = 0.0f;
     for (size_t i = 0; i < n; ++i) {
       auto sid = exec.open_session();
       EXPECT_TRUE(sid.has_value()) << i;
       sids[i] = sid.value_or(-1);
-      exec.set_sampling(sids[i], greedy, 0);
+      exec.set_sampling(sids[i], sampling, i);
       history[i] = cases_[i].prompt;
     }
     auto run = [&](const Step& step) {
@@ -249,6 +259,8 @@ TEST_P(CudaExecutorTest, ConcurrentGenerationsMatchEagerGreedy) {
   ASSERT_GE(methods.size(), 3u);
   EXPECT_EQ(methods.front().name, "forward_1");
   EXPECT_EQ(methods.back().name, "forward_others");
+  EXPECT_EQ(
+      exec->samples_on_device(), std::string(GetParam()) == "device_sampling");
   batching::Runner runner(*exec, scheduler());
   const auto generations = generate(runner, prompts());
   const auto kv = exec->kv_metrics();
@@ -351,6 +363,44 @@ TEST_P(CudaExecutorTest, InterleavedMethodsMatchEagerGreedyWithAndWithoutGraphs)
   }
 }
 
+TEST_P(CudaExecutorTest, DeviceSamplerDrawsWhatTheHostSamplerDraws) {
+  if (std::string(GetParam()) != "device_sampling") {
+    GTEST_SKIP() << "needs the device samplers";
+  }
+  // dense/ has the same forwards and samples on the host. With one seed per
+  // session, both must draw every token alike, under every policy and mixed
+  // greedy/stochastic rows.
+  const std::string host_dir = dir_.substr(0, dir_.rfind('/')) + "/dense";
+  const std::vector<Step> schedule = {{{3, 20}}, {{0, 1}, {1, 3}, {2, 7}}};
+  std::vector<batching::SamplingParams> policies(3);
+  policies[0].temperature = 1.0f;
+  policies[1].temperature = 1.3f;
+  policies[1].top_k = 3;
+  policies[2].temperature = 0.8f;
+  policies[2].top_p = 0.9f;
+  for (const auto& policy : policies) {
+    auto device = executor();
+    auto host = executor_for(module_at(host_dir));
+    ASSERT_NE(device, nullptr);
+    ASSERT_NE(host, nullptr);
+    ASSERT_TRUE(device->initialize());
+    ASSERT_TRUE(host->initialize());
+    ASSERT_TRUE(device->samples_on_device());
+    ASSERT_FALSE(host->samples_on_device());
+    const auto on_device = run_schedule(*device, schedule, policy);
+    const auto on_host = run_schedule(*host, schedule, policy);
+    EXPECT_EQ(on_device, on_host) << "temperature " << policy.temperature
+                                  << " top_k " << policy.top_k << " top_p "
+                                  << policy.top_p;
+    // Sampling, not argmax: some generation leaves the greedy path.
+    bool diverged = false;
+    for (size_t i = 0; i < cases_.size(); ++i) {
+      diverged |= on_device[i] != cases_[i].expected;
+    }
+    EXPECT_TRUE(diverged);
+  }
+}
+
 TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
   // 8 sessions of the full 64-token context need 512 cells; the program has
   // 256.
@@ -368,4 +418,4 @@ TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
 INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorTest,
-    ::testing::Values("dense", "sparse"));
+    ::testing::Values("dense", "sparse", "device_sampling"));

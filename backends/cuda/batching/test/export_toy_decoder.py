@@ -15,6 +15,9 @@ CudaExecutor drives, lowered in the cell layout:
 - ``sparse/``: forward_{1,4}, and forward_others over [4, 32] tokens selecting
   at least five rows, as a model whose kernels switch at a small width must,
   publishing that bound. Steps of 2..3 tokens pad across the gap to 4.
+- ``device_sampling/``: dense's methods with their logits kept on the device,
+  plus the ``sample`` and ``sample_argmax`` device samplers
+  (extension/llm/batching/sampler.py).
 
 Each has ``expected.txt``: one ``prompt;continuation`` line per prompt, the
 greedy continuation computed eagerly with the neutral reference cache.
@@ -152,10 +155,13 @@ def _greedy(model: ToyDecoder, prompt) -> list:
 ARTIFACTS = {
     "dense": {"static": (1, 2, 4, 8), "min_rows": 1},
     "sparse": {"static": (1, 4), "min_rows": 5},
+    "device_sampling": {"static": (1, 2, 4, 8), "min_rows": 1, "device_sampling": True},
 }
 
 
-def export(output_dir: str, static_widths, min_rows: int) -> None:
+def export(
+    output_dir: str, static_widths, min_rows: int, device_sampling: bool = False
+) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -169,7 +175,13 @@ def export(output_dir: str, static_widths, min_rows: int) -> None:
         to_edge_transform_and_lower,
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from executorch.extension.llm.batching.sampler import (
+        BatchArgmax,
+        BatchSampler,
+        NUM_PARAMS,
+    )
     from executorch.exir.passes import MemoryPlanningPass
+    from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
     from executorch.extension.llm.export.model_metadata import (
         write_cache_geometry,
         write_logits_to_keep_mode,
@@ -209,8 +221,23 @@ def export(output_dir: str, static_widths, min_rows: int) -> None:
             dynamic_shapes=({1: width}, {0: width}, {0: rows}),
             strict=True,
         )
+    forward_methods = list(programs)
+    if device_sampling:
+        sample_rows = Dim("sample_rows", min=1, max=8)
+        logits = torch.zeros(8, VOCAB)
+        programs["sample"] = torch.export.export(
+            BatchSampler(),
+            (logits, torch.zeros(8, NUM_PARAMS)),
+            dynamic_shapes=({0: sample_rows}, {0: sample_rows}),
+            strict=True,
+        )
+        programs["sample_argmax"] = torch.export.export(
+            BatchArgmax(), (logits,), dynamic_shapes=({0: sample_rows},), strict=True
+        )
 
     def partitioner(name: str) -> CudaPartitioner:
+        if name not in forward_methods:
+            return CudaPartitioner([CudaBackend.generate_method_name_compile_spec(name)])
         return CudaPartitioner(
             [
                 CudaBackend.generate_method_name_compile_spec(name),
@@ -232,6 +259,15 @@ def export(output_dir: str, static_widths, min_rows: int) -> None:
     }
     if min_rows > 1:
         constant_methods["get_min_prefill_chunk"] = min_rows
+    # With device sampling the forwards' logits stay on the device, planned in
+    # device memory, and the samplers take them there.
+    device = {
+        name: PropagateDeviceConfig(
+            skip_d2h_for_method_outputs=device_sampling and name in forward_methods,
+            skip_h2d_for_method_inputs=device_sampling and name not in forward_methods,
+        )
+        for name in programs
+    }
     program = to_edge_transform_and_lower(
         programs,
         partitioner={name: [partitioner(name)] for name in programs},
@@ -243,6 +279,7 @@ def export(output_dir: str, static_widths, min_rows: int) -> None:
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            propagate_device_config=device,
         )
     )
 
@@ -266,7 +303,12 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     output_dir = parser.parse_args().output_dir
     for name, artifact in ARTIFACTS.items():
-        export(os.path.join(output_dir, name), artifact["static"], artifact["min_rows"])
+        export(
+            os.path.join(output_dir, name),
+            artifact["static"],
+            artifact["min_rows"],
+            artifact.get("device_sampling", False),
+        )
 
 
 if __name__ == "__main__":
