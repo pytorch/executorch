@@ -1096,3 +1096,52 @@ class ArgValueDispatchTest(unittest.TestCase):
         self.assertIsInstance(v, OptionalTensorListArg)
         self.assertEqual(v.names, ["a", ""])
         self.assertEqual(v.has_value, [True, False])
+
+
+class NonFiniteFloatRoundTripTest(unittest.TestCase):
+    """flatc emits non-finite doubles as bare `inf`/`-inf`/`nan`, which Python's
+    json module rejects. Deserialize must accept them: ViT graphs carry
+    `eq.Scalar` with `other=-inf`, which broke CPU export manifests."""
+
+    def _roundtrip_values(self, values):
+        node = Node(
+            name="n",
+            op_kind=OpKind.CALL_FUNCTION,
+            target="torch.ops.aten.eq.Scalar",
+            inputs=[
+                NamedArgument(name=f"a{i}", arg=Argument(value=v))
+                for i, v in enumerate(values)
+            ],
+            outputs=[Output(name="n")],
+        )
+        graph = Graph(nodes=[node])
+        program = Program(version="1", methods=[Method(name="forward", graph=graph)])
+        out = deserialize_program(_compile_to_bytes(program))
+        return [na.arg.value for na in (out.methods[0].graph.nodes[0].inputs or [])]
+
+    def test_non_finite_float_args_roundtrip(self):
+        values = self._roundtrip_values(
+            [
+                FloatArg(value=float("-inf")),
+                FloatArg(value=float("inf")),
+                FloatArg(value=float("nan")),
+            ]
+        )
+        self.assertEqual(values[0].value, float("-inf"))
+        self.assertEqual(values[1].value, float("inf"))
+        self.assertNotEqual(values[2].value, values[2].value)
+
+    def test_non_finite_float_list_roundtrips(self):
+        [value] = self._roundtrip_values(
+            [FloatListArg(values=[1.0, float("inf"), float("-inf"), float("nan")])]
+        )
+        self.assertIsInstance(value, FloatListArg)
+        self.assertEqual(value.values[0], 1.0)
+        self.assertEqual(value.values[1], float("inf"))
+        self.assertEqual(value.values[2], float("-inf"))
+        self.assertNotEqual(value.values[3], value.values[3])
+
+    def test_string_arg_containing_inf_preserved(self):
+        [value] = self._roundtrip_values([StringArg(value="inf")])
+        self.assertIsInstance(value, StringArg)
+        self.assertEqual(value.value, "inf")
