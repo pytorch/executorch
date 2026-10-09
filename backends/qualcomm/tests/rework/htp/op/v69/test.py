@@ -501,6 +501,20 @@ def test_conv3d_transpose(request, kwargs):
     Conv.test_3d_transpose(request, kwargs)  # noqa: F405
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": None, "expected": Tolerance(rtol=1e-1)},
+            id="fp",
+        )
+    ],
+)
+@with_htp_context
+def test_conv_backward(request, kwargs):
+    ConvBackward.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_cos(request, kwargs):
