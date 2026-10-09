@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveContiguousOpPass,
     RemoveDetachCopyPass,
     RemoveNopAddOpPass,
+    RemoveNopAsStridedCopyOpPass,
     RemoveNopExpandOpPass,
     RemoveNopLinalgVectorNormOpPass,
     RemoveNopMulOpPass,
@@ -322,6 +323,45 @@ class TestRemoveOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 0
         )
+
+    def test_remove_nop_as_strided_copy(self) -> None:
+        input_tensor = torch.arange(5, dtype=torch.float32)[1:].reshape(1, 4, 1, 1)
+        for stride, storage_offset, should_remove in (
+            ([4, 1, 4, 4], None, True),
+            ([4, 0, 4, 4], None, False),
+            ([4, 1, 1, 1], 0, False),
+        ):
+            with self.subTest(
+                stride=stride,
+                storage_offset=storage_offset,
+                should_remove=should_remove,
+            ):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", input_tensor)
+                as_strided = builder.call_operator(
+                    op=exir_ops.edge.aten.as_strided_copy.default,
+                    args=(x, [1, 4, 1, 1], stride, storage_offset),
+                )
+                builder.output([as_strided])
+                original = builder.get_graph_module()
+                original_copy = copy.deepcopy(original)
+
+                result = cast(PassResult, RemoveNopAsStridedCopyOpPass()(original))
+
+                self.assertEqual(result.modified, should_remove)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module,
+                        exir_ops.edge.aten.as_strided_copy.default,
+                    ),
+                    0 if should_remove else 1,
+                )
+                validate(
+                    original_copy,
+                    result.graph_module,
+                    (input_tensor,),
+                    "RemoveNopAsStridedCopyOpPass",
+                )
 
     def test_remove_nop_slice(self) -> None:
         builder = GraphBuilder()

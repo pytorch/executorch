@@ -116,9 +116,11 @@ If you're completely new to open-source projects, GitHub, or ExecuTorch, please 
    [API Life Cycle and Deprecation Policy](docs/source/api-life-cycle.md).
 1. Make sure your code follows the [style guides](#coding-style) and passes the
    [lint checks](#lintrunner).
-1. If you haven't already, complete the [Contributor License Agreement ("CLA")](#contributor-license-agreement-cla).
 1. Create a pull request in the `pytorch/executorch` Github repo using the
    [instructions below](#pull-requests).
+1. Complete any steps requested by EasyCLA, as described in the
+   [Contributor License Agreement ("CLA")](#contributor-license-agreement-cla)
+   section.
 
 &nbsp;
 
@@ -461,9 +463,25 @@ licensed under the LICENSE file in the root directory of this source tree.
 &nbsp;
 
 ## Contributor License Agreement ("CLA")
-In order to accept your pull request, we need you to submit a CLA. You only need
-to do this once to work on any of Meta's open source projects.
+ExecuTorch is a PyTorch Foundation project and uses the Linux Foundation's
+[EasyCLA](https://easycla.lfx.linuxfoundation.org/#/?version=2) to manage
+Contributor License Agreements. Before your pull request can be merged, its
+contributors must be covered by the project's CLA.
 
-Complete your CLA here: <https://code.facebook.com/cla>
+After you open a pull request, the `EasyCLA` check verifies your CLA status. If
+action is needed, follow the link in the check's details or the comment from
+`linux-foundation-easycla[bot]` to complete the appropriate workflow:
+
+- **Individual contributors:** Sign the individual CLA through EasyCLA.
+- **Corporate contributors:** Follow EasyCLA's instructions to get authorization
+  under your employer's corporate CLA. If your employer has not signed one,
+  EasyCLA will guide you through the required steps.
+
+If you previously signed Meta's CLA, check your EasyCLA status and complete any
+steps it requests. Once EasyCLA confirms that you are authorized to contribute,
+the check will pass; you do not need to sign again for each pull request.
+
+For more information, see the Linux Foundation's
+[EasyCLA FAQs](https://docs.linuxfoundation.org/lfx/easycla/v2-current/getting-started/easycla-faqs).
 
 &nbsp;
