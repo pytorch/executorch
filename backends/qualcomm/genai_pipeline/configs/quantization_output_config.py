@@ -5,7 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Dict
+
+from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
 
 
 @dataclass
@@ -13,7 +15,10 @@ class QuantizationOutputConfig:
     """Output produced by the quantization stage.
 
     Attributes:
-        quantized_model: The quantized nn.Module or path to saved QDQ model.
+        graphs: Component- and graph-keyed quantized modules with their export
+            inputs, metadata, and optional quantized IO dtypes. The compilation
+            stage consumes the bundles and bakes metadata-derived KV-cache and
+            logits quantization attributes into the ``.pte``.
     """
 
-    quantized_model: Any = None
+    graphs: Dict[str, Dict[str, GraphBundle]] = None
