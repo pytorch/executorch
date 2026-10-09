@@ -57,6 +57,7 @@ add_executable(
   test_op_quantized_conv2d_out.cpp
   test_op_quantized_matmul_out.cpp
   test_op_quantized_relu_out.cpp
+  test_op_relu.cpp
   test_op_transpose_copy.cpp
   ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
 )
