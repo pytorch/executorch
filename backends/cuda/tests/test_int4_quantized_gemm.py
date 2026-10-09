@@ -550,7 +550,10 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
                 self.assertGreaterEqual(cosine.min().item(), 0.999)
 
 
-_GUARD_SHAPES = ((2048, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
+# Every weight packs at least 6 MiB of INT4 data, so each decode kernel runs
+# for many event ticks (one tick is ~0.5 us) and a pick's regret reflects the
+# kernel rather than the timer.
+_GUARD_SHAPES = ((8192, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
 _GUARD_BUCKETS = (1, 4)
 
 
