@@ -186,9 +186,10 @@ class Executor : public batching::testing::FakeExecutor {
       auto& history = histories_[input.sid];
       EXPECT_LE(begin, history.size());
       history.resize(begin);
+      const auto& source = *std::get<batching::TokenInputPtr>(input.payload);
       std::vector<Token> fed(
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          source.begin() + input.offset,
+          source.begin() + input.offset + input.size);
       history.insert(history.end(), fed.begin(), fed.end());
       feeds_.push_back(Feed{
           input.sid,

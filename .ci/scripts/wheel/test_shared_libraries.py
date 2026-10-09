@@ -79,7 +79,10 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # strong one elsewhere, so naming one of those would count a definition that may not be the one
 # the process uses.
 _CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
-_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+_CUDA_EXTENSION_SYMBOLS = (
+    "executorch::extension::cuda::getCallerStream",
+    "executorch::extension::cuda::CudaAllocator::instance",
+)
 
 # The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
 # genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
@@ -96,10 +99,6 @@ _AOTI_SHIM_SYMBOLS = (
     # kernel shim is listed rather than a sample, because a partially built library is exactly the
     # failure this row exists to catch.
     "aoti_torch_cuda__weight_int4pack_mm",
-    "aoti_torch_cuda_int4_plain_mm",
-    "aoti_torch_cuda_int5_plain_mm",
-    "aoti_torch_cuda_int6_plain_mm",
-    "aoti_torch_cuda_int8_plain_mm",
     "aoti_torch_cuda_rand",
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",
@@ -214,6 +213,9 @@ _WINDOWS_IMPORT_WITNESSES = {
         "executorch.dll",
         "executorch::runtime::register_backend",
     ),
+    # The delegate's entry points come from cuda_platform, an archive, so its export list does not
+    # name them either.
+    "CUDA delegate": ("executorch.dll", "executorch::runtime::register_backend"),
 }
 
 _PE_REPORTS: dict = {}
@@ -1236,8 +1238,8 @@ _OWNED_COMPONENTS = (
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     (
-        "CUDA stream helper",
-        _CUDA_STREAM_SYMBOLS,
+        "CUDA allocator and stream helpers",
+        _CUDA_EXTENSION_SYMBOLS,
         _library_file_name("libexecutorch_extension_cuda"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
@@ -1794,9 +1796,13 @@ import sys
 if sys.argv[3] == "torch":
     import torch  # noqa: F401
 
-# executorch/lib, which a C++ program copies beside itself and the package's entry points
-# register. Whether they do is test_package_entry_points_load_their_libraries.
-os.add_dll_directory(sys.argv[2])
+# The directories the package ships DLLs in, the ones the Linux libraries record relative
+# search paths for: executorch/lib, which a C++ program copies beside itself and the
+# package's entry points register (test_package_entry_points_load_their_libraries checks
+# that they do), and backends/cuda, where the CUDA delegate's shim layer ships.
+for directory in [sys.argv[2], *sys.argv[4:]]:
+    if os.path.isdir(directory):
+        os.add_dll_directory(directory)
 ctypes.WinDLL(sys.argv[1])
 """
 
@@ -1830,6 +1836,7 @@ def _assert_shipped_libraries_load_on_windows(root: Path, package_dir: Path) -> 
                 str(target),
                 str(lib_dir),
                 torch_needed,
+                str(root / "backends" / "cuda"),
             ],
             capture_output=True,
             text=True,
@@ -2757,6 +2764,9 @@ def test_extension_contains_no_component() -> None:
             marker in name
             for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
         )
+        # Not on Windows, where a CUDA program cannot be lowered, so the delegate ships for
+        # C++ applications and the extension deliberately does not link it.
+        and not (_WINDOWS and "backend_cuda" in name)
     }
     unused = sorted(expected - needed)
     assert not unused, (
