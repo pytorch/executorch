@@ -409,6 +409,11 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
           Error,
           "CudaAllocator::allocate: cudaGetDevice failed: %s",
           cudaGetErrorString(prev_device_err));
+      // Every failure return in allocate() clears the CUDA error it leaves:
+      // the return value reports the failure, and a pending error would
+      // surface in the next cudaGetLastError(), e.g. a kernel launch check, as
+      // if that call had failed.
+      (void)cudaGetLastError();
       return Error::Internal;
     }
     switch_device = static_cast<int>(index) != prev_device;
@@ -427,6 +432,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
           "CudaAllocator::allocate: cudaSetDevice(%d) failed: %s",
           static_cast<int>(index),
           cudaGetErrorString(set_err));
+      (void)cudaGetLastError();
       return Error::Internal;
     }
   }
@@ -448,6 +454,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         nbytes,
         alignment,
         static_cast<int>(index));
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
 
@@ -471,6 +478,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         block,
         alignment);
     (void)cudaFree(block);
+    (void)cudaGetLastError();
     return Error::NotSupported;
   }
 
@@ -620,6 +628,8 @@ Result<void*> CudaAllocator::allocate_async(
         cudaGetErrorString(err),
         nbytes,
         log_device);
+    // Reported through the return value, as in allocate().
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
 
@@ -693,6 +703,8 @@ Result<void*> CudaAllocator::allocate_stream_ordered(
         cudaGetErrorString(err),
         nbytes,
         static_cast<int>(index));
+    // Reported through the return value, as in allocate().
+    (void)cudaGetLastError();
     return Error::MemoryAllocationFailed;
   }
   return ptr;
