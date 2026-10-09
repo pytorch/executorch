@@ -258,7 +258,7 @@ class TestGenOpList(unittest.TestCase):
     @patch("executorch.codegen.tools.gen_oplist._get_kernel_metadata_for_model")
     @patch("executorch.codegen.tools.gen_oplist._get_operators")
     @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
-    def test_gen_op_list_with_model_and_root_ops(
+    def test_gen_op_list_with_model_and_select_ops_list(
         self,
         mock_dump_yaml,
         mock_get_operators,
@@ -272,7 +272,7 @@ class TestGenOpList(unittest.TestCase):
 
         args = [
             f"--output_path={output_path}",
-            "--root_ops=aten::add",
+            "--select_ops_list=aten::add",
             f"--model_file_path={temp_file.name}",
         ]
 
