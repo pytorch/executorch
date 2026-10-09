@@ -35,13 +35,14 @@ namespace serving {
 namespace detail {
 
 struct TextRequest {
-  GenerationPrompt input;
+  PromptInput input;
+  batching::PreparedInputPtr prepared;
   std::optional<PromptPreparation> prepare;
   GenerationOptions options;
   std::function<void(GenerationEvent)> sink;
-  std::vector<batching::Token> prompt;
+  batching::PrefixIdentityPtr prompt;
   std::vector<batching::Token> raw_tokens;
-  std::vector<batching::Token> history;
+  batching::PrefixIdentityPtr history;
   std::unique_ptr<TextOutput> output;
   std::optional<ServingError> render_error;
   // Completed on control, then transferred unchanged by terminal delivery.
@@ -51,10 +52,6 @@ struct TextRequest {
   bool started = false;
   bool capture_lane = false;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
-
-  bool is_opaque() const {
-    return std::holds_alternative<PreparedPromptInput>(input);
-  }
 
   void emit(GenerationEvent event) {
     if (!sink) {
@@ -225,7 +222,7 @@ struct ServingRuntime::Impl {
     std::optional<batching::Session> session;
     std::uint64_t incarnation = 0;
     RequestId active_request = 0;
-    std::vector<batching::Token> logical_history;
+    batching::PrefixIdentityPtr logical_history;
     bool dirty = false;
   };
 
@@ -244,7 +241,8 @@ struct ServingRuntime::Impl {
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
       ServingRuntimeConfig config,
-      const tokenizers::Tokenizer* tokenizer = nullptr)
+      const tokenizers::Tokenizer* tokenizer = nullptr,
+      ModelPreparer model_preparer = {})
       : config_(config),
         valid_config_(
             scheduler && config.max_sessions > 0 &&
@@ -252,6 +250,7 @@ struct ServingRuntime::Impl {
             config.max_events_per_request > 0 &&
             config.max_tokens_per_request > 0),
         tokenizer_(tokenizer),
+        model_preparer_(std::move(model_preparer)),
         prefix_cache_(config.prefix_cache_capacity) {
     if (valid_config_) {
       runner_ =
@@ -345,6 +344,7 @@ struct ServingRuntime::Impl {
 
   LifecycleResult process(Command& command) {
     std::optional<batching::Session> retired;
+    batching::PrefixIdentityPtr retired_history;
     Request cancelled;
     std::unique_lock<std::mutex> lock(mutex_);
     if (lifecycle_ != Lifecycle::Running) {
@@ -357,6 +357,7 @@ struct ServingRuntime::Impl {
           cancelled = requests_.at(it->second.active_request);
         }
         retired = std::move(it->second.session);
+        retired_history = std::move(it->second.logical_history);
         sessions_.erase(it);
       }
       lock.unlock();
@@ -393,7 +394,7 @@ struct ServingRuntime::Impl {
       }
       it->second.active_request = 0;
       it->second.incarnation = next_incarnation_++;
-      it->second.logical_history.clear();
+      retired_history = std::move(it->second.logical_history);
       it->second.dirty = false;
       retired = std::move(it->second.session);
       it->second.session.reset();
@@ -578,6 +579,7 @@ struct ServingRuntime::Impl {
         text.raw_tokens.size();
     const SessionKey session_key =
         key ? SessionKey(*key) : SessionKey(completion.request_id);
+    batching::PrefixIdentityPtr retired_history;
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = sessions_.find(session_key);
     if (it == sessions_.end() ||
@@ -585,18 +587,13 @@ struct ServingRuntime::Impl {
         it->second.active_request != completion.request_id) {
       return;
     }
-    if (text.is_opaque()) {
-      it->second.logical_history.clear();
-      it->second.dirty = true;
-      return;
-    }
-    if (full_prompt &&
-        text.history.size() == stats.prompt_tokens + text.raw_tokens.size()) {
+    retired_history = std::move(it->second.logical_history);
+    if (full_prompt && text.history &&
+        text.history->size() == stats.prompt_tokens + text.raw_tokens.size()) {
       it->second.logical_history = std::move(text.history);
-    } else {
-      it->second.logical_history.clear();
     }
-    it->second.dirty = !completed || !full_prompt || !all_output ||
+    it->second.dirty = !it->second.logical_history || !completed ||
+        !full_prompt || !all_output ||
         (text.output && text.output->string_stopped());
   }
 
@@ -623,12 +620,17 @@ struct ServingRuntime::Impl {
     };
     request->request.on_prepare_complete =
         [text](const detail::GenerationCompletion&) {
-          if (!text->is_opaque()) {
-            text->history = std::move(text->prompt);
-            text->history.insert(
-                text->history.end(),
-                text->raw_tokens.begin(),
-                text->raw_tokens.end());
+          if (text->prompt) {
+            auto history =
+                std::make_shared<batching::PrefixIdentity>(*text->prompt);
+            if (!text->raw_tokens.empty()) {
+              history->spans.push_back(batching::TokenSpan{
+                  std::make_shared<const std::vector<batching::Token>>(
+                      text->raw_tokens),
+                  0,
+                  text->raw_tokens.size()});
+            }
+            text->history = std::move(history);
           }
           if (text->output) {
             text->output->finish();
@@ -639,6 +641,50 @@ struct ServingRuntime::Impl {
             const detail::GenerationCompletion& completion) {
           complete_text(*text, key, completion);
         };
+  }
+
+  LifecycleResult select_input(const Request& request, std::size_t start) {
+    if (request->cancelled.load()) {
+      return std::nullopt;
+    }
+    const auto& prepared = request->text->prepared;
+    auto view = start == 0 ? prepared : prepared->suffix(start);
+    const auto identity = view ? view->prefix_identity() : nullptr;
+    if (start >= prepared->size() || !view ||
+        view->size() != prepared->size() - start ||
+        view->kind() != prepared->kind() ||
+        view->last_prompt_token() != prepared->last_prompt_token() ||
+        (identity && identity->size() != view->size())) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "invalid prepared suffix"};
+    }
+    if (view->kind() == detail::TokenPreparedInput::type()) {
+      request->request.delta =
+          static_cast<const detail::TokenPreparedInput&>(*view).tokens();
+      return std::nullopt;
+    }
+    const auto acceptance = runner_->accepts_async(view).get();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+        return std::nullopt;
+      }
+    }
+    if (const auto* error =
+            std::get_if<batching::AcceptanceError>(&acceptance)) {
+      return ServingError{
+          *error == batching::AcceptanceError::Unavailable
+              ? ErrorCode::NotReady
+              : ErrorCode::Internal,
+          "prepared input acceptance check failed"};
+    }
+    if (!std::get<bool>(acceptance)) {
+      return ServingError{
+          ErrorCode::InvalidArgument,
+          "executor does not accept prepared input"};
+    }
+    request->request.delta = std::move(view);
+    return std::nullopt;
   }
 
   LifecycleResult prepare_text(const Request& request) {
@@ -685,24 +731,19 @@ struct ServingRuntime::Impl {
             context_limit,
             [state = request.get()] { return state->cancelled.load(); }},
         text.input,
-        text.prepare);
+        text.prepare,
+        model_preparer_);
     if (std::holds_alternative<std::monostate>(prepared)) {
       return std::nullopt;
     }
     if (auto* error = std::get_if<ServingError>(&prepared)) {
       return std::move(*error);
     }
-    batching::Token previous_token;
-    if (auto* opaque = std::get_if<PreparedPromptInput>(&prepared)) {
-      text.terminal.stats.prompt_tokens = opaque->input->size();
-      previous_token = opaque->previous_token;
-      request->request.delta = std::move(opaque->input);
-    } else {
-      text.prompt = std::get<std::vector<batching::Token>>(std::move(prepared));
-      text.input = PromptInput{};
-      text.terminal.stats.prompt_tokens = text.prompt.size();
-      previous_token = text.prompt.back();
-    }
+    text.prepared = std::get<batching::PreparedInputPtr>(std::move(prepared));
+    text.input = PromptInput{};
+    text.prompt = text.prepared->prefix_identity();
+    text.terminal.stats.prompt_tokens = text.prepared->size();
+    const auto previous_token = text.prepared->last_prompt_token();
     const auto available = context_limit - text.terminal.stats.prompt_tokens;
     const auto wanted = options.max_new_tokens.value_or(
         config_.max_context_length
@@ -732,62 +773,30 @@ struct ServingRuntime::Impl {
           state->emit(TextEvent{piece});
         });
 
-    if (text.is_opaque()) {
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
-          return std::nullopt;
-        }
-      }
-      const auto acceptance =
-          runner_
-              ->accepts_async(
-                  std::get<batching::PreparedInputPtr>(request->request.delta))
-              .get();
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
-          return std::nullopt;
-        }
-      }
-      if (const auto* error =
-              std::get_if<batching::AcceptanceError>(&acceptance)) {
-        if (*error == batching::AcceptanceError::Unavailable) {
-          return ServingError{ErrorCode::NotReady, "runner is not ready"};
-        }
-        return ServingError{
-            ErrorCode::Internal, "prepared input acceptance check failed"};
-      }
-      if (!std::get<bool>(acceptance)) {
-        return ServingError{
-            ErrorCode::InvalidArgument,
-            "executor does not accept prepared input"};
-      }
-    }
-
+    const batching::PrefixIdentity empty_identity;
     PrefillPlan plan{PrefillPlan::kFull, 0, "new"};
     bool reset = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
-        if (!text.is_opaque()) {
-          plan = plan_prefill(
-              it->second.logical_history, text.prompt, it->second.dirty);
-        }
+        plan = plan_prefill_identity(
+            it->second.logical_history ? *it->second.logical_history
+                                       : empty_identity,
+            text.prompt ? *text.prompt : empty_identity,
+            it->second.dirty);
         reset = plan.action == PrefillPlan::kFull &&
-            (it->second.dirty || !it->second.logical_history.empty() ||
+            (it->second.dirty || it->second.logical_history ||
              it->second.session->position() != 0);
-        if (text.is_opaque() && reset) {
+        if (!text.prompt && reset) {
           plan.reason = "opaque";
         }
       }
     }
-    text.terminal.stats.session_reset_reason = plan.reason;
-    if (!text.is_opaque()) {
-      request->request.delta = std::vector<batching::Token>(
-          text.prompt.begin() + plan.suffix_start, text.prompt.end());
+    if (auto error = select_input(request, plan.suffix_start)) {
+      return error;
     }
+    text.terminal.stats.session_reset_reason = plan.reason;
     // All fallible preparation precedes destructive cold replacement.
     if (request->cancelled.load()) {
       return std::nullopt;
@@ -800,7 +809,7 @@ struct ServingRuntime::Impl {
   }
 
   std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
-    if (!request->text || request->text->is_opaque() ||
+    if (!request->text || !request->text->prompt ||
         config_.prefix_cache_capacity == 0) {
       return std::nullopt;
     }
@@ -808,7 +817,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      return prefix_cache_.lookup(request->text->prompt);
+      return prefix_cache_.lookup_identity(*request->text->prompt);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       return std::nullopt;
@@ -893,29 +902,30 @@ struct ServingRuntime::Impl {
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
-      auto match = lookup_prefix(request);
-      if (match) {
-        opened = std::move(match->session);
-        // Lookup always leaves the final prompt token for a fresh forward.
-        auto& tokens =
-            std::get<std::vector<batching::Token>>(request->request.delta);
-        tokens.erase(tokens.begin(), tokens.begin() + match->matched_tokens);
-      }
+      LifecycleResult preparation_error;
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
+        auto match = lookup_prefix(request);
+        if (match) {
+          opened = std::move(match->session);
+          // Snapshot positions are committed; named history also includes
+          // pending.
+          preparation_error = select_input(request, match->matched_tokens);
+        }
         if (!opened && !request->cancelled.load()) {
           opened = runner_->open_session_async().get();
         }
 #if ET_HAS_EXCEPTIONS
       } catch (...) {
-        // Refusal below also releases the initial reservation.
+        preparation_error =
+            ServingError{ErrorCode::Internal, "session preparation failed"};
       }
 #endif
       lock.lock();
       const bool cancelled =
           lifecycle_ != Lifecycle::Running || request->cancelled.load();
-      if (!opened || cancelled) {
+      if (!opened || cancelled || preparation_error) {
         sessions_.erase(it);
         const auto code = runner_->initialization_state() ==
                 batching::InitializationState::Failed
@@ -924,8 +934,9 @@ struct ServingRuntime::Impl {
         lock.unlock();
         opened.reset();
         request->reject(
-            cancelled
-                ? std::nullopt
+            cancelled ? std::nullopt
+                : preparation_error
+                ? std::move(preparation_error)
                 : std::optional<ServingError>({code, "session open failed"}));
         return;
       }
@@ -958,7 +969,7 @@ struct ServingRuntime::Impl {
             request->emit(update);
             schedule(request);
           };
-      if (opening && request->text && !request->text->is_opaque() &&
+      if (opening && request->text && request->text->prompt &&
           config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
         // Only a capture needs an extra row beyond the working-session slots.
         capture_lane_busy_ = true;
@@ -967,7 +978,7 @@ struct ServingRuntime::Impl {
         try {
 #endif
           request->text->prefix_capture =
-              prefix_cache_.capture_prompt(session, request->text->prompt);
+              prefix_cache_.capture_identity(session, *request->text->prompt);
           callback = request->text->prefix_capture->wrap(callback);
 #if ET_HAS_EXCEPTIONS
         } catch (...) {
@@ -1048,11 +1059,13 @@ struct ServingRuntime::Impl {
     }
 #endif
     std::optional<batching::Session> retired;
+    batching::PrefixIdentityPtr retired_history;
     if (owns_session) {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       it->second.active_request = 0;
       if (!request->request.key || failed) {
+        retired_history = std::move(it->second.logical_history);
         retired = std::move(it->second.session);
         it->second.session.reset();
         if (!request->request.key) {
@@ -1407,6 +1420,7 @@ struct ServingRuntime::Impl {
   const ServingRuntimeConfig config_;
   const bool valid_config_;
   const tokenizers::Tokenizer* const tokenizer_;
+  const ModelPreparer model_preparer_;
   std::unique_ptr<batching::Runner> runner_;
   batching::PrefixCache prefix_cache_;
   // Control-thread policy; held through capture collection, including clone
@@ -1483,16 +1497,18 @@ ServingRuntime::ServingRuntime(
     batching::Executor& executor,
     std::unique_ptr<batching::Scheduler> scheduler,
     const tokenizers::Tokenizer& tokenizer,
-    ServingRuntimeConfig config)
+    ServingRuntimeConfig config,
+    ModelPreparer model_preparer)
     : impl_(std::make_unique<Impl>(
           executor,
           std::move(scheduler),
           config,
-          &tokenizer)) {}
+          &tokenizer,
+          std::move(model_preparer))) {}
 
 GenerateResult ServingRuntime::generate(
     std::optional<std::string> key,
-    GenerationPrompt prompt,
+    PromptInput prompt,
     GenerationOptions options,
     std::function<void(GenerationEvent)> on_event) {
   auto text = std::make_shared<detail::TextRequest>();

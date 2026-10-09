@@ -17,19 +17,62 @@ namespace executorch::extension::llm::serving::testing {
 class TestPreparedInput : public batching::PreparedInput {
  public:
   explicit TestPreparedInput(std::size_t positions)
-      : positions_(positions), tokens(positions <= 64 ? positions : 0, 42) {}
+      : positions_(positions),
+        tokens(std::make_shared<const std::vector<batching::Token>>(
+            positions <= 64 ? positions : 0,
+            42)) {}
   explicit TestPreparedInput(std::vector<batching::Token> values)
-      : positions_(values.size()), tokens(std::move(values)) {}
+      : positions_(values.size()),
+        tokens(std::make_shared<const std::vector<batching::Token>>(
+            std::move(values))) {}
   const void* kind() const override {
     return &tag;
   }
   std::size_t size() const override {
     return positions_;
   }
+  batching::Token last_prompt_token() const override {
+    return previous;
+  }
+  batching::PreparedInputPtr suffix(std::size_t start) const override {
+    if (start >= size() || (start && refuse_suffix)) {
+      return nullptr;
+    }
+    auto view = std::make_shared<TestPreparedInput>(*this);
+    view->offset += start;
+    view->positions_ -= start;
+    view->positions_ += invalid_suffix ? 1 : 0;
+    if (identity) {
+      auto metadata = std::make_shared<batching::PrefixIdentity>();
+      for (auto span : identity->spans) {
+        std::visit(
+            [&](auto& s) {
+              const auto skip = std::min(start, s.size);
+              s.offset += skip;
+              s.size -= skip;
+              start -= skip;
+              if (s.size) {
+                metadata->spans.emplace_back(s);
+              }
+            },
+            span);
+      }
+      view->identity = std::move(metadata);
+    }
+    return view;
+  }
+  batching::PrefixIdentityPtr prefix_identity() const override {
+    return identity;
+  }
+  batching::PrefixIdentityPtr identity;
+  batching::Token previous = 42;
+  std::size_t offset = 0;
+  bool refuse_suffix = false;
+  bool invalid_suffix = false;
   inline static char tag;
-  const std::size_t positions_;
+  std::size_t positions_;
   // Oversized metadata-only test inputs need no corresponding allocation.
-  const std::vector<batching::Token> tokens;
+  batching::TokenInputPtr tokens;
 };
 
 inline batching::TokenInputPtr validated_backing(
@@ -45,8 +88,9 @@ inline batching::TokenInputPtr validated_backing(
       ADD_FAILURE() << "unexpected opaque input reached execute";
       return {};
     }
-    source = batching::TokenInputPtr(
-        prepared, &static_cast<const TestPreparedInput&>(*prepared).tokens);
+    const auto& view = static_cast<const TestPreparedInput&>(*prepared);
+    source = std::make_shared<const std::vector<batching::Token>>(
+        view.tokens->begin() + view.offset, view.tokens->end());
   }
   if (!source || slice.offset > source->size() ||
       slice.size > source->size() - slice.offset) {

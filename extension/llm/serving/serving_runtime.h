@@ -51,7 +51,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new text sessions; zero disables caching.
+  // Opt-in prefix reuse for new sessions; zero disables caching.
   // Explicit open, reset, and same-session replay bypass the cache. Snapshots
   // may outlive their source; misses/refusals fall back to full prefill.
   // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
@@ -84,7 +84,8 @@ class ET_EXPERIMENTAL ServingRuntime {
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
       const tokenizers::Tokenizer& tokenizer,
-      ServingRuntimeConfig config);
+      ServingRuntimeConfig config,
+      ModelPreparer model_preparer = {});
   ~ServingRuntime();
 
   ServingRuntime(const ServingRuntime&) = delete;
@@ -147,20 +148,18 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Before terminal invocation, this request's session claim and admission
   // are released. Nonblocking follow-up submission is allowed but may still
   // be rejected; wait()/done() remain callback-lifetime barriers.
-  // PreparedPromptInput bypasses encoding and always uses full prefill without
-  // token-history or prefix-cache reuse. Existing content is cold-replaced.
-  // Subsequent ordinary prompts replay only their supplied tokens: prior opaque
-  // or image context is not retained. To retain that context, resend it as part
-  // of each complete prepared prompt, even when reusing the same key.
+  // Model preparation runs for every source prompt. Optional complete identity
+  // permits mixed-prefix reuse; missing identity cold-replays. Resend all image
+  // and text context as part of each full prompt, including for named sessions.
   // Metadata/options errors and unsupported prepared inputs return
   // InvalidArgument without replacing existing content. Executor::accepts()
   // is checked on the engine thread before replacement; later engine admission
-  // or execution failure does not restore content already replaced. Both input
-  // forms need a tokenizer for output. The lifecycle-only constructor rejects
-  // them with NotReady.
+  // or execution failure does not restore content already replaced. Generation
+  // needs a tokenizer for output; the lifecycle-only constructor returns
+  // NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
-      GenerationPrompt prompt,
+      PromptInput prompt,
       GenerationOptions options,
       std::function<void(GenerationEvent)> on_event);
 

@@ -8,6 +8,7 @@
 
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/extension/llm/serving/detail/prompt_preparer.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
 #include <executorch/extension/llm/serving/test/prepared_input.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -110,11 +111,6 @@ class Tokenizer : public tokenizers::Tokenizer {
     return tokenizers::Error::Internal;
   }
 };
-
-PreparedPromptInput opaque(std::size_t positions = 5) {
-  return PreparedPromptInput{
-      std::make_shared<TestPreparedInput>(positions), 777};
-}
 
 class Executor : public batching::testing::FakeExecutor {
  public:
@@ -276,6 +272,13 @@ class TextGenerationTest : public ::testing::Test {
  protected:
   Executor executor;
   Tokenizer tokenizer;
+  batching::PreparedInputPtr next_prepared;
+  PromptInput opaque(std::size_t positions = 5) {
+    auto prepared = std::make_shared<TestPreparedInput>(positions);
+    prepared->previous = 777;
+    next_prepared = std::move(prepared);
+    return PromptInput{{make_image_input(Image{})}};
+  }
   ServingRuntimeConfig config;
   Gate delivery_checkpoint;
   Gate cleanup_checkpoint;
@@ -323,7 +326,23 @@ class TextGenerationTest : public ::testing::Test {
         executor,
         batching::DecodeFirstScheduler::create(batch, decodes, chunk),
         tokenizer,
-        config);
+        config,
+        [this](
+            const PromptPreparationContext& context,
+            const PromptInput& input) -> ModelPreparationResult {
+          if (input.segments.size() == 1 && input.segments[0].is_image()) {
+            return std::exchange(next_prepared, nullptr);
+          }
+          auto result = detail::prepare_text_prompt(
+              context.tokenizer, input, context.max_prompt_positions);
+          if (!result.ok()) {
+            return ServingError{ErrorCode::InvalidArgument, "invalid text"};
+          }
+          return batching::PreparedInputPtr{
+              std::make_shared<detail::TokenPreparedInput>(
+                  std::make_shared<const std::vector<Token>>(
+                      std::move(*result)))};
+        });
   }
   void TearDown() override {
     delivery_checkpoint.release();
@@ -355,7 +374,7 @@ class TextGenerationTest : public ::testing::Test {
   }
   RequestHandle submit(
       const std::shared_ptr<Events>& event,
-      GenerationPrompt prompt,
+      PromptInput prompt,
       GenerationOptions options = {},
       std::optional<std::string> key = "s") {
     if (!options.max_new_tokens) {
@@ -395,9 +414,7 @@ TEST_F(
           EXPECT_EQ(context.max_prompt_positions, 64u);
           EXPECT_FALSE(context.cancelled());
           EXPECT_TRUE(runtime->info().ready); // No runtime lock held.
-          return prepared
-              ? GenerationPrompt{opaque()}
-              : GenerationPrompt{PromptInput{{make_text_input("hello")}}};
+          return prepared ? opaque() : PromptInput{{make_text_input("hello")}};
         },
         options,
         [event](GenerationEvent update) { event->accept(std::move(update)); });
@@ -431,10 +448,8 @@ TEST_F(TextGenerationTest, DeferredCapturesAreReleasedBeforeExecution) {
   auto event = output();
   auto result = runtime->generate(
       "s",
-      [capture = std::move(capture)](
-          const PromptPreparationContext&) -> PromptPreparationResult {
-        return GenerationPrompt{ids({*capture, 11})};
-      },
+      [capture = std::move(capture)](const PromptPreparationContext&)
+          -> PromptPreparationResult { return ids({*capture, 11}); },
       {},
       [event](GenerationEvent update) { event->accept(std::move(update)); });
   ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
@@ -518,7 +533,7 @@ TEST_F(TextGenerationTest, DeferredAdmissionAndQueuedCancellationAreBounded) {
     ++calls;
     delivery_checkpoint.enter();
     EXPECT_TRUE(context.cancelled());
-    return GenerationPrompt{ids({20, 21})};
+    return ids({20, 21});
   };
   auto first =
       runtime->generate("s", prepare, {}, [event](GenerationEvent update) {
@@ -556,7 +571,7 @@ TEST_F(TextGenerationTest, DeferredCancellationDoesNotReplaceResidentHistory) {
       [&](const PromptPreparationContext& context) -> PromptPreparationResult {
         delivery_checkpoint.enter();
         EXPECT_TRUE(context.cancelled());
-        return GenerationPrompt{opaque()};
+        return opaque();
       },
       {},
       {});
@@ -588,7 +603,7 @@ TEST_F(
     }
     PromptPreparationResult operator()(const PromptPreparationContext&) const {
       ++state->calls;
-      return GenerationPrompt{ids({10, 11})};
+      return ids({10, 11});
     }
   };
   static_assert(sizeof(Prepare) == 2 * sizeof(void*));
@@ -620,7 +635,7 @@ TEST_F(TextGenerationTest, OpaquePositionsUseExplicitDecodeContextAndBudgets) {
         std::optional<std::int32_t>{99}}) {
     auto event = output();
     auto prompt = opaque();
-    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    std::weak_ptr<const batching::PreparedInput> owner = next_prepared;
     GenerationOptions options;
     options.max_new_tokens = limit;
     const auto before = executor.seen().size();
@@ -701,7 +716,7 @@ TEST_F(TextGenerationTest, OpaqueRejectionPreservesSameKeyHistory) {
     SCOPED_TRACE(deferred);
     auto event = output();
     auto prompt = opaque();
-    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    std::weak_ptr<const batching::PreparedInput> owner = next_prepared;
     GenerationOptions options;
     options.max_new_tokens = 1;
     auto sink = [event](GenerationEvent update) {
@@ -712,7 +727,7 @@ TEST_F(TextGenerationTest, OpaqueRejectionPreservesSameKeyHistory) {
       result = runtime->generate(
           "s",
           [prompt = std::move(prompt)](const PromptPreparationContext&)
-              -> PromptPreparationResult { return GenerationPrompt{prompt}; },
+              -> PromptPreparationResult { return prompt; },
           options,
           std::move(sink));
     } else {
@@ -788,7 +803,7 @@ TEST_F(TextGenerationTest, CancelDuringOpaquePreflightPreservesHistory) {
   submit(output(), ids({10, 11})).wait();
   executor.accepting.hold();
   auto prompt = opaque();
-  std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+  std::weak_ptr<const batching::PreparedInput> owner = next_prepared;
   auto event = output();
   const auto handle = submit(event, std::move(prompt));
   ASSERT_TRUE(executor.accepting.wait());
@@ -819,7 +834,7 @@ TEST_F(TextGenerationTest, ShutdownDuringOpaquePreflightSettlesWithoutReset) {
   submit(output(), ids({10, 11})).wait();
   executor.accepting.hold();
   auto prompt = opaque();
-  std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+  std::weak_ptr<const batching::PreparedInput> owner = next_prepared;
   auto event = output();
   const auto handle = submit(event, std::move(prompt));
   ASSERT_TRUE(executor.accepting.wait());
@@ -877,7 +892,7 @@ TEST_F(TextGenerationTest, OpaqueMetadataAndOptionsPreserveRawHistory) {
     GenerationOptions options;
     switch (i) {
       case 0:
-        prompt.input.reset();
+        next_prepared.reset();
         break;
       case 1:
         prompt = opaque(0);
@@ -1007,7 +1022,7 @@ TEST_F(
     SCOPED_TRACE(reset ? "cancel with reset" : "cancel");
     executor.executing.hold();
     auto prompt = opaque();
-    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    std::weak_ptr<const batching::PreparedInput> owner = next_prepared;
     auto event = output();
     const auto handle = submit(event, std::move(prompt));
     ASSERT_TRUE(executor.executing.wait());
@@ -1591,7 +1606,7 @@ TEST_P(
       [this, capture = std::move(capture)](
           const PromptPreparationContext&) -> PromptPreparationResult {
         delivery_checkpoint.enter();
-        return GenerationPrompt{ids({10, 11})};
+        return ids({10, 11});
       },
       {},
       [event](GenerationEvent update) { event->accept(std::move(update)); });
@@ -1606,7 +1621,7 @@ TEST_P(
       "s",
       [next_calls](const PromptPreparationContext&) -> PromptPreparationResult {
         ++*next_calls;
-        return GenerationPrompt{ids({20, 21})};
+        return ids({20, 21});
       },
       options,
       {});

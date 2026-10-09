@@ -259,8 +259,8 @@ TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
     EXPECT_EQ(context.max_prompt_positions, 8192u);
     preparing->pause();
     EXPECT_TRUE(context.cancelled());
-    return serving::GenerationPrompt{serving::PromptInput{
-        {executorch::extension::llm::make_token_input({1, 2})}}};
+    return serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2})}};
   };
   start(config, 4, 1);
   auto image = generate(1);
@@ -303,8 +303,8 @@ TEST_F(
     if (prompt.contains("prompt")) {
       throw std::runtime_error("adapter failure");
     }
-    return serving::GenerationPrompt{serving::PromptInput{
-        {executorch::extension::llm::make_token_input({1, 2, 3})}}};
+    return serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2, 3})}};
   };
   start(config);
   send(generate(1));
@@ -337,7 +337,7 @@ TEST_F(ProtocolTest, EofCancelsDeferredPreparationAndWaitsForItsReturn) {
       std::this_thread::yield();
     EXPECT_TRUE(context.cancelled());
     observed->pause();
-    return serving::GenerationPrompt{serving::PromptInput{}};
+    return serving::PromptInput{};
   };
   start(config);
   send(generate(1));

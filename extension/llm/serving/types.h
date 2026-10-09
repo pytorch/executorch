@@ -33,28 +33,12 @@ namespace serving {
 // The full prompt, not a session delta. Preparation encodes each text segment
 // separately and appends ID segments verbatim, in order, without adding
 // BOS/EOS. Segment boundaries therefore matter even between adjacent text
-// segments. Only text and token segments are currently supported; other
-// modalities, encoding failures, and an empty prepared prompt are rejected with
-// InvalidArgument before changing session history.
+// segments. The default preparer supports text and token segments; model
+// preparers may support other modalities. Invalid preparation preserves
+// history.
 struct ET_EXPERIMENTAL PromptInput {
   std::vector<MultimodalInput> segments;
 };
-
-// A complete opaque prompt, never a session delta. Its size counts decoder
-// positions. The caller supplies the tokenizer context preceding generated
-// output, normally the last prompt token; serving cannot infer it from backing.
-struct ET_EXPERIMENTAL PreparedPromptInput {
-  PreparedPromptInput(
-      batching::PreparedInputPtr input,
-      batching::Token previous_token)
-      : input(std::move(input)), previous_token(previous_token) {}
-
-  batching::PreparedInputPtr input;
-  batching::Token previous_token;
-};
-
-using GenerationPrompt ET_EXPERIMENTAL =
-    std::variant<PromptInput, PreparedPromptInput>;
 
 struct ET_EXPERIMENTAL GenerationOptions {
   // Must be positive when set. Capped by the context remaining after the full
@@ -105,9 +89,16 @@ struct ET_EXPERIMENTAL PromptPreparationContext {
 };
 
 using PromptPreparationResult ET_EXPERIMENTAL =
-    std::variant<GenerationPrompt, ServingError>;
+    std::variant<PromptInput, ServingError>;
 using PromptPreparation ET_EXPERIMENTAL =
     std::function<PromptPreparationResult(const PromptPreparationContext&)>;
+
+using ModelPreparationResult ET_EXPERIMENTAL =
+    std::variant<batching::PreparedInputPtr, ServingError>;
+// Runtime-owned; runs on control after deferred source captures are destroyed.
+using ModelPreparer ET_EXPERIMENTAL = std::function<ModelPreparationResult(
+    const PromptPreparationContext&,
+    const PromptInput&)>;
 
 struct ET_EXPERIMENTAL GenerationStats {
   // Full prompt size in decoder positions, including any reused prefix.

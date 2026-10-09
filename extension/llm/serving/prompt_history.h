@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include <executorch/extension/llm/batching/types.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
@@ -36,23 +37,21 @@ struct ET_EXPERIMENTAL PrefillPlan {
   std::string reason;
 };
 
-ET_EXPERIMENTAL inline PrefillPlan plan_prefill(
-    const std::vector<uint64_t>& resident,
-    const std::vector<uint64_t>& prompt,
+ET_EXPERIMENTAL inline PrefillPlan plan_prefill_identity(
+    const batching::PrefixIdentity& resident,
+    const batching::PrefixIdentity& prompt,
     bool dirty) {
   if (dirty) {
     return {PrefillPlan::kFull, 0, "dirty"};
   }
-  if (resident.empty()) {
+  if (!resident.size()) {
     return {PrefillPlan::kFull, 0, "new"};
   }
   if (prompt.size() < resident.size()) {
     return {PrefillPlan::kFull, 0, "mismatch"};
   }
-  for (size_t i = 0; i < resident.size(); ++i) {
-    if (prompt[i] != resident[i]) {
-      return {PrefillPlan::kFull, 0, "mismatch"};
-    }
+  if (batching::common_prefix(resident, prompt) != resident.size()) {
+    return {PrefillPlan::kFull, 0, "mismatch"};
   }
   if (prompt.size() == resident.size()) {
     // Equal histories conservatively replay: this helper cannot establish that
@@ -60,6 +59,18 @@ ET_EXPERIMENTAL inline PrefillPlan plan_prefill(
     return {PrefillPlan::kFull, 0, "equal"};
   }
   return {PrefillPlan::kSuffix, resident.size(), "exact_prefix"};
+}
+
+ET_EXPERIMENTAL inline PrefillPlan plan_prefill(
+    const std::vector<uint64_t>& resident,
+    const std::vector<uint64_t>& prompt,
+    bool dirty) {
+  return plan_prefill_identity(
+      batching::token_identity(
+          std::make_shared<const std::vector<uint64_t>>(resident)),
+      batching::token_identity(
+          std::make_shared<const std::vector<uint64_t>>(prompt)),
+      dirty);
 }
 
 } // namespace llm

@@ -14,7 +14,10 @@
 // chunk of a prompt, never a whole generation. A Task is an Input plus the
 // scheduling identity used to order and cancel it.
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -34,6 +37,105 @@ using Position ET_EXPERIMENTAL = std::int32_t;
 // lifetime, so ids never have to be recycled.
 using TaskId ET_EXPERIMENTAL = std::int64_t;
 
+using TokenInputPtr ET_EXPERIMENTAL = std::shared_ptr<const std::vector<Token>>;
+using ContentKey ET_EXPERIMENTAL = std::array<std::uint8_t, 32>;
+
+struct ET_EXPERIMENTAL TokenSpan {
+  TokenInputPtr tokens;
+  std::size_t offset;
+  std::size_t size;
+};
+struct ET_EXPERIMENTAL OpaqueSpan {
+  ContentKey key;
+  std::size_t offset;
+  std::size_t size;
+};
+using PrefixSpan ET_EXPERIMENTAL = std::variant<TokenSpan, OpaqueSpan>;
+
+// Independent immutable metadata, never an owner of execution/image backing.
+// Keys describe content under one immutable model/configuration.
+struct ET_EXPERIMENTAL PrefixIdentity {
+  std::vector<PrefixSpan> spans;
+
+  // Zero denotes empty or invalid metadata. Validate before comparison/use.
+  std::size_t size() const {
+    std::size_t total = 0;
+    for (const auto& span : spans) {
+      const bool valid = std::visit(
+          [&](const auto& s) {
+            if (!s.size ||
+                s.offset > std::numeric_limits<std::size_t>::max() - s.size ||
+                total > std::numeric_limits<std::size_t>::max() - s.size) {
+              return false;
+            }
+            total += s.size;
+            return true;
+          },
+          span);
+      if (!valid) {
+        return 0;
+      }
+      if (const auto* s = std::get_if<TokenSpan>(&span)) {
+        if (!s->tokens || s->offset + s->size > s->tokens->size()) {
+          return 0;
+        }
+      }
+    }
+    return total;
+  }
+};
+using PrefixIdentityPtr ET_EXPERIMENTAL = std::shared_ptr<const PrefixIdentity>;
+
+ET_EXPERIMENTAL inline PrefixIdentity token_identity(TokenInputPtr tokens) {
+  return PrefixIdentity{{TokenSpan{tokens, 0, tokens ? tokens->size() : 0}}};
+}
+
+// Compare positions, not span boundaries. Opaque offsets are content-relative.
+ET_EXPERIMENTAL inline std::size_t common_prefix(
+    const PrefixIdentity& a,
+    const PrefixIdentity& b) {
+  if (!a.size() || !b.size()) {
+    return 0;
+  }
+  std::size_t i = 0, j = 0, x = 0, y = 0, matched = 0;
+  while (i < a.spans.size() && j < b.spans.size()) {
+    const auto& left = a.spans[i];
+    const auto& right = b.spans[j];
+    if (left.index() != right.index()) {
+      break;
+    }
+    const auto n = std::min(
+        std::visit([](const auto& s) { return s.size; }, left) - x,
+        std::visit([](const auto& s) { return s.size; }, right) - y);
+    if (const auto* l = std::get_if<TokenSpan>(&left)) {
+      const auto& r = std::get<TokenSpan>(right);
+      for (std::size_t k = 0; k < n; ++k) {
+        if ((*l->tokens)[l->offset + x + k] != (*r.tokens)[r.offset + y + k]) {
+          return matched + k;
+        }
+      }
+    } else {
+      const auto& opaque = std::get<OpaqueSpan>(left);
+      const auto& r = std::get<OpaqueSpan>(right);
+      if (opaque.key != r.key || opaque.offset + x != r.offset + y) {
+        break;
+      }
+    }
+    matched += n;
+    x += n;
+    y += n;
+    if (x == std::visit([](const auto& s) { return s.size; }, left)) {
+      ++i;
+      x = 0;
+    }
+    if (y == std::visit([](const auto& s) { return s.size; }, right)) {
+      ++j;
+      y = 0;
+    }
+  }
+  return matched;
+}
+
 // Opaque owned backing, compatible with its consuming executor as a caller
 // precondition. Logical contents, size and layout are fixed before scheduling
 // and immutable for the backing's lifetime. Backend-private lazy caches may
@@ -50,11 +152,20 @@ class ET_EXPERIMENTAL PreparedInput {
   // Producers and consumers must share this address across shared-library
   // boundaries. This does not identify weights or devices.
   virtual const void* kind() const = 0;
-  // Number of decoder positions in the complete backing, not bytes.
+  // Number of decoder positions in this view, not bytes.
   virtual std::size_t size() const = 0;
+  virtual Token last_prompt_token() const = 0;
+  // Same concrete type, shared backing, view-relative executor offsets.
+  // The view ends at the original end and keeps last_prompt_token unchanged.
+  // Invalid or empty suffixes return null.
+  virtual std::shared_ptr<const PreparedInput> suffix(
+      std::size_t start) const = 0;
+  // Optional; when supplied, must cover exactly size() positions.
+  virtual PrefixIdentityPtr prefix_identity() const {
+    return nullptr;
+  }
 };
 using PreparedInputPtr ET_EXPERIMENTAL = std::shared_ptr<const PreparedInput>;
-using TokenInputPtr ET_EXPERIMENTAL = std::shared_ptr<const std::vector<Token>>;
 // Prepared prompts are opaque; generated token feedback needs no preparation.
 using InputPayload ET_EXPERIMENTAL =
     std::variant<TokenInputPtr, PreparedInputPtr>;

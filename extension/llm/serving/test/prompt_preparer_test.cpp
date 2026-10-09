@@ -21,8 +21,7 @@ using namespace executorch::extension::llm;
 using batching::Token;
 using executorch::runtime::Error;
 using serving::ErrorCode;
-using serving::GenerationPrompt;
-using serving::PreparedPromptInput;
+using serving::ModelPreparer;
 using serving::PromptInput;
 using serving::PromptPreparation;
 using serving::PromptPreparationContext;
@@ -175,24 +174,26 @@ TEST(PromptPreparerTest, NormalizesAndValidatesDirectAndDeferredRawPrompts) {
              {{{make_image_input(Image{})}}, {}},
              {{{make_text_input("a"), make_token_input({3, 4})}}, {}}}) {
       SCOPED_TRACE(deferred);
-      GenerationPrompt input = raw;
+      PromptInput input = raw;
       std::optional<PromptPreparation> prepare;
       if (deferred) {
-        input = PreparedPromptInput{nullptr, batching::Token{99}};
-        prepare = [prompt = raw](const auto&) {
-          return GenerationPrompt{prompt};
-        };
+        input = PromptInput{};
+        prepare = [prompt = raw](const auto&) { return prompt; };
       }
       auto result = serving::detail::prepare_prompt(context, input, prepare);
       EXPECT_FALSE(prepare.has_value());
-      ASSERT_TRUE(std::holds_alternative<PromptInput>(input));
+      EXPECT_EQ(input.segments.size(), raw.segments.size());
       if (expected.empty()) {
         ASSERT_TRUE(std::holds_alternative<ServingError>(result));
         EXPECT_EQ(
             std::get<ServingError>(result).code, ErrorCode::InvalidArgument);
       } else {
-        ASSERT_TRUE(std::holds_alternative<std::vector<Token>>(result));
-        EXPECT_EQ(std::get<std::vector<Token>>(result), expected);
+        ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
+        const auto& prepared = std::get<batching::PreparedInputPtr>(result);
+        EXPECT_EQ(
+            static_cast<const serving::detail::TokenPreparedInput&>(*prepared)
+                .tokens(),
+            expected);
       }
     }
   }
@@ -209,8 +210,12 @@ TEST(PromptPreparerTest, MovesOpaqueBackingPreservingTagAndPreviousToken) {
       auto backing = std::make_shared<TestPreparedInput>(size);
       std::weak_ptr<const batching::PreparedInput> weak = backing;
       const auto previous = std::numeric_limits<batching::Token>::max();
-      GenerationPrompt input =
-          PreparedPromptInput{std::move(backing), previous};
+      backing->previous = previous;
+      PromptInput input;
+      ModelPreparer model = [backing = std::move(backing)](
+                                const auto&, const auto&) mutable {
+        return batching::PreparedInputPtr{std::exchange(backing, nullptr)};
+      };
       std::optional<PromptPreparation> prepare;
       if (deferred) {
         prepare = [prompt = std::move(input)](const auto&) mutable {
@@ -219,16 +224,15 @@ TEST(PromptPreparerTest, MovesOpaqueBackingPreservingTagAndPreviousToken) {
         input = PromptInput{};
       }
       {
-        auto result = serving::detail::prepare_prompt(context, input, prepare);
+        auto result =
+            serving::detail::prepare_prompt(context, input, prepare, model);
         EXPECT_FALSE(prepare.has_value());
-        ASSERT_TRUE(std::holds_alternative<PreparedPromptInput>(result));
-        const auto& opaque = std::get<PreparedPromptInput>(result);
-        ASSERT_NE(opaque.input, nullptr);
-        EXPECT_EQ(opaque.input, weak.lock());
-        EXPECT_EQ(opaque.input->size(), size);
-        EXPECT_EQ(opaque.previous_token, previous);
-        ASSERT_TRUE(std::holds_alternative<PreparedPromptInput>(input));
-        EXPECT_EQ(std::get<PreparedPromptInput>(input).input, nullptr);
+        ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
+        const auto& opaque = std::get<batching::PreparedInputPtr>(result);
+        ASSERT_NE(opaque, nullptr);
+        EXPECT_EQ(opaque, weak.lock());
+        EXPECT_EQ(opaque->size(), size);
+        EXPECT_EQ(opaque->last_prompt_token(), previous);
         EXPECT_FALSE(weak.expired());
       }
       EXPECT_TRUE(weak.expired());
@@ -239,6 +243,9 @@ TEST(PromptPreparerTest, MovesOpaqueBackingPreservingTagAndPreviousToken) {
 
 TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
   RecordingTokenizer tokenizer;
+  auto invalid = std::make_shared<TestPreparedInput>(3);
+  invalid->identity = std::make_shared<const batching::PrefixIdentity>(
+      batching::PrefixIdentity{{batching::OpaqueSpan{{7}, 0, 2}}});
   const auto beyond_position_limit =
       static_cast<std::size_t>(std::numeric_limits<batching::Position>::max()) +
       1;
@@ -246,6 +253,7 @@ TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
     for (const auto& [backing, limit] :
          std::vector<std::pair<batching::PreparedInputPtr, std::size_t>>{
              {nullptr, 3},
+             {invalid, 3},
              {std::make_shared<TestPreparedInput>(0), 3},
              {std::make_shared<TestPreparedInput>(4), 3},
              {std::make_shared<TestPreparedInput>(1), 0},
@@ -253,20 +261,22 @@ TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
               beyond_position_limit}}) {
       SCOPED_TRACE(deferred);
       const PromptPreparationContext context{tokenizer, limit, {}};
-      GenerationPrompt input =
-          PreparedPromptInput{backing, batching::Token{42}};
+      PromptInput input;
+      ModelPreparer model = [backing = backing](const auto&, const auto&) {
+        return backing;
+      };
       std::optional<PromptPreparation> prepare;
       if (deferred) {
         prepare = [input](const auto&) { return input; };
         input = PromptInput{};
       }
-      auto result = serving::detail::prepare_prompt(context, input, prepare);
+      auto result =
+          serving::detail::prepare_prompt(context, input, prepare, model);
       EXPECT_FALSE(prepare.has_value());
       ASSERT_TRUE(std::holds_alternative<ServingError>(result));
       EXPECT_EQ(
           std::get<ServingError>(result).code, ErrorCode::InvalidArgument);
-      ASSERT_TRUE(std::holds_alternative<PreparedPromptInput>(input));
-      EXPECT_EQ(std::get<PreparedPromptInput>(input).input, backing);
+      EXPECT_TRUE(input.segments.empty());
     }
   }
   EXPECT_TRUE(tokenizer.calls.empty());
@@ -275,7 +285,7 @@ TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
 TEST(PromptPreparerTest, RejectsEmptyCallbackAndPreservesCallbackError) {
   RecordingTokenizer tokenizer;
   const PromptPreparationContext context{tokenizer, 3, {}};
-  GenerationPrompt input = PromptInput{{make_token_input({7})}};
+  PromptInput input{{make_token_input({7})}};
   std::optional<PromptPreparation> prepare{std::in_place};
   auto result = serving::detail::prepare_prompt(context, input, prepare);
   ASSERT_TRUE(std::holds_alternative<ServingError>(result));
@@ -288,10 +298,7 @@ TEST(PromptPreparerTest, RejectsEmptyCallbackAndPreservesCallbackError) {
   ASSERT_TRUE(std::holds_alternative<ServingError>(result));
   EXPECT_EQ(std::get<ServingError>(result).code, ErrorCode::CapacityExceeded);
   EXPECT_EQ(std::get<ServingError>(result).message, "preparation detail");
-  ASSERT_TRUE(std::holds_alternative<PromptInput>(input));
-  EXPECT_EQ(
-      std::get<PromptInput>(input).segments[0].get_tokens(),
-      (std::vector<batching::Token>{7}));
+  EXPECT_EQ(input.segments[0].get_tokens(), (std::vector<batching::Token>{7}));
   EXPECT_TRUE(tokenizer.calls.empty());
 }
 
@@ -304,7 +311,7 @@ TEST(PromptPreparerTest, CancellationBeforeOrAfterCaptureRelease) {
     bool called = false;
     const PromptPreparationContext context{
         tokenizer, 3, [&] { return before || weak.expired(); }};
-    GenerationPrompt input = PromptInput{{make_text_input("unused")}};
+    PromptInput input{{make_text_input("unused")}};
     std::optional<PromptPreparation> prepare = [capture = std::move(capture),
                                                 &called](const auto&) {
       called = true;
@@ -326,19 +333,34 @@ TEST(PromptPreparerTest, ReleasesCallbackCapturesBeforeTextEncoding) {
   tokenizer.encodings = {{"a", {9}}};
   auto capture = std::make_shared<int>(0);
   std::weak_ptr<int> weak = capture;
-  GenerationPrompt input = PromptInput{};
+  PromptInput input;
   const PromptPreparationContext context{tokenizer, 1, {}};
   std::optional<PromptPreparation> prepare = [capture = std::move(capture),
                                               &context](const auto& actual) {
     EXPECT_EQ(&actual, &context);
-    return GenerationPrompt{PromptInput{{make_text_input("a")}}};
+    return PromptInput{{make_text_input("a")}};
   };
   tokenizer.on_encode = [&] {
     EXPECT_TRUE(weak.expired());
     EXPECT_FALSE(prepare.has_value());
   };
-  auto result = serving::detail::prepare_prompt(context, input, prepare);
-  ASSERT_TRUE(std::holds_alternative<std::vector<Token>>(result));
-  EXPECT_EQ(std::get<std::vector<Token>>(result), (std::vector<Token>{9}));
+  auto result = serving::detail::prepare_prompt(
+      context,
+      input,
+      prepare,
+      [&](const auto& actual,
+          const auto& source) -> serving::ModelPreparationResult {
+        EXPECT_TRUE(weak.expired());
+        EXPECT_FALSE(prepare.has_value());
+        auto tokens =
+            serving::detail::prepare_text_prompt(actual.tokenizer, source);
+        return batching::PreparedInputPtr{
+            std::make_shared<serving::detail::TokenPreparedInput>(
+                std::make_shared<const std::vector<Token>>(
+                    std::move(*tokens)))};
+      });
+  ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(result));
+  EXPECT_EQ(
+      std::get<batching::PreparedInputPtr>(result)->last_prompt_token(), 9u);
   EXPECT_EQ(tokenizer.calls.size(), 1u);
 }

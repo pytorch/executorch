@@ -8,6 +8,7 @@
 
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/extension/llm/serving/detail/prompt_preparer.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
 #include <executorch/extension/llm/serving/test/prepared_input.h>
 #include <gtest/gtest.h>
@@ -122,10 +123,12 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
   bool accept_prepared = false;
+  bool reject_views = false;
   std::size_t burst = 1;
 
   bool accepts(const batching::PreparedInput& input) const override {
-    return accept_prepared && input.kind() == &TestPreparedInput::tag;
+    return accept_prepared && input.kind() == &TestPreparedInput::tag &&
+        !(reject_views && static_cast<const TestPreparedInput&>(input).offset);
   }
   std::optional<SessionId> open_session() override {
     auto session = FakeExecutor::open_session();
@@ -230,6 +233,10 @@ class Executor : public batching::testing::FakeExecutor {
     std::lock_guard<std::mutex> lock(data_mutex_);
     return clones_;
   }
+  void clear_feeds() {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    feeds_.clear();
+  }
   std::vector<Feed> feeds() const {
     std::lock_guard<std::mutex> lock(data_mutex_);
     return feeds_;
@@ -278,6 +285,32 @@ class PrefixReuseTest : public ::testing::Test {
   Executor executor;
   Tokenizer tokenizer;
   ServingRuntimeConfig config;
+  ModelPreparer model_preparer;
+  std::size_t image_positions = 3;
+  batching::ContentKey image_key{7};
+  bool refuse_suffix = false;
+  bool invalid_suffix = false;
+  void use_mixed_preparer() {
+    executor.accept_prepared = true;
+    model_preparer = [this](
+                         const auto&,
+                         const PromptInput& input) -> ModelPreparationResult {
+      const auto& rows = input.segments[0].get_tokens();
+      auto prepared = std::make_shared<TestPreparedInput>(rows);
+      auto tokens = std::make_shared<const std::vector<Token>>(rows);
+      prepared->identity = std::make_shared<const batching::PrefixIdentity>(
+          batching::PrefixIdentity{
+              {batching::TokenSpan{tokens, 0, 1},
+               batching::OpaqueSpan{image_key, 0, image_positions},
+               batching::TokenSpan{
+                   tokens,
+                   1 + image_positions,
+                   rows.size() - 1 - image_positions}}});
+      prepared->refuse_suffix = refuse_suffix;
+      prepared->invalid_suffix = invalid_suffix;
+      return batching::PreparedInputPtr{prepared};
+    };
+  }
   Gate delivery_checkpoint;
   Gate later_delivery_checkpoint;
   Gate cleanup_checkpoint;
@@ -311,7 +344,8 @@ class PrefixReuseTest : public ::testing::Test {
         executor,
         batching::DecodeFirstScheduler::create(32, 4, 8),
         tokenizer,
-        config);
+        config,
+        model_preparer);
   }
   void TearDown() override {
     delivery_checkpoint.release();
@@ -454,6 +488,17 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
   executor.accept_prepared = true;
   config.prefix_cache_capacity = 1;
+  model_preparer = [](const PromptPreparationContext& context,
+                      const PromptInput& input) -> ModelPreparationResult {
+    if (input.segments.size() == 2) {
+      return batching::PreparedInputPtr{
+          std::make_shared<TestPreparedInput>(input.segments[1].get_tokens())};
+    }
+    auto result = detail::prepare_text_prompt(context.tokenizer, input);
+    return batching::PreparedInputPtr{
+        std::make_shared<detail::TokenPreparedInput>(
+            std::make_shared<const std::vector<Token>>(std::move(*result)))};
+  };
   start();
   std::vector<Token> raw(40);
   std::iota(raw.begin(), raw.end(), 1);
@@ -471,7 +516,7 @@ TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
     if (!named) {
       std::iota(rows.begin(), rows.end(), 51);
     }
-    auto opaque = std::make_shared<TestPreparedInput>(rows);
+    batching::PreparedInputPtr opaque;
     const auto first_feed = executor.feeds().size();
     auto event = output();
     GenerationOptions options;
@@ -479,7 +524,7 @@ TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
     options.seed = 42;
     auto result = runtime->generate(
         named ? std::optional<std::string>{"opaque"} : std::nullopt,
-        PreparedPromptInput{opaque, rows.back()},
+        PromptInput{{make_image_input(Image{}), make_token_input(rows)}},
         options,
         [event](GenerationEvent update) { event->accept(std::move(update)); });
     ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
@@ -507,6 +552,9 @@ TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
       const auto& feed = feeds[first_feed + i];
       ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(
           feed.original.payload));
+      if (!opaque) {
+        opaque = std::get<batching::PreparedInputPtr>(feed.original.payload);
+      }
       EXPECT_EQ(
           std::get<batching::PreparedInputPtr>(feed.original.payload), opaque);
       EXPECT_EQ(feed.original.position, 0);
@@ -541,6 +589,126 @@ TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
   EXPECT_EQ(clones[1].source, snapshot.destination);
   EXPECT_EQ(clones[1].prefix, (std::vector<Token>(raw.begin(), raw.end() - 1)));
   EXPECT_EQ(executor.clone_calls.load(), clone_count + 2);
+}
+
+TEST_F(PrefixReuseTest, MixedNamedHistoryIncludesPendingHiddenStopToken) {
+  config.prefix_cache_capacity = 0;
+  config.default_stop_tokens = {101};
+  executor.burst = 2;
+  use_mixed_preparer();
+  start();
+  auto first = output();
+  submit(first, {1, 7, 7, 7, 2}, "s", 2).wait();
+  ASSERT_TRUE(first->terminal);
+  EXPECT_EQ(
+      first->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
+  refuse_suffix = true;
+  auto failed = submit(output(), {1, 7, 7, 7, 2, 100, 101, 3});
+  failed.wait();
+  ASSERT_TRUE(failed.error());
+  EXPECT_EQ(executor.opened().size(), 1u);
+  refuse_suffix = false;
+  auto continued = output();
+  submit(continued, {1, 7, 7, 7, 2, 100, 101, 3}).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 6u);
+  EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
+  const auto feeds = executor.feeds();
+  ASSERT_GE(feeds.size(), 3u);
+  EXPECT_EQ(feeds[feeds.size() - 2].tokens, (std::vector<Token>{101}));
+  EXPECT_EQ(feeds.back().tokens, (std::vector<Token>{3}));
+  EXPECT_EQ(feeds.back().original.offset, 0u);
+  EXPECT_EQ(feeds.back().position, 7);
+  image_key = {8};
+  auto changed = output();
+  submit(changed, {1, 7, 7, 7, 2, 100, 101, 3, 102, 4}).wait();
+  EXPECT_EQ(changed->terminal->stats.session_reset_reason, "mismatch");
+  EXPECT_EQ(changed->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(PrefixReuseTest, MixedSnapshotPartialOpaqueMatchAndViewFailureCleanup) {
+  config.prefix_cache_capacity = 1;
+  use_mixed_preparer();
+  start();
+  submit(output(), {1, 7, 7, 7, 2}, std::nullopt).wait();
+  image_positions = 2;
+  for (int mode = 0; mode < 4; ++mode) {
+    refuse_suffix = mode == 0;
+    executor.reject_views = mode == 1;
+    invalid_suffix = mode == 2;
+    auto event = output();
+    const auto handle = submit(event, {1, 7, 7, 9}, std::nullopt);
+    handle.wait();
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(runtime->info().active_sessions, 0u);
+    if (mode < 3) {
+      ASSERT_TRUE(handle.error());
+      EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+      EXPECT_EQ(executor.feeds().size(), 1u);
+    } else {
+      EXPECT_FALSE(handle.error());
+      EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 3u);
+      EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 1u);
+      EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{9}));
+      EXPECT_EQ(executor.feeds().back().position, 3);
+      EXPECT_EQ(executor.feeds().back().original.offset, 0u);
+    }
+  }
+}
+
+TEST_F(
+    PrefixReuseTest,
+    IdentityStorageRetiresOutsideLockWithoutKeepingPayload) {
+  watch_callbacks();
+  config.prefix_cache_capacity = 0;
+  executor.accept_prepared = true;
+  std::weak_ptr<const batching::PreparedInput> payload;
+  std::weak_ptr<const std::vector<Token>> metadata;
+  model_preparer = [&](const auto&,
+                       const PromptInput& input) -> ModelPreparationResult {
+    const auto& rows = input.segments[0].get_tokens();
+    auto prepared = std::make_shared<TestPreparedInput>(rows);
+    auto tokens = batching::TokenInputPtr(
+        new std::vector<Token>(rows), [this](const auto* p) {
+          (void)runtime->info();
+          delete p;
+        });
+    metadata = tokens;
+    prepared->identity = std::make_shared<const batching::PrefixIdentity>(
+        batching::token_identity(tokens));
+    payload = prepared;
+    return batching::PreparedInputPtr{prepared};
+  };
+  start();
+  for (int retirement = 0; retirement < 5; ++retirement) {
+    submit(
+        output(),
+        {1, 2},
+        retirement == 3 ? std::nullopt : std::optional<std::string>{"s"})
+        .wait();
+    executor.clear_feeds();
+    EXPECT_TRUE(payload.expired());
+    if (retirement == 3) {
+      EXPECT_TRUE(metadata.expired());
+      continue;
+    }
+    EXPECT_FALSE(metadata.expired());
+    if (retirement == 0) {
+      auto old = metadata;
+      submit(output(), {3, 4}).wait();
+      EXPECT_TRUE(old.expired());
+      executor.clear_feeds();
+      EXPECT_FALSE(runtime->close_session_async("s").get());
+    } else if (retirement == 1) {
+      EXPECT_FALSE(runtime->reset_session_async("s").get());
+    } else if (retirement == 2) {
+      EXPECT_FALSE(runtime->close_session_async("s").get());
+    } else {
+      runtime->shutdown();
+    }
+    EXPECT_TRUE(metadata.expired());
+  }
 }
 
 TEST_F(PrefixReuseTest, DisabledCacheNeverCapturesOrLooksUpAnySamplingMode) {

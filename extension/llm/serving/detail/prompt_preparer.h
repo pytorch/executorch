@@ -56,20 +56,55 @@ inline runtime::Result<std::vector<batching::Token>> prepare_text_prompt(
   return prepared;
 }
 
+class TokenPreparedInput final : public batching::PreparedInput {
+ public:
+  explicit TokenPreparedInput(
+      batching::TokenInputPtr tokens,
+      std::size_t offset = 0)
+      : tokens_(std::move(tokens)), offset_(offset) {}
+  static const void* type() {
+    static char kind;
+    return &kind;
+  }
+  const void* kind() const override {
+    return type();
+  }
+  std::size_t size() const override {
+    return tokens_->size() - offset_;
+  }
+  batching::Token last_prompt_token() const override {
+    return tokens_->back();
+  }
+  batching::PreparedInputPtr suffix(std::size_t start) const override {
+    return start < size()
+        ? std::make_shared<TokenPreparedInput>(tokens_, offset_ + start)
+        : nullptr;
+  }
+  batching::PrefixIdentityPtr prefix_identity() const override {
+    return std::make_shared<const batching::PrefixIdentity>(
+        batching::PrefixIdentity{
+            {batching::TokenSpan{tokens_, offset_, size()}}});
+  }
+  std::vector<batching::Token> tokens() const {
+    return {tokens_->begin() + offset_, tokens_->end()};
+  }
+
+ private:
+  batching::TokenInputPtr tokens_;
+  std::size_t offset_;
+};
+
 // Owned normalized input, an error, or cancellation (monostate).
-using PreparedPromptResult = std::variant<
-    std::vector<batching::Token>,
-    PreparedPromptInput,
-    ServingError,
-    std::monostate>;
+using PreparedPromptResult =
+    std::variant<batching::PreparedInputPtr, ServingError, std::monostate>;
 
 // Run on control, outside runtime locks, after admission/options validation.
-// Consumes invoked callbacks and opaque backing; preserves the input variant
-// alternative so the runtime can distinguish opaque requests after preparation.
+// Consumes invoked callbacks before model preparation.
 inline PreparedPromptResult prepare_prompt(
     const PromptPreparationContext& context,
-    GenerationPrompt& input,
-    std::optional<PromptPreparation>& prepare) {
+    PromptInput& input,
+    std::optional<PromptPreparation>& prepare,
+    const ModelPreparer& model_preparer = {}) {
   if (prepare) {
     if (context.cancelled && context.cancelled()) {
       return std::monostate{};
@@ -92,26 +127,38 @@ inline PreparedPromptResult prepare_prompt(
     if (auto* error = std::get_if<ServingError>(&result)) {
       return std::move(*error);
     }
-    input = std::get<GenerationPrompt>(std::move(result));
+    input = std::get<PromptInput>(std::move(result));
   }
   const auto limit = std::min(
       context.max_prompt_positions,
       static_cast<std::size_t>(std::numeric_limits<batching::Position>::max()));
-  if (auto* opaque = std::get_if<PreparedPromptInput>(&input)) {
-    const auto size = opaque->input ? opaque->input->size() : 0;
-    if (size == 0 || size > limit) {
-      return ServingError{
-          ErrorCode::InvalidArgument, "invalid prepared prompt size"};
+  batching::PreparedInputPtr prepared;
+  if (model_preparer) {
+    auto result = model_preparer(context, input);
+    if (auto* error = std::get_if<ServingError>(&result)) {
+      return std::move(*error);
     }
-    return std::move(*opaque);
+    prepared = std::get<batching::PreparedInputPtr>(std::move(result));
+  } else {
+    auto result = prepare_text_prompt(context.tokenizer, input, limit);
+    if (!result.ok()) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "prompt preparation failed"};
+    }
+    prepared = std::make_shared<TokenPreparedInput>(
+        std::make_shared<const std::vector<batching::Token>>(
+            std::move(*result)));
   }
-  auto result = prepare_text_prompt(
-      context.tokenizer, std::get<PromptInput>(input), limit);
-  if (!result.ok()) {
+  if (context.cancelled && context.cancelled()) {
+    return std::monostate{};
+  }
+  const auto size = prepared ? prepared->size() : 0;
+  const auto identity = prepared ? prepared->prefix_identity() : nullptr;
+  if (!size || size > limit || (identity && identity->size() != size)) {
     return ServingError{
-        ErrorCode::InvalidArgument, "prompt preparation failed"};
+        ErrorCode::InvalidArgument, "invalid prepared prompt size or identity"};
   }
-  return std::move(*result);
+  return prepared;
 }
 
 } // namespace executorch::extension::llm::serving::detail
