@@ -162,6 +162,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::le_Tensor_out
 
+- op: log2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::log2_out
+
 - op: lt.Scalar_out
   kernels:
     - arg_meta: null

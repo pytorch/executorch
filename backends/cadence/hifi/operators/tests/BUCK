@@ -70,6 +70,27 @@ jarvis_wrapper.cxx_test(
 )
 
 jarvis_wrapper.cxx_test(
+    name = "test_op_log2",
+    srcs = [
+        "test_op_log2.cpp",
+    ],
+    compatible_backends = ["hifi"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    remote_execution = XTENSA_TEST_REMOTE_EXECUTION_ASIC,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/backends/cadence/hifi/operators:op_log2",
+        "fbsource//xplat/executorch/backends/cadence/runtime:et_pal",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
+
+jarvis_wrapper.cxx_test(
     name = "test_op_div",
     srcs = [
         "test_op_div.cpp",
