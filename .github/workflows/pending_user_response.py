@@ -14,7 +14,7 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
 
 REMINDER_COMMENT = (
     REMINDER_MARKER
-    + f"\nHi @{{0}}, this issue/PR has been marked as 'need-user-input'. "
+    + f"This issue/PR has been marked as 'need-user-input'. "
     + f"Please respond or provide input. If we don't hear back in {DAYS_BEFORE_REMINDER} days, this will be closed."
 )
 CLOSE_COMMENT = (
@@ -43,10 +43,10 @@ def main():
 
         labeled_at = max(
             (
-                e.created_at 
+                e.created_at
                 for e in issue.get_events()
-                if e.event == "labeled" 
-                and e.label 
+                if e.event == "labeled"
+                and e.label
                 and e.label.name == LABEL
             ),
             default=issue.created_at,
@@ -56,7 +56,7 @@ def main():
 
         # ---- AUTOMATION LOGIC ----
         if any(
-            c.user.login == issue.user.login 
+            c.user.login == issue.user.login
             for c in cycle
             if REMINDER_MARKER not in (c.body or "")
         ):
@@ -64,6 +64,12 @@ def main():
             if not DRY_RUN:
                 issue.remove_from_labels(LABEL)
             continue
+        elif (now - reminders[0].created_at).days >= DAYS_BEFORE_CLOSE:
+            print(f"Close issue/PR due to inactivity")
+            if not DRY_RUN:
+                issue.create_comment(CLOSE_COMMENT)
+                issue.edit(state="closed")
+                issue.remove_from_labels(LABEL)
         elif not reminders:
             if (now - labeled_at).days >= DAYS_BEFORE_REMINDER:
                 user = issue.user.login
@@ -77,12 +83,7 @@ def main():
             print(f"Posting follow-up reminder for {user}")
             if not DRY_RUN:
                 issue.create_comment(message)
-        elif (now - reminders[0].created_at).days >= DAYS_BEFORE_CLOSE:
-            print(f"Close issue/PR due to inactivity")
-            if not DRY_RUN:
-                issue.create_comment(CLOSE_COMMENT)
-                issue.edit(state="closed")
-                issue.remove_from_labels(LABEL)
+        
 
 
 if __name__ == "__main__":
