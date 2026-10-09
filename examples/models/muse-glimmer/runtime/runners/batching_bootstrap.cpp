@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 DEFINE_string(pte, "", "Muse Glimmer solo off-graph program");
 DEFINE_string(tokenizer, "", "Matching Hugging Face tokenizer JSON");
@@ -124,8 +125,8 @@ create_muse_glimmer_batching_runtime() {
       serving,
       [spec = result->backend.preparation](
           const serving::PromptPreparationContext& context,
-          const serving::PromptInput& input) {
-        return prepare_muse_glimmer_input(context, input, spec);
+          serving::PromptInput input) {
+        return prepare_muse_glimmer_input(context, std::move(input), spec);
       });
   return result;
 }

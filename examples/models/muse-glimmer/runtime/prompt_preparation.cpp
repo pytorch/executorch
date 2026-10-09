@@ -329,7 +329,7 @@ serving::PromptPreparationResult prepare_muse_glimmer_prompt(
 
 serving::ModelPreparationResult prepare_muse_glimmer_input(
     const serving::PromptPreparationContext& context,
-    const serving::PromptInput& input,
+    serving::PromptInput input,
     std::shared_ptr<const MuseGlimmerPreparationSpec> spec) {
   if (!spec || spec->max_context_length <= 1 || spec->vocab_size <= 0 ||
       input.segments.empty())
