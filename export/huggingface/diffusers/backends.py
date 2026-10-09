@@ -10,9 +10,10 @@ from pathlib import Path
 
 from executorch.exir._warnings import experimental
 
-from .config import DiffusionConfig
+from executorch.extension.diffusers.config import DiffusionConfig
+from executorch.extension.diffusers.pipeline_specs import ResolvedDiffusionPipeline
+
 from .export import export_huggingface, lower_and_write_pte
-from .pipeline_specs import ResolvedDiffusionPipeline
 
 
 @experimental("This API is experimental and may change without notice.")

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Constant-method metadata for experimental diffusion programs."""
+"""Constant-method metadata for experimental Diffusers programs."""
 
 import math
 from dataclasses import dataclass

@@ -1,16 +1,18 @@
-# Diffusion
+# Diffusers
 
 This directory provides experimental export and Python runtime support for
 Hugging Face checkpoints using `StableDiffusionPipeline` or
 `StableDiffusionXLPipeline`. The exported PTE stores the text encoder, denoiser
 and VAE methods together with the metadata needed by the runner.
 
+All Python APIs in this package are experimental and may change without notice.
+
 ## Installation
 
 Install the optional diffusion dependencies:
 
 ```bash
-python -m pip install -r extension/diffusion/requirements.txt
+python -m pip install -r extension/diffusers/requirements.txt
 ```
 
 ## Usage
@@ -20,7 +22,7 @@ python -m pip install -r extension/diffusion/requirements.txt
 Run from the ExecuTorch repository root:
 
 ```bash
-python -m executorch.extension.diffusion.export \
+python -m executorch.export.huggingface.diffusers.export \
   stable-diffusion-v1-5/stable-diffusion-v1-5 \
   stable_diffusion_mlx.pte \
   --backend mlx \
@@ -32,7 +34,7 @@ Use `stabilityai/stable-diffusion-xl-base-1.0` to export SDXL.
 ### Run
 
 ```bash
-python -m executorch.extension.diffusion.runner \
+python -m executorch.extension.diffusers.runner \
   stable_diffusion_mlx.pte \
   --model-id stable-diffusion-v1-5/stable-diffusion-v1-5 \
   --prompt "a photo of a cat" \
@@ -51,7 +53,7 @@ specified by `--model-id`.
 Export SDXL with dynamic spatial dimensions:
 
 ```bash
-python -m executorch.extension.diffusion.export \
+python -m executorch.export.huggingface.diffusers.export \
   stabilityai/stable-diffusion-xl-base-1.0 \
   sdxl_dynamic_mlx.pte \
   --backend mlx \
@@ -65,7 +67,7 @@ python -m executorch.extension.diffusion.export \
 Run it at a resolution within that range:
 
 ```bash
-python -m executorch.extension.diffusion.runner \
+python -m executorch.extension.diffusers.runner \
   sdxl_dynamic_mlx.pte \
   --model-id stabilityai/stable-diffusion-xl-base-1.0 \
   --prompt "an astronaut riding a horse" \
@@ -79,7 +81,7 @@ python -m executorch.extension.diffusion.runner \
 Quantize the denoiser's linear weights during MLX export:
 
 ```bash
-python -m executorch.extension.diffusion.export \
+python -m executorch.export.huggingface.diffusers.export \
   stabilityai/stable-diffusion-xl-base-1.0 \
   sdxl_4w_mlx.pte \
   --backend mlx \

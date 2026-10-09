@@ -15,14 +15,19 @@ from typing import Any
 import torch
 from executorch.exir._warnings import experimental
 
-from .config import DiffusionConfig, ExportConfig, ModelConfig
-from .metadata import build_diffusion_metadata
-from .pipeline_discovery import resolve_huggingface_pipeline
-from .pipeline_specs import (
+from executorch.extension.diffusers.config import (
+    DiffusionConfig,
+    ExportConfig,
+    ModelConfig,
+)
+from executorch.extension.diffusers.metadata import build_diffusion_metadata
+from executorch.extension.diffusers.pipeline_specs import (
     DiffusionComponents,
     DiffusionPipelineSpec,
     ResolvedDiffusionPipeline,
 )
+
+from .pipeline_discovery import resolve_huggingface_pipeline
 
 ExportedPrograms = dict[str, torch.export.ExportedProgram]
 

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Configuration for diffusion model loading and export."""
+"""Configuration for Diffusers model loading and export."""
 
 from dataclasses import dataclass, field
 

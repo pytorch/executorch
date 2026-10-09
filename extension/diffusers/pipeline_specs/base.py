@@ -12,10 +12,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
+from executorch.exir._warnings import experimental
 
 from ..config import DiffusionConfig
 
 
+@experimental("This API is experimental and may change without notice.")
 class DiffusionPipelineSpec(ABC):
     """Contract between diffusion pipelines, exporters and runners."""
 
@@ -192,6 +194,7 @@ class DiffusionPipelineSpec(ABC):
         ...
 
 
+@experimental("This API is experimental and may change without notice.")
 @dataclass(frozen=True)
 class DiffusionComponents:
     """Components loaded for a diffusion pipeline."""
@@ -208,6 +211,7 @@ class DiffusionComponents:
             ) from error
 
 
+@experimental("This API is experimental and may change without notice.")
 @dataclass(frozen=True)
 class DiffusionModelInfo:
     """Facts discovered from a particular diffusion model."""
@@ -238,6 +242,7 @@ class DiffusionModelInfo:
             raise ValueError("guidance_input_dim must not be negative")
 
 
+@experimental("This API is experimental and may change without notice.")
 @dataclass(frozen=True)
 class ResolvedDiffusionPipeline:
     """Bind pipeline behavior to facts from a particular model."""

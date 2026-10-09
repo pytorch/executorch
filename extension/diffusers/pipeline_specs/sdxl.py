@@ -9,6 +9,7 @@
 from typing import Any
 
 import torch
+from executorch.exir._warnings import experimental
 
 from ..config import DiffusionConfig
 from ..wrappers import (
@@ -22,6 +23,7 @@ from ._stable_diffusion import StableDiffusionPipelineSpec
 from .base import DiffusionComponents
 
 
+@experimental("This API is experimental and may change without notice.")
 class SDXLPipelineSpec(StableDiffusionPipelineSpec):
     """Export and runtime behavior for Stable Diffusion XL."""
 

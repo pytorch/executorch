@@ -11,7 +11,7 @@ from typing import Any
 
 from executorch.exir._warnings import experimental
 
-from .pipeline_specs import (
+from executorch.extension.diffusers.pipeline_specs import (
     DiffusionModelInfo,
     DiffusionPipelineSpec,
     HF_PIPELINE_SPECS,
