@@ -22,10 +22,12 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:convert_dtype_pass",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
                 "//executorch/exir:lib",
                 "//executorch/extension/pybindings:portable_lib",  # @manual
                 "//executorch/extension/pytree:pylib",
                 "//executorch/kernels/portable:custom_ops_generated_lib",
+                "//pytorch/ao:torchao",  # @manual
             ],
         )
 

@@ -37,6 +37,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -89,6 +90,9 @@ struct ET_EXPERIMENTAL GenerationUpdate {
 // serviced by this runner. An exception from a callback is contained and ends
 // that generation as Failed.
 using GenerationCallback = std::function<void(const GenerationUpdate&)>;
+
+using GenerationInput ET_EXPERIMENTAL =
+    std::variant<std::vector<Token>, PreparedInputPtr>;
 
 struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
@@ -217,6 +221,10 @@ class ET_EXPERIMENTAL Session {
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
+  // Opaque backing must pass this Runner's Executor::accepts() check and have
+  // a stable logical size and layout. A pending prediction is submitted as
+  // separate raw prefill before the opaque chunks.
+  //
   // The delta must be non-empty and its exclusive end must fit in Position.
   // Invalid input and a second concurrent generation end as Failed. A default
   // or moved-from Session also completes synchronously as Failed; a retained
@@ -231,7 +239,7 @@ class ET_EXPERIMENTAL Session {
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
   GenerationHandle generate_async(
-      std::vector<Token> delta,
+      GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled = {}) const;
