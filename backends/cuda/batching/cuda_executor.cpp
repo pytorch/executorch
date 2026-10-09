@@ -236,12 +236,13 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   (void)prefill_backend;
 
   // Every resident session may fill its budget at once; the pool must hold
-  // them all, or a step could find no free cell mid-generation.
+  // them all, or a step could find no free cell mid-generation. One of the
+  // program's cells is the padding scratch row, never handed out.
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<std::int64_t>(max_sessions) * max_session_tokens <= max_cells,
+      static_cast<std::int64_t>(max_sessions) * max_session_tokens < max_cells,
       InvalidArgument,
       "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
-      " cells",
+      " cells, one of which is reserved",
       max_sessions,
       max_session_tokens,
       max_cells);
