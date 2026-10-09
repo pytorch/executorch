@@ -108,6 +108,7 @@ set(_generic_custom_ops__srcs
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_conv2d.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_max_pool2d.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_matmul.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/generic/operators/op_quantized_fully_connected_packed.cpp"
 )
 
 # Custom ops that are needed to run the test model.

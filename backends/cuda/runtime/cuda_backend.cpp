@@ -43,7 +43,6 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/utils.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
@@ -51,6 +50,7 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 
 namespace executorch::backends::cuda {
@@ -88,6 +88,15 @@ constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
+
+bool CudaGraphState::start_warmup() {
+  if (!CudaAllocator::memory_pools_supported(-1)) {
+    return false;
+  }
+  phase = CudaGraphPhase::Warmup;
+  warmup_remaining = kCudaGraphWarmupSteps;
+  return true;
+}
 
 // Advances the off-graph KV cache past a step's tokens. Every successful exit
 // of execute() ends here, and only those: a run that failed never wrote its
@@ -539,15 +548,22 @@ class ET_EXPERIMENTAL CudaBackend final
         handle->get_cuda_stream(),
         method_name.c_str());
 
-    // Initialize CUDA graph state if enabled for this method.
+    // Initialize CUDA graph state if enabled for this method. Not on a device
+    // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
-      ET_LOG(
-          Info,
-          "CUDA graph enabled for method '%s' (warmup=%d)",
-          method_name.c_str(),
-          kCudaGraphWarmupSteps);
+      if (handle->cuda_graph_state.start_warmup()) {
+        ET_LOG(
+            Info,
+            "CUDA graph enabled for method '%s' (warmup=%d)",
+            method_name.c_str(),
+            kCudaGraphWarmupSteps);
+      } else {
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s' but this device has no "
+            "memory pools; running without a CUDA graph",
+            method_name.c_str());
+      }
     }
 
     mutable_state_note_handle(handle);
@@ -1128,6 +1144,7 @@ class ET_EXPERIMENTAL CudaBackend final
             cudaGetErrorString(sync_err));
         (void)cudaGetLastError();
       }
+      // This also releases unused blocks cached by other allocator users.
       CudaAllocator::release_cached_memory(-1);
     }
   }

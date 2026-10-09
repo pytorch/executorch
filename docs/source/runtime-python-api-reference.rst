@@ -8,6 +8,9 @@ For detailed information on how APIs evolve and the deprecation process, please 
 .. autoclass:: Runtime
     :members: get, load_program
 
+.. autoclass:: BackendRegistry
+    :members: registered_backend_names, is_available, set_option, get_option
+
 .. autoclass:: OperatorRegistry
     :members: operator_names
 

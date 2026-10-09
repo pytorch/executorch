@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
+from executorch.backends.cadence.aot.weight_packing import unpack_rows
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -308,7 +309,7 @@ def quantized_add_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -434,7 +435,7 @@ def quantized_mul_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -683,6 +684,37 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
+@impl_tracked(m, "quantized_fully_connected_packed")
+def quantized_fully_connected_packed(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Sub-byte weights: unpack, then reuse the ordinary quantized path.
+
+    Keeping the arithmetic in `quantized_linear_common` means packing cannot
+    drift from the unpacked operator, which is exactly what the tests assert.
+    """
+    return quantized_linear_common(
+        src,
+        unpack_rows(weight, in_dim, weight_bits),
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+    )
+
+
 @impl_tracked(m, "fully_connected")
 def fully_connected(
     input_tensor: torch.Tensor,
@@ -826,14 +858,21 @@ def quantized_layer_norm_per_tensor(
         - output_scale (float): The scale of the output
         - output_zero_point (int): The zero point of the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
     if input_tensor.dtype not in supported_dtypes:
         raise ValueError(
             f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
         )
 
+    quant_min = torch.iinfo(input_tensor.dtype).min
+    quant_max = torch.iinfo(input_tensor.dtype).max
     float_input_tensor = dequantize_per_tensor(
-        input_tensor, X_scale, X_zero_point, -128, 127, input_tensor.dtype
+        input_tensor,
+        X_scale,
+        X_zero_point,
+        quant_min,
+        quant_max,
+        input_tensor.dtype,
     )
     assert isinstance(float_input_tensor, torch.Tensor)
     out = torch.nn.functional.layer_norm(
@@ -844,8 +883,8 @@ def quantized_layer_norm_per_tensor(
         out,
         output_scale,
         output_zero_point,
-        torch.iinfo(input_tensor.dtype).min,
-        torch.iinfo(input_tensor.dtype).max,
+        quant_min,
+        quant_max,
         input_tensor.dtype,
     )
 
