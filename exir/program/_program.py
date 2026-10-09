@@ -10,7 +10,7 @@ import copy
 import io
 import logging
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
@@ -1134,6 +1134,39 @@ def _apply_pre_decomposition_transforms(
     return program
 
 
+def _mark_constants_shared_across_methods(
+    aten_programs: Dict[str, ExportedProgram],
+) -> None:
+    """
+    Marks each constant placeholder that more than one method reads with
+    ``meta["shared_across_methods"] = True``. A pre-decomposition transform
+    sees one method at a time, and a constant it folds or erases may still be
+    read by another method. Constants are matched by fully qualified name; a
+    placeholder without users is not a read, as unused parameters are
+    removed before emission.
+    """
+    reads = []
+    for program in aten_programs.values():
+        signature = program.graph_signature
+        fqns = {
+            **signature.inputs_to_parameters,
+            **signature.inputs_to_buffers,
+            **signature.inputs_to_lifted_tensor_constants,
+        }
+        reads.append(
+            {
+                node: fqns[node.name]
+                for node in program.graph.find_nodes(op="placeholder")
+                if node.name in fqns and node.users
+            }
+        )
+    readers = Counter(fqn for read in reads for fqn in read.values())
+    for read in reads:
+        for node, fqn in read.items():
+            if readers[fqn] > 1:
+                node.meta["shared_across_methods"] = True
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1156,6 +1189,7 @@ def _gen_edge_manager_for_partitioners(
     """
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
+    _mark_constants_shared_across_methods(aten_programs)
     for name, program in aten_programs.items():
         partitioners_for_program = partitioner.get(name, [])
         program = _apply_pre_decomposition_transforms(program, partitioners_for_program)

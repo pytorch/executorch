@@ -4,19 +4,34 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import io
 import logging
+import re
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import torch
 import torch.nn.functional as F
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    ExecutorchBackendConfig,
+    to_edge,
+    to_edge_transform_and_lower,
+)
+from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass_unlifted,
+)
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch.export import export
+from torch.export import export, ExportedProgram
+from torch.export.experimental import _export_forward_backward
 
 
 class TestXnnpackPartitioner(unittest.TestCase):
@@ -161,3 +176,1016 @@ class TestXnnpackPartitioner(unittest.TestCase):
         fwd2_et = executorch_module.run_method("forward_2", example_inputs)
         self.assertTrue(torch.allclose(fwd1_eager, fwd1_et[0], 1e-3))
         self.assertTrue(torch.allclose(fwd2_eager, fwd2_et[0], 1e-3))
+
+    def test_parametrized_weight_is_folded_before_partitioning(self):
+        """
+        A weight computed from parameters (here weight_norm) is folded into a
+        constant before partitioning, so the convolution is delegated instead
+        of falling back to the portable kernels with the weight computation.
+        """
+
+        class ParametrizedConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3)
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        model = ParametrizedConv().eval()
+        example_inputs = (torch.randn(1, 4, 8),)
+        eager = model(*example_inputs)
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        call_functions = [
+            node
+            for node in edge.exported_program().graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        delegates = [
+            node
+            for node in call_functions
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        self.assertEqual(len(delegates), 1)
+        # The delegate call and the getitem on its output are all that is left.
+        self.assertEqual(len(call_functions), 2)
+
+        # The module keeps a pointer into the buffer rather than a copy, so the
+        # program manager that owns the buffer has to outlive the module.
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                eager,
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
+
+    def test_pre_decomposition_folding_keeps_quantization_primitives(self):
+        """
+        Folding must not touch the Q/DQ chain that convert_pt2e leaves on a
+        quantized weight, or the weight would be dequantized at export time.
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        model = self.SimpleModel().eval()
+        example_inputs = (torch.randn(2, 10),)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
+        prepared = prepare_pt2e(export(model, example_inputs).module(), quantizer)
+        prepared(*example_inputs)
+        converted = convert_pt2e(prepared)
+
+        def quant_targets(ep):
+            return sorted(
+                str(node.target)
+                for node in ep.graph.nodes
+                if node.op == "call_function"
+                and "quantized_decomposed" in str(node.target)
+            )
+
+        class GroupwiseLinear(torch.nn.Module):
+            """A weight stored as int8 groups, the way 4-bit LLM exports do."""
+
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "weight", torch.randint(-8, 8, (8, 16), dtype=torch.int8)
+                )
+                self.register_buffer("scales", torch.rand(8, 2))
+                self.register_buffer("zeros", torch.zeros(8, 2, dtype=torch.int8))
+
+            def forward(self, x):
+                weight = torch.ops.quantized_decomposed.dequantize_per_channel_group(
+                    self.weight, self.scales, self.zeros, -8, 7, torch.int8, 8, x.dtype
+                )
+                return torch.nn.functional.linear(x, weight)
+
+        for quantized, inputs in (
+            (converted, example_inputs),
+            (GroupwiseLinear(), (torch.randn(2, 16),)),
+        ):
+            exported = export(quantized, inputs)
+            before = quant_targets(exported)
+            self.assertGreater(len(before), 0)
+            after = quant_targets(
+                XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            )
+            self.assertEqual(before, after)
+
+    def test_pre_decomposition_folding_skips_factory_ops(self):
+        """
+        A scalar fill of a static shape stays an op, so that the fold does not
+        turn it into a stored tensor. Every target in the skip set is covered,
+        and each is checked to be what the edge-level pass skips for the same
+        reason: a fill that decomposes to aten.full or aten.full_like.
+        """
+        fills = {
+            torch.ops.aten.full.default: lambda p: torch.full((4, 8), 1.5),
+            torch.ops.aten.new_full.default: lambda p: p.new_full((4, 8), 1.5),
+            torch.ops.aten.ones.default: lambda p: torch.ones(4, 8),
+            torch.ops.aten.new_ones.default: lambda p: p.new_ones((4, 8)),
+            torch.ops.aten.zeros.default: lambda p: torch.zeros(4, 8),
+            torch.ops.aten.new_zeros.default: lambda p: p.new_zeros((4, 8)),
+            torch.ops.aten.full_like.default: lambda p: torch.full_like(p, 1.5),
+            torch.ops.aten.ones_like.default: lambda p: torch.ones_like(p),
+            torch.ops.aten.zeros_like.default: lambda p: torch.zeros_like(p),
+        }
+        self.assertEqual(
+            set(fills), set(XnnpackPartitioner._CONSTANT_PROP_SKIP_TARGETS)
+        )
+
+        class Fill(torch.nn.Module):
+            def __init__(self, fill):
+                super().__init__()
+                self.fill = fill
+                self.p = torch.nn.Parameter(torch.randn(4, 8))
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.fill(self.p))
+
+        def call_targets(ep):
+            return [
+                node.target for node in ep.graph.nodes if node.op == "call_function"
+            ]
+
+        for target, fill in fills.items():
+            exported = export(Fill(fill).eval(), (torch.randn(4, 8),))
+            self.assertIn(target, call_targets(exported))
+            decomposed = set(call_targets(exported.run_decompositions()))
+            self.assertTrue(
+                decomposed
+                & {torch.ops.aten.full.default, torch.ops.aten.full_like.default},
+                f"{target} does not decompose to a fill: {decomposed}",
+            )
+
+            folded = XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            self.assertIn(target, call_targets(folded), f"{target} was folded")
+            self.assertEqual(len(folded.constants), 0)
+            self.assertEqual(
+                list(folded.graph_signature.inputs_to_parameters.values()), ["p"]
+            )
+
+    def test_pre_decomposition_folding_keeps_mutated_buffer(self):
+        """
+        A buffer the model writes in place, such as a KV cache, is not a
+        constant. The ATen program handed to the hook lists no mutated buffers
+        yet; the write is still an in-place copy_ on a view of the buffer.
+        Folding that view would leave the write on a constant, and
+        run_decompositions would then fail on the aliasing.
+        """
+
+        class Cache(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(8, 8))
+                self.register_buffer("cache", torch.zeros(4, 8))
+
+            def forward(self, x):
+                previous = self.cache[:2]
+                self.cache[:2] = x
+                return (previous + x) @ self.w.t()
+
+        model = Cache().eval()
+        example_inputs = (torch.randn(2, 8),)
+
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        self.assertEqual(
+            list(folded.graph_signature.buffers_to_mutate.values()), ["cache"]
+        )
+        self.assertEqual(len(folded.constants), 0)
+        (weight,) = folded.graph_signature.inputs_to_parameters.values()
+        self.assertRegex(weight, r"^w_prop_[0-9a-f]{64}$")
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        self.assertEqual(
+            list(edge.exported_program().graph_signature.buffers_to_mutate.values()),
+            ["cache"],
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        # The initial state of a mutated buffer is not serialized, so the first
+        # call only primes the cache on both sides. From then on the cache
+        # carries state from one call to the next.
+        x = torch.randn(2, 8)
+        executorch_module.forward((x,))
+        model(x)
+        for _ in range(3):
+            x = torch.randn(2, 8)
+            self.assertTrue(
+                torch.allclose(
+                    executorch_module.forward((x,))[0],
+                    model(x),
+                    rtol=1e-5,
+                    atol=1e-5,
+                )
+            )
+
+    def test_pre_decomposition_folding_keeps_buffers_shared_across_methods(self):
+        """
+        A buffer one method only reads can be written by another method of
+        the same program. The hook sees one method at a time, so buffers stay
+        out of the fold and the reader keeps its shared allocation.
+        """
+
+        class Shared(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4, 4))
+
+        class Write(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                self.shared.state.copy_(x)
+                return x
+
+        class Read(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                return x @ self.shared.state.t()
+
+        shared = Shared()
+        x = torch.ones(4, 4)
+        read_program = export(Read(shared), (x,))
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(read_program),
+            read_program,
+        )
+        edge = to_edge_transform_and_lower(
+            {"write": export(Write(shared), (x,)), "read": read_program},
+            partitioner={
+                "write": [XnnpackPartitioner()],
+                "read": [XnnpackPartitioner()],
+            },
+        )
+        read = edge.exported_program("read")
+        self.assertEqual(
+            list(read.graph_signature.inputs_to_buffers.values()), ["shared.state"]
+        )
+        self.assertEqual(len(read.constants), 0)
+
+        program = edge.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True),
+                emit_mutable_buffer_names=True,
+            )
+        ).executorch_program
+        for plan in program.execution_plan:
+            shared_names = [
+                value.val.extra_tensor_info.fully_qualified_name
+                for value in plan.values
+                if getattr(value.val, "allocation_info", None) is not None
+                and value.val.allocation_info.memory_id == 2
+            ]
+            self.assertEqual(shared_names, ["shared.state"], plan.name)
+
+    def test_pre_decomposition_folding_skips_training_graphs(self):
+        """
+        A training graph keeps its parameters as inputs: the runtime hands
+        them to the optimizer through the gradient and parameter outputs.
+        """
+
+        class Loss(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 8))
+
+            def forward(self, x):
+                return (x @ self.weight.t()).sum()
+
+        joint = _export_forward_backward(export(Loss(), (torch.randn(2, 8),)))
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(joint), joint
+        )
+
+        edge = to_edge_transform_and_lower(
+            joint,
+            partitioner=[
+                XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+            ],
+        )
+        self.assertEqual(
+            list(edge.exported_program().graph_signature.inputs_to_parameters.values()),
+            ["weight"],
+        )
+        methods = [
+            plan.name for plan in edge.to_executorch().executorch_program.execution_plan
+        ]
+        self.assertIn("__et_training_parameters_index_forward", methods)
+
+    def test_pre_decomposition_folding_handles_view_of_parameter(self):
+        """
+        Before decomposition aten.t returns a view of the parameter, which
+        keeps requires_grad. The fold registers a detached leaf; otherwise
+        the retrace in to_edge clones it into a non-leaf that the delegate
+        cannot deep-copy.
+        """
+
+        class MatmulT(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x):
+                return x @ self.w.t()
+
+        model = MatmulT().eval()
+        example_inputs = (torch.randn(2, 4),)
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        self.assertEqual(
+            [n.op for n in edge.exported_program().graph.nodes].count("get_attr"), 1
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
+
+    def test_pre_decomposition_folding_keeps_external_weight_tags(self):
+        """
+        A weight tagged for an external file keeps its tag through the fold.
+        The folded value is a parameter named after the weight, so the tag
+        function sees the name and run_decompositions carries the custom
+        meta to the delegate.
+        """
+
+        class TaggedWeights(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(3, 4))
+                self.lora_weight = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x):
+                return x @ self.weight.t() + x @ self.lora_weight.t()
+
+        def gen_tag_fn(node):
+            return "lora.ptd" if "lora" in node.name else "foundation.ptd"
+
+        def sha256(tensor):
+            return hashlib.sha256(
+                tensor.detach().t().contiguous().numpy().tobytes()
+            ).hexdigest()
+
+        model = TaggedWeights().eval()
+        example_inputs = (torch.randn(2, 4),)
+        module = export(model, example_inputs).module()
+        delegate_external_constants_pass_unlifted(module, gen_tag_fn)
+        edge = to_edge_transform_and_lower(
+            export(module, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch(
+            ExecutorchBackendConfig(external_constants=gen_tag_fn)
+        )
+        self.assertEqual(
+            {
+                file: set(entries)
+                for file, entries in executorch._named_data.external_data.items()
+            },
+            {
+                "foundation.ptd": {sha256(model.weight)},
+                "lora.ptd": {sha256(model.lora_weight)},
+            },
+        )
+        self.assertEqual(len(executorch._named_data.pte_data), 0)
+
+    def test_pre_decomposition_folding_keeps_adapter_and_base_weights_apart(self):
+        """
+        A merged adapter linear whose base weight is tagged for one external
+        file and whose adapter factors for another is not folded: the fold
+        would store one tensor in the base file and leave the adapter file
+        empty. Each file holds the data tagged for it, as without the hook.
+        """
+
+        class AdaptedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.base = torch.nn.Parameter(torch.randn(3, 4))
+                self.lora_a = torch.nn.Parameter(torch.randn(2, 4))
+                self.lora_b = torch.nn.Parameter(torch.randn(3, 2))
+
+            def forward(self, x):
+                return F.linear(x, self.base + self.lora_b @ self.lora_a)
+
+        def gen_tag_fn(node):
+            return "lora.ptd" if "lora" in node.name else "foundation.ptd"
+
+        def sha256(tensor):
+            return hashlib.sha256(
+                tensor.detach().contiguous().numpy().tobytes()
+            ).hexdigest()
+
+        def tagged_program():
+            module = export(model, example_inputs).module()
+            delegate_external_constants_pass_unlifted(module, gen_tag_fn)
+            return export(module, example_inputs)
+
+        def lower():
+            return to_edge_transform_and_lower(
+                tagged_program(), partitioner=[XnnpackPartitioner()]
+            ).to_executorch(ExecutorchBackendConfig(external_constants=gen_tag_fn))
+
+        def files(executorch):
+            # The delegate's named data and the program's own constants.
+            contents = {
+                file: set(entries)
+                for file, entries in executorch._named_data.external_data.items()
+            }
+            output = executorch._emitter_output
+            for file, entries in output.external_constant_map.items():
+                contents.setdefault(file, set()).update(
+                    hashlib.sha256(
+                        bytes(output.external_constant_buffer[index])
+                    ).hexdigest()
+                    for index in entries.values()
+                )
+            return contents
+
+        model = AdaptedLinear().eval()
+        example_inputs = (torch.randn(2, 4),)
+        exported = tagged_program()
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(exported), exported
+        )
+
+        with_hook = lower()
+        self.assertEqual(
+            files(with_hook),
+            {
+                "foundation.ptd": {sha256(model.base)},
+                "lora.ptd": {sha256(model.lora_a), sha256(model.lora_b)},
+            },
+        )
+        with mock.patch.object(
+            XnnpackPartitioner,
+            "transform_for_pre_decomposition",
+            lambda self, exported_program: exported_program,
+        ):
+            without_hook = lower()
+        self.assertEqual(with_hook.buffer, without_hook.buffer)
+        self.assertEqual(files(with_hook), files(without_hook))
+
+    def test_pre_decomposition_folding_names_folds_after_their_expression(self):
+        """
+        The external constant map is keyed by name and shared by the methods
+        of a program. A folded value is named after its source and the
+        expression, so two methods that fold the same parameter through
+        different expressions write two entries, and two methods that fold
+        the same expression share one.
+        """
+
+        class Shared(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.ones(3, 4))
+
+        class Transpose(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                return x @ self.shared.w.t()
+
+        class ScaledTranspose(Transpose):
+            def forward(self, x):
+                return x @ (self.shared.w * 14).t()
+
+        shared = Shared()
+        example_inputs = (torch.ones(2, 4),)
+        partitioner = XnnpackPartitioner()
+        programs = {
+            name: partitioner.transform_for_pre_decomposition(
+                export(model, example_inputs)
+            )
+            for name, model in (
+                ("prefill", Transpose(shared)),
+                ("decode", ScaledTranspose(shared)),
+                ("scaled", ScaledTranspose(shared)),
+            )
+        }
+        executorch = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(external_constants=lambda node: "weights.ptd")
+        )
+        external_map = executorch._emitter_output.external_constant_map
+        self.assertEqual(len(external_map["weights.ptd"]), 2)
+        for name in external_map["weights.ptd"]:
+            self.assertRegex(name, r"^shared\.w_prop_[0-9a-f]{64}$")
+        self.assertEqual(len(executorch._emitter_output.external_constant_buffer), 2)
+        # The program reads the folded values from the .ptd. With one name
+        # for both folds the second write replaced the first, and one method
+        # read the other's weight: 4 where eager gives 56, or the reverse.
+        with tempfile.TemporaryDirectory() as directory:
+            executorch.write_tensor_data_to_file(directory)
+            data = (Path(directory) / "weights.ptd").read_bytes()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer, data)
+        for name, expected in (("prefill", 4.0), ("decode", 56.0), ("scaled", 56.0)):
+            output = executorch_module.run_method(name, example_inputs)[0]
+            self.assertTrue(torch.equal(output, torch.full((2, 3), expected)), name)
+
+    def test_pre_decomposition_folding_folds_gemm_weights_only(self):
+        """
+        Only a computed weight or bias of a GEMM-like op is folded: it makes
+        the op partitionable. A parameter-only subgraph elsewhere unlocks no
+        delegation and would only be executed at export time and stored, so
+        an arange mask, an expand and a parameter-derived output stay ops.
+        A program with no computed GEMM weight leaves the hook untouched.
+        """
+
+        class Mixed(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3)
+                )
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+                self.row = torch.nn.Parameter(torch.randn(6))
+
+            def forward(self, x):
+                mask = torch.arange(6) < 3
+                expanded = self.row.expand(64, 6)
+                return self.conv(x) * self.scale, mask, expanded, self.scale * 2
+
+        model = Mixed().eval()
+        example_inputs = (torch.randn(1, 4, 8),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+        self.assertNotIn(torch.ops.aten._weight_norm.default, targets)
+        self.assertIn(torch.ops.aten.arange.default, targets)
+        self.assertIn(torch.ops.aten.expand.default, targets)
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 2)
+        parameters = list(folded.graph_signature.inputs_to_parameters.values())
+        self.assertEqual(set(parameters[:-1]), {"conv.bias", "scale", "row"})
+        self.assertRegex(
+            parameters[-1],
+            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
+        )
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        for actual, expected in zip(
+            executorch_module.forward(example_inputs), model(*example_inputs)
+        ):
+            self.assertTrue(torch.allclose(actual, expected, rtol=1e-5, atol=1e-5))
+
+        static = export(self.SimpleModel().eval(), (torch.randn(2, 10),))
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(static), static
+        )
+
+    def test_pre_decomposition_folding_does_not_duplicate_shared_weights(self):
+        """
+        A fold is applied only if it does not make the program larger. A
+        parameter used both inside and outside the folded expression cannot
+        be erased, so its fold would only add a copy: a tied embedding read
+        by one lookup and one transposed matmul stays as it is, and so does a
+        weight used twice.
+        """
+
+        class TiedEmbedding(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(64, 32)
+
+            def forward(self, ids):
+                hidden = self.embedding(ids)
+                return hidden @ self.embedding.weight.t()
+
+        class TwoUses(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(32, 32))
+
+            def forward(self, x):
+                return x @ self.w.t() + x @ self.w
+
+        for model, example_inputs in (
+            (TiedEmbedding().eval(), (torch.tensor([[1, 2, 3]]),)),
+            (TwoUses().eval(), (torch.randn(2, 32),)),
+        ):
+            folded = XnnpackPartitioner().transform_for_pre_decomposition(
+                export(model, example_inputs)
+            )
+            self.assertEqual(len(folded.state_dict), 1)
+            self.assertTrue(
+                any(
+                    n.target is torch.ops.aten.t.default
+                    for n in folded.graph.nodes
+                    if n.op == "call_function"
+                )
+            )
+            with_hook = to_edge_transform_and_lower(
+                export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+            ).to_executorch()
+            with mock.patch.object(
+                XnnpackPartitioner,
+                "transform_for_pre_decomposition",
+                lambda self, exported_program: exported_program,
+            ):
+                without_hook = to_edge_transform_and_lower(
+                    export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+                ).to_executorch()
+            self.assertEqual(len(with_hook.buffer), len(without_hook.buffer))
+            executorch_module = _load_for_executorch_from_buffer(with_hook.buffer)
+            self.assertTrue(
+                torch.allclose(
+                    executorch_module.forward(example_inputs)[0],
+                    model(*example_inputs),
+                    rtol=1e-5,
+                    atol=1e-5,
+                )
+            )
+
+    def test_pre_decomposition_folding_keeps_parameters_shared_across_methods(self):
+        """
+        A parameter another method of the program reads stays out of the
+        fold, as a buffer does: that method keeps the original, so a fold
+        would store a second copy. A tied embedding read by a lookup in one
+        method and by a transposed matmul in another keeps the program its
+        size. A computed weight that only one method reads still folds, also
+        when the other method reads a parameter of the same module.
+        """
+
+        class Lookup(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, ids):
+                return self.embedding(ids)
+
+        class Project(Lookup):
+            def forward(self, hidden):
+                return hidden @ self.embedding.weight.t()
+
+        class Conv(torch.nn.Module):
+            def __init__(self, conv):
+                super().__init__()
+                self.conv = conv
+
+            def forward(self, x):
+                return self.conv(x)
+
+        class Bias(Conv):
+            def forward(self, x):
+                return x + self.conv.bias
+
+        def lower(models, inputs):
+            return to_edge_transform_and_lower(
+                {name: export(model, inputs[name]) for name, model in models.items()},
+                partitioner=[XnnpackPartitioner()],
+            )
+
+        def parameters(edge, method):
+            program = edge.exported_program(method)
+            names = list(program.graph_signature.inputs_to_parameters.values())
+            for module in program.graph_module.modules():
+                if isinstance(module, LoweredBackendModule):
+                    signature = module.original_module.graph_signature
+                    names += signature.inputs_to_parameters.values()
+            return names
+
+        embedding = torch.nn.Embedding(512, 128).eval()
+        models = {"lookup": Lookup(embedding), "project": Project(embedding)}
+        inputs = {
+            "lookup": (torch.tensor([[1, 2, 3]]),),
+            "project": (torch.randn(2, 128),),
+        }
+        edge = lower(models, inputs)
+        self.assertEqual(parameters(edge, "project"), ["embedding.weight"])
+        with_hook = edge.to_executorch()
+        with mock.patch.object(
+            XnnpackPartitioner,
+            "transform_for_pre_decomposition",
+            lambda self, exported_program: exported_program,
+        ):
+            without_hook = lower(models, inputs).to_executorch()
+        self.assertEqual(len(with_hook.buffer), len(without_hook.buffer))
+        executorch_module = _load_for_executorch_from_buffer(with_hook.buffer)
+        for name, model in models.items():
+            self.assertTrue(
+                torch.allclose(
+                    executorch_module.run_method(name, inputs[name])[0],
+                    model(*inputs[name]),
+                    rtol=1e-5,
+                    atol=1e-5,
+                ),
+                name,
+            )
+
+        conv = torch.nn.utils.parametrizations.weight_norm(torch.nn.Conv1d(4, 4, 3))
+        edge = lower(
+            {"conv": Conv(conv).eval(), "bias": Bias(conv).eval()},
+            {"conv": (torch.randn(1, 4, 8),), "bias": (torch.randn(4),)},
+        )
+        self.assertTrue(
+            any(
+                re.match(
+                    r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
+                    name,
+                )
+                for name in parameters(edge, "conv")
+            )
+        )
+
+    def test_pre_decomposition_folding_folds_through_a_scalar_item(self):
+        """
+        aten.item yields a Python float that its consumer takes directly.
+        There is no tensor to lift for it, but the weight computed from it
+        folds all the same, and the op goes with the fold.
+        """
+
+        class ScaleByItem(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(3, 4))
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight * self.scale.item())
+
+        model = ScaleByItem().eval()
+        example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets, [torch.ops.aten.linear.default])
+        (weight,) = folded.graph_signature.inputs_to_parameters.values()
+        self.assertRegex(weight, r"^weight_prop_[0-9a-f]{64}$")
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
+
+    def _assert_lowered_matches_eager(self, model, example_inputs):
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        expected = model(*example_inputs)
+        expected = (expected,) if isinstance(expected, torch.Tensor) else expected
+        for actual, want in zip(executorch_module.forward(example_inputs), expected):
+            self.assertTrue(torch.allclose(actual, want, rtol=1e-5, atol=1e-5))
+
+    def test_pre_decomposition_folding_handles_multi_output_ops(self):
+        """
+        A multi-output op in the weight expression, a packed weight split or
+        chunked into per-projection weights, folds with every output, also
+        when one output is used outside a GEMM: the outputs are materialized,
+        one tensor each, and the op goes.
+        """
+
+        class SplitQKV(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.qkv = torch.nn.Parameter(torch.randn(12, 4))
+
+            def forward(self, x):
+                q, k, v = torch.split(self.qkv, 4)
+                return F.linear(x, q) + F.linear(x, k), v.sum()
+
+        class ChunkGateUp(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gate_up = torch.nn.Parameter(torch.randn(8, 4))
+
+            def forward(self, x):
+                gate, up = self.gate_up.chunk(2)
+                return F.linear(x, gate) * up.sum()
+
+        class UnbindHeads(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.heads = torch.nn.Parameter(torch.randn(2, 4, 4))
+
+            def forward(self, x):
+                a, b = self.heads.unbind(0)
+                return F.linear(x, a) + b[0]
+
+        class MaxDim(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.stack = torch.nn.Parameter(torch.randn(4, 4, 3))
+
+            def forward(self, x):
+                values, indices = self.stack.max(dim=2)
+                return F.linear(x, values), indices
+
+        example_inputs = (torch.randn(2, 4),)
+        for model, source, target, outputs in (
+            (SplitQKV(), "qkv", torch.ops.aten.split.Tensor, 3),
+            (ChunkGateUp(), "gate_up", torch.ops.aten.chunk.default, 2),
+            (UnbindHeads(), "heads", torch.ops.aten.unbind.int, 2),
+            (MaxDim(), "stack", torch.ops.aten.max.dim, 2),
+        ):
+            exported = export(model.eval(), example_inputs)
+            targets = [
+                n.target for n in exported.graph.nodes if n.op == "call_function"
+            ]
+            self.assertIn(target, targets, source)
+            folded = XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+            self.assertNotIn(target, targets, source)
+            parameters = list(folded.graph_signature.inputs_to_parameters.values())
+            self.assertNotIn(source, parameters)
+            self.assertEqual(
+                sum(
+                    bool(re.match(rf"^{source}_prop_[0-9a-f]{{64}}$", p))
+                    for p in parameters
+                ),
+                outputs,
+                (source, parameters),
+            )
+            self._assert_lowered_matches_eager(model, example_inputs)
+
+    def test_pre_decomposition_folding_keeps_a_scalar_item_used_outside_the_fold(self):
+        """
+        A scalar used both in the weight expression and outside it: the
+        weight folds, and the op stays for the outside use with the parameter
+        it reads.
+        """
+
+        class ItemInsideAndOutside(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 4))
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+            def forward(self, x):
+                scale = self.scale.item()
+                return F.linear(x * scale, self.weight * scale)
+
+        model = ItemInsideAndOutside().eval()
+        example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+        self.assertEqual(
+            targets,
+            [
+                torch.ops.aten.item.default,
+                torch.ops.aten.mul.Tensor,
+                torch.ops.aten.linear.default,
+            ],
+        )
+        parameters = list(folded.graph_signature.inputs_to_parameters.values())
+        self.assertEqual(parameters[0], "scale")
+        self.assertRegex(parameters[1], r"^weight_prop_[0-9a-f]{64}$")
+        self._assert_lowered_matches_eager(model, example_inputs)
+
+    def test_pre_decomposition_folding_retraces_only_with_a_fold(self):
+        """
+        The hook decides on the program as it is and functionalizes only
+        when a weight will fold. A quantized linear, whose weight arrives
+        through a dequantize, a linear whose weight is an input and a matmul
+        of two activations leave the hook with the program they came with.
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        class UserWeight(torch.nn.Module):
+            def forward(self, x, w):
+                return F.linear(x, w)
+
+        class ActivationMatmul(torch.nn.Module):
+            def forward(self, x, y):
+                return x @ y
+
+        model = self.SimpleModel().eval()
+        example_inputs = (torch.randn(2, 10),)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
+        prepared = prepare_pt2e(export(model, example_inputs).module(), quantizer)
+        prepared(*example_inputs)
+        quantized = convert_pt2e(prepared)
+
+        partitioner = XnnpackPartitioner()
+        for module, inputs in (
+            (quantized, example_inputs),
+            (UserWeight(), (torch.randn(2, 4), torch.randn(3, 4))),
+            (ActivationMatmul(), (torch.randn(2, 4), torch.randn(4, 3))),
+        ):
+            exported = export(module, inputs)
+            with mock.patch.object(
+                ExportedProgram, "run_decompositions", autospec=True
+            ) as run_decompositions:
+                self.assertIs(
+                    partitioner.transform_for_pre_decomposition(exported), exported
+                )
+            run_decompositions.assert_not_called()
+
+        class WeightNormConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3)
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        exported = export(WeightNormConv().eval(), (torch.randn(1, 4, 8),))
+        folded = partitioner.transform_for_pre_decomposition(exported)
+        self.assertIsNot(folded, exported)
+        self.assertRegex(
+            list(folded.graph_signature.inputs_to_parameters.values())[-1],
+            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
+        )
+
+    def test_pre_decomposition_folding_handles_a_deep_weight_chain(self):
+        """
+        The walk that decides which nodes are constant-only is iterative, so
+        a weight computed through a long chain of producers folds instead of
+        reaching the recursion limit, and the linear is delegated.
+        """
+
+        class Chain(torch.nn.Module):
+            def __init__(self, depth):
+                super().__init__()
+                self.depth = depth
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                w = self.w
+                for _ in range(self.depth):
+                    w = w + 1.0
+                return F.linear(x, w)
+
+        model = Chain(600).eval()
+        example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        (weight,) = folded.graph_signature.inputs_to_parameters.values()
+        self.assertRegex(weight, r"^w_prop_[0-9a-f]{64}$")
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        call_functions = [
+            node.target
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertEqual(
+            call_functions[0], torch.ops.higher_order.executorch_call_delegate
+        )
+        self.assertEqual(len(call_functions), 2)
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
