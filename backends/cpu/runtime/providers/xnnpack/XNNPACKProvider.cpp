@@ -584,6 +584,34 @@ class XNNExecutable final : public Executable {
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
   }
 
+  static bool supports_bmm(const Kernel& node, const ptn::Graph& graph) {
+    if (!fp32(node, graph) || node.inputs.size() != 2 ||
+        node.outputs.size() != 1 ||
+        node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+        arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        arg(node, 1).kind() != ptn::ArgKind::Tensor) {
+      return false;
+    }
+    const auto& lhs =
+        graph.value(arg(node, 0).as_tensor().id).tensor_meta().sizes;
+    const auto& rhs =
+        graph.value(arg(node, 1).as_tensor().id).tensor_meta().sizes;
+    const auto& output = graph.value(node.outputs[0].value_id).tensor_meta().sizes;
+    return lhs.size() == 3 && rhs.size() == 3 && output.size() == 3 &&
+        lhs[0] == rhs[0] && lhs[2] == rhs[1] && output[0] == lhs[0] &&
+        output[1] == lhs[1] && output[2] == rhs[2];
+  }
+
+  Error bmm(const Kernel& node) {
+    CPU_XNN_CHECK(xnn_define_batch_matrix_multiply(
+        subgraph_,
+        arg(node, 0).as_tensor().id,
+        arg(node, 1).as_tensor().id,
+        node.outputs.at(0).value_id,
+        0));
+    return Error::Ok;
+  }
+
   static bool supports_softmax(const Kernel& node, const ptn::Graph& graph) {
     if (node.inputs.size() != 3 || node.outputs.size() != 1 ||
         node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
@@ -806,6 +834,7 @@ const XNNOp* find_op(std::string_view target) {
        &E::supports_as_strided,
        &E::static_reshape},
       {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
+      {"torch.ops.aten.bmm.default", &E::supports_bmm, &E::bmm},
       {"torch.ops.aten.convolution.default",
        &E::supports_convolution,
        &E::convolution},

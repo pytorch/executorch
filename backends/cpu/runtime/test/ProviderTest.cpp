@@ -329,6 +329,48 @@ TEST_F(ProviderTest, XNNPACKAcceptsOnlyContiguousFullSpanStridedCopies) {
       implementation->supports(node, graph, execution_context).supported);
 }
 
+TEST_F(ProviderTest, XNNPACKBMMRejectsIncompatibleShapesAndDtypes) {
+  graph.values.emplace_back(
+      "lhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.values.emplace_back(
+      "rhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 2});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 2});
+  ptn::Node node;
+  node.name = "bmm";
+  node.target = "torch.ops.aten.bmm.default";
+  node.inputs = {{"self", ptn::TensorArg{0}}, {"mat2", ptn::TensorArg{1}}};
+  node.outputs = {{ptn::OutputValueKind::Tensor, 2, {}}};
+  graph.nodes.push_back(std::move(node));
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  EXPECT_TRUE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+  graph.values[1] = ptn::Value("rhs", ptn::ScalarType::Float, {2, 4, 2});
+  EXPECT_FALSE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+  graph.values[1] = ptn::Value("rhs", ptn::ScalarType::Float, {3, 3, 2});
+  EXPECT_FALSE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+  graph.values[1] = ptn::Value("rhs", ptn::ScalarType::Float, {2, 3, 2});
+  graph.values[2] = ptn::Value("output", ptn::ScalarType::Float, {2, 2, 3});
+  EXPECT_FALSE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+  graph.values[2] = ptn::Value("output", ptn::ScalarType::Float, {2, 2, 2});
+  graph.values[0] = ptn::Value("lhs", ptn::ScalarType::Float, {2, 6});
+  EXPECT_FALSE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+  graph.values[0] = ptn::Value("lhs", ptn::ScalarType::Int, {2, 2, 3});
+  EXPECT_FALSE(
+      implementation->supports(graph.node(0), graph, execution_context)
+          .supported);
+}
+
 TEST_F(ProviderTest, XNNPACKSoftmaxAcceptsOnlyFP32LastDimension) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 4});

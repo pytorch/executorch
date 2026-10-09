@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -145,6 +146,40 @@ TEST_F(CPUPlanTest, ConnectedRegionsExposeIntermediateModelOutputs) {
   ASSERT_EQ(plan.execute(execution), Error::Ok);
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[0], 3);
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 5);
+}
+
+TEST_F(CPUPlanTest, BatchedMatrixMultiplyUsesXNNPACKForDynamicOperands) {
+  graph.values.emplace_back(
+      "lhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.values.emplace_back(
+      "rhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 2});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 2});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values[1].role = ptn::ValueRole::UserInput;
+  graph.input_ids = {0, 1};
+  ptn::Node bmm;
+  bmm.name = "bmm";
+  bmm.target = "torch.ops.aten.bmm.default";
+  bmm.inputs = {{"self", ptn::TensorArg{0}}, {"mat2", ptn::TensorArg{1}}};
+  bmm.outputs = {{ptn::OutputValueKind::Tensor, 2, {}}};
+  graph.nodes.push_back(std::move(bmm));
+  finish({2});
+
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  const std::array<float, 12> lhs{1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 1, 3};
+  const std::array<float, 12> rhs{1, 2, 3, 4, 5, 6, 2, 0, 0, 3, 4, 5};
+  std::copy(lhs.begin(), lhs.end(), static_cast<float*>(buffers[0].data));
+  std::copy(rhs.begin(), rhs.end(), static_cast<float*>(buffers[1].data));
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  const auto* result = static_cast<const float*>(buffers[2].data);
+  EXPECT_EQ(
+      (std::vector<float>(result, result + 8)),
+      (std::vector<float>{22, 28, 49, 64, 10, 10, 12, 18}));
 }
 
 TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
