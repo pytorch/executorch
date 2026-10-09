@@ -8,6 +8,8 @@
 
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -16,22 +18,118 @@
 using namespace ::testing;
 
 TEST(VecMinfTest, Smoke) {
-  // No need to be super thorough since we know this is implemented with
-  // std::min_element(). Just show that it's hooked up correctly.
-
   constexpr size_t kNumVals = 5;
   float x[kNumVals] = {1.1, -2.2, 0, -1234.5, 10.0};
   EXPECT_EQ(torch::executor::vec_minf(x, kNumVals), -1234.5);
 }
 
 TEST(VecMaxfTest, Smoke) {
-  // No need to be super thorough since we know this is implemented with
-  // std::max_element(). Just show that it's hooked up correctly.
-
   constexpr size_t kNumVals = 5;
   float x[kNumVals] = {1.1, -2.2, 0, -1234.5, 10.0};
   EXPECT_EQ(torch::executor::vec_maxf(x, kNumVals), 10.0);
 }
+
+namespace {
+
+void expect_extrema(const float* x, size_t size, float min, float max) {
+  float fused_min = 123.0f;
+  float fused_max = -456.0f;
+  torch::executor::vec_minmaxf(x, size, &fused_min, &fused_max);
+  for (float actual : {torch::executor::vec_minf(x, size), fused_min}) {
+    if (std::isnan(min)) {
+      EXPECT_TRUE(std::isnan(actual));
+    } else {
+      EXPECT_EQ(actual, min);
+      EXPECT_EQ(std::signbit(actual), std::signbit(min));
+    }
+  }
+  for (float actual : {torch::executor::vec_maxf(x, size), fused_max}) {
+    if (std::isnan(max)) {
+      EXPECT_TRUE(std::isnan(actual));
+    } else {
+      EXPECT_EQ(actual, max);
+      EXPECT_EQ(std::signbit(actual), std::signbit(max));
+    }
+  }
+}
+
+class VecMinMaxfTest : public TestWithParam<size_t> {};
+
+TEST_P(VecMinMaxfTest, EveryExtremumPositionAndUnalignedInput) {
+  const size_t size = GetParam();
+  std::vector<float> storage(size + 1, 7.0f);
+  float* x = storage.data() + 1;
+  for (size_t i = 0; i < size; ++i) {
+    SCOPED_TRACE(i);
+    x[i] = -13.0f;
+    expect_extrema(x, size, -13.0f, size == 1 ? -13.0f : 7.0f);
+    x[i] = 19.0f;
+    expect_extrema(x, size, size == 1 ? 19.0f : 7.0f, 19.0f);
+    x[i] = 7.0f;
+  }
+}
+
+TEST_P(VecMinMaxfTest, LeadingNaNPersistsAndLaterNaNsAreIgnored) {
+  const size_t size = GetParam();
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  std::vector<float> x(size, 3.0f);
+  for (size_t i = 0; i < size; ++i) {
+    SCOPED_TRACE(i);
+    x[i] = nan;
+    expect_extrema(x.data(), size, i == 0 ? nan : 3.0f, i == 0 ? nan : 3.0f);
+    x[i] = 3.0f;
+  }
+  std::fill(x.begin(), x.end(), nan);
+  expect_extrema(x.data(), size, nan, nan);
+}
+
+TEST_P(VecMinMaxfTest, Infinities) {
+  const size_t size = GetParam();
+  const float inf = std::numeric_limits<float>::infinity();
+  std::vector<float> x(size, inf);
+  expect_extrema(x.data(), size, inf, inf);
+  std::fill(x.begin(), x.end(), -inf);
+  expect_extrema(x.data(), size, -inf, -inf);
+  if (size > 1) {
+    x.back() = inf;
+    expect_extrema(x.data(), size, -inf, inf);
+  }
+}
+
+TEST_P(VecMinMaxfTest, FirstSignedZeroWins) {
+  const size_t size = GetParam();
+  for (float first_zero : {0.0f, -0.0f}) {
+    for (size_t first = 0; first < size; ++first) {
+      SCOPED_TRACE(first);
+      for (float other : {-1.0f, 1.0f}) {
+        std::vector<float> x(size, other);
+        x[first] = first_zero;
+        for (size_t j = first + 1; j < size; ++j) {
+          x[j] = -first_zero;
+        }
+        expect_extrema(
+            x.data(),
+            size,
+            first == 0 || other > 0 ? first_zero : other,
+            first == 0 || other < 0 ? first_zero : other);
+      }
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    VectorBoundaries,
+    VecMinMaxfTest,
+    Values(1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 127, 128, 129));
+
+TEST(VecMinMaxfTest, OutputsMayAliasInput) {
+  float x[] = {4.0f, -9.0f, 2.0f, 11.0f, -3.0f};
+  torch::executor::vec_minmaxf(x, 5, &x[0], &x[1]);
+  EXPECT_EQ(x[0], -9.0f);
+  EXPECT_EQ(x[1], 11.0f);
+}
+
+} // namespace
 
 TEST(VecAddfTest, Smoke) {
   constexpr size_t kNumVals = 5;

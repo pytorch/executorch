@@ -215,6 +215,18 @@ Error XNNWeightsCache::initialize_for_runtime(
   named_data_map_ = named_data_map;
   is_finalized_ = false;
 
+  // An earlier compile can bail out between its first load_unpacked_data and
+  // its finalize_for_runtime, leaving its constants here. A successful compile
+  // frees whatever is left in finalize_for_runtime, but a failed one never
+  // reaches it, so back to back failures would pile up on an instance that
+  // lives as long as the process. The model that loaded them is gone, so free
+  // them here.
+  for (FreeableBuffer& buffer : unpacked_data_) {
+    buffer.Free();
+  }
+  unpacked_data_.clear();
+  unpacked_data_to_name_.clear();
+
 #ifndef _WIN32
   if (packed_cache_path_.empty() || packed_file_fd_ >= 0) {
     return Error::Ok;
@@ -296,11 +308,35 @@ Error XNNWeightsCache::initialize_for_runtime(
   return Error::Ok;
 }
 
+void XNNWeightsCache::take_unpacked_data_from(
+    size_t first_index,
+    std::vector<FreeableBuffer>& out) {
+  // No bounds check: the loop below is empty when first_index is at or past
+  // the end, and the list only grows during a compile so that cannot happen
+  // anyway. An index that is too small cannot be detected here, and would hand
+  // the executor buffers of values XNNPACK did pack; callers must pass the
+  // get_num_unpacked_data() taken immediately before the value was defined.
+  for (size_t i = first_index; i < unpacked_data_.size(); i++) {
+    // The name map is keyed on the data pointer, which a move preserves, so
+    // look_up_or_insert keeps naming packed entries correctly after this.
+    out.push_back(std::move(unpacked_data_[i]));
+  }
+  // The moved-from entries stay in the list rather than being erased:
+  // FreeableBuffer deletes move assignment, so vector::erase does not compile,
+  // and a moved-from buffer holds a null pointer, which makes the Free() in
+  // finalize_for_runtime a no-op. Leaving them also keeps the indices handed
+  // out by get_num_unpacked_data() stable across calls.
+}
+
 Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   is_finalized_ = true;
 
-  // All data has been packed by create_runtime
-  // so we clear the unpacked data as it is no longer needed
+  // Everything still here belongs to a value XNNPACK packed, so create_runtime
+  // has copied it into the packed region and the unpacked copy can go. Buffers
+  // for values XNNPACK does not pack (PReLU slopes, for example) were handed to
+  // the executor by take_unpacked_data_from while the graph was being built;
+  // the subgraph keeps pointers into those, so freeing them here would leave
+  // the runtime reading freed memory.
   for (FreeableBuffer& buffer : unpacked_data_) {
     buffer.Free();
   }

@@ -10,7 +10,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs cache_test.cpp)
+set(_test_srcs cache_test.cpp sequence_clone_attention_test.cpp)
 
 et_cxx_test(
   extension_llm_cache_test SOURCES ${_test_srcs} EXTRA_LIBS extension_llm_cache

@@ -48,7 +48,10 @@ MEMORY
 PHDRS
 {
     rom_exec PT_LOAD;
+    rom_data PT_LOAD;
     rom_dram PT_LOAD;
+    rom_sram PT_LOAD;
+    rom_rodata PT_LOAD;
     rom_model PT_LOAD;
     null     PT_NULL;
 }
@@ -140,7 +143,7 @@ SECTIONS
   __exidx_end = .;
   } > ITCM :rom_exec
 
-  .copy.table :
+  .copy.table (READONLY) :
   {
     . = ALIGN(4);
     __copy_table_start__ = .;
@@ -159,7 +162,7 @@ SECTIONS
     __copy_table_end__ = .;
   } > ITCM :rom_exec
 
-  .zero.table :
+  .zero.table (READONLY) :
   {
     . = ALIGN(4);
     __zero_table_start__ = .;
@@ -207,7 +210,7 @@ SECTIONS
     . = ALIGN(4);
     /* All data end */
     __data_end__ = .;
-  } > DTCM :rom_exec
+  } > DTCM :rom_data
 
 #if (ETHOSU_MODEL == 0)
   .sram.rodata :
@@ -264,7 +267,7 @@ SECTIONS
     . = ALIGN(4);
     *op_*.cpp.obj (*.text*)
     __sram_data_end__ = .;
-  } > BRAM AT >DDR :rom_dram
+  } > BRAM AT >DDR :rom_sram
 
   .rodata :
   {
@@ -273,7 +276,7 @@ SECTIONS
     *(.rodata.*)
     . = ALIGN(4);
     __rodata_end__ = .;
-  } > DTCM AT >DDR :rom_dram
+  } > DTCM AT >DDR :rom_rodata
 
   .ddr.bss (NOLOAD) :
   {

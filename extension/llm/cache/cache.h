@@ -115,10 +115,13 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
   // this only guarantees the one it returns is not already taken.
   virtual std::optional<int32_t> seq_new() = 0;
-  // A new sequence claiming src's slots below `upto`, all of them when unset.
-  // A shared slot keeps one position, so only a prefix can be shared, and the
-  // fork is a snapshot: slots src gains afterwards are its own. Nothing is
-  // copied. nullopt = an unknown or empty src, or no free sequence id.
+  // An independently writable snapshot of src below `upto`, all of it when
+  // unset. The source is unchanged, and later writes to either sequence must
+  // not affect the other. A layout may share slots or copy them; cloning can
+  // therefore require capacity as well as a free id. nullopt = an unknown or
+  // empty source, unavailable retained history, or insufficient resources.
+  // The caller owns the returned id until seq_rm. On failure, including an
+  // allocation exception, the implementation retains no new caller-owned id.
   virtual std::optional<int32_t> seq_clone(
       int32_t src,
       std::optional<int> upto) = 0;

@@ -761,6 +761,13 @@ def get_native_layer_norm_inputs():
             ((S1, S2), [S2], (S2), (S2), 0.001),
             ((M, M1, M2), [M2], (M2), (M2), 0.001),
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
+            # Either affine parameter may be absent: nn.LayerNorm(bias=False)
+            # has no bias, and F.layer_norm called with neither (kokoro's
+            # AdaLayerNorm applies its own scale and shift afterwards) has
+            # neither.
+            ((M, M1, M2), [M2], (M2), None, 0.001),
+            ((M, M1, M2), [M2], None, (M2), 0.001),
+            ((M, M1, M2), [M2], None, None, 0.001),
         ]
     )
     test_suite.layouts = [
@@ -885,10 +892,12 @@ def get_scalar_tensor_inputs():
     test_suite = VkTestSuite(
         [
             (42.0,),
+            (42,),
             (3.14,),
             (2.72,),
             (0.0,),
             (-1.0,),
+            (-7,),
             (100.0,),
         ]
     )
@@ -1999,12 +2008,13 @@ def get_native_batch_norm_inputs():
 def get_gelu_inputs():
     test_suite = VkTestSuite(
         [
-            ((M1), "tanh"),
-            ((M1, M2), "tanh"),
-            ((S1, M1, M2), "tanh"),
-            ((S1, S2, S2, M2), "tanh"),
+            (shape, approximate)
+            for shape in ((M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2))
+            for approximate in ("none", "tanh")
         ]
     )
+    test_suite.data_range = (-6, 6)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 
@@ -2261,8 +2271,8 @@ def get_index_tensor_inputs():
     return test_suite
 
 
-@register_test_suite("aten.pow.Tensor_Scalar")
-def get_pow_tensor_scalar_inputs():
+@register_test_suite(["aten.pow.Tensor_Scalar", "aten.mul.Scalar"])
+def get_binary_scalar_inputs():
     test_suite = VkTestSuite(
         [
             ((M1,), 2.0),

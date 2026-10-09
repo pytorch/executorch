@@ -36,7 +36,7 @@ class TransposeConv2dVisitor(NodeVisitor):
     def _get_attr_func(self, attr):
         return attr.TransposeConv2dAttribute
 
-    def define_node(
+    def define_node(  # noqa: C901
         self,
         node,
         tosa_graph,
@@ -104,6 +104,14 @@ class TransposeConv2dVisitor(NodeVisitor):
 
         output_name = output.name
         acc_type = output.dtype
+        if input.dtype in [ts.DType.FP8E4M3, ts.DType.FP8E5M2]:
+            acc_type = ts.DType.FP16
+        elif output.dtype in [
+            ts.DType.BF16,
+            ts.DType.FP16,
+        ]:
+            # Accumulate BF16 and FP16 inputs in FP32 for better precision.
+            acc_type = ts.DType.FP32
         input_zp_name, weight_zp_name = add_input_weight_zp_consts(
             tosa_graph, node, inputs, output_name
         )

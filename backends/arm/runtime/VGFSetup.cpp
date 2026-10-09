@@ -10,7 +10,10 @@
  * appropriate vulkan structures.
  */
 
+#include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
+
+#include <executorch/runtime/platform/log.h>
 
 #include <cstdlib>
 #include <limits>
@@ -464,7 +467,7 @@ static VkDescriptorType resolve_descriptor_type(
     return vgflib::ToVkDescriptorType(descriptor_type.value());
   }
   ET_LOG(
-      Info,
+      Debug,
       "Resource %u has no explicit descriptor type; assuming VK_DESCRIPTOR_TYPE_TENSOR_ARM",
       index);
   return VK_DESCRIPTOR_TYPE_TENSOR_ARM;
@@ -894,13 +897,8 @@ VkResult create_tensor_unbound(
     VkTensorDescriptionARM* description,
     VkTensorARM* tensor,
     VkMemoryRequirements2* memory_requirements) {
-  VkTensorUsageFlagsARM tensor_usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |
-      VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM |
-      VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM | VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
-
-  if (image_aliasing) {
-    tensor_usage |= VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM;
-  }
+  const VkTensorUsageFlagsARM tensor_usage =
+      vgf_tensor_usage_flags(image_aliasing);
 
   *description = VkTensorDescriptionARM{
       .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
@@ -946,6 +944,64 @@ VkResult create_tensor_unbound(
       device, &memory_requirements_info, memory_requirements);
 
   return VK_SUCCESS;
+}
+
+static void cache_external_tensor_host_allocation_capabilities(
+    VkPhysicalDevice physical_device,
+    uint32_t resource_index,
+    const VkTensorDescriptionARM& tensor_description,
+    VgfZeroCopyIoMetadata* metadata) {
+  // In this fuction we try to decide:
+  // for this exact VGF tensor, does the physical GPU support
+  // importing host memory as external memory.
+  // We don't import memory here and we don't change execution.
+  // We only fills feilds in VgfZeroCopyIoMetadata for later.
+  if (metadata == nullptr ||
+      !vgf_zero_copy_io_structurally_eligible(*metadata) ||
+      !metadata->host_memory_import_advertised) {
+    return;
+  }
+
+#if defined(VK_EXT_external_memory_host)
+  // This is a physical-device capability query.
+  if (vkGetPhysicalDeviceExternalTensorPropertiesARM == nullptr) {
+    ET_LOG(
+        Info,
+        "VGF resource %u cannot query external tensor properties; marking "
+        "zero-copy metadata ineligible",
+        resource_index);
+    return;
+  }
+
+  const VkPhysicalDeviceExternalTensorInfoARM external_tensor_info{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM,
+      .pNext = nullptr,
+      .flags = metadata->tensor_create_flags,
+      .pDescription = &tensor_description,
+      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
+  };
+  VkExternalTensorPropertiesARM external_tensor_properties{
+      .sType = VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM,
+      .pNext = nullptr,
+  };
+
+  vkGetPhysicalDeviceExternalTensorPropertiesARM(
+      physical_device, &external_tensor_info, &external_tensor_properties);
+  vgf_cache_external_tensor_properties(
+      metadata, external_tensor_properties.externalMemoryProperties);
+
+  if (metadata->external_tensor_requires_dedicated_allocation) {
+    ET_LOG(
+        Info,
+        "VGF resource %u reports dedicated-only external tensor allocation; "
+        "zero-copy host import is ineligible",
+        resource_index);
+  }
+#else
+  (void)physical_device;
+  (void)resource_index;
+  (void)tensor_description;
+#endif
 }
 
 VkResult bind_tensor_memory_and_create_view(
@@ -1384,6 +1440,15 @@ VkResult transition_image_layout(
   return result;
 }
 
+static constexpr bool vgf_debug_logging_enabled() {
+#if ET_LOG_ENABLED
+  return static_cast<uint32_t>(executorch::runtime::LogLevel::Debug) >=
+      static_cast<uint32_t>(executorch::runtime::LogLevel::ET_MIN_LOG_LEVEL);
+#else
+  return false;
+#endif
+}
+
 static void debug_print_sequence(
     unique_ptr<vgflib::ModelSequenceTableDecoder>& sequence_decoder) {
   auto module_type_to_string = [](vgflib::ModuleType type) {
@@ -1396,34 +1461,34 @@ static void debug_print_sequence(
         return "UNKNOWN";
     }
   };
-  ET_LOG(Info, "VGF Sequences:");
+  ET_LOG(Debug, "VGF Sequences:");
   for (int i = 0; i < sequence_decoder->modelSequenceTableSize(); i++) {
     ET_LOG(
-        Info,
+        Debug,
         "  Sequence(%d) '%s':",
         i,
         string(sequence_decoder->getSegmentName(i)).c_str());
     auto dispatch_shape = sequence_decoder->getSegmentDispatchShape(i);
     ET_LOG(
-        Info,
+        Debug,
         "    dispatch shape %d %d %d",
         dispatch_shape[0],
         dispatch_shape[1],
         dispatch_shape[2]);
     ET_LOG(
-        Info,
+        Debug,
         "    segment type %s",
         module_type_to_string(sequence_decoder->getSegmentType(i)));
     ET_LOG(
-        Info,
+        Debug,
         "    module index %d",
         sequence_decoder->getSegmentModuleIndex(i));
     auto input_names = sequence_decoder->getModelSequenceInputNamesHandle();
     ET_LOG(
-        Info, "    names (%ld):", sequence_decoder->getNamesSize(input_names));
+        Debug, "    names (%ld):", sequence_decoder->getNamesSize(input_names));
     for (int j = 0; j < sequence_decoder->getNamesSize(input_names); j++) {
       ET_LOG(
-          Info,
+          Debug,
           "      %d: %s",
           j,
           string(sequence_decoder->getName(input_names, j)).c_str());
@@ -1452,18 +1517,18 @@ static void debug_print_modules(
         return "UNKNOWN";
     }
   };
-  ET_LOG(Info, "VGF Modules:");
+  ET_LOG(Debug, "VGF Modules:");
   for (int i = 0; i < module_decoder->size(); i++) {
     auto name = string(module_decoder->getModuleName(i));
     auto entrypoint = string(module_decoder->getModuleEntryPoint(i));
     auto type = module_decoder->getModuleType(i);
     auto spirv = module_decoder->getModuleCode(i);
-    ET_LOG(Info, "  Module(%d) '%s':", i, name.c_str());
-    ET_LOG(Info, "    type %s", module_type_to_string(type));
-    ET_LOG(Info, "    entrypoint '%s'", entrypoint.c_str());
-    ET_LOG(Info, "    has spirv %d", module_decoder->hasSPIRV(i));
+    ET_LOG(Debug, "  Module(%d) '%s':", i, name.c_str());
+    ET_LOG(Debug, "    type %s", module_type_to_string(type));
+    ET_LOG(Debug, "    entrypoint '%s'", entrypoint.c_str());
+    ET_LOG(Debug, "    has spirv %d", module_decoder->hasSPIRV(i));
     ET_LOG(
-        Info,
+        Debug,
         "    code size %lu",
         spirv.size()); // read the .begin() to .end()
   }
@@ -1490,37 +1555,103 @@ bool VgfRepr::process_vgf(
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DECODE_TABLES");
 
-    // Prepare temporary decoders
+    // Prepare temporary decoders. Header-provided offsets are untrusted until
+    // both the header and every referenced sub-range have been validated.
+    const auto header_size = vgflib::HeaderSize();
+    if (vgf_data == nullptr || header_size > vgf_size) {
+      ET_LOG(Error, "Invalid or truncated VGF input buffer");
+      return false;
+    }
+
     header_decoder =
-        vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
+        vgflib::CreateHeaderDecoder(vgf_data, header_size, vgf_size);
     if (!header_decoder) {
       ET_LOG(Error, "Failed to create VGF header decoder");
       return false;
     }
 
+    // Validate the header before consuming any offsets or sizes from it.
+    if (!header_decoder->IsValid() || !header_decoder->CheckVersion()) {
+      ET_LOG(Error, "Invalid or unsupported VGF header");
+      return false;
+    }
+
+    const uint64_t total_size = static_cast<uint64_t>(vgf_size);
+
+    const uint64_t sequence_offset =
+        static_cast<uint64_t>(header_decoder->GetModelSequenceTableOffset());
+    const uint64_t sequence_size =
+        static_cast<uint64_t>(header_decoder->GetModelSequenceTableSize());
+
+    const uint64_t module_offset =
+        static_cast<uint64_t>(header_decoder->GetModuleTableOffset());
+    const uint64_t module_size =
+        static_cast<uint64_t>(header_decoder->GetModuleTableSize());
+
+    const uint64_t resource_offset =
+        static_cast<uint64_t>(header_decoder->GetModelResourceTableOffset());
+    const uint64_t resource_size =
+        static_cast<uint64_t>(header_decoder->GetModelResourceTableSize());
+
+    const uint64_t constants_offset =
+        static_cast<uint64_t>(header_decoder->GetConstantsOffset());
+    const uint64_t constants_size =
+        static_cast<uint64_t>(header_decoder->GetConstantsSize());
+
+    // Use subtraction-based range checks rather than offset + size so a
+    // malformed header cannot trigger integer overflow in the validation
+    // itself. The short-circuit ordering also prevents subtraction underflow.
+    if (sequence_offset > total_size ||
+        sequence_size > total_size - sequence_offset) {
+      ET_LOG(Error, "VGF model-sequence table is outside the input buffer");
+      return false;
+    }
+
+    if (module_offset > total_size ||
+        module_size > total_size - module_offset) {
+      ET_LOG(Error, "VGF module table is outside the input buffer");
+      return false;
+    }
+
+    if (resource_offset > total_size ||
+        resource_size > total_size - resource_offset) {
+      ET_LOG(Error, "VGF model-resource table is outside the input buffer");
+      return false;
+    }
+
+    if (constants_offset > total_size ||
+        constants_size > total_size - constants_offset) {
+      ET_LOG(Error, "VGF constants table is outside the input buffer");
+      return false;
+    }
+
+    // Form sub-buffer pointers only after their ranges have been proven to be
+    // entirely contained in vgf_data.
     sequence_decoder = vgflib::CreateModelSequenceTableDecoder(
-        vgf_data + header_decoder->GetModelSequenceTableOffset(),
-        header_decoder->GetModelSequenceTableSize());
+        vgf_data + static_cast<size_t>(sequence_offset),
+        static_cast<size_t>(sequence_size));
     module_decoder = vgflib::CreateModuleTableDecoder(
-        vgf_data + header_decoder->GetModuleTableOffset(),
-        header_decoder->GetModuleTableSize());
+        vgf_data + static_cast<size_t>(module_offset),
+        static_cast<size_t>(module_size));
     resource_decoder = vgflib::CreateModelResourceTableDecoder(
-        vgf_data + header_decoder->GetModelResourceTableOffset(),
-        header_decoder->GetModelResourceTableSize());
+        vgf_data + static_cast<size_t>(resource_offset),
+        static_cast<size_t>(resource_size));
     constant_decoder = vgflib::CreateConstantDecoder(
-        vgf_data + header_decoder->GetConstantsOffset(),
-        header_decoder->GetConstantsSize());
-    // Check the VGF decoders
-    if (not(header_decoder && module_decoder && sequence_decoder &&
-            resource_decoder && constant_decoder && header_decoder->IsValid() &&
-            header_decoder->CheckVersion())) {
-      ET_LOG(Error, "Failed to process VGF file internalsr");
+        vgf_data + static_cast<size_t>(constants_offset),
+        static_cast<size_t>(constants_size));
+
+    // Each decoder still validates the internal structure of its bounded
+    // sub-buffer.
+    if (!(module_decoder && sequence_decoder && resource_decoder &&
+          constant_decoder)) {
+      ET_LOG(Error, "Failed to process VGF file internals");
       return false;
     }
   }
 
   // Parse the sequences in the VGF (there can be multiple segments).
-  {
+  // Do not even walk decoder metadata unless Debug logging is compiled in.
+  if constexpr (vgf_debug_logging_enabled()) {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DEBUG_PRINT_SEQUENCE");
 
     debug_print_sequence(sequence_decoder);
@@ -1532,7 +1663,8 @@ bool VgfRepr::process_vgf(
   }
 
   // Extract modules
-  {
+  // Module names, entry points and SPIR-V metadata are diagnostics only.
+  if constexpr (vgf_debug_logging_enabled()) {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DEBUG_PRINT_MODULES");
 
     debug_print_modules(module_decoder);
@@ -1948,6 +2080,24 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+
+            auto zero_copy_metadata = make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                VK_DESCRIPTOR_TYPE_TENSOR_ARM,
+                resource_format,
+                /*tensor_backed=*/true,
+                uses_alias_group,
+                image_aliasing,
+                &tensor_description,
+                host_memory_import_capabilities_);
+            cache_external_tensor_host_allocation_capabilities(
+                vk_physical,
+                static_cast<uint32_t>(i),
+                tensor_description,
+                &zero_copy_metadata);
+            zero_copy_io_metadata.push_back(std::move(zero_copy_metadata));
+
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2041,6 +2191,16 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                resource_format,
+                /*tensor_backed=*/false,
+                uses_alias_group,
+                image_aliasing,
+                nullptr,
+                host_memory_import_capabilities_));
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2257,6 +2417,16 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                resource_type,
+                resource_format,
+                /*tensor_backed=*/false,
+                uses_alias_group,
+                needs_tensor_aliasing,
+                nullptr,
+                host_memory_import_capabilities_));
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2736,7 +2906,7 @@ bool VgfRepr::process_vgf(
       auto segment_name = string(sequence_decoder->getSegmentName(segment_id));
       auto segment_module = sequence_decoder->getSegmentModuleIndex(segment_id);
       ET_LOG(
-          Info,
+          Debug,
           "VGF segment '%s' module=%u type=%s dispatch=[%u,%u,%u]",
           segment_name.c_str(),
           segment_module,
@@ -2750,7 +2920,7 @@ bool VgfRepr::process_vgf(
       auto segment_m_entrypoint =
           string(module_decoder->getModuleEntryPoint(segment_module));
       ET_LOG(
-          Info,
+          Debug,
           "VGF module '%s' entrypoint='%s' type=%s has_spirv=%d",
           segment_m_name.c_str(),
           segment_m_entrypoint.c_str(),
@@ -2765,7 +2935,7 @@ bool VgfRepr::process_vgf(
       }
       auto segment_m_spirv =
           get_module_spirv_code(module_decoder, segment_module);
-      ET_LOG(Info, "SPIR-V code size (words) %zu", segment_m_spirv.size());
+      ET_LOG(Debug, "SPIR-V code size (words) %zu", segment_m_spirv.size());
 
       VkShaderModuleCreateInfo smci{
           .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -2988,7 +3158,7 @@ bool VgfRepr::process_vgf(
         auto descriptor_count =
             sequence_decoder->getBindingsSize(descriptor_slots);
         ET_LOG(
-            Info,
+            Debug,
             "VGF descriptor set %u bindings: %zu",
             d_idx,
             descriptor_count);
@@ -2998,9 +3168,36 @@ bool VgfRepr::process_vgf(
           auto mrt_i =
               sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
           const auto& binding_info = resource_bindings[mrt_i];
+
+          if (mrt_i < resource_index_to_io_index.size()) {
+            const int boundary_io_index = resource_index_to_io_index[mrt_i];
+            if (boundary_io_index >= 0 &&
+                static_cast<size_t>(boundary_io_index) <
+                    zero_copy_io_metadata.size()) {
+              const VgfBoundaryBindingRef binding_ref{
+                  .segment_index = static_cast<uint32_t>(segment_id),
+                  .set_index = set_index,
+                  .binding = binding,
+              };
+              if (!vgf_record_boundary_binding(
+                      &zero_copy_io_metadata,
+                      static_cast<size_t>(boundary_io_index),
+                      binding_ref)) {
+                ET_LOG(
+                    Info,
+                    "VGF boundary descriptor mapping is ambiguous: "
+                    "segment=%u set=%u binding=%u mrt=%u; zero-copy "
+                    "metadata is ineligible",
+                    static_cast<uint32_t>(segment_id),
+                    set_index,
+                    binding,
+                    mrt_i);
+              }
+            }
+          }
           if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=VK_DESCRIPTOR_TYPE_TENSOR_ARM",
                 segment_id,
                 d_idx,
@@ -3032,7 +3229,7 @@ bool VgfRepr::process_vgf(
               binding_info.descriptor_type ==
               VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
                 segment_id,
                 d_idx,
@@ -3074,7 +3271,7 @@ bool VgfRepr::process_vgf(
                        ? "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE"
                        : "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE");
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=%s image_view=%p sampler=%p",
                 segment_id,
                 d_idx,
@@ -3440,7 +3637,7 @@ bool VgfRepr::process_vgf(
             segment.neural_statistics_status.clear();
 
             ET_LOG(
-                Info,
+                Debug,
                 "Bound neural accelerator statistics memory for segment %d, size=%llu",
                 segment.segment_id,
                 static_cast<unsigned long long>(
@@ -3595,9 +3792,15 @@ bool VgfRepr::process_vgf(
     }
 
     model_input_io_index[model_input_idx] = io_idx;
+    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
+      auto& metadata = zero_copy_io_metadata[io_idx];
+      metadata.mapped_to_model_boundary = true;
+      metadata.executorch_argument_index =
+          static_cast<int64_t>(model_input_idx);
+    }
 
     ET_LOG(
-        Info,
+        Debug,
         "VGF input: binding_slot=%zu model_input=%zu binding=%u "
         "mrt=%u -> IO[%d]",
         binding_pos,
@@ -3641,14 +3844,43 @@ bool VgfRepr::process_vgf(
     // sequence output binding slots in model-output order, matching the output
     // names vector, so map outputs by binding-slot position.
     model_output_io_index[output_idx] = io_idx;
+    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
+      auto& metadata = zero_copy_io_metadata[io_idx];
+      metadata.mapped_to_model_boundary = true;
+      metadata.executorch_argument_index =
+          static_cast<int64_t>(model_input_count + output_idx);
+    }
 
     ET_LOG(
-        Info,
+        Debug,
         "VGF output: output=%zu binding=%u mrt=%u -> IO[%d]",
         output_idx,
         binding,
         mrt_idx,
         io_idx);
+  }
+
+  for (size_t io_idx = 0; io_idx < zero_copy_io_metadata.size(); ++io_idx) {
+    auto& metadata = zero_copy_io_metadata[io_idx];
+    vgf_finalize_zero_copy_io_metadata(&metadata);
+    ET_LOG(
+        Info,
+        "VGF zero-copy boundary metadata: io=%zu arg=%lld input=%d "
+        "eligible=%d type=%u tiling=%u alias=%d bindings=%zu "
+        "host_import_enabled=%d external_tensor_supported=%d "
+        "dedicated_only=%d",
+        io_idx,
+        static_cast<long long>(metadata.executorch_argument_index),
+        static_cast<int>(metadata.is_input),
+        static_cast<int>(metadata.eligible),
+        static_cast<uint32_t>(metadata.descriptor_type),
+        static_cast<uint32_t>(metadata.tiling),
+        static_cast<int>(metadata.has_alias_group),
+        metadata.bindings.size(),
+        static_cast<int>(metadata.host_memory_import_enabled),
+        static_cast<int>(metadata.external_tensor_host_allocation_supported),
+        static_cast<int>(
+            metadata.external_tensor_requires_dedicated_allocation));
   }
 
   {
@@ -4042,7 +4274,7 @@ bool VgfRepr::process_vgf(
 }
 
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
-  ET_LOG(Info, "Executing vgf");
+  ET_LOG(Debug, "Executing vgf");
 
   VkSubmitInfo submit{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -4072,6 +4304,8 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
       return false;
     }
 
+    // Submit + fence wait only; reset is above.
+    VGF_STATS_TIME(submit_wait_ns);
     result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
@@ -4124,13 +4358,27 @@ VgfRepr::get_neural_statistics_segment_contexts() const {
 }
 
 std::string VgfRepr::collect_neural_statistics_metadata() const {
+  VgfNeuralStatisticsMetadataContext metadata_context;
+  metadata_context.mode_index = neural_statistics_mode_index_;
+
+  if (vk_physical != VK_NULL_HANDLE) {
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(vk_physical, &properties);
+    metadata_context.target_available = true;
+    metadata_context.device_name = properties.deviceName;
+    metadata_context.vendor_id = properties.vendorID;
+    metadata_context.device_id = properties.deviceID;
+    metadata_context.driver_version = properties.driverVersion;
+  }
+
   if (neural_statistics_requested_ && !neural_statistics_device_enabled_) {
     return make_vgf_neural_statistics_unavailable_metadata(
-        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled");
+        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled",
+        metadata_context);
   }
 
   return collect_vgf_neural_statistics_metadata(
-      vk_device, get_neural_statistics_segment_contexts());
+      vk_device, get_neural_statistics_segment_contexts(), metadata_context);
 }
 
 void VgfRepr::free_vgf() {
@@ -4146,7 +4394,11 @@ void VgfRepr::free_vgf() {
     vk_execute_fence = VK_NULL_HANDLE;
   }
 
-  vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+  // Also safe for initialization failures and repeated free_vgf().
+  if (vk_execute_cmd != VK_NULL_HANDLE) {
+    vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+    vk_execute_cmd = VK_NULL_HANDLE;
+  }
   vector<VkDeviceMemory> owned_memory;
   auto remember_owned_memory = [&](VkDeviceMemory memory) {
     if (memory == VK_NULL_HANDLE) {
@@ -4211,6 +4463,7 @@ void VgfRepr::free_vgf() {
     }
   }
   IOs.clear();
+  zero_copy_io_metadata.clear();
   for (const auto& alloc : extra_allocs) {
     if (alloc.descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
       if (alloc.owns_memory) {
@@ -4244,6 +4497,7 @@ void VgfRepr::free_vgf() {
   for (auto memory : intermediates) {
     vkFreeMemory(vk_device, memory, nullptr);
   }
+  intermediates.clear();
 }
 
 static uint32_t get_format_size(VkFormat format) {
