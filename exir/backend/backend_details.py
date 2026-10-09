@@ -94,6 +94,12 @@ class BackendDetails(ABC):
 
     """
 
+    # Whether the runtime backend computes its outputs correctly when the method
+    # passes it the same tensor as one of its inputs and one of its outputs.
+    # With run_reinplace_pass, an input the delegate mutates is then written in
+    # place, instead of copied back after the delegate returns.
+    writes_mutated_inputs_in_place: bool = False
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 

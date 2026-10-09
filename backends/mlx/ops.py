@@ -94,6 +94,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     GreaterEqualNode,
     GreaterNode,
     IdCopyNode,
+    IndexCopyNode,
     IntOrVid,
     IntOrVidOrTid,
     ItemIntNode,
@@ -2401,6 +2402,35 @@ def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             shift=[P.to_int_or_vid(s) for s in shifts],
             axes=dims,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.index_copy.default])
+def _index_copy_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """index_copy into a new tensor, leaving `dst` as it was.
+
+    The INDEX_COPY pattern writes in place when `dst` is a buffer the method
+    mutates; anything else, a mutated user input included, lands here and the
+    caller writes the result back.
+    """
+    args = P.args(n)
+    require_args(args, 4, 4, "aten.index_copy.default")
+    require_kwargs(P.kwargs(n), set(), "aten.index_copy.default")
+    dst, axis, indices, update = args
+    if not isinstance(axis, int):
+        raise ValueError(
+            f"aten.index_copy.default requires a literal int dim, got {axis}"
+        )
+    out = P.make_or_get_slot(n)
+    P.emit(
+        IndexCopyNode(
+            dst=P.slot_to_tid(dst),
+            update=P.slot_to_tid(update),
+            indices=P.slot_to_tid(indices),
+            out=P.slot_to_tid(out),
+            axis=axis,
         )
     )
     return out

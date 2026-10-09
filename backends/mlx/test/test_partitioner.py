@@ -19,7 +19,12 @@ from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
 from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.runtime import Runtime
 from torch.export import export
 
@@ -426,6 +431,131 @@ class TestMLXPartitionerMixedSupport(unittest.TestCase):
         _, delegates, err = _run(TwoRolls().eval(), (torch.randn(4, 8),))
         self.assertGreater(delegates, 0)
         self.assertLess(err, 1e-4)
+
+
+class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
+    """index_copy_ into a user input lowers functionally and is written back."""
+
+    class IndexCopyInput(nn.Module):
+        def __init__(self, axis):
+            super().__init__()
+            self.axis = axis
+
+        def forward(self, data, indices, update):
+            data.index_copy_(self.axis, indices, update)
+            return data.sum(self.axis)
+
+    def test_index_copy_into_input_lowers_and_executes(self):
+        # The write-back of the mutated input runs outside the delegate, as a
+        # portable copy_, so this goes through the Python runtime rather than
+        # op_test_runner, which links no portable kernels.
+        for axis, shape, update_shape in (
+            (0, (16, 8), (4, 8)),
+            (1, (8, 16), (8, 4)),
+        ):
+            with self.subTest(axis=axis):
+                model = self.IndexCopyInput(axis).eval()
+                inputs = (
+                    torch.randn(shape),
+                    torch.tensor([1, 5, 9, 12]),
+                    torch.randn(update_shape),
+                )
+                expected = inputs[0].clone()
+                with torch.no_grad():
+                    expected_sum = model(expected, *inputs[1:])
+                program = _lower(model, inputs)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    counts = get_mlx_node_counts(path)
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    data, summed = method.execute(list(inputs))
+                self.assertEqual(_delegate_count(program), 1)
+                self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+                self.assertTrue(torch.allclose(data, expected))
+                self.assertTrue(torch.allclose(summed, expected_sum, atol=1e-5))
+
+    def test_index_copy_into_input_written_in_place_with_reinplace(self):
+        # With run_reinplace_pass the delegate writes the mutated input itself:
+        # the method has no write-back copy_, and returns the input value.
+        model = self.IndexCopyInput(0).eval()
+        cache = torch.zeros(16, 8)
+        program = to_edge_transform_and_lower(
+            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[0], plan.inputs[0])
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected.index_copy_(0, indices, update)
+            cache, summed = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
+
+    class ReadThenIndexCopy(nn.Module):
+        def forward(self, data, indices, update):
+            before = data.sum(0)
+            data.index_copy_(0, indices, update)
+            return before, data.sum(0)
+
+    def test_read_before_index_copy_with_reinplace(self):
+        # A value read from the input before it is updated in place must be
+        # computed from the old contents, not race the write into the input.
+        model = self.ReadThenIndexCopy().eval()
+        cache = torch.randn(16, 8)
+        program = to_edge_transform_and_lower(
+            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[0], plan.inputs[0])
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected_before = expected.sum(0)
+            expected.index_copy_(0, indices, update)
+            cache, before, after = method.execute([cache, indices, update])
+            self.assertTrue(torch.allclose(before, expected_before, atol=1e-5))
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
+
+    def test_index_copy_accepts_int32_indices(self):
+        # Export accepts int32 indices for index_copy, so the delegate must too.
+        # Eager ATen does not, so the reference uses int64 indices.
+        model = self.IndexCopyInput(0).eval()
+        data, update = torch.randn(16, 8), torch.randn(2, 8)
+        indices = torch.tensor([2, 9], dtype=torch.int32)
+        expected = data.clone().index_copy_(0, indices.long(), update)
+        program = _lower(model, (data.clone(), indices, update))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            result, summed = method.execute([data.clone(), indices, update])
+        self.assertTrue(torch.equal(result, expected))
+        self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
+
+    def test_index_copy_rejects_negative_index(self):
+        # ATen raises on negative indices, so the delegate must not wrap them.
+        model = self.IndexCopyInput(0).eval()
+        inputs = (torch.randn(4, 8), torch.tensor([1]), torch.randn(1, 8))
+        program = _lower(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            with self.assertRaises(RuntimeError):
+                method.execute([inputs[0], torch.tensor([-1]), inputs[2]])
 
 
 if __name__ == "__main__":
