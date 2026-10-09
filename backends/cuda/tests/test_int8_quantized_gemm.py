@@ -342,7 +342,7 @@ class Int8QuantizedGemmLegalityTest(unittest.TestCase):
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
     def test_static_rows_must_equal_bucket(self) -> None:
         args = self._cuda_args(m=2)
-        self._expect_unsupported(1, args, "static M must equal the bucket 1")
+        self._expect_unsupported(1, args, "static M must be within \\[1, 1\\]")
 
     def test_ops_are_registered_per_bucket(self) -> None:
         self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
@@ -358,7 +358,7 @@ class Int8QuantizedGemmLegalityTest(unittest.TestCase):
 
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
     def test_registered_op_validates_before_launch(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "static M must equal the bucket 1"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within \\[1, 1\\]"):
             INT8_QUANTIZED_GEMM.op(1)(*self._cuda_args(m=2))
 
 

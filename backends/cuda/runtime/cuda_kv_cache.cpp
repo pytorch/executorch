@@ -270,6 +270,14 @@ constexpr size_t kFirstMaskBuffer = 2;
 // (cells), the extent (read_len) and one visibility mask per window into
 // buffers the program reads at fixed addresses -- so a captured CUDA graph
 // serves any mix of sequences, and only growth forces a recapture.
+//
+// A program may be wider than the step it runs: a static method of width W
+// serves any T <= W declared tokens, and rows T..W-1 are padding. Padding is
+// never declared to the table. Its rows write their K/V to one scratch row, the
+// last allocated pool row, which the table never hands out and every read_len
+// stops short of, so no real row ever reads it. Each step rewrites all W rows:
+// a padding row left from a wider step would otherwise still name a live cell
+// and overwrite another sequence's history.
 class CudaCellCache final : public cache::CellCache, public CudaKVCache {
  public:
   CudaCellCache(
@@ -277,7 +285,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       const cache::CacheConfig& cfg,
       slimc10::ScalarType storage_dtype,
       std::vector<int> windows)
-      : cache::CellCache(geometry, cfg),
+      : cache::CellCache(geometry, table_config(cfg)),
+        pool_cells_(cfg.capacity),
         max_write_(*cfg.max_write),
         windows_(std::move(windows)),
         pool_(
@@ -403,18 +412,19 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         "offgraph_kv: a %lld-token step is outside [1, %d]",
         static_cast<long long>(write_length),
         max_write_);
+    const int tokens = static_cast<int>(step_seq_ids_.size());
     ET_CHECK_OR_RETURN_ERROR(
-        static_cast<size_t>(width) == step_seq_ids_.size(),
+        tokens > 0 && tokens <= width,
         InvalidState,
-        "offgraph_kv: the step carries %d tokens, declare_step declared %zu",
+        "offgraph_kv: a %d-token program cannot run %d declared tokens",
         width,
-        step_seq_ids_.size());
+        tokens);
 
     // Every declared token continues its sequence, so the positions follow
     // from the declaration; nothing is read back from the device.
-    positions_.resize(width);
+    positions_.resize(tokens);
     std::vector<int32_t> next(kMaxSeqs, -1);
-    for (int i = 0; i < width; ++i) {
+    for (int i = 0; i < tokens; ++i) {
       const int32_t seq_id = step_seq_ids_[i];
       if (next[seq_id] < 0) {
         next[seq_id] = cache::CellCache::pos(seq_id);
@@ -425,24 +435,30 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     // Grow before placing, to where placement could reach at most, so a
     // failed allocation leaves the table as it was. Lowest-free placement
     // fills holes first, so the step reaches past used_end only once every
-    // cell below it is occupied: at most occupied + width.
+    // cell below it is occupied: at most occupied + tokens. One more row is
+    // the scratch row, which therefore lies past every cell and every
+    // read_len.
     const int64_t live = used_end();
     const int64_t occupied = capacity() - free_cells();
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        pool_.prepare(std::max<int64_t>(live, occupied + width), live, stream));
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
+        std::min<int64_t>(
+            pool_cells_, std::max<int64_t>(live, occupied + tokens) + 1),
+        live,
+        stream));
+    const int64_t scratch = pool_.rows() - 1;
 
     std::vector<const cache::CellStep*> steps;
     steps.reserve(windows_.size());
     for (size_t index = 0; index < windows_.size(); ++index) {
       const cache::CellStep* step =
-          place_step(window_layers_[index], positions_.data(), width);
+          place_step(window_layers_[index], positions_.data(), tokens);
       ET_CHECK_OR_RETURN_ERROR(
           step != nullptr,
           InvalidArgument,
           "offgraph_kv: the declared step does not place");
       steps.push_back(step);
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(upload_step(steps, stream));
+    ET_CHECK_OK_OR_RETURN_ERROR(upload_step(steps, width, scratch, stream));
     step_seq_ids_.clear();
     return Error::Ok;
   }
@@ -477,6 +493,13 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   }
 
  private:
+  // The table's cells are the pool's rows but one: the last is scratch.
+  static cache::CacheConfig table_config(const cache::CacheConfig& cfg) {
+    cache::CacheConfig table = cfg;
+    table.capacity = cfg.capacity - 1;
+    return table;
+  }
+
   static std::vector<CudaKVPool::Layer> pool_layers(
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg) {
@@ -510,32 +533,44 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   }
 
   // Writes the step's cells, read_len and one mask per window where the
-  // program reads them. The copies read pinned staging the cache owns, never
-  // the base's step, which the next verb invalidates: an async copy from
-  // pageable memory may still be reading it after the call returns. The
-  // staging is refilled only once the previous step's copies are done.
+  // program reads them, padded to the program's width. Padding tokens write
+  // to the scratch row. Padding mask rows repeat the last real row: they must
+  // see some cell, so every value they carry stays finite. A padding row with
+  // nothing to attend would turn NaN, and a batch-wide reduction (an
+  // activation scale, say) would spread it to the real rows.
+  //
+  // The copies read pinned staging the cache owns, never the base's step,
+  // which the next verb invalidates: an async copy from pageable memory may
+  // still be reading it after the call returns. The staging is refilled only
+  // once the previous step's copies are done.
   Error upload_step(
       const std::vector<const cache::CellStep*>& steps,
+      int width,
+      int64_t scratch,
       cudaStream_t stream) {
     const cache::CellStep& first = *steps.front();
-    const size_t width = first.cells.size();
+    const size_t rows = static_cast<size_t>(width);
+    const size_t tokens = first.cells.size();
     const size_t read_len = static_cast<size_t>(first.read_len);
-    const size_t cells_bytes = width * sizeof(int64_t);
-    const size_t mask_bytes = width * read_len;
+    const size_t cells_bytes = rows * sizeof(int64_t);
+    const size_t mask_bytes = rows * read_len;
     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
         cells_bytes + sizeof(int64_t) + steps.size() * mask_bytes));
     auto* cells = reinterpret_cast<int64_t*>(staging_);
     std::copy(first.cells.begin(), first.cells.end(), cells);
-    cells[width] = first.read_len;
+    std::fill(cells + tokens, cells + rows, scratch);
+    cells[rows] = first.read_len;
     uint8_t* masks = staging_ + cells_bytes + sizeof(int64_t);
     for (size_t index = 0; index < steps.size(); ++index) {
-      std::memcpy(
-          masks + index * mask_bytes,
-          steps[index]->mask_bits.data(),
-          mask_bytes);
+      uint8_t* mask = masks + index * mask_bytes;
+      std::memcpy(mask, steps[index]->mask_bits.data(), tokens * read_len);
+      const uint8_t* last = mask + (tokens - 1) * read_len;
+      for (size_t row = tokens; row < rows; ++row) {
+        std::memcpy(mask + row * read_len, last, read_len);
+      }
     }
     const Error enqueued =
-        enqueue_uploads(steps.size(), width, read_len, stream);
+        enqueue_uploads(steps.size(), rows, read_len, stream);
     // Fenced even when a copy failed: those issued before it may still read
     // the staging.
     const Error fenced = fence_staging(stream);
@@ -571,7 +606,7 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     for (size_t index = 0; index < windows && read_len > 0; ++index) {
       const cudaError_t error = cudaMemcpy2DAsync(
           pool_.side_buffer(kFirstMaskBuffer + index),
-          static_cast<size_t>(capacity()),
+          static_cast<size_t>(pool_cells_),
           masks + index * width * read_len,
           read_len,
           read_len,
@@ -647,6 +682,9 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   // new id through seq_new.
   mutable std::recursive_mutex mutex_;
 
+  // The program's declared cells: the pool's rows at most, and the mask row
+  // pitch.
+  const int pool_cells_;
   const int max_write_;
   const std::vector<int> windows_;
   std::vector<int> window_layers_;
@@ -704,6 +742,11 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
   // cache without the program's widest step cannot address them.
   if (!cfg.max_write || *cfg.max_write <= 0 || *cfg.max_write > cfg.capacity) {
     ET_LOG(Error, "offgraph_kv: the cell layout requires max_write");
+    return nullptr;
+  }
+  // One pool row is the padding scratch; the table needs at least one cell.
+  if (cfg.capacity < 2) {
+    ET_LOG(Error, "offgraph_kv: the cell layout needs at least two cells");
     return nullptr;
   }
   std::set<int> windows;
