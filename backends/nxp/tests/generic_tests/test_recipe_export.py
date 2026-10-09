@@ -481,15 +481,15 @@ def _run_qat_export(model, train_fn=None, recipe_type=NXPRecipeType.INT8_QAT_NEU
 # ---------------------------------------------------------------------------
 
 
-# Both QAT recipe types must reject a missing train_fn.
+# Both QAT recipe types must reject missing train_fn AND missing calibration_inputs_fn.
 @pytest.mark.parametrize(
     "recipe_type",
     [NXPRecipeType.INT8_QAT_NEUTRON, NXPRecipeType.INT8_QAT_NO_DELEGATE],
     ids=lambda r: r.value,
 )
 def test__qat_requires_train_fn(recipe_type):
-    """Any QAT recipe raises ValueError when train_fn is absent from NeutronRecipeConfig."""
-    rc = NeutronRecipeConfig(INPUT_SHAPE)  # train_fn=None (default)
+    """Any QAT recipe raises ValueError when both train_fn and calibration_inputs_fn are absent."""
+    rc = NeutronRecipeConfig(INPUT_SHAPE)  # train_fn=None, calibration_inputs_fn=None
     with pytest.raises(ValueError, match="train_fn"):
         NXPRecipeProvider().create_recipe(recipe_type, neutron_recipe_config=rc)
 

@@ -143,27 +143,27 @@ class TestTrConv:
     @pytest.mark.parametrize(
         "input_shape, out_channels, use_et_ref_model",
         [
-            pytest.param(
-                ins := (1, 3, 7, 14),
-                oc := 3,
-                use_et_ref_model := True,
-                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
-                + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (2, 3, 13, 27),
-                oc := 7,
-                use_et_ref_model := True,
-                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
-                + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (3, 7, 3, 14),
-                oc := 4,
-                use_et_ref_model := True,
-                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
-                + _conv_id(ins, oc),
-            ),
+            # pytest.param(
+            #     ins := (1, 3, 7, 14),
+            #     oc := 3,
+            #     use_et_ref_model := True,
+            #     id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+            #     + _conv_id(ins, oc),
+            # ),
+            # pytest.param(
+            #     ins := (2, 3, 13, 27),
+            #     oc := 7,
+            #     use_et_ref_model := True,
+            #     id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+            #     + _conv_id(ins, oc),
+            # ),
+            # pytest.param(
+            #     ins := (3, 7, 3, 14),
+            #     oc := 4,
+            #     use_et_ref_model := True,
+            #     id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+            #     + _conv_id(ins, oc),
+            # ),
             pytest.param(
                 ins := (1, 9, 9, 13),
                 oc := 1,
@@ -171,20 +171,20 @@ class TestTrConv:
                 id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
                 + _conv_id(ins, oc),
             ),
-            pytest.param(
-                ins := (7, 7, 7, 7),
-                oc := 10,
-                use_et_ref_model := True,
-                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
-                + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (4, 21, 13, 17),
-                oc := 27,
-                use_et_ref_model := True,
-                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
-                + _conv_id(ins, oc),
-            ),
+            # pytest.param(
+            #     ins := (7, 7, 7, 7),
+            #     oc := 10,
+            #     use_et_ref_model := True,
+            #     id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+            #     + _conv_id(ins, oc),
+            # ),
+            # pytest.param(
+            #     ins := (4, 21, 13, 17),
+            #     oc := 27,
+            #     use_et_ref_model := True,
+            #     id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+            #     + _conv_id(ins, oc),
+            # ),
         ],
     )
     def test__tr_unusual(

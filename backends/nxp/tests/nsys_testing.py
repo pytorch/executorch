@@ -57,6 +57,7 @@ from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
 
+
 logger = logging.getLogger(__name__)
 
 OUTPUTS_DIR = outputs_dir.OUTPUTS_DIR
@@ -111,6 +112,7 @@ def _run_delegated_executorch_program(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ) -> tuple[ExportedProgram, str]:
     try:
         if mocker:
@@ -141,6 +143,7 @@ def _run_delegated_executorch_program(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
+            use_recipe_export=use_recipe_export,
         )
 
     except RuntimeError as e:
@@ -203,6 +206,7 @@ def _run_non_delegated_executorch_program(
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ) -> ExportedProgram:
     dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
         input_spec, testing_dataset_dir
@@ -216,6 +220,7 @@ def _run_non_delegated_executorch_program(
         use_qat=use_qat,
         train_fn=train_fn,
         remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
     )
 
     assert not graph_contains_any_of_ops(
@@ -396,6 +401,7 @@ def lower_run_compare(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = True,  # TODO Temporarily set to True for CI testing.
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -473,6 +479,7 @@ def lower_run_compare(
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         operators_not_to_delegate=operators_not_to_delegate,
         remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
     )
 
     output_spec = _get_program_output_spec(delegated_program)
@@ -492,6 +499,7 @@ def lower_run_compare(
                 use_qat=use_qat,
                 train_fn=train_fn,
                 remove_quant_io_ops=remove_quant_io_ops,
+                use_recipe_export=use_recipe_export,
             )
 
         case ReferenceModel.QUANTIZED_EDGE_PYTHON:
@@ -507,6 +515,7 @@ def lower_run_compare(
                     use_qat=use_qat,
                     train_fn=train_fn,
                     remove_quant_io_ops=remove_quant_io_ops,
+                    use_recipe_export=use_recipe_export,
                 )
                 .exported_program()
                 .module()
@@ -603,9 +612,10 @@ def lower_run_compare_ptq_qat(
     output_comparator=None,
     mocker: MockerFixture = None,
     operators_not_to_delegate: list[str] = None,
+    use_recipe_export: bool = True,  # TODO Temporarily set to True for CI testing.
 ):
     """
-    Run provided program twice and compare it's results.
+    Run provided program twice and compare its results.
     The model is once quantized with PTQ and with QAT.
 
     :param model: Executed PyTorch model.
@@ -659,6 +669,7 @@ def lower_run_compare_ptq_qat(
         mocker,
         use_qat=False,
         operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
     )
 
     _ = _run_delegated_executorch_program(
@@ -674,6 +685,7 @@ def lower_run_compare_ptq_qat(
         use_qat=True,
         train_fn=train_fn,
         operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
     )
 
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
