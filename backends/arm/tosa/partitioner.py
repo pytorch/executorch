@@ -833,7 +833,7 @@ class TOSAPartitioner(Partitioner):
             tags = self._tag_module(
                 exported_program.graph_module, exported_program, reporter
             )
-        partition_tags = {tag: self.delegation_spec for tag in tags}
+        partition_tags = {tag: self.delegation_spec for tag in sorted(tags)}
 
         tag_constant_data(exported_program)
         if (
