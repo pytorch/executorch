@@ -17,7 +17,10 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
 
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare, ReferenceModel
+from executorch.backends.nxp.tests.nsys_testing import (
+    lower_run_compare,
+    ReferenceRunner,
+)
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     CifarNet,
     store_test_data,
@@ -69,10 +72,10 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
         # Run the channels last reference in PyTorch as the ExecuTorch CPU model contains incorrectly
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
         #  is caused by ExecuTorch (not NXP). https://github.com/pytorch/executorch/issues/16464
-        reference_model=(
-            ReferenceModel.QUANTIZED_EDGE_PYTHON
+        reference_runner=(
+            ReferenceRunner.QUANTIZED_EDGE_PYTHON
             if channels_last
-            else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+            else ReferenceRunner.QUANTIZED_EXECUTORCH_CPP
         ),
     )
 
