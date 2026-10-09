@@ -109,7 +109,7 @@ def define_common_targets(is_fbcode = False):
             ],
             headers = glob([
                 "runtime/inmemoryfs/**/*.hpp",
-            ]),
+            ]) + ["runtime/util/json_util.hpp"],
             base_module = "executorch.backends.apple.coreml",
             compiler_flags = [
                 "-std=c++17",
