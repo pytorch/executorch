@@ -4358,13 +4358,27 @@ VgfRepr::get_neural_statistics_segment_contexts() const {
 }
 
 std::string VgfRepr::collect_neural_statistics_metadata() const {
+  VgfNeuralStatisticsMetadataContext metadata_context;
+  metadata_context.mode_index = neural_statistics_mode_index_;
+
+  if (vk_physical != VK_NULL_HANDLE) {
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(vk_physical, &properties);
+    metadata_context.target_available = true;
+    metadata_context.device_name = properties.deviceName;
+    metadata_context.vendor_id = properties.vendorID;
+    metadata_context.device_id = properties.deviceID;
+    metadata_context.driver_version = properties.driverVersion;
+  }
+
   if (neural_statistics_requested_ && !neural_statistics_device_enabled_) {
     return make_vgf_neural_statistics_unavailable_metadata(
-        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled");
+        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled",
+        metadata_context);
   }
 
   return collect_vgf_neural_statistics_metadata(
-      vk_device, get_neural_statistics_segment_contexts());
+      vk_device, get_neural_statistics_segment_contexts(), metadata_context);
 }
 
 void VgfRepr::free_vgf() {

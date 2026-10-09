@@ -66,12 +66,20 @@ inline cudaError_t cudaEventRecord(cudaEvent_t event, cudaStream_t stream) {
   return hipEventRecord(event, stream);
 }
 
+inline cudaError_t cudaEventSynchronize(cudaEvent_t event) {
+  return hipEventSynchronize(event);
+}
+
 inline cudaError_t cudaFree(void* ptr) {
   return hipFree(ptr);
 }
 
 inline cudaError_t cudaFreeAsync(void* ptr, cudaStream_t stream) {
   return hipFreeAsync(ptr, stream);
+}
+
+inline cudaError_t cudaFreeHost(void* ptr) {
+  return hipHostFree(ptr);
 }
 
 inline cudaError_t cudaGetDevice(int* device) {
@@ -120,6 +128,10 @@ cudaMallocAsync(void** ptr, size_t size, cudaStream_t stream) {
   return hipMallocAsync(ptr, size, stream);
 }
 
+inline cudaError_t cudaMallocHost(void** ptr, size_t size) {
+  return hipHostMalloc(ptr, size, 0);
+}
+
 inline cudaError_t
 cudaMemcpy(void* dst, const void* src, size_t size, cudaMemcpyKind kind) {
   return hipMemcpy(dst, src, size, kind);
@@ -132,6 +144,19 @@ inline cudaError_t cudaMemcpyAsync(
     cudaMemcpyKind kind,
     cudaStream_t stream) {
   return hipMemcpyAsync(dst, src, size, kind, stream);
+}
+
+inline cudaError_t cudaMemcpy2DAsync(
+    void* dst,
+    size_t dpitch,
+    const void* src,
+    size_t spitch,
+    size_t width,
+    size_t height,
+    cudaMemcpyKind kind,
+    cudaStream_t stream) {
+  return hipMemcpy2DAsync(
+      dst, dpitch, src, spitch, width, height, kind, stream);
 }
 
 inline cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
