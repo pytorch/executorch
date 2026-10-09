@@ -22,7 +22,6 @@
 #include <executorch/runtime/platform/compiler.h>
 
 #include <cinttypes>
-#include <limits>
 
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
@@ -187,16 +186,9 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
   if (!absolute_offset.ok()) {
     return absolute_offset.error();
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      segment_size <= std::numeric_limits<size_t>::max(),
-      NotSupported,
-      "Segment size %" PRIu64 " exceeds the maximum load size %zu",
-      segment_size,
-      std::numeric_limits<size_t>::max());
-
   return loader_->load_at_offset(
       absolute_offset.get(),
-      static_cast<size_t>(segment_size),
+      segment_size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
 }
 
@@ -316,16 +308,10 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       " overflows uint64_t; malformed PTD file.",
       fh->flatbuffer_offset,
       fh->flatbuffer_size);
-  ET_CHECK_OR_RETURN_ERROR(
-      flat_tensor_data_size <= std::numeric_limits<size_t>::max(),
-      NotSupported,
-      "FlatTensor metadata size exceeds the addressable buffer size %zu",
-      std::numeric_limits<size_t>::max());
-
   // Load flatbuffer data as a segment.
   Result<FreeableBuffer> flat_tensor_data = loader->load_at_offset(
       /*offset=*/0,
-      static_cast<size_t>(flat_tensor_data_size),
+      flat_tensor_data_size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!flat_tensor_data.ok()) {
     ET_LOG(Error, "Failed to load flat_tensor data.");

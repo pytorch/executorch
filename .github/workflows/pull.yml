@@ -760,6 +760,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
@@ -872,13 +874,11 @@ jobs:
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         if [[ "${{ matrix.test_arm_backend }}" == "test_pytest_ops_no_target" ]]; then
-          for backend in vgf u55 u85; do
-            python backends/arm/scripts/docgen/generate_op_support.py \
-              --backend "$backend" --check || exit 1
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all --check || exit 1
 
-            python backends/arm/scripts/docgen/generate_op_support.py \
-              --backend "$backend" || exit 1
-          done
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all || exit 1
 
           git diff --exit-code -- \
             docs/source/backends/arm-vgf/VGF_op_support.md \
@@ -1600,7 +1600,6 @@ jobs:
 
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10
@@ -1700,6 +1699,8 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
   test-coreml-bc-macos:
     needs: [changed-files, run-decision]

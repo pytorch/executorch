@@ -16,8 +16,9 @@ produces are meaningless. To classify something real, regenerate the header:
 python gen_input.py your_photo.jpg
 ```
 
-The script resizes to 256, centre-crops to 224x224, stores the result as uint8
-RGB in NCHW order, and records what float32 torchvision MobileNetV2 predicts.
+The script applies the same resize and centre-crop that torchvision's default
+MobileNetV2 weights expect, stores the result as uint8 RGB in NCHW order, and
+records what float32 torchvision MobileNetV2 predicts.
 Rebuild and reflash after regenerating.
 
 Two things are required for that recorded prediction to be a valid reference.
@@ -29,9 +30,13 @@ calibrates on the model's example input, which is random:
 ```bash
 python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2 --quantize --delegate \
-    --target=ethos-u55-256 --calibration_data=<dir-of-pt-tensors> \
+    --target=ethos-u55-256 --calibration_data=calib \
     --output=mv2_ethosu.pte
 ```
+
+`--calibration_data` takes a directory of `.pt` files, each holding one
+preprocessed input tensor of shape `[1, 3, 224, 224]`, produced with the same
+transform the model expects (`MobileNet_V2_Weights.DEFAULT.transforms()`).
 
 ImageNet has no "person" class, so portraits return an unrelated label with low
 confidence. Photographs of animals, objects, food and vehicles work well.

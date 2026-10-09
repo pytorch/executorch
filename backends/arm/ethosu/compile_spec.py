@@ -7,10 +7,7 @@ import json
 from dataclasses import dataclass
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -248,8 +245,3 @@ class EthosUCompileSpec(ArmCompileSpec):
     def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
-
-    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
-        # Any u55 subset passes are treated as tosa specification configs
-        # As such, they should be added to the base class default.
-        return super()._create_default_pipeline_config()

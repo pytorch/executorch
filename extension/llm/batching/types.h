@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
@@ -26,12 +27,37 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-using Token = std::uint64_t;
-using SessionId = std::int64_t;
-using Position = std::int32_t;
+using Token ET_EXPERIMENTAL = std::uint64_t;
+using SessionId ET_EXPERIMENTAL = std::int64_t;
+using Position ET_EXPERIMENTAL = std::int32_t;
 // Wide enough that a monotonically issued id cannot wrap in any realistic
 // lifetime, so ids never have to be recycled.
-using TaskId = std::int64_t;
+using TaskId ET_EXPERIMENTAL = std::int64_t;
+
+// Opaque owned backing, compatible with its consuming executor as a caller
+// precondition. Logical contents, size and layout are fixed before scheduling
+// and immutable for the backing's lifetime. Backend-private lazy caches may
+// only be mutated on the consuming Runner's engine thread; sharing mutable
+// caches across Runners requires backend synchronization.
+class ET_EXPERIMENTAL PreparedInput {
+ public:
+  // The last owner may release on any thread, after the executor is gone.
+  // Destruction must be thread-safe and independent of the executor's lifetime.
+  virtual ~PreparedInput() = default;
+  // Stable, process-local identity for the concrete backing type. Use the
+  // address of one canonical non-const object with static storage per type
+  // (e.g. static char kKind), so identical constants cannot be folded together.
+  // Producers and consumers must share this address across shared-library
+  // boundaries. This does not identify weights or devices.
+  virtual const void* kind() const = 0;
+  // Number of decoder positions in the complete backing, not bytes.
+  virtual std::size_t size() const = 0;
+};
+using PreparedInputPtr ET_EXPERIMENTAL = std::shared_ptr<const PreparedInput>;
+using TokenInputPtr ET_EXPERIMENTAL = std::shared_ptr<const std::vector<Token>>;
+// Prepared prompts are opaque; generated token feedback needs no preparation.
+using InputPayload ET_EXPERIMENTAL =
+    std::variant<TokenInputPtr, PreparedInputPtr>;
 
 // Sampling policy for a generation. Installed on the session before its tasks
 // are submitted, so it does not ride on every Input.
@@ -45,13 +71,13 @@ struct ET_EXPERIMENTAL Input {
   SessionId sid;
   bool produce_output;
 
-  // The selected slice is tokens[offset : offset + size]. It starts at the
+  // The selected slice is payload[offset : offset + size]. It starts at the
   // absolute logical position `position + offset`; `position` is the base of
-  // the complete backing vector, not of the slice.
+  // the complete backing, not of the slice.
   size_t offset;
   size_t size;
 
-  std::shared_ptr<const std::vector<Token>> tokens;
+  InputPayload payload;
   Position position;
 };
 
