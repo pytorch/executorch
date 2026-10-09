@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <array>
 #include <limits>
 #include <tuple>
 #include <utility>
@@ -125,11 +126,68 @@ void check_av(const AVParams& params) {
       }
     }
   }
+
+  constexpr int context = 256;
+  graph.resize_input(0, {1, heads, 4, context});
+  graph.virtual_resize(q, {1, 1, heads, dim});
+  graph.set_symint(position, context - 1);
+  graph.propagate_resize();
+
+  // Each worker consumes four context entries. These inputs distinguish every
+  // adjacent pair of levels in the required 32, 16, 8, 4, 2, 1 reduction tree.
+  // With weights 1/4, large + small rounds to large in both FP16 and FP32.
+  constexpr float large = 16384.0f;
+  constexpr float small = 1.0f / 4096;
+  for (int stride = 32; stride >= 2; stride /= 2) {
+    SCOPED_TRACE(stride);
+    const std::array<int, 4> workers{
+        0, stride / 2, stride, stride + stride / 2};
+    for (const bool cancel_first : {false, true}) {
+      SCOPED_TRACE(cancel_first);
+      const std::array<float, 4> samples = cancel_first
+          ? std::array<float, 4>{large, small, -large, small}
+          : std::array<float, 4>{large, -large, small, small};
+      std::vector<T> values(capacity * kv_heads * dim, T(0.0f));
+      std::vector<T> probabilities(heads * 4 * context, T(0.0f));
+      for (int i = 0; i < 4; ++i) {
+        const int c = 4 * workers[i];
+        for (int h = 0; h < kv_heads; ++h) {
+          for (int d = 0; d < dim; ++d) {
+            const float sign = (h + d) % 2 == 0 ? 1.0f : -1.0f;
+            values[(c * kv_heads + h) * dim + d] = T(sign * samples[i]);
+          }
+        }
+        for (int h = 0; h < heads; ++h) {
+          probabilities[h * 4 * context + c] = T(0.25f);
+        }
+      }
+      graph.maybe_cast_and_copy_into_staging(
+          vstage, values.data(), values.size(), dtype);
+      graph.maybe_cast_and_copy_into_staging(
+          p.staging, probabilities.data(), probabilities.size(), dtype);
+      graph.execute();
+      std::vector<T> actual(heads * dim);
+      graph.maybe_cast_and_copy_from_staging(
+          ostage, actual.data(), actual.size(), dtype);
+
+      // Cancelling the large terms first preserves small / 2. Pairing each
+      // large term with a small one first loses both small terms and yields 0.
+      // Reversing the two reduction levels swaps these expected results.
+      for (int h = 0; h < heads; ++h) {
+        for (int d = 0; d < dim; ++d) {
+          const float sign = (h / group + d) % 2 == 0 ? 1.0f : -1.0f;
+          const float expected = cancel_first ? sign * small / 2 : 0.0f;
+          ASSERT_EQ(float(actual[h * dim + d]), expected)
+              << "head=" << h << " dim=" << d;
+        }
+      }
+    }
+  }
 }
 
 class VulkanSDPAAVTest : public ::testing::TestWithParam<AVParams> {};
 
-TEST_P(VulkanSDPAAVTest, MatchesCPUAcrossDecodeAndPrefill) {
+TEST_P(VulkanSDPAAVTest, MatchesCPUAndPreservesReductionOrder) {
   executorch::runtime::runtime_init();
   if (std::get<3>(GetParam()) == vkapi::kHalf) {
     check_av<executorch::aten::Half>(GetParam());
