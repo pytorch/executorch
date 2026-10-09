@@ -539,6 +539,12 @@ test_deit_e2e_ethos_u() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_person_detection_e2e_cortex_m() {
+    echo "${TEST_SUITE_NAME}: Run person-detection Cortex-M end-to-end test"
+    backends/arm/test/test_arm_ootb.sh run_person_detection_e2e_cortex_m
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # ------------------------------------
 # -------- Miscellaneous tests -------
 # ------------------------------------
