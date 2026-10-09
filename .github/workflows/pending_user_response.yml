@@ -23,4 +23,5 @@ jobs:
       - name: Run needs-user-input script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
         run: python .github/workflows/pending_user_response.py
