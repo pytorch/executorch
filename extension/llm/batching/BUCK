@@ -1,41 +1,10 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl.
+
+load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-fbcode_target(_kind = runtime.cxx_library,
-    name = "executor_utils",
-    exported_headers = ["executor_utils.h"],
-    header_namespace = "executorch/extension/llm/batching",
-    exported_deps = [
-        ":batching",
-        "//executorch/extension/llm/cache:kv_cache",
-        "//executorch/extension/llm/sampler:sampler",
-        "//executorch/extension/tensor:tensor",
-        "//executorch/runtime/backend:backend_options_map",
-        "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-    ],
-    visibility = ["PUBLIC"],
-)
-
-fbcode_target(_kind = runtime.cxx_library,
-    name = "batching",
-    srcs = [
-        "metrics.cpp",
-        "runner.cpp",
-    ],
-    exported_headers = [
-        "decode_first_scheduler.h",
-        "executor.h",
-        "metrics.h",
-        "prefix_cache.h",
-        "runner.h",
-        "scheduler.h",
-        "types.h",
-    ],
-    header_namespace = "executorch/extension/llm/batching",
-    exported_deps = [
-        "//executorch/runtime/platform:compiler",
-    ],
-    visibility = ["PUBLIC"],
-)
+fbcode_target(_kind = define_common_targets,)

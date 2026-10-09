@@ -300,20 +300,23 @@ class WideOffsetDataLoader final : public DataLoader {
 
   Result<FreeableBuffer> load_at_offset(
       uint64_t offset,
-      size_t size,
+      uint64_t size,
       const SegmentInfo& segment_info) const override {
     if (segment_info.segment_type == SegmentInfo::Type::Program) {
       if (offset > metadata_size_ || size > metadata_size_ - offset) {
         return Error::InvalidArgument;
       }
       return FreeableBuffer(
-          metadata_ + static_cast<size_t>(offset), size, nullptr);
+          metadata_ + static_cast<size_t>(offset),
+          static_cast<size_t>(size),
+          nullptr);
     }
+    last_size_ = size;
     if (size > segment_size_) {
       return Error::InvalidArgument;
     }
     last_offset_ = offset;
-    return FreeableBuffer(segment_data_, size, nullptr);
+    return FreeableBuffer(segment_data_, static_cast<size_t>(size), nullptr);
   }
 
   Error load_into_at_offset(
@@ -337,6 +340,10 @@ class WideOffsetDataLoader final : public DataLoader {
     return last_offset_;
   }
 
+  uint64_t last_size() const {
+    return last_size_;
+  }
+
  private:
   const uint8_t* metadata_;
   size_t metadata_size_;
@@ -344,6 +351,7 @@ class WideOffsetDataLoader final : public DataLoader {
   size_t segment_size_;
   uint64_t source_size_;
   mutable uint64_t last_offset_{0};
+  mutable uint64_t last_size_{0};
 };
 
 } // namespace
@@ -445,6 +453,35 @@ TEST_F(FlatTensorDataMapTest, PreservesWideOffsetWhenLoadingData) {
   EXPECT_EQ(loader.last_offset(), absolute_offset);
   EXPECT_EQ(loaded->size(), sizeof(segment_data));
   EXPECT_EQ(loaded->data(), &segment_data);
+}
+
+TEST_F(FlatTensorDataMapTest, PreservesWideSizeWhenLoadingData) {
+  constexpr uint64_t kSegmentSize = (uint64_t{1} << 32) + 16;
+  constexpr SegmentSpec kSegment{0, kSegmentSize, kSegmentSize};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      header->segment_base_offset + kSegmentSize);
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+
+  // The test loader cannot back this size; it only records the request.
+  EXPECT_EQ(data_map->get_data(kWideTensorKey).error(), Error::InvalidArgument);
+  EXPECT_EQ(loader.last_size(), kSegmentSize);
 }
 
 TEST_F(FlatTensorDataMapTest, PreservesWideOffsetWhenLoadingDataIntoBuffer) {
