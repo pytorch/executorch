@@ -1484,16 +1484,21 @@ class CudaCellCacheTest : public CudaKVCacheTest {
   }
 
   // declare + prepare + bind, as the executor and the delegate do per forward.
+  // `width` is the program's step width, the declared tokens by default; a
+  // wider program pads.
   static Error step(
       cache::Cache& cache,
       cu::CudaDelegateHandle& handle,
-      const std::vector<int32_t>& seq_ids) {
+      const std::vector<int32_t>& seq_ids,
+      int64_t width = 0) {
     auto* control = cache.as<cache::BatchControl>();
     auto* kv = cache.as<cu::CudaKVCache>();
     if (!control->declare_step(seq_ids)) {
       return Error::InvalidArgument;
     }
-    const auto width = static_cast<int64_t>(seq_ids.size());
+    if (width == 0) {
+      width = static_cast<int64_t>(seq_ids.size());
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(kv->prepare_step(width, cudaStreamPerThread));
     ET_CHECK_OK_OR_RETURN_ERROR(kv->rebind_for_execute(&handle));
     return kv->commit_step(width);
@@ -1545,10 +1550,11 @@ TEST_F(CudaCellCacheTest, InterleavedSequencesWritePlacementAndMasks) {
       std::vector<int64_t>({1, 1, kMaxWrite, kCells}));
   EXPECT_EQ(fake.bound["cells"].dtype, slimc10::ScalarType::Long);
   EXPECT_EQ(fake.bound["mask0"].dtype, slimc10::ScalarType::Bool);
-  // Pools are declared at every cell; allocated past the first step's reach.
+  // Pools are declared at every cell; allocated past the first step's reach,
+  // plus the scratch row.
   EXPECT_EQ(
       fake.bound["r_k"].sizes, std::vector<int64_t>({1, kCells, kHeads, kDim}));
-  EXPECT_EQ(kv->metrics().flat_capacity, 5);
+  EXPECT_EQ(kv->metrics().flat_capacity, 6);
 
   // Then they decode together, in the other order.
   ASSERT_EQ(step(*cache_ptr, handle, {b, a}), Error::Ok);
@@ -1563,7 +1569,7 @@ TEST_F(CudaCellCacheTest, InterleavedSequencesWritePlacementAndMasks) {
   EXPECT_EQ(control->pos(b), 3);
   const auto metrics = kv->metrics();
   EXPECT_EQ(metrics.logical_length, 7);
-  EXPECT_EQ(metrics.flat_capacity, 10);
+  EXPECT_EQ(metrics.flat_capacity, 12);
   EXPECT_EQ(metrics.growth_count, 1);
   kv->forget_handle(&handle);
 }
@@ -1606,7 +1612,7 @@ TEST_F(CudaCellCacheTest, SwitchingSequencesKeepsACapturedGraph) {
 
   // Growth moves the pools: the graph is captured again, and only the pools'
   // bindings change.
-  ASSERT_EQ(step(*cache_ptr, prefill, {a, a, a, b, b, b}), Error::Ok);
+  ASSERT_EQ(step(*cache_ptr, prefill, {a, a, a, b, b}), Error::Ok);
   EXPECT_NE(graph.phase, cu::CudaGraphPhase::Replay);
   ASSERT_EQ(step(*cache_ptr, decode, {a}), Error::Ok);
   EXPECT_NE(decode_fake.bound["f_k"].data, bound.at("f_k").data);
@@ -1617,9 +1623,10 @@ TEST_F(CudaCellCacheTest, SwitchingSequencesKeepsACapturedGraph) {
 }
 
 TEST_F(CudaCellCacheTest, StepIntoAFreedCellDoesNotGrow) {
-  // Four rows holding a, a, b, b. Once a goes, b's next token takes cell 0
-  // and read_len stays 4, so the pool must not grow, copy, or drop the graph.
-  auto cache_ptr = make(/*initial=*/4);
+  // Four cells holding a, a, b, b, plus the scratch row. Once a goes, b's
+  // next token takes cell 0 and read_len stays 4, so the pool must not grow,
+  // copy, or drop the graph.
+  auto cache_ptr = make(/*initial=*/5);
   auto* control = cache_ptr->as<cache::BatchControl>();
   auto* kv = cache_ptr->as<cu::CudaKVCache>();
   auto fake = container();
@@ -1628,7 +1635,7 @@ TEST_F(CudaCellCacheTest, StepIntoAFreedCellDoesNotGrow) {
   const int32_t a = *control->seq_new();
   const int32_t b = *control->seq_new();
   ASSERT_EQ(step(*cache_ptr, handle, {a, a, b, b}), Error::Ok);
-  ASSERT_EQ(kv->metrics().flat_capacity, 4);
+  ASSERT_EQ(kv->metrics().flat_capacity, 5);
   auto& graph = handle.cuda_graph_state;
   graph.phase = cu::CudaGraphPhase::Replay;
   const void* pool = fake.bound["f_k"].data;
@@ -1640,7 +1647,7 @@ TEST_F(CudaCellCacheTest, StepIntoAFreedCellDoesNotGrow) {
   EXPECT_EQ(
       read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({4}));
   const auto metrics = kv->metrics();
-  EXPECT_EQ(metrics.flat_capacity, 4);
+  EXPECT_EQ(metrics.flat_capacity, 5);
   EXPECT_EQ(metrics.growth_count, 0);
   EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Replay);
   EXPECT_EQ(fake.bound["f_k"].data, pool);
@@ -1695,11 +1702,13 @@ TEST_F(CudaCellCacheTest, ClonedSequenceSharesCellsUntilItsLastOwnerGoes) {
       read_mask(fake.bound["mask0"].data, 1, 4),
       std::vector<std::vector<int>>({{1, 1, 1, 1}}));
 
+  // The table holds every declared cell but the scratch row.
   auto* cells = static_cast<cache::CellCache*>(cache_ptr.get());
+  EXPECT_EQ(cells->capacity(), kCells - 1);
   ASSERT_TRUE(control->seq_rm(a));
-  EXPECT_EQ(cells->free_cells(), kCells - 4);
+  EXPECT_EQ(cells->free_cells(), kCells - 1 - 4);
   ASSERT_TRUE(control->seq_rm(*c));
-  EXPECT_EQ(cells->free_cells(), kCells);
+  EXPECT_EQ(cells->free_cells(), kCells - 1);
   EXPECT_EQ(cells->used_end(), 0);
   kv->forget_handle(&handle);
 }
@@ -1715,24 +1724,116 @@ TEST_F(CudaCellCacheTest, RejectsStepsThatDisagreeWithTheDeclaration) {
 
   // Nothing declared.
   EXPECT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::InvalidState);
-  // Declared two, the program's input carries three.
-  ASSERT_TRUE(control->declare_step({a, a}));
-  EXPECT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::InvalidState);
+  // Declared three, the program takes two: a narrower program cannot run it.
+  ASSERT_TRUE(control->declare_step({a, a, a}));
+  EXPECT_EQ(kv->prepare_step(2, cudaStreamPerThread), Error::InvalidState);
   // Wider than the step buffers the program declared.
   EXPECT_EQ(
       kv->prepare_step(kMaxWrite + 1, cudaStreamPerThread),
       Error::InvalidArgument);
   // More tokens than free cells, or an id that was never handed out, never
-  // declares.
-  EXPECT_FALSE(control->declare_step(std::vector<int32_t>(kCells + 1, a)));
+  // declares; the scratch row is not free.
+  EXPECT_FALSE(control->declare_step(std::vector<int32_t>(kCells, a)));
   EXPECT_FALSE(control->declare_step({-1}));
   // A rejected step leaves the table untouched.
   EXPECT_EQ(control->pos(a), 0);
   // And the earlier accepted declaration still stands.
-  ASSERT_EQ(kv->prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-  ASSERT_EQ(kv->commit_step(2), Error::Ok);
+  ASSERT_EQ(kv->commit_step(3), Error::Ok);
+  EXPECT_EQ(control->pos(a), 3);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, PaddingRowsWriteTheScratchRowAndCopyTheLastMask) {
+  auto cache_ptr = make(/*initial=*/12);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+
+  // Three tokens in a program of width 8: rows 3..7 are padding.
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, b}, kMaxWrite), Error::Ok);
+  const int64_t rows = kv->metrics().flat_capacity;
+  const int64_t scratch = rows - 1;
+  const auto cells = read_longs(fake.bound["cells"].data, kMaxWrite);
+  EXPECT_EQ(
+      cells,
+      std::vector<int64_t>(
+          {0, 1, 2, scratch, scratch, scratch, scratch, scratch}));
+  const int64_t read_len = read_longs(fake.bound["read_len"].data, 1)[0];
+  EXPECT_EQ(read_len, 3);
+  // The scratch row lies past every cell the step reads.
+  EXPECT_GE(scratch, read_len);
+  using Mask = std::vector<std::vector<int>>;
+  const Mask mask = read_mask(fake.bound["mask0"].data, kMaxWrite, 3);
+  for (int row = 3; row < kMaxWrite; ++row) {
+    EXPECT_EQ(mask[row], mask[2]) << row;
+  }
+  EXPECT_EQ(mask[2], std::vector<int>({0, 0, 1}));
+  // Padding was never declared: the table saw three tokens.
   EXPECT_EQ(control->pos(a), 2);
+  EXPECT_EQ(control->pos(b), 1);
+  EXPECT_EQ(kv->metrics().logical_length, 3);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, NarrowStepsNeverLeaveAWiderStepsCells) {
+  auto cache_ptr = make(/*initial=*/16);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto wide_fake = container();
+  auto narrow_fake = container();
+  auto wide = make_handle(wide_fake);
+  auto narrow = make_handle(narrow_fake);
+  ASSERT_TRUE(kv->note_handle(&wide).get());
+  ASSERT_TRUE(kv->note_handle(&narrow).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+
+  // A full-width step fills cells 0..7 of the shared placement buffer.
+  ASSERT_EQ(
+      step(*cache_ptr, wide, {a, a, a, a, b, b, b, b}, kMaxWrite), Error::Ok);
+  // Then one token through a width-4 program: rows 1..3 must not still name
+  // cells 1..3 (a's history), or the forward would overwrite it.
+  ASSERT_EQ(step(*cache_ptr, narrow, {b}, /*width=*/4), Error::Ok);
+  const int64_t scratch = kv->metrics().flat_capacity - 1;
+  EXPECT_EQ(
+      read_longs(narrow_fake.bound["cells"].data, 4),
+      std::vector<int64_t>({8, scratch, scratch, scratch}));
+  const int64_t read_len = read_longs(narrow_fake.bound["read_len"].data, 1)[0];
+  EXPECT_EQ(read_len, 9);
+  EXPECT_GE(scratch, read_len);
+  kv->forget_handle(&wide);
+  kv->forget_handle(&narrow);
+}
+
+TEST_F(CudaCellCacheTest, ScratchRowStaysPastEveryReadAsThePoolGrows) {
+  auto cache_ptr = make(/*initial=*/2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  // Decode one token at a time through a width-2 program until the table is
+  // full: every step pads one row, and the pool grows several times.
+  for (int token = 0; token < kCells - 1; ++token) {
+    ASSERT_EQ(step(*cache_ptr, handle, {a}, /*width=*/2), Error::Ok) << token;
+    const int64_t rows = kv->metrics().flat_capacity;
+    const auto cells = read_longs(fake.bound["cells"].data, 2);
+    const int64_t read_len = read_longs(fake.bound["read_len"].data, 1)[0];
+    EXPECT_EQ(cells[0], token) << token;
+    EXPECT_EQ(cells[1], rows - 1) << token;
+    EXPECT_GE(rows - 1, read_len) << token;
+    EXPECT_LE(rows, kCells) << token;
+  }
+  EXPECT_GE(kv->metrics().growth_count, 2);
+  // The table is full; the scratch row was never handed out.
+  EXPECT_FALSE(control->declare_step({a}));
   kv->forget_handle(&handle);
 }
 
@@ -1745,6 +1846,10 @@ TEST_F(CudaCellCacheTest, BuilderValidatesAndIsRegisteredForBatchedKinds) {
   EXPECT_EQ(
       cu::make_cuda_cell_kv_cache(
           flat_and_ring(kWindow), config(kCells, 4, kCells + 1)),
+      nullptr);
+  // One cell would all go to the padding scratch row.
+  EXPECT_EQ(
+      cu::make_cuda_cell_kv_cache(flat_and_ring(kWindow), config(1, 1, 1)),
       nullptr);
   for (const char* kind : {cache::kind::kBatchedCell, cache::kind::kBatched}) {
     auto built = cache::CacheFactory::global().build(
