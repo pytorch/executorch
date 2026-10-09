@@ -329,6 +329,49 @@ TEST_F(ProviderTest, XNNPACKAcceptsOnlyContiguousFullSpanStridedCopies) {
       implementation->supports(node, graph, execution_context).supported);
 }
 
+TEST_F(ProviderTest, XNNPACKSoftmaxAcceptsOnlyFP32LastDimension) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 4});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 4});
+  ptn::Node node;
+  node.name = "softmax";
+  node.target = "torch.ops.aten._softmax.default";
+  node.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"dim", ptn::IntArg{-1}},
+      {"half_to_float", ptn::BoolArg{false}}};
+  node.outputs = {{ptn::OutputValueKind::Tensor, 1}};
+  graph.nodes.push_back(std::move(node));
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  auto supported = [&] {
+    return implementation->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  EXPECT_TRUE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntArg{2};
+  EXPECT_TRUE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntArg{1};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntArg{-2};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[1].arg = ptn::IntArg{-1};
+  graph.node(0).inputs[2].arg = ptn::BoolArg{true};
+  EXPECT_FALSE(supported());
+  graph.node(0).inputs[2].arg = ptn::BoolArg{false};
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {2, 3, 5});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Int, {2, 3, 4});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {2, 3, 4});
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Int, {2, 3, 4});
+  EXPECT_FALSE(supported());
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {});
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {});
+  EXPECT_FALSE(supported());
+}
+
 TEST_F(ProviderTest, XNNPACKAndETRegionsShareBoundaryAndSkipBuffers) {
   for (size_t id = 0; id < 5; ++id) {
     graph.values.emplace_back(

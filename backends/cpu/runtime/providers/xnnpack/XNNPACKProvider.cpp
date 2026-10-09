@@ -584,6 +584,35 @@ class XNNExecutable final : public Executable {
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
   }
 
+  static bool supports_softmax(const Kernel& node, const ptn::Graph& graph) {
+    if (node.inputs.size() != 3 || node.outputs.size() != 1 ||
+        node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+        arg(node, 0).kind() != ptn::ArgKind::Tensor ||
+        arg(node, 1).kind() != ptn::ArgKind::Int ||
+        arg(node, 2).kind() != ptn::ArgKind::Bool || !fp32(node, graph)) {
+      return false;
+    }
+    const auto& input =
+        graph.value(arg(node, 0).as_tensor().id).tensor_meta().sizes;
+    const auto& output =
+        graph.value(node.outputs[0].value_id).tensor_meta().sizes;
+    const auto dim = arg(node, 1).as_int();
+    const auto half_to_float = arg(node, 2).as_bool();
+    return !input.empty() && input == output && dim.id == ptn::kInvalid &&
+        half_to_float.id == ptn::kInvalid && !half_to_float.value &&
+        (dim.value == -1 ||
+         dim.value == static_cast<int64_t>(input.size()) - 1);
+  }
+
+  Error softmax(const Kernel& node) {
+    CPU_XNN_CHECK(xnn_define_softmax(
+        subgraph_,
+        arg(node, 0).as_tensor().id,
+        node.outputs.at(0).value_id,
+        0));
+    return Error::Ok;
+  }
+
   Error linear(const Kernel& node) {
     const auto weight = arg(node, 1).as_tensor().id;
     const size_t channels = dimensions(weight)[0];
@@ -769,13 +798,14 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 10> kOps{{
+  static constexpr std::array<XNNOp, 15> kOps{{
       {"torch.ops.aten.add.Tensor",
        &E::supports_add,
        &E::binary<xnn_binary_add>},
       {"torch.ops.aten.as_strided_copy.default",
        &E::supports_as_strided,
        &E::static_reshape},
+      {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
       {"torch.ops.aten.convolution.default",
        &E::supports_convolution,
        &E::convolution},
