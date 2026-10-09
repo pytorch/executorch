@@ -315,7 +315,9 @@ TEST_P(CudaExecutorTest, SessionsReuseCellsAcrossRounds) {
   runner.shutdown();
 }
 
-TEST_P(CudaExecutorTest, InterleavedMethodsMatchEagerGreedyWithAndWithoutGraphs) {
+TEST_P(
+    CudaExecutorTest,
+    InterleavedMethodsMatchEagerGreedyWithAndWithoutGraphs) {
   // Prompts: [3], [5 9 1], [7 2 2 8 4 6 1], and 20 tokens. Each step's width,
   // in order: 20, 1, 4, 2, 4 (a partial prefill), 7, 3 -- then all four
   // decode together, narrowing as generations finish. Every static method and

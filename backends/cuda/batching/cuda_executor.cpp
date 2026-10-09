@@ -275,10 +275,12 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       });
   // The dynamic method serves only what no static method holds, so it must be
   // the widest.
-  const bool has_dynamic = !methods.back().is_static;
-  const int widest_static = *static_widths.rbegin();
+  const auto dynamic =
+      std::find_if(methods.begin(), methods.end(), [](const ForwardMethod& m) {
+        return !m.is_static;
+      });
   ET_CHECK_OR_RETURN_ERROR(
-      !has_dynamic || methods.back().max_tokens > widest_static,
+      dynamic == methods.end() || dynamic->max_tokens > *static_widths.rbegin(),
       InvalidProgram,
       "CudaExecutor: %s must be wider than every static method",
       kDynamicMethod);
@@ -298,16 +300,20 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_cells);
   // A dynamic method whose kernels switch at a small width is exported from
   // more selected rows than one; its selector is padded up to that.
-  ET_ASSIGN_OR_RETURN(
-      declared_min_rows,
-      metadata::detail::read_int_method(*module, kMinSelectedRowsMethod));
-  const int min_selected_rows = static_cast<int>(
-      std::max<std::int64_t>(1, declared_min_rows.value_or(1)));
-  ET_CHECK_OR_RETURN_ERROR(
-      min_selected_rows <= max_step_tokens,
-      InvalidProgram,
-      "CudaExecutor: %d selected rows exceed the widest step",
-      min_selected_rows);
+  int min_selected_rows = 1;
+  if (dynamic != methods.end()) {
+    ET_ASSIGN_OR_RETURN(
+        declared_min_rows,
+        metadata::detail::read_int_method(*module, kMinSelectedRowsMethod));
+    const std::int64_t requested_min_rows =
+        std::max<std::int64_t>(1, declared_min_rows.value_or(1));
+    ET_CHECK_OR_RETURN_ERROR(
+        requested_min_rows <= max_step_tokens,
+        InvalidProgram,
+        "CudaExecutor: %" PRId64 " selected rows exceed the widest step",
+        requested_min_rows);
+    min_selected_rows = static_cast<int>(requested_min_rows);
+  }
   ET_ASSIGN_OR_RETURN(published_vocab, metadata::read_vocab_size(*module));
   ET_ASSIGN_OR_RETURN(
       vocab_size, metadata::check_vocab_size(published_vocab, method_vocab));
