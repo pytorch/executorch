@@ -10,7 +10,12 @@ import unittest
 from typing import List, Optional
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    memory,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
@@ -836,26 +841,35 @@ class TestReinplacePass(unittest.TestCase):
         self,
     ) -> None:
         """Writing the input in place moves its mutation from the copy_ to the
-        delegate, so anything reading the input in between would see the new
-        values. The copy_ then stays and the specs stay separate."""
+        delegate, so anything reading the input in between, directly or through
+        a view taken before the delegate, would see the new values. The copy_
+        then stays and the specs stay separate."""
         inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
-        program = to_edge_transform_and_lower(
-            export(_CacheUpdate(), inputs, strict=True),
-            partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
-        ).to_executorch()
-        ep = program.exported_program()
-        graph = ep.graph
-        k_cache = next(n for n in graph.nodes if n.name == "k_cache")
-        delegate = next(n for n in graph.nodes if n.target == executorch_call_delegate)
-        with graph.inserting_after(delegate):
-            graph.call_function(torch.ops.aten.clone.default, (k_cache,))
+        for through_view in (False, True):
+            with self.subTest(through_view=through_view):
+                program = to_edge_transform_and_lower(
+                    export(_CacheUpdate(), inputs, strict=True),
+                    partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
+                ).to_executorch()
+                ep = program.exported_program()
+                graph = ep.graph
+                k_cache = next(n for n in graph.nodes if n.name == "k_cache")
+                delegate = next(
+                    n for n in graph.nodes if n.target == executorch_call_delegate
+                )
+                read = k_cache
+                if through_view:
+                    with graph.inserting_before(delegate):
+                        read = graph.call_function(memory.view, (k_cache, [16, 4]))
+                with graph.inserting_after(delegate):
+                    graph.call_function(torch.ops.aten.clone.default, (read,))
 
-        reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
+                reinplace_delegate_input_mutations(ep.graph_module, ep.graph_signature)
 
-        self.assertEqual(len(_find_nodes(ep, "copy_")), 1)
-        self.assertFalse(
-            any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"])
-        )
+                self.assertEqual(len(_find_nodes(ep, "copy_")), 1)
+                self.assertFalse(
+                    any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"])
+                )
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in

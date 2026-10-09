@@ -534,6 +534,26 @@ def reinplace_pass(  # noqa: C901
     return ep
 
 
+def _storage_aliases(node: torch.fx.Node) -> Set[torch.fx.Node]:
+    """``node`` and every node sharing its storage: views of it, which
+    ReplaceViewCopyWithViewPass has turned into ``memory.view``, and results
+    planned onto its TensorSpec, like those of in-place ops."""
+    from executorch.exir import memory
+
+    aliases = {node}
+    frontier = [node]
+    while frontier:
+        for user in frontier.pop().users:
+            if user in aliases:
+                continue
+            if (user.target == memory.view and user.args[0] in aliases) or (
+                user.meta.get("spec") is node.meta["spec"]
+            ):
+                aliases.add(user)
+                frontier.append(user)
+    return aliases
+
+
 def reinplace_delegate_input_mutations(
     graph_module: torch.fx.GraphModule, graph_signature: ExportGraphSignature
 ) -> None:
@@ -568,10 +588,11 @@ def reinplace_delegate_input_mutations(
         if backend is None or not backend.writes_mutated_inputs_in_place:
             continue
         # The input now changes while the delegate runs, not at the copy, so
-        # nothing in between may read it.
+        # nothing in between may read it, directly or through an alias.
         if any(
             position[delegate] < position[user] < position[node]
-            for user in mutated.users
+            for alias in _storage_aliases(mutated)
+            for user in alias.users
         ):
             continue
         # The emitter takes the delegate's outputs from its own specs.
