@@ -137,6 +137,10 @@ class ET_EXPERIMENTAL Executor {
   // thread, so its destruction must be thread-safe and must not depend on this
   // executor's life.
   //
+  // Cancellation does not interrupt an in-progress execute() call. Work already
+  // submitted in that batch may run to completion before cancellation takes
+  // effect.
+  //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or
   // splits inside execute; it cannot constrain what the runner sends.

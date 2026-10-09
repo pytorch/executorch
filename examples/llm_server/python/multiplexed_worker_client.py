@@ -28,7 +28,6 @@ from .worker_client import (
     WorkerStats,
 )
 
-
 logger = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 1024 * 1024
 _MAX_MESSAGE_BYTES = 1024 * 1024

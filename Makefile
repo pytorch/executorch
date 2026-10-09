@@ -139,6 +139,7 @@ help:
 	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner and worker with MLX backend"
 	@echo "  muse-glimmer-cuda   - Build Muse Glimmer runners and worker with CUDA backend"
 	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
+	@echo "  muse-glimmer-batching-mlx - Build batching Muse Glimmer runner and worker with MLX"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
@@ -512,6 +513,24 @@ muse-glimmer-mlx:
 	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
 	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
 	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
+
+.PHONY: muse-glimmer-batching-mlx
+muse-glimmer-batching-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Configuring batching Muse Glimmer runners with MLX..."
+	cd examples/models/muse-glimmer && cmake --preset muse-glimmer-mlx \
+		-B "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		-DEXECUTORCH_BUILD_CUDA=OFF \
+		-DMUSE_GLIMMER_BUILD_BATCHING=ON \
+		-DMUSE_GLIMMER_BUILD_BATCHING_TESTS=OFF
+	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+		--parallel "$$(sysctl -n hw.ncpu)"
+	@echo ""
+	@echo "Build complete!"
+	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
+	@echo "  Worker:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker"
 
 gemma4_31b-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."

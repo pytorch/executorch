@@ -130,8 +130,9 @@ class ET_EXPERIMENTAL GenerationHandle {
   // and moved-from handles.
   bool valid() const noexcept;
 
-  // Requests cancellation, which lands within one step. A no-op on an invalid
-  // handle.
+  // Requests cancellation, which lands within one execution step. It does not
+  // interrupt an in-progress Executor::execute() call, including any work the
+  // executor performs within that call. A no-op on an invalid handle.
   void cancel() const;
 
   // Becomes true after the terminal callback returns or throws, without
