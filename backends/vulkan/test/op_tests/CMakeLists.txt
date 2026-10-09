@@ -23,10 +23,18 @@ if(ANDROID)
 endif()
 
 find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
-find_package(GTest CONFIG REQUIRED)
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+endif()
+
+# Keep GoogleTest's headers and library on the same pinned revision.
+if(NOT TARGET GTest::gtest_main)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/third-party/googletest
+    ${CMAKE_CURRENT_BINARY_DIR}/googletest EXCLUDE_FROM_ALL
+  )
 endif()
 
 # Include this file to access executorch_target_link_options_shared_lib This is
@@ -49,19 +57,12 @@ find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
 
 set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
 
-set(GTEST_INCLUDE_PATH
-    ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include
-)
 set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
 set(COMMON_INCLUDES
-    ${EXECUTORCH_ROOT}/..
-    ${VULKAN_HEADERS_PATH}
-    ${VOLK_PATH}
-    ${VMA_PATH}
-    ${GTEST_INCLUDE_PATH}
+    ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH} ${VMA_PATH}
     ${TORCH_BASE_PATH}/include
     ${TORCH_BASE_PATH}/include/torch/csrc/api/include
 )
@@ -90,6 +91,9 @@ function(vulkan_op_test test_name test_src)
 endfunction()
 
 if(TARGET vulkan_backend AND LIB_TORCH)
+  vulkan_op_test(
+    vulkan_sdpa_av_test ${CMAKE_CURRENT_SOURCE_DIR}/sdpa_av_test.cpp
+  )
   add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
   target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
   # ATen headers require C++20.
