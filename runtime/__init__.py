@@ -111,7 +111,20 @@ Example output:
 import functools
 from pathlib import Path
 from types import ModuleType
-from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
+from typing import (
+    Any,
+    BinaryIO,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    TYPE_CHECKING,
+    Union,
+)
+
+if TYPE_CHECKING:
+    import torch
 
 try:
     from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
@@ -138,6 +151,14 @@ class Method:
     def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
         """Executes the method with the given inputs.
 
+        Outputs are copies, except for outputs that live in a caller's tensor:
+        an output bound with :meth:`set_output` (overwritten by later calls),
+        and an output that is an input not memory planned (e.g. exported with
+        ``alloc_graph_input=False``), such as the write-back of a mutated input,
+        which is returned as the tensor passed in for it, mutation included. A
+        memory planned input is copied into the method, so the tensor passed in
+        for it is not updated.
+
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
 
@@ -145,6 +166,29 @@ class Method:
             A list of output values, typically torch.Tensor objects.
         """
         return self._method(inputs)
+
+    def set_output(self, tensor: "torch.Tensor", index: int) -> None:
+        """Binds output ``index`` to ``tensor``'s storage for every later call.
+
+        The method then writes that output straight into ``tensor`` and returns
+        it uncloned (viewed at the written shape when that differs) instead of
+        a copy of its own storage. Every later call overwrites ``tensor``, so
+        clone a returned output to keep it.
+
+        The output must not be memory planned (export with
+        ``alloc_graph_output=False``), must not be returned at another output
+        index too, and must not be an input, which is already returned as the
+        tensor passed in for it. That last case is only known once inputs have
+        been set: a binding made before the first call is removed by that call,
+        which raises. ``tensor`` must have the output's dtype and device, be
+        contiguous, and hold at least as many bytes as the output's largest
+        shape. The output itself must be contiguous, not e.g. channels-last.
+
+        Args:
+            tensor: The tensor that stores the output from now on.
+            index: The index of the output to bind.
+        """
+        self._method.set_output(tensor, index)
 
     @property
     def metadata(self) -> MethodMeta:

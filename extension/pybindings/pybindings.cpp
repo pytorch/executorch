@@ -119,6 +119,8 @@ using torch::executor::ETDumpGen;
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
+using ::executorch::extension::executorch_to_torch_device;
+using ::executorch::extension::executorch_to_torch_scalar_type;
 using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
 #endif // !USE_ATEN_LIB
@@ -478,8 +480,7 @@ void write_data_to_file(const std::string& path, void* buf, size_t size) {
 
 void setup_output_storage(
     Method& method,
-    const std::vector<Span<uint8_t>>& output_storages,
-    const std::vector<const void*>& input_data_ptrs) {
+    const std::vector<Span<uint8_t>>& output_storages) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
         Error::InvalidArgument,
@@ -491,16 +492,6 @@ void setup_output_storage(
     if (output_storages[i].size() == 0) {
       // Skip empty output storages, this would happen for non-tensor outputs
       // and memory planned outputs.
-      continue;
-    }
-    const void* output_data = method.get_output(i).toTensor().const_data_ptr();
-    if (output_data != nullptr &&
-        std::find(
-            input_data_ptrs.begin(), input_data_ptrs.end(), output_data) !=
-            input_data_ptrs.end()) {
-      // The graph can return an unplanned input directly. set_inputs() has
-      // already pointed that shared value at the caller's storage, so
-      // replacing the output pointer would also replace the input pointer.
       continue;
     }
     Error output_status = method.set_output_data_ptr(
@@ -1747,6 +1738,7 @@ struct PyMethod final {
     input_tensors.reserve(inputs_size);
 #endif
 
+    std::vector<std::optional<at::Tensor>> fed_inputs(inputs_size);
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
@@ -1758,6 +1750,7 @@ struct PyMethod final {
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
+        fed_inputs[i] = at_tensor;
         const auto input_meta = method_->method_meta().input_tensor_meta(i);
         if (input_meta.ok() && !input_meta->is_memory_planned()) {
           borrowed_inputs.emplace_back(i, at_tensor);
@@ -1876,13 +1869,6 @@ struct PyMethod final {
         cpp_inputs.data(), cpp_inputs.size());
 
     Error set_inputs_status = method_->set_inputs(input_evalue_list);
-    std::vector<const void*> input_data_ptrs;
-    input_data_ptrs.reserve(cpp_inputs.size());
-    for (const auto& input : cpp_inputs) {
-      if (input.isTensor() && input.toTensor().const_data_ptr() != nullptr) {
-        input_data_ptrs.push_back(input.toTensor().const_data_ptr());
-      }
-    }
     if (set_inputs_status != Error::Ok) {
       // set_inputs() installs values one at a time and does not roll back a
       // prefix when a later value is rejected. Retain both generations so any
@@ -1893,14 +1879,13 @@ struct PyMethod final {
           buffer_tensor_ptrs_.end(),
           buffer_tensor_ptrs.begin(),
           buffer_tensor_ptrs.end());
-      input_data_ptrs_.insert(
-          input_data_ptrs_.end(),
-          input_data_ptrs.begin(),
-          input_data_ptrs.end());
       borrowed_inputs_.insert(
           borrowed_inputs_.end(),
           borrowed_inputs.begin(),
           borrowed_inputs.end());
+      // Which generation an input that is also an output now points at is
+      // unknown, so such outputs are returned from the method's own value.
+      fed_inputs_.assign(fed_inputs_.size(), std::nullopt);
       THROW_IF_ERROR(
           set_inputs_status,
           "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -1909,8 +1894,82 @@ struct PyMethod final {
     }
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
-    input_data_ptrs_ = std::move(input_data_ptrs);
     borrowed_inputs_ = std::move(borrowed_inputs);
+    fed_inputs_ = std::move(fed_inputs);
+    find_inputs_aliased_by_outputs();
+  }
+
+  // Writes output `index` straight into `tensor`'s storage from the next
+  // execute() on, instead of into storage this method allocates. The binding
+  // persists across calls and the tensor is kept alive until it is replaced.
+  // Storage the output used before is kept alive, so tensors already returned
+  // for it with clone_outputs=False stay valid.
+  void set_output(at::Tensor tensor, size_t index) {
+    const auto num_outputs = method_->outputs_size();
+    if (index >= num_outputs) {
+      throw std::out_of_range(
+          "output index " + std::to_string(index) + " is out of range for " +
+          std::to_string(num_outputs) + " outputs");
+    }
+    const auto& output = method_->get_output(index);
+    if (!output.isTensor()) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) + " is not a tensor");
+    }
+    if (const auto input = aliased_input(index)) {
+      throw std::runtime_error(aliased_input_message(index, *input));
+    }
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (i != index && &method_->get_output(i) == &output) {
+        throw std::runtime_error(
+            "output " + std::to_string(index) +
+            " is the same value as output " + std::to_string(i) +
+            " and cannot be bound");
+      }
+    }
+    const auto meta = method_->method_meta().output_tensor_meta(index);
+    THROW_IF_ERROR(
+        meta.error(), "Failed to get output tensor meta for output %zu", index);
+    if (meta->is_memory_planned()) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) +
+          " is memory planned and cannot be bound");
+    }
+#ifdef USE_ATEN_LIB
+    const auto dtype = meta->scalar_type();
+    const auto device = output.toTensor().device();
+#else
+    const auto dtype = executorch_to_torch_scalar_type(meta->scalar_type());
+    const auto device = executorch_to_torch_device(output.toTensor().device());
+#endif
+    if (tensor.scalar_type() != dtype || tensor.device() != device) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) + " is " + c10::toString(dtype) +
+          " on " + device.str() + ", so it cannot be bound to a " +
+          c10::toString(tensor.scalar_type()) + " tensor on " +
+          tensor.device().str());
+    }
+    const auto dim_order = meta->dim_order();
+    for (size_t d = 0; d < dim_order.size(); ++d) {
+      if (dim_order[d] != d) {
+        throw std::runtime_error(
+            "output " + std::to_string(index) +
+            " is not contiguous (e.g. channels-last) and cannot be bound");
+      }
+    }
+    if (!tensor.is_contiguous()) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) +
+          " must be bound to a contiguous tensor");
+    }
+    if (tensor.nbytes() < meta->nbytes()) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) + " needs " +
+          std::to_string(meta->nbytes()) + " bytes, but the tensor has " +
+          std::to_string(tensor.nbytes()));
+    }
+    bound_outputs_.resize(num_outputs);
+    bound_outputs_[index] = tensor;
   }
 
   void execute() {
@@ -1920,7 +1979,23 @@ struct PyMethod final {
     const auto num_outputs = method_->outputs_size();
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
-    for (int i = 0; i < output_storages_.size(); ++i) {
+    caller_outputs_.assign(num_outputs, std::nullopt);
+    for (size_t i = 0; i < output_storages_.size(); ++i) {
+      if (is_bound_output(i)) {
+        auto& bound = bound_outputs_[i].value();
+        output_storage_spans[i] = Span<uint8_t>(
+            static_cast<uint8_t*>(mutable_tensor_data_ptr_no_cow(bound)),
+            bound.nbytes());
+        caller_outputs_[i] = bound;
+        continue;
+      }
+      // An output that is an unplanned input (e.g. the write-back of a mutated
+      // input) already points at the tensor fed for it. Giving it storage
+      // would repoint the input too.
+      if (const auto input = aliased_input(i)) {
+        caller_outputs_[i] = fed_inputs_[*input];
+        continue;
+      }
       output_storage_spans[i] = device_output_storages_[i].size() > 0
           ? device_output_storages_[i].as_span()
           : Span<uint8_t>(
@@ -1939,7 +2014,7 @@ struct PyMethod final {
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
-    setup_output_storage(*method_, output_storage_spans, input_data_ptrs_);
+    setup_output_storage(*method_, output_storage_spans);
     Error execute_status = method_->execute();
     THROW_IF_ERROR(
         execute_status,
@@ -1958,8 +2033,38 @@ struct PyMethod final {
         method_->method_meta().name(),
         static_cast<uint32_t>(get_outputs_status));
 
+    // An output bound with set_output(), or an output that is an input,
+    // already lives in the caller's tensor, so it is returned as that tensor
+    // and taken out of `result` before it could be cloned. A dynamic bound
+    // output may have been resized smaller than its (contiguous) tensor, so
+    // view it at its written size. An input keeps the sizes it was fed with,
+    // and may be channels-last.
+    std::vector<py::object> caller_backed(result.size());
+    for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
+      if (!caller_outputs_[i].has_value() || !result[i].isTensor()) {
+        continue;
+      }
+      const auto& caller = caller_outputs_[i].value();
+      const auto& written = result[i].toTensor();
+      std::vector<int64_t> sizes(
+          written.sizes().begin(), written.sizes().end());
+      if (!is_bound_output(i) || caller.sizes().vec() == sizes) {
+        caller_backed[i] = py::cast(caller);
+      } else {
+        caller_backed[i] = py::cast(
+            caller.view({-1}).narrow(0, 0, written.numel()).view(sizes));
+      }
+      result[i] = EValue();
+    }
+
     // Retrieve outputs
-    return get_outputs_as_py_list(result, clone_outputs);
+    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    for (size_t i = 0; i < caller_backed.size(); ++i) {
+      if (caller_backed[i]) {
+        outputs[i] = caller_backed[i];
+      }
+    }
+    return outputs;
   }
 
   py::list call(const py::object& inputs, bool clone_outputs = true) {
@@ -2006,7 +2111,6 @@ struct PyMethod final {
   // next successful set_inputs() call.
   std::vector<std::shared_ptr<BufferTensor>> buffer_inputs_;
   std::vector<TensorPtr> buffer_tensor_ptrs_;
-  std::vector<const void*> input_data_ptrs_;
   std::vector<BorrowedInput> borrowed_inputs_;
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
@@ -2014,6 +2118,74 @@ struct PyMethod final {
   // Backs the outputs the program places on a device without planning them,
   // indexed like output_storages_. Empty for every other output.
   std::vector<DeviceMemoryBuffer> device_output_storages_;
+  // Caller tensors bound as output storage with set_output(), by output index.
+  std::vector<std::optional<at::Tensor>> bound_outputs_;
+  // The tensors passed to the last set_inputs(), by input index. They stay
+  // alive until the next set_inputs(), even if the caller drops them (e.g. a
+  // large KV cache).
+  std::vector<std::optional<at::Tensor>> fed_inputs_;
+  // Per output of the last execute(), the caller tensor it lives in, if any.
+  std::vector<std::optional<at::Tensor>> caller_outputs_;
+  // Per output, the unplanned input it is, if any. Empty until the first
+  // set_inputs().
+  std::vector<std::optional<size_t>> inputs_aliased_by_outputs_;
+
+  bool is_bound_output(size_t index) const {
+    return index < bound_outputs_.size() && bound_outputs_[index].has_value();
+  }
+
+  std::optional<size_t> aliased_input(size_t index) const {
+    return index < inputs_aliased_by_outputs_.size()
+        ? inputs_aliased_by_outputs_[index]
+        : std::nullopt;
+  }
+
+  // An output that carries an input mutation is the same value as that input.
+  // get_input() marks the input as set, so this only runs once set_inputs()
+  // has set them all, leaving execute()'s check for unset inputs intact.
+  void find_inputs_aliased_by_outputs() {
+    const auto num_outputs = method_->outputs_size();
+    if (inputs_aliased_by_outputs_.size() == num_outputs) {
+      return;
+    }
+    inputs_aliased_by_outputs_.assign(num_outputs, std::nullopt);
+    const auto meta = method_->method_meta();
+    for (size_t i = 0; i < num_outputs; ++i) {
+      const auto output_meta = meta.output_tensor_meta(i);
+      if (!output_meta.ok() || output_meta->is_memory_planned()) {
+        continue;
+      }
+      for (size_t j = 0; j < method_->inputs_size(); ++j) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        const bool same = &method_->get_output(i) == &method_->get_input(j);
+#pragma GCC diagnostic pop
+        if (same) {
+          inputs_aliased_by_outputs_[i] = j;
+          break;
+        }
+      }
+    }
+    // Only possible for a binding made before the first set_inputs(), when
+    // aliases were not known yet.
+    std::string error;
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (const auto input = aliased_input(i); input && is_bound_output(i)) {
+        bound_outputs_[i].reset();
+        error +=
+            aliased_input_message(i, *input) + ", so its binding was removed. ";
+      }
+    }
+    if (!error.empty()) {
+      throw std::runtime_error(error);
+    }
+  }
+
+  static std::string aliased_input_message(size_t output, size_t input) {
+    return "output " + std::to_string(output) + " is input " +
+        std::to_string(input) +
+        ", which is returned as the tensor passed in for it";
+  }
 
   void allocate_output_storages() {
     const auto num_outputs = method_->outputs_size();
@@ -2045,8 +2217,10 @@ struct PyMethod final {
           output_tensor_meta.error(),
           "Failed to get output tensor meta for output %zu",
           i);
-      if (output_tensor_meta.get().is_memory_planned()) {
-        // Skip allocating storage for planned memory outputs.
+      if (output_tensor_meta.get().is_memory_planned() || is_bound_output(i) ||
+          aliased_input(i).has_value()) {
+        // Skip allocating storage for planned memory outputs, and for outputs
+        // that live in a caller's tensor.
         output_storages.emplace_back();
         continue;
       }
@@ -2656,6 +2830,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyMethod>(m, "ExecuTorchMethod")
       .def("set_inputs", &PyMethod::set_inputs, py::arg("inputs"), call_guard)
       .def("execute", &PyMethod::execute, call_guard)
+      .def(
+          "set_output",
+          &PyMethod::set_output,
+          py::arg("tensor"),
+          py::arg("index"),
+          call_guard)
       .def(
           "get_outputs",
           &PyMethod::get_outputs,
