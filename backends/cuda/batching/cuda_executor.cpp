@@ -239,8 +239,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   // them all, or a step could find no free cell mid-generation. One of the
   // program's cells is the padding scratch row, never handed out.
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<std::int64_t>(max_sessions) * max_session_tokens <
-          max_cells,
+      static_cast<std::int64_t>(max_sessions) * max_session_tokens < max_cells,
       InvalidArgument,
       "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
       " cells, one of which is reserved",
