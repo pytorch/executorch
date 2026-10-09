@@ -1837,6 +1837,37 @@ TEST_F(CudaCellCacheTest, ScratchRowStaysPastEveryReadAsThePoolGrows) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaCellCacheTest, GrowthGivesAHandleAboutToCaptureOneEagerRunFirst) {
+  // Growth rebinds every handle, and a rebound handle's next run refolds
+  // AOTI's constants, which cannot happen inside a stream capture. A handle
+  // whose warmup is about to capture on that very run must run eagerly once
+  // more; one with warmup left keeps it.
+  auto cache_ptr = make(/*initial=*/4);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto due_fake = container();
+  auto early_fake = container();
+  auto due = make_handle(due_fake);
+  auto early = make_handle(early_fake);
+  ASSERT_TRUE(kv->note_handle(&due).get());
+  ASSERT_TRUE(kv->note_handle(&early).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, due, {a}), Error::Ok);
+  due.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  due.cuda_graph_state.warmup_remaining = 0;
+  early.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  early.cuda_graph_state.warmup_remaining = 3;
+
+  // Past the four allocated rows: the pool grows.
+  ASSERT_EQ(step(*cache_ptr, early, {a, a, a, a}), Error::Ok);
+  ASSERT_EQ(kv->metrics().growth_count, 1);
+  EXPECT_EQ(due.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
+  EXPECT_EQ(due.cuda_graph_state.warmup_remaining, 1);
+  EXPECT_EQ(early.cuda_graph_state.warmup_remaining, 3);
+  kv->forget_handle(&due);
+  kv->forget_handle(&early);
+}
+
 TEST_F(CudaCellCacheTest, BuilderValidatesAndIsRegisteredForBatchedKinds) {
   auto no_max_write = config(kCells, 4, kMaxWrite);
   no_max_write.max_write.reset();
