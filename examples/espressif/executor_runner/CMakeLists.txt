@@ -72,10 +72,8 @@ if(ESP_PLATFORM)
       "0.01"
       CACHE STRING "Relative tolerance for BundleIO testing"
   )
-  option(ET_DUMP_OUTPUTS "Collect and print outputs as base64 in log" OFF)
-  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Collect and print intermediate outputs"
-         OFF
-  )
+  option(ET_DUMP_OUTPUTS "Capture the latest inference's outputs" OFF)
+  option(ET_DUMP_INTERMEDIATE_OUTPUTS "Capture its intermediate outputs" OFF)
   set(ET_DEBUG_BUFFER_SIZE
       "65536"
       CACHE STRING "Size of ETDump debug buffer"

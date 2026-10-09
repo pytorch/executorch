@@ -30,10 +30,9 @@
  * Devtools ETDump: Speed and dumping output
  *
  * ET_EVENT_TRACER_ENABLED       - Build in Devtools ETDump event trace code
- *                                 to generate cycle data.
- * ET_DUMP_OUTPUTS               - Collect and print outputs as a base64
- *                                 buffer in the log.
- * ET_DUMP_INTERMEDIATE_OUTPUTS  - Collect and print intermediate outputs.
+ *                                 to generate timing data.
+ * ET_DUMP_OUTPUTS               - Capture the latest inference's outputs.
+ * ET_DUMP_INTERMEDIATE_OUTPUTS  - Capture its intermediate outputs.
  * ET_DEBUG_BUFFER_SIZE          - Override size of memory area used by
  *                                 ET_DUMP_OUTPUTS /
  * ET_DUMP_INTERMEDIATE_OUTPUTS.
@@ -897,6 +896,7 @@ void write_etdump(RunnerContext& ctx) {
     }
 #endif
   }
+  free(result.buf);
 #endif
 }
 
@@ -949,6 +949,22 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
   return model_ok;
 }
 
+Error execute_method(RunnerContext& ctx) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+  ctx.etdump_gen->reset();
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  if (ctx.debug_buffer != nullptr) {
+    auto result = ctx.etdump_gen->set_debug_buffer(
+        {static_cast<uint8_t*>(ctx.debug_buffer), ET_DEBUG_BUFFER_SIZE});
+    ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+  }
+#endif
+#endif
+  Error status = ctx.method.value()->execute();
+  ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+  return status;
+}
+
 bool run_model(RunnerContext& ctx, const void* model_pte) {
   Error status = Error::Ok;
   if (num_inferences <= 0) {
@@ -968,12 +984,10 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
     if (status != Error::Ok) {
       break;
     }
-    status = ctx.method.value()->execute();
+    status = execute_method(ctx);
     if (status != Error::Ok) {
       break;
     }
-    // Reset the temporary allocator between inferences
-    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
     successful_inferences++;
   }
   if (successful_inferences > 0) {
@@ -1123,11 +1137,7 @@ bool et_runner_execute(void) {
     return false;
   }
 
-  Method& method = *g_runner_ctx.method.value();
-  Error status = method.execute();
-  // Reset the temporary allocator so it is ready for the next inference.
-  g_runner_ctx.temp_allocator.reset(
-      temp_allocation_pool_size, temp_allocation_pool);
+  Error status = execute_method(g_runner_ctx);
   if (status != Error::Ok) {
     ET_LOG(
         Error,
