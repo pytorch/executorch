@@ -37,6 +37,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/module:module",
         ],
         deps = [
+            "//executorch/extension/cuda:caller_stream",
             "//executorch/extension/llm/runner:stats",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",

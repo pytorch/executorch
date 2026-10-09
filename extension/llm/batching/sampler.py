@@ -53,7 +53,9 @@ def sample_rows(logits: torch.Tensor, params: torch.Tensor) -> torch.Tensor:
     greedy = torch.argmax(logits, dim=-1)
 
     stochastic = temperature > 0.0
-    safe_temperature = torch.where(stochastic, temperature, torch.ones_like(temperature))
+    safe_temperature = torch.where(
+        stochastic, temperature, torch.ones_like(temperature)
+    )
     probabilities = torch.softmax(logits / safe_temperature, dim=-1)
 
     sorted_probabilities, sorted_indices = torch.sort(

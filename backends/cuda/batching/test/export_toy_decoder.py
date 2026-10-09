@@ -175,13 +175,13 @@ def export(
         to_edge_transform_and_lower,
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from executorch.exir.passes import MemoryPlanningPass
+    from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
     from executorch.extension.llm.batching.sampler import (
         BatchArgmax,
         BatchSampler,
         NUM_PARAMS,
     )
-    from executorch.exir.passes import MemoryPlanningPass
-    from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
     from executorch.extension.llm.export.model_metadata import (
         write_cache_geometry,
         write_logits_to_keep_mode,
@@ -237,7 +237,9 @@ def export(
 
     def partitioner(name: str) -> CudaPartitioner:
         if name not in forward_methods:
-            return CudaPartitioner([CudaBackend.generate_method_name_compile_spec(name)])
+            return CudaPartitioner(
+                [CudaBackend.generate_method_name_compile_spec(name)]
+            )
         return CudaPartitioner(
             [
                 CudaBackend.generate_method_name_compile_spec(name),

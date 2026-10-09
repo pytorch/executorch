@@ -327,7 +327,9 @@ TEST_P(CudaExecutorTest, SessionsReuseCellsAcrossRounds) {
   runner.shutdown();
 }
 
-TEST_P(CudaExecutorTest, InterleavedMethodsMatchEagerGreedyWithAndWithoutGraphs) {
+TEST_P(
+    CudaExecutorTest,
+    InterleavedMethodsMatchEagerGreedyWithAndWithoutGraphs) {
   // Prompts: [3], [5 9 1], [7 2 2 8 4 6 1], and 20 tokens. Each step's width,
   // in order: 20, 1, 4, 2, 4 (a partial prefill), 7, 3 -- then all four
   // decode together, narrowing as generations finish. Every static method and
@@ -389,9 +391,9 @@ TEST_P(CudaExecutorTest, DeviceSamplerDrawsWhatTheHostSamplerDraws) {
     ASSERT_FALSE(host->samples_on_device());
     const auto on_device = run_schedule(*device, schedule, policy);
     const auto on_host = run_schedule(*host, schedule, policy);
-    EXPECT_EQ(on_device, on_host) << "temperature " << policy.temperature
-                                  << " top_k " << policy.top_k << " top_p "
-                                  << policy.top_p;
+    EXPECT_EQ(on_device, on_host)
+        << "temperature " << policy.temperature << " top_k " << policy.top_k
+        << " top_p " << policy.top_p;
     // Sampling, not argmax: some generation leaves the greedy path.
     bool diverged = false;
     for (size_t i = 0; i < cases_.size(); ++i) {

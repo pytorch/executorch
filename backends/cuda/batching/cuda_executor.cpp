@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <executorch/backends/cuda/runtime/backend_options.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -157,7 +158,8 @@ Result<bool> check_sampler(
     Module& module,
     const std::unordered_set<std::string>& names,
     const char* method,
-    std::size_t num_inputs) {
+    std::size_t num_inputs,
+    std::int64_t vocab_size) {
   if (names.count(method) == 0) {
     return false;
   }
@@ -167,8 +169,10 @@ Result<bool> check_sampler(
   for (std::size_t i = 0; valid && i < num_inputs; ++i) {
     const auto input = meta.input_tensor_meta(i);
     valid = input.ok() && input->sizes().size() == 2 &&
-        (i == 0 ? is_supported_logits_type(input->scalar_type())
-                : input->scalar_type() == ::executorch::aten::ScalarType::Float &&
+        (i == 0
+             ? is_supported_logits_type(input->scalar_type()) &&
+                 input->sizes()[1] == vocab_size
+             : input->scalar_type() == ::executorch::aten::ScalarType::Float &&
                  input->sizes()[1] == 4);
   }
   ET_CHECK_OR_RETURN_ERROR(
@@ -321,10 +325,12 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       });
   // The dynamic method serves only what no static method holds, so it must be
   // the widest.
-  const bool has_dynamic = !methods.back().is_static;
-  const int widest_static = *static_widths.rbegin();
+  const auto dynamic =
+      std::find_if(methods.begin(), methods.end(), [](const ForwardMethod& m) {
+        return !m.is_static;
+      });
   ET_CHECK_OR_RETURN_ERROR(
-      !has_dynamic || methods.back().max_tokens > widest_static,
+      dynamic == methods.end() || dynamic->max_tokens > *static_widths.rbegin(),
       InvalidProgram,
       "CudaExecutor: %s must be wider than every static method",
       kDynamicMethod);
@@ -344,21 +350,27 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_cells);
   // A dynamic method whose kernels switch at a small width is exported from
   // more selected rows than one; its selector is padded up to that.
-  ET_ASSIGN_OR_RETURN(
-      declared_min_rows,
-      metadata::detail::read_int_method(*module, kMinSelectedRowsMethod));
-  const int min_selected_rows = static_cast<int>(
-      std::max<std::int64_t>(1, declared_min_rows.value_or(1)));
-  ET_CHECK_OR_RETURN_ERROR(
-      min_selected_rows <= max_step_tokens,
-      InvalidProgram,
-      "CudaExecutor: %d selected rows exceed the widest step",
-      min_selected_rows);
+  int min_selected_rows = 1;
+  if (dynamic != methods.end()) {
+    ET_ASSIGN_OR_RETURN(
+        declared_min_rows,
+        metadata::detail::read_int_method(*module, kMinSelectedRowsMethod));
+    const std::int64_t requested_min_rows =
+        std::max<std::int64_t>(1, declared_min_rows.value_or(1));
+    ET_CHECK_OR_RETURN_ERROR(
+        requested_min_rows <= max_step_tokens,
+        InvalidProgram,
+        "CudaExecutor: %" PRId64 " selected rows exceed the widest step",
+        requested_min_rows);
+    min_selected_rows = static_cast<int>(requested_min_rows);
+  }
   ET_ASSIGN_OR_RETURN(published_vocab, metadata::read_vocab_size(*module));
   ET_ASSIGN_OR_RETURN(
       vocab_size, metadata::check_vocab_size(published_vocab, method_vocab));
-  ET_ASSIGN_OR_RETURN(has_sampler, check_sampler(*module, names, kSampleMethod, 2));
-  ET_ASSIGN_OR_RETURN(has_argmax, check_sampler(*module, names, kArgmaxMethod, 1));
+  ET_ASSIGN_OR_RETURN(
+      has_sampler, check_sampler(*module, names, kSampleMethod, 2, vocab_size));
+  ET_ASSIGN_OR_RETURN(
+      has_argmax, check_sampler(*module, names, kArgmaxMethod, 1, vocab_size));
   ET_CHECK_OR_RETURN_ERROR(
       has_sampler || !has_argmax,
       InvalidProgram,
@@ -555,7 +567,18 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
       row_sessions.push_back(batch.inputs[input_index].sid);
     }
     std::vector<Token> tokens_out;
-    if (logits.device_type() == ::executorch::aten::DeviceType::CUDA) {
+    const bool device_logits =
+        logits.device_type() == ::executorch::aten::DeviceType::CUDA;
+    if (device_logits_.value_or(device_logits) != device_logits) {
+      ET_LOG(
+          Error,
+          "CudaExecutor: %s returns %s logits, unlike the forwards before it",
+          method.name.c_str(),
+          device_logits ? "device" : "host");
+      return false;
+    }
+    device_logits_ = device_logits;
+    if (device_logits) {
       if (!has_sampler_) {
         ET_LOG(
             Error,
@@ -602,8 +625,8 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
       logits.scalar_type(),
       cuda);
 
-  const bool all_greedy = std::all_of(
-      sessions.begin(), sessions.end(), [this](SessionId session) {
+  const bool all_greedy =
+      std::all_of(sessions.begin(), sessions.end(), [this](SessionId session) {
         return sessions_.greedy(session);
       });
   // Every row's generator advances whichever method runs, as on the host.
@@ -614,13 +637,19 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     if (!row) {
       return std::nullopt;
     }
-    params.insert(params.end(), {row->temperature, row->top_p, row->top_k, row->coin});
+    params.insert(
+        params.end(), {row->temperature, row->top_p, row->top_k, row->coin});
   }
 
-  auto run_sampler = [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
+  const cudaStream_t stream =
+      ::executorch::extension::cuda::getCallerStream().value_or(
+          cudaStreamPerThread);
+  auto run_sampler =
+      [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
     if (all_greedy && has_argmax_) {
       return module_->execute(
-          kArgmaxMethod, std::vector<::executorch::runtime::EValue>{row_logits});
+          kArgmaxMethod,
+          std::vector<::executorch::runtime::EValue>{row_logits});
     }
     if (sessions.size() > device_params_rows_) {
       if (device_params_ != nullptr) {
@@ -635,15 +664,16 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
           "CudaExecutor: could not stage the sampler's params");
       device_params_rows_ = sessions.size();
     }
-    // The backend runs every method on the per-thread stream; ordering the
-    // upload there puts it ahead of the sampler.
+    // The backend runs every method on the caller's stream if one is set,
+    // else the per-thread stream; ordering the upload there puts it ahead of
+    // the sampler.
     ET_CHECK_OR_RETURN_ERROR(
         cudaMemcpyAsync(
             device_params_,
             params.data(),
             params.size() * sizeof(float),
             cudaMemcpyHostToDevice,
-            cudaStreamPerThread) == cudaSuccess,
+            stream) == cudaSuccess,
         Internal,
         "CudaExecutor: could not upload the sampler's params");
     auto device_params =
@@ -669,8 +699,8 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
           tokens.const_data_ptr(),
           host.size() * sizeof(std::int64_t),
           kind,
-          cudaStreamPerThread) != cudaSuccess ||
-      cudaStreamSynchronize(cudaStreamPerThread) != cudaSuccess) {
+          stream) != cudaSuccess ||
+      cudaStreamSynchronize(stream) != cudaSuccess) {
     ET_LOG(Error, "CudaExecutor: could not read the sampled tokens");
     return std::nullopt;
   }

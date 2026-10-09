@@ -113,7 +113,8 @@ TEST(StepPlanTest, EmptyBatchPlansNothing) {
 TEST(StepPlanTest, NonPositiveWidestMethodIsRejected) {
   // A zero-wide slice never advances, so planning would never return.
   const std::vector<cb::ForwardMethod> zero = {{"forward_0", 0, true}};
-  const std::vector<cb::ForwardMethod> negative = {{"forward_others", -1, false}};
+  const std::vector<cb::ForwardMethod> negative = {
+      {"forward_others", -1, false}};
   ET_EXPECT_DEATH(cb::plan_slices(1, zero), "widest method");
   ET_EXPECT_DEATH(cb::plan_slices(1, negative), "widest method");
 }

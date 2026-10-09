@@ -183,7 +183,8 @@ std::optional<DeviceSamplingRow> SessionTable::device_sampling(
   }
   const SamplingParams& params = it->second.params;
   // Sampler resets a negative temperature to 0.
-  const float temperature = params.temperature > 0.0f ? params.temperature : 0.0f;
+  const float temperature =
+      params.temperature > 0.0f ? params.temperature : 0.0f;
   const float coin =
       temperature > 0.0f ? next_coin(it->second.rng_state) : 0.0f;
   return DeviceSamplingRow{

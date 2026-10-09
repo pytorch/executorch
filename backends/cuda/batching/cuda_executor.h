@@ -165,6 +165,9 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // Device staging for the sampler's params, grown to the widest row count.
   void* device_params_ = nullptr;
   std::size_t device_params_rows_ = 0;
+  // Where the first forward's logits lived. Host and device sampling advance
+  // separate generators, so every forward must agree.
+  std::optional<bool> device_logits_;
 };
 
 } // namespace executorch::backends::cuda::batching

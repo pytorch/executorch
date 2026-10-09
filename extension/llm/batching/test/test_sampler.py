@@ -71,8 +71,7 @@ class SampleRowsTest(unittest.TestCase):
             )
             got = sample_rows(self.logits, params).tolist()
             want = [
-                host_sample(row, temperature, top_p, top_k, coin)
-                for row in self.logits
+                host_sample(row, temperature, top_p, top_k, coin) for row in self.logits
             ]
             self.assertEqual(got, want, (temperature, top_p, top_k, coin))
 
@@ -111,9 +110,7 @@ class SampleRowsTest(unittest.TestCase):
     def test_matches_empirical_distribution(self) -> None:
         logits = torch.tensor([[1.0, 2.0, 0.5, 3.0]])
         coins = torch.rand(4000)
-        params = torch.stack(
-            [torch.tensor([1.0, 1.0, 0.0, float(c)]) for c in coins]
-        )
+        params = torch.stack([torch.tensor([1.0, 1.0, 0.0, float(c)]) for c in coins])
         tokens = sample_rows(logits.expand(len(coins), -1), params)
         frequencies = torch.bincount(tokens, minlength=4).double() / len(coins)
         expected = torch.softmax(logits[0].double(), dim=-1)
