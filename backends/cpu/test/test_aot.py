@@ -108,9 +108,7 @@ class CPUAOTTest(unittest.TestCase):
             (ChannelsLast(), torch.contiguous_format, []),
         ):
             with self.subTest(model=type(model).__name__, memory_format=memory_format):
-                sample = torch.randn(2, 3, 4, 5).contiguous(
-                    memory_format=memory_format
-                )
+                sample = torch.randn(2, 3, 4, 5).contiguous(memory_format=memory_format)
                 edge = to_edge_transform_and_lower(
                     torch.export.export(model, (sample,)),
                     partitioner=[CPUPartitioner()],
