@@ -147,7 +147,7 @@ Always use `to_edge_transform_and_lower()` instead of the older `to_edge()` + `t
 
 Only include the operators your model actually needs:
 ```cmake
-gen_selected_ops(LIB_NAME "my_ops" ROOT_OPS "..." INCLUDE_ALL_OPS "OFF")
+gen_selected_ops(LIB_NAME "my_ops" SELECT_OPS_LIST "..." INCLUDE_ALL_OPS "OFF")
 ```
 
 This reduces binary size and can improve load time. [Source: #10297]
