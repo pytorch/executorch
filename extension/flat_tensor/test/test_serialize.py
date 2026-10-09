@@ -285,20 +285,20 @@ class TestSerialize(unittest.TestCase):
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
 
-    def test_get_extended_header_reads_only_header_bytes(self) -> None:
-        # Slicing to the end of the data would copy the whole file.
-        class NoSliceToEnd(bytes):
-            def __getitem__(self, key):
-                if isinstance(key, slice) and key.stop is None:
-                    raise AssertionError("sliced to the end of the data")
-                return super().__getitem__(key)
-
+    def test_reads_only_header_bytes(self) -> None:
+        # Passing data[8:] to from_bytes() would copy the whole file.
         serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
-        serialized_data = NoSliceToEnd(serializer.serialize(TEST_DATA_PAYLOAD))
-        header = _get_extended_header(serialized_data)
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
-        self.assertIsNotNone(header)
-        self.assertTrue(header.is_valid())
+        with mock.patch.object(
+            FlatTensorHeader, "from_bytes", wraps=FlatTensorHeader.from_bytes
+        ) as from_bytes:
+            serializer.deserialize(Cord(serialized_data))
+            self.assertIsNotNone(_get_extended_header(serialized_data))
+
+        self.assertEqual(from_bytes.call_count, 2)
+        for call in from_bytes.call_args_list:
+            self.assertEqual(len(call.args[0]), FlatTensorHeader.EXPECTED_LENGTH)
 
     def test_deserialize_refuses_newer_version(self) -> None:
         # A file whose version is newer than this reader understands must be

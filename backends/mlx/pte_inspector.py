@@ -470,7 +470,12 @@ def parse_executorch_program(pte_data: bytes) -> Dict[str, Any]:  # noqa: C901
     extended_header_offset = 8
     if len(pte_data) > extended_header_offset + 32:
         try:
-            header = _ExtendedHeader.from_bytes(pte_data[extended_header_offset:])
+            header = _ExtendedHeader.from_bytes(
+                pte_data[
+                    extended_header_offset : extended_header_offset
+                    + _ExtendedHeader.EXPECTED_LENGTH
+                ]
+            )
             if header.is_valid():
                 result["extended_header"] = {
                     "magic": header.magic.decode("utf-8", errors="replace"),
