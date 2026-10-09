@@ -57,6 +57,16 @@ struct ET_EXPERIMENTAL SliceRows {
 ET_EXPERIMENTAL SliceRows
 select_rows(const PackedStep& step, int offset, int length);
 
+// One row's policy for a sampler that runs on the device, laid out as the
+// float32 [temperature, top_p, top_k, coin] row
+// extension/llm/batching/sampler.py reads.
+struct ET_EXPERIMENTAL DeviceSamplingRow {
+  float temperature;
+  float top_p;
+  float top_k;
+  float coin;
+};
+
 class ET_EXPERIMENTAL SessionTable {
  public:
   // `control` must outlive the table. `max_sessions` counts every resident
@@ -94,6 +104,13 @@ class ET_EXPERIMENTAL SessionTable {
   std::optional<Token>
   sample(SessionId session, ::executorch::aten::Tensor& logits, int row);
 
+  // The session's next row for a device sampler. Draws the coin from the same
+  // seeded generator, in the same order, as the host sampler would, so a seed
+  // reproduces a generation either way; a greedy row draws none, as on host.
+  std::optional<DeviceSamplingRow> device_sampling(SessionId session);
+  // Whether the session samples greedily (temperature 0).
+  bool greedy(SessionId session) const;
+
   std::size_t size() const {
     return sessions_.size();
   }
@@ -102,6 +119,9 @@ class ET_EXPERIMENTAL SessionTable {
   struct Session {
     std::int32_t seq_id;
     std::unique_ptr<Sampler> sampler;
+    SamplingParams params;
+    // The device path's generator: Sampler's xorshift state, seeded alike.
+    std::uint64_t rng_state = 0;
   };
 
   std::optional<SessionId> publish(std::int32_t seq_id, Position position);
