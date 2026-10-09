@@ -309,7 +309,7 @@ def quantized_add_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -435,7 +435,7 @@ def quantized_mul_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 

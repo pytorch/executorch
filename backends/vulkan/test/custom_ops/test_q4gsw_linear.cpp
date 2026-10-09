@@ -339,6 +339,39 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
     }
   }
 
+  // The narrow 2-row output tile (`tiledm2`) is selected only on Mali, which
+  // no CI runner has, and the weight-only tests above exercise a different
+  // implementation. Force the variant so it is checked against the CPU
+  // reference everywhere. M of 2, 3 and 5 covers an exact multiple of the
+  // tile, one partial tile, and two tiles plus a remainder, which is where a
+  // wrong row bound or a missing bounds check shows up.
+  for (int64_t M : {2, 3, 5}) {
+    for (bool has_bias : {true, false}) {
+      LinearConfig config;
+      config.M = M;
+      config.K = 64;
+      config.N = 32;
+      config.group_size = 32;
+      config.has_bias = has_bias;
+      config.op_name = "linear_dq8ca_q4gsw";
+      config.test_case_name = "correctness_tiledm2_M" + std::to_string(M) +
+          (has_bias ? "" : "_no_bias");
+
+      for (const auto& storage_type : storage_types) {
+        for (const auto& input_dtype : {vkapi::kFloat, vkapi::kHalf}) {
+          // No int8-dot-product gate here on purpose: forcing the
+          // fallback makes this path reachable on any GPU, which is the
+          // point of the variant being hard to reach otherwise.
+          TestCase tc =
+              create_test_case_from_config(config, storage_type, input_dtype);
+          tc.set_name(tc.name() + " [tiledm2]");
+          tc.set_force_narrow_int4_tile(true);
+          test_cases.push_back(tc);
+        }
+      }
+    }
+  }
+
   return test_cases;
 }
 
@@ -543,8 +576,75 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   }
 }
 
+// Reference for the weight-only fallback that linear_dq8ca_q4gsw takes when
+// the device has no int8 dot product (see quantized_linear_impl). The op keeps
+// its dq8ca signature, so the activation scale/zp and weight sums are present
+// but unused: the GPU multiplies float activations by dequantized weights, and
+// so does this.
+void linear_dq8ca_q4gsw_weight_only_reference_impl(TestCase& test_case) {
+  const ValueSpec& input_spec = test_case.inputs()[0];
+  // inputs()[1] input_scale and inputs()[2] input_zp are unused on this path
+  const ValueSpec& weight_spec = test_case.inputs()[3];
+  // inputs()[4] weight_sums is unused on this path
+  const ValueSpec& weight_scales_spec = test_case.inputs()[5];
+  const ValueSpec& group_size_spec = test_case.inputs()[6];
+  const ValueSpec& bias_spec = test_case.inputs()[7];
+
+  ValueSpec& output_spec = test_case.outputs()[0];
+
+  auto input_sizes = input_spec.get_tensor_sizes();
+  auto output_sizes = output_spec.get_tensor_sizes();
+
+  const int64_t batch_size = input_sizes[0];
+  const int64_t in_features = input_sizes[1];
+  const int64_t out_features = output_sizes[1];
+  const int64_t group_size = group_size_spec.get_int_value();
+
+  if (batch_size > kRefDimSizeLimit || in_features > kRefDimSizeLimit ||
+      out_features > kRefDimSizeLimit) {
+    throw std::invalid_argument(
+        "One or more dimensions exceed the allowed limit for reference implementation.");
+  }
+  if (input_spec.dtype != vkapi::kFloat && input_spec.dtype != vkapi::kHalf) {
+    throw std::invalid_argument("Unsupported dtype");
+  }
+
+  auto& weight_data = weight_spec.get_uint8_data();
+  auto& ref_data = output_spec.get_ref_float_data();
+  ref_data.resize(batch_size * out_features);
+
+  for (int64_t b = 0; b < batch_size; ++b) {
+    for (int64_t out_f = 0; out_f < out_features; ++out_f) {
+      float sum = 0.0f;
+      for (int64_t in_f = 0; in_f < in_features; ++in_f) {
+        const float input_val = input_spec.get_element(b * in_features + in_f);
+
+        const int64_t group_idx = in_f / group_size;
+        const int64_t scales_idx = group_idx * out_features + out_f;
+
+        const int64_t weight_idx = out_f * (in_features / 2) + (in_f / 2);
+        const uint8_t packed_weight = weight_data[weight_idx];
+        const auto unpacked = unpack_4bit(packed_weight);
+        const int8_t weight_4bit =
+            (in_f % 2 == 0) ? unpacked.first : unpacked.second;
+
+        const float weight_scale = weight_scales_spec.get_element(scales_idx);
+        sum += input_val * static_cast<float>(weight_4bit) * weight_scale;
+      }
+      if (!bias_spec.is_none()) {
+        sum += bias_spec.get_element(out_f);
+      }
+      ref_data[b * out_features + out_f] = sum;
+    }
+  }
+}
+
 void reference_impl(TestCase& test_case) {
-  if (test_case.operator_name().find("dq8ca") != std::string::npos) {
+  // The forced-narrow-tile cases run the weight-only fallback regardless of
+  // what the device supports, so they need the fallback's reference.
+  if (test_case.name().find("tiledm2") != std::string::npos) {
+    linear_dq8ca_q4gsw_weight_only_reference_impl(test_case);
+  } else if (test_case.operator_name().find("dq8ca") != std::string::npos) {
     linear_dq8ca_q4gsw_reference_impl(test_case);
   } else {
     linear_q4gsw_reference_impl(test_case);
