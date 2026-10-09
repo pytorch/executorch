@@ -8,12 +8,14 @@
 
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
+#include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
 #include <executorch/runtime/core/evalue.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -43,10 +45,29 @@ struct FakeContainer {
   int updates{0};
   // Compiled metadata the fake reports for a constant index. Unset entries
   // report what the most recent make_cache() geometry and config declare.
-  std::unordered_map<size_t, size_t> data_size_override{};
   std::unordered_map<size_t, int32_t> dtype_override{};
   size_t last_update_pairs{0};
+  // Compiled dtype and bytes by FQN, for constants make_cache() cannot
+  // describe: storage built straight on a CudaKVPool, side buffers, and
+  // programs compiled for another geometry than the cache's.
+  std::unordered_map<std::string, std::pair<int32_t, size_t>> declared{};
+  // Compiled shape by FQN, as the serialized FQN-weight metadata carries it.
+  std::unordered_map<std::string, std::vector<int64_t>> shapes{};
 };
+
+// Declares `fqn` as compiled with `dtype` and contiguous `sizes`.
+void declare(
+    FakeContainer& container,
+    const std::string& fqn,
+    slimc10::ScalarType dtype,
+    std::initializer_list<int64_t> sizes) {
+  size_t bytes = slimc10::elementSize(dtype);
+  for (const int64_t size : sizes) {
+    bytes *= static_cast<size_t>(size);
+  }
+  container.declared[fqn] = {static_cast<int32_t>(dtype), bytes};
+  container.shapes[fqn] = sizes;
+}
 
 // What the program under test was "compiled" with, for the fake's defaults.
 struct Compiled {
@@ -65,21 +86,54 @@ std::shared_ptr<cache::Cache> make_cache(
   return cu::make_cuda_sequence_kv_cache(geometry, cfg);
 }
 
+// Rows the compiled program declares for one layer's K or V: the capacity,
+// or window + max_write - 1 for a ring.
+int64_t declared_rows(
+    const cache::LayerGeometry& layer,
+    const cache::CacheConfig& cfg) {
+  return layer.policy.kind == cache::LayerPolicy::Kind::Ring
+      ? layer.policy.window + cfg.max_write.value_or(1) - 1
+      : cfg.capacity;
+}
+
 // Bytes the compiled program declares for one layer's K or V: BSHD at the
-// maximum rows, i.e. the capacity, or window + max_write - 1 for a ring.
+// declared rows.
 size_t declared_bytes(
     const cache::LayerGeometry& layer,
     const cache::CacheConfig& cfg) {
-  const int64_t rows = layer.policy.kind == cache::LayerPolicy::Kind::Ring
-      ? layer.policy.window + cfg.max_write.value_or(1) - 1
-      : cfg.capacity;
-  return static_cast<size_t>(rows) * layer.n_kv_heads * layer.head_dim *
+  return static_cast<size_t>(declared_rows(layer, cfg)) * layer.n_kv_heads *
+      layer.head_dim *
       slimc10::elementSize(static_cast<slimc10::ScalarType>(cfg.kv_dtype));
 }
 
 size_t layer_of(const std::string& fqn) {
   const std::string prefix = "__et_offgraph_kv_layer_";
   return std::stoul(fqn.substr(prefix.size()));
+}
+
+// The shapes the serialized metadata carries for the container's off-graph
+// constants: what declare() recorded, else what the most recent make_cache()
+// geometry and config declare for a layer.
+std::unordered_map<std::string, std::vector<int64_t>> compiled_shapes(
+    const FakeContainer& container) {
+  std::unordered_map<std::string, std::vector<int64_t>> shapes;
+  const auto& layers = compiled().geometry.layers;
+  for (const std::string& fqn : container.fqns) {
+    const auto declared = container.shapes.find(fqn);
+    if (declared != container.shapes.end()) {
+      shapes[fqn] = declared->second;
+    } else if (
+        fqn.rfind("__et_offgraph_kv_layer_", 0) == 0 &&
+        layer_of(fqn) < layers.size()) {
+      const auto& layer = layers[layer_of(fqn)];
+      shapes[fqn] = {
+          1,
+          declared_rows(layer, compiled().config),
+          layer.n_kv_heads,
+          layer.head_dim};
+    }
+  }
+  return shapes;
 }
 
 Error get_num_constants(
@@ -113,7 +167,12 @@ Error get_constant_dtype(
     int32_t* dtype) {
   auto* fake = reinterpret_cast<FakeContainer*>(container);
   const auto it = fake->dtype_override.find(index);
-  *dtype = it != fake->dtype_override.end() ? it->second
+  if (it != fake->dtype_override.end()) {
+    *dtype = it->second;
+    return Error::Ok;
+  }
+  const auto declared = fake->declared.find(fake->fqns.at(index));
+  *dtype = declared != fake->declared.end() ? declared->second.first
                                             : compiled().config.kv_dtype;
   return Error::Ok;
 }
@@ -123,12 +182,12 @@ Error get_constant_data_size(
     size_t index,
     size_t* data_size) {
   auto* fake = reinterpret_cast<FakeContainer*>(container);
-  const auto it = fake->data_size_override.find(index);
-  if (it != fake->data_size_override.end()) {
-    *data_size = it->second;
+  const std::string& fqn = fake->fqns.at(index);
+  const auto declared = fake->declared.find(fqn);
+  if (declared != fake->declared.end()) {
+    *data_size = declared->second.second;
     return Error::Ok;
   }
-  const std::string& fqn = fake->fqns.at(index);
   *data_size = declared_bytes(
       compiled().geometry.layers.at(layer_of(fqn)), compiled().config);
   return Error::Ok;
@@ -165,6 +224,7 @@ cu::CudaDelegateHandle make_handle(FakeContainer& container) {
   handle.get_constant_dtype = get_constant_dtype;
   handle.get_constant_data_size = get_constant_data_size;
   handle.update_user_managed_constant_buffer_pairs = update_pairs;
+  handle.offgraph_kv_sizes = compiled_shapes(container);
   return handle;
 }
 
@@ -556,10 +616,40 @@ TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledRingIsRejected) {
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
-  const size_t compiled_ring_bytes =
-      static_cast<size_t>(kWindow + 8 - 1) * kRow * sizeof(uint16_t);
-  container.data_size_override = {
-      {2, compiled_ring_bytes}, {3, compiled_ring_bytes}};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_1_k", "__et_offgraph_kv_layer_1_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kWindow + 8 - 1, kHeads, kDim});
+  }
+  auto handle = make_handle(container);
+
+  EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
+  EXPECT_EQ(container.updates, 0);
+}
+
+TEST_F(CudaKVCacheTest, RingWithinTheSamePaddedBytesIsRejected) {
+  // One bf16 head of 16: a ring compiled at window 2 spans 64 bytes, and one
+  // installed at window 1 allocates 32, which AOTI's 64-byte rounding also
+  // reports as 64. A step at position 1 would index the second row, past the
+  // allocation, so only the shape may decide.
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Ring, 1}, 1, 16}};
+  auto cache_ptr = make_cache(geometry, config(64, 4, 1));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  FakeContainer container{
+      {"ring_k", "ring_v"},
+      {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(container, fqn, slimc10::ScalarType::BFloat16, {1, 2, 1, 16});
+  }
+  ASSERT_EQ(container.declared["__et_offgraph_kv_layer_0_k"].second, 64u);
   auto handle = make_handle(container);
 
   EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
@@ -571,9 +661,11 @@ TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledCapacityIsRejected) {
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
-  const size_t compiled_flat_bytes = 128 * kRow * sizeof(uint16_t);
-  container.data_size_override = {
-      {0, compiled_flat_bytes}, {1, compiled_flat_bytes}};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container, fqn, slimc10::ScalarType::BFloat16, {1, 128, kHeads, kDim});
+  }
   auto handle = make_handle(container);
 
   EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
@@ -1004,4 +1096,304 @@ TEST_F(CudaKVCacheTest, GrowthDuringAnotherMethodDropsItsGraph) {
   EXPECT_NE(decode_container.bound["flat_k"].data, captured_storage);
   kv.forget_handle(&prefill);
   kv.forget_handle(&decode);
+}
+
+namespace {
+
+// One growable layer, one fixed layer and two side buffers: everything the
+// pool distinguishes, and nothing about what the rows mean.
+class CudaKVPoolTest : public CudaKVCacheTest {
+ protected:
+  static constexpr int kDeclaredRows = 64;
+  static constexpr int kFixedRows = 6;
+
+  std::unique_ptr<cu::CudaKVPool> make_pool(int initial_rows) {
+    return std::make_unique<cu::CudaKVPool>(
+        std::vector<cu::CudaKVPool::Layer>{
+            {kHeads, kDim, kDeclaredRows, /*growable=*/true},
+            {kHeads, kDim, kFixedRows, /*growable=*/false},
+        },
+        std::vector<cu::CudaKVPool::SideBuffer>{
+            {"__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16}},
+            {"__et_offgraph_kv_mask_w0",
+             slimc10::ScalarType::Bool,
+             {1, 1, 16, kDeclaredRows}},
+        },
+        slimc10::ScalarType::BFloat16,
+        initial_rows);
+  }
+
+  // What a program lowered for make_pool() declares, for `fqns`.
+  static void declare_pool(FakeContainer& container) {
+    const auto bf16 = slimc10::ScalarType::BFloat16;
+    for (const char* fqn :
+         {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+      declare(container, fqn, bf16, {1, kDeclaredRows, kHeads, kDim});
+    }
+    for (const char* fqn :
+         {"__et_offgraph_kv_layer_1_k", "__et_offgraph_kv_layer_1_v"}) {
+      declare(container, fqn, bf16, {1, kFixedRows, kHeads, kDim});
+    }
+    declare(
+        container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16});
+    declare(
+        container,
+        "__et_offgraph_kv_mask_w0",
+        slimc10::ScalarType::Bool,
+        {1, 1, 16, kDeclaredRows});
+  }
+
+  static FakeContainer full_container() {
+    FakeContainer container{
+        {"grow_k", "grow_v", "fixed_k", "fixed_v", "cells", "mask"},
+        {"__et_offgraph_kv_layer_0_k",
+         "__et_offgraph_kv_layer_0_v",
+         "__et_offgraph_kv_layer_1_k",
+         "__et_offgraph_kv_layer_1_v",
+         "__et_offgraph_kv_cells",
+         "__et_offgraph_kv_mask_w0"},
+        {},
+        0};
+    declare_pool(container);
+    return container;
+  }
+};
+
+} // namespace
+
+TEST_F(CudaKVPoolTest, SideBuffersBindAtFixedAddressesAcrossGrowth) {
+  auto pool = make_pool(4);
+  auto container = full_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(pool->note_handle(&handle).get());
+  ASSERT_EQ(pool->validate(), Error::Ok);
+
+  ASSERT_EQ(pool->prepare(3, 0, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  void* grow_k = container.bound["grow_k"].data;
+  void* fixed_k = container.bound["fixed_k"].data;
+  void* cells = container.bound["cells"].data;
+  void* mask = container.bound["mask"].data;
+  EXPECT_EQ(cells, pool->side_buffer(0));
+  EXPECT_EQ(mask, pool->side_buffer(1));
+  EXPECT_EQ(pool->side_buffer_bytes(0), 16 * sizeof(int64_t));
+  EXPECT_EQ(container.bound["cells"].sizes, std::vector<int64_t>({16}));
+  const std::vector<int64_t> mask_sizes{1, 1, 16, kDeclaredRows};
+  EXPECT_EQ(container.bound["mask"].sizes, mask_sizes);
+  EXPECT_EQ(container.bound["mask"].dtype, slimc10::ScalarType::Bool);
+  const std::vector<int64_t> fixed_sizes{1, kFixedRows, kHeads, kDim};
+  EXPECT_EQ(container.bound["fixed_k"].sizes, fixed_sizes);
+
+  // Side buffers start zeroed.
+  std::vector<int64_t> cells_host(16, -1);
+  ASSERT_EQ(
+      cudaMemcpy(
+          cells_host.data(),
+          cells,
+          cells_host.size() * sizeof(int64_t),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(cells_host, std::vector<int64_t>(16, 0));
+  ASSERT_EQ(pool->mark_step_done(), Error::Ok);
+
+  // Growth moves only the growable layer.
+  ASSERT_EQ(pool->prepare(5, 3, cudaStreamPerThread), Error::Ok);
+  EXPECT_EQ(pool->rows(), 8);
+  EXPECT_EQ(pool->growth_count(), 1);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  EXPECT_NE(container.bound["grow_k"].data, grow_k);
+  EXPECT_EQ(container.bound["fixed_k"].data, fixed_k);
+  EXPECT_EQ(container.bound["cells"].data, cells);
+  EXPECT_EQ(container.bound["mask"].data, mask);
+  pool->forget_handle(&handle);
+}
+
+TEST_F(CudaKVPoolTest, GrowthCarriesLiveRowsAndCapsAtDeclaredRows) {
+  auto pool = make_pool(4);
+  auto container = full_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(pool->note_handle(&handle).get());
+  ASSERT_EQ(pool->prepare(4, 0, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  const auto history = iota_rows(3);
+  ASSERT_EQ(
+      cudaMemcpy(
+          container.bound["grow_k"].data,
+          history.data(),
+          history.size() * sizeof(uint16_t),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_EQ(pool->mark_step_done(), Error::Ok);
+
+  // Asking past twice the rows grows straight to what is asked; past the
+  // declared rows it is capped there.
+  ASSERT_EQ(pool->prepare(20, 3, cudaStreamPerThread), Error::Ok);
+  EXPECT_EQ(pool->rows(), 20);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  EXPECT_EQ(read_rows(container.bound["grow_k"].data, 3), history);
+  ASSERT_EQ(pool->prepare(kDeclaredRows, 3, cudaStreamPerThread), Error::Ok);
+  EXPECT_EQ(pool->rows(), kDeclaredRows);
+  EXPECT_EQ(
+      pool->allocated_bytes(),
+      2 * (kDeclaredRows + kFixedRows) * kRow *
+          static_cast<int64_t>(sizeof(uint16_t)));
+  pool->forget_handle(&handle);
+}
+
+TEST_F(CudaKVPoolTest, CompiledSizeRoundedUpBy64IsAccepted) {
+  // AOTI reports constant bytes rounded up to 64 when the program also holds
+  // CPU constants: a 16-byte read_len buffer reads as 64. Its serialized
+  // shape still matches what the pool declares.
+  cu::CudaKVPool pool(
+      {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
+      {{"__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2}}},
+      slimc10::ScalarType::BFloat16,
+      4);
+  FakeContainer container{
+      {"k", "v", "read_len"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_read_len"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kDeclaredRows, kHeads, kDim});
+  }
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
+  container.declared["__et_offgraph_kv_read_len"].second = 64;
+  auto handle = make_handle(container);
+  EXPECT_TRUE(pool.note_handle(&handle).get());
+
+  // Rounded past the next multiple of 64: the library and its metadata
+  // disagree.
+  container.declared["__et_offgraph_kv_read_len"].second = 128;
+  EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
+  pool.forget_handle(&handle);
+}
+
+TEST_F(CudaKVPoolTest, ShapeHiddenByPaddingIsRejected) {
+  // A read_len compiled at {4} spans 32 bytes, and the pool's {2} spans 16;
+  // padded, both read as 64. The serialized shape tells them apart.
+  cu::CudaKVPool pool(
+      {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
+      {{"__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2}}},
+      slimc10::ScalarType::BFloat16,
+      4);
+  FakeContainer container{
+      {"k", "v", "read_len"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_read_len"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kDeclaredRows, kHeads, kDim});
+  }
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
+  container.declared["__et_offgraph_kv_read_len"].second = 64;
+  auto handle = make_handle(container);
+  EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
+
+  // Nor is a constant accepted without a serialized shape to check.
+  handle.offgraph_kv_sizes.erase("__et_offgraph_kv_read_len");
+  EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
+}
+
+TEST_F(CudaKVPoolTest, ConstantNotMatchingItsCompiledSizeIsRejected) {
+  // A side buffer compiled at another shape than the pool allocates would
+  // be addressed past its allocation.
+  auto pool = make_pool(4);
+  auto container = full_container();
+  declare(
+      container,
+      "__et_offgraph_kv_mask_w0",
+      slimc10::ScalarType::Bool,
+      {1, 1, 16, 2 * kDeclaredRows});
+  auto handle = make_handle(container);
+  EXPECT_EQ(pool->note_handle(&handle).error(), Error::InvalidProgram);
+
+  // And one compiled with another dtype.
+  auto wrong_dtype = full_container();
+  declare(
+      wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
+  auto wrong_dtype_handle = make_handle(wrong_dtype);
+  EXPECT_EQ(
+      pool->note_handle(&wrong_dtype_handle).error(), Error::InvalidProgram);
+}
+
+TEST_F(CudaKVPoolTest, ProgramMissingSideBuffersIsRejected) {
+  auto pool = make_pool(4);
+  // Every layer, but only one of the two side buffers: the lowering and the
+  // runtime disagree about the layout.
+  FakeContainer partial{
+      {"grow_k", "grow_v", "fixed_k", "fixed_v", "cells"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_layer_1_k",
+       "__et_offgraph_kv_layer_1_v",
+       "__et_offgraph_kv_cells"},
+      {},
+      0};
+  declare_pool(partial);
+  auto handle = make_handle(partial);
+  EXPECT_EQ(pool->note_handle(&handle).error(), Error::InvalidProgram);
+
+  // A program with no storage at all is simply not served.
+  FakeContainer embedding{{"weight"}, {"tok_embeddings.weight"}, {}, 0};
+  auto embedding_handle = make_handle(embedding);
+  const auto serves = pool->note_handle(&embedding_handle);
+  ASSERT_EQ(serves.error(), Error::Ok);
+  EXPECT_FALSE(serves.get());
+  // Neither program contributed storage, the rejected one included.
+  EXPECT_EQ(pool->validate(), Error::InvalidProgram);
+}
+
+TEST_F(CudaKVPoolTest, FailedSideBufferAllocationLeavesThePoolRetryable) {
+  // A side buffer too large for any device fails the first allocation, which
+  // must release the layers it already allocated.
+  cu::CudaKVPool pool(
+      {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
+      {{"__et_offgraph_kv_huge",
+        slimc10::ScalarType::Byte,
+        {int64_t{1} << 50}}},
+      slimc10::ScalarType::BFloat16,
+      4);
+  FakeContainer container{
+      {"k", "v", "huge"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_huge"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kDeclaredRows, kHeads, kDim});
+  }
+  declare(
+      container,
+      "__et_offgraph_kv_huge",
+      slimc10::ScalarType::Byte,
+      {int64_t{1} << 50});
+  auto handle = make_handle(container);
+  ASSERT_TRUE(pool.note_handle(&handle).get());
+  EXPECT_NE(pool.prepare(1, 0, cudaStreamPerThread), Error::Ok);
+  EXPECT_FALSE(pool.allocated());
+  EXPECT_EQ(pool.allocated_bytes(), 0);
+  pool.forget_handle(&handle);
 }
