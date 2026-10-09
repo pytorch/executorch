@@ -54,9 +54,10 @@ bool et_runner_set_input(size_t input_idx, const void* data, size_t num_bytes);
 /**
  * Execute one forward pass of the model.
  *
- * Must be called after et_runner_init(). Call et_runner_set_input() before
- * this if you want to provide custom input data. Results are available via
- * et_runner_get_output() after this call returns successfully.
+ * Must be called after et_runner_init(). Set all inputs with
+ * et_runner_set_input() before each call: execution may reuse their storage for
+ * intermediate tensors. Results are available via et_runner_get_output() after
+ * this call returns successfully.
  *
  * @returns true on success, false on failure.
  */

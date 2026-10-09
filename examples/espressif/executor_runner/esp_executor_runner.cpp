@@ -303,24 +303,10 @@ template <typename ValueType>
   std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
 }
 
-Error prepare_input_tensors(Method& method, MemoryAllocator& allocator) {
-  MethodMeta method_meta = method.method_meta();
-  size_t num_inputs = method_meta.num_inputs();
-
-  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
-  ET_CHECK_OR_RETURN_ERROR(
-      input_evalues != nullptr,
-      MemoryAllocationFailed,
-      "Could not allocate memory for input evalues.");
-
-  Error err = method.get_inputs(input_evalues, num_inputs);
-  ET_CHECK_OK_OR_RETURN_ERROR(err);
-
-  for (size_t i = 0; i < num_inputs; i++) {
-    auto tag = method_meta.input_tag(i);
-    ET_CHECK_OK_OR_RETURN_ERROR(tag.error());
-
-    if (tag.get() != Tag::Tensor) {
+Error prepare_input_tensors(Method& method) {
+  for (size_t i = 0; i < method.inputs_size(); i++) {
+    const EValue& input = method.get_input(i);
+    if (!input.isTensor()) {
       ET_LOG(
           Debug,
           "Skipping non-tensor input %lu",
@@ -328,28 +314,22 @@ Error prepare_input_tensors(Method& method, MemoryAllocator& allocator) {
       continue;
     }
 
-    // Fill tensors with default values (1) when no input data is provided
-    if (input_evalues[i].isTensor()) {
-      Tensor& tensor = input_evalues[i].toTensor();
-      switch (tensor.scalar_type()) {
+    Tensor tensor = input.toTensor();
+    switch (tensor.scalar_type()) {
 #define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
   case ScalarType::scalar_name:                       \
     fill_tensor_with_default_value<cpp_type>(tensor); \
     break;
-        ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+      ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
 #undef HANDLE_SCALAR_TYPE
-        default:
-          ET_LOG(
-              Error, "Unhandled ScalarType %s", toString(tensor.scalar_type()));
-          err = Error::InvalidArgument;
-          break;
-      }
-    } else {
-      printf("Input[%lu]: Not Tensor\n", static_cast<unsigned long>(i));
+      default:
+        ET_LOG(
+            Error, "Unhandled ScalarType %s", toString(tensor.scalar_type()));
+        return Error::InvalidArgument;
     }
   }
 
-  return err;
+  return Error::Ok;
 }
 
 #if defined(FILESYSTEM_LOAD)
@@ -487,6 +467,16 @@ struct RunnerContext {
 #endif
 #endif
 };
+
+Error prepare_inputs(RunnerContext& ctx) {
+#if defined(ET_BUNDLE_IO)
+  if (ctx.bundle_io) {
+    return executorch::bundled_program::load_bundled_input(
+        *ctx.method.value(), model_pte, testset_idx);
+  }
+#endif
+  return prepare_input_tensors(*ctx.method.value());
+}
 
 bool runner_init(RunnerContext& ctx, size_t pte_size) {
   ET_CHECK_OR_RETURN_FALSE(
@@ -687,25 +677,11 @@ bool runner_init(RunnerContext& ctx, size_t pte_size) {
   ET_LOG(Info, "Preparing inputs...");
   size_t input_membase = ctx.method_allocator->used_size();
 
-#if defined(ET_BUNDLE_IO)
-  if (ctx.bundle_io) {
-    ET_LOG(Info, "Input testset[%d] from bundled bpte", testset_idx);
-    Error status = executorch::bundled_program::load_bundled_input(
-        *ctx.method.value(), model_pte, testset_idx);
-    ET_CHECK_OR_RETURN_FALSE(
-        status == Error::Ok,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-  } else
-#endif
-  {
-    Error status = ::prepare_input_tensors(
-        *ctx.method.value(), ctx.method_allocator.value());
-    ET_CHECK_OR_RETURN_FALSE(
-        status == Error::Ok,
-        "Failed to prepare inputs 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-  }
+  Error status = prepare_inputs(ctx);
+  ET_CHECK_OR_RETURN_FALSE(
+      status == Error::Ok,
+      "Failed to prepare inputs 0x%" PRIx32,
+      static_cast<uint32_t>(status));
 
 #if defined(ET_LOG_DUMP_INPUT)
   {
@@ -988,6 +964,10 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
   StartMeasurements();
   for (int n = 0; n < num_inferences; n++) {
     ET_LOG(Debug, "Running inference number %d", n);
+    status = prepare_inputs(ctx);
+    if (status != Error::Ok) {
+      break;
+    }
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
       break;
