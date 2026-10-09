@@ -30,3 +30,14 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
     )
+
+    runtime.python_test(
+        name = "test_sampler",
+        srcs = [
+            "test_sampler.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/extension/llm/batching:sampler",
+        ],
+    )

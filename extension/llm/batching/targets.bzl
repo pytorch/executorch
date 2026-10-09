@@ -77,3 +77,14 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
     )
+
+    runtime.python_library(
+        name = "sampler",
+        srcs = [
+            "sampler.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
