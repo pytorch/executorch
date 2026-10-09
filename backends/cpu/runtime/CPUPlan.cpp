@@ -215,7 +215,8 @@ Error CPUPlan::select() {
     }
     for (const auto& output : node.outputs) {
       ET_CHECK_OR_RETURN_ERROR(
-          output.kind == ptn::OutputValueKind::Tensor,
+          output.kind == ptn::OutputValueKind::Tensor ||
+              output.kind == ptn::OutputValueKind::TensorList,
           NotSupported,
           "CPU static delegate requires tensor outputs: %s",
           node.target.c_str());
@@ -336,8 +337,7 @@ Error CPUPlan::select() {
           inputs.insert(input);
         }
       }
-      for (const auto& output : node.outputs) {
-        const auto value = output.value_id;
+      for (auto value : node.output_value_ids()) {
         bool exposed = !step.implementation->accepts_regions() ||
             graph_outputs.count(value);
         for (auto consumer : graph.value(value).consumer_ids) {
