@@ -11,7 +11,7 @@ conv2d_pw_tiled:
     TILE_M4: 1
     TILE_K4: 1
     TILE_N4: 1
-    TILE_M: 4
+    TILE_M: 2
   generate_variant_forall:
     DTYPE:
       - VALUE: float

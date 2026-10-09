@@ -142,6 +142,126 @@ cudaMemPool_t mem_pool_for(int device) {
   return pool;
 }
 
+// Whether `device` supports the stream-ordered allocator. Devices without
+// memory pools, such as data-center GPUs in TCC mode on Windows, reject
+// cudaMallocAsync and cudaMemPoolCreate with cudaErrorNotSupported, so their
+// allocations take the synchronous path instead. Asked on every allocation,
+// so the answer is cached per device in atomics rather than behind a lock. An
+// attribute query that fails is treated as supported, which keeps the
+// stream-ordered path and its own error reporting.
+constexpr int kPoolSupportCacheSize = 64;
+enum PoolSupport : int { kPoolSupportUnknown = 0, kPoolsSupported, kNoPools };
+std::atomic<int> g_pool_support[kPoolSupportCacheSize] = {};
+// Set once any device is found without memory pools, so a free can skip
+// looking up which device its pointer is on while every device has them.
+std::atomic<bool> g_device_without_pools_seen{false};
+
+bool device_supports_memory_pools(int device) {
+  const bool cached = device >= 0 && device < kPoolSupportCacheSize;
+  if (cached) {
+    const int known = g_pool_support[device].load(std::memory_order_acquire);
+    if (known != kPoolSupportUnknown) {
+      return known == kPoolsSupported;
+    }
+  }
+  int value = 0;
+  const cudaError_t err =
+      cudaDeviceGetAttribute(&value, cudaDevAttrMemoryPoolsSupported, device);
+  if (err != cudaSuccess) {
+    (void)cudaGetLastError();
+  }
+  const bool supported = err != cudaSuccess || value != 0;
+  if (!supported) {
+    g_device_without_pools_seen.store(true, std::memory_order_release);
+  }
+  if (cached) {
+    int expected = kPoolSupportUnknown;
+    const int answer = supported ? kPoolsSupported : kNoPools;
+    if (g_pool_support[device].compare_exchange_strong(expected, answer) &&
+        !supported) {
+      ET_LOG(
+          Info,
+          "CUDA device %d does not support memory pools; stream-ordered "
+          "allocations use cudaMalloc and cudaFree instead, and CUDA graphs "
+          "are not used.",
+          device);
+    }
+  }
+  return supported;
+}
+
+bool stream_is_capturing(cudaStream_t stream) {
+  cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
+  if (cudaStreamIsCapturing(stream, &status) != cudaSuccess) {
+    (void)cudaGetLastError();
+    return false;
+  }
+  return status != cudaStreamCaptureStatusNone;
+}
+
+// The synchronous fallback for a device without memory pools. Refused while
+// the stream is capturing: in relaxed capture mode cudaMalloc and cudaFree
+// succeed, so a block freed during capture would be handed out again while
+// the graph still writes to it on every replay. Failing here keeps the loud
+// failure the stream-ordered call gave before.
+Result<void*>
+allocate_without_pools(size_t nbytes, DeviceIndex index, cudaStream_t stream) {
+  if (stream_is_capturing(stream)) {
+    ET_LOG(
+        Error,
+        "Cannot allocate %zu bytes while capturing a CUDA graph on a device "
+        "without memory pools",
+        nbytes);
+    return Error::NotSupported;
+  }
+  return CudaAllocator::instance().allocate(nbytes, index);
+}
+
+// cudaFree waits for the work already submitted to the device, so work still
+// using the block on `stream` finishes before it is released. During capture
+// that work has only been recorded, so the block is kept rather than freed, and
+// the caller is told: Error::NotSupported for a kept block, Error::Internal for
+// a failed cudaFree. Freed here rather than through deallocate(), which reports
+// nothing, so the result is cudaFree's own and not whatever else last failed.
+Error deallocate_without_pools(
+    void* ptr,
+    DeviceIndex index,
+    cudaStream_t stream) {
+  if (stream_is_capturing(stream)) {
+    ET_LOG(
+        Error,
+        "Not freeing %p while capturing a CUDA graph on a device without "
+        "memory pools; the graph may still use it",
+        ptr);
+    return Error::NotSupported;
+  }
+  // On the block's device, as deallocate() frees it, so cudaFree waits for the
+  // work submitted there. A failed switch still frees rather than leaking; only
+  // cudaFree's own result is reported. cudaFree directly is right because the
+  // fallback allocates at the default alignment, which allocate() never rounds,
+  // so this is the pointer cudaMalloc returned.
+  int previous = -1;
+  bool switched = false;
+  if (index >= 0 && cudaGetDevice(&previous) == cudaSuccess &&
+      previous != static_cast<int>(index)) {
+    switched = cudaSetDevice(index) == cudaSuccess;
+  }
+  const cudaError_t err = cudaFree(ptr);
+  if (switched) {
+    (void)cudaSetDevice(previous);
+  }
+  if (err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "cudaFree failed: %s (ptr=%p, device %d)",
+        cudaGetErrorString(err),
+        ptr,
+        static_cast<int>(index));
+    return Error::Internal;
+  }
+  return Error::Ok;
+}
+
 #endif // !EXECUTORCH_USE_HIP
 
 Error copy_impl(
@@ -473,6 +593,13 @@ Result<void*> CudaAllocator::allocate_async(
     (void)cudaGetLastError();
     stream_device = -1;
   }
+  const int target = device >= 0 ? device : stream_device;
+  if (target >= 0 && !device_supports_memory_pools(target)) {
+    // Without memory pools there is no stream-ordered allocation to make. A
+    // synchronous allocation is usable from any stream at once, so the caller's
+    // ordering still holds; deallocate_async frees it to match.
+    return allocate_without_pools(nbytes, index, stream);
+  }
   cudaMemPool_t pool =
       (device >= 0 && device == stream_device) ? mem_pool_for(device) : nullptr;
   if (device >= 0) {
@@ -507,6 +634,25 @@ void CudaAllocator::deallocate_async(
     return;
   }
 
+#if !defined(EXECUTORCH_USE_HIP)
+  // Decided by the device the memory lives on, the same answer allocate_async
+  // reached for it. Looked up only once some device without memory pools has
+  // been seen, so a process whose devices all have them frees as before.
+  if (g_device_without_pools_seen.load(std::memory_order_acquire)) {
+    cudaPointerAttributes attributes{};
+    if (cudaPointerGetAttributes(&attributes, ptr) == cudaSuccess) {
+      if (attributes.type == cudaMemoryTypeDevice && attributes.device >= 0 &&
+          !device_supports_memory_pools(attributes.device)) {
+        (void)deallocate_without_pools(
+            ptr, static_cast<DeviceIndex>(attributes.device), stream);
+        return;
+      }
+    } else {
+      (void)cudaGetLastError();
+    }
+  }
+#endif
+
   cudaError_t err = cudaFreeAsync(ptr, stream);
   if (err != cudaSuccess) {
     ET_LOG(
@@ -516,6 +662,66 @@ void CudaAllocator::deallocate_async(
         ptr,
         static_cast<int>(index));
   }
+}
+
+bool CudaAllocator::memory_pools_supported(DeviceIndex index) {
+#if defined(EXECUTORCH_USE_HIP)
+  (void)index;
+  return true;
+#else
+  const int device = resolve_device(index);
+  return device < 0 || device_supports_memory_pools(device);
+#endif
+}
+
+Result<void*> CudaAllocator::allocate_stream_ordered(
+    size_t nbytes,
+    DeviceIndex index,
+    cudaStream_t stream) {
+#if !defined(EXECUTORCH_USE_HIP)
+  const int device = resolve_device(index);
+  if (device >= 0 && !device_supports_memory_pools(device)) {
+    return allocate_without_pools(nbytes, index, stream);
+  }
+#endif
+  void* ptr = nullptr;
+  const cudaError_t err = cudaMallocAsync(&ptr, nbytes, stream);
+  if (err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "cudaMallocAsync failed: %s (requested %zu bytes on device %d)",
+        cudaGetErrorString(err),
+        nbytes,
+        static_cast<int>(index));
+    return Error::MemoryAllocationFailed;
+  }
+  return ptr;
+}
+
+executorch::runtime::Error CudaAllocator::deallocate_stream_ordered(
+    void* ptr,
+    DeviceIndex index,
+    cudaStream_t stream) {
+  if (ptr == nullptr) {
+    return Error::Ok;
+  }
+#if !defined(EXECUTORCH_USE_HIP)
+  const int device = resolve_device(index);
+  if (device >= 0 && !device_supports_memory_pools(device)) {
+    return deallocate_without_pools(ptr, index, stream);
+  }
+#endif
+  const cudaError_t err = cudaFreeAsync(ptr, stream);
+  if (err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "cudaFreeAsync failed: %s (ptr=%p, device %d)",
+        cudaGetErrorString(err),
+        ptr,
+        static_cast<int>(index));
+    return Error::Internal;
+  }
+  return Error::Ok;
 }
 
 #if !defined(EXECUTORCH_USE_HIP)

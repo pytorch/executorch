@@ -18,7 +18,6 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/passes/QkvBk64.h>
-#include <executorch/backends/webgpu/runtime/passes/SwiGLU.h>
 
 #include <algorithm>
 #include <cmath>
@@ -1179,12 +1178,6 @@ void WebGPUGraph::build(
          tensors_[oid].nbytes});
   }
 
-  std::vector<passes::SwiGluFusion> swiglu_fusions;
-  std::unordered_map<unsigned, size_t> swiglu_gate_producers;
-  std::unordered_map<unsigned, size_t> swiglu_anchors;
-  std::unordered_set<unsigned> swiglu_skipped_ops;
-  std::unordered_set<unsigned> claimed_fusion_ops;
-
   std::vector<passes::QkvBk64Fusion> qkv_fusions;
   std::unordered_map<unsigned, size_t> qkv_first_ops;
   std::unordered_map<unsigned, size_t> qkv_last_ops;
@@ -1199,27 +1192,6 @@ void WebGPUGraph::build(
       qkv_first_ops,
       qkv_last_ops,
       qkv_member_ops);
-  passes::detect_swiglu_fusions(
-      *this,
-      graph,
-      num_vals,
-      swiglu_fusions,
-      swiglu_gate_producers,
-      swiglu_anchors,
-      swiglu_skipped_ops,
-      claimed_fusion_ops);
-
-  // SwiGLU keeps precedence when the exact QKV geometry is also formed by a
-  // q projection plus gate/up projections. QKV detection runs first because it
-  // validates constant geometry, but it has no side effects until Phase 3; now
-  // discard candidates claimed by the completed SwiGLU pass and rebuild the
-  // index maps for the retained groups.
-  passes::retain_unclaimed_qkv_fusions(
-      qkv_fusions,
-      qkv_first_ops,
-      qkv_last_ops,
-      qkv_member_ops,
-      claimed_fusion_ops);
 
   // Phase 3: Build operator dispatch chain
   if (chain) {
@@ -1237,27 +1209,6 @@ void WebGPUGraph::build(
         for (unsigned j = 0; j < fb_args->size(); j++) {
           args.push_back(static_cast<int>(fb_args->Get(j)));
         }
-      }
-
-      const auto gate_it = swiglu_gate_producers.find(i);
-      if (gate_it != swiglu_gate_producers.end()) {
-        const int gate_id = swiglu_fusions[gate_it->second].gate_id;
-        tensors_[gate_id].buffer = acquire_scratch(tensors_[gate_id].nbytes);
-      }
-      const auto anchor_it = swiglu_anchors.find(i);
-      if (anchor_it != swiglu_anchors.end()) {
-        const passes::SwiGluFusion& fusion = swiglu_fusions[anchor_it->second];
-        passes::add_silu_mul_fused_dispatch(
-            *this,
-            fusion.common_input_id,
-            fusion.gate_id,
-            fusion.up_id,
-            fusion.out_id);
-        release_scratch(tensors_[fusion.gate_id].buffer);
-        continue;
-      }
-      if (swiglu_skipped_ops.count(i) != 0) {
-        continue;
       }
 
       const auto qkv_first = qkv_first_ops.find(i);

@@ -116,6 +116,23 @@ else
     export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=ON"
     echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
     echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' is a CUDA row, requiring the CUDA build"
+    # The Linux rows take the row's GPU list from envvar_cuda_linux.sh. Windows has no env-var
+    # script slot, so the same list is resolved here; without it the build compiles device
+    # code only for whatever GPU the builder has. The reusable workflow writes its own list
+    # into BUILD_ENV_FILE, which the build step sources after this hook and which would
+    # otherwise win, so the row's list is appended there as well as to GITHUB_ENV.
+    # Also needed for the ninja the Windows CUDA build generates with.
+    if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+        source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
+        TORCH_CUDA_ARCH_LIST="$(EXECUTORCH_BUILD_CUDA=1 executorch_cuda_arch_list)"
+        export TORCH_CUDA_ARCH_LIST
+        echo "TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}" >> "${GITHUB_ENV}"
+        if [[ -n "${BUILD_ENV_FILE:-}" ]]; then
+            echo "export TORCH_CUDA_ARCH_LIST='${TORCH_CUDA_ARCH_LIST}'" >> "${BUILD_ENV_FILE}"
+        fi
+        echo "building device code for: ${TORCH_CUDA_ARCH_LIST}"
+        pip install --quiet ninja
+    fi
 fi
 
 # On Windows, enable symlinks and re-checkout the current revision to create
@@ -125,14 +142,6 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     git config core.symlinks true
     git checkout -f HEAD
 
-    # Windows wheels are CPU-only (build-wheels-windows.yml sets
-    # with-cuda: disabled), but the Windows CI image ships a CUDA toolkit on
-    # PATH, which makes setup.py auto-enable EXECUTORCH_BUILD_CUDA. That bakes a
-    # CUDA _C into the CPU wheel, which then fails its DLL load in the
-    # smoke test ("DLL load failed while importing _C"). Force a
-    # CPU-only build.
-    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
-    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
 
 # Manually install build requirements because `python setup.py bdist_wheel` does
@@ -202,7 +211,8 @@ if [[ "${EXECUTORCH_BUILD_VULKAN:-0}" != "0" \
     echo "glslc installed: $(command -v glslc)"
   fi
 else
-  # This is the Vulkan equivalent of the Windows CUDA force-off above (#20527).
+  # Off unless asked for: a builder with the Vulkan SDK would otherwise turn it on
+  # for a wheel that does not ship it, as a CUDA toolkit once did for Windows (#20527).
   export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_VULKAN=OFF"
   echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi

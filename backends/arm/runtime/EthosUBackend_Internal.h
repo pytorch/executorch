@@ -104,13 +104,6 @@ executorch::runtime::Error platform_execute(
     executorch::runtime::Span<executorch::runtime::EValue*> args,
     char* ethosu_scratch);
 
-executorch::runtime::Error copy_with_layout_adjustment(
-    const VelaIO& output_io,
-    int output_index,
-    const char* src,
-    executorch::aten::Tensor& tensor_out,
-    size_t tensor_bytes);
-
 void calculate_dimensions(
     const executorch::aten::Tensor tensor,
     VelaIO* io,

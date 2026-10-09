@@ -27,7 +27,7 @@ from utils.artifacts import (  # type: ignore[import-not-found]
     report_input,
     report_output,
     save_checkpoint,
-    TRAINED_PATH,
+    TRAINED_FULLY_PRUNED_PATH,
 )
 
 COMPACT_BACKBONE_CHANNELS = (32, 64, 64, 64, 64, 32, 32, 32)
@@ -183,7 +183,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    input_path = args.input or TRAINED_PATH
+    input_path = args.input or TRAINED_FULLY_PRUNED_PATH
     report_input("checkpoint", input_path)
     checkpoint = torch.load(input_path, map_location="cpu", weights_only=True)
     if "model" not in checkpoint:

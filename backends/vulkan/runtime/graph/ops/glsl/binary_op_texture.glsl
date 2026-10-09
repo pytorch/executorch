@@ -62,6 +62,11 @@ ${layout_declare_spec_const(C, "int", "other_broadcast_packed_dim", "0")}
 $if MASK_PADDING:
   #define MASK_PADDING
 
+$if OPERATOR == "swiglu(X, Y)":
+  vec4 swiglu(vec4 gate, vec4 up) {
+    return (gate * (1.0 / (1.0 + exp(-gate)))) * up;
+  }
+
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
 

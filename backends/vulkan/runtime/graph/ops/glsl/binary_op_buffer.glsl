@@ -62,6 +62,11 @@ ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_broadcast_packed_dim", "0")}
 ${layout_declare_spec_const(C, "int", "other_broadcast_packed_dim", "0")}
 
+$if OPERATOR == "swiglu(X, Y)":
+  float swiglu(float gate, float up) {
+    return (gate * (1.0 / (1.0 + exp(-gate)))) * up;
+  }
+
 void main() {
   const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
