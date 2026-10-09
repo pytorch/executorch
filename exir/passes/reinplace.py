@@ -535,19 +535,22 @@ def reinplace_pass(  # noqa: C901
 
 
 def _storage_aliases(node: torch.fx.Node) -> Set[torch.fx.Node]:
-    """``node`` and every node sharing its storage: views of it, which
+    """``node`` and every node sharing its storage, transitively: views, which
     ReplaceViewCopyWithViewPass has turned into ``memory.view``, and results
-    planned onto its TensorSpec, like those of in-place ops."""
+    planned onto the TensorSpec of the alias they consume, like those of
+    in-place ops, including on views."""
     from executorch.exir import memory
 
     aliases = {node}
     frontier = [node]
     while frontier:
-        for user in frontier.pop().users:
+        alias = frontier.pop()
+        spec = alias.meta.get("spec")
+        for user in alias.users:
             if user in aliases:
                 continue
-            if (user.target == memory.view and user.args[0] in aliases) or (
-                user.meta.get("spec") is node.meta["spec"]
+            if (user.target == memory.view and user.args[0] is alias) or (
+                spec is not None and user.meta.get("spec") is spec
             ):
                 aliases.add(user)
                 frontier.append(user)

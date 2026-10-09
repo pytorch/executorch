@@ -845,8 +845,8 @@ class TestReinplacePass(unittest.TestCase):
         a view taken before the delegate, would see the new values. The copy_
         then stays and the specs stay separate."""
         inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
-        for through_view in (False, True):
-            with self.subTest(through_view=through_view):
+        for read_through in ("input", "view", "in-place op on a view"):
+            with self.subTest(read_through=read_through):
                 program = to_edge_transform_and_lower(
                     export(_CacheUpdate(), inputs, strict=True),
                     partitioner=[AllNodePartitioner("_InPlaceDemoBackend", [])],
@@ -858,9 +858,17 @@ class TestReinplacePass(unittest.TestCase):
                     n for n in graph.nodes if n.target == executorch_call_delegate
                 )
                 read = k_cache
-                if through_view:
-                    with graph.inserting_before(delegate):
+                with graph.inserting_before(delegate):
+                    if read_through != "input":
                         read = graph.call_function(memory.view, (k_cache, [16, 4]))
+                        read.meta["spec"] = object()
+                    if read_through == "in-place op on a view":
+                        # Planned onto the view's spec, not the input's.
+                        update_view = graph.call_function(
+                            torch.ops.aten.add_.Tensor, (read, read)
+                        )
+                        update_view.meta["spec"] = read.meta["spec"]
+                        read = update_view
                 with graph.inserting_after(delegate):
                     graph.call_function(torch.ops.aten.clone.default, (read,))
 
