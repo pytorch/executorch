@@ -284,9 +284,9 @@ AOTITorchError aoti_torch_mps_gated_delta_rule(
         kernel_func->setArg(2, *v_tensor);
         kernel_func->setArg(3, *g_tensor);
         kernel_func->setArg(4, *beta_tensor);
-        kernel_func->setArg(5, *state_tensor);    // state_in
-        kernel_func->setArg(6, *y_tensor);
-        kernel_func->setArg(7, *state_tensor);    // state_out = state_in (in-place)
+        kernel_func->setArg(5, *state_tensor, ETMetalKernelFunction::ArgAccess::kWrite);    // state_in
+        kernel_func->setArg(6, *y_tensor, ETMetalKernelFunction::ArgAccess::kWrite);
+        kernel_func->setArg(7, *state_tensor, ETMetalKernelFunction::ArgAccess::kWrite);    // state_out = state_in (in-place)
         kernel_func->setArg(8, T_uint);
 
         // Grid: [32, Dv, B*Hv]  Threadgroup: [32, 4, 1]
