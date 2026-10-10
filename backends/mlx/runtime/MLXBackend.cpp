@@ -6,6 +6,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXBatchedCache.h"
 #include "MLXBatchedSequenceCache.h"
 #include "MLXCache.h"
 #include "MLXCellCache.h"
@@ -665,13 +666,13 @@ const int cache_builders_registered = [] {
       "Failed to register cache builder for %s:%s",
       kMLXBackendId,
       cache::kind::kBatchedSequence);
-  // The layout kBatched points at, also registered under its own name above.
+  // MLXBatchedCache is the default batched implementation.
   const Error batched = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatched,
       [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
+            std::make_shared<MLXBatchedCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched == Error::Ok,
