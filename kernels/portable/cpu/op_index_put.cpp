@@ -163,12 +163,7 @@ bool check_special_case_in_place_args(
     Tensor& in,
     TensorOptList indices,
     const Tensor& values,
-    const bool accumulate,
     size_t* dim) {
-  ET_CHECK_OR_RETURN_FALSE(
-      !accumulate,
-      "Special case in-place index_put does not support accumulate");
-
   ET_CHECK_OR_RETURN_FALSE(
       static_cast<ssize_t>(indices.size()) <= in.dim(),
       "Indexing too many dimensions");
@@ -285,8 +280,7 @@ Tensor& index_put_(
   size_t dim = 0;
   ET_KERNEL_CHECK(
       ctx,
-      check_special_case_in_place_args(
-          ctx, in, indices, values, accumulate, &dim),
+      check_special_case_in_place_args(ctx, in, indices, values, &dim),
       InvalidArgument,
       in);
 
@@ -315,13 +309,32 @@ Tensor& index_put_(
 
   ET_SWITCH_TWO_TYPES(Long, Int, index_type, ctx, "index_put_", CTYPE, [&]() {
     const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
-    for (const auto i : c10::irange(leading_dims)) {
-      const char* src = values_data + i * values_dim_length * length_per_step;
-      char* dest = in_data + i * in_dim_length * length_per_step;
-      for (const auto j : c10::irange(values_dim_length)) {
-        const char* copy_src = src + j * length_per_step;
-        char* copy_dest = dest + index_arr[j] * length_per_step;
-        memcpy(copy_dest, copy_src, length_per_step);
+    if (accumulate) {
+      ET_SWITCH_REALHBBF16_TYPES(
+          in.scalar_type(), ctx, "index_put_", VALUE_T, [&]() {
+            const VALUE_T* src = values.const_data_ptr<VALUE_T>();
+            VALUE_T* dest = in.mutable_data_ptr<VALUE_T>();
+            for (const auto i : c10::irange(leading_dims)) {
+              for (const auto j : c10::irange(values_dim_length)) {
+                const size_t src_offset =
+                    (i * values_dim_length + j) * trailing_dims;
+                const size_t dest_offset =
+                    (i * in_dim_length + index_arr[j]) * trailing_dims;
+                for (const auto k : c10::irange(trailing_dims)) {
+                  dest[dest_offset + k] += src[src_offset + k];
+                }
+              }
+            }
+          });
+    } else {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src = values_data + i * values_dim_length * length_per_step;
+        char* dest = in_data + i * in_dim_length * length_per_step;
+        for (const auto j : c10::irange(values_dim_length)) {
+          const char* copy_src = src + j * length_per_step;
+          char* copy_dest = dest + index_arr[j] * length_per_step;
+          memcpy(copy_dest, copy_src, length_per_step);
+        }
       }
     }
   });
