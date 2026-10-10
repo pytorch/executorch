@@ -23,7 +23,8 @@ class TestNestedShaderSources(unittest.TestCase):
             "import pathlib\n"
             "import sys\n"
             "log = pathlib.Path(__file__).with_name('compiler.log')\n"
-            "log.write_text(log.read_text() + 'compile\\n' if log.exists() else 'compile\\n')\n"
+            "with log.open('a') as log_file:\n"
+            "    log_file.write('compile\\n')\n"
             "source = pathlib.Path(sys.argv[2])\n"
             + assertions
             + "output = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])\n"
@@ -93,6 +94,23 @@ class TestNestedShaderSources(unittest.TestCase):
             generator.generateSPV(output_dir, cache_dir, nthreads=1)
 
             self.assertTrue((output_dir / "generated_kernel.glsl").is_file())
+
+    def test_rejects_generated_shader_outside_output_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_root = root / "src"
+            self._write_shader(source_root, str(root / "escaped_kernel"))
+            output_dir = root / "out"
+            cache_dir = root / "cache"
+            output_dir.mkdir()
+            cache_dir.mkdir()
+            compiler, _ = self._write_fake_compiler(root)
+
+            generator = gen_vulkan_spv.SPVGenerator(
+                str(source_root), {}, glslc_path=str(compiler)
+            )
+            with self.assertRaisesRegex(ValueError, "outside output directory"):
+                generator.generateSPV(output_dir, cache_dir, nthreads=1)
 
     def test_local_include_change_recompiles_nested_shader(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
