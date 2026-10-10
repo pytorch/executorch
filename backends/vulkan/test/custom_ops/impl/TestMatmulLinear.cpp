@@ -9,11 +9,12 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCommon.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Linear.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/GemmCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/Linear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/LinearCoopmat.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatMul.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatmulCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace vkcompute {

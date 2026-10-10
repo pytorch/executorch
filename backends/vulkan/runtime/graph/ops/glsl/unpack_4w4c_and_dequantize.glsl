@@ -42,8 +42,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#include "linear_fp_input_tile.glslh"
-#include "linear_int8_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_int8_input_tile.glslh"
 
 void load_packed_int8_tile(
     out Int8InputTile int8_tile,

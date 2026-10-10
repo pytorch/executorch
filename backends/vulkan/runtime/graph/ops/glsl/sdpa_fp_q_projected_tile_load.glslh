@@ -28,7 +28,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
 
 LINEAR_FP_INPUT_TILE_VEC4_T load_q_projected_d4(
     const int d4,

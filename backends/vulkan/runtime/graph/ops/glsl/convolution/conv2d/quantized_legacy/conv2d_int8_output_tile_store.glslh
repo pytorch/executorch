@@ -12,7 +12,7 @@
 #extension GL_EXT_control_flow_attributes : require
 
 #include "conv2d_common.glslh"
-#include "linear_int8_output_tile.glslh"
+#include "gemm/tile_utils/linear_int8_output_tile.glslh"
 
 void store_packed_int8_output_tile(
     const Int8OutTile int8_tile,

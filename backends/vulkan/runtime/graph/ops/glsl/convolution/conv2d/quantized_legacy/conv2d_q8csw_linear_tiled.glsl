@@ -63,12 +63,12 @@ ${layout_declare_spec_const(C, "int", "conv2d_params_logical_K_per_group", "1")}
 ${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
 
 
-#include "linear_fp_input_tile_load.glslh"
-#include "linear_int8_weight_tile_load.glslh"
-#include "linear_fp_weight_scales_load.glslh"
-#include "linear_fp_bias_load.glslh"
-#include "linear_fp_output_tile_fp_int8_compute.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile_load.glslh"
+#include "gemm/tile_utils/linear_int8_weight_tile_load.glslh"
+#include "gemm/tile_utils/linear_fp_weight_scales_load.glslh"
+#include "gemm/tile_utils/linear_fp_bias_load.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_int8_compute.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 #include "conv2d_fp_im2col_block_store.glslh"
 
 void main() {
