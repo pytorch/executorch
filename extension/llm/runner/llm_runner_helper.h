@@ -84,6 +84,28 @@ ET_EXPERIMENTAL std::unordered_set<uint64_t> get_eos_ids(
     Module* module);
 
 /**
+ * @brief Gets the largest number of prompt tokens one prefill call can take
+ *
+ * For the text runner's [1, N] token input: returns `max_seq_len` (the model's
+ * get_max_seq_len), lowered to the upper bound of the method's input 0,
+ * dimension 1, when that bound is smaller. The bound is the size serialized for
+ * a bounded dynamic dimension; if it cannot be read, `max_seq_len` is returned.
+ * export_llm's default KV-cache dynamic shapes in ExecuTorch 1.1 through 1.5
+ * bound that dimension at max_seq_len - 1 while the program publishes
+ * get_max_seq_len = max_seq_len, so prefill chunks sized from the metadata
+ * alone are one token larger than the program accepts.
+ *
+ * @param module The model module
+ * @param method_name The method that runs prefill
+ * @param max_seq_len The model's get_max_seq_len
+ * @return int64_t The prefill chunk size to use
+ */
+ET_EXPERIMENTAL int64_t get_max_prefill_chunk_size(
+    Module* module,
+    const std::string& method_name,
+    int64_t max_seq_len);
+
+/**
  * @brief Creates a TextLLMRunner instance with dependency injection
  *
  * This factory function creates and initializes a TextLLMRunner with all
