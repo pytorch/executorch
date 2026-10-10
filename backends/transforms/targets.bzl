@@ -83,6 +83,18 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_transforms_utils",
+        srcs = ["test/test_transforms_utils.py"],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/backends/test:program_builder",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_fuse_rms_norm",
         srcs = ["test/test_fuse_rms_norm.py"],
         deps = [
@@ -243,6 +255,7 @@ def define_common_targets():
         srcs = ["utils.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
@@ -866,5 +879,305 @@ def define_common_targets():
             ":enforce_contiguous_dim_order",
             ":replace_channels_last_input_clones",
             "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_library(
+        name = "quantize_reorder_utils",
+        srcs = ["quantize_reorder_utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_quant_dequant_to_requantize",
+        srcs = ["fuse_quant_dequant_to_requantize.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir:pass_base",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_alias_copy_op",
+        srcs = ["remove_alias_copy_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_branched_quant_dequant",
+        srcs = ["remove_branched_quant_dequant.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir:pass_base",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_cat_from_slice_copy",
+        srcs = ["remove_cat_from_slice_copy.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_clone_ops_transform_imported",
+        srcs = ["remove_clone_ops_transform_imported.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/passes:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:pass_manager",
+            ":remove_clone_ops",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_nop_expand_op",
+        srcs = ["remove_nop_expand_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_nop_slice_or_view_op",
+        srcs = ["remove_nop_slice_or_view_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_permute_before_mean",
+        srcs = ["remove_permute_before_mean.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_zero_sized_cat_args",
+        srcs = ["remove_zero_sized_cat_args.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "advance_quantize_op_above_def_in_branch",
+        srcs = ["advance_quantize_op_above_def_in_branch.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir:pass_base",
+            ":permute_pass_utils",
+            ":quantize_reorder_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "advance_quantize_op_above_def_chain",
+        srcs = ["advance_quantize_op_above_def_chain.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir:pass_base",
+            ":permute_pass_utils",
+            ":quantize_reorder_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "postpone_dequantize_op_below_use_chain",
+        srcs = ["postpone_dequantize_op_below_use_chain.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:tensor",
+            ":permute_pass_utils",
+            ":quantize_reorder_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "move_permute_after_concat",
+        srcs = ["move_permute_after_concat.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "move_slice_before_permute",
+        srcs = ["move_slice_before_permute.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "move_slice_before_view",
+        srcs = ["move_slice_before_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "propagate_slice",
+        srcs = ["propagate_slice.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "split_dequantized_cat",
+        srcs = ["split_dequantized_cat.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_select_with_view_op",
+        srcs = ["replace_select_with_view_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_split_with_slice",
+        srcs = ["replace_split_with_slice.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/dialects:lib",
+            ":permute_pass_utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "remove_nop_as_strided_copy_op",
+        srcs = ["remove_nop_as_strided_copy_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+            ":permute_pass_utils",
         ],
     )
