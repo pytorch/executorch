@@ -158,9 +158,7 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
         obj_options = flatbuffer_to_option(option)
-        qnn_manager = get_current_qnn_manager(
-            obj_options.backend_options.backend_type, compile_specs
-        )
+        qnn_manager = get_current_qnn_manager(compile_specs)
         qnn_manager.InitContext([DEFAULT_GRAPH_NAME])
         py_op_wrapper_list = QnnBackend._build_op_wrappers(
             edge_program,
@@ -183,104 +181,166 @@ class QnnBackend(BackendDetails):
         qnn_manager.DestroyContext()
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(
-            processed_bytes=bytes(qnn_context_binary),
+            processed_bytes=qnn_context_binary,
             debug_handle_map={},
         )
+
+    @staticmethod
+    def _populate_delegate_mapping(
+        debug_handle_builder: DelegateMappingBuilder,
+        program: ExportedProgram,
+    ):
+        for node in program.graph.nodes:
+            # Skip multi-output nodes: devtools only supports
+            # single-output intermediate capture (len == 1).
+            if (
+                (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
+                and QCOM_TENSOR_NAME in node.meta
+                and len(node.meta[QCOM_TENSOR_NAME]) == 1
+            ):
+                debug_handle_builder.insert_delegate_mapping_entry(
+                    handles=handle_id,
+                    identifier=node.meta[QCOM_TENSOR_NAME][0],
+                )
+
+    @staticmethod
+    def _get_compile_func(qnn_manager: PyQnnManager.QnnManager):
+        def compile_func(graph_names, op_wrapper_list):
+            qnn_manager.InitContext(graph_names)
+            try:
+                qnn_context_binary = qnn_manager.Compile(graph_names, op_wrapper_list)
+            finally:
+                qnn_manager.DestroyContext()
+            return qnn_context_binary
+
+        return compile_func
+
+    @staticmethod
+    def _get_compile_func_fcb(qnn_managers: List[PyQnnManager.QnnManager]):
+        def compile_func(graph_names, op_wrapper_list):
+            with qnn_managers[0].CreateDlc() as dlc_handle:
+                for qnn_manager in qnn_managers:
+                    qnn_manager.InitContext(graph_names)
+                    try:
+                        qnn_manager.CompileToDlc(
+                            graph_names, op_wrapper_list, dlc_handle
+                        )
+                    finally:
+                        qnn_manager.DestroyContext()
+                dlc_binary = bytes(qnn_managers[0].GetDlcBinary(dlc_handle))
+            return dlc_binary
+
+        return compile_func
 
     @staticmethod
     def preprocess_multimethod(  # noqa: C901
         edge_programs: Dict[str, List[ExportedProgram]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
-    ) -> PreprocessResult:
+    ) -> Dict[str, List[PreprocessResult]]:
+        # In `edge_programs: Dict[str, List[ExportedProgram]]`,
+        # `edge_programs[method][i]` is the i-th ExecuTorch partition of one
+        # method. In the QNN graph path, each partition contributes one QNN graph.
+        #
+        # Weight sharing compiles the i-th partitions from all methods into one
+        # multi-graph context binary. For methods x and y:
+        #
+        #   context_binary_0 = compile([x.partition_0, y.partition_0])
+        #   context_binary_1 = compile([x.partition_1, y.partition_1])
+        #   context_binary_2 = compile([x.partition_2, y.partition_2])
+        #
+        # The returned `all_processed_results: Dict[str, List[PreprocessResult]]`
+        # stores `context_binary_i` for every method at partition index i. This
+        # requires every method to have the same number of partitions.
+
         # TODO: refactor QnnManager to consume multiple compile_spec
         # take first compile_specs here for the same partitions
         graph_names = list(edge_programs.keys())
         compile_spec = list(compile_specs.values())[0][0]
         option = flatbuffer_to_option(compile_spec[0].value)
+
+        debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
+
+        is_fcb = option.target_options is not None
+        if is_fcb:
+            qnn_managers = [
+                get_current_qnn_manager(compile_spec, target.soc_info.soc_model)
+                for target in option.target_options.targets
+            ]
+            compile_func = QnnBackend._get_compile_func_fcb(qnn_managers)
+        else:
+            qnn_manager = get_current_qnn_manager(compile_spec)
+            compile_func = QnnBackend._get_compile_func(qnn_manager)
+
+        all_processed_results = {key: [] for key in edge_programs}
+
         # check if each graph has equal number of partitions
-        num_sub_graphs = set()
-        for edge_program in edge_programs.values():
-            num_sub_graphs.add(len(edge_program))
+        num_partitions_per_method = {
+            len(programs) for programs in edge_programs.values()
+        }
         # this constraint is dedicated to weight-sharing scenario
         assert (
-            len(num_sub_graphs) == 1
+            len(num_partitions_per_method) == 1
         ), "Only graphs with the same number of partitions could be used"
+        num_partitions_per_method = next(iter(num_partitions_per_method))
 
-        all_processed_results = {key: [] for key in edge_programs.keys()}
-        num_sub_graphs = next(iter(num_sub_graphs))
-        qnn_manager = get_current_qnn_manager(
-            option.backend_options.backend_type, compile_spec
-        )
-        debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
-        for i in range(num_sub_graphs):
-            # e.g. 2 methods (x, y) with 3 subgraphs(partitions)
-            #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
-            #      > context_binary_1: [x.subgraph_1, y.subgraph_1]
-            #      > context_binary_2: [x.subgraph_2, y.subgraph_2]
-            qnn_manager.InitContext(graph_names)
-            py_op_wrapper_list, ctx_binary_list = [], []
-            for j, programs in enumerate(edge_programs.values()):
-                logger.info(f"Processing Method({j}): ({i+1}/{num_sub_graphs})")
-                py_op_wrappers = QnnBackend._build_op_wrappers(
+        for i in range(num_partitions_per_method):
+            method_to_ith_partition_wrapper = {
+                key: QnnBackend._build_op_wrappers(
                     programs[i],
-                    qnn_manager.IsTensorDump(),
+                    option.dump_intermediate_outputs,
                     option.op_package_options.op_package_infos,
                     option.use_mha2sha,
                     option.backend_options.backend_type,
                 )
-                if qnn_manager.IsTensorDump():
-                    for node in programs[i].graph.nodes:
-                        # Skip multi-output nodes: devtools only supports
-                        # single-output intermediate capture (len == 1).
-                        if (
-                            (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
-                            and QCOM_TENSOR_NAME in node.meta
-                            and len(node.meta[QCOM_TENSOR_NAME]) == 1
-                            and node.op == "call_function"
-                        ):
-                            debug_handle_builder.insert_delegate_mapping_entry(
-                                handles=handle_id,
-                                identifier=node.meta[QCOM_TENSOR_NAME][0],
-                            )
-                if isinstance(py_op_wrappers, bytes):
-                    ctx_binary_list.append(py_op_wrappers)
-                else:
-                    py_op_wrapper_list.append(
-                        [
-                            py_op_wrapper.GetOpWrapper()
-                            for py_op_wrapper in py_op_wrappers
-                        ]
+                for key, programs in edge_programs.items()
+            }
+
+            # QNN preprocessing assigns the final QCOM_TENSOR_NAME metadata used as
+            # delegate identifiers, so build this mapping only after wrappers exist.
+            if option.dump_intermediate_outputs:
+                for edge_program in edge_programs.values():
+                    QnnBackend._populate_delegate_mapping(
+                        debug_handle_builder, edge_program[i]
                     )
-            if len(py_op_wrapper_list) == len(edge_programs.values()):
-                qnn_context_binary = qnn_manager.Compile(
-                    graph_names, py_op_wrapper_list
-                )
+
+            # ensure not mixed
+            wrapper_types = set(map(type, method_to_ith_partition_wrapper.values()))
+            if len(wrapper_types) != 1:
+                raise RuntimeError("Hybrid compilation is not supported")
+            wrapper_type = next(iter(wrapper_types))
+
+            if wrapper_type == bytes:
+                for key, wrapper in method_to_ith_partition_wrapper.items():
+                    all_processed_results[key].append(
+                        PreprocessResult(
+                            processed_bytes=wrapper,
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
+                        )
+                    )
+            elif wrapper_type == list:
+                # List[PyQnnManager.PyQnnOpWrapper]
+                op_wrapper_list = [
+                    [wrapper.GetOpWrapper() for wrapper in wrappers]
+                    for wrappers in method_to_ith_partition_wrapper.values()
+                ]
+                context_binary = compile_func(graph_names, op_wrapper_list)
                 if option.saver:
                     # TODO: Currently, only the first method is saved. Update this logic if saving multiple methods becomes necessary in the future.
                     exit(
                         f"Record all QNN API calls from saver backend at: {option.saver_output_dir}"
                     )
                 assert (
-                    len(qnn_context_binary) != 0
+                    len(context_binary) != 0
                 ), "Failed to generate Qnn context binary."
-                qnn_manager.DestroyContext()
-                # methods should share the same context binary for current partition
-                for key in edge_programs.keys():
+                for key in edge_programs:
                     all_processed_results[key].append(
                         PreprocessResult(
-                            processed_bytes=bytes(qnn_context_binary),
-                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
-                        )
-                    )
-            elif len(ctx_binary_list) == len(edge_programs.values()):
-                for i, key in enumerate(edge_programs.keys()):
-                    all_processed_results[key].append(
-                        PreprocessResult(
-                            processed_bytes=ctx_binary_list[i],
+                            processed_bytes=context_binary,
                             debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )
             else:
-                raise RuntimeError("Hybrid compilation is not supported")
-
+                raise ValueError(
+                    f"Unexpected preprocessing op wrapper type {wrapper_type}"
+                )
         return all_processed_results

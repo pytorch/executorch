@@ -334,6 +334,22 @@ table QnnExecuTorchBackendOptions {
   lpai_options:QnnExecuTorchLpaiBackendOptions;
 }
 
+/// Backend configurations to use for one SoC target.
+/// Currently we support exactly one backend_option per target.
+table QnnExecuTorchTarget {
+  soc_info:SocInfo;
+  backend_options:[QnnExecuTorchBackendOptions];
+}
+
+/// target options (support multi-SoC).
+table QnnExecuTorchTargetOptions {
+  /// One backend-configuration group per SoC.
+  targets:[QnnExecuTorchTarget];
+
+  /// Enable host-AOT reference-weight sharing while appending FCB contexts.
+  fcb_reference_weight_sharing:bool = true;
+}
+
 table QnnExecuTorchOptions {
   /// Specify SoC to compile or execute for.
   soc_info:SocInfo;
@@ -374,6 +390,9 @@ table QnnExecuTorchOptions {
 
   /// This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
   use_mha2sha:bool;
+
+  /// Emit a multi-SoC DLC instead of one device context binary.
+  target_options:QnnExecuTorchTargetOptions;
 }
 
 root_type QnnExecuTorchOptions;
