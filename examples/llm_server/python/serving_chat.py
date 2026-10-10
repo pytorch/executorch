@@ -9,10 +9,12 @@ template, parses tool calls, and formats OpenAI responses. It owns no model or
 session state -- generation goes through SessionRuntime, and the token-ID warm-
 resume transcript lives in OpenAITranscriptState."""
 
+import asyncio
 import json
 import logging
 import math
-from typing import AsyncIterator, Callable, Optional
+from contextlib import aclosing
+from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
 from .errors import (
@@ -38,7 +40,13 @@ from .protocol import (
     ToolCall,
     Usage,
 )
-from .session_runtime import GenerationOptions, GenStats, PromptInput, SessionRuntime
+from .session_runtime import (
+    _SessionLocks,
+    GenerationOptions,
+    GenStats,
+    PromptInput,
+    SessionRuntime,
+)
 from .tool_parsers import HermesDetector, ToolCallItem
 from .worker_client import WorkerError
 
@@ -57,6 +65,71 @@ def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
     return best
 
 
+class _ChatStream:
+    """Own the transaction even when an HTTP stream is closed before first read."""
+
+    def __init__(self, stream, lease, generation):
+        self._stream = stream
+        self._lease = lease
+        self._generation = generation
+        self._reader = None
+        self._read_done = None
+        self._close_task = None
+        self._closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._closed:
+            raise StopAsyncIteration
+        if self._reader is not None:
+            raise RuntimeError("chat stream already has an active reader")
+        self._reader = asyncio.current_task()
+        self._read_done = asyncio.get_running_loop().create_future()
+        try:
+            try:
+                return await self._stream.__anext__()
+            finally:
+                self._reader = None
+                self._read_done.set_result(None)
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def _close(self):
+        if self._reader is not None:
+            self._reader.cancel()
+            await SessionRuntime._finish_cleanup(self._read_done)
+        try:
+            await self._stream.aclose()
+        finally:
+            try:
+                await self._generation.aclose()
+            finally:
+                await self._lease.__aexit__(None, None, None)
+
+    async def aclose(self):
+        self._closed = True
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close())
+        await SessionRuntime._finish_cleanup(self._close_task)
+
+
+class StreamingResponseParser(Protocol):
+    """Request-local, append-only content/reasoning parser; no SSE or tool state.
+
+    For parsed streams, replaces buffered reasoning extraction and content cleanup
+    (content_filter and _strip_specials). Raw stop-string handling still runs
+    before feed(). finish() runs only at successful logical EOF, including length
+    exhaustion and a drained stop, not on error, cancellation, or early close.
+    """
+
+    def feed(self, text: str) -> Iterable[DeltaMessage]: ...
+
+    def finish(self) -> Iterable[DeltaMessage]: ...
+
+
 class ServingChat:
     def __init__(
         self,
@@ -71,6 +144,9 @@ class ServingChat:
         reasoning_extractor: Optional[
             Callable[[str], tuple[Optional[str], str]]
         ] = None,
+        streaming_parser_factory: Optional[
+            Callable[[], StreamingResponseParser]
+        ] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -79,6 +155,7 @@ class ServingChat:
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
+        self._streaming_parser_factory = streaming_parser_factory
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -101,6 +178,10 @@ class ServingChat:
         # not runtime; kept in lockstep with the worker's session state by
         # clearing both on reset/close.
         self._transcript = OpenAITranscriptState(template)
+        self._multiplexed = getattr(runtime, "supports_multiplexing", False) is True
+        self._transactions = _SessionLocks(
+            runtime.max_concurrent_requests if self._multiplexed else None
+        )
 
     @property
     def healthy(self) -> bool:
@@ -175,6 +256,17 @@ class ServingChat:
         boundary is neither parsed nor emitted."""
         return self._apply_stop(text, self._stops + self._request_stops(req))
 
+    def _cancel_generation(self, generation: AsyncIterator[str]) -> None:
+        cancel = getattr(generation, "cancel", None)
+        if callable(cancel):
+            cancel()
+        elif not self._multiplexed:
+            self._runtime.stop()
+        else:
+            raise WorkerError(
+                "multiplexed runtime requires request-scoped cancellation"
+            )
+
     async def _collect_until_stop(self, stream: AsyncIterator[str], stops: list[str]):
         """Accumulate a buffered (non-streamed) generation into one string,
         halting the runtime early once a stop string (special token or request
@@ -187,7 +279,7 @@ class ServingChat:
             text += tok
             if stops and _earliest_stop(text, stops) is not None:
                 stopped = True
-                self._runtime.stop()
+                self._cancel_generation(stream)
                 async for _ in stream:  # drain so stats_cb fires
                     pass
                 break
@@ -294,35 +386,69 @@ class ServingChat:
         if not all(0x21 <= ord(c) <= 0x7E for c in session_id):
             raise InvalidSessionId("must be printable ASCII with no spaces")
 
+    @staticmethod
+    def _generation_error(error: Exception) -> APIError:
+        if isinstance(error, WorkerError):
+            if error.code in ("capacity_exhausted", "unsupported_session"):
+                return SessionCapacity(error.code)
+            if error.code is not None:
+                status = {
+                    "session_not_found": 404,
+                    "session_busy": 409,
+                    "not_ready": 503,
+                    "invalid_argument": 400,
+                }.get(error.code, 500)
+                return APIError(
+                    status,
+                    f"Generation failed: {error}",
+                    "invalid_request_error" if status < 500 else "server_error",
+                    error.code,
+                )
+        return GenerationError(str(error))
+
     async def _preflight_session(self, session_id: str) -> None:
         """Reserve the session before any response bytes are emitted so a
         capacity refusal becomes an HTTP status, not an SSE error event."""
         try:
             await self._runtime.open(session_id)
         except WorkerError as e:
-            if e.code in ("capacity_exhausted", "unsupported_session"):
-                raise SessionCapacity(e.code)
-            raise GenerationError(str(e))
+            raise self._generation_error(e)
 
     async def close_session(self, session_id: str) -> None:
-        # Lockstep: do the fallible worker op FIRST, then clear the (best-effort,
-        # can't-fail) transcript. If the worker op fails both retain old state,
-        # so they never drift.
         self._validate_session_id(session_id)
         try:
-            await self._runtime.close(session_id)
+            async with self._transactions.hold(session_id):
+                try:
+                    await self._runtime.close(session_id)
+                except BaseException:
+                    if self._multiplexed:
+                        self._transcript.close(session_id)
+                    raise
+                self._transcript.close(session_id)
         except WorkerError as e:
-            raise GenerationError(str(e))
-        self._transcript.close(session_id)
+            raise self._generation_error(e)
 
     async def reset_session(self, session_id: str) -> None:
-        # Lockstep: worker op first (fallible), then clear the transcript.
         self._validate_session_id(session_id)
         try:
-            await self._runtime.reset(session_id)
+            async with self._transactions.hold(session_id):
+                try:
+                    await self._runtime.reset(session_id)
+                except BaseException as error:
+                    missing = (
+                        isinstance(error, WorkerError)
+                        and error.code == "session_not_found"
+                    )
+                    # Missing native state is already reset at the HTTP boundary.
+                    # A failed cold replacement does not restore the old state.
+                    if self._multiplexed or missing:
+                        self._transcript.reset(session_id)
+                    if not missing:
+                        raise
+                else:
+                    self._transcript.reset(session_id)
         except WorkerError as e:
-            raise GenerationError(str(e))
-        self._transcript.reset(session_id)
+            raise self._generation_error(e)
 
     def _finish_reason(
         self,
@@ -463,6 +589,24 @@ class ServingChat:
         return total
 
     async def create(self, req: ChatCompletionRequest):
+        if req.session_id is not None:
+            self._validate_session_id(req.session_id)
+        lease = self._transactions.hold(req.session_id)
+        entered = False
+        try:
+            await lease.__aenter__()
+            entered = True
+            result = await self._create(req, lease)
+            if req.stream:
+                entered = False  # The returned iterator owns the transaction.
+            return result
+        except WorkerError as error:
+            raise self._generation_error(error)
+        finally:
+            if entered:
+                await lease.__aexit__(None, None, None)
+
+    async def _create(self, req: ChatCompletionRequest, lease):
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -519,12 +663,29 @@ class ServingChat:
         preamble = self._template.generation_preamble(
             template_kwargs, tools=template_tools
         )
-        # Admit the session up front (before the stream's first chunk) so a
-        # capacity refusal is an HTTP status, not a mid-stream error event.
-        if req.session_id is not None:
+        return await self._create_response(
+            req, prompt_input, options, preamble, gen_stops, lease
+        )
+
+    async def _create_response(
+        self, req, prompt_input, options, preamble, gen_stops, lease
+    ):
+        # Legacy workers need explicit admission. Multiplexed generation opens
+        # implicitly from its full prompt, preserving new-session prefix reuse.
+        if req.session_id is not None and not self._multiplexed:
             await self._preflight_session(req.session_id)
         if req.stream:
-            return self._stream(req, prompt_input, options, preamble, gen_stops)
+            stats = GenStats()
+            generation = self._runtime.generate_stream(
+                req.session_id, prompt_input, options, stats
+            )
+            if self._multiplexed:
+                await generation.wait_ready()
+            return _ChatStream(
+                self._stream(req, preamble, gen_stops, generation, stats),
+                lease,
+                generation,
+            )
         return await self._complete(req, prompt_input, options, preamble, gen_stops)
 
     async def _complete(
@@ -547,12 +708,12 @@ class ServingChat:
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
-            text, stopped = await self._collect_until_stop(
-                self._runtime.generate_stream(req.session_id, prompt, options, stats),
-                stops,
-            )
+            async with aclosing(
+                self._runtime.generate_stream(req.session_id, prompt, options, stats)
+            ) as generation:
+                text, stopped = await self._collect_until_stop(generation, stops)
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
-            raise GenerationError(str(e))
+            raise self._generation_error(e)
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, reasoning, content = self._extract_response(
@@ -596,18 +757,12 @@ class ServingChat:
 
     async def _stream_plain_content(
         self,
-        req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        stats: GenStats,
+        generation: AsyncIterator[str],
         stops: list[str],
         stop_hit: list[bool],
     ) -> AsyncIterator[str]:
         if self._content_filter is not None:
-            raw, stop_hit[0] = await self._collect_until_stop(
-                self._runtime.generate_stream(req.session_id, prompt, options, stats),
-                stops,
-            )
+            raw, stop_hit[0] = await self._collect_until_stop(generation, stops)
             content = self._visible_content(self._apply_stop(raw, stops))
             if content:
                 yield content
@@ -615,14 +770,48 @@ class ServingChat:
 
         def on_stop():
             stop_hit[0] = True
-            self._runtime.stop()
+            self._cancel_generation(generation)
 
         async for token in self._clean(
-            self._runtime.generate_stream(req.session_id, prompt, options, stats),
+            generation,
             stops,
             on_stop=on_stop,
         ):
             yield token
+
+    async def _stream_content_deltas(
+        self,
+        req: ChatCompletionRequest,
+        generation: AsyncIterator[str],
+        stops: list[str],
+        stop_hit: list[bool],
+    ) -> AsyncIterator[DeltaMessage]:
+        if self._streaming_parser_factory is None:
+            async for text in self._stream_plain_content(generation, stops, stop_hit):
+                yield DeltaMessage(content=text)
+            return
+        parser = self._streaming_parser_factory()
+        return_reasoning = self._return_reasoning(req)
+
+        def on_stop():
+            stop_hit[0] = True
+            self._cancel_generation(generation)
+
+        async def parsed():
+            async for text in self._clean(generation, stops, on_stop=on_stop):
+                for delta in parser.feed(text):
+                    yield delta
+            # Finalize only a successful logical EOF, including a drained stop.
+            for delta in parser.finish():
+                yield delta
+
+        async for delta in parsed():
+            visible = DeltaMessage(
+                content=delta.content,
+                reasoning_content=delta.reasoning_content if return_reasoning else None,
+            )
+            if visible.content or visible.reasoning_content:
+                yield visible
 
     async def _stream_final_chunks(
         self,
@@ -663,10 +852,10 @@ class ServingChat:
     async def _stream(
         self,
         req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        preamble: str = "",
-        gen_stops: Optional[list[str]] = None,
+        preamble: str,
+        stops: list[str],
+        generation: AsyncIterator[str],
+        stats: GenStats,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -685,35 +874,28 @@ class ServingChat:
         reasoning = None
         content = None
 
-        stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         # Per-path stop set from create(): for plain chat this includes the broad
         # content specials, so _clean cuts a leaked special out of the stream (and
         # the worker, given the same set, halts + omits ids -> non-resumable turn).
-        stops = (
-            gen_stops
-            if gen_stops is not None
-            else self._stops + self._request_stops(req)
-        )
         try:
             if use_tools:
                 # Buffer the (usually short) tool response, parse once.
                 # Halt early at a stop boundary, and bound the raw output
                 # BEFORE parsing so post-stop tool calls / text don't leak.
                 raw, stop_hit[0] = await self._collect_until_stop(
-                    self._runtime.generate_stream(
-                        req.session_id, prompt, options, stats
-                    ),
+                    generation,
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
                     req, self._truncate_raw(raw, req)
                 )
-            elif self._reasoning_extractor is not None:
+            elif (
+                self._reasoning_extractor is not None
+                and self._streaming_parser_factory is None
+            ):
                 raw, stop_hit[0] = await self._collect_until_stop(
-                    self._runtime.generate_stream(
-                        req.session_id, prompt, options, stats
-                    ),
+                    generation,
                     stops,
                 )
                 tool_calls, reasoning, content = self._extract_response(
@@ -724,25 +906,25 @@ class ServingChat:
                 if content:
                     yield chunk(DeltaMessage(content=content))
             else:
-                streamed: list[str] = []
-                async for token in self._stream_plain_content(
-                    req, prompt, options, stats, stops, stop_hit
+                content_parts, reasoning_parts = [], []
+                async for delta in self._stream_content_deltas(
+                    req, generation, stops, stop_hit
                 ):
-                    streamed.append(token)
-                    yield chunk(DeltaMessage(content=token))
-                content = "".join(streamed)  # for the session fingerprint
+                    content_parts.append(delta.content or "")
+                    reasoning_parts.append(delta.reasoning_content or "")
+                    yield chunk(delta)
+                content = "".join(content_parts)  # for the session fingerprint
+                reasoning = "".join(reasoning_parts) or None
         except (
             Exception
         ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket
             error = e
+        finally:
+            await generation.aclose()
 
         if error is not None:
-            err = {
-                "message": f"Generation failed: {error}",
-                "type": "server_error",
-                "code": None,
-            }
-            yield f"data: {json.dumps({'error': err})}\n\n"
+            err = self._generation_error(error).body()
+            yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
             return
         self._transcript.record_assistant_turn(

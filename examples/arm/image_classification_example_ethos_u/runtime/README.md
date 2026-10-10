@@ -8,8 +8,10 @@
 $ cmake --preset arm-baremetal \
 -DCMAKE_BUILD_TYPE=Release \
 -B../../cmake-out-arm ../..
-cmake --build ../../cmake-out-arm --target install -j$(nproc)
+cmake --build ../../cmake-out-arm --target install
 ```
+
+Adding `-j<N>` to `cmake --build` runs `<N>` jobs in parallel and tends to speed up the build significantly.
 
 3. Set up the build system. You need to provide path to the DEiT-Tiny pte generated in the
 `examples/arm/image_classification_example_ethos_u/model_export` folder. You also need to provide an image of a dog or cat, you can download such image from the [HuggingFace Oxford iiit pet dataset](https://huggingface.co/datasets/timm/oxford-iiit-pet).
@@ -21,7 +23,7 @@ $ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/ethos-u-setup/arm-none-eabi-gcc.cmake -DET
 4. Compile the application.
 
 ```
-$ cmake --build simple_app_deit_tiny -j$(nproc) -- img_class_example
+$ cmake --build simple_app_deit_tiny -- img_class_example
 ```
 
 5. Deploy the application on the Corstone-320 Fixed Virtual Platform. Assuming you have the Corstone-320 installed on your path, do the following command to deploy the application.
