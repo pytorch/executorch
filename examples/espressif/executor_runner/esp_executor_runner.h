@@ -58,6 +58,8 @@ bool et_runner_set_input(size_t input_idx, const void* data, size_t num_bytes);
  * et_runner_set_input() before each call: execution may reuse their storage for
  * intermediate tensors. Results are available via et_runner_get_output() after
  * this call returns successfully.
+ * When tracing is enabled, only the latest inference's trace and debug outputs
+ * are retained.
  *
  * @returns true on success, false on failure.
  */
