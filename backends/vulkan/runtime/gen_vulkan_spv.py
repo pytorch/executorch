@@ -1094,11 +1094,16 @@ class SPVGenerator:
             include_dir = os.path.dirname(gen_file_path)
             include_dirs = [include_dir]
             while include_dir != output_dir:
-                include_dir = os.path.dirname(include_dir)
+                parent_dir = os.path.dirname(include_dir)
+                if parent_dir == include_dir:
+                    raise ValueError(
+                        f"{gen_file_path} is outside output directory {output_dir}"
+                    )
+                include_dir = parent_dir
                 include_dirs.append(include_dir)
             return include_dirs
 
-        def any_sources_changed(gen_file_path, output_dir, visited=None):
+        def any_sources_changed(gen_file_path, visited=None):
             """
             Given the path to a generated source file, check the gen_file_meta dict to
             determine if the ANY of the source files contributing to the compilation of
@@ -1126,7 +1131,7 @@ class SPVGenerator:
                     # Untracked includes must disable the cache.
                     candidate_paths[-1],
                 )
-                if any_sources_changed(included_file_path, output_dir, visited):
+                if any_sources_changed(included_file_path, visited):
                     return True
 
             return False
@@ -1254,7 +1259,7 @@ class SPVGenerator:
                 # in the cache.
                 cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
 
-                can_use_cached = not any_sources_changed(gen_out_path, output_dir)
+                can_use_cached = not any_sources_changed(gen_out_path)
                 if can_use_cached and os.path.exists(cached_spv_out_path):
                     shutil.copyfile(cached_spv_out_path, spv_out_path)
                     return (spv_out_path, gen_out_path)
