@@ -117,7 +117,9 @@ class MobileBertFinetune:
 
         return data_loader
 
-    def get_finetune_mobilebert(self, artifacts_dir, batch_size=64):
+    def get_finetune_mobilebert(
+        self, artifacts_dir, batch_size=64, max_train_samples=None, learning_rate=1e-5
+    ):
         # Pretrained bert's output ranges in a large scale. It is challenge for enn backend to support directly.
         # Please finetune mobilebert on specific tasks, make sure that bert's output and hidden states are friendly
         # to resource-constraint device.
@@ -136,6 +138,12 @@ class MobileBertFinetune:
             BytesIO(content), delimiter="\t", header=None, names=["text", "label"]
         )
         labels_set = train_data.label.unique()
+        if max_train_samples is not None:
+            if max_train_samples <= 0:
+                raise ValueError("max_train_samples must be positive")
+            train_data = train_data.sample(
+                n=min(max_train_samples, len(train_data)), random_state=51
+            )
 
         train_data_loader = self.build_loader_from_dataset(
             train_data, batch_size=batch_size, usage="train"
@@ -173,7 +181,7 @@ class MobileBertFinetune:
         num_epochs = 5
         num_train_steps = len(train_data_loader) * num_epochs
 
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
         scheduler = get_linear_schedule_with_warmup(
             optimizer, num_warmup_steps=0, num_training_steps=num_train_steps
         )
