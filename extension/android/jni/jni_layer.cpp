@@ -84,10 +84,9 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
         0, tensor_shape_vec.size(), tensor_shape_vec.data());
 
     static auto cls = TensorHybrid::javaClassStatic();
-    // Note: this is safe as long as the data stored in tensor is valid; the
-    // data won't go out of scope as long as the Method for the inference is
-    // valid and there is no other inference call. Java layer picks up this
-    // value immediately so the data is valid.
+    // The Java tensor aliases this memory without a copy. For Module outputs,
+    // Module.kt rejects reads once the method runs again or the module is
+    // destroyed.
     facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
         facebook::jni::JByteBuffer::wrapBytes(
             (uint8_t*)tensor.data_ptr(), tensor.nbytes());

@@ -169,6 +169,58 @@ class ModuleInstrumentationTest {
     module.destroy()
   }
 
+  // --- Output lifetime tests ---
+
+  @Test
+  @Throws(IOException::class)
+  fun testOutputValidUntilMethodRunsAgain() {
+    val module = loadAddModule()
+    try {
+      val first = runAdd(module, addX, addY)
+      Assert.assertArrayEquals(floatArrayOf(6f, 8f, 10f, 12f), first.dataAsFloatArray, 0f)
+
+      val second = runAdd(module, addY, addY)
+      Assert.assertThrows(IllegalStateException::class.java) { first.dataAsFloatArray }
+      Assert.assertArrayEquals(floatArrayOf(10f, 12f, 14f, 16f), second.dataAsFloatArray, 0f)
+    } finally {
+      module.destroy()
+    }
+  }
+
+  @Test
+  @Throws(IOException::class)
+  fun testOutputInvalidAfterDestroy() {
+    val module = loadAddModule()
+    val output = runAdd(module, addX, addY)
+    module.destroy()
+    Assert.assertThrows(IllegalStateException::class.java) { output.dataAsFloatArray }
+  }
+
+  @Test
+  @Throws(IOException::class)
+  fun testOutputCanBePassedBackAsInput() {
+    val module = loadAddModule()
+    try {
+      val first = runAdd(module, addX, addY)
+      val second = runAdd(module, first, addY)
+      Assert.assertArrayEquals(floatArrayOf(11f, 14f, 17f, 20f), second.dataAsFloatArray, 0f)
+    } finally {
+      module.destroy()
+    }
+  }
+
+  private fun loadAddModule(): Module {
+    val pteFile = File(getTestFilePath(ADD_FILE_NAME))
+    javaClass.getResourceAsStream(ADD_FILE_NAME)!!.use {
+      FileUtils.copyInputStreamToFile(it, pteFile)
+    }
+    return Module.load(pteFile.absolutePath)
+  }
+
+  // ModuleAdd computes torch.add(x, y, alpha=alpha).
+  private fun runAdd(module: Module, x: Tensor, y: Tensor): Tensor =
+      module.forward(EValue.from(x), EValue.from(y), EValue.from(1.0))[0].toTensor()
+
   // --- Load mode tests ---
 
   @Test
@@ -303,12 +355,15 @@ class ModuleInstrumentationTest {
 
   companion object {
     private const val TEST_FILE_NAME = "/mobilenet_v2.pte"
+    private const val ADD_FILE_NAME = "/ModuleAdd.pte"
     private const val MISSING_FILE_NAME = "/missing.pte"
     private const val NON_PTE_FILE_NAME = "/test.txt"
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
     private val inputShape = longArrayOf(1, 3, 224, 224)
     private val expectedOutputShape = longArrayOf(1, 1000)
+    private val addX = Tensor.fromBlob(floatArrayOf(1f, 2f, 3f, 4f), longArrayOf(2, 2))
+    private val addY = Tensor.fromBlob(floatArrayOf(5f, 6f, 7f, 8f), longArrayOf(2, 2))
 
     private fun dummyInput(): Tensor = Tensor.ones(inputShape, DType.FLOAT)
 
