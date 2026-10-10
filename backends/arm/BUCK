@@ -110,6 +110,7 @@ fbcode_target(
         "vgf/model_converter.py",
         "vgf/quantization_quality.py",
         "vgf/quantization_assessment.py",
+        "vgf/quantization_sensitivity.py",
         "vgf/quantization_visualization.py",
         "vgf/partitioner.py",
         "vgf/shaders/__init__.py",
