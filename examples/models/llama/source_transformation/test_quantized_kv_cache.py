@@ -124,3 +124,80 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self._test_simple_update_fetch(
             is_dynamic_shape=True, use_custom_update_cache_op=True
         )
+
+    def _test_update_with_non_float32_activation_dtype(
+        self, dtype, use_custom_update_cache_op
+    ):
+        """QuantizedKVCache stores int8 data internally but always dequantizes
+        back to a hardcoded `cache_fp_type` (float32), regardless of the dtype
+        of the live k/v activations it's updated with (`cache_fp_type` is not
+        parameterized by, and does not track, the model's actual compute
+        dtype). When those activations are bfloat16/float16 (the common case
+        for on-device LLM inference, which is the whole point of
+        ExecuTorch), `QuantizedKVCache.update()` must not crash and must
+        return values consistent with the un-quantized reference cache,
+        exactly as it already does for float32 activations in
+        `_test_simple_update_fetch` above.
+        """
+        max_batch_size, max_context_len, n_kv_heads, head_dim = 1, 5, 8, 17
+        kv_cache = KVCache(
+            max_batch_size,
+            max_context_len,
+            n_kv_heads,
+            head_dim,
+            False,
+            dtype=dtype,
+        )
+        quantized_kv_cache = QuantizedKVCache.from_float(
+            kv_cache,
+            QuantizedCacheType.AffineAsymmetric,
+            use_custom_update_cache_op,
+        )
+
+        input_pos = torch.tensor([0, 1, 2])
+        shape = (max_batch_size, n_kv_heads, input_pos.size(0), head_dim)
+        k = torch.rand(shape, dtype=dtype)
+        v = torch.rand(shape, dtype=dtype)
+
+        updated_dequantized_k_cache, updated_dequantized_v_cache = (
+            quantized_kv_cache.update(input_pos, k, v)
+        )
+
+        # Reference: un-quantized cache update, same dtype.
+        updated_k_cache, updated_v_cache = kv_cache.update(input_pos, k, v)
+
+        def index(t, positions):
+            return t[:, :, positions, :]
+
+        torch.testing.assert_close(
+            index(updated_k_cache, input_pos).float(),
+            index(updated_dequantized_k_cache, input_pos).float(),
+            rtol=1e-02,
+            atol=1e-02,
+        )
+        torch.testing.assert_close(
+            index(updated_v_cache, input_pos).float(),
+            index(updated_dequantized_v_cache, input_pos).float(),
+            rtol=1e-02,
+            atol=1e-02,
+        )
+
+    def test_update_bfloat16_activation(self):
+        self._test_update_with_non_float32_activation_dtype(
+            torch.bfloat16, use_custom_update_cache_op=False
+        )
+
+    def test_update_bfloat16_activation_use_custom_op(self):
+        self._test_update_with_non_float32_activation_dtype(
+            torch.bfloat16, use_custom_update_cache_op=True
+        )
+
+    def test_update_float16_activation(self):
+        self._test_update_with_non_float32_activation_dtype(
+            torch.float16, use_custom_update_cache_op=False
+        )
+
+    def test_update_float16_activation_use_custom_op(self):
+        self._test_update_with_non_float32_activation_dtype(
+            torch.float16, use_custom_update_cache_op=True
+        )
