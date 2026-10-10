@@ -1227,7 +1227,8 @@ def _minimal_dependencies() -> List[str]:
 
     Derived as the subset of _base_dependencies() that executorch.exir needs to
     lower and serialize a .pte, so version pins and markers stay in sync with the
-    full set. torch is intentionally absent from both (consumers bring their own).
+    full set. torch is intentionally absent, as it is from a nightly full wheel
+    (consumers bring their own); only a release full wheel declares it.
     mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
     "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
     set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.
@@ -1256,6 +1257,17 @@ def _minimal_dependencies() -> List[str]:
     unmatched = keep - {_name(dep) for dep in minimal}
     assert not unmatched, f"minimal keep-set names not found in base deps: {unmatched}"
     return minimal
+
+
+def _torch_dependencies() -> List[str]:
+    """The torch requirement of a release wheel, or nothing for any other build.
+
+    Reads the BUILD_VERSION environment variable rather than Version.string(), which adds the git
+    hash to the version from version.txt when it is unset and so makes a local build look like a
+    release.
+    """
+    requirement = install_utils.release_torch_requirement(os.getenv("BUILD_VERSION"))
+    return [requirement] if requirement else []
 
 
 class Version:
@@ -2990,8 +3002,11 @@ if _is_minimal_build():
 else:
     setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
-    # carry it are declared here. A CPU wheel adds nothing.
-    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
+    # carry it are declared here. A CPU wheel adds none of these. A release of either
+    # kind also declares the torch it was built against.
+    setup_kwargs["install_requires"] = (
+        _base_dependencies() + _cuda_dependencies() + _torch_dependencies()
+    )
 
 
 setup(

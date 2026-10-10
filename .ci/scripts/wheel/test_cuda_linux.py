@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Set
 
 import test_base
+import test_clean_install
 import test_cpp_sdk
 import test_shared_libraries
 from examples.models import Backend, Model
@@ -585,6 +586,7 @@ if __name__ == "__main__":
 
     test_cuda_libraries_are_shipped()
     test_cuda_runtime_is_declared()
+    test_clean_install.test_release_declares_torch()
     test_cuda_libraries_resolve_relatively()
     test_device_code_covers_the_row()
     test_portable_device_code_is_present()

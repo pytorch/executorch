@@ -17,10 +17,11 @@ The following are required to install the ExecuTorch host libraries, needed to e
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package. Consider installing it within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
 
-Install PyTorch in the same command. The ExecuTorch package does not declare it
-as a dependency, because the build you need depends on your hardware, so pip
-cannot choose one for you. Installing ExecuTorch on its own gives an environment
-where exporting a model stops with `No module named 'torch'`.
+Install PyTorch in the same command. A release of ExecuTorch declares the
+PyTorch versions it works with, but not which build of PyTorch to use, because
+that depends on your hardware. Nightly builds of ExecuTorch declare no PyTorch
+at all, so installing one on its own gives an environment where exporting a model
+stops with `No module named 'torch'`.
 
 Both packages come from the same package index. Find your machine in the table
 below and put the name from it in place of `<variant>`:
