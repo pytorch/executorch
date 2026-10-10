@@ -83,7 +83,7 @@ For a complete working example, see the [CUDA export script](https://github.com/
 
 ## Runtime Integration
 
-To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information.
+To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](../../getting-started.md#running-on-device) for more information.
 
 When building from source, pass `-DEXECUTORCH_BUILD_CUDA=ON` when configuring the CMake build to compile the CUDA backend.
 
