@@ -9363,7 +9363,6 @@ class TestExampleLLMScript(TestQNN):
                 "1024",
                 "--max_context_len",
                 "1024",
-                "--skip_user_prompt_calibration",
                 "--soc_model",
                 self.soc_model,
                 "--target",
