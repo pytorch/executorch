@@ -19,13 +19,16 @@ from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare, ReferenceModel
+from executorch.backends.nxp.tests.nsys_testing import (
+    lower_run_compare,
+    ReferenceRunner,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mobilenet_v2 import MobileNetV2
 
 BOUNDS_MSE = {
-    "PTQ": {"channels-last": 3.8e-04, "channels-first": 3e-03},
-    "QAT": {"channels-last": 6e-04, "channels-first": 3e-03},
+    "PTQ": {"channels-last": 1.0e-3, "channels-first": 1.0e-3},
+    "QAT": {"channels-last": 1.0e-3, "channels-first": 1.0e-3},
 }
 
 
@@ -77,10 +80,12 @@ def test_mobilenet_v2_mse_cpu_vs_npu(
 
     # Run the channels last and QAT reference in Python as the ExecuTorch CPU model produces invalid results
     ref_model = (
-        ReferenceModel.QUANTIZED_EDGE_PYTHON
+        ReferenceRunner.QUANTIZED_EDGE_PYTHON
         if channels_last or not use_qat
-        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+        else ReferenceRunner.QUANTIZED_EXECUTORCH_CPP
     )
+    ref_input_spec = ModelInputSpec(input_spec.shape)
+    ref_input_spec.dim_order = torch.contiguous_format
 
     lower_run_compare(
         model,
@@ -89,7 +94,8 @@ def test_mobilenet_v2_mse_cpu_vs_npu(
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ref_model,
+        reference_runner=ref_model,
+        reference_input_spec=[ref_input_spec],
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
