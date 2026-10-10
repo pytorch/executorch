@@ -142,7 +142,7 @@ def test_empty_pass_list_reports_no_change():
         manager.transform()
 
 
-def test_empty_pass_list_still_lifts_constants():
+def test_empty_pass_list_preserves_unlifted_constants():
     class AddConstant(ExportPass):
         def call_operator(self, op, args, kwargs, meta):
             result = super().call_operator(op, args, kwargs, meta)
@@ -159,9 +159,10 @@ def test_empty_pass_list_still_lifts_constants():
     assert any(node.op == "get_attr" for node in program.graph.nodes)
 
     result = CortexMPassManager(passes=[])(program)
-    assert result.modified
-    lowered = result.exported_program
-    lowered.validate()
-    assert all(node.op != "get_attr" for node in lowered.graph.nodes)
-    assert len(lowered.graph_signature.buffers) == 1
-    torch.testing.assert_close(lowered.module()(*inputs), torch.tensor([2.0, 4.0]))
+    assert not result.modified
+    assert result.exported_program.graph is program.graph
+    assert result.exported_program.graph_signature is program.graph_signature
+    program.validate()
+    assert any(node.op == "get_attr" for node in program.graph.nodes)
+    assert not program.graph_signature.buffers
+    torch.testing.assert_close(program.module()(*inputs), torch.tensor([2.0, 4.0]))

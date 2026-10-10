@@ -37,20 +37,19 @@ Tensor& mean_dim_out(
       out);
 
   ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
-
-  ET_KERNEL_CHECK(
       ctx,
       resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
       InvalidArgument,
       out);
 
+  const bool out_is_contiguous =
+      is_contiguous_dim_order(out.dim_order().data(), out.dim());
+
   // Fast path: contiguous tensor, single innermost dim reduction, same dtype.
   // Bypasses generic MapReduceOverDimListPlan to use a tight vectorizable loop.
   if (in.numel() > 0 && dim_list.has_value() && dim_list.value().size() == 1 &&
-      in.scalar_type() == out.scalar_type()) {
+      in.scalar_type() == out.scalar_type() && out_is_contiguous &&
+      is_contiguous_dim_order(in.dim_order().data(), in.dim())) {
     const int64_t d = dim_list.value()[0] < 0 ? dim_list.value()[0] + in.dim()
                                               : dim_list.value()[0];
     if (d >= 0 && d < in.dim() && d == in.dim() - 1 &&
@@ -109,7 +108,17 @@ Tensor& mean_dim_out(
                     [](ACC outv, ACC acc) { return acc + outv; },
                     out_ix);
               }
-              out_data[out_ix] =
+              // The reduction plan indexes outputs in logical dimension order.
+              size_t out_offset = out_ix;
+              if (!out_is_contiguous) {
+                out_offset = 0;
+                size_t ix = out_ix;
+                for (int64_t d = out.dim() - 1; d >= 0; --d) {
+                  out_offset += (ix % out.size(d)) * out.strides()[d];
+                  ix /= out.size(d);
+                }
+              }
+              out_data[out_offset] =
                   static_cast<CTYPE_OUT>(sum / static_cast<float>(num));
             }
           });
