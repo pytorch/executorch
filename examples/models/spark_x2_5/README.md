@@ -13,7 +13,28 @@
 
 Spark-X2.5 uses the same export pipeline as the optimized Llama model. Please see the [Llama README](../llama/README.md) for general runner and mobile-app details.
 
+Pre-exported ExecuTorch MLX artifacts for Spark-X2.5 1.7B and 4B are available
+on the [Hugging Face Hub](https://huggingface.co/collections/XHToken/spark-x25).
+
 ### Example export
+
+Export Spark-X2.5-1.7B to MLX on Apple Silicon, quantized with 4-bit weights:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/spark_x2_5/config/spark_x2_5_mlx_4w.yaml \
+  +base.model_class="spark_x2_5_1_7b" \
+  +base.params="examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json" \
+  +export.output_name="spark_x2_5_1_7b_mlx_4w.pte"
+```
+
+Export Spark-X2.5-4B to MLX on Apple Silicon, quantized with 4-bit weights:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/spark_x2_5/config/spark_x2_5_mlx_4w.yaml \
+  +base.model_class="spark_x2_5_4b" \
+  +base.params="examples/models/spark_x2_5/config/spark_x2_5_4b_config.json" \
+  +export.output_name="spark_x2_5_4b_mlx_4w.pte"
+```
 
 Export Spark-X2.5-1.7B to XNNPack, FP32:
 ```
@@ -65,6 +86,17 @@ you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence
 
 > The special tokens `<｜start▁of▁sentence｜>` and `<｜end▁of▁sentence｜>` use the Unicode lower-one-eighth block character (`▁`, U+2581).
 
+For MLX on Apple Silicon, build or install ExecuTorch with MLX enabled. The
+easiest local path is:
+```
+conda activate <your-executorch-env>
+python install_executorch.py
+xcrun -sdk macosx --find metal
+```
+
+The `metal` command must resolve to an Xcode path, not fail under standalone
+Command Line Tools.
+
 With ExecuTorch pybindings:
 ```
 python -m examples.models.llama.runner.native \
@@ -80,13 +112,18 @@ you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence
   --temperature 0.3
 ```
 
-With ExecuTorch's sample C++ runner:
+With ExecuTorch pybindings and a Spark-X2.5 MLX export:
 ```
-cmake-out/examples/models/llama/llama_main \
-  --model_path spark_x2_5_1_7b_8da4w.pte \
-  --tokenizer_path ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
+python -m examples.models.llama.runner.native \
+  --model spark_x2_5_1_7b \
+  --pte spark_x2_5_1_7b_mlx_4w.pte \
+  --tokenizer ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
+  --tokenizer_config ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer_config.json \
   --prompt="<｜start▁of▁sentence｜><|System|>
 you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>" \
+  --params examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json \
+  --max_len 128 \
+  -kv \
   --temperature 0.3
 ```
 
@@ -98,6 +135,31 @@ root = Path.home() / ".cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/sn
 for path in root.glob("*/tokenizer.json"):
     print(path.parent)
 PY
+```
+
+With ExecuTorch's sample C++ runner:
+```
+cmake-out/examples/models/llama/llama_main \
+  --model_path spark_x2_5_1_7b_8da4w.pte \
+  --tokenizer_path ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
+  --prompt="<｜start▁of▁sentence｜><|System|>
+you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>" \
+  --temperature 0.3
+```
+
+Build the C++ runner with MLX support for Spark-X2.5:
+```
+make spark_x2_5-mlx
+```
+
+Then run a Spark-X2.5 MLX export with the C++ runner:
+```
+cmake-out/examples/models/llama/llama_main \
+  --model_path spark_x2_5_1_7b_mlx_4w.pte \
+  --tokenizer_path ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
+  --prompt="<｜start▁of▁sentence｜><|System|>
+you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>" \
+  --temperature 0.3
 ```
 
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.

@@ -93,7 +93,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx spark_x2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -132,6 +132,7 @@ help:
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
 	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner with MLX backend"
+	@echo "  spark_x2_5-mlx      - Build Spark-X2.5 runner with MLX backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
@@ -428,14 +429,21 @@ llama-cuda-debug:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
-lfm_2_5-mlx:
+# Internal target for MLX runner builds
+.mlx-runner:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
-	@echo "==> Building LFM2.5 runner with MLX..."
+	@echo "==> Building $(MODEL_NAME) runner with MLX..."
 	cd examples/models/llama && cmake --workflow --preset llama-mlx
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
+lfm_2_5-mlx:
+	@$(MAKE) .mlx-runner MODEL_NAME="LFM2.5"
+
+spark_x2_5-mlx:
+	@$(MAKE) .mlx-runner MODEL_NAME="Spark-X2.5"
 
 llava-cpu:
 	@echo "==> Building and installing ExecuTorch..."
