@@ -98,17 +98,17 @@ jobs:
         done
 
         # Operator coverage (mirrors test-vulkan-operators-linux, on real hardware).
-        # The custom-op prototyping binaries are GPU microbenchmarks that rely on
-        # GPU timestamp queries, so they require the hardware selected above.
+        # etvk_bench runs GPU microbenchmarks that rely on GPU timestamp queries,
+        # so it requires the hardware selected above.
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark/build_and_run.sh
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_add
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q8csw_linear
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q4gsw_linear
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_choose_qparams_per_row
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q8ta_qdq
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q8ta_clone
-        ./cmake-out/backends/vulkan/test/ops/benchmark/test_q8ta_binary
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=add
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_linear --set=correctness,performance
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q4gsw_linear --set=correctness,performance
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=choose_qparams_per_row --set=correctness,performance
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/qdq --set=correctness
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/clone --set=correctness
+        ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/binary --set=correctness
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
 
