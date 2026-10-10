@@ -86,7 +86,13 @@ import random
 from collections import defaultdict, namedtuple
 from typing import List
 
-from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
+from executorch.backends.qualcomm._passes import (
+    FoldQDQ,
+    LayoutTransform,
+    LpaiPartitionFallbackSupport,
+    ResolveDebugHandle,
+    TagQuantIO,
+)
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -7783,6 +7789,56 @@ class TestQNNFloatingPointUtils(TestQNN):
 
 
 class TestQNNQuantizedUtils(TestQNN):
+    def test_qnn_backend_terminal_edge_pass_ordering(self):
+        # Regression test for #23580: registering a dynamic pass used to
+        # overwrite dep_table[TagQuantIO], scheduling passes after the
+        # backend's terminal edge passes. The adversarial case checks the
+        # terminal suffix survives such an overwrite; the production case
+        # registers the pass as the fixed sharding call sites do and checks
+        # TagQuantIO keeps both its prerequisites.
+        def index_of(passes, pass_cls):
+            return next(i for i, p in enumerate(passes) if isinstance(p, pass_cls))
+
+        for backend_type, terminal_passes in (
+            (QnnExecuTorchBackendType.kHtpBackend, [ResolveDebugHandle]),
+            (
+                QnnExecuTorchBackendType.kLpaiBackend,
+                [ResolveDebugHandle, LpaiPartitionFallbackSupport],
+            ),
+        ):
+            for production in (False, True):
+                with self.subTest(backend_type=backend_type, production=production):
+                    pass_manager_cls = get_qnn_pass_manager_cls(backend_type)
+                    pass_jobs = pass_manager_cls.get_capture_program_passes()
+                    pass_jobs[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+                    split_graph_pass, setting = self.split_graph(4)
+                    pass_jobs[split_graph_pass] = setting
+                    dep_table = (
+                        pass_manager_cls.get_passes_dependency_for_capture_program()
+                    )
+                    dep_table[split_graph_pass] = [FoldQDQ]
+                    if production:
+                        # Register as the sharding call sites do since the fix.
+                        dep_table.setdefault(TagQuantIO, []).append(split_graph_pass)
+                    else:
+                        # Adversarial: overwrite instead of append, as the
+                        # sharding call sites did before the fix.
+                        dep_table[TagQuantIO] = [split_graph_pass]
+                    passes = pass_manager_cls().get_to_edge_transform_passes(
+                        None, passes_job=pass_jobs, dep_table=dep_table
+                    )
+                    tail = passes[-len(terminal_passes) :]
+                    for actual, expected in zip(tail, terminal_passes):
+                        self.assertIsInstance(actual, expected)
+                    if production:
+                        tag_quant_io_index = index_of(passes, TagQuantIO)
+                        self.assertLess(
+                            index_of(passes, LayoutTransform), tag_quant_io_index
+                        )
+                        self.assertLess(
+                            index_of(passes, split_graph_pass), tag_quant_io_index
+                        )
+
     def setUp(self):
         match get_backend_type(self.backend):
             case QnnExecuTorchBackendType.kHtpBackend:
