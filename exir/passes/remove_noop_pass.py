@@ -43,6 +43,10 @@ def eliminate_dq_q(
                 user.replace_all_uses_with(node.args[0])  # pyre-fixme[6]
 
 
+def _is_static(tensor: torch.Tensor) -> bool:
+    return all(isinstance(dim, int) for dim in tensor.size())
+
+
 class RemoveNoopPass(ExportPass):
     """
     Removes noops that pass through arguments.
@@ -57,6 +61,25 @@ class RemoveNoopPass(ExportPass):
 
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
+                continue
+
+            if node.target == torch.ops.aten.copy.default and len(node.args) == 2:
+                # Decomposing a functionalized index_copy leaves copy(dst,
+                # index_put(dst, ...)) between a mutated input and its update,
+                # which keeps the update from being reinplaced. index_put keeps
+                # its self's representation, quantization included, so copying
+                # its result back into that same tensor is a no-op. Copies of
+                # anything else are kept: their metadata alone cannot show that
+                # two tensors share quantization parameters.
+                dst, src = node.args
+                if (
+                    src.target == torch.ops.aten.index_put.default
+                    and src.args[0] is dst
+                    and _is_static(dst.meta["val"])
+                    and dst.meta["val"].shape == src.meta["val"].shape
+                    and dst.meta["val"].stride() == src.meta["val"].stride()
+                ):
+                    node.replace_all_uses_with(src)
                 continue
 
             if node.target not in (
@@ -81,9 +104,7 @@ class RemoveNoopPass(ExportPass):
                 # The output may contain unbacked SymInts (e.g. from
                 # data-dependent slicing with .item()), so we must check
                 # both tensors before comparing shapes.
-                if all(isinstance(dim, int) for dim in orig_tensor.size()) and all(
-                    isinstance(dim, int) for dim in output_tensor.size()
-                ):
+                if _is_static(orig_tensor) and _is_static(output_tensor):
                     if orig_tensor.shape == output_tensor.shape:
                         # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
                         # Otherwise, removing only the op will suffice.
