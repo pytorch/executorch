@@ -550,9 +550,6 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
       "Setup Method allocator pool. Size: %lu bytes.",
       static_cast<unsigned long>(method_allocation_pool_size));
 
-  ctx.method_allocator.reset(
-      method_allocation_pool_size, method_allocation_pool);
-
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   ctx.planned_spans.reserve(num_memory_planned_buffers);
@@ -1007,6 +1004,8 @@ static const size_t kMaxInputOutputs = 16;
 bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
+  g_runner_ctx.method_allocator.reset(
+      method_allocation_pool_size, method_allocation_pool);
   size_t pte_size;
 
 #if defined(FILESYSTEM_LOAD)
@@ -1016,10 +1015,8 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  MemoryAllocator file_allocator(
-      method_allocation_pool_size, method_allocation_pool);
-  auto [buffer, buffer_size] =
-      load_file_from_fs("/spiffs/model.pte", file_allocator);
+  auto [buffer, buffer_size] = load_file_from_fs(
+      "/spiffs/model.pte", g_runner_ctx.method_allocator.value());
   if (buffer == nullptr) {
     ET_LOG(Fatal, "Failed to load model from filesystem.");
     return false;
