@@ -17,6 +17,7 @@ from typing import Any, Dict, final, List, Optional, Tuple, Union
 
 import coremltools as ct
 import coremltools.optimize as cto
+import numpy as np
 from executorch.backends.apple.coreml import executorchcoreml
 from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
     _get_ct_inputs,
@@ -67,12 +68,70 @@ def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
     return shared
 
 
+def _parse_flag(name: str, value: Any) -> bool:
+    """
+    Reads a boolean option that may come from a config file. Accepts a bool, the ints
+    0 and 1, and the strings "true", "false", "1" and "0" in any case. Raises on
+    anything else rather than guessing, since every non-empty string is truthy.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        spelling = value.strip().lower()
+        if spelling in ("true", "1"):
+            return True
+        if spelling in ("false", "0"):
+            return False
+    raise ValueError(f"{name} must be a bool, 0/1 or 'true'/'false', got {value!r}")
+
+
+def _gathers_with_a_float_table(mlmodel: ct.models.MLModel) -> List[str]:
+    """
+    Names of gather ops whose table is a floating point constant. These are the
+    tables quantize_gather_tables opts into op_linear_quantizer_config.
+
+    This is every constant-table read Core ML lowers to single-axis `gather`, not only
+    embedding layers: `index_select` and plain indexing lower to `gather` too, so a
+    float buffer such as a rotary position cache is named as well.
+
+    `gather_along_axis` (from `torch.gather`) and `gather_nd` (from indexing with two
+    index tensors) are not named here and not exempted by default either, so their
+    tables are compressed by op_linear_quantizer_config with or without the opt-in.
+
+    Integer tables are skipped: the quantizer raises on a two dimensional integer
+    table, which would fail the conversion. Returns nothing for a model whose program
+    is not available, which leaves the behaviour as it was.
+    """
+    program = getattr(mlmodel, "_mil_program", None)
+    if program is None:
+        return []
+
+    names: List[str] = []
+    for function in program.functions.values():
+        for op in function.operations:
+            if op.op_type != "gather":
+                continue
+            table = op.inputs.get("x")
+            source = getattr(table, "op", None)
+            if source is None or source.op_type != "const":
+                continue
+            value = getattr(table, "val", None)
+            if value is None:
+                continue
+            if np.issubdtype(np.asarray(value).dtype, np.floating):
+                names.append(op.name)
+    return names
+
+
 class COMPILE_SPEC_KEYS(Enum):
     COMPUTE_UNITS = "compute_units"
     MODEL_TYPE = "model_type"
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
+    QUANTIZE_GATHER_TABLES = "quantize_gather_tables"
     ENUMERATED_SHAPES = "enumerated_shapes"
     PASS_PIPELINE = "pass_pipeline"
     MULTIMETHOD_WEIGHT_SHARING_STRATEGY = "multimethod_weight_sharing_strategy"
@@ -278,6 +337,35 @@ class CoreMLBackend(BackendDetails):
         return None
 
     @staticmethod
+    def generate_quantize_gather_tables_compile_spec(
+        quantize_gather_tables: Union[bool, int, str],
+    ) -> CompileSpec:
+        """
+        Returns the compile spec saying whether op_linear_quantizer_config should also
+        compress float gather tables; _gathers_with_a_float_table says which ones.
+        The value may be a bool, 0/1 or "true"/"false"; anything else raises.
+        """
+        flag = _parse_flag("quantize_gather_tables", quantize_gather_tables)
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value,
+            str(flag).encode("utf-8"),
+        )
+
+    @staticmethod
+    def quantize_gather_tables_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> bool:
+        """
+        Returns whether float gather tables opt in to op_linear_quantizer_config.
+        Defaults to False, which is the behaviour of every model lowered before this
+        spec existed.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value:
+                return compile_spec.value.decode("utf-8") == "True"
+        return False
+
+    @staticmethod
     def generate_pass_pipeline_compile_spec(pass_names: List[str]) -> CompileSpec:
         """
         Creates a compile spec representing the pass pipeline to be used by the CoreML backend
@@ -397,10 +485,20 @@ class CoreMLBackend(BackendDetails):
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
         pass_names: Optional[List[str]] = None,
+        *,
+        quantize_gather_tables: Union[bool, int, str] = False,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
+
+        quantize_gather_tables also compresses float gather tables, which
+        op_linear_quantizer_config otherwise leaves alone. It does nothing without
+        op_linear_quantizer_config. See _gathers_with_a_float_table for which tables
+        it covers.
         """
+        quantize_gather_tables = _parse_flag(
+            "quantize_gather_tables", quantize_gather_tables
+        )
         compile_specs: List[CompileSpec] = []
         compile_specs.append(
             CoreMLBackend.generate_compute_unit_compile_spec(compute_unit)
@@ -423,6 +521,17 @@ class CoreMLBackend(BackendDetails):
         if pass_names is not None:
             compile_specs.append(
                 CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
+            )
+        if quantize_gather_tables:
+            if op_linear_quantizer_config is None:
+                logger.warning(
+                    "quantize_gather_tables is set but op_linear_quantizer_config is "
+                    "not; the flag only widens that config and does nothing on its own."
+                )
+            compile_specs.append(
+                CoreMLBackend.generate_quantize_gather_tables_compile_spec(
+                    quantize_gather_tables
+                )
             )
 
         return compile_specs
@@ -610,16 +719,20 @@ class CoreMLBackend(BackendDetails):
             logger.warning(
                 "Core ML Backend op_linear_quantizer_config API is experimental"
             )
-            # Gathers are left alone so that embedding tables are not quantized by this
-            # config, except where the table is also some other op's weight. A tied
-            # embedding is one constant feeding both a gather and a linear, and coremltools
-            # refuses to compress a constant its consumers disagree about, so opting the
-            # gather out there does not skip the table, it fails the whole lowering.
-            tied = _gathers_sharing_a_weight(mlmodel)
+            # `gather` tables are left alone, except where an op of another type also
+            # reads the table: coremltools refuses to compress a constant its consumers
+            # disagree about, so opting a tied embedding's gather out fails the whole
+            # lowering rather than skipping the table. quantize_gather_tables opts the
+            # float tables in as well.
+            configured = set(_gathers_sharing_a_weight(mlmodel))
+            if CoreMLBackend.quantize_gather_tables_from_compile_specs(compile_specs):
+                configured |= set(_gathers_with_a_float_table(mlmodel))
             config = cto.coreml.OptimizationConfig(
                 global_config=op_linear_quantizer_config,
                 op_type_configs={"gather": None},
-                op_name_configs={name: op_linear_quantizer_config for name in tied},
+                op_name_configs={
+                    name: op_linear_quantizer_config for name in sorted(configured)
+                },
             )
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 
