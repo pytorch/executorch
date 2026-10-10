@@ -309,6 +309,10 @@ support the original ESP32.
 
 ## Memory Considerations
 
+The runner requires memory-planned tensor inputs and outputs. Export with
+`MemoryPlanningPass(alloc_graph_input=True, alloc_graph_output=True)` (the default).
+Initialization reports an error for unplanned I/O.
+
 ### ESP32 (no PSRAM)
 - Total available SRAM: ~520KB (shared between code and data)
 - Recommended method allocator pool: 128-256KB
