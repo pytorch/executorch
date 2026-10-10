@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(init=False)
 class VgfCompileSpec(ArmCompileSpec):
     """Normalise inputs and populate the underlying Arm compile spec.
 
@@ -27,16 +29,22 @@ class VgfCompileSpec(ArmCompileSpec):
         compiler_flags (list[str] | None): Optional converter-backend flags.
         emit_debug_info (bool): Preserve Model Converter debug information in
             the generated VGF. Defaults to ``False``.
+        alias_buffer_mutations (bool): Whether eligible mutable buffers should
+            be delegated as persistent VGF state. Defaults to ``False``.
 
     """
 
+    alias_buffer_mutations: bool = False
+
     _EMIT_DEBUG_INFO_KEY = "vgf_emit_debug_info"
+    _ALIAS_BUFFER_MUTATIONS_KEY = "alias_buffer_mutations"
 
     def __init__(
         self,
         tosa_spec: TosaSpecification | str | None = None,
         compiler_flags: list[str] | None = None,
         emit_debug_info: bool = False,
+        alias_buffer_mutations: bool = False,
     ):
         if tosa_spec is None:
             tosa_spec = TosaSpecification.create_from_string(
@@ -49,15 +57,22 @@ class VgfCompileSpec(ArmCompileSpec):
             compiler_flags = []
         self._set_compile_specs(tosa_spec, compiler_flags)
         self.emit_debug_info = emit_debug_info
+        self.alias_buffer_mutations = alias_buffer_mutations
         # intermediate handling needed until release 2027.02 of tosa-tools
         self._set_tosa_dev_mode(True)
         self._validate()
 
     def _to_list(self):
-        """Return compile specs including the VGF debug-info setting."""
+        """Return compile specs including VGF-specific settings."""
         compile_specs = super()._to_list()
         if self.emit_debug_info:
             compile_specs.append(CompileSpec(self._EMIT_DEBUG_INFO_KEY, b"True"))
+        compile_specs.append(
+            CompileSpec(
+                self._ALIAS_BUFFER_MUTATIONS_KEY,
+                str(bool(self.alias_buffer_mutations)).encode(),
+            )
+        )
         return compile_specs
 
     @classmethod
@@ -68,6 +83,13 @@ class VgfCompileSpec(ArmCompileSpec):
             str(emit_debug_info).lower() in ("1", "true", "yes")
             if emit_debug_info is not None
             else False
+        )
+        value = specs.pop(cls._ALIAS_BUFFER_MUTATIONS_KEY, "False")
+        specs.pop("mutable_buffer_pairs", None)
+        compile_spec.alias_buffer_mutations = str(value).lower() in (
+            "1",
+            "true",
+            "yes",
         )
 
     def _validate(self):

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
@@ -97,6 +99,30 @@ def vary_segments(test_method):
 
 
 class TestBackends(unittest.TestCase):
+    def test_direct_lowering_does_not_mutate_shared_compile_specs(self):
+        class CompileSpecAppendingBackend(BackendDetails):
+            @staticmethod
+            def preprocess(edge_program, compile_specs):
+                compile_specs.append(CompileSpec("partition_specific", b"1"))
+                return PreprocessResult(processed_bytes=b"test")
+
+        class SinModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.sin(x)
+
+        edge_program = to_edge(
+            export(SinModule(), (torch.ones(1),), strict=True)
+        ).exported_program()
+        shared_specs = [CompileSpec("shared", b"0")]
+
+        first = to_backend("CompileSpecAppendingBackend", edge_program, shared_specs)
+        second = to_backend("CompileSpecAppendingBackend", edge_program, shared_specs)
+
+        self.assertEqual(shared_specs, [CompileSpec("shared", b"0")])
+        self.assertEqual(first.compile_specs, second.compile_specs)
+        self.assertEqual(len(first.compile_specs), 2)
+        self.assertIsNot(first.compile_specs, second.compile_specs)
+
     def check_delegate_input(
         self, delegate: LoweredBackendModule, input_len: int
     ) -> None:

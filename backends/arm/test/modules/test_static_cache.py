@@ -13,7 +13,12 @@ from executorch.backends.arm._passes.insert_int32_casts_after_int64_placeholders
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.runner_utils import (
+    get_elf_path,
+    vkml_emulation_layer_installed,
+)
 from executorch.backends.arm.test.tester.arm_tester import RunPasses, ToExecutorch
+from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -21,6 +26,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec, VgfPartitioner
+from executorch.backends.test.harness.stages import StageType
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
     StaticQuantizedKVCache,
 )
@@ -359,3 +366,159 @@ def test_static_cache_vgf_quant(test_data):
         EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_STATIC_QUANTIZED_OUTPUT_COUNTS
     )
     pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("test_data", test_configs)
+def test_static_quantized_cache_vgf_alias(test_data):
+    module = StaticQuantizedCacheModule(test_data).eval()
+    pipeline = VgfPipeline[input_t](
+        module,
+        module.get_inputs(),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+        tosa_spec="TOSA-1.0+FP+INT+int16",
+        alias_buffer_mutations=True,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.pop_stage("check_not.quant_nodes")
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        pipeline.tester.check_not,
+        ["executorch_exir_dialects_edge__ops_aten_copy_default"],
+        suffix="portable_cache_copy",
+    )
+
+    def check_mutable_buffer_pair_metadata():
+        edge_manager = pipeline.tester.get_artifact(
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER
+        )
+        graph_module = edge_manager.exported_program().graph_module
+        lowered_modules = [
+            getattr(graph_module, node.target)
+            for node in graph_module.graph.nodes
+            if node.op == "get_attr" and node.name.startswith("lowered_module_")
+        ]
+        assert len(lowered_modules) == 1
+        pair_specs = [
+            spec.value
+            for spec in lowered_modules[0].compile_specs
+            if spec.key == "mutable_buffer_pairs"
+        ]
+        assert len(pair_specs) == 1
+        assert pair_specs[0] == b"0:0:0,1:1:1"
+
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        check_mutable_buffer_pair_metadata,
+        suffix="mutable_buffer_pair_metadata",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_static_quantized_cache_vgf_alias_rejects_nonzero_state():
+    config = LlamaConfig(
+        hidden_size=8,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+    )
+    module = StaticQuantizedCacheModule(config, max_cache_len=4).eval()
+    module.cache.k_cache.fill_(1)
+    pipeline = VgfPipeline[input_t](
+        module,
+        module.get_inputs(),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+        tosa_spec="TOSA-1.0+FP+INT+int16",
+        alias_buffer_mutations=True,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.pop_stage("check_not.quant_nodes")
+
+    with pytest.raises(ValueError, match="must be zero-initialized"):
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_static_quantized_cache_vgf_alias_runtime():
+    if not vkml_emulation_layer_installed():
+        pytest.skip("VGF emulation layer is unavailable")
+
+    runner_suffix = None
+    for suffix in ("", "_etdump"):
+        try:
+            get_elf_path("vkml_emulation_layer", build_dir_suffix=suffix)
+        except FileNotFoundError:
+            continue
+        runner_suffix = suffix
+        break
+    if runner_suffix is None:
+        pytest.skip("VGF executor runner is unavailable")
+
+    config = LlamaConfig(
+        hidden_size=8,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+    )
+    module = StaticQuantizedCacheModule(config, max_cache_len=4).eval()
+    pipeline = VgfPipeline[input_t](
+        module,
+        module.get_inputs(),
+        aten_op=[],
+        exir_op=[],
+        quantize=False,
+        tosa_spec="TOSA-1.0+FP+INT+int16",
+        alias_buffer_mutations=True,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        run_on_vulkan_runtime=True,
+    )
+    pipeline.pop_stage("check_not.quant_nodes")
+    pipeline.change_args(
+        "serialize",
+        Serialize(
+            pipeline.tester.compile_spec,
+            module,
+            build_dir_suffix=runner_suffix,
+        ),
+    )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("persistent", [True, False])
+@pytest.mark.parametrize("initial_value", [0, 1])
+def test_vgf_mutable_buffer_validation(persistent, initial_value):
+    """Validate both persistent and non-persistent exported cache buffers."""
+
+    class MutatingBuffer(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer(
+                "cache",
+                torch.full((4,), initial_value, dtype=torch.int8),
+                persistent=persistent,
+            )
+
+        def forward(self, x):
+            self.cache.add_(x)
+            return self.cache
+
+    exported_program = torch.export.export(
+        MutatingBuffer(), (torch.ones(4, dtype=torch.int8),)
+    ).run_decompositions()
+    for node in exported_program.graph.nodes:
+        if node.op == "call_function":
+            node.meta["delegation_tag"] = "tag0"
+
+    partitioner = VgfPartitioner(VgfCompileSpec(alias_buffer_mutations=True))
+    partitioner._validate_mutable_buffers(exported_program)
+
+    if initial_value:
+        with pytest.raises(ValueError, match="must be zero-initialized"):
+            VgfBackend._validate_mutable_buffer_contents(exported_program)
+    else:
+        VgfBackend._validate_mutable_buffer_contents(exported_program)

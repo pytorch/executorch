@@ -1278,6 +1278,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
+        alias_buffer_mutations: bool = False,
         n_expected_delegates: int = 1,
         is_qat: bool = False,
     ):
@@ -1303,6 +1304,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
             preserve_io_quantization=preserve_io_quantization,
+            alias_buffer_mutations=alias_buffer_mutations,
         )
 
         super().__init__(

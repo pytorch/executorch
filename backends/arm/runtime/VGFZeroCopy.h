@@ -76,6 +76,47 @@ struct VgfZeroCopyIoMetadata {
   std::vector<VgfBoundaryBindingRef> bindings;
 };
 
+struct VgfExternalIoMapping {
+  std::vector<int> inputs;
+  std::vector<int> outputs;
+};
+
+inline VgfExternalIoMapping vgf_resolve_external_io_mapping(
+    const std::vector<int>& serialized_inputs,
+    const std::vector<int>& serialized_outputs,
+    const std::vector<bool>& mutable_inputs,
+    const std::vector<bool>& mutable_outputs,
+    std::vector<VgfZeroCopyIoMetadata>& metadata) {
+  VgfExternalIoMapping mapping;
+  for (size_t i = 0; i < serialized_inputs.size(); ++i) {
+    if (!mutable_inputs[i]) {
+      mapping.inputs.push_back(serialized_inputs[i]);
+    }
+  }
+  for (size_t i = 0; i < serialized_outputs.size(); ++i) {
+    if (!mutable_outputs[i]) {
+      mapping.outputs.push_back(serialized_outputs[i]);
+    }
+  }
+
+  for (size_t i = 0; i < mapping.inputs.size(); ++i) {
+    const int io_index = mapping.inputs[i];
+    if (io_index >= 0 && static_cast<size_t>(io_index) < metadata.size()) {
+      metadata[io_index].mapped_to_model_boundary = true;
+      metadata[io_index].executorch_argument_index = static_cast<int64_t>(i);
+    }
+  }
+  for (size_t i = 0; i < mapping.outputs.size(); ++i) {
+    const int io_index = mapping.outputs[i];
+    if (io_index >= 0 && static_cast<size_t>(io_index) < metadata.size()) {
+      metadata[io_index].mapped_to_model_boundary = true;
+      metadata[io_index].executorch_argument_index =
+          static_cast<int64_t>(mapping.inputs.size() + i);
+    }
+  }
+  return mapping;
+}
+
 // We keep this as the single source of truth for VGF tensor usage.
 inline VkTensorUsageFlagsARM vgf_tensor_usage_flags(bool image_aliasing) {
   VkTensorUsageFlagsARM usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |

@@ -32,8 +32,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
+#include <numeric>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -89,6 +92,24 @@ struct AliasLogicalContract {
   bool image_initialized = false;
   uint32_t image_component_count = 0;
 };
+
+static std::optional<uint32_t> parse_uint32_decimal(std::string_view value) {
+  if (value.empty()) {
+    return std::nullopt;
+  }
+  uint32_t parsed = 0;
+  for (char character : value) {
+    if (character < '0' || character > '9') {
+      return std::nullopt;
+    }
+    const uint32_t digit = static_cast<uint32_t>(character - '0');
+    if (parsed > (std::numeric_limits<uint32_t>::max() - digit) / 10) {
+      return std::nullopt;
+    }
+    parsed = parsed * 10 + digit;
+  }
+  return parsed;
+}
 
 static size_t element_count_from_shape(const vector<int64_t>& shape) {
   if (shape.empty()) {
@@ -1540,7 +1561,6 @@ bool VgfRepr::process_vgf(
     ArrayRef<CompileSpec> specs,
     executorch::runtime::EventTracer* event_tracer) {
   VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_PROCESS_VGF");
-  (void)specs;
 
   ET_LOG(Info, "Preparing VGF as Vulkan objects");
 
@@ -1709,12 +1729,221 @@ bool VgfRepr::process_vgf(
   unordered_set<uint32_t> output_image_alias_groups;
   int IO_count = resource_decoder->size();
 
+  auto input_handle =
+      sequence_decoder->getModelSequenceInputBindingSlotsHandle();
+  auto output_handle =
+      sequence_decoder->getModelSequenceOutputBindingSlotsHandle();
+  auto input_names_handle =
+      sequence_decoder->getModelSequenceInputNamesHandle();
+  auto output_names_handle =
+      sequence_decoder->getModelSequenceOutputNamesHandle();
+  const size_t serialized_model_input_count =
+      sequence_decoder->getNamesSize(input_names_handle);
+  const size_t serialized_model_output_count =
+      sequence_decoder->getNamesSize(output_names_handle);
+  const size_t input_binding_count =
+      sequence_decoder->getBindingsSize(input_handle);
+  const size_t output_binding_count =
+      sequence_decoder->getBindingsSize(output_handle);
+  vector<bool> mutable_model_inputs(serialized_model_input_count, false);
+  vector<bool> mutable_model_outputs(serialized_model_output_count, false);
+  vector<std::optional<uint32_t>> input_mrt_indices(
+      serialized_model_input_count);
+  vector<std::optional<uint32_t>> output_mrt_indices(
+      serialized_model_output_count);
+
+  if (input_binding_count > serialized_model_input_count ||
+      output_binding_count != serialized_model_output_count) {
+    ET_LOG(Error, "VGF model names and binding slots are inconsistent");
+    return false;
+  }
+  for (size_t binding_pos = 0; binding_pos < input_binding_count;
+       ++binding_pos) {
+    const uint32_t model_input =
+        sequence_decoder->getBindingSlotBinding(input_handle, binding_pos);
+    const uint32_t mrt =
+        sequence_decoder->getBindingSlotMrtIndex(input_handle, binding_pos);
+    if (model_input >= serialized_model_input_count || mrt >= IO_count ||
+        input_mrt_indices[model_input].has_value()) {
+      ET_LOG(Error, "Invalid VGF model input binding slot");
+      return false;
+    }
+    input_mrt_indices[model_input] = mrt;
+  }
+  for (size_t output = 0; output < output_binding_count; ++output) {
+    const uint32_t mrt =
+        sequence_decoder->getBindingSlotMrtIndex(output_handle, output);
+    if (mrt >= IO_count) {
+      ET_LOG(Error, "Invalid VGF model output binding slot");
+      return false;
+    }
+    output_mrt_indices[output] = mrt;
+  }
+
+  struct MutableBufferPair {
+    std::optional<uint32_t> input_mrt;
+    std::optional<uint32_t> output_mrt;
+  };
+  unordered_map<uint32_t, MutableBufferPair> mutable_buffer_pairs;
+  for (const auto& spec : specs) {
+    if (spec.key == nullptr ||
+        std::strcmp(spec.key, "mutable_buffer_pairs") != 0) {
+      continue;
+    }
+    const auto* data = static_cast<const char*>(spec.value.buffer);
+    std::string_view encoded(data, spec.value.nbytes);
+    size_t entry_start = 0;
+    while (entry_start < encoded.size()) {
+      const size_t entry_end = encoded.find(',', entry_start);
+      const std::string_view entry = encoded.substr(
+          entry_start,
+          (entry_end == std::string_view::npos ? encoded.size() : entry_end) -
+              entry_start);
+      const size_t first_colon = entry.find(':');
+      const size_t second_colon = entry.find(':', first_colon + 1);
+      if (first_colon == std::string_view::npos ||
+          second_colon == std::string_view::npos ||
+          entry.find(':', second_colon + 1) != std::string_view::npos) {
+        ET_LOG(Error, "Invalid mutable_buffer_pairs compile spec");
+        return false;
+      }
+      auto id = parse_uint32_decimal(entry.substr(0, first_colon));
+      auto input = parse_uint32_decimal(
+          entry.substr(first_colon + 1, second_colon - first_colon - 1));
+      auto output = parse_uint32_decimal(entry.substr(second_colon + 1));
+      if (!id.has_value() || !input.has_value() || !output.has_value() ||
+          *input >= serialized_model_input_count ||
+          *output >= serialized_model_output_count ||
+          !input_mrt_indices[*input].has_value() ||
+          !output_mrt_indices[*output].has_value() ||
+          mutable_buffer_pairs.count(*id) != 0 ||
+          mutable_model_inputs[*input] || mutable_model_outputs[*output]) {
+        ET_LOG(Error, "Invalid mutable-buffer endpoint ordinal");
+        return false;
+      }
+      mutable_buffer_pairs.emplace(
+          *id,
+          MutableBufferPair{
+              .input_mrt = input_mrt_indices[*input],
+              .output_mrt = output_mrt_indices[*output],
+          });
+      mutable_model_inputs[*input] = true;
+      mutable_model_outputs[*output] = true;
+      if (entry_end == std::string_view::npos) {
+        break;
+      }
+      entry_start = entry_end + 1;
+    }
+  }
+
+  vector<uint32_t> alias_parents(IO_count);
+  std::iota(alias_parents.begin(), alias_parents.end(), 0);
+  auto find_alias_root = [&](uint32_t resource) {
+    uint32_t root = resource;
+    while (alias_parents[root] != root) {
+      root = alias_parents[root];
+    }
+    while (alias_parents[resource] != resource) {
+      const uint32_t parent = alias_parents[resource];
+      alias_parents[resource] = root;
+      resource = parent;
+    }
+    return root;
+  };
+  auto union_alias_resources = [&](uint32_t lhs, uint32_t rhs) {
+    lhs = find_alias_root(lhs);
+    rhs = find_alias_root(rhs);
+    if (lhs != rhs) {
+      alias_parents[rhs] = lhs;
+    }
+  };
+
+  unordered_map<uint32_t, uint32_t> first_resource_for_alias_group;
+  uint32_t next_alias_group = 0;
+  for (int i = 0; i < IO_count; ++i) {
+    auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+    if (!alias_group.has_value()) {
+      continue;
+    }
+    next_alias_group = std::max(next_alias_group, *alias_group);
+    auto [it, inserted] = first_resource_for_alias_group.emplace(
+        *alias_group, static_cast<uint32_t>(i));
+    if (!inserted) {
+      union_alias_resources(it->second, static_cast<uint32_t>(i));
+    }
+  }
+
+  unordered_set<uint32_t> mutable_alias_roots;
+  for (const auto& [id, pair] : mutable_buffer_pairs) {
+    if (!pair.input_mrt.has_value() || !pair.output_mrt.has_value()) {
+      ET_LOG(Error, "Mutable buffer %u does not have paired VGF endpoints", id);
+      return false;
+    }
+    for (uint32_t mrt : {*pair.input_mrt, *pair.output_mrt}) {
+      const auto descriptor_type =
+          resolve_descriptor_type(resource_decoder, mrt);
+      const auto format =
+          vgflib::ToVkFormat(resource_decoder->getVkFormat(mrt));
+      if (!is_tensor_like_descriptor_type(descriptor_type) ||
+          format != VK_FORMAT_R8_SINT) {
+        ET_LOG(
+            Error,
+            "Mutable buffer %u must use a signed INT8 tensor-like resource",
+            id);
+        return false;
+      }
+    }
+    union_alias_resources(*pair.input_mrt, *pair.output_mrt);
+  }
+
+  unordered_map<uint32_t, uint32_t> root_to_effective_alias_group;
+  for (int i = 0; i < IO_count; ++i) {
+    auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+    if (!alias_group.has_value()) {
+      continue;
+    }
+    const uint32_t root = find_alias_root(static_cast<uint32_t>(i));
+    auto [it, inserted] =
+        root_to_effective_alias_group.emplace(root, *alias_group);
+    if (!inserted) {
+      it->second = std::min(it->second, *alias_group);
+    }
+  }
+  for (const auto& [id, pair] : mutable_buffer_pairs) {
+    (void)id;
+    const uint32_t root = find_alias_root(*pair.input_mrt);
+    if (root_to_effective_alias_group.count(root) == 0) {
+      if (next_alias_group == std::numeric_limits<uint32_t>::max()) {
+        ET_LOG(Error, "No VGF alias group identifier is available");
+        return false;
+      }
+      root_to_effective_alias_group.emplace(root, ++next_alias_group);
+    }
+    mutable_alias_roots.insert(root);
+  }
+
+  vector<std::optional<uint32_t>> effective_alias_groups(IO_count);
+  unordered_set<uint32_t> mutable_state_alias_groups;
+  for (int i = 0; i < IO_count; ++i) {
+    const uint32_t root = find_alias_root(static_cast<uint32_t>(i));
+    auto group = root_to_effective_alias_group.find(root);
+    if (group == root_to_effective_alias_group.end()) {
+      continue;
+    }
+    effective_alias_groups[i] = group->second;
+    if (mutable_alias_roots.count(root) != 0) {
+      mutable_state_alias_groups.insert(group->second);
+    }
+  }
+  auto get_effective_alias_group = [&](uint32_t resource) {
+    return effective_alias_groups.at(resource);
+  };
+
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ANALYZE_ALIAS_RESOURCES");
-
     for (int i = 0; i < IO_count; i++) {
       VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ANALYZE_ALIAS_RESOURCE");
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
       if (!alias_group.has_value()) {
         continue;
       }
@@ -1750,7 +1979,7 @@ bool VgfRepr::process_vgf(
     for (int i = 0; i < IO_count; i++) {
       VGF_PROFILE_SCOPE(
           event_tracer, "VGF_INIT_QUERY_ALIAS_RESOURCE_REQUIREMENTS");
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
       if (!alias_group.has_value()) {
         continue;
       }
@@ -1910,7 +2139,7 @@ bool VgfRepr::process_vgf(
       auto resource_type = resolve_descriptor_type(resource_decoder, i);
       auto resource_format =
           vgflib::ToVkFormat(resource_decoder->getVkFormat(i));
-      auto alias_group = get_resource_alias_group_id(resource_decoder, i);
+      auto alias_group = get_effective_alias_group(i);
 
       // Get tensor shape and strides
       auto shape = resource_decoder->getTensorShape(i);
@@ -3692,49 +3921,28 @@ bool VgfRepr::process_vgf(
       vk_pipeline_cache != VK_NULL_HANDLE ? "enabled" : "disabled");
 
   // Map model sequence inputs/outputs to IO indices
-  auto input_handle =
-      sequence_decoder->getModelSequenceInputBindingSlotsHandle();
-  auto output_handle =
-      sequence_decoder->getModelSequenceOutputBindingSlotsHandle();
-  auto input_names_handle =
-      sequence_decoder->getModelSequenceInputNamesHandle();
-  auto output_names_handle =
-      sequence_decoder->getModelSequenceOutputNamesHandle();
-
-  const size_t model_input_count =
-      sequence_decoder->getNamesSize(input_names_handle);
-  const size_t model_output_count =
-      sequence_decoder->getNamesSize(output_names_handle);
-
-  this->model_input_count = model_input_count;
-  this->model_output_count = model_output_count;
-
-  model_input_io_index.assign(model_input_count, -1);
-  model_output_io_index.assign(model_output_count, -1);
-
-  const size_t input_binding_count =
-      sequence_decoder->getBindingsSize(input_handle);
-  const size_t output_binding_count =
-      sequence_decoder->getBindingsSize(output_handle);
+  vector<int> serialized_model_input_io_index(serialized_model_input_count, -1);
+  vector<int> serialized_model_output_io_index(
+      serialized_model_output_count, -1);
 
   // Model converter may eliminate dead inputs, so fewer bindings than model
   // input names is valid. More bindings than names is not.
-  if (input_binding_count > model_input_count) {
+  if (input_binding_count > serialized_model_input_count) {
     ET_LOG(
         Error,
         "VGF has %zu model input bindings but only %zu model input names",
         input_binding_count,
-        model_input_count);
+        serialized_model_input_count);
     return false;
   }
 
   // Every externally visible model output must have a resource binding.
-  if (output_binding_count != model_output_count) {
+  if (output_binding_count != serialized_model_output_count) {
     ET_LOG(
         Error,
         "VGF has %zu model output bindings for %zu model output names",
         output_binding_count,
-        model_output_count);
+        serialized_model_output_count);
     return false;
   }
 
@@ -3749,14 +3957,14 @@ bool VgfRepr::process_vgf(
     // converter may omit dead inputs from the binding-slot list, so binding_pos
     // is not necessarily the model input index.
     const size_t model_input_idx = static_cast<size_t>(binding);
-    if (model_input_idx >= model_input_count) {
+    if (model_input_idx >= serialized_model_input_count) {
       ET_LOG(
           Error,
           "VGF input binding slot %zu refers to model input %u, "
           "but the model has only %zu inputs",
           binding_pos,
           binding,
-          model_input_count);
+          serialized_model_input_count);
       return false;
     }
 
@@ -3783,7 +3991,7 @@ bool VgfRepr::process_vgf(
       return false;
     }
 
-    if (model_input_io_index[model_input_idx] != -1) {
+    if (serialized_model_input_io_index[model_input_idx] != -1) {
       ET_LOG(
           Error,
           "VGF model input %zu is referenced by multiple input binding slots",
@@ -3791,13 +3999,7 @@ bool VgfRepr::process_vgf(
       return false;
     }
 
-    model_input_io_index[model_input_idx] = io_idx;
-    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index =
-          static_cast<int64_t>(model_input_idx);
-    }
+    serialized_model_input_io_index[model_input_idx] = io_idx;
 
     ET_LOG(
         Debug,
@@ -3843,13 +4045,7 @@ bool VgfRepr::process_vgf(
     // IDs and are not model-output indices. The model converter serializes
     // sequence output binding slots in model-output order, matching the output
     // names vector, so map outputs by binding-slot position.
-    model_output_io_index[output_idx] = io_idx;
-    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index =
-          static_cast<int64_t>(model_input_count + output_idx);
-    }
+    serialized_model_output_io_index[output_idx] = io_idx;
 
     ET_LOG(
         Debug,
@@ -3859,6 +4055,17 @@ bool VgfRepr::process_vgf(
         mrt_idx,
         io_idx);
   }
+
+  auto external_io = vgf_resolve_external_io_mapping(
+      serialized_model_input_io_index,
+      serialized_model_output_io_index,
+      mutable_model_inputs,
+      mutable_model_outputs,
+      zero_copy_io_metadata);
+  model_input_io_index = std::move(external_io.inputs);
+  model_output_io_index = std::move(external_io.outputs);
+  this->model_input_count = model_input_io_index.size();
+  this->model_output_count = model_output_io_index.size();
 
   for (size_t io_idx = 0; io_idx < zero_copy_io_metadata.size(); ++io_idx) {
     auto& metadata = zero_copy_io_metadata[io_idx];
@@ -3935,8 +4142,10 @@ bool VgfRepr::process_vgf(
     // Sync what will be the data coming in from host
     VkMemoryBarrier2 barrier = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-        .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+        .srcStageMask =
+            VK_PIPELINE_STAGE_2_HOST_BIT | vgf_execution_stage_mask(),
+        .srcAccessMask =
+            VK_ACCESS_2_HOST_WRITE_BIT | vgf_execution_write_access_mask(),
         .dstStageMask =
             VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
         .dstAccessMask =
@@ -4031,8 +4240,7 @@ bool VgfRepr::process_vgf(
         for (uint32_t i = 0; i < descriptor_count; i++) {
           auto mrt_i =
               sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
-          auto alias_group =
-              get_resource_alias_group_id(resource_decoder, mrt_i);
+          auto alias_group = get_effective_alias_group(mrt_i);
           if (!alias_group.has_value()) {
             continue;
           }
@@ -4267,6 +4475,26 @@ bool VgfRepr::process_vgf(
     if (!map_persistent_io_memory()) {
       ET_LOG(Error, "Failed to persistently map VGF IO memory");
       return false;
+    }
+
+    for (uint32_t alias_group : mutable_state_alias_groups) {
+      const auto backing = alias_backings.find(alias_group);
+      if (backing == alias_backings.end() ||
+          backing->second.memory == VK_NULL_HANDLE) {
+        ET_LOG(Error, "Mutable VGF alias group has no backing allocation");
+        return false;
+      }
+      const auto mapping = std::find_if(
+          persistent_mapped_memories.begin(),
+          persistent_mapped_memories.end(),
+          [&](const auto& mapped_memory) {
+            return mapped_memory.memory == backing->second.memory;
+          });
+      if (mapping == persistent_mapped_memories.end()) {
+        ET_LOG(Error, "Mutable VGF alias group is not host visible");
+        return false;
+      }
+      std::memset(mapping->data, 0, backing->second.allocation_size);
     }
   }
 
