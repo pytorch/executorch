@@ -359,7 +359,8 @@
       "displayName": "Build ExecuTorch for ESP baremetal",
       "inherits": ["common"],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake",
+        "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY"
       }
     },
     {

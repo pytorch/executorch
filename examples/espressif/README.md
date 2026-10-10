@@ -1,6 +1,7 @@
 # ExecuTorch Executor Runner for Espressif ESP32/ESP32-S3
 
-> **Warning:** This example is not tested in CI. Use at your own risk.
+The ESP32-S3 runner has an [emulator smoke test](#emulator-smoke-test).
+The original ESP32 target is not covered by this test.
 
 This example demonstrates how to run an ExecuTorch model on Espressif ESP32 and
 ESP32-S3 microcontrollers. It is based on the
@@ -40,7 +41,10 @@ ESP-IDF build system and ESP32 memory architecture.
 ```
 examples/espressif/
 ├── README.md                    # This file
+├── setup.sh                     # Install ESP-IDF and esp-emulator
 ├── build.sh                     # Build helper script
+├── export_smoke_model.py        # Export bundled add/multiply test data
+├── test_emulator.py             # Check a smoke-test emulator log
 ├── executor_runner/
 │   ├── CMakeLists.txt           # Component/standalone CMake build
 │   ├── esp_executor_runner.cpp  # Main executor runner
@@ -152,6 +156,12 @@ Output[0][7]: (float) 2.000000
 
 ExecuTorch needs to be cross-compiled for the ESP32 target (Xtensa architecture).
 
+The `esp-baremetal` preset sets `CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY`
+so CMake's header and type checks compile without linking executables. With
+ESP-IDF v5.5.5, those standalone probes fail with `cannot find @/ldflags` because
+they lack the ESP-IDF project's linker configuration. This causes valid headers
+and types to be reported as missing and prevents configuration from completing.
+
 ### Using the ESP-IDF toolchain
 
 ```bash
@@ -171,6 +181,131 @@ cmake --preset esp-baremetal -B cmake-out-esp \
 cmake --build cmake-out-esp -j$(nproc)
 cmake --build cmake-out-esp --target install
 ```
+
+## Emulator Smoke Test
+
+[Espressif's esp-emulator](https://github.com/espressif/esp-emulator) can run
+the ESP32-S3 firmware locally without a board. The following steps export a model
+with two inputs and two outputs (`x + y` and `x * y`), bundle PyTorch reference
+outputs, and run the existing runner with 8 MB of octal PSRAM. Each step can be
+run independently: rebuild after code changes, rerun existing firmware, or check
+a saved log without installing or building anything.
+
+Run these Bash commands from the ExecuTorch repository root with your ExecuTorch
+venv or conda environment active and pip installed.
+
+### 1. Install tools
+
+```bash
+bash examples/espressif/setup.sh
+source ~/.cache/executorch-espressif/setup_path.sh
+```
+
+The installer uses ESP-IDF **v6.1** and esp-emulator **0.48.0**. ESP-IDF's Python
+dependencies are installed into your active environment, so the SDK and
+ExecuTorch share the same Python. The generated `setup_path.sh` adds the installed
+tools to `PATH` and selects the ESP32-S3 target. In a new shell, activate the same
+Python environment and source this file. Installation only needs to be done once.
+
+The default install includes ESP-IDF's standard ESP32-S3 development tools,
+including GDB, OpenOCD, and the ULP toolchains. OpenOCD requires your platform's
+USB libraries (`libusb-1.0-0` on Ubuntu).
+
+For the minimal toolset used by CI, run:
+
+```bash
+bash examples/espressif/setup.sh --minimal
+```
+
+This installs only the Xtensa compiler, SDK Python packages, and emulator. It
+does not require libusb. Source the generated `setup_path.sh` as above to activate
+the tools. Rerun setup without `--minimal` to add the full development toolset.
+
+Set `ESPRESSIF_TOOLS_DIR` to choose another installation directory. The installer
+prints the corresponding activation command. It also accepts `IDF_PATH` and
+`IDF_TOOLS_PATH` for an existing ESP-IDF v6.1 installation. The setup script checks
+the SDK version before installing dependencies into the active environment.
+Use `--skip-idf` or `--skip-emulator` to install only the tools you need.
+
+### 2. Export the test model
+
+```bash
+python examples/espressif/export_smoke_model.py --output cmake-out-esp-emulator/smoke.bpte
+```
+
+The `.bpte` contains the program, test inputs, and expected outputs. Exporting is
+only needed when the model or its test data changes.
+
+### 3. Build the runtime
+
+```bash
+cmake --preset esp-baremetal -G Ninja -B cmake-out-esp-emulator/runtime \
+    -DCMAKE_TOOLCHAIN_FILE="$IDF_PATH/tools/cmake/toolchain-esp32s3.cmake" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF \
+    -DEXECUTORCH_SELECT_OPS_LIST=aten::add.out,aten::mul.out
+cmake --build cmake-out-esp-emulator/runtime --parallel 8
+cmake --install cmake-out-esp-emulator/runtime
+```
+
+### 4. Build the firmware
+
+```bash
+idf.py -C examples/espressif/project -B "$PWD/cmake-out-esp-emulator/firmware" \
+    -DIDF_TARGET=esp32s3 \
+    -DSDKCONFIG="$PWD/cmake-out-esp-emulator/sdkconfig" \
+    -DET_BUILD_DIR_PATH="$PWD/cmake-out-esp-emulator/runtime" \
+    -DET_PTE_FILE_PATH="$PWD/cmake-out-esp-emulator/smoke.bpte" \
+    -DET_BUNDLE_IO=ON -DET_NUM_INFERENCES=3 \
+    -DET_ATOL=0.000001 -DET_RTOL=0.000001 reconfigure
+cmake --build cmake-out-esp-emulator/firmware --parallel 8
+idf.py -C examples/espressif/project -B "$PWD/cmake-out-esp-emulator/firmware" merge-bin
+```
+
+The build embeds the bundled model and enables reference-output comparisons.
+The project's default ESP32-S3 configuration enables 8 MB of octal PSRAM.
+For incremental builds, rerun the build and merge commands; reconfigure when
+changing CMake options.
+
+### 5. Run the emulator
+
+```bash
+esp-emu --chip esp32s3 \
+    --firmware cmake-out-esp-emulator/firmware/merged-binary.bin \
+    --elf cmake-out-esp-emulator/firmware/executorch_esp_runner.elf \
+    --net user --psram-size 8M --exit-on 'Program complete.'
+```
+
+This boots the existing firmware and prints its output in the terminal. Change
+the firmware paths to run another build.
+
+### 6. Check the test result
+
+To validate a run automatically, append `> emulator.log 2>&1` to the emulator
+command above to capture its output, then run:
+
+```bash
+python examples/espressif/test_emulator.py emulator.log
+```
+
+This check uses only the Python standard library. It requires the ESP platform
+hooks, PSRAM initialization, three completed inferences, matching bundled
+outputs, and firmware completion. A missing success marker or failed comparison
+fails the test. This also detects incomplete runs when the emulator's optional
+`--timeout` returns exit status zero. The check can be rerun on a saved log
+without rebuilding or starting the emulator.
+
+The [CI wrapper](../../.ci/scripts/test_espressif.sh) composes these same steps,
+adds a host timeout, and collects logs and firmware. The
+[GitHub Actions workflow](../../.github/workflows/test-espressif.yml) runs it on
+pull requests changing the ESP integration, pushes to `main` and `release/*`,
+weekly, and on manual dispatch. Branch and scheduled runs cover changes to
+shared runtime and export code.
+
+This covers CPU execution and the ESP-IDF integration on S3. It does not establish
+performance or peripheral behavior on real boards, and the emulator does not
+support the original ESP32.
 
 ## Memory Considerations
 
@@ -244,7 +379,7 @@ For larger models, load from the filesystem at runtime:
 | Performance monitor | ARM PMU + Ethos-U PMU | CPU cycle counter + esp_timer |
 | Semihosting | FVP simulator filesystem access | SPIFFS/LittleFS/SD filesystem |
 | Entry point | `main()` bare-metal | `app_main()` via FreeRTOS |
-| Timing | ARM_PMU_Get_CCNTR() | esp_cpu_get_cycle_count() |
+| Timing | ARM_PMU_Get_CCNTR() | esp_timer_get_time() |
 
 ## Troubleshooting
 
