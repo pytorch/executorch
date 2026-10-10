@@ -748,6 +748,7 @@ class SPVGenerator:
 
         self.src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
+        self.yaml_relative_dirs: Dict[str, str] = {}
 
         self.addSrcAndYamlFiles(self.src_dir_paths)
         self.shader_template_params: Dict[Any, Any] = {}
@@ -759,20 +760,30 @@ class SPVGenerator:
 
     def addSrcAndYamlFiles(self, src_dir_paths: List[str]) -> None:
         for src_path in src_dir_paths:
+            src_path = os.path.abspath(src_path)
             # Collect glsl source files
             src_files_list = glob.glob(
                 os.path.join(src_path, "**", "*.[gh]lsl*"), recursive=True
             ) + glob.glob(os.path.join(src_path, "**", "*.h"), recursive=True)
-            for file in src_files_list:
+            for file in sorted(src_files_list):
                 if len(file) > 1:
-                    self.src_files[extract_filename(file, keep_ext=False)] = file
+                    relative_path = os.path.relpath(file, src_path)
+                    src_name = os.path.join(
+                        os.path.dirname(relative_path),
+                        extract_filename(relative_path, keep_ext=False),
+                    )
+                    if src_name in self.src_files:
+                        raise KeyError(f"{relative_path} source file is defined twice")
+                    self.src_files[src_name] = file
             # Collect template yaml files
             yaml_files = glob.glob(
                 os.path.join(src_path, "**", "*.yaml"), recursive=True
             )
-            for file in yaml_files:
+            for file in sorted(yaml_files):
                 if len(file) > 1:
                     self.template_yaml_files.append(file)
+                    relative_path = os.path.relpath(file, src_path)
+                    self.yaml_relative_dirs[file] = os.path.dirname(relative_path)
 
     def generateVariantCombinations(  # noqa: C901
         self,
@@ -839,14 +850,17 @@ class SPVGenerator:
         with open(yaml_file) as f:
             contents = yaml.load(f, Loader=UniqueKeyLoader)
             for template_name, params_dict in contents.items():
-                if template_name in self.shader_template_params:
-                    raise KeyError(f"{template_name} params file is defined twice")
+                template_path = os.path.normpath(
+                    os.path.join(self.yaml_relative_dirs[yaml_file], template_name)
+                )
+                if template_path in self.shader_template_params:
+                    raise KeyError(f"{template_path} params file is defined twice")
 
                 default_params = params_dict["parameter_names_with_default_values"]
                 default_params["YAML_SRC_FULLPATH"] = yaml_file
                 params_names = set(default_params.keys()).union({"NAME"})
 
-                self.shader_template_params[template_name] = []
+                self.shader_template_params[template_path] = []
 
                 default_iterated_params = params_dict.get(
                     "generate_variant_forall", None
@@ -907,7 +921,7 @@ class SPVGenerator:
                             default_params_copy["NAME"] = variant_name
                             default_params_copy["VARIANT_NAME"] = variant["NAME"]
 
-                            self.shader_template_params[template_name].append(
+                            self.shader_template_params[template_path].append(
                                 default_params_copy
                             )
                     else:
@@ -916,7 +930,7 @@ class SPVGenerator:
                             if key not in reserved_yaml_keys:
                                 default_params_copy[key] = variant[key]
 
-                        self.shader_template_params[template_name].append(
+                        self.shader_template_params[template_path].append(
                             default_params_copy
                         )
 
@@ -944,18 +958,36 @@ class SPVGenerator:
         return shader_params
 
     def constructOutputMap(self) -> None:
+        shader_names = set()
+
+        def add_output(
+            output_name: str,
+            src_file_fullpath: str,
+            params: Dict[str, str],
+        ) -> None:
+            if output_name in self.output_file_map:
+                raise KeyError(f"{output_name} output file is defined twice")
+            if extract_extension(src_file_fullpath) == "glsl":
+                shader_name = os.path.basename(output_name)
+                if shader_name in shader_names:
+                    raise KeyError(f"{shader_name} shader is defined twice")
+                shader_names.add(shader_name)
+            self.output_file_map[output_name] = (src_file_fullpath, params)
+
         for src_name, params in self.shader_template_params.items():
             for variant in params:
                 src_file_fullpath = self.src_files[src_name]
-
-                self.output_file_map[variant["NAME"]] = (
+                output_name = os.path.join(os.path.dirname(src_name), variant["NAME"])
+                add_output(
+                    output_name,
                     src_file_fullpath,
                     self.create_shader_params(variant),
                 )
 
         for src_name, src_file_fullpath in self.src_files.items():
             if src_name not in self.shader_template_params:
-                self.output_file_map[src_name] = (
+                add_output(
+                    src_name,
                     src_file_fullpath,
                     self.create_shader_params(),
                 )
@@ -1054,21 +1086,55 @@ class SPVGenerator:
             cached_checksum = self.get_md5_checksum(cached_file_path)
             return current_checksum != cached_checksum
 
-        def any_sources_changed(gen_file_path, output_dir):
+        def get_include_dirs(gen_file_path):
+            """
+            Return the directories searched for a generated file's includes: its
+            own directory, then each ancestor up to output_dir, nearest first.
+            """
+            include_dir = os.path.dirname(gen_file_path)
+            include_dirs = [include_dir]
+            while include_dir != output_dir:
+                parent_dir = os.path.dirname(include_dir)
+                if parent_dir == include_dir:
+                    raise ValueError(
+                        f"{gen_file_path} is outside output directory {output_dir}"
+                    )
+                include_dir = parent_dir
+                include_dirs.append(include_dir)
+            return include_dirs
+
+        def any_sources_changed(gen_file_path, visited=None):
             """
             Given the path to a generated source file, check the gen_file_meta dict to
             determine if the ANY of the source files contributing to the compilation of
             this file were changed since the last successful compilation.
             """
-            gen_file_changed, includes_list = gen_file_meta[gen_file_path]
-            any_changed = gen_file_changed
-            for included_file in includes_list:
-                included_file_path = os.path.join(output_dir, included_file)
-                any_changed = any_changed or any_sources_changed(
-                    included_file_path, output_dir
-                )
+            if visited is None:
+                visited = set()
+            if gen_file_path in visited:
+                return False
+            if gen_file_path not in gen_file_meta:
+                return True
+            visited.add(gen_file_path)
 
-            return any_changed
+            gen_file_changed, includes_list = gen_file_meta[gen_file_path]
+            if gen_file_changed:
+                return True
+            include_dirs = get_include_dirs(gen_file_path)
+            for included_file in includes_list:
+                candidate_paths = [
+                    os.path.normpath(os.path.join(include_dir, included_file))
+                    for include_dir in include_dirs
+                ]
+                included_file_path = next(
+                    (path for path in candidate_paths if path in gen_file_meta),
+                    # Untracked includes must disable the cache.
+                    candidate_paths[-1],
+                )
+                if any_sources_changed(included_file_path, visited):
+                    return True
+
+            return False
 
         def generate_src_file(shader_paths_pair) -> Tuple[bool, List[str]]:
             """
@@ -1102,6 +1168,8 @@ class SPVGenerator:
             cached_gen_out_path = os.path.join(
                 cache_dir, f"{src_file_name}.{out_file_ext}"
             )
+            os.makedirs(os.path.dirname(gen_out_path), exist_ok=True)
+            os.makedirs(os.path.dirname(cached_gen_out_path), exist_ok=True)
 
             # Execute codegen to generate the output file
             with codecs.open(template_file_path, "r", encoding="utf-8") as input_file:
@@ -1191,7 +1259,7 @@ class SPVGenerator:
                 # in the cache.
                 cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
 
-                can_use_cached = not any_sources_changed(gen_out_path, output_dir)
+                can_use_cached = not any_sources_changed(gen_out_path)
                 if can_use_cached and os.path.exists(cached_spv_out_path):
                     shutil.copyfile(cached_spv_out_path, spv_out_path)
                     return (spv_out_path, gen_out_path)
@@ -1207,9 +1275,9 @@ class SPVGenerator:
                     spv_out_path,
                     "--target-env=vulkan{}".format(vk_version),
                     "-Werror",
-                    "-I",
-                    output_dir,
                 ]
+                for include_dir in get_include_dirs(gen_out_path):
+                    cmd_base += ["-I", include_dir]
                 cmd = cmd_base + self.glslc_flags
 
                 try:
