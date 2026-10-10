@@ -12,6 +12,7 @@ sdpa_compute_attn_weights_tiled:
     K_CACHE_STORAGE: texture3d
     MODE: llm
     HAS_BIAS: false
+    HAS_MASK: false
     TILE_M4: 1
     TILE_K4: 1
     TILE_N4: 1
@@ -31,6 +32,8 @@ sdpa_compute_attn_weights_tiled:
           suffix: half
   shader_variants:
     - NAME: sdpa_compute_attn_weights_tiled
+    - NAME: sdpa_compute_attn_weights_tiled_mask
+      HAS_MASK: true
     - NAME: fused_sdpa_qk_tiled
       MODE: fused
       OUT_DTYPE: float

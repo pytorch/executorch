@@ -10,6 +10,8 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan.op_registry import check_llm_sdpa_node
+
 from executorch.backends.vulkan.patterns.pattern_registry import (
     PatternMatch,
     register_pattern_detector,
@@ -87,6 +89,11 @@ def find_causal_sdpa_patterns(
     node: torch.fx.Node,
 ) -> Optional[CausalSDPAMatch]:
     if not is_custom_sdpa_node(node):
+        return None
+
+    # A matched node is delegated without the partitioner's per-op checks, so
+    # leave unsupported mask configurations unmatched to keep them on CPU.
+    if not check_llm_sdpa_node(node):
         return None
 
     matched_pattern = CausalSDPAMatch(node)
