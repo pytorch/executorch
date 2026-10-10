@@ -34,8 +34,8 @@ from executorch.backends.mlx.serialization._generated_serializers import (
     MLX_OP_TYPE_NAMES,
 )
 from executorch.exir._serialize._program import (
-    _ExtendedHeader,
     _extract_delegate_payload as extract_delegate_payload,
+    _get_extended_header,
 )
 
 MLX_MAGIC = b"MLX0"
@@ -468,29 +468,20 @@ def parse_executorch_program(pte_data: bytes) -> Dict[str, Any]:  # noqa: C901
     result["flatbuffer_magic"] = fb_magic.decode("utf-8", errors="replace")
 
     extended_header_offset = 8
-    if len(pte_data) > extended_header_offset + 32:
-        try:
-            header = _ExtendedHeader.from_bytes(
-                pte_data[
-                    extended_header_offset : extended_header_offset
-                    + _ExtendedHeader.EXPECTED_LENGTH
-                ]
-            )
-            if header.is_valid():
-                result["extended_header"] = {
-                    "magic": header.magic.decode("utf-8", errors="replace"),
-                    "length": header.length,
-                    "program_size": header.program_size,
-                    "segment_base_offset": header.segment_base_offset,
-                    "segment_data_size": header.segment_data_size,
-                }
-                fb_start = extended_header_offset + header.length
-                result["flatbuffer_offset"] = fb_start
-                result["flatbuffer_size"] = header.program_size
-                result["segment_offset"] = header.segment_base_offset
-                result["segment_size"] = header.segment_data_size
-        except Exception as e:
-            result["header_parse_error"] = str(e)
+    header = _get_extended_header(pte_data)
+    if header is not None:
+        result["extended_header"] = {
+            "magic": header.magic.decode("utf-8", errors="replace"),
+            "length": header.length,
+            "program_size": header.program_size,
+            "segment_base_offset": header.segment_base_offset,
+            "segment_data_size": header.segment_data_size,
+        }
+        fb_start = extended_header_offset + header.length
+        result["flatbuffer_offset"] = fb_start
+        result["flatbuffer_size"] = header.program_size
+        result["segment_offset"] = header.segment_base_offset
+        result["segment_size"] = header.segment_data_size
 
     try:
         from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
