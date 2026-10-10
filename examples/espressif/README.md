@@ -134,7 +134,6 @@ I [executorch:esp_executor_runner.cpp:780 runner_init()] Input prepared.
 I [executorch:esp_executor_runner.cpp:979 run_model()] Starting running 1 inferences...
 I [executorch:esp_perf_monitor.cpp:41 StopMeasurements()] Profiler report:
 I [executorch:esp_perf_monitor.cpp:42 StopMeasurements()] Number of inferences: 1
-I [executorch:esp_perf_monitor.cpp:43 StopMeasurements()] Total CPU cycles: 49545 (49545.00 per inference)
 I [executorch:esp_perf_monitor.cpp:48 StopMeasurements()] Total wall time: 205 us (205.00 us per inference)
 I [executorch:esp_perf_monitor.cpp:53 StopMeasurements()] Average inference time: 0.205 ms
 I [executorch:esp_perf_monitor.cpp:59 StopMeasurements()] Free heap: 6097576 bytes
@@ -151,6 +150,9 @@ Output[0][6]: (float) 2.000000
 Output[0][7]: (float) 2.000000
 
 ```
+
+The profiler reports wall time for the whole inference loop, including input
+preparation and tracing setup.
 
 ## Cross-Compiling ExecuTorch
 
@@ -380,7 +382,7 @@ For larger models, load from the filesystem at runtime:
 | Build system | Bare-metal CMake + Arm toolchain | ESP-IDF (FreeRTOS-based) |
 | NPU | Ethos-U55/U65/U85 | None (CPU only) |
 | Memory | ITCM/DTCM/SRAM/DDR via linker script | IRAM/DRAM/PSRAM via ESP-IDF |
-| Performance monitor | ARM PMU + Ethos-U PMU | CPU cycle counter + esp_timer |
+| Performance monitor | ARM PMU + Ethos-U PMU | esp_timer (64-bit wall time) |
 | Semihosting | FVP simulator filesystem access | SPIFFS/LittleFS/SD filesystem |
 | Entry point | `main()` bare-metal | `app_main()` via FreeRTOS |
 | Timing | ARM_PMU_Get_CCNTR() | esp_timer_get_time() |

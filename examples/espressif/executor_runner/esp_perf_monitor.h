@@ -10,8 +10,7 @@
 /**
  * Performance monitoring helpers for Espressif ESP32/ESP32-S3.
  *
- * Uses the Xtensa/RISC-V CPU cycle counter (CCOUNT register on Xtensa,
- * or esp_cpu_get_cycle_count() from ESP-IDF) for timing measurements.
+ * Uses ESP-IDF's 64-bit monotonic timer for elapsed wall time.
  */
 
 void StartMeasurements();
