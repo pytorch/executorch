@@ -9,8 +9,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
 
 #include <optional>
 
@@ -32,8 +32,8 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // impl_selector grammar:
   //   ""             -> aten.convolution.default (heuristic-routed:
   //                     should_use_conv2d_im2col() picks direct vs im2col)
-  //   "direct"       -> add_conv2d_node(force_direct=true): forces the direct
-  //                     sliding-window path, bypassing the routing heuristic
+  //   "direct"       -> conv2d_direct_impl: forces the direct sliding-window
+  //                     path, bypassing the routing heuristic
   //   "im2col"       -> et_vk.conv2d_gemm.default, auto im2col storage
   //   "im2col_buffer"-> im2col/GEMM, force buffer im2col intermediate
   //   "im2col_tex2d" -> im2col/GEMM, force texture2d im2col intermediate
@@ -94,11 +94,10 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   // The "direct" selector must reach the exact direct sliding-window dispatch
   // the heuristic would otherwise pick. The registered op can only route via
-  // the heuristic, so call add_conv2d_node directly with force_direct=true to
-  // bypass it (mirroring how the forced-storage variants call
-  // conv2d_gemm_impl).
+  // the heuristic, so call conv2d_direct_impl directly to bypass it (mirroring
+  // how the forced-storage variants call conv2d_gemm_impl).
   if (impl_selector == "direct") {
-    add_conv2d_node(
+    conv2d_direct_impl(
         graph,
         input,
         weight,
@@ -109,11 +108,10 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         transposed,
         output_padding,
         groups,
-        /*out_min=*/kDummyValueRef,
-        /*out_max=*/kDummyValueRef,
         out,
         /*clamp_out=*/false,
-        /*force_direct=*/true);
+        /*out_min_val=*/0.0f,
+        /*out_max_val=*/0.0f);
     return;
   }
 

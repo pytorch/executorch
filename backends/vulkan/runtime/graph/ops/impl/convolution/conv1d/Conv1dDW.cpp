@@ -150,7 +150,7 @@ void add_conv1d_dw_node(
 // Args: in, weight, bias, stride, padding, dilation, groups,
 //       output_min, output_max, out
 // output_min and output_max may be kDummyValueRef (no clamp).
-void conv1d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void conv1d_dw_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef in = args[0];
   ValueRef weight = args[1];
   ValueRef bias = args[2];
@@ -182,7 +182,7 @@ void conv1d_dw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(et_vk.conv1d_dw.default, conv1d_dw);
+  VK_REGISTER_OP(et_vk.conv1d_dw.default, conv1d_dw_impl);
 }
 
 } // namespace vkcompute

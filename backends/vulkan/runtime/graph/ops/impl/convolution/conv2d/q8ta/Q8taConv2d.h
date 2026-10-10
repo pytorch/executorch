@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+
 #include <cstdint>
 
 namespace vkcompute {
@@ -29,5 +31,7 @@ struct Q8taConv2dRouteParams final {
 };
 
 bool should_use_q8ta_conv2d_im2col(const Q8taConv2dRouteParams& params);
+
+void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
 } // namespace vkcompute
