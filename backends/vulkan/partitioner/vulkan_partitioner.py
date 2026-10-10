@@ -78,6 +78,9 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
         self.downcast_64_bit = downcast_64_bit
+        self.constant_nodes: Set[torch.fx.Node] = (
+            constant_nodes if constant_nodes is not None else set()
+        )
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -328,6 +331,15 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "op args not supported")
             return False
 
+        if (
+            features.are_node_inputs_supported_with_constants_fn is not None
+            and not features.are_node_inputs_supported_with_constants_fn(
+                node, self.constant_nodes
+            )
+        ):
+            self.log_skip(node, "op args are not constant where required")
+            return False
+
         if not features.supports_highdim and utils.op_contains_high_dim_tensor(node):
             self.log_skip(node, "op does not support high dim tensors")
             return False
@@ -476,12 +488,7 @@ class VulkanPartitioner(Partitioner):
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
                 downcast_64_bit=self.options.get("downcast_64_bit", True),
-                constant_nodes={
-                    node
-                    for node in exported_program.graph.nodes
-                    if utils.is_param_node(exported_program, node)
-                    and not utils.is_mutable_buffer_node(node, exported_program)
-                },
+                constant_nodes=utils.get_constant_nodes(exported_program),
             ),
             allows_single_node_partition=True,
         )
