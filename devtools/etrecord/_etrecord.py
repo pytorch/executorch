@@ -9,7 +9,8 @@
 import io
 import json
 import os
-from typing import BinaryIO, Dict, IO, List, Optional, Union
+from dataclasses import dataclass
+from typing import BinaryIO, Dict, IO, List, Optional, Tuple, Union
 from zipfile import BadZipFile, ZipFile
 
 import torch
@@ -55,6 +56,25 @@ class ETRecordReservedFileNames(StrEnum):
     INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = "instruction_id_to_num_outs_map"
     REFERENCE_OUTPUTS = "reference_outputs"
     REPRESENTATIVE_INPUTS = "representative_inputs"
+
+
+@dataclass(frozen=True)
+class DelegatePartitionProvenance:
+    """Backend-agnostic provenance for one emitted delegate partition.
+
+    ``instruction_id`` is local to ``method_name`` and identifies the emitted
+    ``executorch_call_delegate`` instruction. ``source_debug_handles`` contains
+    the source/Edge debug handles captured from the delegate's original module.
+
+    The same source debug handle may appear in more than one partition. Consumers
+    should therefore treat this as a relation rather than constructing a single
+    ``debug_handle -> partition`` mapping.
+    """
+
+    method_name: str
+    instruction_id: int
+    backend_id: str
+    source_debug_handles: Tuple[int, ...]
 
 
 class ETRecord:
@@ -516,6 +536,172 @@ class ETRecord:
             self._reference_outputs = {"forward": reference_outputs}
         else:
             self._reference_outputs = reference_outputs
+
+
+def _normalize_nonnegative_int(value: object, description: str) -> int:
+    """Normalize JSON/in-memory integer values while rejecting ambiguous data."""
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid {description}: boolean values are not allowed")
+
+    if isinstance(value, int):
+        normalized = value
+    elif isinstance(value, str):
+        try:
+            normalized = int(value)
+        except ValueError as exc:
+            raise ValueError(f"Invalid {description}: {value!r}") from exc
+    else:
+        raise ValueError(f"Invalid {description}: {value!r}")
+
+    if normalized < 0:
+        raise ValueError(f"Invalid {description}: {normalized}")
+    return normalized
+
+
+def _normalize_source_debug_handles(
+    value: object,
+    *,
+    method_name: str,
+    instruction_id: int,
+) -> Tuple[int, ...]:
+    """Normalize one delegate instruction's source debug-handle collection."""
+    if isinstance(value, (int, str)) and not isinstance(value, bool):
+        raw_handles = [value]
+    elif isinstance(value, (list, tuple)):
+        raw_handles = value
+    else:
+        raise ValueError(
+            "Invalid ETRecord debug-handle entry for delegate instruction "
+            f"{method_name}/{instruction_id}: {value!r}"
+        )
+
+    handles = []
+    seen = set()
+    for raw_handle in raw_handles:
+        handle = _normalize_nonnegative_int(
+            raw_handle,
+            f"debug handle for delegate instruction {method_name}/{instruction_id}",
+        )
+        if handle not in seen:
+            seen.add(handle)
+            handles.append(handle)
+    return tuple(handles)
+
+
+def _lookup_delegate_instruction_handles(
+    method_debug_handle_map: Dict[Union[int, str], object],
+    instruction_id: int,
+) -> object:
+    """Look up an instruction in both in-memory and JSON-deserialized maps."""
+    candidate_keys = (instruction_id, str(instruction_id))
+    for key in candidate_keys:
+        if key in method_debug_handle_map:
+            return method_debug_handle_map[key]
+    raise KeyError(instruction_id)
+
+
+def get_delegate_partition_provenance(  # noqa: C901
+    etrecord: ETRecord,
+) -> Dict[str, Tuple[DelegatePartitionProvenance, ...]]:
+    """Return delegate partition provenance using ETRecord's existing metadata.
+
+    This is the supported consumer API for reconstructing delegate partitions
+    without reading ETRecord private fields. It does not add a new ETRecord wire
+    format field: provenance is derived from the existing delegate map and debug
+    handle map emitted for ``executorch_call_delegate`` instructions.
+
+    Args:
+        etrecord: Parsed or in-memory ETRecord.
+
+    Returns:
+        A mapping from method name to delegate partitions sorted by instruction ID.
+        Methods present in the delegate map but containing no delegates are returned
+        with an empty tuple.
+
+    Raises:
+        ValueError: If delegate metadata is present but internally inconsistent.
+    """
+    delegate_map = etrecord._delegate_map
+    if not delegate_map:
+        return {}
+    if not isinstance(delegate_map, dict):
+        raise ValueError("Invalid ETRecord delegate map")
+
+    debug_handle_map = etrecord._debug_handle_map
+    if not isinstance(debug_handle_map, dict):
+        raise ValueError(
+            "ETRecord contains delegate metadata but does not contain a valid "
+            "debug handle map"
+        )
+
+    provenance: Dict[str, Tuple[DelegatePartitionProvenance, ...]] = {}
+    for method_name, method_delegate_map in delegate_map.items():
+        if not isinstance(method_name, str) or not isinstance(
+            method_delegate_map, dict
+        ):
+            raise ValueError(
+                f"Invalid ETRecord delegate metadata for method {method_name!r}"
+            )
+
+        if not method_delegate_map:
+            provenance[method_name] = ()
+            continue
+
+        method_debug_handle_map = debug_handle_map.get(method_name)
+        if not isinstance(method_debug_handle_map, dict):
+            raise ValueError(
+                "ETRecord delegate metadata has no matching debug-handle map for "
+                f"method {method_name!r}"
+            )
+
+        partitions = []
+        for raw_instruction_id, delegate_metadata in method_delegate_map.items():
+            instruction_id = _normalize_nonnegative_int(
+                raw_instruction_id,
+                f"delegate instruction ID in method {method_name!r}",
+            )
+            if not isinstance(delegate_metadata, dict):
+                raise ValueError(
+                    "Invalid ETRecord delegate metadata for instruction "
+                    f"{method_name}/{instruction_id}"
+                )
+
+            backend_id = delegate_metadata.get("name")
+            if not isinstance(backend_id, str) or not backend_id:
+                raise ValueError(
+                    "ETRecord delegate metadata has no valid backend name for "
+                    f"instruction {method_name}/{instruction_id}"
+                )
+
+            try:
+                raw_handles = _lookup_delegate_instruction_handles(
+                    method_debug_handle_map,
+                    instruction_id,
+                )
+            except KeyError as exc:
+                raise ValueError(
+                    "ETRecord delegate metadata has no matching debug-handle entry "
+                    f"for instruction {method_name}/{instruction_id}"
+                ) from exc
+
+            partitions.append(
+                DelegatePartitionProvenance(
+                    method_name=method_name,
+                    instruction_id=instruction_id,
+                    backend_id=backend_id,
+                    source_debug_handles=_normalize_source_debug_handles(
+                        raw_handles,
+                        method_name=method_name,
+                        instruction_id=instruction_id,
+                    ),
+                )
+            )
+
+        provenance[method_name] = tuple(
+            sorted(partitions, key=lambda partition: partition.instruction_id)
+        )
+
+    return provenance
 
 
 def _get_reference_outputs(

@@ -145,3 +145,33 @@ Using an ``ETRecord``
 ---------------------
 
 Pass the ``ETRecord`` as an optional argument into the `Inspector API <model-inspector.html>`__ to access this data and  do post-run analysis.
+
+Delegate partition provenance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Tools that need to construct delegate/partition structure before an ETDump is
+available can use ``get_delegate_partition_provenance``. This exposes a
+backend-agnostic view of the existing ETRecord delegate and debug-handle
+metadata without requiring consumers to access private ETRecord fields.
+
+.. code-block:: python
+
+    from executorch.devtools.etrecord import (
+        get_delegate_partition_provenance,
+        parse_etrecord,
+    )
+
+    etrecord = parse_etrecord("model_debug.etrecord")
+    provenance = get_delegate_partition_provenance(etrecord)
+
+    for partition in provenance.get("forward", ()):
+        print(partition.instruction_id)
+        print(partition.backend_id)
+        print(partition.source_debug_handles)
+
+The delegate instruction ID is scoped to its method and identifies the emitted
+``executorch_call_delegate`` instruction. It is suitable as an artifact-local
+partition identity, but it is not guaranteed to remain stable after rebuilding
+or re-exporting the model. A source debug handle may also appear in more than
+one partition, so consumers should preserve the many-to-many provenance
+relationship rather than assuming a single partition per debug handle.
