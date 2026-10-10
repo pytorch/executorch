@@ -193,6 +193,12 @@ void embedding_xbit_per_channel(
 
   for (int i = 0; i < indices.numel(); i++) {
     CTYPE_INDICES index = indices_ptr[i];
+    ET_CHECK_MSG(
+        index >= 0 && index < weight.size(0),
+        "Index out of bounds for weight: index %" PRId64
+        " must be in range [0, %zd)",
+        static_cast<int64_t>(index),
+        weight.size(0));
     // If using groupwise embedding
     int32_t qparams_index = index * num_groups_per_channel;
     CTYPE_PARAMS zp = 0.0;
