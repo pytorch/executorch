@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import logging
+import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.samsung.builders.node_visitor as node_visitor
@@ -22,6 +23,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.samsung.utils.constants import QuantConstants
 from executorch.backends.samsung.utils.utils import get_compile_spec
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -74,6 +76,18 @@ class EnnOperatorSupport(OperatorSupportBase):
         if node.op != "call_function":
             return False
 
+        # The SDK has no TopK exporter. Keep its output Q/DQ on CPU too,
+        # since Q/DQ-only delegate partitions disappear during preprocessing.
+        producer = node
+        while producer.target in (
+            operator.getitem,
+            *QuantConstants.QUANT_OPS_KEY_MAP,
+            *QuantConstants.DEQUANT_OPS_KEY_MAP,
+        ):
+            producer = producer.args[0]
+        if producer.target == exir_ops.edge.aten.topk.default:
+            return False
+
         if node.op in [
             "get_attr",
             "placeholder",
@@ -83,6 +97,9 @@ class EnnOperatorSupport(OperatorSupportBase):
 
         if node.target in SUPPORTED_OPS:
             return True
+
+        if node.target == operator.getitem:
+            return self.is_node_supported(_, node.args[0])
 
         if node.target.__name__ in self.node_visitors:
             enn_graph = EnnGraph()

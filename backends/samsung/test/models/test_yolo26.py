@@ -19,9 +19,16 @@ from executorch.examples.models.yolo26 import YOLO26Model
 class TestMilestoneYolo26(unittest.TestCase):
     def test_yolo26_fp16(self):
         torch.manual_seed(8)
-        model = YOLO26Model().get_eager_model()
-        example_input = YOLO26Model().get_example_inputs()
+        provider = YOLO26Model()
+        model = provider.get_eager_model()
+        example_input = provider.get_example_inputs()
         tester = SamsungTester(
             model, example_input, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
-        (tester.export().to_edge_transform_and_lower().to_executorch())
+        (
+            tester.export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
+            .check(["executorch_exir_dialects_edge__ops_aten_topk_default"])
+            .to_executorch()
+        )

@@ -42,6 +42,8 @@ class TestMilestoneMobileBertQAT(unittest.TestCase):
         self._random_state = random.getstate()
         self._np_random_state = np.random.get_state()
         self._torch_rng_state = torch.get_rng_state()
+        # Match Trainer's seed before initializing the classification head.
+        torch.manual_seed(42)
 
     def tearDown(self):
         random.setstate(self._random_state)
@@ -67,7 +69,7 @@ class TestMilestoneMobileBertQAT(unittest.TestCase):
         # Get the finetune model
         mobilebert_finetune = MobileBertFinetune(metric, args)
         model, tokenized_datasets = mobilebert_finetune.get_finetune_mobilebert(
-            args.artifact
+            args.artifact, max_train_samples=128, learning_rate=5e-4
         )
 
         # Configure QAT parameters
