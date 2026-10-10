@@ -799,6 +799,25 @@ class TestProgramManagers(unittest.TestCase):
         except SpecViolationError:
             self.fail("Should not error out on linalg_vector_norm op")
 
+    def test_to_edge_decomposes_var_mean_and_std_mean(self):
+        class VarMeanStdMean(torch.nn.Module):
+            def forward(self, x: torch.Tensor):
+                var, mean = torch.var_mean(x, dim=1, correction=0)
+                std, std_mean = torch.std_mean(x, dim=1)
+                return var, mean, std, std_mean
+
+        model = VarMeanStdMean()
+        x = torch.randn(3, 7)
+        ep = torch.export.export(model, (x,), strict=True)
+
+        # aten.var_mean.correction is not a core ATen op, so it must be decomposed
+        executorch_module = _load_for_executorch_from_buffer(
+            to_edge(ep).to_executorch().buffer
+        )
+        outputs = executorch_module.run_method("forward", (x,))
+        for output, expected in zip(outputs, model(x)):
+            self.assertTrue(torch.allclose(output, expected, atol=1e-5))
+
     @staticmethod
     def _count_nodes(graph_module, targets):
         """Count nodes in graph_module whose target matches any in targets."""
