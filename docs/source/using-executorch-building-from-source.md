@@ -36,7 +36,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.14
+* `python` version 3.11-3.15
 * `cmake` version 3.26 or higher
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
@@ -57,7 +57,7 @@ portability details.
    ```bash
    git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10
+   conda create -yn executorch python=3.11
    conda activate executorch
    ```
 

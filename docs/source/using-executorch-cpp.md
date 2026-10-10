@@ -422,7 +422,7 @@ pip install executorch torch \
   --extra-index-url https://pypi.org/simple
 ```
 
-CUDA wheels are built for Python 3.10 through 3.14, which is every Python this project supports.
+CUDA wheels are built for Python 3.11 through 3.15, which is every Python this project supports.
 
 The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
 dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
