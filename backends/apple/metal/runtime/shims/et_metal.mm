@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <unordered_set>
 #include <list>
 #include <map>
 #include <optional>
@@ -81,6 +82,158 @@ void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)()) {
 // Global Metal buffer mapping - accessible for MPS shim
 std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
 
+namespace {
+// A view's address mapped to the address of the buffer it lives in, counted
+// because several tensors can be views of the same address. For a view of CPU
+// memory, `base` is the start of a CPU region in cpu_regions.
+struct MetalView {
+    void* base;
+    int32_t count;
+    bool cpu = false;
+};
+std::unordered_map<void*, MetalView> ptr_to_view;
+
+// CPU memory that views of it are bound into, the way views of a Metal
+// allocation are bound into its buffer: one no-copy buffer over the whole
+// region, which all its views and the region's own address share, so Metal
+// orders their uses. Separate buffers over overlapping memory would not be. The
+// buffer lives as long as the memory, not its views: views come and go all the
+// time, and a new buffer for the same memory would not be ordered with work
+// still queued on the old one.
+struct CpuRegion {
+    id<MTLBuffer> buffer;
+    // Memory the runtime allocated: the region lives until the memory is freed
+    // (metal_release_cpu_region). Other memory can be freed and its address
+    // reused behind the runtime's back, so its region only lives while views
+    // of it do, and `views` counts their handles.
+    bool owned;
+    int32_t views;
+    // Whether queued work has bound this buffer (metal_resolve_buffer), and
+    // how many waits the stream had completed when it last did. There is one
+    // stream (see getCurrentMetalStream).
+    bool bound = false;
+    uint64_t bound_at = 0;
+};
+std::unordered_map<void*, CpuRegion> cpu_regions;
+
+bool contains(const void* start, id<MTLBuffer> buffer, const void* ptr) {
+    const auto* begin = static_cast<const uint8_t*>(start);
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    return begin <= p && p < begin + [buffer length];
+}
+
+// Finds the memory `ptr` lies in: a Metal buffer, given by the address it is
+// keyed at in ptr_to_mtl_buffer, or a CPU region (`*cpu`). Registered views and
+// buffer or region starts are looked up directly. Any other pointer, such as a
+// tensor made from a blob at an offset into a buffer, is found by address,
+// which scans every buffer: this is for registering such tensors when they are
+// made, not for lookups while running.
+bool find_memory(void* ptr, void** base, bool* cpu) {
+    auto view = ptr_to_view.find(ptr);
+    if (view != ptr_to_view.end()) {
+        *base = view->second.base;
+        *cpu = view->second.cpu;
+        return *cpu ? cpu_regions.find(*base) != cpu_regions.end()
+                    : ptr_to_mtl_buffer.find(*base) != ptr_to_mtl_buffer.end();
+    }
+    if (ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end()) {
+        *base = ptr;
+        *cpu = false;
+        return true;
+    }
+    if (cpu_regions.find(ptr) != cpu_regions.end()) {
+        *base = ptr;
+        *cpu = true;
+        return true;
+    }
+    // A constant's buffer lies inside the buffer of all constants: take the
+    // innermost one, the one the constant's own tensor is bound to.
+    void* found = nullptr;
+    for (const auto& pair : ptr_to_mtl_buffer) {
+        if (contains(pair.first, pair.second, ptr) && pair.first > found) {
+            found = pair.first;
+        }
+    }
+    if (found != nullptr) {
+        *base = found;
+        *cpu = false;
+        return true;
+    }
+    for (const auto& pair : cpu_regions) {
+        if (contains(pair.first, pair.second.buffer, ptr)) {
+            *base = pair.first;
+            *cpu = true;
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+// Records that queued work is about to use the region's buffer.
+static void note_bound(CpuRegion& region) {
+    region.bound = true;
+    region.bound_at = getCurrentMetalStream()->completedWaits();
+}
+
+// Whether work using the region's buffer may still be queued: it was bound
+// since the stream last waited.
+static bool may_be_in_use(const CpuRegion& region) {
+    return region.bound &&
+        region.bound_at == getCurrentMetalStream()->completedWaits();
+}
+
+static bool resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset, bool bind) {
+    void* base = ptr;
+    auto view = ptr_to_view.find(ptr);
+    if (view != ptr_to_view.end()) {
+        base = view->second.base;
+        if (view->second.cpu) {
+            auto region = cpu_regions.find(base);
+            if (region == cpu_regions.end()) {
+                return false;
+            }
+            if (bind) {
+                note_bound(region->second);
+            }
+            *buffer = region->second.buffer;
+            *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
+            return true;
+        }
+    }
+
+    auto it = ptr_to_mtl_buffer.find(base);
+    if (it == ptr_to_mtl_buffer.end()) {
+        // The start of a CPU region is bound into the region's buffer too.
+        auto region = cpu_regions.find(ptr);
+        if (region == cpu_regions.end()) {
+            return false;
+        }
+        if (bind) {
+            note_bound(region->second);
+        }
+        *buffer = region->second.buffer;
+        *offset = 0;
+        return true;
+    }
+    *buffer = it->second;
+    *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
+    return true;
+}
+
+bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
+    return resolve_buffer(ptr, buffer, offset, /*bind=*/true);
+}
+
+bool metal_find_memory(void* ptr, void** base, bool* cpu, size_t* nbytes) {
+    if (!find_memory(ptr, base, cpu)) {
+        return false;
+    }
+    *nbytes = *cpu ? [cpu_regions.find(*base)->second.buffer length]
+                   : [ptr_to_mtl_buffer.find(*base)->second length];
+    return true;
+}
+
 // Metal buffer pool with best-fit matching and LRU eviction.
 // On free, buffers are recycled into a sorted pool. On alloc, the smallest
 // buffer >= requested size is returned (if within the headroom bound). When the
@@ -93,6 +246,12 @@ static const size_t kMaxHeadroom = 32768; // 32KB
 struct PoolEntry {
     id<MTLBuffer> buffer;
     size_t size;
+    // The stream the buffer was freed on, which alone may reuse it, and how
+    // many waits it had completed then: work queued before that may still use
+    // the buffer until the stream waits again. Like every wait in this backend,
+    // this takes a buffer to be used on the stream that frees it.
+    ETMetalStream* stream;
+    uint64_t waits;
 };
 
 class MetalBufferPool {
@@ -100,18 +259,26 @@ public:
     explicit MetalBufferPool(size_t max_bytes = 256 * 1024 * 1024)
         : max_bytes_(max_bytes), cached_bytes_(0) {}
 
-    id<MTLBuffer> reuse(size_t size) {
+    id<MTLBuffer> reuse(size_t size, bool* may_be_in_use) {
         auto it = size_map_.lower_bound(size);
         // Use saturating arithmetic to avoid size_t overflow.
         size_t double_size = (size > SIZE_MAX / 2) ? SIZE_MAX : 2 * size;
         size_t size_plus_headroom = (size > SIZE_MAX - kMaxHeadroom) ? SIZE_MAX : size + kMaxHeadroom;
         size_t max_acceptable = std::min(double_size, size_plus_headroom);
+        // Only a buffer freed on this stream: waits here do not cover work
+        // another stream may still have queued on it.
+        ETMetalStream* stream = getCurrentMetalStream();
+        while (it != size_map_.end() && it->first <= max_acceptable &&
+               it->second->stream != stream) {
+            ++it;
+        }
         if (it == size_map_.end() || it->first > max_acceptable) {
             return nil;
         }
 
         auto lru_it = it->second;
         id<MTLBuffer> buffer = lru_it->buffer;
+        *may_be_in_use = lru_it->waits == stream->completedWaits();
         cached_bytes_ -= lru_it->size;
         lru_list_.erase(lru_it);
         size_map_.erase(it);
@@ -128,12 +295,34 @@ public:
             return;
         }
 
-        lru_list_.push_front({buffer, size});
+        ETMetalStream* stream = getCurrentMetalStream();
+        lru_list_.push_front({buffer, size, stream, stream->completedWaits()});
         size_map_.insert({size, lru_list_.begin()});
         cached_bytes_ += size;
 
         while (cached_bytes_ > max_bytes_ && !lru_list_.empty()) {
             evict_oldest();
+        }
+    }
+
+    // Releases the buffers freed on `stream`, which is going away: no other
+    // stream may reuse them.
+    void forget_stream(ETMetalStream* stream) {
+        for (auto it = lru_list_.begin(); it != lru_list_.end();) {
+            if (it->stream != stream) {
+                ++it;
+                continue;
+            }
+            auto range = size_map_.equal_range(it->size);
+            for (auto entry = range.first; entry != range.second; ++entry) {
+                if (entry->second == it) {
+                    size_map_.erase(entry);
+                    break;
+                }
+            }
+            cached_bytes_ -= it->size;
+            [it->buffer release];
+            it = lru_list_.erase(it);
         }
     }
 
@@ -207,6 +396,12 @@ static thread_local ETMetalStream* currentStream_ = nullptr;
 extern "C" {
 
 void* metal_allocate_buffer(long bytes) {
+    bool may_be_in_use = false;
+    return metal_allocate_buffer_tracking_use(bytes, &may_be_in_use);
+}
+
+void* metal_allocate_buffer_tracking_use(long bytes, bool* may_be_in_use) {
+    *may_be_in_use = false;
     if (bytes <= 0) {
         ET_LOG(Error, "Invalid Metal buffer allocation size: %ld", bytes);
         return nullptr;
@@ -215,7 +410,7 @@ void* metal_allocate_buffer(long bytes) {
 
     // Check the buffer pool first (best-fit with bounded headroom)
     auto& pool = get_metal_buffer_pool();
-    id<MTLBuffer> buffer = pool.reuse(size);
+    id<MTLBuffer> buffer = pool.reuse(size, may_be_in_use);
     if (buffer) {
         void* ptr = [buffer contents];
         ptr_to_mtl_buffer[ptr] = buffer;
@@ -261,15 +456,75 @@ void metal_deallocate_buffer(void* ptr) {
     }
 }
 
+namespace {
+// Buffers that constants were copied into, each holding a buffer of its own
+// for every constant (aoti_torch_mps_memcpy).
+// For each, where the first of its constants with a buffer of its own starts.
+std::unordered_map<void*, size_t> constants_buffers;
+} // namespace
+
+void metal_record_constants_buffer(void* ptr, size_t offset) {
+    auto inserted = constants_buffers.emplace(ptr, offset);
+    if (!inserted.second && offset < inserted.first->second) {
+        inserted.first->second = offset;
+    }
+}
+
+bool metal_forget_constants_buffer(void* ptr) {
+    return constants_buffers.erase(ptr) != 0;
+}
+
+bool metal_is_constant_buffer(void* ptr) {
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    for (const auto& constants : constants_buffers) {
+        const auto* begin = static_cast<const uint8_t*>(constants.first);
+        auto buffer = ptr_to_mtl_buffer.find(constants.first);
+        if (buffer != ptr_to_mtl_buffer.end() && begin < p &&
+            p < begin + [buffer->second length]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t metal_constant_extent(void* base, size_t nbytes) {
+    auto it = constants_buffers.find(base);
+    return it == constants_buffers.end() ? nbytes : std::min(nbytes, it->second);
+}
+
+void metal_forget_views_within(void* ptr, size_t nbytes) {
+    const auto* begin = static_cast<const uint8_t*>(ptr);
+    for (auto it = ptr_to_view.begin(); it != ptr_to_view.end();) {
+        const auto* base = static_cast<const uint8_t*>(it->second.base);
+        if (!it->second.cpu && begin <= base && base < begin + nbytes) {
+            it = ptr_to_view.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void metal_cleanup_resources() {
+    constants_buffers.clear();
     for (auto& pair : ptr_to_mtl_buffer) {
         [pair.second release];
     }
     ptr_to_mtl_buffer.clear();
+    ptr_to_view.clear();
+    for (auto& pair : cpu_regions) {
+        [pair.second.buffer release];
+    }
+    cpu_regions.clear();
     get_metal_buffer_pool().clear();
 }
 
 bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    // A second buffer over memory another one covers would not be ordered
+    // with it.
+    if (metal_overlaps_gpu_memory(ptr, nbytes)) {
+        ET_LOG(Error, "metal_buffer_nocopy: %zu bytes at %p overlap memory already bound", nbytes, ptr);
+        return false;
+    }
     id<MTLDevice> device = get_metal_device();
     id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
                                                         length:nbytes
@@ -282,34 +537,229 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
 
     if (map_ptr_to_buffer) {
         ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    } else {
+        [subBuffer release];
     }
 
     return true;
 }
 
+bool metal_register_view(void* view_ptr, void* base_ptr) {
+    // A view of a view lives in the same buffer as its parent.
+    auto parent = ptr_to_view.find(base_ptr);
+    void* base = parent != ptr_to_view.end() ? parent->second.base : base_ptr;
+    if (ptr_to_mtl_buffer.find(base) == ptr_to_mtl_buffer.end()) {
+        ET_LOG(Error, "metal_register_view: %p is not inside a Metal buffer", base_ptr);
+        return false;
+    }
+
+    auto it = ptr_to_view.find(view_ptr);
+    if (it == ptr_to_view.end()) {
+        ptr_to_view[view_ptr] = {base, 1};
+    } else {
+        it->second.base = base;
+        it->second.count++;
+    }
+    return true;
+}
+
+bool metal_retain_view(void* view_ptr) {
+    auto it = ptr_to_view.find(view_ptr);
+    if (it == ptr_to_view.end()) {
+        return false;
+    }
+    it->second.count++;
+    if (it->second.cpu) {
+        auto region = cpu_regions.find(it->second.base);
+        if (region != cpu_regions.end()) {
+            region->second.views++;
+        }
+    }
+    return true;
+}
+
+bool metal_register_cpu_view(
+    void* view_ptr,
+    size_t view_nbytes,
+    void* region,
+    size_t region_nbytes,
+    bool owned) {
+    auto view = ptr_to_view.find(view_ptr);
+    if (view != ptr_to_view.end() && (!view->second.cpu || view->second.base != region)) {
+        ET_LOG(Error, "metal_register_cpu_view: %p is already a view of other memory", view_ptr);
+        return false;
+    }
+    // A region's buffer starts at the region: a view below it cannot be bound.
+    if (static_cast<uint8_t*>(view_ptr) < static_cast<uint8_t*>(region)) {
+        ET_LOG(Error, "metal_register_cpu_view: %p lies before the region at %p", view_ptr, region);
+        return false;
+    }
+
+    const size_t needed = std::max(
+        region_nbytes,
+        static_cast<size_t>(static_cast<uint8_t*>(view_ptr) - static_cast<uint8_t*>(region)) + view_nbytes);
+    auto it = cpu_regions.find(region);
+    if (it == cpu_regions.end() || [it->second.buffer length] < needed) {
+        // Two buffers over the same bytes would not be ordered by Metal. That
+        // takes memory viewed through two different tensors, such as a blob
+        // inside another one viewed first, which is not supported.
+        const auto* begin = static_cast<const uint8_t*>(region);
+        for (const auto& other : ptr_to_mtl_buffer) {
+            const auto* start = static_cast<const uint8_t*>(other.first);
+            if (begin < start + [other.second length] && start < begin + needed) {
+                ET_LOG(Error, "metal_register_cpu_view: %zu bytes at %p overlap the Metal buffer at %p",
+                       needed, region, other.first);
+                return false;
+            }
+        }
+        for (const auto& other : cpu_regions) {
+            const auto* start = static_cast<const uint8_t*>(other.first);
+            if (other.first != region && begin < start + [other.second.buffer length] &&
+                start < begin + needed) {
+                ET_LOG(Error, "metal_register_cpu_view: %zu bytes at %p overlap the region at %p",
+                       needed, region, other.first);
+                return false;
+            }
+        }
+        // Default CPU caching: the CPU keeps reading and writing this memory.
+        id<MTLBuffer> buffer = [get_metal_device() newBufferWithBytesNoCopy:region
+                                                                     length:needed
+                                                                    options:MTLResourceStorageModeShared
+                                                                deallocator:nil];
+        if (!buffer) {
+            ET_LOG(Error, "metal_register_cpu_view: failed to wrap %zu bytes at %p", needed, region);
+            return false;
+        }
+        if (it == cpu_regions.end()) {
+            it = cpu_regions.emplace(region, CpuRegion{buffer, owned, 0}).first;
+        } else {
+            // Only for memory whose extent was not known up front. Work already
+            // queued uses the old buffer, which Metal does not relate to the new
+            // one over the same memory, so it has to be done first (on the
+            // current stream: see getCurrentMetalStream).
+            if (may_be_in_use(it->second)) {
+                getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+            }
+            [it->second.buffer release];
+            it->second.buffer = buffer;
+        }
+    }
+    it->second.views++;
+
+    if (view == ptr_to_view.end()) {
+        ptr_to_view[view_ptr] = {region, 1, true};
+    } else {
+        view->second.count++;
+    }
+    return true;
+}
+
+bool metal_is_view(void* ptr) {
+    return ptr_to_view.find(ptr) != ptr_to_view.end();
+}
+
+bool metal_cpu_view_region(void* ptr, void** region) {
+    auto it = ptr_to_view.find(ptr);
+    if (it == ptr_to_view.end() || !it->second.cpu) {
+        return false;
+    }
+    *region = it->second.base;
+    return true;
+}
+
+bool metal_is_cpu_view(void* ptr) {
+    void* region = nullptr;
+    return metal_cpu_view_region(ptr, &region);
+}
+
+bool metal_is_cpu_memory(void* ptr) {
+    return metal_is_cpu_view(ptr) || cpu_regions.find(ptr) != cpu_regions.end();
+}
+
+bool metal_release_cpu_region(void* region) {
+    auto it = cpu_regions.find(region);
+    if (it == cpu_regions.end()) {
+        return false;
+    }
+    // Queued work may still use the memory through this buffer, which does
+    // not own the memory: it has to be done before the memory goes (on the
+    // current stream: see getCurrentMetalStream).
+    if (may_be_in_use(it->second)) {
+        getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+    }
+    [it->second.buffer release];
+    cpu_regions.erase(it);
+    return true;
+}
+
+bool metal_unregister_view(void* view_ptr) {
+    auto it = ptr_to_view.find(view_ptr);
+    if (it == ptr_to_view.end()) {
+        return false;
+    }
+    if (it->second.cpu) {
+        auto region = cpu_regions.find(it->second.base);
+        if (region != cpu_regions.end() && --region->second.views <= 0 &&
+            !region->second.owned) {
+            metal_release_cpu_region(it->second.base);
+        }
+    }
+    if (--it->second.count > 0) {
+        return false;
+    }
+    ptr_to_view.erase(it);
+    return true;
+}
+
 bool metal_is_device_pointer(void* ptr) {
-    return ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end();
+    id<MTLBuffer> buffer = nil;
+    size_t offset = 0;
+    return resolve_buffer(ptr, &buffer, &offset, /*bind=*/false);
+}
+
+bool metal_overlaps_gpu_memory(const void* ptr, size_t nbytes) {
+    const auto* begin = static_cast<const uint8_t*>(ptr);
+    auto overlaps = [&](const void* start_ptr, id<MTLBuffer> buffer) {
+        const auto* start = static_cast<const uint8_t*>(start_ptr);
+        return begin < start + [buffer length] && start < begin + nbytes;
+    };
+    for (const auto& pair : ptr_to_mtl_buffer) {
+        if (overlaps(pair.first, pair.second)) {
+            return true;
+        }
+    }
+    for (const auto& pair : cpu_regions) {
+        if (overlaps(pair.first, pair.second.buffer)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_device, bool dst_is_device) {
-    if (!src || !dst || nbytes == 0) {
+    if (nbytes == 0) {
+        return 0;  // An empty tensor: nothing to copy.
+    }
+    if (!src || !dst) {
         ET_LOG(Error, "Metal copy: Invalid parameters");
         return -1;
     }
 
     @autoreleasepool {
-        // Case 1: Device-to-device copy - use GPU blit encoder (most efficient)
-        if (src_is_device && dst_is_device) {
-            auto src_it = ptr_to_mtl_buffer.find(const_cast<void*>(src));
-            auto dst_it = ptr_to_mtl_buffer.find(dst);
+        // Case 1: Device-to-device copy - use GPU blit encoder (most efficient).
+        // CPU memory with a Metal buffer (metal_register_cpu_view) counts as a
+        // device pointer, but CPU code reads and writes it directly after the
+        // copy returns, so a copy involving it is made on the CPU, after a wait.
+        if (src_is_device && dst_is_device &&
+            !metal_is_cpu_memory(const_cast<void*>(src)) &&
+            !metal_is_cpu_memory(dst)) {
+            id<MTLBuffer> srcBuffer = nil;
+            id<MTLBuffer> dstBuffer = nil;
+            size_t srcOffset = 0;
+            size_t dstOffset = 0;
 
-            if (src_it != ptr_to_mtl_buffer.end() && dst_it != ptr_to_mtl_buffer.end()) {
-                id<MTLBuffer> srcBuffer = src_it->second;
-                id<MTLBuffer> dstBuffer = dst_it->second;
-
-                // Calculate offsets relative to buffer base
-                size_t srcOffset = static_cast<const uint8_t*>(src) - static_cast<const uint8_t*>([srcBuffer contents]);
-                size_t dstOffset = static_cast<uint8_t*>(dst) - static_cast<uint8_t*>([dstBuffer contents]);
+            if (metal_resolve_buffer(const_cast<void*>(src), &srcBuffer, &srcOffset) &&
+                metal_resolve_buffer(dst, &dstBuffer, &dstOffset)) {
 
                 // Use Metal's blit encoder for GPU-accelerated copy
                 ETMetalStream* stream = getCurrentMetalStream();
@@ -324,16 +774,15 @@ int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_dev
         }
 
         // Case 2: Host-to-device or device-to-host - use memcpy with shared memory
-        // Since Metal uses shared storage mode, CPU and GPU access the same memory
-        std::memcpy(dst, src, nbytes);
-
-        // Synchronize only if we need to ensure GPU operations complete before CPU reads
-        // (device-to-host case where GPU may have written data)
-        if (src_is_device && !dst_is_device) {
-            // Ensure any pending GPU writes to source complete before CPU reads
+        // Since Metal uses shared storage mode, CPU and GPU access the same memory.
+        // What the GPU still has to do with it must be done before the CPU
+        // touches it: writes to a device source, and reads or writes of a device
+        // destination.
+        if (src_is_device || dst_is_device) {
             ETMetalStream* stream = getCurrentMetalStream();
             stream->synchronize(SyncType::COMMIT_AND_WAIT);
         }
+        std::memcpy(dst, src, nbytes);
 
         ET_LOG(Debug, "Metal memory copy (memcpy): %zu bytes, src_device=%d, dst_device=%d",
                nbytes, src_is_device, dst_is_device);
@@ -514,11 +963,11 @@ void ETMetalKernelFunction::setArg(unsigned idx, const executorch::runtime::eten
     void* data_ptr = tensor.mutable_data_ptr();
     size_t totalSize = tensor.numel() * tensor.element_size();
 
-    auto it = ptr_to_mtl_buffer.find(data_ptr);
-    if (it != ptr_to_mtl_buffer.end()) {
-        // Use existing Metal buffer
-        id<MTLBuffer> mtlBuffer = it->second;
-        [encoder_ setBuffer:mtlBuffer offset:0 atIndex:idx];
+    id<MTLBuffer> mtlBuffer = nil;
+    size_t bufferOffset = 0;
+    if (metal_resolve_buffer(data_ptr, &mtlBuffer, &bufferOffset)) {
+        // Use existing Metal buffer; a view binds its parent at an offset
+        [encoder_ setBuffer:mtlBuffer offset:bufferOffset atIndex:idx];
         ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set Metal buffer at index %u (size: %zu)", idx, totalSize);
     } else {
         // Handle CPU tensor data
@@ -873,6 +1322,7 @@ ETMetalStream::~ETMetalStream() {
     @autoreleasepool {
         // Synchronize before cleanup
         synchronize(SyncType::COMMIT_AND_WAIT);
+        get_metal_buffer_pool().forget_stream(this);
 
         // Clean up command encoder
         if (commandEncoder_) {
@@ -1035,7 +1485,12 @@ void ETMetalStream::commit() {
     [commandBuffer_ commit];
     ET_LOG(Debug, "ETMetalStream::commit: Committed buffer %p", commandBuffer_);
 
-    [commandBuffer_ release];
+    // Kept so that commitAndWait() waits for it. Buffers on one queue complete
+    // in order, so it only needs the latest one.
+    if (prevCommandBuffer_) {
+        [prevCommandBuffer_ release];
+    }
+    prevCommandBuffer_ = commandBuffer_;
     commandBuffer_ = nil;
     dispatchCount_ = 0;
 }
@@ -1058,6 +1513,7 @@ void ETMetalStream::commitAndWait() {
     }
 
     dispatchCount_ = 0;
+    completedWaits_++;
     ET_LOG(Debug, "ETMetalStream::commitAndWait: Committed and waited for completion");
 }
 
@@ -1078,12 +1534,11 @@ void ETMetalStream::flush() {
     if (commandBuffer_) {
         [commandBuffer_ commit];
 
-        if (!enableCommitAndContinue_) {
-            // Keep the command buffer for later waiting if commit-and-continue is disabled
-            prevCommandBuffer_ = commandBuffer_;
-        } else {
-            [commandBuffer_ release];
+        // Kept so that commitAndWait() waits for it, as in commit().
+        if (prevCommandBuffer_) {
+            [prevCommandBuffer_ release];
         }
+        prevCommandBuffer_ = commandBuffer_;
         commandBuffer_ = nil;
         dispatchCount_ = 0;
 
@@ -1172,10 +1627,22 @@ bool ETMetalStream::isEmpty() const {
     return !commandBuffer_ && !commandEncoder_;
 }
 
-void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSDictionary* results, SyncType syncType) {
+void ETMetalStream::executeMPSGraph(
+    MPSGraph* mpsGraph,
+    NSDictionary* feeds,
+    NSDictionary* results,
+    SyncType syncType,
+    bool settle_aliases) {
     // Use dispatch_sync_with_rethrow exactly like PyTorch does for MPSGraph execution
     dispatch_sync_with_rethrow(serialQueue_, ^() {
         @autoreleasepool {
+            // An alias (see get_mtl_buffer) is a separate MTLBuffer over memory
+            // another buffer covers, and Metal orders nothing between the two.
+            // Settle that memory on both sides of this graph, all within this
+            // block so that no other work on the stream can come in between.
+            if (settle_aliases) {
+                synchronize(SyncType::COMMIT_AND_WAIT);
+            }
             endKernelCoalescing();
 
             [mpsGraph encodeToCommandBuffer:commandBuffer()
@@ -1183,6 +1650,10 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                            targetOperations:nil
                           resultsDictionary:results
                         executionDescriptor:nil];
+
+            if (settle_aliases) {
+                synchronize(SyncType::COMMIT_AND_WAIT);
+            }
         }
     });
 }
