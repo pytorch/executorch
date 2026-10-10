@@ -1332,6 +1332,21 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
         self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
 
+    def test_get_extended_header_reads_only_header_bytes(self) -> None:
+        # Passing program_data[8:] to from_bytes() would copy the whole file.
+        pte_data = b"\x00" * 8 + EXAMPLE_HEADER_DATA + b"\x55" * 1024
+
+        with patch.object(
+            _ExtendedHeader, "from_bytes", wraps=_ExtendedHeader.from_bytes
+        ) as from_bytes:
+            eh = _get_extended_header(pte_data)
+
+        self.assertIsNotNone(eh)
+        self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
+        self.assertEqual(
+            len(from_bytes.call_args.args[0]), _ExtendedHeader.EXPECTED_LENGTH
+        )
+
     def test_from_bytes_larger_than_needed_header_size_field(self) -> None:
         # Simulate a backwards-compatibility situation. Parse a header
         # with a larger-than expected size. This would typically mean that

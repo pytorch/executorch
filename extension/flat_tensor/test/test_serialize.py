@@ -34,6 +34,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
     _FLAT_TENSOR_VERSION,
     _FLATBUFFER_ALIGNMENT,
+    _get_extended_header,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
@@ -308,6 +309,21 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
+
+    def test_reads_only_header_bytes(self) -> None:
+        # Passing data[8:] to from_bytes() would copy the whole file.
+        serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+
+        with mock.patch.object(
+            FlatTensorHeader, "from_bytes", wraps=FlatTensorHeader.from_bytes
+        ) as from_bytes:
+            serializer.deserialize(Cord(serialized_data))
+            self.assertIsNotNone(_get_extended_header(serialized_data))
+
+        self.assertEqual(from_bytes.call_count, 2)
+        for call in from_bytes.call_args_list:
+            self.assertEqual(len(call.args[0]), FlatTensorHeader.EXPECTED_LENGTH)
 
     def test_deserialize_refuses_newer_version(self) -> None:
         # A file whose version is newer than this reader understands must be
