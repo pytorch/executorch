@@ -503,6 +503,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 in [
                     memory.alloc,
                     memory.view,
+                    memory.slice,
                     operator.getitem,
                     torch.ops.higher_order.cond,
                     exir_while,
@@ -785,11 +786,13 @@ def get_node_tensor_specs(
     node produces, but every caller that walks specs to place, verify or
     attribute memory needs them.
     """
+    from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
+
     # get tensor specs
-    if node.target == memory.view:
+    if node.target in (memory.view, memory.slice):
         base = node.args[0]
         assert isinstance(base, torch.fx.Node)
-        specs = base.meta.get("spec")
+        return get_node_tensor_specs(base)
     else:
         specs = node.meta.get("spec")
 
@@ -803,6 +806,12 @@ def get_node_tensor_specs(
             for spec in specs
             if not isinstance(spec, (int, float, bool, str, type(None)))
         ]
+        allocation_specs = []
+        for spec in specs:
+            while isinstance(spec, _ViewSpec):
+                spec = spec._base
+            allocation_specs.append(spec)
+        return allocation_specs
 
     if scratch := memory.delegate_scratch_specs(node):
         return list(specs) + scratch
