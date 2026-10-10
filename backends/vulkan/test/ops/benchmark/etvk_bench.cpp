@@ -234,8 +234,12 @@ int main(int argc, char* argv[]) {
   }
 
   print_separator();
-  std::cout << "Ran " << selected.size() << " test case sets, " << failed.size()
-            << " failed" << std::endl;
+  std::cout << "Ran " << selected.size() << " test case sets";
+  if (failed.empty()) {
+    std::cout << ", all passed" << std::endl;
+  } else {
+    std::cout << ", " << failed.size() << " failed" << std::endl;
+  }
   for (const std::string& id : failed) {
     std::cout << "  FAILED: " << id << std::endl;
   }
