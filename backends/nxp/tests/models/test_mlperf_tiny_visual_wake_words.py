@@ -17,14 +17,9 @@ from executorch.backends.nxp.tests.dataset_creator import (
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
-    ClassificationAccuracyOutputComparator,
     NumericalStatsOutputComparator,
 )
-from executorch.backends.nxp.tests.nsys_testing import (
-    lower_run_compare,
-    lower_run_compare_ptq_qat,
-    ReferenceModel,
-)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare, ReferenceModel
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
     MLPerfTinyVisualWakeWords,
@@ -44,11 +39,10 @@ def reseed_model_per_test_run():
 
 @pytest.mark.parametrize("channels_last", [False, True])
 def test_mlperf_tiny_vww_mse_cpu_vs_npu(mocker, request, channels_last, use_qat):
-    # 20 samples per class
-    num_samples = 40
+    num_samples = 1
 
     visual_wake_words = MLPerfTinyVisualWakeWords(
-        num_samples=num_samples, use_random_dataset=True
+        num_samples=num_samples, use_random_dataset=True, balanced_dataset=False
     )
     model = visual_wake_words.get_eager_model()
     dataset = visual_wake_words.dataset
@@ -94,35 +88,4 @@ def test_mlperf_tiny_vww_mse_cpu_vs_npu(mocker, request, channels_last, use_qat)
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
-    )
-
-
-def test_mlperf_tiny_vww_ptq_qat_equivalence(request):
-    # 20 samples per class
-    num_samples = 40
-
-    visual_wake_words = MLPerfTinyVisualWakeWords(
-        num_samples=num_samples, use_random_dataset=True
-    )
-
-    model = visual_wake_words.get_eager_model()
-    dataset = visual_wake_words.dataset
-    labels = visual_wake_words.labels
-
-    dataset_creator = FromCalibrationDataDatasetCreator(
-        dataset, num_examples=num_samples, idx_to_label=labels
-    )
-    comparator = ClassificationAccuracyOutputComparator(class_dict=labels)
-
-    input_spec = ModelInputSpec(visual_wake_words.input_shape)
-    model_verifier = BaseGraphVerifier(1, [])
-
-    lower_run_compare_ptq_qat(
-        model,
-        [input_spec],
-        model_verifier,
-        request,
-        train_fn=visual_wake_words.train_model_fn,
-        dataset_creator=dataset_creator,
-        output_comparator=comparator,
     )

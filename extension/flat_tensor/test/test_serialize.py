@@ -262,6 +262,31 @@ class TestSerialize(unittest.TestCase):
         config = FlatTensorConfig(segment_alignment=1024)
         self._serialize_with_alignment(config)
 
+    def test_serialize_aliases_combine_alignment(self) -> None:
+        data_payload = DataPayload(
+            buffers=[b"abcd"],
+            named_data={
+                "weak": DataEntry(0, 16, None),
+                "strong": DataEntry(0, 256, None),
+            },
+        )
+        serialized_data = bytes(FlatTensorSerializer().serialize(data_payload))
+
+        header = FlatTensorHeader.from_bytes(serialized_data[8:])
+        self.assertEqual(header.segment_base_offset % 256, 0)
+
+        flat_tensor = _deserialize_to_flat_tensor(
+            serialized_data[: header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        alias_entries = [
+            entry for entry in flat_tensor.named_data if entry.key in ("weak", "strong")
+        ]
+        self.assertEqual(len(alias_entries), 2)
+        self.assertEqual(alias_entries[0].segment_index, alias_entries[1].segment_index)
+        segment = flat_tensor.segments[alias_entries[0].segment_index]
+        absolute_offset = header.segment_base_offset + segment.offset
+        self.assertEqual(absolute_offset % 256, 0)
+
     def test_round_trip(self) -> None:
         # Serialize and then deserialize the test payload. Make sure it's reconstructed
         # properly.

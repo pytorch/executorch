@@ -13,7 +13,7 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional
+from typing import ClassVar, List, Literal, Optional
 
 import executorch.extension.flat_tensor.serialize as serialize_package
 
@@ -23,9 +23,11 @@ from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decomp
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
+    AlignedData,
     DataEntry,
     DataPayload,
     DataSerializer,
+    extract_named_data_segments,
 )
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
@@ -212,24 +214,6 @@ class FlatTensorHeader:
         return data
 
 
-@dataclass
-class AlignedData:
-    """
-    Holds data that should be aligned, for serialization.
-
-    Attributes:
-        data: The data to serialize, as a cord.
-        alignment: The alignment required for the data.
-    """
-
-    data: Cord
-    alignment: int
-
-    def __init__(self, data: Cord, alignment: Optional[int] = None) -> None:
-        self.data = data
-        self.alignment = alignment or 1
-
-
 def _get_extended_header(flat_tensor_data: bytes) -> Optional[FlatTensorHeader]:
     """Returns the extended header of the flat_tensor data, if present and valid."""
     try:
@@ -247,38 +231,28 @@ def _extract_named_data(
     data_payload: DataPayload,
     segments: List[AlignedData],
 ) -> List[NamedData]:
-    """Places named data into segments and record the alignment for each.
+    """Places named data into segments and records the alignment for each.
 
     Args:
-        key_to_data: A map from keys to opaque data entries.
-        buffers: A sequence of buffers holding opaque blob data.
+        data_payload: Buffers and their named-data entries.
         segments: A list of segments to append data to. Modified in-place.
 
     Returns:
         A list of NamedData describing the offsets to the opaque blob data.
     """
 
-    # Map from buffer_idx to segment_idx.
-    segment_index_map: Dict[int, int] = {}
+    name_to_segment_index = extract_named_data_segments(
+        segments, data_payload.buffers, data_payload.named_data
+    )
 
     named_data: List[NamedData] = []
-    for key, data_entry in data_payload.named_data.items():
-        buffer_idx = data_entry.buffer_index
-        segment_index = segment_index_map.get(buffer_idx, None)
-        if segment_index is None:
-            segment_index = len(segments)
-            segment_index_map[buffer_idx] = segment_index
-            segments.append(
-                AlignedData(
-                    Cord(data_payload.buffers[buffer_idx]), data_entry.alignment
-                )
-            )
+    for key, segment_index in name_to_segment_index.items():
         named_data.append(
             NamedData(
                 key=key,
                 segment_index=segment_index,
                 # pyre-ignore Incompatible parameter type [6]
-                tensor_layout=data_entry.tensor_layout,
+                tensor_layout=data_payload.named_data[key].tensor_layout,
             )
         )
     return named_data
@@ -308,6 +282,10 @@ class FlatTensorSerializer(DataSerializer):
 
         # Add a config to place tensors in a single segment.
         named_data = _extract_named_data(data, segments)
+        segment_base_alignment = math.lcm(
+            self.config.segment_alignment,
+            *(segment.alignment for segment in segments),
+        )
 
         data_segments: List[DataSegment] = []
         aggregated_segment_data = Cord()
@@ -348,7 +326,7 @@ class FlatTensorSerializer(DataSerializer):
 
         segment_base_offset = aligned_size(
             len(flatbuffer_payload) + padded_header_length,
-            self.config.segment_alignment,
+            segment_base_alignment,
         )
 
         # Create FlatTensorHeader, which stores the offsets and sizes of the
@@ -360,7 +338,7 @@ class FlatTensorSerializer(DataSerializer):
             segment_data_size=len(aggregated_segment_data),
         ).to_bytes()
 
-        # Pad header and payload to segment alignment.
+        # Pad header and payload to every segment requirement.
         header_data = pad_to(header_data, padded_header_length)
         injected_flatbuffer_data: bytes = _insert_flatbuffer_header(
             flatbuffer_data=flatbuffer_payload.__bytes__(),
