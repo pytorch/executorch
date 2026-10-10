@@ -575,7 +575,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        model: [qwen3_4b, phi_4_mini, lfm2_5_1_2b]
+        model: [qwen3_4b, phi_4_mini, lfm2_5_1_2b, spark_x2_5_1_7b, spark_x2_5_4b]
         runner: [mt-l-x86iavx512-8-64]
         docker-image: [executorch-ubuntu-22.04-clang12]
         backend: [xnnpack]
@@ -589,6 +589,14 @@ jobs:
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
           - model: lfm2_5_1_2b
+            runner: mt-l-arm64g4-16-62
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
+          - model: spark_x2_5_1_7b
+            runner: mt-l-arm64g4-16-62
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
+          - model: spark_x2_5_4b
             runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
