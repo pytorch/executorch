@@ -692,15 +692,17 @@ inline std::vector<float> load_pos_embed_table(const std::string& path) {
   f.seekg(0, std::ios::end);
   const int64_t nbytes = f.tellg();
   f.seekg(0, std::ios::beg);
-  const int64_t n = nbytes / static_cast<int64_t>(sizeof(float));
   const int64_t expected = static_cast<int64_t>(kPosGrid) * kPosGrid * kLatent;
-  if (n != expected) {
+  const int64_t expected_bytes = expected * static_cast<int64_t>(sizeof(float));
+  if (nbytes != expected_bytes) {
     throw std::runtime_error(
-        "pos_embed.bin size mismatch: got " + std::to_string(n) +
-        " floats, expected " + std::to_string(expected));
+        "pos_embed.bin size mismatch: got " + std::to_string(nbytes) +
+        " bytes, expected " + std::to_string(expected_bytes));
   }
-  std::vector<float> table(static_cast<size_t>(n));
-  f.read(reinterpret_cast<char*>(table.data()), nbytes);
+  std::vector<float> table(static_cast<size_t>(expected));
+  if (!f.read(reinterpret_cast<char*>(table.data()), expected_bytes)) {
+    throw std::runtime_error("Cannot read pos_embed.bin: " + path);
+  }
   return table;
 }
 
