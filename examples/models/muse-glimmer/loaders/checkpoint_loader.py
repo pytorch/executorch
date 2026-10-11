@@ -396,7 +396,7 @@ def _atomic_sd_from_safetensors(
 
 
 def _atomic_sd_from_bf16(
-    checkpoint_dir: str, recipe, max_seq_len: int, activation_dtype: torch.dtype
+    checkpoint_dir: str, recipe, max_seq_len: int | None, activation_dtype: torch.dtype
 ) -> tuple[dict, object]:
     from executorch.examples.models.muse_glimmer.model.model import (
         load_unfused_bf16_state_dict,
@@ -419,7 +419,14 @@ def _atomic_sd_from_bf16(
 # Shared tail: fuse -> build fused model -> assign -> backend pass.
 
 
-def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dtype):
+def _finalize(
+    atomic_sd: dict,
+    backend: str,
+    config,
+    activation_dtype: torch.dtype,
+    *,
+    defer_runtime_buffers: bool = False,
+):
     from executorch.examples.models.muse_glimmer.model.model import (
         materialize_runtime_buffers,
         MuseGlimmerModel,
@@ -488,7 +495,10 @@ def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dty
         print("Converting quantized tensors for CUDA...")
         convert_quantized_tensors_for_cuda(model)
 
-    materialize_runtime_buffers(model, dtype=activation_dtype)
+    # The off-graph MLX export replaces attention before materialization, so
+    # the original meta KV buffers must not allocate their full context here.
+    if not defer_runtime_buffers:
+        materialize_runtime_buffers(model, dtype=activation_dtype)
     model.eval()
     print(f"Model: {config.n_layers} layers, dim={config.dim}")
     return model
@@ -637,51 +647,138 @@ def load_mmproj_vision_model(  # noqa: C901
     return model, pos_embed_table, config
 
 
-# Public entry points (stable signatures shared with export.py / callers).
+def _gguf_native_context(gguf_path: str) -> int:
+    """Read the context field qualified by the GGUF's declared architecture."""
+    from gguf import GGUFReader, GGUFValueType
+
+    reader = GGUFReader(gguf_path)
+
+    def read_scalar(key):
+        field = reader.get_field(key)
+        if field is None or field.types[0] == GGUFValueType.ARRAY:
+            return None
+        data = field.parts[field.data[0]]
+        if field.types[0] == GGUFValueType.STRING:
+            return data.tobytes().decode("utf-8")
+        return data.item()
+
+    architecture = read_scalar("general.architecture")
+    if not isinstance(architecture, str) or not architecture.strip():
+        raise ValueError(
+            f"Native context requires a nonempty 'general.architecture' in {gguf_path}"
+        )
+    key = f"{architecture}.context_length"
+    value = read_scalar(key)
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(
+            f"Native context requires a positive non-boolean integer "
+            f"{key!r} in {gguf_path}; got {value!r}"
+        )
+    return value
+
+
+def _mlx_native_context(mlx_dir: str) -> int:
+    """Read HF text context, preferring the nested text configuration."""
+    import json
+
+    path = os.path.join(mlx_dir, "config.json")
+    with open(path) as f:
+        config = json.load(f)
+    if not isinstance(config, dict):
+        raise ValueError(f"Native context requires a JSON object in {path}")
+    text_config = config.get("text_config", {})
+    if not isinstance(text_config, dict):
+        raise ValueError(
+            f"Native context requires 'text_config' to be an object in {path}"
+        )
+    value = text_config.get(
+        "max_position_embeddings", config.get("max_position_embeddings")
+    )
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(
+            f"Native context requires a positive non-boolean integer "
+            f"'max_position_embeddings' in {path}; got {value!r}"
+        )
+    return value
+
+
+# Public entry points: max_seq_len=None requires checkpoint-native context.
 
 
 def load_gguf_model(
     gguf_path: str,
     backend: str = "cuda",
-    max_seq_len: int = 131072,
+    max_seq_len: int | None = 131072,
     config=None,
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``."""
     _validate_backend(backend)
     from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
 
     if config is None:
-        config = MuseGlimmerConfig(max_seq_len=max_seq_len)
+        config = MuseGlimmerConfig(
+            max_seq_len=(
+                _gguf_native_context(gguf_path) if max_seq_len is None else max_seq_len
+            )
+        )
     print(f"Loading GGUF from {gguf_path}...")
     atomic_sd = _atomic_sd_from_gguf(gguf_path, activation_dtype)
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 def load_prequantized_model(
     prequantized_dir: str,
-    max_seq_len: int = 16384,
+    max_seq_len: int | None = 16384,
     backend: str = "cuda",
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load an atomic quantized safetensors checkpoint, packed for ``backend``."""
     _validate_backend(backend)
     from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
 
-    config = MuseGlimmerConfig.from_json(os.path.join(prequantized_dir, "params.json"))
-    config.max_seq_len = max_seq_len
+    config = MuseGlimmerConfig.from_json(
+        os.path.join(prequantized_dir, "params.json"),
+        require_native_context=max_seq_len is None,
+    )
+    if max_seq_len is not None:
+        config.max_seq_len = max_seq_len
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
     print(f"Loading quantized checkpoint from {safetensors_path}...")
     atomic_sd = _atomic_sd_from_safetensors(safetensors_path, activation_dtype)
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 def load_and_quantize(
     checkpoint_dir: str,
     recipe,
-    max_seq_len: int = 16384,
+    max_seq_len: int | None = 16384,
     backend: str = "cuda",
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load a bf16 consolidated checkpoint, quantize, and pack for ``backend``."""
     _validate_backend(backend)
@@ -689,7 +786,16 @@ def load_and_quantize(
     atomic_sd, config = _atomic_sd_from_bf16(
         checkpoint_dir, recipe, max_seq_len, activation_dtype
     )
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 # Muse Glimmer ET ``RMSNorm`` applies its weight as an absolute gain, but the HF
@@ -725,9 +831,11 @@ def _mlx_target_convert(fqn: str, w: torch.Tensor) -> torch.Tensor:
 def load_mlx_model(
     mlx_dir: str,
     backend: str = "mlx",
-    max_seq_len: int = 131072,
+    max_seq_len: int | None = 131072,
     config=None,
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load an MLX-quantized safetensors checkpoint (e.g. mlx_lm output).
 
@@ -745,7 +853,11 @@ def load_mlx_model(
     from executorch.extension.llm.export.load import iter_checkpoint
 
     if config is None:
-        config = MuseGlimmerConfig(max_seq_len=max_seq_len)
+        config = MuseGlimmerConfig(
+            max_seq_len=(
+                _mlx_native_context(mlx_dir) if max_seq_len is None else max_seq_len
+            )
+        )
     print(f"Loading MLX checkpoint from {mlx_dir}...")
     atomic_sd = dict(
         iter_checkpoint(
@@ -756,4 +868,13 @@ def load_mlx_model(
             dtype=activation_dtype,
         )
     )
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )

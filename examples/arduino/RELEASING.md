@@ -9,20 +9,60 @@ make the change here, then regenerate.
 Library Manager indexes new git tags hourly, so pushing a tag publishes the
 release.
 
+## Versions
+
+The generator fills `library.properties.in` from the root `version.txt`. The
+publishing repository's **Sync from ExecuTorch** workflow uses that version by
+default. Generating from ExecuTorch `v1.5.1`, for example, produces
+`version=1.5.1`, aligning the Arduino package with the runtime it bundles.
+
+Syncs accept a branch, tag or SHA and default to `main`. A development checkout
+can already carry the next version. Keep `executorch_pin.txt` and
+`extras/PROVENANCE.txt`: they record the exact source commit and ExecuTorch
+version independently of the Arduino package version.
+
+For a separate Arduino package release, maintainers can set the workflow's
+optional `library_version` input to an explicit `X.Y.Z` version. Numbering
+Arduino-only releases remains a maintainer decision. Choose an unused package
+version before publishing. Syncing opens a PR; pushing a tag publishes it.
+
+### Moving from 0.2.0
+
+Leave the published `0.x` releases intact. The next release can jump directly
+to `1.5.1` after regenerating and validating against ExecuTorch `v1.5.1`.
+Changing the old package's version alone does not update its runtime or models.
+
+First update the publishing repository's **Sync from ExecuTorch** workflow to
+derive the default version from `version.txt` and remove its automatic bump.
+The workflow also handles older ExecuTorch tags whose generator still writes
+`0.x`, so this migration does not require changing an existing upstream tag:
+
+```bash
+gh workflow run sync.yml --repo meta-pytorch/executorch-arduino \
+  -f executorch_ref=v1.5.1
+```
+
+The workflow builds, verifies model schemas and opens a PR. Review its CI and
+test on a board before merging and tagging. The manual procedure below uses a
+checkout containing the version-aware generator. Use the sync workflow for
+older tags such as `v1.5.1` or an explicitly selected package version.
+
 ## 1. Make your changes
 
 Edit anything under `examples/arduino/` in this repository and land it as a
-normal pull request. Then release from a clean checkout of `main`.
+normal pull request.
 
-## 2. Bump the version
+## 2. Select the ExecuTorch sources
 
 ```bash
-cd examples/arduino
-./build_arduino_library.sh --bump minor      # major | minor | patch
+# From the ExecuTorch repository root:
+git fetch origin <branch-tag-or-sha>
+git checkout --detach FETCH_HEAD
+examples/arduino/build_arduino_library.sh --version
 ```
 
-Minor for new public API such as `ETModel.h`, patch for fixes. The version must
-differ from every previously published one or Library Manager drops the release.
+Use a clean checkout. The printed version comes from that checkout's
+`version.txt`; confirm it is the package version you intend to publish.
 
 ## 3. Build
 
@@ -72,7 +112,7 @@ and are not generated.
 ## 6. Check what you are about to publish
 
 ```bash
-grep ^version= library.properties               # the version you bumped to
+grep ^version= library.properties               # the intended Arduino package version
 cat executorch_pin.txt                          # matches: git -C <executorch> rev-parse HEAD
 ls src/executorch/runtime/platform/default/     # exactly one .cpp
 git status --short | grep '^D '                 # deletions are expected, not surprising ones
@@ -90,25 +130,24 @@ Open it against `main` and merge.
 
 ## 8. Tag the merged commit
 
-Tag last. A tag pushed before the release commit is on `main` points at a commit
-no branch contains, and the fix is to delete a published tag:
+Fetch the merged release commit from remote `main` and tag that exact commit.
+Set `ARDUINO_VERSION` to the intended package version; the check below verifies
+it before publishing:
 
 ```bash
-git fetch origin && git checkout main && git reset --hard origin/main
-grep ^version= library.properties               # confirms the merge landed
-git tag v<version>
-git push origin v<version>
-git rev-parse v<version> HEAD                   # both must print the same SHA
+(
+  set -e
+  ARDUINO_VERSION='<version>'
+  git fetch origin main
+  RELEASE_COMMIT=$(git rev-parse FETCH_HEAD)
+  test "$(git show "${RELEASE_COMMIT}:library.properties" | sed -n 's/^version=//p')" = "$ARDUINO_VERSION"
+  git tag "v${ARDUINO_VERSION}" "$RELEASE_COMMIT"
+  git push origin "v${ARDUINO_VERSION}"
+)
 ```
 
-If a tag already exists on the wrong commit, move it:
-
-```bash
-git push origin :refs/tags/v<version>           # delete on the remote
-git tag -d v<version>                           # delete locally
-git tag v<version>                              # recreate on the current HEAD
-git push origin v<version>
-```
+Published tags are immutable. The tag must match the version in
+`library.properties`, and that package version must not already be published.
 
 ## 9. Write the release notes
 
@@ -136,7 +175,7 @@ that needs raising, a board core version. This goes first, not last.>
 ```
 
 Title the release with what a user cares about, for example
-`v0.2.0 — ETModel helper and Arduino platform layer`.
+`v1.5.1 — Arduino library for ExecuTorch 1.5.1`.
 
 Add a matching `CHANGELOG.md` entry in that repository's existing format.
 

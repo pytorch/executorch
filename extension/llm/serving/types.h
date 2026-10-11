@@ -10,14 +10,20 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/runtime/platform/compiler.h>
+
+namespace tokenizers {
+class Tokenizer;
+}
 
 namespace executorch {
 namespace extension {
@@ -27,9 +33,9 @@ namespace serving {
 // The full prompt, not a session delta. Preparation encodes each text segment
 // separately and appends ID segments verbatim, in order, without adding
 // BOS/EOS. Segment boundaries therefore matter even between adjacent text
-// segments. Only text and token segments are currently supported; other
-// modalities, encoding failures, and an empty prepared prompt are rejected with
-// InvalidArgument before changing session history.
+// segments. The default preparer supports text and token segments; model
+// preparers may support other modalities. Invalid preparation preserves
+// history.
 struct ET_EXPERIMENTAL PromptInput {
   std::vector<MultimodalInput> segments;
 };
@@ -43,8 +49,8 @@ struct ET_EXPERIMENTAL GenerationOptions {
   // Per-request policy: finite temperature >= 0, finite top_p in (0, 1],
   // and top_k >= 0. Invalid options leave existing session history unchanged.
   batching::SamplingParams sampling;
-  // Added to the service's default stop tokens. A matched token is retained in
-  // logical session history, but excluded from text and generated_token_ids.
+  // Added to the service's default stop tokens. A matched token is excluded
+  // from text and generated_token_ids, but retained in ordinary prompt history.
   std::vector<batching::Token> stop_tokens;
   // Non-empty strings matched across decoded pieces. The match and everything
   // after it are hidden; a match invalidates exact token replay and warm reuse.
@@ -74,8 +80,34 @@ struct ET_EXPERIMENTAL ServingError {
   std::string message;
 };
 
+// Valid only during preparation on the runtime's control thread. The callback
+// must do bounded work and may poll cancelled while preparing a large prompt.
+struct ET_EXPERIMENTAL PromptPreparationContext {
+  const tokenizers::Tokenizer& tokenizer;
+  std::size_t max_prompt_positions;
+  std::function<bool()> cancelled;
+};
+
+using PromptPreparationResult ET_EXPERIMENTAL =
+    std::variant<PromptInput, ServingError>;
+using PromptPreparation ET_EXPERIMENTAL =
+    std::function<PromptPreparationResult(const PromptPreparationContext&)>;
+
+using ModelPreparationResult ET_EXPERIMENTAL =
+    std::variant<batching::PreparedInputPtr, ServingError>;
+// Runtime-owned; consumes source storage on control after deferred source
+// captures are destroyed.
+using ModelPreparer ET_EXPERIMENTAL = std::function<
+    ModelPreparationResult(const PromptPreparationContext&, PromptInput)>;
+
+// Canonical token fast path for already-normalized owned tokens. Empty input
+// is InvalidArgument. Tokenization/BOS policy belongs to the caller; context
+// bounds remain enforced by the serving preparation pipeline.
+ModelPreparationResult make_token_prepared_input(
+    std::vector<batching::Token> tokens);
+
 struct ET_EXPERIMENTAL GenerationStats {
-  // Full prepared prompt size, including any reused prefix.
+  // Full prompt size in decoder positions, including any reused prefix.
   std::size_t prompt_tokens = 0;
   // Tokens processed by text output, excluding EOS/stop tokens but including
   // the token that completes a string stop. Later discarded tokens do not
@@ -85,7 +117,7 @@ struct ET_EXPERIMENTAL GenerationStats {
   // Committed prompt prefix reused without execution. A pending prediction
   // fed by this request counts as prefilled, not reused.
   std::size_t reused_prompt_tokens = 0;
-  // Actually consumed prompt tokens; may be partial on cancellation or failure.
+  // Consumed prompt positions; may be partial on cancellation or failure.
   std::size_t prefilled_prompt_tokens = 0;
   double prefill_ms = 0.0;
   double decode_ms = 0.0;
