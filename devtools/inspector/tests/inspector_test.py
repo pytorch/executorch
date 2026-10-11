@@ -390,6 +390,45 @@ class TestInspector(unittest.TestCase):
                     )
                 )
 
+    def test_inspector_with_etrecord_object_resolves_debug_handles(self):
+        _, _, et_output = TestETRecord().get_test_model(generate_etrecord=True)
+        etrecord = et_output.get_etrecord()
+        # An ETRecord object from get_etrecord() keys its maps by int instruction id
+        instruction_id = next(iter(etrecord._debug_handle_map["forward"]))
+        self.assertIsInstance(instruction_id, int)
+
+        def gen_event_blocks(*args, **kwargs):
+            return [
+                EventBlock(
+                    name=EVENT_BLOCK_NAME,
+                    events=[Event(name="op", _instruction_id=instruction_id)],
+                )
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump", side_effect=gen_event_blocks
+            ):
+                inspector_from_object = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord
+                )
+                inspector_from_file = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord_path
+                )
+
+        event_from_object = inspector_from_object.event_blocks[0].events[0]
+        event_from_file = inspector_from_file.event_blocks[0].events[0]
+        self.assertIsNotNone(event_from_file.debug_handles)
+        # Passing the ETRecord object directly must give the same result as
+        # passing the path of the saved ETRecord
+        self.assertEqual(event_from_object.debug_handles, event_from_file.debug_handles)
+        self.assertEqual(event_from_object.op_types, event_from_file.op_types)
+
     def test_populate_debugging_related_fields_raises_for_inconsistent_events(self):
         ret_event: Event = Event(
             name="event",
