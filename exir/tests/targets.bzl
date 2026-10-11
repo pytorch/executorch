@@ -80,6 +80,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend/test:backend_with_compiler_demo",
+            "//executorch/exir/backend/test:backend_with_named_data_map",
             "//executorch/exir/backend/test:op_partitioner_demo",
             "//executorch/exir/serde:serialize",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
