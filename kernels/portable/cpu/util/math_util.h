@@ -47,15 +47,22 @@ template <
         type = true>
 FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
   if (b == 0) {
-    return std::signbit(a) ? static_cast<FLOAT_T>(-INFINITY)
-                           : static_cast<FLOAT_T>(INFINITY);
+    return a / b;
   }
   const auto mod = std::fmod(a, b);
   auto div = (a - mod) / b;
   if ((mod != 0) && std::signbit(b) != std::signbit(mod)) {
-    return div - 1;
+    div -= 1;
   }
-  return div;
+  if (div == 0) {
+    return std::copysign(static_cast<FLOAT_T>(0), a / b);
+  }
+  // (a - mod) / b can be off from a whole number by a rounding error.
+  auto floordiv = std::floor(div);
+  if (div - floordiv > static_cast<FLOAT_T>(0.5)) {
+    floordiv += 1;
+  }
+  return floordiv;
 }
 
 /**
