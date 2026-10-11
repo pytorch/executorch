@@ -102,6 +102,7 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
 template <typename OUT_T>
 bool log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
   if constexpr (
+      std::is_same_v<OUT_T, double> ||
       std::is_same_v<OUT_T, executorch::aten::BFloat16> ||
       std::is_same_v<OUT_T, executorch::aten::Half>) {
     // Input dtype equals output dtype (enforced by check_log_softmax_args).
@@ -112,7 +113,6 @@ bool log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
   } else {
     auto input_scalar_type = X.scalar_type();
     switch (input_scalar_type) {
-      // TODO: support Double as well
       case ScalarType::Float:
         log_softmax_kernel<float, OUT_T>(X, dim, out);
         return true;
@@ -149,9 +149,13 @@ Tensor& opt_log_softmax_out(
 
   auto out_scalar_type = out.scalar_type();
   switch (out_scalar_type) {
-    // TODO: support Double as well
     case ScalarType::Float: {
       bool success = log_softmax_wrapper<float>(self, dim, out);
+      ET_KERNEL_CHECK(context, success, InvalidArgument, out);
+      break;
+    }
+    case ScalarType::Double: {
+      bool success = log_softmax_wrapper<double>(self, dim, out);
       ET_KERNEL_CHECK(context, success, InvalidArgument, out);
       break;
     }
