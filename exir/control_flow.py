@@ -42,11 +42,11 @@ and cond operator:
 
     ret = control_flow.cond(pred, branch_true, branch_false, args)
 
-and we can use the usual exir.capture() function.
+and we can use the usual torch.export.export() function.
 
 .. code-block:: python
 
-    exir.capture(module, args)
+    torch.export.export(module, args)
 
 """
 
@@ -180,7 +180,7 @@ def tracing_context(
     """
     A decorator function to annotate code path that we conditionally
     run during tracing. We need to annotate these paths for now because
-    during exir.capture(), the tracer does not know what's the proper
+    during torch.export.export(), the tracer does not know what's the proper
     local inputs to be passed to the untaken path.
     """
 
