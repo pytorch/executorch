@@ -203,7 +203,7 @@ template <
     typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
         0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
-  float rem = std::fmod(a, b);
+  CTYPE rem = std::fmod(a, b);
   if (((a < 0) ^ (b < 0)) && rem != 0) {
     rem += b;
   }
@@ -214,7 +214,13 @@ template <
     typename CTYPE,
     typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
-  return a % b;
+  CTYPE rem = a % b;
+  if constexpr (std::is_signed<CTYPE>::value) {
+    if (((a < 0) ^ (b < 0)) && rem != 0) {
+      rem += b;
+    }
+  }
+  return rem;
 }
 
 } // namespace utils
