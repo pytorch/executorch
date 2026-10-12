@@ -222,11 +222,48 @@ TEST_F(CudaAllocatorTest, AllocateOnMissingDeviceFails) {
                  << " leaves no absent ordinal in DeviceIndex";
   }
   CudaAllocator& a = CudaAllocator::instance();
+  (void)cudaGetLastError();
   auto res = a.allocate(1024, missing_device());
   ASSERT_FALSE(res.ok()) << "allocate must not report success for device "
                          << static_cast<int>(missing_device())
                          << ", which does not exist";
   EXPECT_EQ(res.error(), Error::Internal);
+  EXPECT_EQ(cudaGetLastError(), cudaSuccess);
+}
+
+TEST_F(CudaAllocatorTest, FailedAllocationLeavesNoPendingCudaError) {
+  // Far beyond any device, so every allocation entry point fails in the CUDA
+  // runtime rather than in an argument check.
+  constexpr size_t kImpossible = size_t{1} << 50;
+  CudaAllocator& a = CudaAllocator::instance();
+  (void)cudaGetLastError();
+
+  auto sync = a.allocate(kImpossible, 0);
+  if (sync.ok()) {
+    a.deallocate(sync.get(), 0);
+  }
+  ASSERT_FALSE(sync.ok());
+  EXPECT_EQ(sync.error(), Error::MemoryAllocationFailed);
+  EXPECT_EQ(cudaGetLastError(), cudaSuccess);
+
+  auto async =
+      CudaAllocator::allocate_async(kImpossible, 0, cudaStreamPerThread);
+  if (async.ok()) {
+    CudaAllocator::deallocate_async(async.get(), 0, cudaStreamPerThread);
+  }
+  ASSERT_FALSE(async.ok());
+  EXPECT_EQ(async.error(), Error::MemoryAllocationFailed);
+  EXPECT_EQ(cudaGetLastError(), cudaSuccess);
+
+  auto ordered = CudaAllocator::allocate_stream_ordered(
+      kImpossible, 0, cudaStreamPerThread);
+  if (ordered.ok()) {
+    (void)CudaAllocator::deallocate_stream_ordered(
+        ordered.get(), 0, cudaStreamPerThread);
+  }
+  ASSERT_FALSE(ordered.ok());
+  EXPECT_EQ(ordered.error(), Error::MemoryAllocationFailed);
+  EXPECT_EQ(cudaGetLastError(), cudaSuccess);
 }
 
 TEST_F(CudaAllocatorTest, LargeAlignmentsWithLiveBlocksRoundtrip) {

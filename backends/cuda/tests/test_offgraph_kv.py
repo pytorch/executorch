@@ -767,6 +767,50 @@ class OffGraphKVCellDecompositionTest(unittest.TestCase):
         )
         self._run(steps, max_cells=512, max_write=296)
 
+    def test_padding_rows_touch_only_the_scratch_row(self) -> None:
+        # A static program wider than its step runs padding rows the way the
+        # runtime writes them: cells name the scratch row (the last pool row,
+        # past every read_len) and masks repeat the last real row. Real rows
+        # must match the unpadded step, only the scratch row may change beyond
+        # the real cells, and nothing may turn NaN.
+        max_cells, width = 64, 8
+        for seed, groups in enumerate((((0, 0, 3),), ((0, 0, 2), (1, 0, 3)))):
+            torch.manual_seed(30 + seed)
+            oracle = _CellOracle(max_cells - 1)
+            self.addCleanup(oracle.close)
+            seq_ids, q, k, v, position = _batch(groups)
+            tokens = len(seq_ids)
+            (expected,) = oracle.step(seq_ids, q, k, v, position)
+            cells, read_len, mask_for = oracle.plan()
+
+            buffers = _CellBuffers(width, max_cells)
+            scratch = max_cells - 1
+            buffers.cells[:tokens] = cells.to("cuda")
+            buffers.cells[tokens:width] = scratch
+            buffers.read_len.fill_(read_len)
+            mask = mask_for(0).to("cuda")
+            buffers.masks[0][0, 0, :tokens, :read_len] = mask
+            buffers.masks[0][0, 0, tokens:width, :read_len] = mask[-1]
+            pad = width - tokens
+            q_pad, k_pad, v_pad = (
+                torch.cat([t, torch.randn_like(t[:, :, :1]).expand(-1, -1, pad, -1)], 2)
+                for t in (q, k, v)
+            )
+
+            out = buffers.step(0, q_pad, k_pad, v_pad)
+            self.assertFalse(torch.isnan(out).any())
+            self.assertLess(_max_abs_diff(out[:, :, :tokens], expected), 1e-2)
+            k_pool, v_pool = buffers.pools[0]
+            real = cells.to("cuda")
+            self.assertTrue(torch.equal(k_pool[0, real], k[0].transpose(0, 1)))
+            self.assertTrue(torch.equal(v_pool[0, real], v[0].transpose(0, 1)))
+            untouched = torch.ones(max_cells, dtype=torch.bool, device="cuda")
+            untouched[real] = False
+            untouched[scratch] = False
+            self.assertFalse(k_pool[0, untouched].any())
+            self.assertFalse(v_pool[0, untouched].any())
+            self.assertGreaterEqual(scratch, read_len)
+
 
 class LowerOffGraphKVCellPassTest(unittest.TestCase):
     """The pass in cell layout, on an exported program."""
