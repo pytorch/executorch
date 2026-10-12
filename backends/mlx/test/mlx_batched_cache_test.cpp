@@ -104,7 +104,7 @@ class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
 
 // Two sequences in one step: each comes back with what it would have computed
 // alone, so neither saw the other's cells.
-TEST_P(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
+TEST_P(MLXBatchedCacheTest, SpansMatchSeparateRuns) {
   ASSERT_NO_FATAL_FAILURE(
       create_cache(flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
@@ -127,7 +127,7 @@ TEST_P(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
 }
 
 // Decode: each span continues its own history, not the step before it.
-TEST_P(MLXBatchedSequenceCacheTest, DecodeContinuesEachPrivateHistory) {
+TEST_P(MLXBatchedCacheTest, DecodeContinuesEachPrivateHistory) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
   const int32_t b = *batch_->seq_new();
@@ -154,7 +154,7 @@ TEST_P(MLXBatchedSequenceCacheTest, DecodeContinuesEachPrivateHistory) {
 
 // A sequence named twice in one step: its second span continues its first,
 // and the outputs come back in the order the step declared them.
-TEST_P(MLXBatchedSequenceCacheTest, SequenceSpannedTwicePreservesOrder) {
+TEST_P(MLXBatchedCacheTest, SequenceSpannedTwicePreservesOrder) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
   const int32_t b = *batch_->seq_new();
@@ -177,7 +177,7 @@ TEST_P(MLXBatchedSequenceCacheTest, SequenceSpannedTwicePreservesOrder) {
 
 // A windowed layer bounds each span to its own window, and only the span's own
 // history is in it -- a neighbour's cells are in another pool entirely.
-TEST_P(MLXBatchedSequenceCacheTest, WindowBoundsEachSpanWithinItsSequence) {
+TEST_P(MLXBatchedCacheTest, WindowBoundsEachSpanWithinItsSequence) {
   const int window = 2;
   ASSERT_NO_FATAL_FAILURE(create_cache(
       ring_config(/*capacity=*/32, window, /*max_write=*/4, H, D, kHalf)));
@@ -211,7 +211,7 @@ TEST_P(MLXBatchedSequenceCacheTest, WindowBoundsEachSpanWithinItsSequence) {
 }
 
 // K/V are cast to the configured storage dtype on the way in, per sequence.
-TEST_P(MLXBatchedSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
+TEST_P(MLXBatchedCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
   ASSERT_NO_FATAL_FAILURE(create_cache(
       flat_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16))));
@@ -231,7 +231,7 @@ TEST_P(MLXBatchedSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
 }
 
 // A sequence removed frees its pools; the id comes back and starts empty.
-TEST_P(MLXBatchedSequenceCacheTest, RemovedSequenceStartsOverOnReuse) {
+TEST_P(MLXBatchedCacheTest, RemovedSequenceStartsOverOnReuse) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
   step({a, a, a}, {0, 1, 2}, randn(3), randn(3), randn(3));
@@ -248,7 +248,7 @@ TEST_P(MLXBatchedSequenceCacheTest, RemovedSequenceStartsOverOnReuse) {
 }
 
 // Undeclared, miscounted and out-of-order steps are refused.
-TEST_P(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
+TEST_P(MLXBatchedCacheTest, IllFormedStepsThrow) {
   ASSERT_NO_FATAL_FAILURE(
       create_cache(flat_config(32, /*n_layers=*/2, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
@@ -271,7 +271,7 @@ TEST_P(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
 
 // A fork holds the donor's prefix and then diverges: the copy is its own, so
 // what either writes afterwards is invisible to the other.
-TEST_P(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
+TEST_P(MLXBatchedCacheTest, ForkCopiesThePrefixThenDiverges) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
   array q0 = randn(2), k0 = randn(2), v0 = randn(2);
@@ -297,7 +297,7 @@ TEST_P(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
   EXPECT_TRUE(allclose(span(out, 1, 1), want, 1e-2f)); // and its fork
 }
 
-TEST_P(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
+TEST_P(MLXBatchedCacheTest, PartialFlatForkCopiesOnlyPrefix) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   const int32_t source = *batch_->seq_new();
   array q0 = randn(8), k0 = randn(8), v0 = randn(8);
@@ -317,7 +317,7 @@ TEST_P(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
 
 // A fork's writes must not reach the source, nor the reverse. Feeding the two
 // different tokens distinguishes isolation from a shared writable buffer.
-TEST_P(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
+TEST_P(MLXBatchedCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
   // A small initial capacity so the pool grows past it before the fork.
   auto cfg = [&] { return flat_config(32, 1, H, D, kHalf, 2); };
   ASSERT_NO_FATAL_FAILURE(create_cache(cfg()));
@@ -363,22 +363,22 @@ TEST_P(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
 }
 
 // A refusal is not a verb: the declaration it refused stays standing.
-TEST_P(MLXBatchedCacheTest, RejectedDeclarationLeavesTheLastOneStanding)
-ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
-const int32_t a = *batch_->seq_new();
+TEST_P(MLXBatchedCacheTest, RejectedDeclarationLeavesTheLastOneStanding) {
+  ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
+  const int32_t a = *batch_->seq_new();
 
-EXPECT_TRUE(batch_->declare_step({a}));
-EXPECT_FALSE(batch_->declare_step({a + 5})); // never handed out
-EXPECT_FALSE(batch_->declare_step({})); // a step carries a token
+  EXPECT_TRUE(batch_->declare_step({a}));
+  EXPECT_FALSE(batch_->declare_step({a + 5})); // never handed out
+  EXPECT_FALSE(batch_->declare_step({})); // a step carries a token
 
-array q = randn(1), k = randn(1), v = randn(1);
-EXPECT_NO_THROW(attention_->attend(0, {0}, q, k, v, kScale, s));
-EXPECT_EQ(batch_->pos(a), 1);
+  array q = randn(1), k = randn(1), v = randn(1);
+  EXPECT_NO_THROW(attention_->attend(0, {0}, q, k, v, kScale, s));
+  EXPECT_EQ(batch_->pos(a), 1);
 }
 
 // batched-sequence and batched-cell share capacity; batched limits each
 // private history. Cell forks share their prefix without using more cells.
-TEST_P(MLXBatchedSequenceCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
+TEST_P(MLXBatchedCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
   ASSERT_NO_FATAL_FAILURE(
       create_cache(flat_config(/*capacity=*/4, 1, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
@@ -410,7 +410,7 @@ TEST_P(MLXBatchedSequenceCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
 }
 
 // Every test uses the registry; also check the exposed capacity and admission.
-TEST_P(MLXBatchedSequenceCacheTest, RegistryBuildsSelectedLayout) {
+TEST_P(MLXBatchedCacheTest, RegistryBuildsSelectedLayout) {
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(32, 1, H, D, kHalf)));
   EXPECT_EQ(batch_->capacity(), 32);
   const auto a = batch_->seq_new();
@@ -493,7 +493,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 // Evicting rings refuse older prefixes; cell storage retains them even when
 // attention is windowed. Recent retained prefixes are available in all kinds.
-TEST_P(MLXBatchedSequenceCacheTest, PartialForkHonorsWindowedRetention) {
+TEST_P(MLXBatchedCacheTest, PartialForkHonorsWindowedRetention) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
   ASSERT_NO_FATAL_FAILURE(
       create_cache(ring_config(32, window, max_write, H, D, kHalf)));
@@ -536,7 +536,7 @@ TEST_P(MLXBatchedSequenceCacheTest, PartialForkHonorsWindowedRetention) {
 
 // A fork preserves its donor's retention boundary, including non-evicting
 // cell storage, so cloning again cannot recover previously evicted history.
-TEST_P(MLXBatchedSequenceCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
+TEST_P(MLXBatchedCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
   ASSERT_NO_FATAL_FAILURE(
       create_cache(ring_config(32, window, max_write, H, D, kHalf)));
