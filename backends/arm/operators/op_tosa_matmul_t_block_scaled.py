@@ -60,19 +60,16 @@ class MatMulTBlockScaledVisitor(NodeVisitor):
                 ts.DType.FP8E4M3,
                 ts.DType.FP8E5M2,
             ],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [A_scale, B_scale],
             ts.DType.FP8UE8M0,
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             output,
             ts.DType.FP32,
-            self.tosa_spec,
         )
         if block_size != 32:
             raise ValueError(f"Invalid block size {block_size}")
