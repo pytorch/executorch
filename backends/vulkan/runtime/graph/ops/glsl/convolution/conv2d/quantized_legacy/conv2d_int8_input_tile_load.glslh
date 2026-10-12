@@ -11,7 +11,7 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
-#include "linear_int8_input_tile.glslh"
+#include "gemm/tile_utils/linear_int8_input_tile.glslh"
 
 struct Int8InputTileIndex {
 #ifdef PACKED_INT8_INPUT_BUFFER

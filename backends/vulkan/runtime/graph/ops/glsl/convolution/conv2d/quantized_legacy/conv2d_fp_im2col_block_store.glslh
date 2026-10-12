@@ -23,7 +23,7 @@
 #include "indexing.glslh"
 #include "conv2d_common.glslh"
 #include "conv2d_fp_im2col_block.glslh"
-#include "linear_fp_output_tile.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile.glslh"
 
 // TODO: implement buffer support
 void write_output_texel(const VEC4_T out_texel, const TensorIndex4D tidx) {
