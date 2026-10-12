@@ -1150,7 +1150,7 @@ class TestVulkanPasses(unittest.TestCase):
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "repeat.default"), 1)
 
-    def test_can_rewrite_batch_norm_as_group_norm(self):
+    def test_can_rewrite_batch_norm_as_group_norm(self):  # noqa: C901
         class InstanceNormModule(torch.nn.Module):
             def __init__(self, affine=True):
                 super().__init__()
@@ -1192,6 +1192,25 @@ class TestVulkanPasses(unittest.TestCase):
                 )
                 return out, mean
 
+        class BufferAffineModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(8))
+                self.register_buffer("bias", torch.randn(8))
+
+            def forward(self, x):
+                return torch.nn.functional.instance_norm(
+                    x, weight=self.weight, bias=self.bias
+                )
+
+        class MutatedBufferAffineModule(BufferAffineModule):
+            # The norm reads the buffer before the update, so it consumes the
+            # buffer placeholder itself, whose data changes between calls.
+            def forward(self, x):
+                out = super().forward(x)
+                self.weight.add_(1.0)
+                return out
+
         x1 = torch.randn(1, 8, 5, 6)
         x2 = torch.randn(2, 8, 5, 6)
         affine = (torch.randn(8), torch.randn(8))
@@ -1204,6 +1223,8 @@ class TestVulkanPasses(unittest.TestCase):
             ("no_affine", InstanceNormModule(affine=False), (x1,), False),
             ("input_affine", InputAffineModule(), (x1, *affine), False),
             ("computed_weight", ComputedWeightModule(), (x1,), False),
+            ("buffer_affine", BufferAffineModule(), (x1,), True),
+            ("mutated_buffer_affine", MutatedBufferAffineModule(), (x1,), False),
             ("batch_norm_batch_1", BatchNormModule(), (x1,), True),
             ("batch_norm_batch_2", BatchNormModule(), (x2,), False),
             ("saved_stats", SavedStatsModule(), (x1,), False),
