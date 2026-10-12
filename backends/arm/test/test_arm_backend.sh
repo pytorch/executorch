@@ -498,6 +498,7 @@ test_runtime_vgf() {
     --target \
         vgf_neural_statistics_test \
         vgf_vulkan_features_test \
+        vgf_zero_copy_test \
         vgf_execution_stats_enabled_test \
         vgf_execution_stats_disabled_test \
     --parallel
