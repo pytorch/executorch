@@ -19,6 +19,8 @@ import java.io.File
 class ExecuTorchRuntime private constructor() {
 
   companion object {
+    private const val TAG = "ExecuTorchRuntime"
+
     init {
       if (!NativeLoader.isInitialized()) {
         NativeLoader.init(SystemDelegate())
@@ -27,11 +29,6 @@ class ExecuTorchRuntime private constructor() {
       NativeLoader.loadLibrary("executorch")
       loadSplitBackends()
     }
-
-    private const val TAG = "ExecuTorchRuntime"
-
-    private val SPLIT_BACKEND_LIBRARIES =
-        arrayOf("xnnpack_executorch_backend", "vulkan_executorch_backend")
 
     /**
      * Loads the backends that were built as their own shared library.
@@ -47,24 +44,33 @@ class ExecuTorchRuntime private constructor() {
      * different thing entirely, so the two are distinguished rather than both being swallowed.
      */
     private fun loadSplitBackends() {
-      for (name in SPLIT_BACKEND_LIBRARIES) {
-        try {
-          NativeLoader.loadLibrary(name)
-        } catch (e: UnsatisfiedLinkError) {
-          val path = packagedLibraryPath(name)
-          if (path == null) {
-            Log.d(
-                TAG,
-                "No lib$name.so in this build; the backend it provides is either linked into " +
-                    "libexecutorch.so or not included",
-            )
-          } else {
-            // Packaged but unloadable, typically an unresolved symbol or a
-            // dependency mismatch. Swallowing this would leave the delegate
-            // unavailable at run time with nothing to point at.
-            Log.e(TAG, "Failed to load $path; the backend it provides will be unavailable", e)
-          }
-        }
+      // Keep each NativeLoader.loadLibrary argument a string literal: some builds trace it back to
+      // a constant to decide which .so files can be stripped.
+      try {
+        NativeLoader.loadLibrary("xnnpack_executorch_backend")
+      } catch (e: UnsatisfiedLinkError) {
+        logSplitBackendLoadFailure("xnnpack_executorch_backend", e)
+      }
+      try {
+        NativeLoader.loadLibrary("vulkan_executorch_backend")
+      } catch (e: UnsatisfiedLinkError) {
+        logSplitBackendLoadFailure("vulkan_executorch_backend", e)
+      }
+    }
+
+    private fun logSplitBackendLoadFailure(name: String, e: UnsatisfiedLinkError) {
+      val path = packagedLibraryPath(name)
+      if (path == null) {
+        Log.d(
+            TAG,
+            "No lib$name.so in this build; the backend it provides is either linked into " +
+                "libexecutorch.so or not included",
+        )
+      } else {
+        // Packaged but unloadable, typically an unresolved symbol or a
+        // dependency mismatch. Swallowing this would leave the delegate
+        // unavailable at run time with nothing to point at.
+        Log.e(TAG, "Failed to load $path; the backend it provides will be unavailable", e)
       }
     }
 
