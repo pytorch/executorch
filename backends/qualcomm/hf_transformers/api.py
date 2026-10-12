@@ -6,21 +6,9 @@
 
 import copy
 import logging
-
-import tempfile
-from functools import partial
 from typing import Optional
 
 import torch
-from executorch.backends.qualcomm._passes import TagQuantIO
-from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_qnn_pass_manager_cls,
-)
-from executorch.backends.qualcomm.builders.utils import is_graph_output
-from executorch.backends.qualcomm.hf_transformers.causal_lm.decoder_model_wrapper import (
-    QnnCausalLMExportableModule,
-)
 from executorch.backends.qualcomm.hf_transformers.causal_lm.hf_llm_quant_recipe import (
     DefaultQuantRecipe,
     Granite_3_3_2B_Instruct_HFQuantRecipe,
@@ -32,24 +20,8 @@ from executorch.backends.qualcomm.hf_transformers.causal_lm.hf_llm_quant_recipe 
     Smollm2_HFQuantRecipe,
 )
 
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_PASS_ACTIVATE_KEY,
-    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
-)
-from executorch.backends.qualcomm.utils.utils import (
-    generate_htp_compiler_spec,
-    generate_qnn_executorch_compiler_spec,
-    get_soc_to_chipset_map,
-    to_edge_transform_and_lower_to_qnn,
-)
-from executorch.devtools.backend_debug import print_delegation_info
-from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from pytorch_tokenizers import get_tokenizer
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-from transformers import AutoConfig, AutoTokenizer
 
 from transformers.exporters import ExecutorchQnnConfig
 
@@ -69,21 +41,6 @@ HUGGING_FACE_QUANT_RECIPES = {
 }
 
 
-def prepare_for_qnn(model: torch.nn.Module, hf_config: ExecutorchQnnConfig):
-    assert hasattr(
-        model, "generation_config"
-    ), "HF API currently only support Generation LLM models"
-    assert hasattr(
-        model.generation_config, "cache_config"
-    ), "Please provide cache_config in generation_config."
-    assert (
-        "max_cache_len" in model.generation_config.cache_config
-    ), "Please provide max_cache_len in cache_config"
-    return QnnCausalLMExportableModule(
-        model, model.generation_config.cache_config["max_cache_len"]
-    )
-
-
 def quantize_for_qnn(
     exported_program: ExportedProgram,
     hf_config: ExecutorchQnnConfig,
@@ -93,19 +50,12 @@ def quantize_for_qnn(
     quantizer = hf_config.pt2e_quantizer
     graph_module = prepare_pt2e(exported_program.module(), quantizer)
 
-    tokenizer = AutoTokenizer.from_pretrained(hf_config.model_id)
-    # Generalize tokenizer so it's consistent.
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tokenizer_json_path = tokenizer.save_pretrained(tmpdir)[-1]
-        tokenizer = get_tokenizer(tokenizer_json_path)
-
     _pt2e_calibrate(
         graph_module=graph_module,
         calibration_dataset=hf_config.calibration_dataset,
         sample_inputs=sample_inputs,
         max_seq_len=max_seq_len,
         ar_len=1,
-        tokenizer=tokenizer,
     )
     qdq_module = convert_pt2e(graph_module)
 
@@ -119,91 +69,12 @@ def quantize_for_qnn(
     return qdq_ep
 
 
-def lower_for_qnn(
-    exported_program: ExportedProgram,
-    hf_config: ExecutorchQnnConfig,
-    sample_inputs: dict,
-):
-    source_model_config = AutoConfig.from_pretrained(hf_config.model_id)
-    backend_options = generate_htp_compiler_spec(
-        use_fp16=hf_config.pt2e_quantizer is None
-    )
-    compiler_spec = generate_qnn_executorch_compiler_spec(
-        soc_model=get_soc_to_chipset_map()[hf_config.soc_model],
-        backend_options=backend_options,
-        use_mha2sha=True,
-    )
-
-    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-
-    if hf_config.pt2e_quantizer:
-        fixed_point_type = {}
-        quant_recipe = _get_quant_recipe(hf_config.model_id, verbose=False)
-        kv_bits = quant_recipe.get_kv_io_bit_width()
-        if kv_bits == 8:
-            fixed_point_type["kv_type"] = torch.uint8
-        elif kv_bits == 16:
-            fixed_point_type["kv_type"] = torch.uint16
-        else:
-            raise RuntimeError(f"unknown kv io bit width {kv_bits}")
-
-        logits_bits = quant_recipe.get_logits_output_bit_width()
-        if logits_bits == 16:
-            fixed_point_type["io_type"] = torch.uint16
-        else:
-            raise ValueError("Only support uint16 logits output for quantized hf llm.")
-
-        passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "get_quant_io_dtype_fn"
-        ] = partial(
-            _tag_ios,
-            fixed_point_type=fixed_point_type,
-            vocab_size=source_model_config.vocab_size,
-            sample_inputs=sample_inputs,
-        )
-
-    constant_methods = {
-        "get_bos_id": source_model_config.bos_token_id,
-        "get_eos_ids": source_model_config.eos_token_id,
-        "get_vocab_size": source_model_config.vocab_size,
-        "get_max_seq_len": sample_inputs["atten_mask"].shape[3],
-        "get_n_layers": source_model_config.num_hidden_layers,
-        "use_kv_cache": source_model_config.use_cache,
-    }
-
-    with torch.no_grad():
-        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-            {KV_FORWARD: exported_program.module()},
-            {KV_FORWARD: sample_inputs},
-            compiler_spec,
-            constant_methods=constant_methods,
-            passes_job=passes_job,
-            convert_linear_to_conv2d=True,
-        )
-
-    print_delegation_info(edge_prog_mgr.exported_program(KV_FORWARD).graph_module)
-
-    executorch_config = ExecutorchBackendConfig(
-        memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=hf_config.alloc_graph_input,
-            alloc_graph_output=hf_config.alloc_graph_output,
-            alloc_mutable_buffers=hf_config.alloc_mutable_buffers,
-        ),
-        passes=[BuildQuantIo()],
-    )
-    exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-
-    return exec_prog_mgr
-
-
 def _pt2e_calibrate(  # noqa: C901
     graph_module: torch.fx.GraphModule,
     calibration_dataset: list[list[int]] | list[str],
     sample_inputs: dict,
     max_seq_len: int,
     ar_len: int,
-    tokenizer,
 ):
     def calibrate_template(
         module: torch.fx.GraphModule,
@@ -211,8 +82,10 @@ def _pt2e_calibrate(  # noqa: C901
         sample_inputs: dict,
         max_seq_len: int,
         ar_len: int,
-        tokenizer,
     ):
+        assert all(
+            isinstance(x, int) for x in prompt
+        ), "Expected calibration dataset to be tokenized."
 
         def _build_mask(n_past, past_len, context_len):
             mask = torch.full((1, 1, 1, context_len), -65535.0)
@@ -223,8 +96,6 @@ def _pt2e_calibrate(  # noqa: C901
         pos = 0
 
         token_list = prompt
-        if isinstance(prompt, str):
-            token_list = tokenizer.encode(prompt, bos=True, eos=False)
         past_k, past_v = [], []
         for _ in range(len(sample_inputs["past_k"])):
             past_k.append(torch.zeros(sample_inputs["past_k"][0].shape))
@@ -237,7 +108,7 @@ def _pt2e_calibrate(  # noqa: C901
         max_seq_len = min(max_seq_len, past_len)
 
         with torch.no_grad():
-            while token_list[-1] != tokenizer.eos_id and pos < max_seq_len:
+            while pos < max_seq_len:
                 n_past = min(pos, past_len)
                 atten_mask = _build_mask(n_past, past_len, context_len)
                 input_pos = torch.tensor([[n_past]], dtype=torch.int32)
@@ -255,9 +126,7 @@ def _pt2e_calibrate(  # noqa: C901
                 pos += 1
                 if pos >= len(token_list):
                     token_list.append(torch.argmax(logits, dim=-1).item())
-        logging.info(
-            f"Result of LLM with static cache:\n {tokenizer.decode(token_list)} \n\n\n"
-        )
+        logging.info(f"Token result of LLM with static cache:\n {token_list} \n\n\n")
 
     for prompt in calibration_dataset:
         calibrate_template(
@@ -266,47 +135,12 @@ def _pt2e_calibrate(  # noqa: C901
             sample_inputs=sample_inputs,
             max_seq_len=max_seq_len,
             ar_len=ar_len,
-            tokenizer=tokenizer,
         )
 
     logging.info("Calibration finish...")
 
 
-def _tag_ios(node, fixed_point_type, vocab_size, sample_inputs):
-    ar_len = sample_inputs["input_tokens"].shape[1]
-    max_batch_size = 1
-    logit_out_shape = {
-        (
-            max_batch_size,
-            ar_len,
-            vocab_size,
-        )
-    }
-    past_k_shape = sample_inputs["past_k"][0].shape
-    past_v_shape = sample_inputs["past_v"][0].shape
-    kv_cache_shape = {past_k_shape, past_v_shape}
-    kv_out_shape = {
-        torch.Size([*past_k_shape[:3], ar_len]),
-        torch.Size([*past_v_shape[:2], ar_len, *past_v_shape[3:]]),
-    }
-    atten_mask_shape = sample_inputs["atten_mask"].shape
-    quant_io_type = None
-
-    if node.op == "placeholder":
-        if node.meta["val"].shape in kv_cache_shape:
-            quant_io_type = fixed_point_type["kv_type"]
-        elif node.meta["val"].shape == atten_mask_shape:
-            quant_io_type = fixed_point_type["io_type"]
-    if is_graph_output(node):
-        if node.meta["val"].shape in kv_out_shape:
-            quant_io_type = fixed_point_type["kv_type"]
-        elif node.meta["val"].shape in logit_out_shape:
-            quant_io_type = fixed_point_type["io_type"]
-
-    return quant_io_type
-
-
-def _get_quant_recipe(model_id, verbose=True):
+def get_quant_recipe(model_id, verbose=True):
     """
     model_id = The Hugging Face Model ID.
     verbose: If True, it will the quant config tagged for each node.
