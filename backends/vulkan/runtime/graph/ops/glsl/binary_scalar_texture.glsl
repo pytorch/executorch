@@ -42,6 +42,7 @@ ${define_active_storage_type(STORAGE)}
 layout(std430) buffer;
 
 #include "indexing.glslh"
+#include "convert.glslh"
 
 $if IS_COMPARISON_OP:
   ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
@@ -58,6 +59,7 @@ layout(push_constant) uniform restrict Block {
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+layout(constant_id = 3) const bool input_is_half = false;
 
 $if not IS_COMPARISON_OP:
   #include "binary_op_defs.glslh"
@@ -72,6 +74,11 @@ void main() {
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
   VEC4_OUT_T out_texel = VEC4_OUT_T(
       op(COMPUTE_VEC4_T(in_texel), COMPUTE_VEC4_T(scalar_value)));
+
+  $if not IS_COMPARISON_OP and DTYPE in ("float", "half"):
+    if (input_is_half) {
+      out_texel = round_to_half_rte(out_texel);
+    }
 
   imageStore(t_out, pos, out_texel);
 }

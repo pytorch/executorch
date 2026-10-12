@@ -371,6 +371,12 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  inline vkapi::ScalarType original_dtype_of(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isTensor() ? value.toConstTensor().original_dtype()
+                            : dtype_of(idx);
+  }
+
   vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {

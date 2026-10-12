@@ -8,8 +8,8 @@
  */
 
 /*
- * Common Arm backend for Ethos-U. Please see
- * EthosUBackend_Cortex_*.cpp for specific backends.
+ * Common Arm backend for Ethos-U. The driver-specific platform implementations
+ * live in EthosUBackend_CoreDriver.cpp and EthosUBackend_LinuxDriver.cpp.
  */
 
 #include <cstdlib>

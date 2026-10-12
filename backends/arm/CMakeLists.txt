@@ -68,7 +68,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     target_sources(
       executorch_delegate_ethos_u
-      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_CoreDriver.cpp
     )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
@@ -92,7 +93,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_sources(
       executorch_delegate_ethos_u
-      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_A.cpp
+      PRIVATE
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp
     )
     if(NOT ETHOSU_LINUX_DRIVER_SOURCE_DIR
        OR NOT EXISTS

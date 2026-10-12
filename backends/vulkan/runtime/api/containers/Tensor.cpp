@@ -886,6 +886,7 @@ vTensor::vTensor(
     const vkapi::VulkanImage* external_image,
     const vkapi::VulkanBuffer* external_buffer)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
+      original_dtype_(dtype),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
       sizes_(sizes.begin(), sizes.end()),
@@ -962,6 +963,7 @@ vTensor::vTensor(
     const utils::GPUMemoryLayout memory_layout,
     const utils::AxisMapLayout axis_map_layout)
     : dtype_(vkapi::element_scalartype(image.format())),
+      original_dtype_(dtype_),
       packed_dim_info_(
           calculate_packed_dim_info(memory_layout, utils::kTexture3D)),
       // Calculate tensor metadata
@@ -996,6 +998,7 @@ vTensor::vTensor(
 
 vTensor::vTensor(vTensor& other)
     : dtype_(other.dtype_),
+      original_dtype_(other.original_dtype_),
       packed_dim_info_{other.packed_dim_info_},
       // Copy tensor size metadata
       sizes_(other.sizes_.begin(), other.sizes_.end()),
@@ -1021,6 +1024,7 @@ vTensor::vTensor(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& dim_order)
     : dtype_(other.dtype_),
+      original_dtype_(other.original_dtype_),
       packed_dim_info_(other.packed_dim_info_),
       // Copy tensor size metadata
       sizes_(sizes.begin(), sizes.end()),
