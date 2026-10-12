@@ -540,8 +540,10 @@ jobs:
         # job's timeout.
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" \
           --ignore=backends/cuda/tests/test_int4_quantized_gemm.py \
+          --ignore=backends/cuda/tests/test_int4_large_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int5_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int6_quantized_gemm.py \
+          --ignore=backends/cuda/tests/test_int6_large_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int8_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_cuda_graph_timing.py
 
@@ -566,10 +568,13 @@ jobs:
         include:
           - shard: int4
             tests: backends/cuda/tests/test_int4_quantized_gemm.py
-          - shard: int5-int6-int8-graph-timing
+          # The int4 shard alone takes ~60 min, so the large-M suites go here.
+          - shard: large-int5-int6-int8-graph-timing
             tests: >-
+              backends/cuda/tests/test_int4_large_quantized_gemm.py
               backends/cuda/tests/test_int5_quantized_gemm.py
               backends/cuda/tests/test_int6_quantized_gemm.py
+              backends/cuda/tests/test_int6_large_quantized_gemm.py
               backends/cuda/tests/test_int8_quantized_gemm.py
               backends/cuda/tests/test_cuda_graph_timing.py
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
