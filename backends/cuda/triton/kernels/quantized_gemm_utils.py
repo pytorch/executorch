@@ -12,7 +12,7 @@
   W*A8 formats' first kernel, and its launcher;
 * the deterministic split-K reduce kernel, the split-K candidates the launch
   functions time during AOTI compile, and their legality check;
-* the generic autotune space and its ``prune_configs_by`` pruning;
+* generic row and tensor-core tile autotune spaces and their pruning;
 * legality checks the formats compose into their ``unsupported_reason``.
 
 Nothing here is tuned per architecture or per shape.
@@ -45,10 +45,13 @@ _TL_Q8_TILE = tl.constexpr(Q8_TILE)
 # Split-K values each launch function times during AOTI compile
 # (@autotune_launch_param); outside it, the first one is used.
 SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16)
-# Generic autotune space: rows per CTA (one output row per warp) and pipeline
-# stages. num_stages and the kernel's PIPELINE_STAGES are the same value.
+# Generic autotune spaces. num_stages and the kernel's PIPELINE_STAGES are
+# always the same value.
 ROWS_PER_CTA_CHOICES = (1, 2, 4, 8)
 PIPELINE_STAGE_CHOICES = (1, 2, 3)
+TILE_BLOCK_M_CHOICES = (8, 16, 32, 64)
+TILE_BLOCK_N_CHOICES = (32, 64, 128)
+TILE_WARP_CHOICES = (4, 8)
 
 
 @triton.jit
@@ -306,10 +309,14 @@ def quantize_activations_q8(
     return qwords, x_scale, x_sum
 
 
-def splitk_reduce(partial: torch.Tensor, out: torch.Tensor, block_m: int) -> None:
-    """Sums ``partial`` [SPLIT_K, >=M, N] (FP32) over splits into BF16 ``out`` [M, N]."""
+def splitk_reduce(
+    partial: torch.Tensor, out: torch.Tensor, block_m: int, block_n: int = 64
+) -> None:
+    """Sums ``partial`` [SPLIT_K, >=M, N] in fixed order into BF16 ``out``."""
     M, N = out.shape
-    wrap_triton(_splitk_reduce_kernel)[(triton.cdiv(N, 64), triton.cdiv(M, block_m))](
+    wrap_triton(_splitk_reduce_kernel)[
+        (triton.cdiv(N, block_n), triton.cdiv(M, block_m))
+    ](
         partial,
         out,
         M,
@@ -320,7 +327,7 @@ def splitk_reduce(partial: torch.Tensor, out: torch.Tensor, block_m: int) -> Non
         out.stride(0),
         out.stride(1),
         BLOCK_M=block_m,
-        BLOCK_N=64,
+        BLOCK_N=block_n,
         SPLIT_K=partial.shape[0],
         num_warps=4,
         num_stages=1,
@@ -350,6 +357,26 @@ def autotune_configs(
         )
         for implementation in implementations
         for rows in ROWS_PER_CTA_CHOICES
+        for stages in PIPELINE_STAGE_CHOICES
+    ]
+
+
+def tile_autotune_configs(bucket: int) -> list[triton.Config]:
+    """Generic tensor-core tile space for a static maximum-M bucket."""
+    return [
+        triton.Config(
+            {
+                "BLOCK_M": block_m,
+                "BLOCK_N": block_n,
+                "PIPELINE_STAGES": stages,
+            },
+            num_warps=warps,
+            num_stages=stages,
+        )
+        for block_m in TILE_BLOCK_M_CHOICES
+        if block_m <= bucket
+        for block_n in TILE_BLOCK_N_CHOICES
+        for warps in TILE_WARP_CHOICES
         for stages in PIPELINE_STAGE_CHOICES
     ]
 
@@ -404,11 +431,12 @@ def check_k(k, multiple: int) -> Optional[str]:
 
 
 def check_rows(m, bucket: int) -> Optional[str]:
-    """A static M must equal the bucket; a dynamic M must provably lie in
-    [1, bucket] (the kernels skip rows at or above the runtime M)."""
+    """Static or dynamic M must lie in [1, bucket]."""
     if isinstance(m, int):
         return (
-            None if m == bucket else f"static M must equal the bucket {bucket}, got {m}"
+            None
+            if 1 <= m <= bucket
+            else f"static M must be within [1, {bucket}], got {m}"
         )
     if statically_known_true(m >= 1) and statically_known_true(m <= bucket):
         return None

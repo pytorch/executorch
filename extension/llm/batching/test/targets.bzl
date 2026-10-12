@@ -5,6 +5,7 @@ def define_common_targets():
     runtime.cxx_test(
         name = "test",
         srcs = [
+            "opaque_input_test.cpp",
             "prefix_cache_test.cpp",
             "runner_test.cpp",
             "scheduler_test.cpp",
@@ -19,6 +20,12 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "executor_utils_test",
+        srcs = ["executor_utils_test.cpp"],
+        deps = ["//executorch/extension/llm/batching:executor_utils"],
+    )
+
+    runtime.cxx_test(
         name = "session_table_test",
         srcs = [
             "session_table_test.cpp",
@@ -28,5 +35,16 @@ def define_common_targets():
             "//executorch/extension/llm/cache:kv_cache",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_sampler",
+        srcs = [
+            "test_sampler.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/extension/llm/batching:sampler",
         ],
     )
