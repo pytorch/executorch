@@ -42,7 +42,7 @@ def _is_mutated_buffer(node: torch.fx.Node, exported_program: ExportedProgram) -
     """Whether `node` is a buffer the program writes back to."""
     signature = exported_program.graph_signature
     name = signature.inputs_to_buffers.get(node.name)
-    return name is not None and name in set(signature.buffers_to_mutate.values())
+    return name is not None and name in signature.buffers_to_mutate.values()
 
 
 # Dequantized constants are still known at build time. Quantized weights
