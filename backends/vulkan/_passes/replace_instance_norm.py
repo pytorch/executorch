@@ -26,10 +26,16 @@ class ReplaceInstanceNormPass(ExportPass):
     Replace ``aten._native_batch_norm_legit.no_stats`` with
     ``aten.native_group_norm`` using one group per channel.
 
-    Without this, every ``nn.InstanceNorm2d`` is a graph break. Architectures that
-    normalize in each block (the fast neural style transformer nets, for one) then
-    copy their activations out to the CPU and back once per block, which costs far
-    more than the normalization itself.
+    Without this, an instance norm is a graph break. Architectures that normalize
+    in each block (the fast neural style transformer nets, for one) then copy their
+    activations out to the CPU and back once per block, which costs far more than
+    the normalization itself.
+
+    Only the cases can_rewrite_batch_norm_as_group_norm() accepts are rewritten:
+    a rank-4, static-shape, batch-1 input with weight and bias that are constants,
+    as in ``nn.InstanceNorm2d(affine=True)``. Everything else stays on the CPU,
+    including the ``nn.InstanceNorm2d`` default ``affine=False``, a batch above 1
+    and computed or runtime affine args.
     """
 
     def __init__(self) -> None:
@@ -48,7 +54,8 @@ class ReplaceInstanceNormPass(ExportPass):
             input_node = node.args[0]
             assert isinstance(input_node, torch.fx.Node)
             input_val = input_node.meta["val"]
-            batches, channels, height, width = (int(d) for d in input_val.shape)
+            # The predicate only accepts static shapes.
+            batches, channels, height, width = input_val.shape
 
             with graph_module.graph.inserting_before(node):
                 group_norm_node = graph_module.graph.create_node(
@@ -70,9 +77,10 @@ class ReplaceInstanceNormPass(ExportPass):
                 )
 
             out_val, _, _ = node.meta["val"]
-            stats_val = input_val.new_empty((batches, channels))
+            mean_val = input_val.new_empty((batches, channels))
+            rstd_val = input_val.new_empty((batches, channels))
             group_norm_node.meta = dict(node.meta)
-            group_norm_node.meta["val"] = (out_val, stats_val, stats_val)
+            group_norm_node.meta["val"] = (out_val, mean_val, rstd_val)
 
             node.replace_all_uses_with(group_norm_node)
             modified = True

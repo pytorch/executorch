@@ -1928,8 +1928,9 @@ def can_rewrite_batch_norm_as_group_norm(
     val = input_node.meta.get("val")
     if val is None or val.dim() != 4:
         return False
-    # A symbolic batch dim could be above 1 at runtime.
-    if not isinstance(val.shape[0], int) or val.shape[0] != 1:
+    # A symbolic batch dim could be above 1 at runtime, and the pass passes the
+    # static channel and spatial sizes to group norm.
+    if not all(isinstance(d, int) for d in val.shape) or val.shape[0] != 1:
         return False
 
     # Group norm always applies an affine transform, so both weight and bias must
