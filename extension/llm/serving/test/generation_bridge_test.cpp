@@ -8,6 +8,7 @@
 
 #include <executorch/extension/llm/serving/detail/generation_bridge.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
+#include <executorch/extension/llm/serving/test/prepared_input.h>
 
 #include <algorithm>
 #include <atomic>
@@ -38,6 +39,7 @@ using serving::detail::GenerationBridge;
 using serving::detail::GenerationCompletion;
 using serving::detail::GenerationRequest;
 using serving::detail::SubmissionResult;
+using serving::testing::TestPreparedInput;
 
 namespace {
 
@@ -129,6 +131,31 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<bool> shared_batch{false};
 };
 
+class PreparedExecutor : public Executor {
+ public:
+  bool accepts(const batching::PreparedInput& input) const override {
+    EXPECT_EQ(std::this_thread::get_id(), engine_thread);
+    return input.kind() == &TestPreparedInput::tag;
+  }
+  bool execute(const batching::BatchInput& input, batching::BatchOutput& output)
+      override {
+    for (const auto& slice : input.inputs) {
+      if (const auto* prepared =
+              std::get_if<batching::PreparedInputPtr>(&slice.payload)) {
+        if (!*prepared || (*prepared)->kind() != &TestPreparedInput::tag ||
+            slice.offset > (*prepared)->size() ||
+            slice.size > (*prepared)->size() - slice.offset) {
+          return false;
+        }
+      }
+      slices.push_back(slice);
+    }
+    // This size-only model generates from sampling state, not payload values.
+    return Executor::execute(input, output);
+  }
+  std::vector<batching::Input> slices;
+};
+
 struct Events {
   void record(const batching::GenerationUpdate& update) {
     std::lock_guard<std::mutex> lock(mutex);
@@ -211,7 +238,7 @@ class GenerationBridgeTest : public ::testing::Test {
       int budget = 2) {
     GenerationRequest result;
     result.key = std::move(key);
-    result.delta = {10, 11};
+    result.delta = std::vector<batching::Token>{10, 11};
     result.config.max_new_tokens = budget;
     result.config.seed = 42;
     result.on_update = [events](
@@ -403,7 +430,7 @@ class GenerationInlineCallbackTest
     // Prvalue construction leaves no caller-owned function/request source.
     return GenerationRequest{
         "session",
-        {10, 11},
+        std::vector<batching::Token>{10, 11},
         config,
         slot == InlineCallbackSlot::Update
             ? Update{Probe{&state}}
@@ -630,6 +657,116 @@ TEST_F(GenerationBridgeTest, SmallUpdateCallbackDestructionCanReenterInfo) {
   EXPECT_EQ(small_callback_state.calls.load(), 2);
   EXPECT_EQ(small_callback_state.terminals.load(), 1);
   EXPECT_FALSE(handle.error());
+}
+
+TEST_F(GenerationBridgeTest, OpaqueSuffixPreservesPendingTokenAndRawFeedback) {
+  PreparedExecutor prepared_executor;
+  ServingRuntime prepared_runtime(
+      prepared_executor,
+      batching::DecodeFirstScheduler::create(32, 4, 2),
+      ServingRuntimeConfig{1, 128, 16});
+  auto first_events = std::make_shared<Events>();
+  auto first = accepted(GenerationBridge::submit(
+      prepared_runtime, request("session", first_events, 1)));
+  completed(first);
+  ASSERT_TRUE(first.done());
+  ASSERT_FALSE(first.error());
+  ASSERT_TRUE(first_events->completion);
+  ASSERT_TRUE(first_events->completion->position);
+  ASSERT_EQ(first_events->updates.size(), 2u);
+  ASSERT_EQ(first_events->updates.front().tokens.size(), 1u);
+  const auto prior_position = *first_events->completion->position;
+  EXPECT_EQ(prior_position, 2);
+  const auto pending = first_events->updates.front().tokens.front();
+
+  auto opaque = std::make_shared<TestPreparedInput>(3);
+  auto next_events = std::make_shared<Events>();
+  auto input = request("session", next_events, 2);
+  input.delta = opaque;
+  auto next =
+      accepted(GenerationBridge::submit(prepared_runtime, std::move(input)));
+  completed(next);
+  prepared_runtime.shutdown();
+  ASSERT_FALSE(next.error());
+  ASSERT_TRUE(next_events->completion);
+  ASSERT_EQ(next_events->updates.size(), 3u);
+  EXPECT_EQ(next_events->terminals, 1);
+  EXPECT_EQ(
+      next_events->updates.back().finish_reason,
+      batching::FinishReason::NewTokenLimit);
+  EXPECT_TRUE(next_events->completion->current_session);
+  EXPECT_EQ(
+      next_events->completion->incarnation,
+      first_events->completion->incarnation);
+  EXPECT_EQ(next_events->completion->position, prior_position + 5);
+  EXPECT_EQ(next_events->completion->metrics.n_prompt_tokens, 3);
+  EXPECT_EQ(next_events->completion->metrics.n_prefilled_tokens, 4);
+  EXPECT_EQ(next_events->completion->metrics.n_generated_tokens, 2);
+  EXPECT_EQ(prepared_executor.opened().size(), 1u);
+  EXPECT_EQ(prepared_executor.clones.load(), 0);
+
+  const auto& slices = prepared_executor.slices;
+  ASSERT_EQ(slices.size(), 5u);
+  for (const auto& slice : slices) {
+    EXPECT_EQ(slice.sid, slices.front().sid);
+  }
+  const auto& carried = slices[1];
+  EXPECT_EQ(carried.position, prior_position);
+  EXPECT_EQ(carried.offset, 0u);
+  EXPECT_EQ(carried.size, 1u);
+  EXPECT_FALSE(carried.produce_output);
+  ASSERT_TRUE(std::holds_alternative<batching::TokenInputPtr>(carried.payload));
+  EXPECT_EQ(
+      *std::get<batching::TokenInputPtr>(carried.payload),
+      (std::vector<batching::Token>{pending}));
+  for (std::size_t i = 0; i < 2; ++i) {
+    const auto& chunk = slices[2 + i];
+    ASSERT_TRUE(
+        std::holds_alternative<batching::PreparedInputPtr>(chunk.payload));
+    EXPECT_EQ(std::get<batching::PreparedInputPtr>(chunk.payload), opaque);
+    EXPECT_EQ(chunk.position, prior_position + 1);
+    EXPECT_EQ(chunk.offset, i * 2);
+    EXPECT_EQ(chunk.size, i == 0 ? 2u : 1u);
+    EXPECT_EQ(chunk.produce_output, i == 1);
+  }
+  const auto& feedback = slices.back();
+  EXPECT_EQ(feedback.position, prior_position + 4);
+  EXPECT_EQ(feedback.offset, 0u);
+  EXPECT_EQ(feedback.size, 1u);
+  EXPECT_TRUE(feedback.produce_output);
+  ASSERT_EQ(next_events->updates.front().tokens.size(), 1u);
+  ASSERT_TRUE(
+      std::holds_alternative<batching::TokenInputPtr>(feedback.payload));
+  EXPECT_EQ(
+      *std::get<batching::TokenInputPtr>(feedback.payload),
+      next_events->updates.front().tokens);
+}
+
+TEST_F(GenerationBridgeTest, EmptyOpaqueSuffixRejectsBeforeAdmission) {
+  ServingRuntimeConfig config{1, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  for (const auto& opaque :
+       {batching::PreparedInputPtr{},
+        batching::PreparedInputPtr{std::make_shared<TestPreparedInput>(0)}}) {
+    auto events = std::make_shared<Events>();
+    auto input = request("session", events);
+    input.delta = opaque;
+    auto result = GenerationBridge::submit(*runtime, std::move(input));
+    ASSERT_TRUE(std::holds_alternative<ServingError>(result));
+    EXPECT_EQ(std::get<ServingError>(result).code, ErrorCode::InvalidArgument);
+    EXPECT_TRUE(events->updates.empty());
+    EXPECT_FALSE(events->prepared);
+    EXPECT_FALSE(events->completion);
+    EXPECT_TRUE(executor.opened().empty());
+    EXPECT_EQ(executor.calls.load(), 0);
+  }
+  auto events = std::make_shared<Events>();
+  auto handle = accepted(
+      GenerationBridge::submit(*runtime, request("session", events, 1)));
+  completed(handle);
+  EXPECT_FALSE(handle.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
 }
 
 TEST_F(GenerationBridgeTest, DistinctSessionsReachOnePhysicalBatch) {
@@ -2044,7 +2181,7 @@ TEST_F(GenerationBridgeTest, InvalidSubmissionAndDefaultHandleHaveNoCallbacks) {
   start();
   auto events = std::make_shared<Events>();
   auto input = request("session", events);
-  input.delta.clear();
+  input.delta = std::vector<batching::Token>{};
   auto result = GenerationBridge::submit(*runtime, std::move(input));
   ASSERT_TRUE(std::holds_alternative<ServingError>(result));
   EXPECT_EQ(std::get<ServingError>(result).code, ErrorCode::InvalidArgument);

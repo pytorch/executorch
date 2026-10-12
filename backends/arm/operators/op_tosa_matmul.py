@@ -44,7 +44,7 @@ class MatmulVisitor(NodeVisitor):
     ) -> None:
         """Define the TOSA ``MATMUL`` operator."""
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs], ts)
+        validate_same_dtype(self.target, [*inputs])
         validate_valid_dtype(
             self.target,
             [*inputs],
@@ -58,13 +58,11 @@ class MatmulVisitor(NodeVisitor):
                 ts.DType.FP8E4M3,
                 ts.DType.FP8E5M2,
             ],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [output],
             [ts.DType.INT32, ts.DType.INT48, ts.DType.FP16, ts.DType.FP32],
-            self.tosa_spec,
         )
 
         # We need to get the zero points and add an intermediate tensor for INT16 case

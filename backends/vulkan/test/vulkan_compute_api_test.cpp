@@ -4317,18 +4317,34 @@ TEST_P(VulkanSwiGLUTest, MatchesUnfusedAcrossResizes) {
         const float reference = (x / (1.0f + std::exp(-x))) * y;
         if (dtype == vkapi::kHalf) {
           constexpr float fp16_min_normal = 0x1p-14f;
+          constexpr float unfused_rtol = 3e-3f;
           ASSERT_NEAR(
               float(actual[i]),
               reference,
               1e-3f * std::abs(reference) + fp16_min_normal)
               << "element " << i;
-          // Multiplications amplify error from flushed FP16 values.
-          const float atol = fp16_min_normal *
-              (std::abs(x * y) + std::abs(x) + std::abs(y) + 1.0f);
+          const float sigmoid_reference = 1.0f / (1.0f + std::exp(-x));
+          const auto is_subnormal = [](const float value) {
+            return value != 0.0f && std::abs(value) < fp16_min_normal;
+          };
+          const auto may_underflow = [](const float value) {
+            return value != 0.0f &&
+                std::abs(value) < fp16_min_normal * (1.0f + unfused_rtol);
+          };
+          float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          if (is_subnormal(x) || is_subnormal(y) ||
+              may_underflow(sigmoid_reference) ||
+              may_underflow(x * sigmoid_reference) ||
+              may_underflow(reference)) {
+            // Flushing the unfused path to zero can lose the full reference
+            // magnitude. Its relative tolerance then vanishes, so the extra
+            // 1e-3 covers the fused result's relative error.
+            atol += (1.0f + 1e-3f) * std::abs(reference);
+          }
           ASSERT_NEAR(
               float(actual[i]),
               float(expected[i]),
-              3e-3f * std::abs(float(expected[i])) + atol)
+              unfused_rtol * std::abs(float(expected[i])) + atol)
               << "element " << i;
         } else {
           ASSERT_NEAR(
