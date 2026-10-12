@@ -338,6 +338,7 @@ def _top_level_package_dirs() -> FrozenSet[str]:
 # rather than scanned from .github, which a source distribution does not carry; a test re-derives
 # the list so it cannot drift.
 _CI_ENTRY_POINTS = (
+    "executorch.backends.cuda.batching.test.export_toy_decoder",
     "executorch.backends.mlx.test.run_all_tests",
     "executorch.backends.mlx.test.test_sample",
     "executorch.backends.mlx.test.test_slot_recycling",

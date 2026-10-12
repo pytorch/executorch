@@ -8,14 +8,13 @@
 """Tests for CudaDp4aPlanarInt6Tensor F.linear dispatch via int6_dispatch.
 
 These tests validate the eager / trace-time dispatch path — the same code that
-torch.export traces through when building the AOTI graph. They do NOT test the
-.pte runtime C shim (W6A8 dp4a kernel); that is covered by
-test_aoti_torch_cuda_int6_plain_mm.cpp (C++ unit tests).
+torch.export traces through when building the AOTI graph. The Triton kernels
+themselves are covered by test_int6_quantized_gemm.py.
 
 The API contract: after importing int6_dispatch, F.linear / nn.Linear with a
 CudaDp4aPlanarInt6Tensor weight produce numerically correct results, routed by
-batch size (decode M<=4 -> custom op, prefill M>4 -> inline dequant). Routing
-tests run without a GPU by recording calls to the decode custom op.
+batch size (decode M<=4 -> ``triton::int6_quantized_gemm_m{M}``, everything
+else -> inline dequant, never an error).
 
 Usage:
   python -m pytest backends/cuda/tests/test_int6_dispatch.py -v
@@ -77,28 +76,36 @@ def _ref_weight(q, scale, group_size, dtype=torch.bfloat16):
 
 
 @contextlib.contextmanager
-def _record_int6_plain_mm():
-    """Record calls to the decode custom op without needing a GPU.
+def _record_int6_kernel_ops():
+    """Record which INT6 Triton op the dispatch would launch, without a GPU.
 
-    Replaces ``torch.ops.executorch_cuda.int6_plain_mm`` (whose real impl is the
-    CUDA C shim) with a recorder that computes the result via the eager CPU
-    dequant, so the dispatch handler still returns a valid tensor.
+    Replaces ``INT6_QUANTIZED_GEMM.op`` with a recorder whose ops compute the
+    result via the eager dequant, so the dispatch handler still returns a valid
+    tensor.
     """
+    from executorch.backends.cuda.triton.kernels.int6_quantized_gemm import (
+        INT6_QUANTIZED_GEMM,
+    )
+
     calls = []
 
-    def _fake(self, ql, qh, scale, steps, group_size):
-        calls.append((tuple(self.shape), group_size))
-        return _unit_dq_mm_int6(self, ql, qh, scale, steps, group_size)
+    def _op(bucket):
+        def run(x, *weight_args):
+            calls.append((bucket, tuple(x.shape)))
+            return _unit_dq_mm_int6(x, *weight_args)
 
-    with mock.patch.object(torch.ops.executorch_cuda, "int6_plain_mm", _fake):
+        return run
+
+    with mock.patch.object(INT6_QUANTIZED_GEMM, "op", side_effect=_op):
         yield calls
 
 
 class TestDispatchRouting(unittest.TestCase):
-    """Type-based routing: M<=4 -> int6_plain_mm op, M>4 -> inline dequant.
+    """Type-based routing on CPU: CudaDp4aPlanarInt6Tensor takes inline dequant.
 
-    Runs without a GPU by recording calls to the decode custom op and computing
-    the result with the eager CPU dequant.
+    These tests run without a GPU. Decode on CUDA traces the Triton kernels
+    (TestDecodeDispatch); CPU eager cannot launch Triton, so every M takes the
+    inline dequant and no INT6 op is reached.
     """
 
     def setUp(self):
@@ -109,32 +116,32 @@ class TestDispatchRouting(unittest.TestCase):
             (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
         ).item()
 
-    def test_decode_routes_to_int6_plain_mm(self):
-        """M<=4 routes to the decode custom op."""
+    def test_cpu_decode_uses_dequant(self):
+        """M<=4 on CPU eager takes inline dequant, never a Triton op."""
         t, _, _ = _make_int6_tensor(16, 256)
         x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
-        with _record_int6_plain_mm() as calls:
+        with _record_int6_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         self.assertEqual(out.shape, (1, 16))
 
     def test_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""
         t, q, scale = _make_int6_tensor(16, 256)
         x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
-        with _record_int6_plain_mm() as calls:
+        with _record_int6_kernel_ops() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])
         ref = F.linear(x, _ref_weight(q, scale, 16))
         self.assertLess(self._rel_err(out, ref), 0.02)
 
     def test_decode_result_matches_reference(self):
-        """The decode op (eager -> dequant) is numerically correct."""
+        """The CPU decode-sized result is numerically correct."""
         t, q, scale = _make_int6_tensor(24, 512)
         x = torch.randn(2, 512, dtype=torch.bfloat16)
-        with _record_int6_plain_mm() as calls:
+        with _record_int6_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         ref = F.linear(x, _ref_weight(q, scale, 16))
         self.assertLess(self._rel_err(out, ref), 0.02)
 
@@ -143,7 +150,7 @@ class TestDispatchRouting(unittest.TestCase):
         t, q, scale = _make_int6_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
         x = torch.randn(1, 256, dtype=torch.bfloat16)
-        with _record_int6_plain_mm():
+        with _record_int6_kernel_ops():
             out = F.linear(x, t, bias)
         ref = F.linear(x, _ref_weight(q, scale, 16), bias)
         self.assertLess(self._rel_err(out, ref), 0.02)
@@ -153,13 +160,13 @@ class TestDispatchRouting(unittest.TestCase):
         t, q, scale = _make_int6_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
         x = torch.randn(1, 256, dtype=torch.bfloat16)
-        with _record_int6_plain_mm():
+        with _record_int6_kernel_ops():
             out = F.linear(x, t, bias=bias)
         ref = F.linear(x, _ref_weight(q, scale, 16), bias)
         self.assertLess(self._rel_err(out, ref), 0.02)
         # Guard against a regression to dropping the keyword bias: the no-bias
         # result must differ from the bias result by exactly the bias.
-        with _record_int6_plain_mm():
+        with _record_int6_kernel_ops():
             out_no_bias = F.linear(x, t)
         self.assertTrue(
             torch.allclose(out, out_no_bias + bias, atol=1e-2),
@@ -170,7 +177,7 @@ class TestDispatchRouting(unittest.TestCase):
         """3D input is flattened and the output shape is restored."""
         t, q, scale = _make_int6_tensor(16, 256)
         x = torch.randn(2, 8, 256, dtype=torch.bfloat16)  # flattened M=16 > 4
-        with _record_int6_plain_mm() as calls:
+        with _record_int6_kernel_ops() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])  # prefill regime
         self.assertEqual(out.shape, (2, 8, 16))
@@ -195,9 +202,9 @@ class TestDispatchRouting(unittest.TestCase):
         )
         t = CudaDp4aPlanarInt6Tensor._from_intx_int8(intx)
         x = torch.randn(1, K, dtype=torch.bfloat16)
-        with _record_int6_plain_mm() as calls:
+        with _record_int6_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])  # CPU eager: inline dequant
         # The packer re-encodes scale as int8 code * per-256 fp16 step, so the
         # reference uses the effective decoded scale (the tensor's dequant), not
         # the raw input scale.
@@ -315,6 +322,140 @@ class TestFLinearDispatchCuda(unittest.TestCase):
         # Pass an explicit dtype: the scale is stored as int8 codes, so the
         # default (self.scale.dtype) would dequantize in int8 and collapse to 0.
         self.assertTrue(torch.equal(t.dequantize(torch.bfloat16).cpu(), ref))
+
+
+class TestDecodeDispatch(unittest.TestCase):
+    """CUDA export: decode-sized M captures the INT6 bucket op."""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(0)
+
+    def _module(self, n=256, k=512, group_size=16):
+        t, q, scale = _make_int6_tensor(n, k, group_size)
+        module = nn.Linear(k, n, bias=False, dtype=torch.bfloat16)
+        module.weight = nn.Parameter(t, requires_grad=False)
+        return module.cuda(), _ref_weight(q, scale, group_size).cuda()
+
+    @staticmethod
+    def _targets(module, x, dynamic_m=None):
+        from torch.export import Dim
+
+        dynamic = None
+        if dynamic_m is not None:
+            dynamic = ({0: Dim("m", min=dynamic_m[0], max=dynamic_m[1])},)
+        with torch.no_grad():
+            program = torch.export.export(module, (x,), dynamic_shapes=dynamic)
+        return {str(node.target) for node in program.graph.nodes}
+
+    @staticmethod
+    def _bucket_ops(targets):
+        return {t for t in targets if "int6_quantized_gemm" in t}
+
+    def test_static_m_uses_the_smallest_covering_bucket_op(self):
+        module, w_ref = self._module()
+        cases = {1: 1, 2: 2, 3: 3, 4: 4, 6: 8, 8: 8, 16: 16, 24: 32, 48: 64, 64: 64}
+        for m, bucket in cases.items():
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            ops = self._bucket_ops(self._targets(module, x))
+            self.assertEqual(ops, {f"triton.int6_quantized_gemm_m{bucket}.default"}, m)
+            with torch.no_grad():
+                out = module(x)
+            ref = F.linear(x, w_ref)
+            rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+            self.assertLess(rel.item(), 0.02, m)
+
+    def test_dynamic_m_bounded_by_a_bucket_uses_that_bucket(self):
+        module, _ = self._module()
+        x = torch.randn(4, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertEqual(
+            self._bucket_ops(self._targets(module, x, dynamic_m=(2, 4))),
+            {"triton.int6_quantized_gemm_m4.default"},
+        )
+        self.assertEqual(
+            self._bucket_ops(self._targets(module, x[:2], dynamic_m=(2, 3))),
+            {"triton.int6_quantized_gemm_m3.default"},
+        )
+
+    def test_bounded_dynamic_m_through_64_uses_a_bucket(self):
+        module, _ = self._module()
+        x64 = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
+        for bounds in ((5, 64), (1, 64)):
+            self.assertEqual(
+                self._bucket_ops(self._targets(module, x64, dynamic_m=bounds)),
+                {"triton.int6_quantized_gemm_m64.default"},
+                bounds,
+            )
+
+    def test_more_than_64_rows_uses_dequant(self):
+        module, _ = self._module()
+        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
+        self.assertFalse(
+            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
+        )
+
+
+class TestFallbacks(unittest.TestCase):
+    """Inputs the INT6 kernels do not serve take inline dequant: no error, no
+    Triton op in the graph, correct output."""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(5)
+
+    def _check(self, t, q, scale, group_size, x):
+        with _record_int6_kernel_ops() as calls:
+            out = F.linear(x, t)
+        self.assertEqual(calls, [])
+        ref = F.linear(
+            x.to(torch.bfloat16), _ref_weight(q, scale, group_size).cuda()
+        ).to(out.dtype)
+        rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+        self.assertLess(rel.item(), 0.05)
+
+    def _cuda_tensor(self, n, k, group_size):
+        t, q, scale = _make_int6_tensor(n, k, group_size)
+        return t.cuda(), q, scale
+
+    def test_fp16_activation(self):
+        t, q, scale = self._cuda_tensor(64, 512, 16)
+        self._check(
+            t, q, scale, 16, torch.randn(1, 512, dtype=torch.float16, device="cuda")
+        )
+
+    def test_non_contiguous_activation(self):
+        t, q, scale = self._cuda_tensor(64, 512, 16)
+        x = torch.randn(512, 2, dtype=torch.bfloat16, device="cuda").t()
+        self._check(t, q, scale, 16, x)
+
+    def test_group_size_other_than_16(self):
+        t, q, scale = self._cuda_tensor(64, 512, 32)
+        self._check(
+            t, q, scale, 32, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
+        )
+
+    def test_more_than_64_rows(self):
+        t, q, scale = self._cuda_tensor(64, 512, 16)
+        self._check(
+            t, q, scale, 16, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+        )
+
+    def test_raw_uint8_scale_codes_are_signed(self):
+        """uint8 scale storage holds the same signed codes, on the dequant
+        fallback (gs = 32) as in the kernels."""
+        t, _, _ = self._cuda_tensor(64, 512, 32)
+        codes = t.scale.clone()
+        codes[:, ::2] = -codes[:, ::2]
+        x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
+        ref = _unit_dq_mm_int6(x, t.ql, t.qh, codes, t.steps, 32)
+        raw = _unit_dq_mm_int6(x, t.ql, t.qh, codes.view(torch.uint8), t.steps, 32)
+        torch.testing.assert_close(raw, ref)
+        strided = codes.t().contiguous().t().view(torch.uint8)
+        self.assertFalse(strided.is_contiguous())
+        torch.testing.assert_close(
+            _unit_dq_mm_int6(x, t.ql, t.qh, strided, t.steps, 32), ref
+        )
 
 
 if __name__ == "__main__":

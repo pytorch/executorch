@@ -35,7 +35,7 @@ namespace serving {
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
-  // Text-generation context bound and reported metadata; 0 means unknown.
+  // Decoder-position context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
   // Queued, executing, and delivery-fenced lifecycle/generation-start
   // operations, excluding completion callbacks. Must be non-zero.
@@ -51,7 +51,7 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new text sessions; zero disables caching.
+  // Opt-in prefix reuse for new sessions; zero disables caching.
   // Explicit open, reset, and same-session replay bypass the cache. Snapshots
   // may outlive their source; misses/refusals fall back to full prefill.
   // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
@@ -84,7 +84,8 @@ class ET_EXPERIMENTAL ServingRuntime {
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
       const tokenizers::Tokenizer& tokenizer,
-      ServingRuntimeConfig config);
+      ServingRuntimeConfig config,
+      ModelPreparer model_preparer = {});
   ~ServingRuntime();
 
   ServingRuntime(const ServingRuntime&) = delete;
@@ -147,10 +148,32 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Before terminal invocation, this request's session claim and admission
   // are released. Nonblocking follow-up submission is allowed but may still
   // be rejected; wait()/done() remain callback-lifetime barriers.
-  // The lifecycle-only constructor rejects text generation with NotReady.
+  // Model preparation runs for every source prompt. Optional complete identity
+  // permits mixed-prefix reuse; missing identity cold-replays. Resend all image
+  // and text context as part of each full prompt, including for named sessions.
+  // Metadata/options errors and unsupported prepared inputs return
+  // InvalidArgument without replacing existing content. Executor::accepts()
+  // is checked on the engine thread before replacement; later engine admission
+  // or execution failure does not restore content already replaced. Generation
+  // needs a tokenizer for output; the lifecycle-only constructor returns
+  // NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
       PromptInput prompt,
+      GenerationOptions options,
+      std::function<void(GenerationEvent)> on_event);
+
+  // Deferred preparation uses the same bounded admission and lifecycle fences.
+  // Invoked at most once on control, after options/session validation and
+  // before destructive replacement; cancelled or rejected work may skip
+  // invocation. Errors leave history intact. Exceptions become Internal errors
+  // when enabled. Invoked callback captures are released on control when the
+  // invocation exits. All captures are released outside locks before
+  // done()/wait() and close/reset acknowledgement. Neither the callback nor its
+  // capture destructors may wait for runtime work or shutdown.
+  GenerateResult generate(
+      std::optional<std::string> key,
+      PromptPreparation prepare,
       GenerationOptions options,
       std::function<void(GenerationEvent)> on_event);
 
