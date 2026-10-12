@@ -72,8 +72,8 @@ std::vector<TestCase> generate_test_cases(
 
         for (const auto& storage_type : storage_types) {
           for (const auto& input_dtype : input_dtypes) {
-            TestCase test_case = create_test_case_from_config(
-                config, storage_type, input_dtype);
+            TestCase test_case =
+                create_test_case_from_config(config, storage_type, input_dtype);
             test_case.set_name(test_case.name() + " [tiledm2]");
             test_case.set_force_narrow_int4_tile(true);
             test_cases.push_back(test_case);

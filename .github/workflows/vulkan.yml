@@ -110,7 +110,7 @@ jobs:
         ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/clone --set=correctness
         ./cmake-out/backends/vulkan/test/ops/benchmark/etvk_bench --op=q8ta/binary --set=correctness
 
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build vulkan_sdpa_av_test
 
         # Run e2e testing for selected operators.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"

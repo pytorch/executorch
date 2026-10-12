@@ -711,6 +711,16 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_relu",
+        srcs = ["op_relu.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS + ["//executorch/kernels/portable/cpu:op_relu"],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_remainder",
         srcs = ["op_remainder.cpp"],
         exported_headers = ["operators.h"],
