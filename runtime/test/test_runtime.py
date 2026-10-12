@@ -115,9 +115,12 @@ class RuntimeTest(unittest.TestCase):
 
     def test_mutated_planned_input_is_not_updated(self):
         x, cache, pos = _cache_inputs()
+        # The update is planned onto the input's own spec, which is also an
+        # output, so both must be planned for the cache to be planned.
         method, _buffer = _load_unplanned_io_method(
-            ModuleCacheUpdate(), _cache_inputs(), plan_inputs=True
+            ModuleCacheUpdate(), _cache_inputs(), plan_inputs=True, plan_outputs=True
         )
+        self.assertTrue(method.metadata.input_tensor_meta(1).is_memory_planned())
         outputs = method.execute((x, cache, pos))
         self.assertIsNot(outputs[0], cache)
         self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
