@@ -1439,6 +1439,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora_multimethod.sh
 
   test-mediatek-models-linux:
+    # NeuroPilot's converter requires Python 3.10; re-enable with a Python 3.11+ SDK.
+    if: ${{ false }}
     needs: docker-image
     name: test-mediatek-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
