@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.transforms import addmm_mm_to_linear
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -213,7 +214,10 @@ class TestAddmmToLinearTransform(unittest.TestCase):
             torch.export.export(Model().eval(), (torch.randn(2, 8),), strict=True)
         )
         program = edge.exported_program()
-        graph = AddmmToLinearTransform()(program.graph_module).graph_module.graph
+        # The skip is silent otherwise, so it is logged (once per process).
+        addmm_mm_to_linear._warn_no_exported_program.cache_clear()
+        with self.assertLogs(addmm_mm_to_linear.logger, level="WARNING"):
+            graph = AddmmToLinearTransform()(program.graph_module).graph_module.graph
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
 
 

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import functools
+import logging
 from typing import Optional
 
 import torch
@@ -14,6 +16,8 @@ from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 
 _int64_max_dim_val = torch.iinfo(torch.int64).max - 1
+
+logger = logging.getLogger(__name__)
 
 
 def get_shape(input_node: torch.fx.Node):
@@ -62,6 +66,15 @@ _QDQ_TARGETS = (
 )
 
 
+@functools.cache
+def _warn_no_exported_program() -> None:
+    logger.warning(
+        "addmm/mm to linear: no ExportedProgram was passed, so matmuls whose "
+        "weight is a placeholder (including parameters) are not rewritten to "
+        "linear. Pass the owning program to enable the rewrite."
+    )
+
+
 def is_constant_tensor(
     node: torch.fx.Node, exported_program: Optional[ExportedProgram]
 ) -> bool:
@@ -89,6 +102,7 @@ def is_constant_tensor(
         # from a user input, and prepacking a user input would bake in whatever
         # the first call passed. Every in-tree caller threads the program, so
         # take the safe side and leave the matmul alone.
+        _warn_no_exported_program()
         return False
     if is_param(exported_program, node) or is_lifted_tensor_constant(
         exported_program, node
