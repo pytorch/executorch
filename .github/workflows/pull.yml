@@ -74,7 +74,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
       contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
-      contains(needs.changed-files.outputs.changed-files, 'schema/')
+      contains(needs.changed-files.outputs.changed-files, 'schema/') ||
+      contains(needs.changed-files.outputs.changed-files, 'version.txt')
     name: test-arduino-library
     uses: ./.github/workflows/_test_arduino_library.yml
     permissions:

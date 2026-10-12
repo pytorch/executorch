@@ -18,7 +18,7 @@ def define_common_targets():
         name = "arm_backend",
         srcs = [
             "EthosUBackend.cpp",
-            "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_CoreDriver.cpp",
             "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],
@@ -44,6 +44,7 @@ def define_common_targets():
             "VGFExecutionStats.cpp",
             "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
+            "VGFZeroCopy.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
