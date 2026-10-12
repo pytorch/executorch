@@ -1306,3 +1306,52 @@ class TestVulkanPasses(unittest.TestCase):
                         if graph.values[i].value.constant_id >= 0
                     ]
                     self.assertEqual(constant_outputs, [])
+
+    def test_instance_norm_with_repeat_not_delegated(self):
+        """
+        The affine args of a delegated instance norm must reach the delegate as
+        constants. If the repeats feeding them stay on the CPU, so must the norm.
+        """
+
+        class Conv2dInstanceNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm2d(8, affine=True)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        edge_program = lower_to_vulkan(
+            Conv2dInstanceNormModule().eval(),
+            (torch.randn(1, 8, 6, 6),),
+            operator_blocklist=[exir_ops.edge.aten.repeat.default],
+        )
+        self.assertEqual(
+            len(
+                batch_norm_no_stats_nodes(edge_program.exported_program().graph_module)
+            ),
+            1,
+        )
+        graphs = vulkan_delegate_graphs(edge_program)
+        self.assertGreater(len(graphs), 0)
+        for graph in graphs:
+            for op in graph.chain:
+                self.assertNotIn("batch_norm", op.name)
+
+    def test_replace_instance_norm_rejects_leftover_batch_norm(self):
+        """A batch norm without stats that cannot be rewritten fails the export."""
+
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(8)
+
+            def forward(self, x):
+                return self.norm(x)
+
+        ep = export_to_edge(InstanceNormModule(), (torch.randn(1, 8, 5, 6),))
+        replace_pass = ReplaceInstanceNormPass()
+        replace_pass._exported_program = ep
+        with self.assertRaises(RuntimeError):
+            replace_pass.call(ep.graph_module)

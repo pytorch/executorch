@@ -334,7 +334,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if (
             features.are_node_inputs_supported_with_constants_fn is not None
             and not features.are_node_inputs_supported_with_constants_fn(
-                node, self.constant_nodes
+                node, self.constant_nodes, self._is_node_supported
             )
         ):
             self.log_skip(node, "op args are not constant where required")
