@@ -330,12 +330,16 @@ class PyQnnManager {
       throw std::runtime_error(
           "QNN DLC binary must be retrieved by its creating manager");
     }
-    std::vector<uint8_t> binary;
-    if (qnn_manager_->GetDlcBinary(dlc_handle.Get(), binary) != Error::Ok) {
+    std::vector<uint8_t> dlc_binary;
+    if (qnn_manager_->GetDlcBinary(dlc_handle.Get(), dlc_binary) != Error::Ok) {
       throw std::runtime_error("Failed to get QNN DLC binary");
     }
-    return py::bytes(
-        reinterpret_cast<const char*>(binary.data()), binary.size());
+    QnnExecuTorchContextBinary binary(
+        {dlc_binary.data(), static_cast<uint64_t>(dlc_binary.size())});
+    QnnContextCustomProtocol custom_protocol(binary.nbytes);
+    custom_protocol.BuildContextCustomBuffer(binary);
+    auto [buffer, size] = custom_protocol.GetCustomProtocolBuffer();
+    return py::bytes(reinterpret_cast<const char*>(buffer), size);
   }
 
   void Destroy() {

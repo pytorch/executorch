@@ -54,7 +54,11 @@ from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
 )
 
 from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
-from executorch.backends.qualcomm.utils.utils import update_spill_fill_size
+from executorch.backends.qualcomm.utils.utils import (
+    dump_context_from_pte,
+    PyQnnManagerAdaptor,
+    update_spill_fill_size,
+)
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 
@@ -891,6 +895,27 @@ class Fcb:
 
             with pytest.raises(RuntimeError, match="already been freed"):
                 owner.GetDlcBinary(handle)
+
+    @staticmethod
+    def dump_context_writes_stripped_dlc(fcb_compile_specs):
+        compile_specs = fcb_compile_specs((QcomChipset.SM8650, QcomChipset.SM8750))
+        exec_prog = to_edge_transform_and_lower_to_qnn(
+            torch.nn.ReLU(), (torch.randn(1, 3, 4, 4),), compile_specs
+        ).to_executorch()
+        delegate = exec_prog.executorch_program.execution_plan[0].delegates[0]
+        wrapped_dlc = exec_prog.executorch_program.backend_delegate_data[
+            delegate.processed.index
+        ].data
+        dlc = bytes(PyQnnManagerAdaptor.StripProtocol(wrapped_dlc))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                exec_prog.write_to_file(f)
+            [dlc_path] = dump_context_from_pte(pte_path)
+            assert dlc_path.endswith(".dlc")
+            with open(dlc_path, "rb") as f:
+                assert f.read() == dlc
 
     @staticmethod
     @unpack_fixtures

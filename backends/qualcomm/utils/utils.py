@@ -232,8 +232,13 @@ def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
                 processed_bytes = program.backend_delegate_data[
                     delegate.processed.index
                 ].data
+                options = flatbuffer_to_option(
+                    generate_qnn_executorch_option(delegate.compile_specs)
+                )
                 binary = PyQnnManagerAdaptor.StripProtocol(processed_bytes)
-                file_extension = ".bin"
+                file_extension = (
+                    ".dlc" if options.target_options is not None else ".bin"
+                )
                 if len(binary) == 0:
                     binary = processed_bytes
                     file_extension = ".dlc"
@@ -1246,6 +1251,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
             is unsupported. FCB requires at least two unique HTP SoCs, no online
             preparation, and no DLBC when reference-weight sharing is enabled.
     """
+    setup_qnn_sdk()
     # Normalize inputs
     soc_models = soc_model if isinstance(soc_model, list) else [soc_model]
     target_backend_options = (
@@ -1272,7 +1278,9 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         if fcb_reference_weight_sharing and any(
             option.htp_options.use_dlbc for option in target_backend_options
         ):
-            raise ValueError("FCB reference weight sharing does not support DLBC")
+            warnings.warn(
+                "FCB reference weight sharing might conflict with DLBC", stacklevel=1
+            )
         htp_arches = {_soc_info_table[model].htp_info.htp_arch for model in soc_models}
         has_v6x_target = bool(htp_arches & {HtpArch.V68, HtpArch.V69})
         has_v7x_or_newer_target = bool(

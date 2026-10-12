@@ -124,6 +124,10 @@ def test_fcb_dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs):
     Fcb.dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs)  # noqa: F405
 
 
+def test_fcb_dump_context_writes_stripped_dlc(fcb_compile_specs):
+    Fcb.dump_context_writes_stripped_dlc(fcb_compile_specs)  # noqa: F405
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
