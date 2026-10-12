@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import tempfile
+import warnings
 from functools import partial
 from importlib import resources as _resources
 from json import JSONDecodeError
@@ -34,6 +35,11 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.model_identity import (
+    LEGACY_MODEL_CLASS_TO_FAMILY,
+    MODEL_SPECS,
+    ModelFamily,
+)
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_openvino_partitioner,
@@ -56,7 +62,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.export import ExportedProgram
 
 from ..model_factory import EagerModelFactory
@@ -97,60 +103,33 @@ pkg_name = __name__
 verbosity_setting = None
 
 
-# All models that leverage the transformer architecture defined in llama_transformer.py.
-EXECUTORCH_DEFINED_MODELS = [
-    "stories110m",
-    "llama2",
-    "llama3",
-    "llama3_1",
-    "llama3_2",
-    "static_llama",
-    "qwen2_5_0_5b",
-    "qwen2_5_1_5b",
-    "qwen2_5_coder_32b",
-    "qwen3_0_6b",
-    "qwen3_1_7b",
-    "qwen3_4b",
-    "qwen3_5_0_8b",
-    "qwen3_5_2b",
-    "qwen3_5_4b",
-    "phi_4_mini",
-    "smollm2",
-    "smollm2_360m",
-    "lfm2_350m",  # hybrid
-    "lfm2_700m",  # hybrid
-    "lfm2_1_2b",  # hybrid
-    "lfm2_5_350m",  # hybrid
-    "lfm2_5_1_2b",  # hybrid
-    "spark_x2_5_1_7b",  # hybrid
-    "spark_x2_5_4b",  # hybrid
-    "spark_x2_6_1_7b",  # hybrid
-    "spark_x2_6_4b",  # hybrid
+EXECUTORCH_DEFINED_MODEL_FAMILIES = [
+    ModelFamily.llama2,
+    ModelFamily.llama3,
+    ModelFamily.llama3_1,
+    ModelFamily.llama3_2,
+    ModelFamily.qwen2_5,
+    ModelFamily.qwen3,
+    ModelFamily.qwen3_5,
+    ModelFamily.phi_4_mini,
+    ModelFamily.smollm2,
+    ModelFamily.lfm2,
+    ModelFamily.lfm2_5,
+    ModelFamily.spark_x2_5,
 ]
-TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
-HUGGING_FACE_REPO_IDS = {
-    "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
-    "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
-    "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
-    "phi_4_mini": "microsoft/Phi-4-mini-instruct",
-    "smollm2": "HuggingFaceTB/SmolLM2-135M",
-    "smollm2_360m": "HuggingFaceTB/SmolLM2-360M",
-    "qwen3_0_6b": "Qwen/Qwen3-0.6B",
-    "qwen3_1_7b": "Qwen/Qwen3-1.7B",
-    "qwen3_4b": "Qwen/Qwen3-4B",
-    "qwen3_5_0_8b": "Qwen/Qwen3.5-0.8B",
-    "qwen3_5_2b": "Qwen/Qwen3.5-2B",
-    "qwen3_5_4b": "Qwen/Qwen3.5-4B",
-    "lfm2_350m": "LiquidAI/LFM2-350M",
-    "lfm2_700m": "LiquidAI/LFM2-700M",
-    "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
-    "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
-    "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
-    "spark_x2_5_1_7b": "XHToken/Spark-X2.5-1.7B",
-    "spark_x2_5_4b": "XHToken/Spark-X2.5-4B",
-    "spark_x2_6_1_7b": "XHToken/Spark-X2.6-1.7B",
-    "spark_x2_6_4b": "XHToken/Spark-X2.6-4B",
-}
+TORCHTUNE_DEFINED_MODEL_FAMILIES = [ModelFamily.llama3_2_vision]
+
+# Legacy parser choices are derived from the fixed model_class compatibility map.
+EXECUTORCH_DEFINED_MODELS = [
+    model_class
+    for model_class, model_family in LEGACY_MODEL_CLASS_TO_FAMILY.items()
+    if model_family in EXECUTORCH_DEFINED_MODEL_FAMILIES
+]
+TORCHTUNE_DEFINED_MODELS = [
+    model_class
+    for model_class, model_family in LEGACY_MODEL_CLASS_TO_FAMILY.items()
+    if model_family in TORCHTUNE_DEFINED_MODEL_FAMILIES
+]
 
 
 def set_pkg_name(name: str) -> None:
@@ -202,6 +181,28 @@ def parse_list_of_ints(s):
         )
 
 
+def _get_hf_weight_converter(model_family: ModelFamily) -> Callable[[str, str], None]:
+    if model_family == ModelFamily.qwen2_5:
+        from executorch.examples.models.qwen2_5 import convert_weights
+    elif model_family == ModelFamily.qwen3:
+        from executorch.examples.models.qwen3 import convert_weights
+    elif model_family == ModelFamily.qwen3_5:
+        from executorch.examples.models.qwen3_5 import convert_weights
+    elif model_family == ModelFamily.phi_4_mini:
+        from executorch.examples.models.phi_4_mini import convert_weights
+    elif model_family == ModelFamily.smollm2:
+        from executorch.examples.models.smollm2 import convert_weights
+    elif model_family in (ModelFamily.lfm2, ModelFamily.lfm2_5):
+        from executorch.examples.models.lfm2 import convert_weights
+    elif model_family == ModelFamily.spark_x2_5:
+        from executorch.examples.models.spark_x2_5 import convert_weights
+    else:
+        raise ValueError(
+            f"Converting weights to meta format for {model_family.value} is not yet supported"
+        )
+    return convert_weights
+
+
 def build_args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
@@ -210,9 +211,22 @@ def build_args_parser() -> argparse.ArgumentParser:
     # )
     parser.add_argument(
         "--model",
-        default="llama3",
+        default=None,
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
-        help="The Llama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
+        help="Legacy combined model selector. Prefer --model-family or --model-id.",
+    )
+    parser.add_argument(
+        "--model-family",
+        choices=[model_family.value for model_family in ModelFamily],
+        help="Model architecture. Cannot be combined with --model-id or --model.",
+    )
+    parser.add_argument(
+        "--model-id",
+        choices=list(MODEL_SPECS),
+        help=(
+            "Concrete model id for an automatically downloaded Hugging Face "
+            "checkpoint; --checkpoint uses a local override."
+        ),
     )
     parser.add_argument(
         "-E",
@@ -716,41 +730,42 @@ def export_llama(  # noqa: C901
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
         llm_config = LlmConfig.from_args(export_options)
-    elif isinstance(export_options, LlmConfig) or isinstance(
-        export_options, DictConfig
-    ):
-        # Hydra CLI.
+    elif isinstance(export_options, LlmConfig):
         llm_config = export_options
+    elif isinstance(export_options, DictConfig):
+        llm_config = OmegaConf.to_object(
+            OmegaConf.merge(OmegaConf.structured(LlmConfig), export_options)
+        )
+        if not isinstance(llm_config, LlmConfig):
+            raise TypeError("Expected DictConfig input to materialize as LlmConfig")
     else:
         raise ValueError(
-            "Input to export_llama must be either of type argparse.Namespace or LlmConfig"
+            "Input to export_llama must be argparse.Namespace, LlmConfig, or DictConfig"
         )
 
-    # If a checkpoint isn't provided for an HF OSS model, download and convert the
-    # weights first.
-    model_name = llm_config.base.model_class.value
-    if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
-        repo_id = HUGGING_FACE_REPO_IDS[model_name]
-        if model_name.startswith("qwen2_5"):
-            from executorch.examples.models.qwen2_5 import convert_weights
-        elif model_name.startswith("qwen3_5"):
-            from executorch.examples.models.qwen3_5 import convert_weights
-        elif model_name.startswith("qwen3"):
-            from executorch.examples.models.qwen3 import convert_weights
-        elif model_name == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import convert_weights
-        elif model_name in ("smollm2", "smollm2_360m"):
-            from executorch.examples.models.smollm2 import convert_weights
-        elif model_name.startswith("lfm2"):
-            from executorch.examples.models.lfm2 import convert_weights
-        elif model_name.startswith("spark_x2_"):
-            from executorch.examples.models.spark_x2_5 import convert_weights
-        else:
-            raise ValueError(
-                f"Converting weights to meta format for {model_name} is not yet supported"
-            )
-        checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+    # Download and convert weights when the selected model id has no local override.
+    model_identity = llm_config.model_identity
+    model_family = model_identity.family
+    model_id = model_identity.model_id
+    if model_id is not None and not llm_config.base.params:
+        raise ValueError(
+            f"base.model_id {model_id!r} requires base.params to construct the model."
+        )
+
+    if not llm_config.base.checkpoint and model_id is not None:
+        model_spec = MODEL_SPECS[model_id]
+        convert_weights = _get_hf_weight_converter(model_family)
+        checkpoint = download_and_convert_hf_checkpoint(
+            model_spec.hf_repo_id, convert_weights
+        )
         llm_config.base.checkpoint = checkpoint
+    elif not llm_config.base.checkpoint and model_id is None:
+        warnings.warn(
+            "No base.model_id or base.checkpoint was supplied; "
+            "exporting randomly initialized weights",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if llm_config.debug.profile_path is not None:
         try:
@@ -1723,7 +1738,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
     )
 
     additional_passes = []
-    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
+    model_family = llm_config.model_identity.family
+    if model_family in TORCHTUNE_DEFINED_MODEL_FAMILIES:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # For attention sink models, cache_positions must be initialized to -1
@@ -1806,7 +1822,8 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     )
 
     additional_passes = []
-    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
+    model_family = llm_config.model_identity.family
+    if model_family in TORCHTUNE_DEFINED_MODEL_FAMILIES:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
     if llm_config.model.use_kv_cache and (
         llm_config.backend.tosa.enabled
@@ -2022,18 +2039,20 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         An instance of LLMEdgeManager which contains the eager mode model.
     """
 
-    modelname = llm_config.base.model_class.value
-    if modelname in EXECUTORCH_DEFINED_MODELS:
+    model_identity = llm_config.model_identity
+    model_family = model_identity.family
+    modelname = model_identity.model_id or model_family.value
+    if model_family in EXECUTORCH_DEFINED_MODEL_FAMILIES:
         module_name = "llama"
         model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
-    elif modelname in TORCHTUNE_DEFINED_MODELS:
-        if modelname == "llama3_2_vision":
+    elif model_family in TORCHTUNE_DEFINED_MODEL_FAMILIES:
+        if model_family == ModelFamily.llama3_2_vision:
             module_name = "llama3_2_vision"
             model_class_name = "Llama3_2Decoder"
         else:
-            raise ValueError(f"{modelname} is not a valid Llama model.")
+            raise ValueError(f"{model_family.value} is not a valid Llama model.")
     else:
-        raise ValueError(f"{modelname} is not a valid Llama model.")
+        raise ValueError(f"{model_family.value} is not a valid Llama model.")
 
     (
         model,

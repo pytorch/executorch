@@ -130,7 +130,7 @@ LLAMA_PARAMS=path/to/params.json
 
 python -m extension.llm.export.export_llm \
   --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \
-  +base.model_class="llama3_2" \
+  +base.model_family="llama3_2" \
   +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}"
 ```

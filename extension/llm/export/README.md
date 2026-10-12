@@ -31,7 +31,7 @@ Use structured configuration arguments directly on the command line:
 
 ```bash
 python -m extension.llm.export.export_llm \
-    base.model_class=llama3 \
+    base.model_family=llama3 \
     model.use_sdpa_with_kv_cache=True \
     model.use_kv_cache=True \
     export.max_seq_length=128 \
@@ -52,7 +52,7 @@ python -m extension.llm.export.export_llm --config my_config.yaml
 Example `my_config.yaml`:
 ```yaml
 base:
-  model_class: llama3
+  model_family: llama3
   tokenizer_path: /path/to/tokenizer.json
 
 model:
@@ -83,9 +83,27 @@ You can you also still provide additional overrides using the CLI args as well:
 ```bash
 python -m extension.llm.export.export_llm
   --config my_config.yaml
-  base.model_class="llama2"
+  base.model_family="llama2"
   +export.max_context_length=1024
 ```
+
+For supported Hugging Face models, set `base.model_id` and matching
+`base.params`; weights download automatically unless `base.checkpoint` is set.
+For local models, set `base.model_family`, `base.params`, and
+`base.checkpoint`.
+
+`base.model_family` and `base.model_id` are mutually exclusive; a model ID
+infers its family.
+
+`base.model_class` is deprecated and will be removed in a future release.
+
+In Python, identity fields retain the supplied selectors. Read
+`config.model_identity` for the effective `family` and `model_id`.
+This read-only result is resolved from the current selectors on
+each read. An ID-only config keeps `base.model_family=None`; its resolved identity
+contains the inferred family.
+The default export label uses `model_id` when present, otherwise the family.
+Set `export.output_name` to override the output filename.
 
 Note that if a config file is specified and you want to specify a CLI arg that is not in the config, you need to prepend with a `+`. You can read more about this in the Hydra [docs](https://hydra.cc/docs/advanced/override_grammar/basic/).
 

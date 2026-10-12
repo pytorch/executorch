@@ -21,45 +21,29 @@ for more information.
 import argparse
 import math
 import re
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar, List, Optional
 
+from executorch.extension.llm.export.config.model_identity import (
+    ModelFamily,
+    ModelIdentity,
+    ModelType,
+    normalize_model_identity,
+    resolve_model_identity,
+)
 
-################################################################################
-################################## BaseConfig ##################################
-################################################################################
+_MODEL_CLASS_DEPRECATION_MESSAGE = (
+    "base.model_class is deprecated and will be removed in a future release. "
+    "Use base.model_id, or base.model_family with base.checkpoint for local models."
+)
 
 
-class ModelType(str, Enum):
-    stories110m = "stories110m"
-    llama2 = "llama2"
-    llama3 = "llama3"
-    llama3_1 = "llama3_1"
-    llama3_2 = "llama3_2"
-    llama3_2_vision = "llama3_2_vision"
-    static_llama = "static_llama"
-    qwen2_5_0_5b = "qwen2_5_0_5b"
-    qwen2_5_1_5b = "qwen2_5_1_5b"
-    qwen2_5_coder_32b = "qwen2_5_coder_32b"
-    qwen3_0_6b = "qwen3_0_6b"
-    qwen3_1_7b = "qwen3_1_7b"
-    qwen3_4b = "qwen3_4b"
-    qwen3_5_0_8b = "qwen3_5_0_8b"
-    qwen3_5_2b = "qwen3_5_2b"
-    qwen3_5_4b = "qwen3_5_4b"
-    phi_4_mini = "phi_4_mini"
-    smollm2 = "smollm2"
-    smollm2_360m = "smollm2_360m"
-    lfm2_350m = "lfm2_350m"
-    lfm2_700m = "lfm2_700m"
-    lfm2_1_2b = "lfm2_1_2b"
-    lfm2_5_350m = "lfm2_5_350m"
-    lfm2_5_1_2b = "lfm2_5_1_2b"
-    spark_x2_5_1_7b = "spark_x2_5_1_7b"
-    spark_x2_5_4b = "spark_x2_5_4b"
-    spark_x2_6_1_7b = "spark_x2_6_1_7b"
-    spark_x2_6_4b = "spark_x2_6_4b"
+def _warn_model_class_deprecated(stacklevel: int = 2) -> None:
+    warnings.warn(
+        _MODEL_CLASS_DEPRECATION_MESSAGE, FutureWarning, stacklevel=stacklevel
+    )
 
 
 class PreqMode(str, Enum):
@@ -107,6 +91,11 @@ class LoraConfig:
     adapter_quant: Optional[str] = None
 
 
+################################################################################
+################################## BaseConfig ##################################
+################################################################################
+
+
 @dataclass
 class BaseConfig:
     """
@@ -115,13 +104,18 @@ class BaseConfig:
     eager model and its weights.
 
     Attributes:
-        model_class: Which model to to export.
+        model_class: Deprecated legacy field; supported during migration.
+        model_family: Explicit architecture to use for the model implementation.
+            Mutually exclusive with model_id, which infers the family.
+        model_id: Specific model id used to download a registered Hugging Face
+            checkpoint, unless checkpoint selects a local override. Requires
+            matching params to construct the model.
         params: Model parameters, such as n_layers, hidden_size, etc.
-            If left empty will use defaults specified in model_args.py.
+            Required to construct a registered model selected by model_id. If left
+            empty otherwise, uses defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
             If left empty, the model will either be initialized with random weights
-            if it is a Llama model or the weights will be downloaded from HuggingFace
-            if it is a non-Llama model.
+            or downloaded from Hugging Face when model_id is set.
         lora_config: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
@@ -136,7 +130,9 @@ class BaseConfig:
             are loaded.
     """
 
-    model_class: ModelType = ModelType.llama3
+    model_class: Optional[ModelType] = None
+    model_family: Optional[ModelFamily] = None
+    model_id: Optional[str] = None
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     lora_config: Optional[LoraConfig] = None
@@ -146,6 +142,17 @@ class BaseConfig:
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
+
+    def __post_init__(self) -> None:
+        identity = normalize_model_identity(
+            model_class=self.model_class,
+            model_family=self.model_family,
+            model_id=self.model_id,
+        )
+        if self.model_family is not None:
+            self.model_family = identity.family
+        if self.model_class is not None:
+            _warn_model_class_deprecated(stacklevel=4)
 
 
 ################################################################################
@@ -718,17 +725,32 @@ class LlmConfig:
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
+    @property
+    def model_identity(self) -> ModelIdentity:
+        """Effective model identity derived from the current base selectors."""
+        return resolve_model_identity(self.base)
+
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "LlmConfig":  # noqa: C901
         """
         To support legacy purposes, this function converts CLI args from
         argparse to an LlmConfig, which is used by the LLM export process.
         """
-        llm_config = LlmConfig()
-
-        # BaseConfig
-        if hasattr(args, "model"):
-            llm_config.base.model_class = ModelType(args.model)
+        llm_config = LlmConfig(
+            base=BaseConfig(
+                model_class=(
+                    ModelType(args.model)
+                    if hasattr(args, "model") and args.model
+                    else None
+                ),
+                model_family=(
+                    ModelFamily(args.model_family)
+                    if hasattr(args, "model_family") and args.model_family
+                    else None
+                ),
+                model_id=args.model_id if hasattr(args, "model_id") else None,
+            )
+        )
         if hasattr(args, "params"):
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
