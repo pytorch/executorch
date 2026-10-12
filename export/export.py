@@ -566,9 +566,9 @@ class ExportSession:
         """
         # Check stages in order of preference
         edge_stages = [
-            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,  # latest: applied after TO_EDGE_TRANSFORM_AND_LOWER
             StageType.TO_BACKEND,
-            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_EDGE,
         ]
         for stage_type in edge_stages:
