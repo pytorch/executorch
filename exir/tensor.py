@@ -49,7 +49,9 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
     return tuple(reversed(strides))
 
 
-def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
+def dim_order_from_stride(
+    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
+) -> Tuple[bytes]:
     """
     Dimension order represents how dimensions are laid out in memory,
     starting from the outer-most to the inner-most dimension.
@@ -65,8 +67,16 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     in original order. Thus when strides = (4, 3, 1, 1) returned value is (0, 1, 2, 3)
     Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
     value is (0, 2, 3, 1)
+
+    With sizes, ambiguous non-canonical orders are corrected when strides
+    exactly match channels-last. Preserve existing default orders: portable
+    kernels require matching dim orders even for physically equivalent layouts.
     """
-    from torch.fx.experimental.symbolic_shapes import guard_or_false, guard_or_true
+    from torch.fx.experimental.symbolic_shapes import (
+        guard_or_false,
+        guard_or_true,
+        statically_known_true,
+    )
 
     for s in stride:
         torch._check(s != 0, lambda: "0 in strides is not supported for ExecuTorch.")
@@ -93,6 +103,18 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     sorted_dims = [
         i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
+    ndim = len(stride)
+    if (
+        sizes is not None
+        and len(sizes) == ndim
+        and ndim in (4, 5)
+        and sorted_dims != list(range(ndim))
+    ):
+        from torch._prims_common import make_channels_last_strides_for
+
+        expected = make_channels_last_strides_for(sizes)
+        if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
+            sorted_dims = [0, *range(2, ndim), 1]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
@@ -201,7 +223,7 @@ class TensorSpec:
             is_sparse=tensor.is_sparse,
         )
         spec.stride = tensor.stride()
-        spec.dim_order = dim_order_from_stride(spec.stride)
+        spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))
         spec.requires_grad = tensor.requires_grad
         spec.storage = tensor.untyped_storage() if const else None
 

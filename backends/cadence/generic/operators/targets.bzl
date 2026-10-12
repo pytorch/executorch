@@ -21,8 +21,26 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "weight_zero_point",
+        exported_headers = ["weight_zero_point.h"],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "quantized_linear",
         exported_headers = ["quantized_linear.h"],
+        exported_deps = [
+            ":weight_zero_point",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ]
+    )
+
+    runtime.cxx_library(
+        name = "quantized_linear_packed",
+        exported_headers = ["quantized_linear_packed.h"],
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
@@ -127,6 +145,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -140,6 +159,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -175,6 +195,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -190,6 +211,21 @@ def define_common_targets():
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_linear",
+            ":quantized_op_macros",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_fully_connected_packed",
+        srcs = ["op_quantized_fully_connected_packed.cpp"],
+        exported_headers = ["op_quantized_fully_connected_packed.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+            "//executorch/runtime/kernel:kernel_includes",
+            ":quantized_linear",
+            ":quantized_linear_packed",
             ":quantized_op_macros",
         ],
         visibility = ["PUBLIC"],
@@ -467,6 +503,19 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_sdpa_bitwise_causal_mask_gen",
+        srcs = ["op_sdpa_bitwise_causal_mask_gen.cpp"],
+        exported_headers = ["op_sdpa_bitwise_causal_mask_gen.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
         visibility = ["PUBLIC"],
     )

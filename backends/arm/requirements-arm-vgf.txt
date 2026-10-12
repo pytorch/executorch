@@ -6,4 +6,4 @@
 # These dependencies need to match pyproject.toml
 
 ai_ml_emulation_layer_for_vulkan == 0.10.0
-ai_ml_sdk_model_converter == 0.10.0
+ai_ml_sdk_model_converter == 0.11.0

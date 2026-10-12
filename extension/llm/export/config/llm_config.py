@@ -56,6 +56,8 @@ class ModelType(str, Enum):
     lfm2_1_2b = "lfm2_1_2b"
     lfm2_5_350m = "lfm2_5_350m"
     lfm2_5_1_2b = "lfm2_5_1_2b"
+    spark_x2_5_1_7b = "spark_x2_5_1_7b"
+    spark_x2_5_4b = "spark_x2_5_4b"
 
 
 class PreqMode(str, Enum):
@@ -529,12 +531,13 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+            On by default; set to False to restrict the delegate to DQLinear.
         enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
             must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
-    extended_ops: bool = False
+    extended_ops: bool = True
     enable_bf16: bool = False
 
 

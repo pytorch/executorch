@@ -22,6 +22,12 @@ binary_op_buffer:
       OPERATOR: X - A * Y
     - NAME: binary_mul_buffer
       OPERATOR: X * Y
+    - NAME: binary_swiglu_buffer
+      OPERATOR: swiglu(X, Y)
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
     - NAME: binary_div_buffer
       OPERATOR: X / Y
     - NAME: binary_pow_buffer

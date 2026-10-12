@@ -34,6 +34,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.utils import is_shape_dynamic, WhyNoPartition
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import free_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -898,6 +899,10 @@ class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
         input_rank = len(node.args[0].meta["val"].shape)
         if dim != -1 and dim != input_rank:
             why(node, reason="unsqueeze_copy only supported on the trailing dimension")
+            return False
+
+        if sum(bool(free_symbols(d)) for d in node.meta["val"].shape) > 1:
+            why(node, reason="XNNPACK reshape only supports one dynamic dimension")
             return False
 
         return True

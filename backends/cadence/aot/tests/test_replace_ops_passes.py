@@ -15,6 +15,8 @@ import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+
+from executorch.backends.cadence.aot.quantizer.utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
@@ -51,7 +53,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceTrivialConvWithLinear,
     ReplaceWhereWithFullArgsWithWhereScalar,
 )
-
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -519,6 +520,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 groups,
             ),
         )
+        if not bias_enabled:
+            convolution.node.meta["debug_handle"] = 1234
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
@@ -549,11 +552,169 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.cadence.conv1d.default),
             1,
         )
+        for node in graph_after_passes.graph.nodes:
+            if node.target == exir_ops.edge.cadence.conv1d.default:
+                self.assertIsNotNone(node.args[2])
+                if not bias_enabled:
+                    bias_node = node.args[2]
+                    self.assertIsInstance(bias_node, torch.fx.Node)
+                    self.assertEqual(
+                        exir_ops.edge.aten.full.default,
+                        cast(torch.fx.Node, bias_node).target,
+                    )
+                    self.assertEqual(
+                        1234, cast(torch.fx.Node, bias_node).meta["debug_handle"]
+                    )
+                    self.assertEqual(
+                        (out_channels,),
+                        tuple(cast(torch.fx.Node, bias_node).meta["val"].shape),
+                    )
         self.assertEqual(
             count_node(
                 graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
             ),
             0,
+        )
+
+    @expand([[2], [3]])
+    @torch.no_grad()
+    def test_replace_aten_multidimensional_conv_materializes_zero_bias(
+        self,
+        spatial_dims: int,
+    ) -> None:
+        in_channels = 4
+        out_channels = 6
+        builder = GraphBuilder()
+        x_tensor = torch.randn(
+            1,
+            in_channels,
+            *([8] * spatial_dims),
+            dtype=torch.float32,
+        )
+        weights_tensor = torch.randn(
+            out_channels,
+            in_channels,
+            *([3] * spatial_dims),
+            dtype=torch.float32,
+        )
+        x = builder.placeholder("x", x_tensor)
+        weights = builder.placeholder("weights", weights_tensor)
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                None,
+                [1] * spatial_dims,
+                [0] * spatial_dims,
+                [1] * spatial_dims,
+                False,
+                [0] * spatial_dims,
+                1,
+            ),
+        )
+        convolution.node.meta["debug_handle"] = 1234
+        convolution.node.meta["stack_trace"] = "convolution-only provenance"
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+        gm_before = copy.deepcopy(original_gm)
+
+        result = cast(
+            PassResult,
+            ReplaceAtenConvolutionWithCadenceConvolutionPass()(original_gm),
+        )
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+        validate(
+            gm_before,
+            graph_after_passes,
+            (x_tensor, weights_tensor),
+            "ReplaceAtenConvolutionWithCadenceConvolutionPass",
+        )
+
+        target = (
+            exir_ops.edge.cadence.conv2d.default
+            if spatial_dims == 2
+            else exir_ops.edge.cadence.conv3d.default
+        )
+        replacement = next(
+            node for node in graph_after_passes.graph.nodes if node.target == target
+        )
+        bias_node = replacement.args[2]
+        self.assertIsInstance(bias_node, torch.fx.Node)
+        assert isinstance(bias_node, torch.fx.Node)
+        self.assertEqual(exir_ops.edge.aten.full.default, bias_node.target)
+        self.assertEqual((out_channels,), tuple(bias_node.meta["val"].shape))
+        self.assertEqual(1234, bias_node.meta["debug_handle"])
+        self.assertNotIn("stack_trace", bias_node.meta)
+
+    @torch.no_grad()
+    def test_materialized_zero_bias_metadata_matches_runtime_value(self) -> None:
+        for weight_dtype, bias_dtype in (
+            (torch.float32, torch.float32),
+            (torch.float64, torch.float64),
+        ):
+            with self.subTest(weight_dtype=weight_dtype):
+                graph = torch.fx.Graph()
+                input_node = graph.placeholder("x")
+                weight = graph.placeholder("weight")
+                weight.meta["val"] = torch.ones(6, 2, 3, dtype=weight_dtype)
+                source = graph.call_function(
+                    exir_ops.edge.aten.relu.default,
+                    args=(input_node,),
+                )
+                source.meta["val"] = torch.ones(2, 6, 4, dtype=torch.float32)
+                source.meta["debug_handle"] = 1234
+
+                zero_bias = ReplaceAtenConvolutionWithCadenceConvolutionPass().materialize_zero_bias(
+                    source,
+                    weight,
+                )
+
+                self.assertEqual(exir_ops.edge.aten.full.default, zero_bias.target)
+                self.assertEqual(([6], 0.0), zero_bias.args)
+                self.assertEqual({"dtype": bias_dtype}, zero_bias.kwargs)
+                torch.testing.assert_close(
+                    zero_bias.meta["val"],
+                    weight.meta["val"].new_zeros(6, dtype=bias_dtype),
+                )
+                self.assertEqual(bias_dtype, zero_bias.meta["val"].dtype)
+                self.assertEqual(
+                    weight.meta["val"].device,
+                    zero_bias.meta["val"].device,
+                )
+                self.assertEqual(1234, zero_bias.meta["debug_handle"])
+                self.assertLess(
+                    list(graph.nodes).index(zero_bias),
+                    list(graph.nodes).index(source),
+                )
+
+    @torch.no_grad()
+    def test_rejected_convolution_does_not_materialize_zero_bias(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 4, 8))
+        weights = builder.placeholder("weights", torch.randn(6, 4, 3))
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(x, weights, None, [1], [0], [1], False, [1], 1),
+        )
+        builder.output([convolution])
+
+        result = cast(
+            PassResult,
+            ReplaceAtenConvolutionWithCadenceConvolutionPass()(
+                builder.get_graph_module()
+            ),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            1,
+            count_node(result.graph_module, exir_ops.edge.aten.convolution.default),
+        )
+        self.assertEqual(
+            0,
+            count_node(result.graph_module, exir_ops.edge.aten.full.default),
         )
 
     @expand(
@@ -648,6 +809,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
             ),
             1,
         )
+        for node in graph_after_passes.graph.nodes:
+            if node.target == exir_ops.edge.cadence.transposed_convolution.default:
+                self.assertIsNotNone(node.args[2])
+                if not bias_enabled:
+                    bias_node = node.args[2]
+                    self.assertIsInstance(bias_node, torch.fx.Node)
+                    self.assertEqual(
+                        exir_ops.edge.aten.full.default,
+                        cast(torch.fx.Node, bias_node).target,
+                    )
 
     @expand(
         [
@@ -946,7 +1117,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     def test_replace_masked_scalar_tensor_with_full(
         self,
         shape: Tuple[int],
-        mask_shape: Union[Tuple[int, ...], None] = None,
+        mask_shape: Optional[Tuple[int, ...]] = None,
     ) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -1444,6 +1615,126 @@ class TestReplaceOpsPasses(unittest.TestCase):
             ),
             3,
         )
+
+    @torch.no_grad()
+    def test_replace_per_channel_quantized_conv1d_ncl_with_linear(self) -> None:
+        """A trivial per-channel quantized conv1d collapses to quantized_linear.
+
+        The per-channel op carries its qparams as tensors, so the pass cannot
+        recompute out_multiplier/out_shift from bias_scale / out_scale the way it
+        does for scalars. It has to forward the conv's existing qparam nodes, and
+        those have to stay per-output-channel vectors.
+        """
+        in_channels = 3
+        out_channels = 4
+        kernel_size = 2
+        x = torch.randint(-10, 10, (1, in_channels, kernel_size), dtype=torch.int8)
+        w = torch.randint(
+            -5, 5, (out_channels, in_channels, kernel_size), dtype=torch.int8
+        )
+        b = torch.zeros(out_channels, dtype=torch.int32)
+        weight_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        bias_scale = torch.full((out_channels,), 0.001, dtype=torch.float32)
+        # Deliberately distinct per channel so a collapse to a scalar is visible.
+        out_multiplier = torch.tensor(
+            [1073741824, 1181116006, 1288490188, 1395864371], dtype=torch.int32
+        )
+        out_shift = torch.tensor([0, -1, -2, -3], dtype=torch.int32)
+        placeholders = (
+            x,
+            w,
+            b,
+            weight_zero_point,
+            bias_scale,
+            out_multiplier,
+            out_shift,
+        )
+        args = (
+            x,
+            w,
+            b,
+            [1],
+            [0],
+            [1],
+            1,
+            0,
+            weight_zero_point,
+            bias_scale,
+            1.0,
+            0,
+            out_multiplier,
+            out_shift,
+        )
+        original_gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+            args=args,
+        )
+
+        conv_nodes = original_gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+        )
+        self.assertEqual(len(conv_nodes), 1)
+        # Record which graph inputs carried the qparams so we can check the
+        # linear ends up reading the very same ones.
+        conv_args = conv_nodes[0].args
+        wzp_name = cast(torch.fx.Node, conv_args[8]).name
+        multiplier_name = cast(torch.fx.Node, conv_args[12]).name
+        shift_name = cast(torch.fx.Node, conv_args[13]).name
+
+        p = ReplaceTrivialConvWithLinear()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_linear.default,
+            ),
+            1,
+        )
+        # 3 view_copy ops: weight reshape, input reshape, output reshape
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.aten.view_copy.default,
+            ),
+            3,
+        )
+
+        linear_nodes = graph_after_passes.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_linear.default,
+        )
+        self.assertEqual(len(linear_nodes), 1)
+        linear_args = linear_nodes[0].args
+        # quantized_linear(src, weight, bias, src_zero_point, weight_zero_point,
+        #                  out_multiplier, out_shift, out_zero_point, offset)
+        for idx, expected_name in (
+            (4, wzp_name),
+            (5, multiplier_name),
+            (6, shift_name),
+        ):
+            arg = linear_args[idx]
+            self.assertIsInstance(
+                arg,
+                torch.fx.Node,
+                f"per-channel qparam at arg {idx} was flattened to a scalar",
+            )
+            self.assertEqual(cast(torch.fx.Node, arg).name, expected_name)
+            self.assertEqual(
+                cast(torch.fx.Node, arg).meta["val"].shape,
+                torch.Size([out_channels]),
+            )
 
     @torch.no_grad()
     def test_replace_quantized_conv1d_nlc_with_linear(self) -> None:
@@ -3084,6 +3375,491 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         self.assertEqual(
             count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
             3,
+        )
+
+
+class TestPerChannelConvLowering(unittest.TestCase):
+    """Per-channel convs must survive the conv lowering exits.
+
+    Per-channel qparams ride on the tensor-qparam (`.default`) overload. Passes
+    that enumerate only `.per_tensor` silently skip these nodes, so a per-channel
+    model quietly loses the channel-last layout or the im2row path.
+    """
+
+    def _per_channel_conv2d(
+        self, kernel: int = 3, out_channels: int = 4
+    ) -> tuple[tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        in_channels = 3
+        x = torch.randint(-8, 8, (1, in_channels, 8, 8), dtype=torch.int8)
+        w = torch.randint(
+            -8, 8, (out_channels, in_channels, kernel, kernel), dtype=torch.int8
+        )
+        b = torch.randint(-16, 16, (out_channels,), dtype=torch.int32)
+        w_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        b_scale = torch.full((out_channels,), 0.01)
+        out_scale = 0.1
+        # The conv reference uses bias_scale/out_scale directly while linear uses
+        # the Q31 multiplier, so they have to encode the same ratio for the
+        # im2row rewrite to be numerically neutral.
+        multiplier, shift = quantize_tensor_multiplier(b_scale / out_scale)
+        out_multiplier = multiplier.to(torch.int32)
+        out_shift = shift.to(torch.int32)
+        placeholders = (x, w, b, w_zero_point, b_scale, out_multiplier, out_shift)
+        args = (
+            x,
+            w,
+            b,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,  # groups
+            0,  # input_zero_point
+            w_zero_point,
+            b_scale,
+            out_scale,
+            0,  # out_zero_point
+            out_multiplier,
+            out_shift,
+        )
+        return placeholders, single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+            args=args,
+        )
+
+    def test_channel_last_preserves_per_channel_overload(self) -> None:
+        placeholders, gm = self._per_channel_conv2d()
+        original = copy.deepcopy(gm)
+
+        result = ReplaceConvWithChannelLastConvPass().call(gm)
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv2d_nchw.default),
+            0,
+        )
+        # The rewrite must land on the tensor-qparam overload, not collapse to
+        # the scalar one.
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv2d_nhwc.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                gm_after, exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
+            ),
+            0,
+        )
+        validate(
+            original,
+            gm_after,
+            list(placeholders),
+            "ReplaceConvWithChannelLastConvPass (per-channel)",
+        )
+
+    def test_channel_last_keeps_qparams_as_vectors(self) -> None:
+        """The qparam args must stay per-channel nodes across the rewrite."""
+        _, gm = self._per_channel_conv2d(out_channels=4)
+
+        gm_after = ReplaceConvWithChannelLastConvPass().call(gm).graph_module
+
+        conv = gm_after.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+        )[0]
+        for idx, name in ((8, "weight_zero_point"), (12, "out_multiplier")):
+            arg = conv.args[idx]
+            self.assertIsInstance(arg, torch.fx.Node, f"{name} should stay a node")
+            self.assertEqual(
+                tuple(cast(torch.fx.Node, arg).meta["val"].shape),
+                (4,),
+                f"{name} should stay a per-channel vector",
+            )
+
+    def test_im2row_lowers_per_channel_conv_to_per_channel_linear(self) -> None:
+        # No numerical validation across this rewrite: the conv reference scales
+        # by bias_scale/out_scale while the linear reference (like the kernel)
+        # scales by -out_multiplier/2^31 * 2^out_shift, so the two sides disagree
+        # by a sign at any granularity.
+        _, gm = self._per_channel_conv2d()
+        result = cast(PassResult, ReplaceConvWithIm2RowAndLinear()(gm))
+        self.assertTrue(
+            result.modified, "per-channel conv2d should take the im2row exit"
+        )
+        gm_after = result.graph_module
+
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv2d_nchw.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.im2row.per_tensor), 1
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.default), 1
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.per_tensor), 0
+        )
+
+    def test_im2row_reuses_the_per_channel_multiplier(self) -> None:
+        """The linear must inherit the conv's per-channel multiplier and shift.
+
+        The per-tensor path recomputes these from a scalar bias_scale; doing that
+        for per-channel would flatten the vector to channel 0's value.
+        """
+        _, gm = self._per_channel_conv2d(out_channels=4)
+        conv = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+        )[0]
+        conv_multiplier, conv_shift = conv.args[12], conv.args[13]
+
+        gm_after = cast(PassResult, ReplaceConvWithIm2RowAndLinear()(gm)).graph_module
+
+        linear = gm_after.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.cadence.quantized_linear.default
+        )[0]
+        # quantized_linear(src, weight, bias, in_zp, w_zp, multiplier, shift, ...)
+        self.assertEqual(
+            cast(torch.fx.Node, linear.args[5]).name,
+            cast(torch.fx.Node, conv_multiplier).name,
+        )
+        self.assertEqual(
+            cast(torch.fx.Node, linear.args[6]).name,
+            cast(torch.fx.Node, conv_shift).name,
+        )
+
+    def test_linear_to_fully_connected_preserves_per_channel(self) -> None:
+        """The final conv exit is linear -> fully_connected, on a batch of 1."""
+        out_features, in_features = 4, 6
+        src = torch.randint(-8, 8, (1, in_features), dtype=torch.int8)
+        weight = torch.randint(-8, 8, (out_features, in_features), dtype=torch.int8)
+        bias = torch.randint(-16, 16, (out_features,), dtype=torch.int32)
+        w_zero_point = torch.zeros(out_features, dtype=torch.int32)
+        out_multiplier = torch.full((out_features,), 1 << 30, dtype=torch.int32)
+        out_shift = torch.zeros(out_features, dtype=torch.int32)
+        placeholders = (src, weight, bias, w_zero_point, out_multiplier, out_shift)
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_linear.default,
+            args=(
+                src,
+                weight,
+                bias,
+                0,
+                w_zero_point,
+                out_multiplier,
+                out_shift,
+                0,
+                None,
+            ),
+        )
+
+        gm_after = cast(
+            PassResult, ReplaceLinearWithFullyConnectedOpPass()(gm)
+        ).graph_module
+
+        self.assertEqual(
+            count_node(
+                gm_after, exir_ops.edge.cadence.quantized_fully_connected.default
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.default), 0
+        )
+
+    def _per_channel_conv1d_ncl(
+        self,
+    ) -> tuple[tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        in_channels, out_channels, kernel = 3, 4, 3
+        x = torch.randint(-8, 8, (1, in_channels, 6), dtype=torch.int8)
+        w = torch.randint(-8, 8, (out_channels, in_channels, kernel), dtype=torch.int8)
+        b = torch.randint(-16, 16, (out_channels,), dtype=torch.int32)
+        w_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        # Deliberately distinct per output channel.
+        b_scale = torch.tensor([0.01, 0.03, 0.005, 0.07])
+        out_scale = 0.1
+        multiplier, shift = quantize_tensor_multiplier(b_scale / out_scale)
+        placeholders = (x, w, b, w_zero_point, b_scale, multiplier, shift)
+        args = (
+            x,
+            w,
+            b,
+            (1,),
+            (0,),
+            (1,),
+            1,
+            0,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            0,
+            multiplier,
+            shift,
+        )
+        return placeholders, single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+            args=args,
+        )
+
+    def _per_channel_depthwise_conv1d_ncl(
+        self,
+    ) -> tuple[tuple[torch.Tensor, ...], torch.fx.GraphModule]:
+        channels, kernel = 3, 3
+        x = torch.randint(-8, 8, (1, channels, 6), dtype=torch.int8)
+        w = torch.randint(-8, 8, (channels, 1, kernel), dtype=torch.int8)
+        b = torch.zeros(channels, dtype=torch.int32)
+        w_zero_point = torch.zeros(channels, dtype=torch.int32)
+        b_scale = torch.tensor([0.01, 0.05, 0.005])
+        out_scale = 0.1
+        multiplier, shift = quantize_tensor_multiplier(b_scale / out_scale)
+        placeholders = (x, w, b, w_zero_point, b_scale, multiplier, shift)
+        args = (
+            x,
+            w,
+            b,
+            (1,),
+            (0,),
+            (1,),
+            channels,  # depthwise
+            0,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            0,
+            multiplier,
+            shift,
+        )
+        return placeholders, single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.default,
+            args=args,
+        )
+
+    def test_channel_last_preserves_per_channel_overload_conv1d(self) -> None:
+        """The per-channel 1d conv has to stay on ``.default`` after NCL→NLC."""
+        _, gm = self._per_channel_conv1d_ncl()
+        gm_after = ReplaceConvWithChannelLastConvPass().call(gm).graph_module
+
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv1d_ncl.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv1d_nlc.default),
+            1,
+        )
+        # And the scalar overload must NOT appear -- that would silently lose
+        # the tensor qparams.
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor),
+            0,
+        )
+
+    def test_channel_last_routes_per_channel_depthwise_to_depthwise_nlc(
+        self,
+    ) -> None:
+        """Depthwise routing must survive alongside the per-channel overload swap.
+
+        If the pass only looked at ``.per_tensor`` targets, a per-channel
+        depthwise conv would either miss the depthwise op entirely or fall
+        back to the dense NLC form.
+        """
+        _, gm = self._per_channel_depthwise_conv1d_ncl()
+        gm_after = ReplaceConvWithChannelLastConvPass().call(gm).graph_module
+
+        self.assertEqual(
+            count_node(
+                gm_after,
+                exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.default,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                gm_after,
+                exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.default,
+            ),
+            1,
+        )
+        # The dense NLC op must not appear either.
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv1d_nlc.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                gm_after,
+                exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor,
+            ),
+            0,
+        )
+
+    def test_replace_per_channel_conv2d_nchw_with_linear(self) -> None:
+        """A trivial per-channel quantized conv2d collapses to quantized_linear.
+
+        The map at replace_ops.py ~line 856 has four per-channel entries; this
+        walks the 2d side of it. If the pass rebuilt multiplier/shift from a
+        scalar bias_scale, the per-channel vectors would collapse.
+        """
+        in_channels, out_channels = 3, 4
+        kh, kw = 2, 2
+        x = torch.randint(-10, 10, (1, in_channels, kh, kw), dtype=torch.int8)
+        w = torch.randint(-5, 5, (out_channels, in_channels, kh, kw), dtype=torch.int8)
+        b = torch.zeros(out_channels, dtype=torch.int32)
+        weight_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        bias_scale = torch.tensor([0.001, 0.002, 0.005, 0.01])
+        out_multiplier = torch.tensor(
+            [1073741824, 1181116006, 1288490188, 1395864371], dtype=torch.int32
+        )
+        out_shift = torch.tensor([0, -1, -2, -3], dtype=torch.int32)
+        placeholders = (
+            x,
+            w,
+            b,
+            weight_zero_point,
+            bias_scale,
+            out_multiplier,
+            out_shift,
+        )
+        args = (
+            x,
+            w,
+            b,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,
+            0,
+            weight_zero_point,
+            bias_scale,
+            1.0,
+            0,
+            out_multiplier,
+            out_shift,
+        )
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+            args=args,
+        )
+        conv_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+        )
+        self.assertEqual(len(conv_nodes), 1)
+        conv_args = conv_nodes[0].args
+        wzp_name = cast(torch.fx.Node, conv_args[8]).name
+        multiplier_name = cast(torch.fx.Node, conv_args[12]).name
+        shift_name = cast(torch.fx.Node, conv_args[13]).name
+
+        result = cast(PassResult, ReplaceTrivialConvWithLinear()(gm))
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv2d_nchw.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.default),
+            1,
+        )
+        linear = gm_after.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_linear.default,
+        )[0]
+        # Same nodes forwarded, not rebuilt from scalars.
+        self.assertEqual(cast(torch.fx.Node, linear.args[4]).name, wzp_name)
+        self.assertEqual(cast(torch.fx.Node, linear.args[5]).name, multiplier_name)
+        self.assertEqual(cast(torch.fx.Node, linear.args[6]).name, shift_name)
+        self.assertEqual(
+            cast(torch.fx.Node, linear.args[5]).meta["val"].shape,
+            torch.Size([out_channels]),
+        )
+
+    def test_im2row_lowers_per_channel_conv2d_nhwc_to_linear(self) -> None:
+        """The im2row + linear rewrite covers the NHWC per-channel entry too.
+
+        The map at replace_ops.py ~line 1351 includes both nchw.default and
+        nhwc.default; the nhwc side would silently regress if only nchw were
+        tested.
+        """
+        in_channels, out_channels = 3, 4
+        # channel-last: [N, H, W, C]; im2row picks the same conv on nhwc.
+        x = torch.randint(-8, 8, (1, 4, 4, in_channels), dtype=torch.int8)
+        w = torch.randint(-8, 8, (out_channels, 3, 3, in_channels), dtype=torch.int8)
+        b = torch.randint(-16, 16, (out_channels,), dtype=torch.int32)
+        w_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        b_scale = torch.tensor([0.01, 0.03, 0.005, 0.07])
+        out_scale = 0.1
+        multiplier, shift = quantize_tensor_multiplier(b_scale / out_scale)
+        placeholders = (x, w, b, w_zero_point, b_scale, multiplier, shift)
+        args = (
+            x,
+            w,
+            b,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,
+            0,
+            w_zero_point,
+            b_scale,
+            out_scale,
+            0,
+            multiplier,
+            shift,
+        )
+        gm = single_op_builder(
+            placeholders=placeholders,
+            op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+            args=args,
+        )
+        conv_multiplier = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+        )[0].args[12]
+        conv_shift = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+        )[0].args[13]
+
+        result = cast(PassResult, ReplaceConvWithIm2RowAndLinear()(gm))
+        self.assertTrue(result.modified)
+        gm_after = result.graph_module
+
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_conv2d_nhwc.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.im2row.per_tensor), 1
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.default), 1
+        )
+        self.assertEqual(
+            count_node(gm_after, exir_ops.edge.cadence.quantized_linear.per_tensor),
+            0,
+        )
+        linear = gm_after.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantized_linear.default,
+        )[0]
+        # The linear must reuse the conv's own multiplier/shift constants
+        # rather than rebuilding scalars.
+        self.assertEqual(
+            cast(torch.fx.Node, linear.args[5]).name,
+            cast(torch.fx.Node, conv_multiplier).name,
+        )
+        self.assertEqual(
+            cast(torch.fx.Node, linear.args[6]).name,
+            cast(torch.fx.Node, conv_shift).name,
         )
 
 

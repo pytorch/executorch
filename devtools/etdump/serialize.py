@@ -10,6 +10,7 @@
 import importlib.resources as _resources
 import json
 import os
+import re
 import tempfile
 
 import executorch.devtools.etdump as etdump_package
@@ -20,6 +21,10 @@ from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decomp
 # The prefix of schema files used for etdump
 ETDUMP_FLATCC_SCHEMA_NAME = "etdump_schema_flatcc"
 SCALAR_TYPE_SCHEMA_NAME = "scalar_type"
+
+# flatc writes non-finite floats as bare inf, -inf, nan and -nan, which
+# json.loads rejects. String literals are matched first so they pass through.
+_FLATC_NON_FINITE_RE = re.compile(rb'("(?:[^"\\]|\\.)*")|-?\bnan\b|\binf\b')
 
 
 def _write_schema(d: str, schema_name: str) -> None:
@@ -39,7 +44,12 @@ ETDump FlatCC Schema Implementations
 
 # from json to etdump
 def _deserialize_from_json_to_etdump_flatcc(etdump_json: bytes) -> ETDumpFlatCC:
-    etdump_json = json.loads(etdump_json)
+    etdump_json = json.loads(
+        _FLATC_NON_FINITE_RE.sub(
+            lambda m: m.group(1) or (b"Infinity" if m.group(0) == b"inf" else b"NaN"),
+            etdump_json,
+        )
+    )
     return _json_to_dataclass(etdump_json, ETDumpFlatCC)
 
 

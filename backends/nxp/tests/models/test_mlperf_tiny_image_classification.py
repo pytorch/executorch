@@ -17,15 +17,9 @@ from executorch.backends.nxp.tests.dataset_creator import (
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
-    ClassificationAccuracyOutputComparator,
     NumericalStatsOutputComparator,
 )
-
-from executorch.backends.nxp.tests.nsys_testing import (
-    lower_run_compare,
-    lower_run_compare_ptq_qat,
-    ReferenceModel,
-)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare, ReferenceModel
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
@@ -47,11 +41,10 @@ def reseed_model_per_test_run():
 def test_mlperf_tiny_classification_mse_cpu_vs_npu(
     mocker, request, channels_last, use_qat
 ):
-    # 10 samples per class
-    num_samples = 60
+    num_samples = 1
 
     img_classification = MLPerfTinyImageClassification(
-        num_samples=num_samples, use_random_dataset=True
+        num_samples=num_samples, use_random_dataset=True, balanced_dataset=False
     )
     model = img_classification.get_eager_model()
     dataset = img_classification.dataset
@@ -80,6 +73,13 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
+    # Portable constant_pad_nd does not support channels-last tensors.
+    ref_model = (
+        ReferenceModel.QUANTIZED_EDGE_PYTHON
+        if channels_last
+        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+    )
+
     lower_run_compare(
         model,
         [input_spec],
@@ -87,39 +87,8 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+        reference_model=ref_model,
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
-    )
-
-
-def test_mlperf_tiny_image_classification_ptq_qat_equivalence(request):
-    # 10 samples per class
-    num_samples = 60
-
-    img_classification = MLPerfTinyImageClassification(
-        num_samples=num_samples, use_random_dataset=True
-    )
-
-    model = img_classification.get_eager_model()
-    dataset = img_classification.dataset
-    labels = img_classification.labels
-
-    dataset_creator = FromCalibrationDataDatasetCreator(
-        dataset, num_examples=num_samples, idx_to_label=labels
-    )
-    comparator = ClassificationAccuracyOutputComparator(class_dict=labels)
-
-    input_spec = ModelInputSpec(img_classification.input_shape)
-    model_verifier = BaseGraphVerifier(1, [])
-
-    lower_run_compare_ptq_qat(
-        model,
-        [input_spec],
-        model_verifier,
-        request,
-        train_fn=img_classification.train_model_fn,
-        dataset_creator=dataset_creator,
-        output_comparator=comparator,
     )

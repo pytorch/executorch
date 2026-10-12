@@ -247,10 +247,8 @@ def _export_cortex_m(
             _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
         ),
         constant_methods=metadata,
+        transform_passes=CortexMPassManager(target_config=target_config),
     )
-    edge._edge_programs["forward"] = CortexMPassManager(
-        edge.exported_program(), target_config=target_config
-    ).transform()
     return edge.to_executorch()
 
 

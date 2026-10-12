@@ -9,7 +9,9 @@
 #include <gtest/gtest.h>
 
 #include <bitset>
+#include <cmath>
 #include <iomanip>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -4239,3 +4241,130 @@ TEST(VulkanWorkGroupSizeTest, compute_graph_preserves_dispatch_intent) {
   EXPECT_EQ(graph.create_lwg(buffer_gwg), buffer_gwg.required_lwg_size());
   EXPECT_FALSE(texture_gwg.is_linear());
 }
+
+class VulkanSwiGLUTest : public ::testing::TestWithParam<std::tuple<
+                             utils::StorageType,
+                             vkapi::ScalarType,
+                             utils::GPUMemoryLayout,
+                             int64_t,
+                             bool>> {};
+
+TEST_P(VulkanSwiGLUTest, MatchesUnfusedAcrossResizes) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  const auto storage = std::get<0>(GetParam());
+  const auto dtype = std::get<1>(GetParam());
+  const auto layout = std::get<2>(GetParam());
+  const auto width = std::get<3>(GetParam());
+  const auto broadcast = std::get<4>(GetParam());
+  GraphConfig config;
+  config.set_storage_type_override(storage);
+  config.set_memory_layout_override(layout);
+  ComputeGraph graph(config);
+  const std::vector<int64_t> max_shape = {2, 63, width};
+  const std::vector<int64_t> up_shape =
+      broadcast ? std::vector<int64_t>{1, 1, width} : max_shape;
+  const IOValueRef gate = graph.add_input_tensor(max_shape, dtype);
+  const IOValueRef up = graph.add_input_tensor(up_shape, dtype);
+  const ValueRef sigmoid = graph.add_tensor(max_shape, dtype);
+  const ValueRef silu = graph.add_tensor(max_shape, dtype);
+  const ValueRef unfused = graph.add_tensor(max_shape, dtype);
+  const ValueRef fused = graph.add_tensor(max_shape, dtype);
+  VK_GET_OP_FN("aten.sigmoid.default")(graph, {gate.value, sigmoid});
+  VK_GET_OP_FN("aten.mul.Tensor")(graph, {gate.value, sigmoid, silu});
+  VK_GET_OP_FN("aten.mul.Tensor")(graph, {silu, up.value, unfused});
+  VK_GET_OP_FN("et_vk.swiglu.default")(graph, {gate.value, up.value, fused});
+  const ValueRef unfused_staging = graph.set_output_tensor(unfused);
+  const ValueRef fused_staging = graph.set_output_tensor(fused);
+  graph.prepare();
+  graph.prepack();
+
+  auto check_resizes = [&](auto scalar) {
+    using T = decltype(scalar);
+    for (const int64_t rows : {1, 7, 63, 1}) {
+      SCOPED_TRACE(rows);
+      const std::vector<int64_t> shape = {2, rows, width};
+      graph.resize_input(0, shape);
+      if (!broadcast) {
+        graph.resize_input(1, shape);
+      }
+      graph.propagate_resize();
+      ASSERT_EQ(graph.sizes_of(fused), shape);
+      const size_t count = 2 * rows * width;
+      std::vector<T> gate_data(count);
+      std::vector<T> up_data(broadcast ? width : count);
+      for (size_t i = 0; i < gate_data.size(); ++i) {
+        gate_data[i] = 20.0f * std::sin(static_cast<float>(i));
+      }
+      for (size_t i = 0; i < up_data.size(); ++i) {
+        up_data[i] = 2.0f * std::cos(static_cast<float>(i));
+      }
+      graph.maybe_cast_and_copy_into_staging(
+          gate.staging, gate_data.data(), gate_data.size(), dtype);
+      graph.maybe_cast_and_copy_into_staging(
+          up.staging, up_data.data(), up_data.size(), dtype);
+      graph.execute();
+      std::vector<T> expected(count);
+      std::vector<T> actual(count);
+      graph.maybe_cast_and_copy_from_staging(
+          unfused_staging, expected.data(), count, dtype);
+      graph.maybe_cast_and_copy_from_staging(
+          fused_staging, actual.data(), count, dtype);
+      for (size_t i = 0; i < count; ++i) {
+        const float x = float(gate_data[i]);
+        const float y = float(up_data[broadcast ? i % width : i]);
+        const float reference = (x / (1.0f + std::exp(-x))) * y;
+        if (dtype == vkapi::kHalf) {
+          ASSERT_NEAR(
+              float(actual[i]), reference, 1e-3f * std::abs(reference) + 1e-7f)
+              << "element " << i;
+          // The unfused path rounds twice more, including subnormal sigmoid.
+          const float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          ASSERT_NEAR(
+              float(actual[i]),
+              float(expected[i]),
+              3e-3f * std::abs(float(expected[i])) + atol)
+              << "element " << i;
+        } else {
+          ASSERT_NEAR(
+              float(actual[i]), reference, 2e-6f * std::abs(reference) + 1e-7f)
+              << "element " << i;
+          ASSERT_NEAR(
+              float(actual[i]),
+              float(expected[i]),
+              2e-6f * std::abs(float(expected[i])) + 1e-7f)
+              << "element " << i;
+        }
+      }
+    }
+  };
+  if (dtype == vkapi::kHalf) {
+    check_resizes(executorch::aten::Half{});
+  } else {
+    check_resizes(float{});
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    StorageDtypeLayoutWidthBroadcast,
+    VulkanSwiGLUTest,
+    ::testing::Combine(
+        ::testing::Values(utils::kBuffer, utils::kTexture3D),
+        ::testing::Values(vkapi::kFloat, vkapi::kHalf),
+        ::testing::Values(
+            utils::kWidthPacked,
+            utils::kHeightPacked,
+            utils::kChannelsPacked),
+        ::testing::Values(int64_t(13), int64_t(1023)),
+        ::testing::Bool()));
+
+INSTANTIATE_TEST_SUITE_P(
+    LlmHiddenSize,
+    VulkanSwiGLUTest,
+    ::testing::Combine(
+        ::testing::Values(utils::kBuffer, utils::kTexture3D),
+        ::testing::Values(vkapi::kFloat, vkapi::kHalf),
+        ::testing::Values(utils::kWidthPacked),
+        ::testing::Values(int64_t(3072)),
+        ::testing::Bool()));

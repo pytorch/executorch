@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 

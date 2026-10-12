@@ -52,7 +52,10 @@ from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny
 from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
     MLPerfTinyKeywordSpotting,
 )
-from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
+from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
+    MLPerfTinyVisualWakeWords,
+)
+from executorch.examples.nxp.models.mobilenet_v2 import MobileNetV2
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -69,10 +72,11 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 
 MODELS = {
     "cifar10": CifarNet,
-    "mobilenetv2": MobilenetV2,
+    "mobilenetv2": MobileNetV2,
     "mlperf_tiny_anomaly_detection": MLPerfTinyAnomalyDetection,
     "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
     "mlperf_tiny_keyword_spotting": MLPerfTinyKeywordSpotting,
+    "mlperf_tiny_visual_wake_words": MLPerfTinyVisualWakeWords,
 }
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -133,12 +137,15 @@ def _get_model_info_from_name(
         elif model_cls in (
             MLPerfTinyImageClassification,
             MLPerfTinyKeywordSpotting,
+            MLPerfTinyVisualWakeWords,
             MLPerfTinyAnomalyDetection,
+            MobileNetV2,
         ):
             model_cls_inst = model_cls(
                 dataset_path=dataset_path,
                 use_random_dataset=use_random_dataset,
                 num_samples=num_samples,
+                balanced_dataset=False,
             )
 
         else:
@@ -349,7 +356,9 @@ if __name__ == "__main__":  # noqa C901
                     CifarNet,
                     MLPerfTinyImageClassification,
                     MLPerfTinyKeywordSpotting,
+                    MLPerfTinyVisualWakeWords,
                     MLPerfTinyAnomalyDetection,
+                    MobileNetV2,
                 ),
             ):
                 raise ValueError(

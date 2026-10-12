@@ -58,6 +58,36 @@ define_load_int8x4_buffer_fns(t_in_b)
 // Generate storing functions for output buffer
 define_store_int8x4_buffer_fns(t_out)
 
+// Inputs are broadcast against the output; a size 1 input dim is read at index
+// 0 for every output index along that dim.
+TensorIndex4D broadcast_tidx(
+    const TensorIndex4D tidx,
+    const BufferMetadata meta) {
+  TensorIndex4D in_tidx;
+  in_tidx.data = min(tidx.data, ivec4(meta.sizes[0]) - 1);
+  return in_tidx;
+}
+
+// A block loaded at a broadcast tidx holds valid data only at index 0 of each
+// broadcast block dim, so replicate it across the block.
+ivec4 broadcast_block(
+    ivec4 block,
+    const BufferMetadata meta,
+    const int block_inner_dim,
+    const int block_outer_dim) {
+  if (safe_idx(meta.sizes[0], block_outer_dim) <
+      safe_idx(out_meta.sizes[0], block_outer_dim)) {
+    block = ivec4(block.x);
+  }
+  if (safe_idx(meta.sizes[0], block_inner_dim) <
+      safe_idx(out_meta.sizes[0], block_inner_dim)) {
+    block &= 0xFF;
+    block |= block << 8;
+    block |= block << 16;
+  }
+  return block;
+}
+
 void main() {
   // Buffer storage: use linear dispatch
   const uint contig_block_idx = linear_idx_from_gid();
@@ -68,13 +98,28 @@ void main() {
     return;
   }
 
+  const int block_inner_dim = get_block_inner_dim(block_config);
   const int block_outer_dim = get_block_outer_dim(block_config);
 
   // Load int8x4 blocks from both inputs
-  ivec4 in_block_a = load_int8x4_block_from_t_in_a(
-      in_a_meta, tidx, in_layout, block_outer_dim);
-  ivec4 in_block_b = load_int8x4_block_from_t_in_b(
-      in_b_meta, tidx, other_layout, block_outer_dim);
+  ivec4 in_block_a = broadcast_block(
+      load_int8x4_block_from_t_in_a(
+          in_a_meta,
+          broadcast_tidx(tidx, in_a_meta),
+          in_layout,
+          block_outer_dim),
+      in_a_meta,
+      block_inner_dim,
+      block_outer_dim);
+  ivec4 in_block_b = broadcast_block(
+      load_int8x4_block_from_t_in_b(
+          in_b_meta,
+          broadcast_tidx(tidx, in_b_meta),
+          other_layout,
+          block_outer_dim),
+      in_b_meta,
+      block_inner_dim,
+      block_outer_dim);
 
   ivec4 out_block;
 

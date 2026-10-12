@@ -1,9 +1,25 @@
 # Batched generation, session cloning, and prefix reuse
 
-`Runner` schedules token deltas through an `Executor`. `ModuleExecutor` runs
-those batches against a registered off-graph KV cache. Session cloning is a
-runtime operation; token matching and snapshot eviction are a separate,
+`Runner` schedules generation inputs through an `Executor`. `ModuleExecutor`
+runs raw-token batches against a registered off-graph KV cache. Session cloning
+is a runtime operation; token matching and snapshot eviction are a separate,
 caller-owned policy in `batching::PrefixCache`.
+
+## Opaque inputs
+
+Ordinary text and decode use raw token IDs. Supporting executors can also consume
+an opaque `PreparedInputPtr` through `session.generate_async(input, config,
+callback)`. Its model-specific representation must be compatible with that
+executor; the framework provides no preparation or construction API.
+Executors opt in through `Executor::accepts()`, which defaults to false. The runner
+checks it before scheduling, so rejected opaque input fails only its generation.
+`PreparedInput::kind()` provides a process-local type identity for this check,
+without RTTI; matching a type does not establish model or device compatibility.
+
+The complete backing reports a fixed decoder-position count through `size()`.
+Prefill chunks share its owner and slice its logical positions; decode feedback
+remains raw tokens. Input metrics count positions, not necessarily text tokens.
+Metadata and logical contents stay immutable. `ModuleExecutor` remains raw-token-only.
 
 ## Cloning a session
 

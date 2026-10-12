@@ -40,6 +40,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.utils import WhyNoPartition
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import free_symbols
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -363,6 +364,12 @@ class ConvolutionConfig(GEMMConfig):
 
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
+        if any(
+            value.meta["val"].dtype == torch.bfloat16
+            for value in (node, kernel_node, get_input_node(node, 0))
+        ):
+            why(node, "XNNPACK does not support BF16 convolution")
+            return False
         # The weight rank is the only reliable indicator of the conv dimensionality.
         # stride, padding and dilation may each be a single value that ATen
         # broadcasts over every spatial dim.
@@ -370,6 +377,17 @@ class ConvolutionConfig(GEMMConfig):
         if conv_dim > 2:
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
+
+        # Conv1d lowering inserts reshapes with at most one inferred dimension.
+        if (
+            conv_dim == 1
+            and sum(
+                bool(free_symbols(d)) for d in get_input_node(node, 0).meta["val"].shape
+            )
+            > 1
+        ):
+            why(node, "Conv1d reshapes only support one dynamic dimension")
+            return False
 
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
         groups = cast(int, node.args[8])

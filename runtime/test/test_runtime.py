@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import io
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +22,17 @@ from executorch.runtime import Runtime, Verification
 
 
 class RuntimeTest(unittest.TestCase):
+    def test_runtime_import_does_not_load_the_exporter(self):
+        # A fresh interpreter, since this process has already imported exir.
+        probe = (
+            "import sys; import executorch.runtime; "
+            "print(sorted(m for m in ('executorch.exir', 'torch._dynamo') if m in sys.modules))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(result.stdout.strip(), "[]")
+
     def test_smoke(self):
         ep, inputs = create_program(ModuleAdd())
         runtime = Runtime.get()

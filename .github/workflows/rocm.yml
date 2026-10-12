@@ -175,7 +175,10 @@ jobs:
       id-token: write
       contents: read
     with:
-      timeout: 90
+      # Since #23603 the quantized GEMM kernels compile and run here instead of
+      # failing fast; the job takes ~80 min, ~37 of them Int4AutotunePickTest's
+      # CPU-saturated AOTI compile.
+      timeout: 150
       no-sudo: true
       runner: linux.rocm.gpu.gfx950.1
       gpu-arch-type: rocm

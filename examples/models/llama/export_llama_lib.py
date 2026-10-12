@@ -121,6 +121,8 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_1_2b",  # hybrid
     "lfm2_5_350m",  # hybrid
     "lfm2_5_1_2b",  # hybrid
+    "spark_x2_5_1_7b",  # hybrid
+    "spark_x2_5_4b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -141,6 +143,8 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
     "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
+    "spark_x2_5_1_7b": "XHToken/Spark-X2.5-1.7B",
+    "spark_x2_5_4b": "XHToken/Spark-X2.5-4B",
 }
 
 
@@ -458,8 +462,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--xnnpack-extended-ops",
-        action="store_true",
-        help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Delegate more operators beyond DQLinear to the xnnpack backend. On by "
+        "default; pass --no-xnnpack-extended-ops to delegate DQLinear only. Requires "
+        "-X or --xnnpack to be set.",
     )
     parser.add_argument(
         "--xnnpack-enable-bf16",
@@ -718,6 +725,8 @@ def export_llama(  # noqa: C901
             from executorch.examples.models.smollm2 import convert_weights
         elif model_name.startswith("lfm2"):
             from executorch.examples.models.lfm2 import convert_weights
+        elif model_name.startswith("spark_x2_5"):
+            from executorch.examples.models.spark_x2_5 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
@@ -1159,7 +1168,7 @@ def _to_edge_and_lower_llama_xnnpack(
     pt2e_quant_params,
     quantizers,
     quant_dtype,
-    xnnpack_extended_ops: bool = False,
+    xnnpack_extended_ops: bool = True,
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
@@ -1174,15 +1183,16 @@ def _to_edge_and_lower_llama_xnnpack(
         )
     )
 
-    modelname = f"xnnpack_dq_{modelname}"
-
     if xnnpack_extended_ops:
         partitioners.append(
             get_xnnpack_partitioner(
                 dynamic_quant_only_partitioner=False, enable_bf16=enable_bf16
             )
         )
-        modelname = f"xnnpack_{modelname}"
+
+    modelname = (
+        f"xnnpack_{modelname}" if xnnpack_extended_ops else f"xnnpack_dq_{modelname}"
+    )
 
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:

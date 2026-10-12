@@ -15,6 +15,16 @@ from executorch.backends.qualcomm.tests.rework.src.feature import *  # noqa: F40
 @pytest.mark.parametrize(
     "kwargs",
     [
+        pytest.param({"expected": Tolerance()}, id="e2e"),
+    ],
+)
+def test_graph_splitting(request, kwargs):
+    GraphSplit.test_graph_splitting(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
         pytest.param({"expected": nullcontext()}, id="e2e"),
     ],
 )

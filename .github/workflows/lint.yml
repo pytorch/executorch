@@ -58,7 +58,7 @@ jobs:
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
           # Match requirements-examples.txt for the model APIs checked by mypy.
-          pip install pytest numpy parameterized huggingface_hub "transformers==5.0.0rc1" timm expecttest types-requests
+          pip install pytest numpy parameterized huggingface_hub "transformers==5.0.0rc1" timm expecttest types-requests tosa-tools
 
       - name: Generate mypy stubs for C++ bindings
         run: |

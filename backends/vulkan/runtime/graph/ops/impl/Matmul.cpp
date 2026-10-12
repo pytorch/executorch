@@ -27,19 +27,33 @@ namespace vkcompute {
 // selected to increase parallelism.
 static constexpr uint32_t kMinOccupancyThreads = 4096;
 
+// Mali saturates at a lower thread count than the threshold above was tuned
+// for, so the 4-row tile is never worth its register cost there and the 2-row
+// tile clears a lower bar. Leaving Mali on the shared threshold picks the
+// 1-row tile for typical encoder shapes, which is the least weight reuse of
+// the three.
+static constexpr uint32_t kMinOccupancyThreadsMali = 2048;
+
 // Returns the M tile size (1, 2, or 4) to use for the matmul shader. The
-// largest tile that produces at least kMinOccupancyThreads thread groups is
-// chosen; if even tile_m=1 doesn't meet the threshold, tile_m=1 is used.
+// largest tile that produces at least the device's occupancy threshold is
+// chosen; if even tile_m=1 doesn't meet it, tile_m=1 is used.
 uint32_t pick_matmul_tile_m(ComputeGraph* graph, const ValueRef out) {
   uint32_t N = graph->size_at<uint32_t>(-1, out);
   uint32_t M = graph->size_at<uint32_t>(-2, out);
   uint32_t B = graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
   uint32_t n_groups = utils::div_up_4(N);
+  const bool is_mali =
+      graph->context()->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
+  const uint32_t min_threads =
+      is_mali ? kMinOccupancyThreadsMali : kMinOccupancyThreads;
   // Try tile_m = 4, 2, 1 in descending order; pick the first that gives
-  // enough threads.
+  // enough threads. Mali skips the 4-row tile entirely.
   for (uint32_t tile_m : {4u, 2u, 1u}) {
+    if (is_mali && tile_m == 4u) {
+      continue;
+    }
     uint32_t total = n_groups * utils::div_up(M, tile_m) * B;
-    if (total >= kMinOccupancyThreads) {
+    if (total >= min_threads) {
       return tile_m;
     }
   }

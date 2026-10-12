@@ -560,6 +560,59 @@ adb logcat | grep -E "ExecuTorch"
     adb logcat | grep "ExecuTorch"
     ```
 
+##### Issue 5: fp16 model compiles, then the DSP stops responding (err 1003 / 1007 / 1011)
+
+- **Symptoms**: lowering succeeds, but the first execution never returns and fails
+  after a constant ~10 s with a transport error rather than a graph error:
+
+    ```
+    [ERROR] QnnDsp <E> DspTransport call failed, error 0x00000010
+    [ERROR] QnnDsp <E> skelExecute call failed with err 1003
+    [ERROR] QnnDsp <E> Graph forward failed in execution with err 1003
+    ```
+
+  A fixed interval is the signature of an RPC/watchdog timeout, not of slow
+  arithmetic. The error codes are `QNN_COMMON_ERROR_SYSTEM*`, not
+  `QNN_GRAPH_ERROR_*`, so QNN is not rejecting the graph.
+
+- **Cause**: a convolution with a large `dilation` and many input channels that
+  HTP could not tile into VTCM. Reported for a single
+  `Conv2d(960, 256, 3, padding=36, dilation=36)` on a `(1, 960, 65, 65)` input on
+  an 8 MB-VTCM part. The quantized path rejects the same shape at compile time
+  with `not sufficiently tiled to fit in TCM`, but the fp16 path performs no such
+  check and emits a context binary that cannot execute. Tracked as
+  [#23096](https://github.com/pytorch/executorch/issues/23096).
+
+- **Diagnosis**: the partitioner logs a warning naming the convolution when its
+  weights plus one output pixel's receptive field exceed the SoC's VTCM. The
+  warning is advisory, not a defect report: the estimate behind it ignores that
+  the backend can also tile along input and output channels, so it fires on some
+  convolutions that run correctly. The operator is still delegated either way.
+  Treat it as a starting point when a model does fail as above, not as a problem
+  to fix on its own. The warning is a temporary workaround for an open backend
+  defect: the estimate behind it comes from measurements on QAIRT 2.49 with
+  8 MB-VTCM parts, not from a documented backend constraint. Both the warning and
+  this entry are expected to be removed once HTP performs the TCM-fit check on
+  the fp16 path; `test_dilated_conv_tcm_fit_sentinel` is an `xfail(strict=True)`
+  guard that starts failing when that happens.
+
+- **Solution**: split the convolution along its input channels and sum the
+  results. This is mathematically identical, since convolution is linear in the
+  input-channel axis, and it lets the backend tile each part:
+
+    ```
+    # instead of:  nn.Conv2d(960, 256, 3, padding=36, dilation=36, bias=False)
+    self.convs = nn.ModuleList([
+        nn.Conv2d(480, 256, 3, padding=36, dilation=36, bias=False)
+        for _ in range(2)
+    ])
+    ...
+    out = self.convs[0](x[:, :480]) + self.convs[1](x[:, 480:])
+    ```
+
+  Quantizing the model also avoids the crash, though on some SDK versions the
+  same shape then fails at compile time instead.
+
 ## Supported model list
 
 Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.

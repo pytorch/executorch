@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "export",
+    typing = True,
+    srcs = ["export.py"],
+    main_function = "executorch.examples.native.vision.export.main",
+    deps = [
+        "fbsource//third-party/pypi/pillow:pillow",
+        "//caffe2:torch",
+        "//executorch/examples/models:models",
+        "//executorch/exir/native:native",
+        "//pytorch/vision:torchvision",  # @manual
+    ],
+)

@@ -10,6 +10,11 @@
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <type_traits>
 
+#if defined(CUDA_AVAILABLE)
+#include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
+#endif
+
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
@@ -400,6 +405,27 @@ aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking) {
   self->copy_(*src);
 
   return Error::Ok;
+}
+
+AOTITorchError aoti_torch_zero_(SlimTensor* self) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr && self->is_contiguous(),
+      InvalidArgument,
+      "aoti_torch_zero_: expected a contiguous tensor");
+  if (self->nbytes() == 0) {
+    return Error::Ok;
+  }
+#if defined(CUDA_AVAILABLE)
+  if (self->device().is_cuda()) {
+    auto stream = getCurrentCUDAStream(self->device_index());
+    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaMemsetAsync(self->data_ptr(), 0, self->nbytes(), stream.get()));
+    return Error::Ok;
+  }
+#endif
+  ET_CHECK_OR_RETURN_ERROR(
+      false, NotSupported, "aoti_torch_zero_: only CUDA tensors are supported");
 }
 
 #define ET_CUDA_DEFINE_ITEM_SHIM(SUFFIX, CTYPE)            \

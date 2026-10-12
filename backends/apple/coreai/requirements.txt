@@ -1,0 +1,3 @@
+coreai-core==1.0.0b3
+coreai-torch==0.4.3
+coreai-opt==0.3.0
