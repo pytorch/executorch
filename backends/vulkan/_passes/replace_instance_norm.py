@@ -11,7 +11,10 @@ from typing import Optional
 import executorch.backends.vulkan.utils as utils
 
 import torch
-from executorch.backends.vulkan.op_registry import can_rewrite_batch_norm_as_group_norm
+from executorch.backends.vulkan.op_registry import (
+    can_rewrite_batch_norm_as_group_norm,
+    unwrap_identity_repeat,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -53,8 +56,11 @@ class ReplaceInstanceNormPass(ExportPass):
                     exir_ops.edge.aten.native_group_norm.default,
                     args=(
                         input_node,
-                        node.args[1],  # weight
-                        node.args[2],  # bias
+                        # F.instance_norm repeats the affine args once per batch.
+                        # For a batch of 1 that repeat is an identity: use its
+                        # source, so the constant is prepacked, and let DCE drop it.
+                        unwrap_identity_repeat(node.args[1]),  # weight
+                        unwrap_identity_repeat(node.args[2]),  # bias
                         batches,
                         channels,
                         height * width,
