@@ -201,6 +201,16 @@ class VgfRepr {
     return host_memory_import_capabilities_;
   }
 
+  // Resource-management seam for execute().
+  VgfZeroCopyImportResult try_import_zero_copy_candidate(
+      size_t io_index,
+      void* host_pointer,
+      size_t logical_nbytes);
+
+  const VgfZeroCopySlot* zero_copy_import_slot(size_t io_index) const {
+    return zero_copy_import_manager_.slot(io_index);
+  }
+
   ~VgfRepr() {
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
@@ -230,6 +240,7 @@ class VgfRepr {
   bool neural_statistics_device_enabled_ = false;
   int neural_statistics_mode_index_ = 1;
   VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
+  VgfZeroCopyImportManager zero_copy_import_manager_;
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;
