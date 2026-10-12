@@ -62,6 +62,28 @@ class TestAddmmToLinearTransform(unittest.TestCase):
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.addmm.default), 0)
 
+    def test_groupwise_dequantized_constant_weight_is_rewritten_to_linear(self):
+        # 4-bit groupwise (8da4w-style) weights are dequantized per channel
+        # group, and have to be rewritten like any other dequantized constant.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "w", torch.randint(-8, 7, (4, 8), dtype=torch.int8)
+                )
+                self.register_buffer("scale", torch.rand(4, 2) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, 2, dtype=torch.int8))
+
+            def forward(self, x):
+                w = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+                    self.w, self.scale, self.zero, -8, 7, torch.int8, 4, torch.float32
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
     def test_computed_weight_stays_a_matmul(self):
         # `w` is produced at runtime, so the transposed matmul below is not a
         # linear: backends prepack a linear's weight while building their graph
