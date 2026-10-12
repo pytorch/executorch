@@ -247,9 +247,13 @@ def run_conv1d_as_conv2d(
 
 
 def export_to_edge(
-    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor, ...]
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor, ...],
+    dynamic_shapes=None,
 ) -> torch.export.ExportedProgram:
-    program = torch.export.export(model, sample_inputs, strict=True)
+    program = torch.export.export(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    )
     return to_edge(
         program,
         compile_config=EdgeCompileConfig(
@@ -1204,9 +1208,14 @@ class TestVulkanPasses(unittest.TestCase):
             ("batch_norm_batch_2", BatchNormModule(), (x2,), False),
             ("saved_stats", SavedStatsModule(), (x1,), False),
         ]
-        for name, model, inputs, expected in cases:
+        # The pass hands group norm static channel and spatial sizes.
+        dynamic_height = ({2: torch.export.Dim("height", min=2, max=64)},)
+        cases.append(
+            ("dynamic_height", InstanceNormModule(), (x1,), False, dynamic_height)
+        )
+        for name, model, inputs, expected, *dynamic_shapes in cases:
             with self.subTest(name):
-                ep = export_to_edge(model, inputs)
+                ep = export_to_edge(model, inputs, *dynamic_shapes)
                 nodes = batch_norm_no_stats_nodes(ep.graph_module)
                 self.assertEqual(len(nodes), 1)
                 self.assertEqual(
