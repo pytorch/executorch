@@ -23,6 +23,7 @@ from executorch.backends.mlx.llm.cache import (
 )
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
+    rotate_half,
 )
 from executorch.examples.models.muse_glimmer.model.model import (
     apply_rotary_emb,
@@ -385,7 +386,10 @@ def _replace_model_forward_with_hidden_tapping(
         return x.to(self.activation_dtype)
 
     def _mlx_target_forward_from_embeddings(
-        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
+        self,
+        inputs_embeds: torch.Tensor,
+        input_pos: torch.Tensor,
+        logits_indices: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         x = inputs_embeds.to(self.activation_dtype)
         tapped = []
@@ -394,6 +398,8 @@ def _replace_model_forward_with_hidden_tapping(
                 tapped.append(x)
             x = layer(x, input_pos)
 
+        if logits_indices is not None:
+            x = x.index_select(1, logits_indices)
         x = self.output_norm(x)
         all_logits = self.lm_head(x).float()
         mult = self.output_multiplier.float()
@@ -418,6 +424,7 @@ def mlx_source_transformations_dflash_target(
     target_layer_ids: list[int],
     dtype: torch.dtype = torch.bfloat16,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Apply MLX source transformations for the DFlash target model.
 
@@ -431,7 +438,7 @@ def mlx_source_transformations_dflash_target(
         ``target_forward_from_embeddings(inputs_embeds, input_pos)`` with the
         same full-sequence logits and hidden outputs as ``forward``.
     """
-    _apply_mlx_transforms(model, dtype, max_write_len)
+    _apply_mlx_transforms(model, dtype, max_write_len, use_offgraph_kv_cache)
     _replace_model_forward_with_hidden_tapping(model, target_layer_ids)
 
 
@@ -455,6 +462,7 @@ class MLXDFlashAttention(nn.Module):
         is_sliding: bool = False,
         window_size: int | None = None,
         max_write_len: int | None = None,
+        use_offgraph_kv_cache: bool = False,
     ) -> "MLXDFlashAttention":
         m = cls.__new__(cls)
         nn.Module.__init__(m)
@@ -465,6 +473,7 @@ class MLXDFlashAttention(nn.Module):
         m.attn_scale = attn.attn_scale
         m.rope_theta = attn.rope_theta
         m.is_sliding = is_sliding
+        m.use_offgraph_kv_cache = use_offgraph_kv_cache
 
         m.q_proj = attn.q_proj
         m.k_proj = attn.k_proj
@@ -473,6 +482,13 @@ class MLXDFlashAttention(nn.Module):
         m.q_norm = attn.q_norm
         m.k_norm = attn.k_norm
 
+        if use_offgraph_kv_cache:
+            m.register_buffer(
+                "inv_freq",
+                MuseGlimmerAttention._compute_inv_freq(m, device="cpu"),
+                persistent=False,
+            )
+            return m
         if is_sliding:
             ring_kwargs = {
                 "max_batch_size": 1,
@@ -496,12 +512,49 @@ class MLXDFlashAttention(nn.Module):
 
         return m
 
+    def _apply(self, fn, recurse=True):
+        result = super()._apply(fn, recurse)
+        if self.use_offgraph_kv_cache:
+            self.inv_freq = MuseGlimmerAttention._compute_inv_freq(
+                self, device=self.inv_freq.device
+            )
+        return result
+
+    def _offgraph_forward(self, x, target_hidden, positions, kv_order):
+        batch, width, _ = x.shape
+        context = target_hidden.shape[1]
+        torch._check(kv_order.shape[0] == context + width)
+        # Raw rows and positions are [all context, all blocks], before gathering.
+        k = torch.cat([self.k_proj(target_hidden), self.k_proj(x)], dim=1)
+        v = torch.cat([self.v_proj(target_hidden), self.v_proj(x)], dim=1)
+        k = self.k_norm(k.view(batch, context + width, self.n_kv_heads, self.head_dim))
+        v = v.view(batch, context + width, self.n_kv_heads, self.head_dim)
+        q = self.q_norm(self.q_proj(x).view(batch, width, self.n_heads, self.head_dim))
+        phase = positions.float()[:, None] * self.inv_freq[None, :]
+        cos, sin = phase.cos()[None, None], phase.sin()[None, None]
+        q = rotate_half(q.transpose(1, 2), cos[:, :, context:], sin[:, :, context:])
+        k = rotate_half(k.transpose(1, 2), cos, sin).index_select(2, kv_order)
+        v = v.transpose(1, 2).index_select(2, kv_order)
+        y = update_and_attend(
+            q,
+            k,
+            v,
+            positions.index_select(0, kv_order)[:, None],
+            self.layer_idx,
+            self.attn_scale,
+            q.dtype,
+        )
+        return self.o_proj(y.transpose(1, 2).reshape(batch, width, -1))
+
     def forward(
         self,
         x: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        if kv_order is not None:
+            return self._offgraph_forward(x, target_hidden, input_pos, kv_order)
         B, T, _ = x.shape
         n_new = target_hidden.shape[1]
         ctx_start = input_pos[0].item()
@@ -579,8 +632,11 @@ def _replace_dflash_layer_forward(layer: nn.Module) -> None:
         x: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.self_attn(self.input_layernorm(x), target_hidden, input_pos)
+        x = x + self.self_attn(
+            self.input_layernorm(x), target_hidden, input_pos, kv_order
+        )
         x = x + self.mlp(self.post_attention_layernorm(x))
         return x
 
@@ -599,12 +655,15 @@ def _replace_dflash_model_forward(model: nn.Module) -> None:
         noise_embedding: torch.Tensor,
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
+        kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
         ctx = self.hidden_norm(self.fc(target_hidden))
 
         x = noise_embedding
+        if kv_order is not None:
+            x = x.reshape(1, -1, x.shape[-1])
         for layer in self.layers:
-            x = layer(x, ctx, input_pos)
+            x = layer(x, ctx, input_pos, kv_order)
 
         return self.norm(x)
 
@@ -618,6 +677,7 @@ def dflash_mlx_source_transformations(
     sliding_window: int | None = None,
     sliding_window_pattern: list[bool] | None = None,
     max_write_len: int | None = None,
+    use_offgraph_kv_cache: bool = False,
 ) -> nn.Module:
     """Apply MLX source transformations to a DFlashDraftModel in-place.
 
@@ -636,7 +696,9 @@ def dflash_mlx_source_transformations(
             is_sliding=is_sliding,
             window_size=sliding_window if is_sliding else None,
             max_write_len=max_write_len if is_sliding else None,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
         )
+        layer.self_attn.layer_idx = i
         _replace_dflash_layer_forward(layer)
 
     _replace_dflash_model_forward(model)

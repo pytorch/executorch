@@ -302,6 +302,76 @@ class MLXOffgraphTest(unittest.TestCase):
                             torch.zeros(max_width + 1, dtype=torch.long),
                         )
 
+    def test_packed_dflash_export(self):
+        from executorch import exir
+        from executorch.backends.mlx import preprocess
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            _export_dflash_mlx,
+        )
+        from executorch.examples.models.muse_glimmer.model.dflash_model import (
+            DFlashConfig,
+            DFlashDraftModel,
+        )
+        from executorch.extension.llm.cache.reference_cache import AttendSpec, MaskKind
+
+        cfg = DFlashConfig(dim=32, n_layers=1, ffn_dim=64, target_layers=[1])
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            preprocess, "serialize_mlx_graph", wraps=preprocess.serialize_mlx_graph
+        ) as capture, patch.object(
+            exir, "to_edge_transform_and_lower", wraps=exir.to_edge_transform_and_lower
+        ) as lower:
+            _export_dflash_mlx(
+                _model(),
+                CONFIG,
+                DFlashDraftModel(cfg).eval(),
+                cfg,
+                None,
+                None,
+                directory,
+                CONFIG.max_seq_len,
+                torch.float16,
+                4,
+                use_offgraph_kv_cache=True,
+            )
+        self.assertEqual(capture.call_count, 3)
+        for call in capture.call_args_list:
+            self.assertEqual(call.args[0].num_mutable_buffer_tensors, 0)
+        draft = lower.call_args.args[0]["draft_forward"].module()
+        with patch.object(REGISTRY, "current") as cache, torch.no_grad():
+            for owners, block, context in ((1, 2, 0), (1, 3, 1), (1, 16, 2), (2, 3, 3)):
+                queries = owners * block
+                cache.return_value.update_and_fetch.side_effect = (
+                    lambda layer, k, v, pos, queries=queries: [
+                        AttendSpec(k, v, MaskKind.NONE, queries)
+                    ]
+                )
+                logits = draft(
+                    torch.zeros((owners, block), dtype=torch.long),
+                    torch.zeros((1, context, CONFIG.dim), dtype=torch.float16),
+                    torch.arange(context + queries),
+                    torch.arange(context + queries),
+                )
+                self.assertEqual(logits.shape, (1, queries, CONFIG.vocab_size))
+                self.assertTrue(torch.isfinite(logits).all())
+            with self.assertRaises(RuntimeError):
+                draft(
+                    torch.zeros((1, cfg.block_size + 1), dtype=torch.long),
+                    torch.zeros((1, 0, CONFIG.dim), dtype=torch.float16),
+                    torch.arange(cfg.block_size + 1),
+                    torch.arange(cfg.block_size + 1),
+                )
+            target = lower.call_args.args[0]["forward_from_embeddings"].module()
+            cache.return_value.update_and_fetch.side_effect = lambda layer, k, v, pos: [
+                AttendSpec(k, v, MaskKind.NONE, pos.numel())
+            ]
+            logits, hidden = target(
+                torch.zeros((1, 4, CONFIG.dim), dtype=torch.float16),
+                torch.arange(4),
+                torch.tensor([3]),
+            )
+            self.assertEqual(logits.shape, (1, 1, CONFIG.vocab_size))
+            self.assertEqual(hidden.shape, (1, 4, CONFIG.dim))
+
     def test_legacy_forward_last_logits(self):
         original = _model()
         model = copy.deepcopy(original)
