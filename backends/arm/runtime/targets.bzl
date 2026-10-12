@@ -44,6 +44,7 @@ def define_common_targets():
             "VGFExecutionStats.cpp",
             "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
+            "VGFZeroCopy.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
