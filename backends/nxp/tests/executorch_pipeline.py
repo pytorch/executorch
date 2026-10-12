@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import os
 from functools import partial
 from typing import Callable, Iterable
@@ -60,6 +61,8 @@ from executorch.export import ExportRecipe, ExportSession, StageType
 from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
+
+_USE_RECIPE_EXPORT = os.environ.get("NXP_USE_RECIPE_EXPORT", "0") == "1"
 
 neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
@@ -187,7 +190,7 @@ def to_quantized_edge_program(
     dump_kernel_selection_code: bool = False,
     use_profiling: bool = False,
     delegate_to_npu=True,
-    use_recipe_export: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target)
     input_spec = to_model_input_spec(input_spec)
@@ -195,6 +198,7 @@ def to_quantized_edge_program(
     example_input = get_example_input(input_spec)
 
     if use_recipe_export:
+        logging.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
         rc = NeutronRecipeConfig(
             input_spec,
             target,
@@ -309,7 +313,7 @@ def to_quantized_executorch_program(
     use_profiling: bool = False,
     operators_not_to_delegate: list[str] | None = None,
     remove_quant_io_ops: bool = False,
-    use_recipe_export: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ) -> ExecutorchProgramManager:
     if dataset_dir:
         # Extract calibration data from a directory.
@@ -320,6 +324,7 @@ def to_quantized_executorch_program(
         get_calibration_inputs_fn = None  # Use default -> random data.
 
     if use_recipe_export:
+        logging.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
         rc = NeutronRecipeConfig(
             input_spec,
             operators_not_to_delegate=operators_not_to_delegate,
