@@ -14,9 +14,9 @@ from executorch.backends.qualcomm.export_utils import (
     QnnConfig,
     setup_common_args_and_variables,
 )
-from executorch.backends.qualcomm.hf_transformers.api import _get_quant_recipe
+from executorch.backends.qualcomm.hf_transformers.api import get_quant_recipe
 from executorch.examples.qualcomm.oss_scripts.hf_causal_lm import inference
-from transformers import AutoModelForCausalLM, GenerationConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from transformers.exporters import ExecutorchExporter, ExecutorchQnnConfig
 
 
@@ -45,24 +45,24 @@ def main(args):
     os.makedirs(args.artifact, exist_ok=True)
     logging.info(f"Loading {args.decoder_model_id}...")
     model = build_model(args.decoder_model_id, args.max_seq_len)
-
     if not args.pre_gen_pte:
         quantizer = None
         if not args.use_fp16:
             quantizer = make_quantizer(
                 backend=get_backend_type(args.backend), soc_model=args.soc_model
             )
-            quant_recipe = _get_quant_recipe(args.decoder_model_id)
+            quant_recipe = get_quant_recipe(args.decoder_model_id)
             quantizer.set_recipe(quant_recipe.recipe)
             quantizer.set_convert_linear_to_conv2d(True)
 
+        tokenizer = AutoTokenizer.from_pretrained(args.decoder_model_id)
+        token_list = tokenizer.encode(args.prompt, bos=True, eos=False)
         et_program_manager = ExecutorchExporter().export(
             model,
             None,
             ExecutorchQnnConfig(
-                model_id=args.decoder_model_id,
                 soc_model=args.soc_model,
-                calibration_dataset=[args.prompt],
+                calibration_dataset=[token_list],
                 pt2e_quantizer=quantizer,
                 backend="qnn",
                 backend_hardware=args.backend,
