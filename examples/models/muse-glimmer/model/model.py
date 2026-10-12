@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-
 # Config
 
 
@@ -71,9 +70,19 @@ class MuseGlimmerConfig:
         return pattern[count_backward % len(pattern)]
 
     @staticmethod
-    def from_json(path: str) -> "MuseGlimmerConfig":
+    def from_json(
+        path: str, *, require_native_context: bool = False
+    ) -> "MuseGlimmerConfig":
+        """Read params, optionally requiring an explicit checkpoint context limit."""
         with open(path) as f:
             d = json.load(f)
+        if require_native_context:
+            value = d.get("max_seq_len") if isinstance(d, dict) else None
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"Native context requires a positive non-boolean integer "
+                    f"'max_seq_len' in {path}; got {value!r}"
+                )
         return MuseGlimmerConfig(
             **{
                 k: v
@@ -884,7 +893,7 @@ def _split_gate_up(
 
 
 def load_unfused_bf16_state_dict(
-    checkpoint_dir: str, max_seq_len: int = 16384
+    checkpoint_dir: str, max_seq_len: int | None = 16384
 ) -> tuple[dict[str, torch.Tensor], MuseGlimmerConfig]:
     """Load a consolidated Muse Glimmer checkpoint as a fully-unfused bf16 state dict.
 
@@ -894,8 +903,13 @@ def load_unfused_bf16_state_dict(
     fusion both operate on this canonical form downstream (``quantize_and_save``
     and ``checkpoint_loader``), so no fusion layout is baked into the checkpoint.
     """
-    config = MuseGlimmerConfig.from_json(os.path.join(checkpoint_dir, "params.json"))
-    config.max_seq_len = max_seq_len
+    # None preserves the checkpoint limit instead of sizing an export-time cache.
+    config = MuseGlimmerConfig.from_json(
+        os.path.join(checkpoint_dir, "params.json"),
+        require_native_context=max_seq_len is None,
+    )
+    if max_seq_len is not None:
+        config.max_seq_len = max_seq_len
     state_dict = _load_and_remap_checkpoint(checkpoint_dir)
     state_dict = _split_fused_qkv(state_dict, config)
     state_dict = _split_gate_up(state_dict, config)
