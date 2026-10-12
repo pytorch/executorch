@@ -48,6 +48,7 @@ ops_list=(
     aten::convolution.out
     aten::max_pool2d_with_indices.out
     dim_order_ops::_clone_dim_order.out
+    aten::view_copy.out
     aten::cat.out
     aten::full.out
     aten::ge.Tensor_out

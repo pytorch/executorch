@@ -1,15 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import copy
 import unittest
+from itertools import product
 
 import torch
 import torch.nn as nn
-from executorch.exir import memory, to_edge
+from executorch.exir import EdgeCompileConfig, memory, to_edge
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
@@ -21,6 +23,10 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 
 
 class TestModel1(nn.Module):
@@ -62,6 +68,78 @@ class TestRemoveViewCopy(unittest.TestCase):
         NormalizeViewCopyBasePass()(graph_module)
         ReplaceViewCopyWithViewPass()(graph_module)
         return graph_module
+
+    def test_flatten_layout_runtime(self) -> None:
+        class Flatten(nn.Module):
+            def __init__(self, internal_channels_last):
+                super().__init__()
+                self.internal_channels_last = internal_channels_last
+
+            def forward(self, x):
+                if self.internal_channels_last:
+                    x = x.clone(memory_format=torch.channels_last)
+                return x.flatten(2).transpose(1, 2)
+
+        for layout, skip_dim_order, remove_view_copy in product(
+            ("contiguous", "channels_last", "singleton", "internal"),
+            (False, True),
+            (False, True),
+        ):
+            # Explicit layout conversions require dim-order operators.
+            if layout == "internal" and skip_dim_order:
+                continue
+            with self.subTest(
+                layout=layout,
+                skip_dim_order=skip_dim_order,
+                remove_view_copy=remove_view_copy,
+            ):
+                channels = 1 if layout == "singleton" else 3
+                x = torch.arange(16 * channels, dtype=torch.float32).reshape(
+                    2, channels, 2, 4
+                )
+                if layout in ("channels_last", "singleton"):
+                    x = x.contiguous(memory_format=torch.channels_last)
+                model = Flatten(layout == "internal").eval()
+                edge = to_edge(
+                    torch.export.export(model, (x,), strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
+                )
+                program = edge.to_executorch(
+                    config=ExecutorchBackendConfig(remove_view_copy=remove_view_copy)
+                )
+                targets = [
+                    node.target for node in program.exported_program().graph.nodes
+                ]
+                uses_view = remove_view_copy and layout in ("contiguous", "singleton")
+                self.assertEqual(memory.view in targets, uses_view)
+                self.assertEqual(torch.ops.aten.view_copy.out in targets, not uses_view)
+                if skip_dim_order and layout != "internal":
+                    self.assertFalse(any("dim_order" in str(t) for t in targets))
+                    self.assertNotIn(torch.ops.aten._to_copy.out, targets)
+                runtime = _load_for_executorch_from_buffer(program.buffer)
+                actual = runtime.run_method("forward", (x,))[0]
+                torch.testing.assert_close(actual, model(x), rtol=0, atol=0)
+
+    def test_view_replacement_preserves_input_layout(self) -> None:
+        class Flatten(nn.Module):
+            def forward(self, x):
+                return x.flatten(2).transpose(1, 2)
+
+        for channels in (1, 3):
+            for channels_last in (False, True):
+                with self.subTest(channels=channels, channels_last=channels_last):
+                    x = torch.arange(8 * channels, dtype=torch.float32).reshape(
+                        1, channels, 2, 4
+                    )
+                    if channels_last:
+                        x = x.contiguous(memory_format=torch.channels_last)
+                    graph = self._run_view_and_reinplace_passes(Flatten(), (x,))
+                    targets = [node.target for node in graph.graph.nodes]
+                    if channels_last and channels > 1:
+                        self.assertNotIn(memory.view, targets)
+                        self.assertIn(ops.edge.aten.view_copy.default, targets)
+                    else:
+                        self.assertIn(memory.view, targets)
 
     def test_disable(self) -> None:
         model = TestModel1()

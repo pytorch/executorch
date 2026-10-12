@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
@@ -1394,6 +1399,7 @@ ATEN_OPS = (
     op_target(
         name = "op_view_copy",
         deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
