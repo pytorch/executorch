@@ -44,14 +44,21 @@ def _is_mutated_buffer(node: torch.fx.Node, exported_program: ExportedProgram) -
 # Dequantized constants are still known at build time. Quantized weights
 # reach mm/addmm through one of these, and backends rely on the rewrite to
 # `linear` to fuse the pair back into a quantized matmul, so they have to
-# count as constant here.
-_DEQUANT_TARGETS = (
+# count as constant here. Quantize ops are listed too because a weight that
+# was never constant-folded reaches the matmul as dq(q(param)).
+_QDQ_TARGETS = (
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     exir_ops.edge.torchao.dequantize_affine.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+    exir_ops.edge.torchao.quantize_affine.default,
 )
 
 
@@ -68,8 +75,8 @@ def is_constant_tensor(
     """
     if node.op == "get_attr":
         return True
-    if node.op == "call_function" and node.target in _DEQUANT_TARGETS:
-        # Constant only if everything it dequantizes is itself constant.
+    if node.op == "call_function" and node.target in _QDQ_TARGETS:
+        # Constant only if every tensor it (de)quantizes is itself constant.
         return all(
             is_constant_tensor(arg, exported_program)
             for arg in node.args

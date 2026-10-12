@@ -84,6 +84,46 @@ class TestAddmmToLinearTransform(unittest.TestCase):
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
 
+    def test_unfolded_quantized_constant_weight_is_rewritten_to_linear(self):
+        # Without constant folding the weight reaches mm as dq(q(param)). The
+        # quantize node only reads constants, so the operand is still constant.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 8))
+                self.register_buffer("scale", torch.rand(4) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, dtype=torch.int64))
+
+            def forward(self, x):
+                q = torch.ops.quantized_decomposed.quantize_per_channel.default(
+                    self.w, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                w = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                    q, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_quantized_computed_weight_stays_a_matmul(self):
+        # The quantize node reads a value produced at runtime, so dq(q(.)) is
+        # runtime data too.
+        class Model(torch.nn.Module):
+            def forward(self, x, w):
+                q = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                    w * 2.0, 0.1, 0, -128, 127, torch.int8
+                )
+                w = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    q, 0.1, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8), torch.randn(4, 8)))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
     def test_computed_weight_stays_a_matmul(self):
         # `w` is produced at runtime, so the transposed matmul below is not a
         # linear: backends prepack a linear's weight while building their graph
