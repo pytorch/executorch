@@ -53,11 +53,7 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15t"]
 # Skip wholly absent trains so an upstream removal cannot block the remaining releases.
 # Offered trains must still cover every supported Python version.
 #
-# cu126 was the floor until PyTorch stopped offering it on the nightly channel. The generator
-# still offers it when a release is cut, so keeping it here would publish a train that no
-# nightly has built since, and a release is the wrong place to find out that it no longer
-# builds. A machine on CUDA 12.6 can still build from source, where the pinned torch comes
-# from a channel that carries 12.6.
+# cu126 is not supported: the pinned torch has no CUDA 12.6 build.
 #
 # cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
 # other projects, and its release-candidate builds do not carry it, so a release would have

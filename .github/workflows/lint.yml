@@ -53,7 +53,7 @@ jobs:
             "torch==${TORCH_VERSION}" \
             torchvision \
             torchaudio \
-            --index-url https://download.pytorch.org/whl/cpu
+            --index-url https://download.pytorch.org/whl/test/cpu
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao

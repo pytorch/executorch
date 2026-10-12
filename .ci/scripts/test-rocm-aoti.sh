@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-ROCM_VERSION="${ROCM_VERSION:-7.2}"
+ROCM_VERSION="${ROCM_VERSION:-7.14}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
 TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
@@ -24,15 +24,15 @@ export TORCHINDUCTOR_COMPILE_THREADS=1
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
+from install_requirements import TORCHAO_NIGHTLY_VERSION
 from torch_pin import TORCH_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(TORCH_VERSION, TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
 TORCHAO_WHEEL="${TORCHAO_ROCM_WHEEL_BASE}/torchao-${TORCHAO_VERSION}"
-TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-cp310-abi3-manylinux_2_28_x86_64.whl"
+TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-py3-none-any.whl"
 python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
