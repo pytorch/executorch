@@ -12,7 +12,7 @@
 #extension GL_EXT_control_flow_attributes : require
 #extension GL_EXT_integer_dot_product : require
 
-#include "linear_int_accumulator.glslh"
+#include "gemm/tile_utils/linear_int_accumulator.glslh"
 
 struct Int8InputWindow1D {
   int[MAX_WINDOW_WIDTH] data;
