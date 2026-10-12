@@ -68,8 +68,11 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+                "//executorch/exir:lib",
                 "//pytorch/ao:torchao",  # @manual
             ]
         )
