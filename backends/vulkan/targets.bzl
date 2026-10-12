@@ -377,6 +377,7 @@ def define_common_targets(is_fbcode = False):
                 ":utils_lib",
                 "//caffe2:torch",
                 "//executorch/exir/dialects:lib",
+                "//executorch/backends/vulkan/patterns:vulkan_patterns",
                 "//executorch/backends/vulkan/serialization:lib",
             ]
         )

@@ -1085,8 +1085,10 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
         q_dtype=torch.float32,
         is_causal=False,
     ):
-        from executorch.backends.vulkan.op_registry import check_llm_sdpa_node
-        from executorch.backends.vulkan.patterns.sdpa import find_causal_sdpa_patterns
+        from executorch.backends.vulkan.patterns.sdpa import (
+            check_llm_sdpa_node,
+            find_causal_sdpa_patterns,
+        )
         from torch._subclasses.fake_tensor import FakeTensorMode
 
         fake_mode = FakeTensorMode()
