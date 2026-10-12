@@ -222,6 +222,181 @@ inline bool vgf_record_boundary_binding(
   return true;
 }
 
+// Reasons are stable indices for optional EXECUTORCH_VGF_IO_STATS counters.
+// Keep kCount last and append new reasons before it.
+enum class VgfZeroCopyImportRejectionReason : uint32_t {
+  kNone = 0,
+  kInvalidIoIndex,
+  kFeatureDisabled,
+  kMetadataIneligible,
+  kExternalTensorUnsupported,
+  kDedicatedAllocationUnsupported,
+  kNullHostPointer,
+  kInvalidHostRange,
+  kPointerAlignment,
+  kLogicalSizeAlignment,
+  kVulkanFunctionUnavailable,
+  kHostPointerPropertiesQueryFailed,
+  kNoCompatibleCoherentMemoryType,
+  kMemoryRequirementsTooLarge,
+  kTensorCreateFailed,
+  kMemoryAllocateFailed,
+  kTensorBindFailed,
+  kTensorViewCreateFailed,
+  kDuplicateActiveRange,
+  kOverlappingActiveRange,
+  kCount,
+};
+
+// cppcheck-suppress unusedFunction
+const char* vgf_zero_copy_import_rejection_reason_string(
+    VgfZeroCopyImportRejectionReason reason);
+
+// One application-owned host buffer imported for one VGF boundary IO.
+// The host allocation is never owned or freed by the delegate.
+struct VgfZeroCopySlot {
+  void* host_pointer = nullptr;
+  size_t logical_size = 0;
+  size_t imported_size = 0;
+  VkDeviceMemory memory = VK_NULL_HANDLE;
+  VkTensorARM tensor = VK_NULL_HANDLE;
+  VkTensorViewARM tensor_view = VK_NULL_HANDLE;
+  uint32_t memory_type_index = UINT32_MAX;
+
+  bool valid() const {
+    return host_pointer != nullptr && imported_size != 0 &&
+        memory != VK_NULL_HANDLE && tensor != VK_NULL_HANDLE &&
+        tensor_view != VK_NULL_HANDLE;
+  }
+};
+
+struct VgfZeroCopyImportResult {
+  bool accepted = false;
+  bool cache_hit = false;
+  VgfZeroCopyImportRejectionReason reason =
+      VgfZeroCopyImportRejectionReason::kNone;
+  VkResult vk_result = VK_SUCCESS;
+};
+
+// Vulkan call table for host-memory import operations.
+// Production uses the loaded Vulkan entry points; unit tests can
+// inject mock functions without requiring a Vulkan device.
+//
+// The guard checks Vulkan header support for VK_EXT_external_memory_host.
+// It is not a test-only flag or a runtime extension availability check.
+#if defined(VK_EXT_external_memory_host)
+struct VgfZeroCopyVulkanApi {
+  void* context = nullptr;
+
+  VkResult (*get_memory_host_pointer_properties)(
+      void* context,
+      VkDevice device,
+      VkExternalMemoryHandleTypeFlagBits handle_type,
+      const void* host_pointer,
+      VkMemoryHostPointerPropertiesEXT* properties) = nullptr;
+  void (*get_physical_device_memory_properties)(
+      void* context,
+      VkPhysicalDevice physical_device,
+      VkPhysicalDeviceMemoryProperties* properties) = nullptr;
+  VkResult (*create_tensor)(
+      void* context,
+      VkDevice device,
+      const VkTensorCreateInfoARM* create_info,
+      const VkAllocationCallbacks* allocator,
+      VkTensorARM* tensor) = nullptr;
+  void (*get_tensor_memory_requirements)(
+      void* context,
+      VkDevice device,
+      const VkTensorMemoryRequirementsInfoARM* info,
+      VkMemoryRequirements2* requirements) = nullptr;
+  VkResult (*allocate_memory)(
+      void* context,
+      VkDevice device,
+      const VkMemoryAllocateInfo* allocate_info,
+      const VkAllocationCallbacks* allocator,
+      VkDeviceMemory* memory) = nullptr;
+  VkResult (*bind_tensor_memory)(
+      void* context,
+      VkDevice device,
+      uint32_t bind_info_count,
+      const VkBindTensorMemoryInfoARM* bind_infos) = nullptr;
+  VkResult (*create_tensor_view)(
+      void* context,
+      VkDevice device,
+      const VkTensorViewCreateInfoARM* create_info,
+      const VkAllocationCallbacks* allocator,
+      VkTensorViewARM* tensor_view) = nullptr;
+  void (*destroy_tensor_view)(
+      void* context,
+      VkDevice device,
+      VkTensorViewARM tensor_view,
+      const VkAllocationCallbacks* allocator) = nullptr;
+  void (*destroy_tensor)(
+      void* context,
+      VkDevice device,
+      VkTensorARM tensor,
+      const VkAllocationCallbacks* allocator) = nullptr;
+  void (*free_memory)(
+      void* context,
+      VkDevice device,
+      VkDeviceMemory memory,
+      const VkAllocationCallbacks* allocator) = nullptr;
+};
+#else
+struct VgfZeroCopyVulkanApi {
+  void* context = nullptr;
+};
+#endif
+
+// Per-method resource manager. Slots and active host ranges live as long as
+// the VgfRepr that owns this manager, not as process-global state.
+class VgfZeroCopyImportManager final {
+ public:
+  VgfZeroCopyImportManager() = default;
+  ~VgfZeroCopyImportManager();
+
+  VgfZeroCopyImportManager(const VgfZeroCopyImportManager&) = delete;
+  VgfZeroCopyImportManager& operator=(const VgfZeroCopyImportManager&) = delete;
+
+  void reset(
+      VkPhysicalDevice physical_device,
+      VkDevice device,
+      const VgfHostMemoryImportCapabilities& capabilities,
+      size_t io_count,
+      const VgfZeroCopyVulkanApi* api = nullptr);
+
+  VgfZeroCopyImportResult try_import_candidate(
+      size_t io_index,
+      void* host_pointer,
+      size_t logical_nbytes,
+      const VgfZeroCopyIoMetadata& metadata);
+
+  void release(size_t io_index);
+  void release_all();
+
+  const VgfZeroCopySlot* slot(size_t io_index) const;
+  size_t slot_count() const {
+    return slots_.size();
+  }
+
+ private:
+  bool api_ready() const;
+  bool find_coherent_memory_type(
+      uint32_t compatible_memory_type_bits,
+      uint32_t* memory_type_index) const;
+  void destroy_slot(VgfZeroCopySlot* slot) noexcept;
+  VgfZeroCopyImportResult reject(
+      VgfZeroCopyImportRejectionReason reason,
+      bool import_failure,
+      VkResult vk_result = VK_SUCCESS) const;
+
+  VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
+  VkDevice device_ = VK_NULL_HANDLE;
+  VgfHostMemoryImportCapabilities capabilities_{};
+  VgfZeroCopyVulkanApi api_{};
+  std::vector<VgfZeroCopySlot> slots_;
+};
+
 } // namespace vgf
 } // namespace backends
 } // namespace executorch
