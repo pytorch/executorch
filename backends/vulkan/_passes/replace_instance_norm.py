@@ -81,4 +81,18 @@ class ReplaceInstanceNormPass(ExportPass):
             graph_module.recompile()
             dead_code_elimination_pass(graph_module)
 
+        # The partitioner only delegates the batch norms this pass can rewrite, and
+        # the Vulkan runtime has no batch norm kernel without stats. A leftover one
+        # would abort when the model loads, so fail the export instead.
+        remaining = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten._native_batch_norm_legit.no_stats
+        ]
+        if remaining:
+            raise RuntimeError(
+                "Vulkan cannot run _native_batch_norm_legit.no_stats nodes that "
+                f"ReplaceInstanceNormPass does not rewrite: {remaining}"
+            )
+
         return PassResult(graph_module, modified)
