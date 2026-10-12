@@ -28,7 +28,7 @@ $if INPUT_STORAGE == "buffer":
 
 layout(std430) buffer;
 
-#include "conv2d_common.glslh"
+#include "convolution/conv2d/conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_fp_output", DTYPE, OUTPUT_STORAGE)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_output", "int", INPUT_STORAGE, is_scalar_array=False)}

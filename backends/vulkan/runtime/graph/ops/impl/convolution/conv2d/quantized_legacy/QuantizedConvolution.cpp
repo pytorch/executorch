@@ -9,13 +9,15 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedConvolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/ConvolutionUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dDW.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dDirect.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/quantized_legacy/QuantizedConvolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -1341,7 +1343,7 @@ void conv2d_q8ta_q8csw_q8to(
 // Test operators
 //
 
-void test_conv2d_q8ta_q8csw_q8to(
+void test_conv2d_q8ta_q8csw_q8to_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   int32_t idx = 0;
@@ -1407,7 +1409,8 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw.default, conv2d_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.conv2d_q8csw.default, conv2d_q8csw);
   VK_REGISTER_OP(
-      etvk.test_conv2d_q8ta_q8csw_q8to.default, test_conv2d_q8ta_q8csw_q8to);
+      etvk.test_conv2d_q8ta_q8csw_q8to.default,
+      test_conv2d_q8ta_q8csw_q8to_impl);
   VK_REGISTER_OP(et_vk.conv2d_q8ta_q8csw_q8to.default, conv2d_q8ta_q8csw_q8to);
   VK_REGISTER_OP(
       et_vk.conv2d_q8ta_q8csw_q8to_dw.default, conv2d_q8ta_q8csw_q8to);

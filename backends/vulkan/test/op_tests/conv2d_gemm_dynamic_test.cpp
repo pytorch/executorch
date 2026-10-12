@@ -10,7 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
 
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
