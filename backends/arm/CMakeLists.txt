@@ -266,6 +266,7 @@ if(EXECUTORCH_BUILD_VGF)
   # Add backend delegate for VGF
   set(_vgf_backend_sources
       backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFZeroCopy.cpp
       backends/arm/runtime/VGFNeuralStatistics.cpp
   )
   if(NOT EXECUTORCH_BUILD_VULKAN)
@@ -378,6 +379,25 @@ if(EXECUTORCH_BUILD_VGF)
       target_link_libraries(vgf_vulkan_features_test PRIVATE gtest gtest_main)
     endif()
     add_test(NAME vgf_vulkan_features_test COMMAND vgf_vulkan_features_test)
+
+    add_executable(
+      vgf_zero_copy_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_zero_copy_test.cpp
+    )
+    target_include_directories(
+      vgf_zero_copy_test PRIVATE ${_common_include_directories}
+                                 ${VULKAN_HEADERS_PATH} ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_zero_copy_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    target_link_libraries(vgf_zero_copy_test PRIVATE vgf_backend)
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_zero_copy_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_zero_copy_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_zero_copy_test COMMAND vgf_zero_copy_test)
   endif()
 
   # end config for VGF builds
