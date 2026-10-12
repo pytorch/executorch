@@ -34,18 +34,6 @@ def _get_attribute_or_constants(
     return constant_or_attribute
 
 
-def _replace_node(arg, old_node: torch.fx.Node, new_node: torch.fx.Node):
-    """Swap ``old_node`` for ``new_node`` inside a node argument.
-
-    An argument is not always the node itself: ops such as ``aten.cat`` take
-    their inputs as a list, so comparing the argument to the node directly
-    never matches and the user keeps pointing at the original.
-    """
-    if isinstance(arg, (list, tuple)):
-        return type(arg)([_replace_node(a, old_node, new_node) for a in arg])
-    return new_node if arg is old_node else arg
-
-
 # TODO: add other passes to duplicate call_function nodes
 def duplicate_constant_node(
     exported_program: ExportedProgram, candidate_node: str
@@ -109,24 +97,11 @@ def duplicate_constant_node(
                     copied_constant_or_attribute_node.meta["val"] = (
                         constant_or_attribute_node.meta["val"]
                     )
-                    new_args = tuple(
-                        _replace_node(
-                            arg,
-                            constant_or_attribute_node,
-                            copied_constant_or_attribute_node,
-                        )
-                        for arg in users[ith].args
+                    # Rewires the constant wherever it appears in the user's
+                    # args/kwargs, including inside lists such as aten.cat's.
+                    users[ith].replace_input_with(
+                        constant_or_attribute_node, copied_constant_or_attribute_node
                     )
-                    new_kwargs = {
-                        key: _replace_node(
-                            value,
-                            constant_or_attribute_node,
-                            copied_constant_or_attribute_node,
-                        )
-                        for key, value in users[ith].kwargs.items()
-                    }
-                    users[ith].args = new_args
-                    users[ith].kwargs = new_kwargs
                     if old_input_spec.kind == InputKind.CONSTANT_TENSOR:
                         exported_program.constants[copy_constant_or_attribute_fqn] = (
                             copy.deepcopy(constant_or_attribute)
