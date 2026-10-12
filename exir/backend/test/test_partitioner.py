@@ -36,6 +36,7 @@ from executorch.exir.backend.utils import (
     tag_mutated_buffer,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 from executorch.exir.tests.models import MLP
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
@@ -543,23 +544,8 @@ class TestPartitioner(unittest.TestCase):
             in str(error.exception),
         )
 
-    def test_duplicate_constant_used_in_list_arg(self):
-        """
-        A constant shared by two partitions is duplicated so each partition
-        owns a copy. The user's reference to it is not always the argument
-        itself: aten.cat takes a list, so the rewrite has to look inside it.
-        """
-
-        class SharedConstInCat(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.const = torch.ones(2, 2)
-
-            def forward(self, x):
-                return (
-                    torch.cat([x, self.const], dim=0),
-                    torch.cat([x + 1.0, self.const], dim=0),
-                )
+    def _lower_each_cat_separately(self, module, inputs):
+        """Lower every aten.cat into its own partition."""
 
         class PartitionerTagData(Partitioner):
             def __init__(self):
@@ -573,8 +559,6 @@ class TestPartitioner(unittest.TestCase):
                 self, edge_exported_program: ExportedProgram
             ) -> PartitionResult:
                 partition_tags = {}
-                # Put each cat in its own partition so the constant they share
-                # has two distinct user tags.
                 cat_index = 0
                 for node in edge_exported_program.graph.nodes:
                     if (
@@ -594,14 +578,132 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        inputs = (torch.ones(2, 2),)
-        edge = to_edge_transform_and_lower(
-            export(SharedConstInCat(), inputs, strict=True),
+        return to_edge_transform_and_lower(
+            export(module, inputs, strict=True),
             partitioner=[PartitionerTagData()],
         )
 
+    def _assert_each_delegate_owns_a_copy(self, edge, name, num_delegates):
+        """
+        Each delegate owns its own placeholder for the constant ``name``: the
+        original and then ``name_copy_0``, ``name_copy_1``, ... The top-level
+        program keeps none of them.
+        """
         graph_module = edge.exported_program().graph_module
-        self.assertEqual(len(get_delegates(graph_module.graph)), 2)
+        lowered_modules = get_lowered_backend_modules(graph_module)
+        self.assertEqual(len(lowered_modules), num_delegates)
+        owned = sorted(
+            [
+                node.name
+                for node in lowered.original_module.graph.nodes
+                if node.op == "placeholder" and node.name.startswith(name)
+            ]
+            for lowered in lowered_modules
+        )
+        expected = sorted(
+            [[name]] + [[f"{name}_copy_{i}"] for i in range(num_delegates - 1)]
+        )
+        self.assertEqual(owned, expected)
+        self.assertFalse(
+            any(
+                node.op == "placeholder" and node.name.startswith(name)
+                for node in graph_module.graph.nodes
+            )
+        )
+        return lowered_modules
+
+    def test_duplicate_constant_used_in_list_arg(self):
+        """
+        A constant shared by two partitions is duplicated so each partition
+        owns a copy. The user's reference to it is not always the argument
+        itself: aten.cat takes a list, so the rewrite has to look inside it.
+        """
+
+        class SharedConstInCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.ones(2, 2)
+
+            def forward(self, x):
+                return (
+                    torch.cat([x, self.const], dim=0),
+                    torch.cat([x + 1.0, self.const], dim=0),
+                )
+
+        edge = self._lower_each_cat_separately(SharedConstInCat(), (torch.ones(2, 2),))
+        self._assert_each_delegate_owns_a_copy(edge, "c_const", 2)
+
+    def test_duplicate_constant_repeated_in_one_list_arg(self):
+        """Every occurrence of the constant in the user's list is rewired."""
+
+        class RepeatedConstInCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.ones(2, 2)
+
+            def forward(self, x):
+                return (
+                    torch.cat([x, self.const], dim=0),
+                    torch.cat([x + 1.0, self.const, self.const], dim=0),
+                )
+
+        edge = self._lower_each_cat_separately(
+            RepeatedConstInCat(), (torch.ones(2, 2),)
+        )
+        lowered_modules = self._assert_each_delegate_owns_a_copy(edge, "c_const", 2)
+        occurrences = []
+        for lowered in lowered_modules:
+            (cat,) = [
+                node
+                for node in lowered.original_module.graph.nodes
+                if node.target == exir_ops.edge.aten.cat.default
+            ]
+            constants = [
+                arg
+                for arg in cat.args[0]
+                if arg.op == "placeholder" and arg.name.startswith("c_const")
+            ]
+            # Both occurrences point at the delegate's own placeholder.
+            self.assertEqual(len(set(constants)), 1)
+            occurrences.append(len(constants))
+        self.assertEqual(sorted(occurrences), [1, 2])
+
+    def test_duplicate_constant_shared_by_three_partitions(self):
+        class SharedConstInThreeCats(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.ones(2, 2)
+
+            def forward(self, x):
+                return (
+                    torch.cat([x, self.const], dim=0),
+                    torch.cat([x + 1.0, self.const], dim=0),
+                    torch.cat([x + 2.0, self.const], dim=0),
+                )
+
+        edge = self._lower_each_cat_separately(
+            SharedConstInThreeCats(), (torch.ones(2, 2),)
+        )
+        self._assert_each_delegate_owns_a_copy(edge, "c_const", 3)
+
+    def test_duplicate_shared_parameter_used_in_list_arg(self):
+        """A parameter is copied through the state_dict, not the constants."""
+
+        class SharedParamInCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.ones(2, 2))
+
+            def forward(self, x):
+                return (
+                    torch.cat([x, self.w], dim=0),
+                    torch.cat([x + 1.0, self.w], dim=0),
+                )
+
+        edge = self._lower_each_cat_separately(SharedParamInCat(), (torch.ones(2, 2),))
+        lowered_modules = self._assert_each_delegate_owns_a_copy(edge, "p_w", 2)
+        for lowered in lowered_modules:
+            self.assertIn("w", lowered.original_module.state_dict)
 
     def test_not_delegate_mutable_buffers(self) -> None:
         """
