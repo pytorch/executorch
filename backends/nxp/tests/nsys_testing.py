@@ -58,6 +58,8 @@ from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
 
+_USE_RECIPE_EXPORT = environ.get("NXP_USE_RECIPE_EXPORT", "0") == "1"
+
 logger = logging.getLogger(__name__)
 
 OUTPUTS_DIR = outputs_dir.OUTPUTS_DIR
@@ -403,7 +405,7 @@ def lower_run_compare(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
-    use_recipe_export: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -708,7 +710,7 @@ def lower_run_compare_ptq_qat(
     output_comparator=None,
     mocker: MockerFixture = None,
     operators_not_to_delegate: list[str] = None,
-    use_recipe_export: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ):
     """
     Run provided program twice and compare its results.
