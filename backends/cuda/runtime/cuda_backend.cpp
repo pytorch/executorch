@@ -478,6 +478,10 @@ class ET_EXPERIMENTAL CudaBackend final
     ET_LOG(Info, "container_handle = %p", container_handle);
 
     handle->container_handle = container_handle;
+    if (has_fqn_weights) {
+      handle->offgraph_kv_sizes =
+          CudaWeightCache::offgraph_kv_sizes(fqn_weights);
+    }
 
     // Runtime-owned off-graph buffers must capture their AOTI names before
     // the serialized constants update installs the ordinary weight set.

@@ -42,12 +42,8 @@ class TableVisitor(NodeVisitor):
             supported_input_dtypes.append(ts.DType.INT16)
             supported_output_dtypes.append(ts.DType.INT32)
 
-        validate_valid_dtype(
-            self.target, inputs, supported_input_dtypes, self.tosa_spec
-        )
-        validate_valid_dtype(
-            self.target, output, supported_output_dtypes, self.tosa_spec
-        )
+        validate_valid_dtype(self.target, inputs, supported_input_dtypes)
+        validate_valid_dtype(self.target, output, supported_output_dtypes)
 
         # The name of the table constant is a bit complex.
         # The name of the pytorch buffer will be the target of last node argument.
