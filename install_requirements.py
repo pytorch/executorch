@@ -22,11 +22,13 @@ CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
-# These wheels' metadata pairs August 11 domain libraries with August 10 torch.
+# Installed from the same channel and pinned the same way as the other CUDA versions,
+# but torch 2.14.0 has no CUDA 13.4 build there: 2.15.0 is the first release that does.
+# The domain libraries are the CUDA 13.4 builds on that channel.
 CU134_TORCH_PACKAGES = [
-    "torch==2.14.0.dev20260810+cu134",
-    "torchvision==0.29.0.dev20260811+cu134",
-    "torchaudio==2.11.0.dev20260811+cu134",
+    "torch==2.15.0",
+    "torchvision==0.29.2",
+    "torchaudio==2.11.1",
 ]
 
 
@@ -79,10 +81,8 @@ def install_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
     cu134_packages = cu134_requirements(torch_url)
-    if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
-        if not use_pytorch_nightly:
-            cu134_packages[0] = "torch"
+    if cu134_packages and not use_pytorch_nightly:
+        cu134_packages[0] = "torch"
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
@@ -176,13 +176,17 @@ def install_optional_example_requirements(use_pytorch_nightly):
         if use_pytorch_nightly
         else []
     )
+    # The CUDA 13.4 selection pins torchao too, which only its own channel carries.
+    torchao_index = []
     if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
-    torchao_index = (
-        ["--extra-index-url", f"{TORCHAO_URL_BASE}/cpu"]
-        if cu134_packages and platform.machine().lower() in ("aarch64", "arm64")
-        else []
-    )
+        torchao_index = [
+            "--extra-index-url",
+            (
+                f"{TORCHAO_URL_BASE}/cpu"
+                if platform.machine().lower() in ("aarch64", "arm64")
+                else determine_torch_url(TORCHAO_URL_BASE)
+            ),
+        ]
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = cu134_packages or [
