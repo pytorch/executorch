@@ -20,6 +20,7 @@ from executorch.examples.models.llama.llama_transformer import construct_transfo
 from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.model_identity import ModelFamily
 from torchao.utils import TorchAOBaseTensor
 
 from ..model_base import EagerModelBase
@@ -130,11 +131,11 @@ class Llama2Model(EagerModelBase):
 
         if model_args.use_scaled_rope:
             # Older models don't have use_scaled_rope configuration
-            model_name = self.llm_config.base.model_class.value
-            assert model_name not in ["llama2", "stories110m"]
+            model_family = self.llm_config.model_identity.family
+            assert model_family != ModelFamily.llama2
 
             # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
-            if model_name not in ["llama3", "llama3_1"]:
+            if model_family not in [ModelFamily.llama3, ModelFamily.llama3_1]:
                 model_args.rope_scale_factor = 32
 
         if self.verbose:
