@@ -2538,6 +2538,24 @@ class TestVulkanBackend(unittest.TestCase):
             def forward(self, x, weight, bias):
                 return torch.relu(F.instance_norm(x + 1.0, weight=weight, bias=bias))
 
+        # The repeats of the affine args are delegated while the norm is not, so
+        # these also check that the delegate still computes them.
+        class InstanceNorm1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm1d(8, affine=True)
+                torch.nn.init.normal_(self.norm.weight)
+                torch.nn.init.normal_(self.norm.bias)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        class ComputedWeightModule(InstanceNormModule):
+            def forward(self, x):
+                weight = self.norm.weight * 2
+                return F.instance_norm(x + 1.0, weight=weight, bias=self.norm.bias)
+
         cases = [
             ("batch_2", InstanceNormModule(), (torch.randn(2, 8, 5, 6),)),
             (
@@ -2545,6 +2563,8 @@ class TestVulkanBackend(unittest.TestCase):
                 InputAffineModule(),
                 (torch.randn(1, 8, 5, 6), torch.randn(8), torch.randn(8)),
             ),
+            ("instance_norm_1d", InstanceNorm1dModule(), (torch.randn(1, 8, 20),)),
+            ("computed_weight", ComputedWeightModule(), (torch.randn(1, 8, 5, 6),)),
         ]
         for name, model, sample_inputs in cases:
             with self.subTest(name):

@@ -1882,6 +1882,21 @@ def register_native_batch_norm_legit_no_training():
     )
 
 
+def unwrap_identity_repeat(arg: Any) -> Any:
+    """
+    Return the source of ``arg`` if it is a ``repeat`` whose every factor is 1
+    (its output shape matches its input shape), else ``arg`` itself.
+    """
+    if (
+        isinstance(arg, torch.fx.Node)
+        and arg.target == exir_ops.edge.aten.repeat.default
+        and isinstance(arg.args[0], torch.fx.Node)
+        and arg.args[0].meta["val"].shape == arg.meta["val"].shape
+    ):
+        return arg.args[0]
+    return arg
+
+
 def can_rewrite_batch_norm_as_group_norm(
     node: torch.fx.Node, constant_nodes: AbstractSet[torch.fx.Node]
 ) -> bool:
@@ -1914,19 +1929,12 @@ def can_rewrite_batch_norm_as_group_norm(
     # Group norm always applies an affine transform, so both weight and bias must
     # be present. add_native_group_norm_node() prepacks them, so each must be a
     # constant by the time group norm sees it. F.instance_norm passes
-    # weight.repeat(N): RemoveRedundantOpsTransform drops that repeat when N is 1,
-    # but for N above 1 it is a runtime tensor, so instance norm over a batch is
-    # rejected here. So are computed affine args and ones fed in as model inputs.
+    # weight.repeat(N): ReplaceInstanceNormPass looks through that repeat when N
+    # is 1, but for N above 1 it is a runtime tensor, so instance norm over a
+    # batch is rejected here. So are computed affine args and ones fed in as model
+    # inputs.
     for affine_arg in (node.args[1], node.args[2]):
-        if not isinstance(affine_arg, torch.fx.Node):
-            return False
-        if (
-            affine_arg.target == exir_ops.edge.aten.repeat.default
-            and isinstance(affine_arg.args[0], torch.fx.Node)
-            and affine_arg.args[0].meta["val"].shape == affine_arg.meta["val"].shape
-        ):
-            affine_arg = affine_arg.args[0]
-        if affine_arg not in constant_nodes:
+        if unwrap_identity_repeat(affine_arg) not in constant_nodes:
             return False
 
     # Only the normalized output may be consumed. Group norm returns mean and rstd

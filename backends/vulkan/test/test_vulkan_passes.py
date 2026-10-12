@@ -12,11 +12,24 @@ from executorch.backends.vulkan._passes.remove_redundant_ops import (
 from executorch.backends.vulkan._passes.replace_instance_norm import (
     ReplaceInstanceNormPass,
 )
-from executorch.backends.vulkan.op_registry import can_rewrite_batch_norm_as_group_norm
+from executorch.backends.vulkan.op_registry import (
+    can_rewrite_batch_norm_as_group_norm,
+    unwrap_identity_repeat,
+)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
+from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
+    extract_vk_flatbuffer,
+    flatbuffer_to_vk_graph,
+)
 from executorch.backends.vulkan.utils import get_constant_nodes
 
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -252,6 +265,28 @@ def batch_norm_no_stats_nodes(
         node
         for node in graph_module.graph.nodes
         if node.target == exir_ops.edge.aten._native_batch_norm_legit.no_stats
+    ]
+
+
+def lower_to_vulkan(
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor, ...],
+    **partitioner_kwargs,
+) -> EdgeProgramManager:
+    return to_edge_transform_and_lower(
+        torch.export.export(model, sample_inputs, strict=True),
+        compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        partitioner=[VulkanPartitioner(**partitioner_kwargs)],
+    )
+
+
+def vulkan_delegate_graphs(edge_program: EdgeProgramManager) -> List:
+    """The serialized VkGraph of every Vulkan delegate in the program."""
+    graph_module = edge_program.exported_program().graph_module
+    return [
+        flatbuffer_to_vk_graph(extract_vk_flatbuffer(module.processed_bytes))
+        for _, module in graph_module.named_children()
+        if hasattr(module, "processed_bytes")
     ]
 
 
@@ -1081,8 +1116,8 @@ class TestVulkanPasses(unittest.TestCase):
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)
 
-    def test_remove_identity_repeat(self):
-        """A repeat is dropped only when every repeat factor is 1."""
+    def test_unwrap_identity_repeat(self):
+        """Only a repeat whose every factor is 1 is looked through."""
 
         class RepeatModule(torch.nn.Module):
             def __init__(self, repeats):
@@ -1093,13 +1128,23 @@ class TestVulkanPasses(unittest.TestCase):
                 return x.repeat(*self.repeats) + 1.0
 
         # [1] keeps the shape, [2] doubles it, and [1, 1] raises [8] to [1, 8].
-        for repeats, expected in (([1], 0), ([2], 1), ([1, 1], 1)):
+        for repeats, unwraps in (([1], True), ([2], False), ([1, 1], False)):
             with self.subTest(repeats=repeats):
                 ep = export_to_edge(RepeatModule(repeats), (torch.rand(8),))
-                RemoveRedundantOpsTransform().call(ep.graph_module)
-                self.assertEqual(
-                    op_node_count(ep.graph_module, "repeat.default"), expected
-                )
+                (repeat,) = [
+                    node
+                    for node in ep.graph_module.graph.nodes
+                    if node.target == exir_ops.edge.aten.repeat.default
+                ]
+                expected = repeat.args[0] if unwraps else repeat
+                self.assertIs(unwrap_identity_repeat(repeat), expected)
+
+        # RemoveRedundantOpsTransform must keep identity repeats: if the repeat is
+        # delegated on its own, dropping it would make a constant the delegate's
+        # output, which nothing on the GPU writes.
+        ep = export_to_edge(RepeatModule([1]), (torch.rand(8),))
+        RemoveRedundantOpsTransform().call(ep.graph_module)
+        self.assertEqual(op_node_count(ep.graph_module, "repeat.default"), 1)
 
     def test_can_rewrite_batch_norm_as_group_norm(self):
         class InstanceNormModule(torch.nn.Module):
@@ -1186,12 +1231,13 @@ class TestVulkanPasses(unittest.TestCase):
         inputs = (torch.randn(1, 13, 7, 9),)
         ep = export_to_edge(model, inputs)
 
-        RemoveRedundantOpsTransform().call(ep.graph_module)
         replace_pass = ReplaceInstanceNormPass()
         replace_pass._exported_program = ep
         gm = replace_pass(ep.graph_module).graph_module
 
         self.assertEqual(batch_norm_no_stats_nodes(gm), [])
+        # The identity repeats of the affine args are looked through and dropped.
+        self.assertEqual(op_node_count(gm, "repeat.default"), 0)
         group_norms = [
             node
             for node in gm.graph.nodes
@@ -1206,3 +1252,57 @@ class TestVulkanPasses(unittest.TestCase):
             self.assertEqual(affine_arg.op, "placeholder")
 
         self.assertTrue(torch.allclose(ep.module()(*inputs), model(*inputs), atol=1e-5))
+
+    def test_instance_norm_delegates_have_no_constant_outputs(self):
+        """
+        Whether or not the instance norm is delegated, no delegate may output a
+        constant: nothing on the GPU writes it, so the CPU reads garbage.
+        """
+
+        class Conv1dInstanceNormModule(torch.nn.Module):
+            # A rank-3 instance norm is not rewritten and stays on the CPU, while
+            # the repeats of its affine args are delegated.
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm1d(8, affine=True)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        class ComputedWeightModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm2d(8, affine=True)
+
+            def forward(self, x):
+                return torch.nn.functional.instance_norm(
+                    self.conv(x), weight=self.norm.weight * 2, bias=self.norm.bias
+                )
+
+        class Conv2dInstanceNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm2d(8, affine=True)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        cases = [
+            ("instance_norm_1d", Conv1dInstanceNormModule(), (torch.randn(1, 8, 20),)),
+            ("computed_weight", ComputedWeightModule(), (torch.randn(1, 8, 6, 6),)),
+            ("rewritten", Conv2dInstanceNormModule(), (torch.randn(1, 8, 6, 6),)),
+        ]
+        for name, model, inputs in cases:
+            with self.subTest(name):
+                graphs = vulkan_delegate_graphs(lower_to_vulkan(model.eval(), inputs))
+                self.assertGreater(len(graphs), 0)
+                for graph in graphs:
+                    constant_outputs = [
+                        i
+                        for i in graph.output_ids
+                        if graph.values[i].value.constant_id >= 0
+                    ]
+                    self.assertEqual(constant_outputs, [])
