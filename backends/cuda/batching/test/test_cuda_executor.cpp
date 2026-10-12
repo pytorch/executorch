@@ -365,10 +365,14 @@ TEST_P(
   }
 }
 
-TEST_P(CudaExecutorTest, DeviceSamplerDrawsWhatTheHostSamplerDraws) {
-  if (std::string(GetParam()) != "device_sampling") {
-    GTEST_SKIP() << "needs the device samplers";
-  }
+// Only the device_sampling program has the device samplers, so this suite is
+// instantiated for it alone: a skipped instance would read, in CI, as the toy
+// programs missing.
+class CudaExecutorDeviceSamplingTest : public CudaExecutorTest {};
+
+TEST_P(
+    CudaExecutorDeviceSamplingTest,
+    DeviceSamplerDrawsWhatTheHostSamplerDraws) {
   // dense/ has the same forwards and samples on the host. With one seed per
   // session, both must draw every token alike, under every policy and mixed
   // greedy/stochastic rows.
@@ -421,3 +425,8 @@ INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorTest,
     ::testing::Values("dense", "sparse", "device_sampling"));
+
+INSTANTIATE_TEST_SUITE_P(
+    Toy,
+    CudaExecutorDeviceSamplingTest,
+    ::testing::Values("device_sampling"));

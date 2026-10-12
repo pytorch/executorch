@@ -195,7 +195,8 @@ void conv2d_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // SlidingWindow conv2d: route to the im2col + GEMM path when the heuristic
   // indicates it is beneficial, falling back to the direct convolution shader
   // otherwise.
-  const bool use_im2col = method == Conv2dMethod::SlidingWindow &&
+  const bool use_im2col =
+      method == Conv2dMethod::SlidingWindow &&
       should_use_conv2d_im2col(
           graph, weight_data, groups_val, kernel_params, out);
   if (use_im2col) {
