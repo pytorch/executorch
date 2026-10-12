@@ -41,7 +41,7 @@ The CUDA packages are built for Linux, on x86_64 and ARM64. Use the `cpu`
 variant on macOS and on Windows. If your CUDA version is not in the table,
 choose the closest lower one with the same major version, because CUDA works
 across minor versions but not across major ones. There is no package for CUDA 12,
-so on CUDA 12 use the `cpu` variant or build from source. On CUDA 13.0 or 13.1 no
+so on CUDA 12 use the `cpu` variant. On CUDA 13.0 or 13.1 no
 lower variant exists, so use `cu132`.
 
 To get a change that has landed on the `main` branch but is not in a release

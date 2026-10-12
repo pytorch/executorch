@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-ROCM_VERSION="${ROCM_VERSION:-7.2}"
+ROCM_VERSION="${ROCM_VERSION:-7.14}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
 EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
@@ -35,21 +35,21 @@ export HF_TOKEN
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
+from install_requirements import TORCHAO_NIGHTLY_VERSION
 from torch_pin import TORCH_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(TORCH_VERSION, TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
 TORCHAO_WHEEL="${TORCHAO_ROCM_WHEEL_BASE}/torchao-${TORCHAO_VERSION}"
-TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-cp310-abi3-manylinux_2_28_x86_64.whl"
+TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-py3-none-any.whl"
 python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
   "${TORCHAO_WHEEL}"
-# ExecuTorch requires torchao>=TORCHAO_NIGHTLY_VERSION, which has no ROCm build, so
-# install its other dependencies separately to keep the ROCm TorchAO wheel in place.
+# Install ExecuTorch's other dependencies separately so pip cannot swap the ROCm
+# TorchAO wheel for another build.
 python -m pip install --editable . --no-build-isolation --no-deps
 python - <<'PY' >"${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
 from importlib.metadata import requires

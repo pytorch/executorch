@@ -112,9 +112,17 @@ def update_pytorch_pin(commit_hash):
     print(f"Updated {pin_file} with commit hash: {commit_hash}")
 
 
+# The ROCm version the ROCm CI installs TorchAO for; keep in step with rocm.yml.
+ROCM_TORCHAO_CHANNEL = "rocm7.14"
+
+
 def get_supported_torchao_channels():
     cuda_versions = runpy.run_path("install_utils.py")["SUPPORTED_CUDA_VERSIONS"]
-    return ["cpu", *(f"cu{major}{minor}" for major, minor in cuda_versions)]
+    return [
+        "cpu",
+        *(f"cu{major}{minor}" for major, minor in cuda_versions),
+        ROCM_TORCHAO_CHANNEL,
+    ]
 
 
 def get_torchao_versions(channel):
@@ -132,7 +140,13 @@ def get_torchao_versions(channel):
         if match:
             wheel_tags.setdefault(match.group(1), set()).add(match.group(2))
 
-    required_tags = ("py3-none-any", "aarch64") if channel == "cpu" else ("x86_64",)
+    if channel == "cpu":
+        required_tags = ("py3-none-any", "aarch64")
+    elif channel.startswith("rocm"):
+        # ROCm TorchAO nightlies are pure Python.
+        required_tags = ("py3-none-any",)
+    else:
+        required_tags = ("x86_64",)
     return {
         version
         for version, tags in wheel_tags.items()
@@ -182,7 +196,7 @@ def update_torchao_pins(nightly_version, commit_hash):
     requirements_path = Path("install_requirements.py")
     content = requirements_path.read_text()
     content, replacements = re.subn(
-        r'^(?P<prefix>(?:CU\d+_)?TORCHAO_NIGHTLY_VERSION\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
+        r'^(?P<prefix>TORCHAO_NIGHTLY_VERSION\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
         rf"\g<prefix>{nightly_version}\g<suffix>",
         content,
         flags=re.MULTILINE,
