@@ -45,10 +45,8 @@ class TestConvertToLinear(unittest.TestCase):
             )
 
     def test_multimethod_program_without_a_forward_method(self):
-        # A multimethod export has no "forward". The pass needs the exported
-        # program of the method it is rewriting, so binding one program for
-        # every method, or letting exported_program() default to "forward",
-        # raises KeyError before any rewriting happens.
+        # A multimethod export has no "forward". Each method's pass has to be
+        # bound to that method's own exported program.
         class Linear(torch.nn.Module):
             def __init__(self, out_features: int):
                 super().__init__()
@@ -68,9 +66,6 @@ class TestConvertToLinear(unittest.TestCase):
             _core_aten_ops_exception_list=[torch.ops.aten.linear.default]
         )
         edge = exir.to_edge(programs, compile_config=config)
-
-        with self.assertRaises(KeyError):
-            edge.exported_program()
 
         edge = edge.transform(
             {

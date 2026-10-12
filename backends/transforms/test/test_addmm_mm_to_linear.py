@@ -125,6 +125,26 @@ class TestAddmmToLinearTransform(unittest.TestCase):
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
 
+    def test_dequantized_runtime_input_stays_a_matmul(self):
+        # A dequantize is only constant when what it reads is: here it reads a
+        # value produced at runtime, so the matmul must stay a matmul.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("scale", torch.rand(4) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, dtype=torch.int8))
+
+            def forward(self, x, w_int):
+                w = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                    w_int + 1, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        w_int = torch.randint(-128, 126, (4, 8), dtype=torch.int8)
+        graph = self._transform(Model().eval(), (torch.randn(2, 8), w_int))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
     def test_computed_weight_stays_a_matmul(self):
         # `w` is produced at runtime, so the transposed matmul below is not a
         # linear: backends prepack a linear's weight while building their graph
@@ -137,7 +157,7 @@ class TestAddmmToLinearTransform(unittest.TestCase):
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
 
-    def test_computed_bias_operand_stays_an_addmm(self):
+    def test_computed_addmm_weight_stays_an_addmm(self):
         class Model(torch.nn.Module):
             def forward(self, x, w, b):
                 return torch.addmm(b, x, (w * 2.0).t())
