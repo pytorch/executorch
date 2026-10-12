@@ -64,7 +64,9 @@ backends/arm/
 │   └── quantization_annotator.py  # Defines how operators are annotated for quantization
 │
 ├── runtime/                       # Backends for running inference on target devices
-│   ├── EthosUBackend.cpp
+│   ├── EthosUBackend.cpp          # Common Ethos-U backend implementation
+│   ├── EthosUBackend_CoreDriver.cpp
+│   ├── EthosUBackend_LinuxDriver.cpp
 │   └── VGFBackend.cpp
 │
 ├── scripts/                       # Auxiliary build, dependency installation and utility scripts
@@ -78,6 +80,21 @@ backends/arm/
 │
 └── vgf/                           # Implementations of VgfPartitioner and VgfBackend
 ```
+
+### Ethos-U runtime drivers
+
+The common `EthosUBackend.cpp` runtime is paired with one driver-specific
+implementation:
+
+- `EthosUBackend_CoreDriver.cpp` calls the Ethos-U core driver directly for
+  bare-metal (no-OS) and RTOS targets. CMake selects it when
+  `EXECUTORCH_BUILD_ARM_BAREMETAL` is enabled.
+- `EthosUBackend_LinuxDriver.cpp` uses the Ethos-U Linux userspace and kernel
+  driver stack. CMake selects it when `EXECUTORCH_BUILD_ARM_ETHOSU_LINUX` is
+  enabled.
+
+The two implementations provide the same internal platform hooks and are
+mutually exclusive in a build.
 
 ## Building
 
