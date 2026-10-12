@@ -242,6 +242,11 @@
     - arg_meta: null
       kernel_name: impl::HiFi::pow_Tensor_Tensor_out
 
+- op: relu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::relu_out
+
 - op: remainder.Tensor_out
   kernels:
     - arg_meta: null
