@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import executorch.extension.pybindings.portable_lib
+import executorch.extension.pybindings.portable_lib  # noqa F401
 import executorch.kernels.quantized  # noqa F401
 from executorch.backends.nxp.backend.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -20,8 +20,11 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNet
 def test_conv_fc_softmax__to_executorch_program(use_qat):
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)
+    train_fn = lambda m: None if use_qat else None  # noqa E731
 
-    exec_prog = to_quantized_executorch_program(model, input_shape, use_qat=use_qat)
+    exec_prog = to_quantized_executorch_program(
+        model, input_shape, use_qat=use_qat, train_fn=train_fn
+    )
 
     program = exec_prog.exported_program()
     assert (
@@ -40,8 +43,14 @@ def test_conv_fc_softmax__to_executorch_program(use_qat):
 def test_cifarnet(use_qat):
     model = CifarNet().get_eager_model().eval()
     input_shape = (1, 3, 32, 32)
+    train_fn = lambda m: None if use_qat else None  # noqa E731
+
     exec_prog = to_quantized_executorch_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
+        model,
+        input_shape,
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
+        train_fn=train_fn,
     )
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
