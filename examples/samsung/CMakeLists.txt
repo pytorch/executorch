@@ -211,18 +211,20 @@ target_link_libraries(
           -Wl,--no-whole-archive
 )
 
-# Public shared library exposing the C API in ennllm.h. Bundles all
+# Public shared library exposing the C API in exynos_llm_wrapper.h. Bundles all
 # dependencies so only the .so + header need to be shipped to third parties.
-add_library(ennllm SHARED ${CMAKE_CURRENT_LIST_DIR}/executor_runner/ennllm.cpp)
+add_library(
+  exynos_llm_wrapper SHARED
+  ${CMAKE_CURRENT_LIST_DIR}/executor_runner/exynos_llm_wrapper.cpp
+)
 
-target_compile_definitions(ennllm PRIVATE EXECUTORCH_VERSION=2)
+target_compile_definitions(exynos_llm_wrapper PRIVATE EXECUTORCH_VERSION=2)
 target_include_directories(
-  ennllm
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/executor_runner
+  exynos_llm_wrapper PUBLIC ${CMAKE_CURRENT_LIST_DIR}/executor_runner
 )
 
 target_link_libraries(
-  ennllm
+  exynos_llm_wrapper
   PUBLIC enn_llm_runner
   PRIVATE log
           gflags
@@ -243,5 +245,20 @@ target_link_libraries(
 )
 
 set_target_properties(
-  ennllm PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON
+  exynos_llm_wrapper PROPERTIES CXX_VISIBILITY_PRESET hidden
+                                VISIBILITY_INLINES_HIDDEN ON
+)
+
+# Sample CLI consuming the public exynos_llm_wrapper C API (same shape as an app
+# using libexynos_llm_wrapper.so). Links the shared lib so it coexists with the
+# all-in-one enn_executor_llm_runner.
+add_executable(
+  exynos_llm_wrapper_sample
+  ${CMAKE_CURRENT_LIST_DIR}/executor_runner/exynos_llm_wrapper_sample_main.cpp
+)
+
+target_link_libraries(exynos_llm_wrapper_sample PRIVATE exynos_llm_wrapper)
+
+set_target_properties(
+  exynos_llm_wrapper_sample PROPERTIES CXX_VISIBILITY_PRESET hidden
 )

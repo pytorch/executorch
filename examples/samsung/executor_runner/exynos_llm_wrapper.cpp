@@ -6,7 +6,7 @@
  * across generate() calls so consecutive inferences do not re-prepare.
  */
 
-#include <executorch/examples/samsung/executor_runner/ennllm.h>
+#include <executorch/examples/samsung/executor_runner/exynos_llm_wrapper.h>
 
 #include <executorch/runtime/platform/log.h>
 

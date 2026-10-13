@@ -2,9 +2,12 @@
  * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
- * Public C API for the Exynos LLM runner.
+ * Public C API wrapping the Exynos LLM runner.
  *
- * Only these symbols are exported from libennllm.so. The underlying
+ * Provided as a reference for porting the Exynos LLM runner into an Android
+ * app.
+ *
+ * Only these symbols are exported from libexynos_llm_wrapper.so. The underlying
  * implementation (model loading, ENN backend, tokenizer, KV-cache) is kept
  * internal to the library.
  *
@@ -13,8 +16,8 @@
  * reloading or re-preparing the models.
  */
 
-#ifndef ENNLLM_H_
-#define ENNLLM_H_
+#ifndef EXYNOS_LLM_WRAPPER_H_
+#define EXYNOS_LLM_WRAPPER_H_
 
 #include <stdint.h>
 
@@ -23,9 +26,9 @@ extern "C" {
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
-#define ENN_API __attribute__((visibility("default")))
+#define EXYNOS_LLM_WRAPPER_API __attribute__((visibility("default")))
 #else
-#define ENN_API
+#define EXYNOS_LLM_WRAPPER_API
 #endif
 
 /** Values returned by the API functions. 0 = OK, non-zero = error. */
@@ -59,7 +62,7 @@ typedef struct enn_runner enn_runner;
  * @param vision_model_path Vision encoder .pte, or NULL => text-only runner.
  * @return A handle on success, NULL on failure.
  */
-ENN_API enn_runner* enn_llm_create(
+EXYNOS_LLM_WRAPPER_API enn_runner* enn_llm_create(
     const char* model_path,
     const char* data_path,
     const char* tokenizer_path,
@@ -68,10 +71,10 @@ ENN_API enn_runner* enn_llm_create(
     const char* vision_model_path);
 
 /** Destroy the runner and release all resources. Safe to call with NULL. */
-ENN_API void enn_llm_destroy(enn_runner* runner);
+EXYNOS_LLM_WRAPPER_API void enn_llm_destroy(enn_runner* runner);
 
 /** Request the runner to stop current generation. */
-ENN_API void enn_llm_stop(enn_runner* runner);
+EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
 
 /**
  * Generate a response for prompt (optionally with an image). The models stay
@@ -93,7 +96,7 @@ ENN_API void enn_llm_stop(enn_runner* runner);
  * @param userdata Opaque pointer passed through to on_token.
  * @return ENN_OK on success, an ENN_ERR_* code otherwise.
  */
-ENN_API int32_t enn_llm_generate(
+EXYNOS_LLM_WRAPPER_API int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,
     const char* image_path,
@@ -110,4 +113,4 @@ ENN_API int32_t enn_llm_generate(
 }
 #endif
 
-#endif // ENNLLM_H_
+#endif // EXYNOS_LLM_WRAPPER_H_
