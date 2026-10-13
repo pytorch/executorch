@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Samsung Electronics Co. LTD
+ * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -24,21 +24,18 @@ DEFINE_string(
 
 DEFINE_string(data_path, "", "Data file for the model.");
 
-DEFINE_string(
-    tokenizer_type,
-    "tiktoken",
-    "Tokenizer type. One of ['bpe', 'tiktoken'].");
+DEFINE_string(pos_embedding_path, "", "rotary embedding stuff.");
 
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
-DEFINE_string(pos_embedding_path, "", "rotary embedding stuff.");
+DEFINE_string(config_path, "", "Path to the model configuration JSON file.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
 DEFINE_double(
     temperature,
-    0.8f,
-    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+    0.8,
+    "Temperature; Default is 0.8. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 
 DEFINE_int32(
     seq_len,
@@ -60,50 +57,41 @@ DEFINE_int32(
     0,
     "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
 
-DEFINE_bool(warmup, false, "Whether to run a warmup run.");
+DEFINE_bool(is_warmup, false, "Whether to run a warmup run.");
 
-DEFINE_bool(decode_only, false, "Whether to run with decode method only.");
-
-DEFINE_bool(use_gemma, false, "Use Gemma model specific processing.");
+DEFINE_bool(is_decode_only, false, "Whether to run with decode method only.");
 
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Create a loader to get the data of the program file. There are other
-  // DataLoaders that use mmap() or point32_t to data that's already in memory,
-  // and users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
-
   std::optional<std::string> data_path = std::nullopt;
   if (!FLAGS_data_path.empty()) {
     data_path = FLAGS_data_path.c_str();
   }
-
-  const char* tokenizer_type = FLAGS_tokenizer_type.c_str();
-
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
-
   std::optional<const std::string> pos_embedding_path =
-      FLAGS_pos_embedding_path.empty() ? std::nullopt
-                                       : std::make_optional(FLAGS_pos_embedding_path.c_str());
+      FLAGS_pos_embedding_path.empty()
+      ? std::nullopt
+      : std::make_optional(FLAGS_pos_embedding_path.c_str());
 
-  ET_LOG(Info, "prompt : %s", FLAGS_prompt.c_str());
+  const char* config_path = FLAGS_config_path.c_str();
+
   const char* prompt = FLAGS_prompt.c_str();
 
-  float temperature = FLAGS_temperature;
+  if (FLAGS_prompt.empty()) {
+    ET_LOG(Error, "Input prompt cannot be empty.");
+    return static_cast<int32_t>(executorch::runtime::Error::InvalidArgument);
+  }
+  ET_LOG(Info, "Input prompt message: %s", prompt);
 
+  float temperature = static_cast<float>(FLAGS_temperature);
   int32_t seq_len = FLAGS_seq_len;
-
   int32_t cpu_threads = FLAGS_cpu_threads;
 
-  bool warmup = FLAGS_warmup;
-
-  bool decode_only = FLAGS_decode_only;
-
-  bool use_gemma = FLAGS_use_gemma;
+  bool is_warmup = FLAGS_is_warmup;
+  bool is_decode_only = FLAGS_is_decode_only;
 
   int num_bos = FLAGS_num_bos;
-
   int num_eos = FLAGS_num_eos;
 
 #if defined(ET_USE_THREADPOOL)
@@ -118,45 +106,28 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
 
-  // create llama runner
   example::RunnerPaths runner_paths{
       .model_path = model_path,
       .tokenizer_path = tokenizer_path,
       .pos_embedding_path = pos_embedding_path,
       .data_path = data_path};
   example::RunnerConfig runner_config{
-      .tokenizer_type = tokenizer_type,
-      .decode_only = decode_only,
-      .use_gemma = use_gemma};
-  std::unique_ptr<llm::IRunner> runner = example::create_llama_runner(runner_paths, runner_config);
+      .config_path = config_path, .is_decode_only = is_decode_only};
+  std::unique_ptr<llm::IRunner> runner =
+      example::create_llama_runner(runner_paths, runner_config);
+  ET_CHECK_MSG(runner != nullptr, "Failed to create llama runner");
 
-  if (runner == nullptr) {
-    ET_LOG(Error, "Failed to create llama runner");
-    return 1;
-  }
+  // TODO: support warmup interface
 
-  if (warmup) {
-    ET_LOG(
-        Info,
-        "Can not support warm-up (TODO : IRunner doesn't have warmup interface (pure virtual)");
-#if 0
-    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
-    if (error != executorch::runtime::Error::Ok) {
-      ET_LOG(Error, "Failed to warmup llama runner");
-      return 1;
-    }
-#endif
-  }
-
-  // generate
   executorch::extension::llm::GenerationConfig config{
-      .seq_len = seq_len, .temperature = temperature,
-      .num_bos = num_bos, .num_eos = num_eos};
+      .seq_len = seq_len,
+      .temperature = temperature,
+      .num_bos = num_bos,
+      .num_eos = num_eos};
   auto error = runner->generate(prompt, config, {}, {});
-  if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(Error, "Failed to generate token from llama runner");
-    return 1;
-  }
+  ET_CHECK_MSG(
+      error == executorch::runtime::Error::Ok,
+      "Failed to generate token from llama runner");
 
   return 0;
 }

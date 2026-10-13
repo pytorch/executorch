@@ -16,12 +16,15 @@
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/token_generator.h>
 
 namespace example {
 
 namespace llm = ::executorch::extension::llm;
+namespace runtime = ::executorch::runtime;
+namespace extension = ::executorch::extension;
 
 /**
  * @brief Holds path-related configuration for creating a llama runner.
@@ -37,10 +40,32 @@ struct RunnerPaths {
  * @brief Holds non-path configuration for creating a llama runner.
  */
 struct RunnerConfig {
-  std::string tokenizer_type;
-  bool decode_only = false;
-  bool use_gemma = false;
+  std::string config_path;
+  bool is_decode_only = false;
   float temperature = -1.0f;
+
+  // Strategies
+  DecoderModelVersion model_version = DecoderModelVersion::kLlama3;
+  EmbeddingStrategy embedding_strategy = EmbeddingStrategy::kGlobalOnly;
+  MaskingStrategy masking_strategy = MaskingStrategy::kCausal;
+
+  // Parsed from JSON
+  int64_t hidden_dim = 0;
+  int64_t n_heads = 0;
+  int64_t n_kv_heads = 0;
+  int64_t n_layers = 0;
+  int64_t head_dim = 0;
+  int64_t vocab_size = 0;
+  int64_t max_seq_len = 128;
+  int64_t max_context_len = 128;
+  int64_t prefill_seq_len = 128;
+  int64_t decode_seq_len = 1;
+  int64_t attn_mask_rows = 128;
+  int64_t attn_mask_cols = 1024;
+  std::optional<int64_t> sliding_window;
+  std::string tokenizer_type;
+
+  void load_from_json();
 };
 
 class LLMRunner : public llm::IRunner {
@@ -70,7 +95,7 @@ class LLMRunner : public llm::IRunner {
   explicit LLMRunner(
       std::unordered_map<std::string, int64_t> metadata,
       std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-      std::unique_ptr<::executorch::extension::Module> module,
+      std::unique_ptr<extension::Module> module,
       std::unique_ptr<llm::TextDecoderRunner> text_decoder_runner,
       std::unique_ptr<llm::TextPrefiller> text_prefiller,
       std::unique_ptr<example::TokenGenerator> text_token_generator,
@@ -92,7 +117,7 @@ class LLMRunner : public llm::IRunner {
    *
    * @return ::executorch::runtime::Error Success or error status
    */
-  ::executorch::runtime::Error load();
+  runtime::Error load();
   /**
    * @brief Generates text based on the provided prompt
    *
@@ -109,7 +134,7 @@ class LLMRunner : public llm::IRunner {
    * @param stats_callback Function called with performance statistics
    * @return ::executorch::runtime::Error Success or error status
    */
-  ::executorch::runtime::Error generate(
+  runtime::Error generate(
       const std::string& prompt,
       const llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
@@ -132,7 +157,7 @@ class LLMRunner : public llm::IRunner {
    * @param stats_callback Function called with performance statistics
    * @return ::executorch::runtime::Error Success or error status
    */
-  ::executorch::runtime::Error generate_from_pos(
+  runtime::Error generate_from_pos(
       const std::string& prompt,
       int64_t start_pos,
       const llm::GenerationConfig& config,
@@ -149,9 +174,7 @@ class LLMRunner : public llm::IRunner {
    * @param max_new_tokens Maximum number of tokens to generate during warmup
    * @return ::executorch::runtime::Error Success or error status
    */
-  ::executorch::runtime::Error warmup(
-      const std::string& prompt,
-      int32_t max_new_tokens);
+  runtime::Error warmup(const std::string& prompt, int32_t max_new_tokens);
   /**
    * @brief Stops the ongoing text generation process
    *
@@ -159,6 +182,19 @@ class LLMRunner : public llm::IRunner {
    * terminate the current generation process.
    */
   void stop();
+
+  /**
+   * @brief Formats the prompt based on the model version.
+   *
+   * @param prompt The input text
+   * @param system_prompt The system prompt (optional)
+   * @param version The version of the decoder model
+   * @return Formatted prompt string
+   */
+  static std::string get_formatted_prompt(
+      const std::string& prompt,
+      const std::string& system_prompt,
+      DecoderModelVersion version);
 
   /**
    * @brief Force remove prefilled tokens and reset KV cache start position
@@ -174,7 +210,7 @@ class LLMRunner : public llm::IRunner {
   // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
-  std::unique_ptr<::executorch::extension::Module>
+  std::unique_ptr<extension::Module>
       module_; // Manage module's lifecycle, make sure it outlives
                // text_decoder_runner_llm::.
   std::unique_ptr<llm::TextDecoderRunner>
@@ -191,10 +227,11 @@ class LLMRunner : public llm::IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
+  DecoderModelVersion model_version_ = DecoderModelVersion::kLlama3;
 };
 
 std::unique_ptr<llm::IRunner> create_llama_runner(
     const RunnerPaths& paths,
-    const RunnerConfig& config);
+    RunnerConfig config);
 
 } // namespace example

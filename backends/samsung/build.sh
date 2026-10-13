@@ -108,7 +108,6 @@ function build_android() {
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DBUILD_TESTING=OFF \
-        -DPYTHON_EXECUTABLE=python \
         -S ${PROJECT_DIR} \
         -B ${ANDROID_BUILD_DIR}
 

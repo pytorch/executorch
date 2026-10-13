@@ -14,8 +14,13 @@
 
 namespace example {
 
+namespace llm = ::executorch::extension::llm;
+namespace runtime = ::executorch::runtime;
+namespace aten = ::executorch::aten;
+namespace extension = ::executorch::extension;
+
 Prefiller::Prefiller(
-    executorch::extension::llm::TextDecoderRunner* text_decoder_runner,
+    llm::TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
     bool enable_parallel_prefill,
     int64_t max_seq_len)
@@ -29,7 +34,7 @@ Prefiller::Prefiller(
       enable_parallel_prefill_(enable_parallel_prefill),
       max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
 
-::executorch::runtime::Result<uint64_t> Prefiller::prefill(
+runtime::Result<uint64_t> Prefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
@@ -37,10 +42,8 @@ Prefiller::Prefiller(
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
   }
 
-  // Check if we need to chunk the prompt tokens
-  int32_t num_prompt_tokens = prompt_tokens.size();
-
   // If prompt tokens exceed max_seq_len_, we need to chunk them
+  int32_t num_prompt_tokens = prompt_tokens.size();
   ET_LOG(
       Info,
       "Micro Batch: num_prompt(%d), prefill::max_seq_len(%ld), start_pos(%ld)",
@@ -64,14 +67,13 @@ Prefiller::Prefiller(
               num_tokens_to_prefill_with,
           prompt_tokens_to_process.begin());
 
-      // Process this chunk
       auto chunk_result = prefill_chunk(prompt_tokens_to_process, start_pos);
       ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
       cur_token = chunk_result.get();
 
-      //if (enable_parallel_prefill_) {
-      //  start_pos += num_tokens_to_prefill_with;
-      //}
+      if (enable_parallel_prefill_) {
+        start_pos += num_tokens_to_prefill_with;
+      }
       num_tokens_to_process += num_tokens_to_prefill_with;
     }
 
@@ -82,7 +84,7 @@ Prefiller::Prefiller(
   }
 }
 
-::executorch::runtime::Result<uint64_t> Prefiller::prefill_chunk(
+runtime::Result<uint64_t> Prefiller::prefill_chunk(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
@@ -93,10 +95,10 @@ Prefiller::Prefiller(
   uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
-    auto tokens = executorch::extension::from_blob(
+    auto tokens = extension::from_blob(
         prompt_tokens.data(),
         {1, static_cast<int>(prompt_tokens.size())},
-        executorch::aten::ScalarType::Long);
+        aten::ScalarType::Long);
 
     auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
 
@@ -120,8 +122,8 @@ Prefiller::Prefiller(
 
     // initialize tensor wrappers
     // TODO(sicheon.oh) : Set tensor size by metadata::get_prefill_ar_len
-    auto tokens = executorch::extension::from_blob(
-        &cur_token, {1, 1}, executorch::aten::ScalarType::Long);
+    auto tokens =
+        extension::from_blob(&cur_token, {1, 1}, aten::ScalarType::Long);
 
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.

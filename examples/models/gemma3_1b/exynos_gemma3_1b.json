@@ -1,0 +1,21 @@
+{
+  "model_id": "exynos_gemma3_1b",
+  "description": "Exynos Optimized Gemma3 1B Configuration",
+  "hidden_dim": 1152,
+  "n_heads": 4,
+  "n_kv_heads": 1,
+  "n_layers": 26,
+  "head_dim": 256,
+  "vocab_size": 262144,
+  "max_seq_len": 1024,
+  "max_context_len": 8192,
+  "embedding_strategy": "global_and_local",
+  "masking_strategy": "causal_local",
+  "model_version": "gemma3",
+  "tokenizer_type": "hf",
+  "prefill_seq_len": 128,
+  "decode_seq_len": 1,
+  "attn_mask_rows": 128,
+  "attn_mask_cols": 1024,
+  "sliding_window": 512
+}
