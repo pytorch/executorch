@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -287,11 +288,10 @@ std::vector<ValueId> output_ids(const Node& node) {
   std::vector<ValueId> ids;
   for (const Output& output : node.outputs) {
     if (output.kind == OutputValueKind::TensorList) {
-      for (const ValueId id : output.elem_ids) {
-        if (valid(id)) {
-          ids.push_back(id);
-        }
-      }
+      std::ranges::copy_if(
+          output.elem_ids, std::back_inserter(ids), [](ValueId id) {
+            return valid(id);
+          });
     } else if (valid(output.value_id)) {
       ids.push_back(output.value_id);
     }
@@ -599,10 +599,11 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void execute() override {
-    for (const InputSlot& input : inputs_) {
-      if (input.bytes.size() != checked_nbytes(input.sizes, input.meta.dtype)) {
-        throw std::logic_error("ggml: every input must be set before execute");
-      }
+    if (std::ranges::any_of(inputs_, [](const InputSlot& input) {
+          return input.bytes.size() !=
+              checked_nbytes(input.sizes, input.meta.dtype);
+        })) {
+      throw std::logic_error("ggml: every input must be set before execute");
     }
 
     ggml_backend_sched_reset(scheduler_.get());
@@ -739,11 +740,10 @@ class GgmlExecutable final : public EngineExecutable {
     }
     backends_.push_back(std::move(cpu));
 
-    std::vector<ggml_backend_t> raw;
-    raw.reserve(backends_.size());
-    for (const auto& backend : backends_) {
-      raw.push_back(backend.get());
-    }
+    std::vector<ggml_backend_t> raw(backends_.size());
+    std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
+      return backend.get();
+    });
     scheduler_.reset(ggml_backend_sched_new(
         raw.data(),
         nullptr,
@@ -2041,10 +2041,10 @@ class GraphBuilder {
     auto* data = reinterpret_cast<ggml_fp16_t*>(upload.bytes.data());
     for (int64_t query = 0; query < tokens; ++query) {
       for (int64_t key = 0; key < keys; ++key) {
-        const float value = key <= start + query
+        const float bias = key <= start + query
             ? 0.0f
             : -std::numeric_limits<float>::infinity();
-        data[query * keys + key] = ggml_fp32_to_fp16(value);
+        data[query * keys + key] = ggml_fp32_to_fp16(bias);
       }
     }
     instance_.uploads.push_back(std::move(upload));
@@ -2525,6 +2525,7 @@ ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options) {
       " GPU devices registered by the linked ggml backends)");
 }
 
+// cppcheck-suppress unusedFunction
 std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Method& method,
     const Package& package,
