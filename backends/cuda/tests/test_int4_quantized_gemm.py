@@ -642,9 +642,12 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             traced.append(kernel)
             return wrap(kernel)
 
+        # Through the op, whose eager path runs the autotuner itself, so the
+        # first call tunes and caches its pick (wrap_triton's eager path tunes a
+        # fresh copy on every call and would never reuse it).
         with mock.patch.object(quantized_gemm_family, "wrap_triton", recording):
             for _ in range(3):
-                out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
+                out = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
         autotuner = int4_kernel._W4A16_DIRECT_KERNELS[bucket]
         tuned = [kernel for kernel in traced if kernel is not autotuner]
         self.assertGreaterEqual(len(tuned), 2)
