@@ -286,9 +286,11 @@ class TestProgram {
     inputs_.push_back(name);
   }
 
-  void buffer(const std::string& name, const std::vector<int64_t>& shape) {
-    placeholder(
-        name, create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape));
+  void buffer(
+      const std::string& name,
+      const std::vector<int64_t>& shape,
+      fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+    placeholder(name, create_tensor_meta(builder_, dtype, shape));
     buffers_.push_back(
         fbs::CreateMutableBufferSpecDirect(
             builder_, name.c_str(), name.c_str()));
@@ -862,6 +864,64 @@ TEST(GgmlEngineTest, CopyingViewsOfABufferKeepTheOldValue) {
       EXPECT_EQ(std::accumulate(old.begin(), old.end(), 0.0f), expected_sum);
     }
   }
+}
+
+// Rows [3, 4) of an F16 cache = (2 * x or a buffer) cast to F16. The CPY into
+// the cache converts a fresh source itself, but a buffer could change before
+// the write, so its cast stays.
+TEST(GgmlEngineTest, Fp16CacheUpdateSkipsCastOfFreshSource) {
+  const auto run = [](const char* rows, std::vector<float>& cache) {
+    TestProgram program;
+    program.input("x", fbs::ScalarType::FLOAT, {1, 1, 2, 4});
+    program.buffer("state", {1, 1, 2, 4});
+    program.buffer("cache", {1, 8, 2, 4}, fbs::ScalarType::HALF);
+    program.call(
+        "doubled",
+        "torch.ops.aten.mul.Tensor",
+        {{"self", std::string("x")}, {"other", 2.0}},
+        fbs::ScalarType::FLOAT,
+        {1, 1, 2, 4});
+    program.call(
+        "half",
+        "torch.ops.aten._to_copy.default",
+        {{"self", std::string(rows)}},
+        fbs::ScalarType::HALF,
+        {1, 1, 2, 4});
+    program.call(
+        "updated",
+        "torch.ops.llama.update_cache.default",
+        {{"value", std::string("half")},
+         {"cache", std::string("cache")},
+         {"start_pos", int64_t{3}}},
+        fbs::ScalarType::HALF,
+        {1, 1, 2, 4});
+    program.call(
+        "result",
+        "torch.ops.aten._to_copy.default",
+        {{"self", std::string("cache")}},
+        fbs::ScalarType::FLOAT,
+        {1, 8, 2, 4});
+    auto host =
+        GgmlEngineHost::create(GgmlEngineOptions{.print_graph_ops = true});
+    auto context = make_context(*host, program.finish("result"));
+    auto executable = context->compile("forward");
+    const std::vector<float> x(8, 1.0f / 3);
+    executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+    ::testing::internal::CaptureStderr();
+    executable->execute();
+    const std::string ops = ::testing::internal::GetCapturedStderr();
+    executable->get_output(0, cache.data(), cache.size(), ScalarType::Float);
+    const size_t cpy = ops.find(" CPY=");
+    return cpy == std::string::npos ? -1 : std::stoi(ops.substr(cpy + 5));
+  };
+  std::vector<float> cache(64);
+  const int fresh_copies = run("doubled", cache);
+  for (size_t i = 0; i < cache.size(); ++i) {
+    SCOPED_TRACE(i);
+    // 2 / 3 rounded to F16.
+    EXPECT_EQ(cache[i], i / 8 == 3 ? 1365.0f / 2048 : 0.0f);
+  }
+  EXPECT_EQ(run("state", cache), fresh_copies + 1);
 }
 
 TEST(GgmlEngineTest, RejectsDtypesGgmlCannotConvert) {

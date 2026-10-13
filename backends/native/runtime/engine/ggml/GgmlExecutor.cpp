@@ -2654,10 +2654,12 @@ class GraphBuilder {
     const size_t offset = static_cast<size_t>(start) * cache.tensor->nb[2];
     ggml_tensor* destination =
         view_with_shape(instance_.context.get(), cache.tensor, sizes, offset);
+    ggml_tensor* source = cache.tensor->type == GGML_TYPE_F16
+        ? skip_f16_cast(update.tensor)
+        : update.tensor;
     invalidate_cached_transforms(destination);
     mark_written(destination);
-    ggml_tensor* write =
-        ggml_cpy(instance_.context.get(), update.tensor, destination);
+    ggml_tensor* write = ggml_cpy(instance_.context.get(), source, destination);
     expand_write(write);
     const std::vector<ValueId> ids = output_ids(node);
     if (!ids.empty()) {
@@ -2959,6 +2961,25 @@ class GraphBuilder {
     set_single_output(node, TensorRef{result, input.sizes});
   }
 
+  // set_rows rounds F32 rows into an F16 destination exactly like a cast, so
+  // it can read a fresh F32 -> F16 cast's source directly. ggml_cast is a CPY
+  // whose destination is its own result. Skipping the cast moves the read of
+  // its source to the set_rows, so a source in a persistent buffer or in
+  // storage the graph writes in place keeps its cast.
+  ggml_tensor* skip_f16_cast(ggml_tensor* rows) const {
+    ggml_tensor* source = rows->src[0];
+    if (rows->type != GGML_TYPE_F16 || rows->op != GGML_OP_CPY ||
+        rows->src[1] != rows || source->type != GGML_TYPE_F32 ||
+        !ggml_are_same_shape(rows, source) ||
+        !ggml_is_contiguous_rows(source)) {
+      return rows;
+    }
+    const ggml_tensor* root = storage_root(source);
+    return persistent_storage_.contains(root) || written_storage_.contains(root)
+        ? rows
+        : source;
+  }
+
   void lower_index_put(const Node& node) {
     const TensorRef self = tensor_arg(node, "self", 0);
     const Argument& indices_arg = require_arg(node, "indices", 1).arg;
@@ -2992,6 +3013,9 @@ class GraphBuilder {
     ggml_tensor* rows = values.tensor->type == GGML_TYPE_F16
         ? values.tensor
         : as_f32(values.tensor);
+    if (self.tensor->type == GGML_TYPE_F16) {
+      rows = skip_f16_cast(rows);
+    }
     invalidate_cached_transforms(self.tensor);
     mark_written(self.tensor);
     ggml_tensor* result = ggml_set_rows(
