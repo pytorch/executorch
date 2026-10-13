@@ -251,6 +251,19 @@ class NodeVisitor:
             # OI (pytorch) -> OI (QNN)
             quant_config[QCOM_AXIS] = 0
             quant_config[QCOM_AXIS_ORDER] = (0, 1)
+            # QNN HTP FullyConnected + BLOCKWISE_EXPANSION sizes the per-channel
+            # scale arrays by in_features instead of out_features, so it reads
+            # past them and stray heap values intermittently drop the bias
+            # (T291919349). Zero-pad to in_features so the over-read is benign.
+            in_features = node.meta["val"].shape[1]
+            if in_features > num_channels:
+                pad = in_features - num_channels
+                scale_offset_arr = np.concatenate(
+                    [scale_offset_arr, np.zeros(pad, dtype=scale_offset_arr.dtype)]
+                )
+                q_scales = torch.cat(
+                    [q_scales, q_scales.new_zeros((pad, q_scales.shape[1]))]
+                )
         else:
             raise AttributeError("undetermined axis for block quantization")
 
