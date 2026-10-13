@@ -62,7 +62,6 @@ Error EnnExecutor::initialize(
         ET_CHECK_OR_RETURN_ERROR(
             ret == ENN_RET_SUCCESS, Internal, "Open model with weights failed.");
         ET_LOG(Info, "Opened model from file descriptor with weights");
-        sm_instance->free(ptd_buffer->va);
         sm_instance->free(pte_buffer->va);
       } else {
         ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
