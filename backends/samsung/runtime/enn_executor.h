@@ -7,10 +7,8 @@
  *
  */
 #pragma once
-
 #include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/enn_type.h>
-
 #include <vector>
 
 namespace torch {
@@ -25,6 +23,12 @@ struct DataBuffer {
 class EnnExecutor {
  public:
   Error initialize(const char* binary_buf_addr, size_t buf_size);
+  Error initialize(
+      const char* binary_buf_addr,
+      size_t buf_size,
+      const char* weight_buf_addr,
+      size_t weight_size,
+      bool use_weight_fd);
 
   Error eval(
       const std::vector<DataBuffer>& inputs,

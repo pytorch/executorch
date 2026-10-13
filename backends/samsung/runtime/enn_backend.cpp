@@ -13,9 +13,11 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/profiler.h>
 
 #include <memory>
+#include <queue>
 #include <vector>
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
@@ -23,12 +25,21 @@
 namespace torch {
 namespace executor {
 
+using executorch::runtime::NamedDataMap;
+
+const char ennWeightBufferKey[] = "enn_weight_buffer_hash_id";
+
 class EnnBackend final : public PyTorchBackendInterface {
  public:
   ~EnnBackend() = default;
 
   bool is_available() const override {
     return true;
+  }
+
+  std::string decode_spec_value(const CompileSpec& spec) const {
+    const char* char_ptr = static_cast<const char*>(spec.value.buffer);
+    return std::string(char_ptr, spec.value.nbytes);
   }
 
   Result<DelegateHandle*> init(
@@ -41,12 +52,40 @@ class EnnBackend final : public PyTorchBackendInterface {
     const char* binary_buf_addr =
         reinterpret_cast<const char*>(processed->data());
     size_t buf_size = processed->size();
-    Error err = executor->initialize(binary_buf_addr, buf_size);
-    if (err != Error::Ok) {
-      ENN_LOG_ERROR("Exynos backend initialize failed.");
-      executor->~EnnExecutor();
-      return err;
+    const NamedDataMap* named_data_map = context.get_named_data_map();
+
+    auto it = std::find_if(
+        compile_specs.begin(),
+        compile_specs.end(),
+        [](const CompileSpec& spec) {
+          return std::strcmp(spec.key, ennWeightBufferKey) == 0;
+        });
+
+    if (it != compile_specs.end()) {
+      std::string weight_key = decode_spec_value(*it);
+      ET_LOG(
+          Info, "EnnBackend, Weight Buffer Enabled for %s", weight_key.c_str());
+      Result<FreeableBuffer> weight =
+          named_data_map->get_data(weight_key.c_str());
+      const char* weight_buf_addr =
+          reinterpret_cast<const char*>(weight->data());
+      size_t weight_size = weight->size();
+      Error err = executor->initialize(
+          binary_buf_addr, buf_size, weight_buf_addr, weight_size, true);
+      if (err != Error::Ok) {
+        ENN_LOG_ERROR("Exynos backend initialize failed.");
+        executor->~EnnExecutor();
+        return err;
+      }
+    } else {
+      Error err = executor->initialize(binary_buf_addr, buf_size);
+      if (err != Error::Ok) {
+        ENN_LOG_ERROR("Exynos backend initialize failed.");
+        executor->~EnnExecutor();
+        return err;
+      }
     }
+
     return executor;
   }
 
@@ -88,6 +127,7 @@ class EnnBackend final : public PyTorchBackendInterface {
       executor->~EnnExecutor();
     }
   }
+
 }; // namespace executor
 
 namespace {
