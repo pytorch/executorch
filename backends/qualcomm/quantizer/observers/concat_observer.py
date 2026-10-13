@@ -94,8 +94,8 @@ class ConcatObserver(UniformQuantizationObserverBase):
                 if isinstance(observers, FakeQuantizeBase)
                 else observers
             )
-            target.min_val = self.min_val
-            target.max_val = self.max_val
+            target.min_val.copy_(self.min_val)
+            target.max_val.copy_(self.max_val)
 
         return x_orig
 
@@ -125,7 +125,9 @@ def concat_observer_ctr(node_name, graph, output_activation):
     same max-range-of-all-inputs behavior ConcatObserver gives PTQ.
     """
     kwargs = {"node_name": node_name, "graph": graph}
-    base = getattr(output_activation.observer_or_fake_quant_ctr, "p", None)
-    if base is not None and issubclass(base.func, FakeQuantizeBase):
+    ctr = output_activation.observer_or_fake_quant_ctr
+    # unwrap _PartialWrapper if present, otherwise use the class directly
+    unwrapped = getattr(getattr(ctr, "p", None), "func", ctr)
+    if isinstance(unwrapped, type) and issubclass(unwrapped, FakeQuantizeBase):
         return ConcatFakeQuantize.with_args(**kwargs)
     return ConcatObserver.with_args(**kwargs)
