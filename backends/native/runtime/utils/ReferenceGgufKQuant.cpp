@@ -148,15 +148,18 @@ void decode_rows(
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 bool is_gguf_kquant(std::string_view codec) {
   return codec == kQ4K || codec == kQ6K;
 }
 
+// cppcheck-suppress unusedFunction
 size_t gguf_kquant_row_nbytes(std::string_view codec, int64_t cols) {
   return static_cast<size_t>(blocks_per_row(cols)) *
       codec_of(codec).block_bytes;
 }
 
+// cppcheck-suppress unusedFunction
 void decode_gguf_kquant(
     std::string_view codec,
     const uint8_t* data,
