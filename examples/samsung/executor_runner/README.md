@@ -25,3 +25,10 @@ For example:
 - Llama 3 1B: `examples/models/llama3_1b/exynos_llama3_1b.json`
 
 Ensure these files are pushed to the target device (e.g., to `/data/local/tmp/`) before running the script.
+
+## `exynos_llm_wrapper` library (app-porting reference)
+
+`libexynos_llm_wrapper.so` is a reference for porting the Exynos LLM runner into
+an Android app: a small public C API (`exynos_llm_wrapper.h`) that hides the
+runner internals behind an opaque handle. `exynos_llm_wrapper_sample` is a CLI
+that exercises the same API on-device.
