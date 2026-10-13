@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
 #include <executorch/runtime/core/error.h>
 #include <memory>
 #include <optional>
@@ -40,6 +40,7 @@ class RotaryEmbedding {
 
  private:
   Config config_;
+  bool loaded_ = false;
   std::unique_ptr<char[]> global_cos_;
   std::unique_ptr<char[]> global_sin_;
   std::unique_ptr<char[]> local_cos_;

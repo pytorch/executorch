@@ -8,6 +8,7 @@ MODEL_PATH=/data/local/tmp/gemma3/gemma3.pte
 WEIGHT_SHARED_MODEL_PATH=/data/local/tmp/gemma3/weights.ptd
 TOKENIZER_PATH=/data/local/tmp/gemma3/tokenizer.json
 POS_EMBEDDING_PATH=/data/local/tmp/gemma3/pos_embedding.bin
+CONFIG_PATH="/data/local/tmp/exynos_gemma3_1b.json"
 
 SEQ_LEN=1024
 TEMPERATURE=0
@@ -23,7 +24,6 @@ chmod +x enn_executor_llm_runner
     --temperature=$TEMPERATURE \
     --num_bos=$NUM_BOS \
     --pos_embedding_path=$POS_EMBEDDING_PATH \
-    --tokenizer_type="$TOKENIZER_TYPE" \
     --tokenizer_path=$TOKENIZER_PATH \
     --prompt="$INPUT_PROMPT" \
     --config_path "$CONFIG_PATH"

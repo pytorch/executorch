@@ -9,7 +9,7 @@
 // Given a text prompt, encode it using tokenizer and prefill the KV cache of a
 // LLM.
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
 #include <algorithm>
 
 namespace example {
