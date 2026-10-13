@@ -24,6 +24,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -69,11 +70,10 @@ std::vector<std::string> split(const std::string& list, char delimiter) {
 }
 
 size_t numel_of(const std::vector<int64_t>& sizes) {
-  size_t numel = 1;
-  for (const int64_t size : sizes) {
-    numel *= static_cast<size_t>(size);
-  }
-  return numel;
+  return std::accumulate(
+      sizes.begin(), sizes.end(), size_t{1}, [](size_t numel, int64_t size) {
+        return numel * static_cast<size_t>(size);
+      });
 }
 
 std::vector<int64_t> parse_sizes(const std::string& shape) {
