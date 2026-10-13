@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <executorch/backends/native/runtime/Method.h>
@@ -557,6 +558,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
   // Chosen memory layout per native value; channels-packed backbone by default.
   std::vector<utils::GPUMemoryLayout> layout_;
   std::vector<utils::StorageType> storage_;
+  // Views of dynamically shaped sources that now run as copies. They keep
+  // their source's layout as the views did, while other copies, such as
+  // clone, may convert layouts.
+  std::unordered_set<NodeId> view_copies_;
   MemoryPlan memory_plan_;
   VkRef none_ref_ = -1;
   // Staging refs, aligned to inputs_ / outputs_.
@@ -871,7 +876,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
       for (const NodeId node_id : nodes_) {
         const Node& node = g().node(node_id);
         if (node.is_call() &&
-            preserves_packed_layout(registry_key(node.target)) &&
+            (preserves_packed_layout(registry_key(node.target)) ||
+             view_copies_.contains(node_id)) &&
             node_is_width(node)) {
           changed |= mark_node_width(node);
         }
@@ -937,6 +943,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
         }
         if (storage_at(id) != storage_at(source)) {
           storage_at(id) = storage_at(source);
+          changed = true;
+        }
+      }
+      // ET-VK's copy kernels for these views read and write one storage type.
+      for (const NodeId node_id : view_copies_) {
+        const Node& node = g().node(node_id);
+        const ValueId in_id = node.inputs.at(0).arg.as_tensor().id;
+        const ValueId out_id = node.outputs.at(0).value_id;
+        if (storage_at(in_id) != storage_at(out_id)) {
+          storage_at(in_id) = utils::kBuffer;
+          storage_at(out_id) = utils::kBuffer;
           changed = true;
         }
       }
@@ -2012,8 +2029,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
   void build(const Package& package) {
     check_mutation_outputs();
-    assign_layouts();
+    // Unmarking first lets views that feed a functional in-place op become
+    // copies too; layout assignment then sees the final aliases.
     unmark_functional_in_place_mutations();
+    for (const NodeId id :
+         vulkan::materialize_dynamic_view_copies(method_.graph)) {
+      view_copies_.insert(id);
+    }
+    assign_layouts();
     materialize_packed_views();
     detach_in_place_outputs();
     index_output_kinds();
