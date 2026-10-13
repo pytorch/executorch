@@ -30,6 +30,15 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(config_path, "", "Path to the model configuration JSON file.");
 
+DEFINE_string(vision_model_path, "", "Path to the Gemma 4 vision encoder PTE.");
+
+DEFINE_string(image_path, "", "Path to an input image (Gemma 4 multimodal).");
+
+DEFINE_string(
+    prompt_before_image,
+    "",
+    "Text placed before the image in the user turn (Gemma 4 multimodal).");
+
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
 DEFINE_double(
@@ -77,6 +86,10 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   const char* config_path = FLAGS_config_path.c_str();
+  std::optional<std::string> vision_model_path = std::nullopt;
+  if (!FLAGS_vision_model_path.empty()) {
+    vision_model_path = FLAGS_vision_model_path;
+  }
 
   const char* prompt = FLAGS_prompt.c_str();
 
@@ -112,9 +125,14 @@ int32_t main(int32_t argc, char** argv) {
       .model_path = model_path,
       .tokenizer_path = tokenizer_path,
       .pos_embedding_path = pos_embedding_path,
-      .data_path = data_path};
+      .data_path = data_path,
+      .vision_model_path = vision_model_path};
   example::RunnerConfig runner_config{
-      .config_path = config_path, .is_decode_only = is_decode_only};
+      .config_path = config_path,
+      .is_decode_only = is_decode_only,
+      .verbose = true,
+      .image_path = FLAGS_image_path,
+      .prompt_before_image = FLAGS_prompt_before_image};
   std::unique_ptr<llm::IRunner> runner =
       example::create_llm_runner(runner_paths, std::move(runner_config));
   ET_CHECK_MSG(runner != nullptr, "Failed to create LLM runner");

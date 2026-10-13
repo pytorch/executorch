@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace example {
 
@@ -28,6 +29,15 @@ inline constexpr auto kNumOfKVHeads = "get_n_kv_heads";
 inline constexpr auto default_method_name = "forward";
 inline constexpr auto default_method_name_prefill = "prefill_forward";
 inline constexpr auto default_method_name_decode = "decode_forward";
+
+// Gemma 4 multimodal special tokens (matches the model's tokenizer).
+inline constexpr int64_t kGemma4PadId = 0;
+inline constexpr int64_t kGemma4BosId = 2;
+inline constexpr int64_t kGemma4TurnStartId = 105; // <|turn|
+inline constexpr int64_t kGemma4TurnEndId = 106; // <turn|>
+inline constexpr int64_t kGemma4ImageTokenId = 258880;
+inline constexpr int64_t kGemma4BoiTokenId = 255999; // <|boi|>
+inline constexpr int64_t kGemma4EoiTokenId = 258882; // <|eoi|>
 
 enum class DecoderModelVersion {
   kLlama3,
@@ -185,6 +195,7 @@ class RunnerPaths {
   std::string tokenizer_path;
   std::optional<std::string> pos_embedding_path = std::nullopt;
   std::optional<std::string> data_path = std::nullopt;
+  std::optional<std::string> vision_model_path = std::nullopt;
 };
 
 class BaseModelArgs {
@@ -232,6 +243,23 @@ class BaseModelArgs {
   }
   virtual std::optional<int64_t> get_sliding_window() const {
     return std::nullopt;
+  }
+  // Number of trailing layers that reuse (share) KV cache from earlier layers
+  // and therefore do not maintain their own externally-managed cache.
+  virtual int64_t get_num_kv_shared_layers() const {
+    return 0;
+  }
+  // Per-layer head dimension. Defaults to a uniform head_dim; models with
+  // mixed local/global attention (e.g. Gemma 4) override this.
+  virtual int64_t get_head_dim_for_layer(int64_t layer_idx) const {
+    (void)layer_idx;
+    return get_head_dim();
+  }
+  // Layers that actually produce/consume an externally-managed KV cache
+  // (the leading self-decoder layers). Shared layers are handled inside the
+  // delegate and are not cached by the runner.
+  int64_t get_num_cache_layers() const {
+    return get_n_layers() - get_num_kv_shared_layers();
   }
 };
 
@@ -397,6 +425,14 @@ class Gemma4Args : public BaseModelArgs {
   int64_t attn_mask_rows = 128;
   int64_t attn_mask_cols = 1024;
 
+  // YOCO KV sharing: the last num_kv_shared_layers reuse earlier layers' KV.
+  int64_t num_kv_shared_layers = 0;
+  // Attention pattern period (every pattern-th layer is full_attention).
+  int64_t sliding_window_pattern = 5;
+  // Parsed from "layer_types"; true where the layer uses full (global)
+  // attention. Empty falls back to the sliding_window_pattern derivation.
+  std::vector<bool> is_full_attention;
+
   int64_t get_hidden_dim() const override {
     return text_config.hidden_size;
   }
@@ -427,11 +463,25 @@ class Gemma4Args : public BaseModelArgs {
   std::optional<int64_t> get_sliding_window() const override {
     return text_config.sliding_window;
   }
+  // Attention mask spans [prefill_seq_len, max_seq_len] (rows x cols).
   int64_t get_attn_mask_rows() const override {
-    return attn_mask_rows;
+    return get_prefill_seq_len();
   }
   int64_t get_attn_mask_cols() const override {
-    return attn_mask_cols;
+    return text_config.max_seq_len;
+  }
+  int64_t get_num_kv_shared_layers() const override {
+    return num_kv_shared_layers;
+  }
+  int64_t get_head_dim_for_layer(int64_t layer_idx) const override {
+    bool full;
+    if (layer_idx >= 0 &&
+        layer_idx < static_cast<int64_t>(is_full_attention.size())) {
+      full = is_full_attention[layer_idx];
+    } else {
+      full = ((layer_idx + 1) % sliding_window_pattern == 0);
+    }
+    return full ? text_config.global_head_dim : text_config.head_dim;
   }
 };
 
@@ -440,6 +490,13 @@ class RunnerConfig {
   std::string config_path;
   bool is_decode_only = false;
   float temperature = -1.0f;
+
+  // Stream generated tokens to stdout (in addition to the token callback).
+  bool verbose = false;
+
+  // Vision inputs (Gemma 4 multimodal). Empty image_path => text-only.
+  std::string image_path;
+  std::string prompt_before_image;
 
   // Strategies
   EmbeddingStrategy embedding_strategy = EmbeddingStrategy::kGlobalOnly;

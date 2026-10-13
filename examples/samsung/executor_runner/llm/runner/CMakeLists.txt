@@ -26,6 +26,8 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/prefiller.cpp
   ${CMAKE_CURRENT_LIST_DIR}/io_manager.cpp
   ${CMAKE_CURRENT_LIST_DIR}/rotary_embedding.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/vision_encoder.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/stb_image_impl.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp
 )
 
@@ -87,5 +89,6 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../extension/llm/tokenizers/third-party/json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/samsung/executor_runner/llm/runner
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../third-party/stb
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../extension/llm/runner
 )
