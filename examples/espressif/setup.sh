@@ -35,6 +35,7 @@ done
 tools_dir="${ESPRESSIF_TOOLS_DIR:-${HOME}/.cache/executorch-espressif}"
 idf_version=v6.1
 emulator_version=0.48.0
+emulator_installer_sha256=7d116867e9a54b8ab90b12fffec93eb5782b3b01f74191078be5278fa6fd5688
 mkdir -p "${tools_dir}"
 tools_dir=$(cd "${tools_dir}" && pwd)
 
@@ -77,6 +78,15 @@ if "${install_emulator}"; then
     curl --fail --silent --show-error --location --retry 3 \
         "https://raw.githubusercontent.com/espressif/esp-emulator/v${emulator_version}/install.sh" \
         -o "${tools_dir}/install-esp-emu.sh"
+    python - "${tools_dir}/install-esp-emu.sh" "${emulator_installer_sha256}" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+installer = Path(sys.argv[1])
+if hashlib.sha256(installer.read_bytes()).hexdigest() != sys.argv[2]:
+    sys.exit(f"Checksum mismatch for {installer}; refusing to execute it.")
+PY
     sh "${tools_dir}/install-esp-emu.sh" --version "${emulator_version}" \
         --bin-dir "${tools_dir}/bin" --quiet
     "${tools_dir}/bin/esp-emu" --version

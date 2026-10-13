@@ -42,7 +42,7 @@ cmake --preset esp-baremetal -G Ninja -B "${build_dir}/runtime" \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF \
     -DEXECUTORCH_SELECT_OPS_LIST=aten::add.out,aten::mul.out \
     2>&1 | tee "${build_dir}/runtime-configure.log"
-cmake --build "${build_dir}/runtime" --parallel 8 \
+cmake --build "${build_dir}/runtime" \
     2>&1 | tee "${build_dir}/runtime-build.log"
 cmake --install "${build_dir}/runtime" \
     2>&1 | tee "${build_dir}/runtime-install.log"
@@ -55,7 +55,7 @@ idf.py -C examples/espressif/project -B "${build_dir}/firmware" \
     -DET_BUNDLE_IO=ON -DET_NUM_INFERENCES=3 \
     -DET_ATOL=0.000001 -DET_RTOL=0.000001 reconfigure \
     2>&1 | tee "${build_dir}/firmware-configure.log"
-cmake --build "${build_dir}/firmware" --parallel 8 \
+cmake --build "${build_dir}/firmware" \
     2>&1 | tee "${build_dir}/firmware-build.log"
 idf.py -C examples/espressif/project -B "${build_dir}/firmware" merge-bin \
     2>&1 | tee "${build_dir}/firmware-merge.log"

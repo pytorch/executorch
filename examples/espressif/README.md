@@ -157,10 +157,9 @@ Output[0][7]: (float) 2.000000
 ExecuTorch needs to be cross-compiled for the ESP32 target (Xtensa architecture).
 
 The `esp-baremetal` preset sets `CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY`
-so CMake's header and type checks compile without linking executables. With
-ESP-IDF v5.5.5, those standalone probes fail with `cannot find @/ldflags` because
-they lack the ESP-IDF project's linker configuration. This causes valid headers
-and types to be reported as missing and prevents configuration from completing.
+so CMake's header and type checks compile without linking executables. These
+standalone probes lack the ESP-IDF project's linker configuration; requiring
+an executable link can incorrectly report valid headers and types as missing.
 
 ### Using the ESP-IDF toolchain
 
@@ -201,7 +200,8 @@ bash examples/espressif/setup.sh
 source ~/.cache/executorch-espressif/setup_path.sh
 ```
 
-The installer uses ESP-IDF **v6.1** and esp-emulator **0.48.0**. ESP-IDF's Python
+The installer uses ESP-IDF **v6.1** and esp-emulator **0.48.0**, verifying the
+emulator installer's pinned SHA-256 checksum before running it. ESP-IDF's Python
 dependencies are installed into your active environment, so the SDK and
 ExecuTorch share the same Python. The generated `setup_path.sh` adds the installed
 tools to `PATH` and selects the ESP32-S3 target. In a new shell, activate the same
@@ -238,6 +238,9 @@ only needed when the model or its test data changes.
 
 ### 3. Build the runtime
 
+Ninja chooses the default build parallelism. Set `CMAKE_BUILD_PARALLEL_LEVEL`
+to limit the number of concurrent build jobs; the CI wrapper honors it too.
+
 ```bash
 cmake --preset esp-baremetal -G Ninja -B cmake-out-esp-emulator/runtime \
     -DCMAKE_TOOLCHAIN_FILE="$IDF_PATH/tools/cmake/toolchain-esp32s3.cmake" \
@@ -245,7 +248,7 @@ cmake --preset esp-baremetal -G Ninja -B cmake-out-esp-emulator/runtime \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF \
     -DEXECUTORCH_SELECT_OPS_LIST=aten::add.out,aten::mul.out
-cmake --build cmake-out-esp-emulator/runtime --parallel 8
+cmake --build cmake-out-esp-emulator/runtime
 cmake --install cmake-out-esp-emulator/runtime
 ```
 
@@ -259,7 +262,7 @@ idf.py -C examples/espressif/project -B "$PWD/cmake-out-esp-emulator/firmware" \
     -DET_PTE_FILE_PATH="$PWD/cmake-out-esp-emulator/smoke.bpte" \
     -DET_BUNDLE_IO=ON -DET_NUM_INFERENCES=3 \
     -DET_ATOL=0.000001 -DET_RTOL=0.000001 reconfigure
-cmake --build cmake-out-esp-emulator/firmware --parallel 8
+cmake --build cmake-out-esp-emulator/firmware
 idf.py -C examples/espressif/project -B "$PWD/cmake-out-esp-emulator/firmware" merge-bin
 ```
 
@@ -290,8 +293,10 @@ python examples/espressif/test_emulator.py emulator.log
 ```
 
 This check uses only the Python standard library. It requires the ESP platform
-hooks, PSRAM initialization, three completed inferences, matching bundled
-outputs, and firmware completion. A missing success marker or failed comparison
+hooks, PSRAM initialization, completion of all requested inferences, matching
+bundled outputs, and firmware completion. The completed inference count must
+match the count announced by the firmware, so changing `ET_NUM_INFERENCES` does
+not require changing this checker. A missing success marker or failed comparison
 fails the test. This also detects incomplete runs when the emulator's optional
 `--timeout` returns exit status zero. The check can be rerun on a saved log
 without rebuilding or starting the emulator.
