@@ -28,6 +28,7 @@ import concurrent.futures
 import contextlib
 import contextvars
 import inspect
+import logging
 import os
 import threading
 import typing
@@ -47,6 +48,8 @@ except ImportError:  # A Triton without parallel compile compiles each config on
 # Threads that compile one kernel's autotune configs. Compiling is mostly ptxas
 # and LLVM, which run outside the GIL.
 _MAX_COMPILE_THREADS = 32
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _resolved_signature(prototype) -> inspect.Signature:
@@ -205,7 +208,14 @@ def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
     if not _has_untuned_configs(kernel, args, kwargs):
         return False
     key = _tuning_key(kernel, args, kwargs)
-    kernel.warmup(*args, grid=(1,), **kwargs)
+    try:
+        kernel.warmup(*args, grid=(1,), **kwargs)
+    except Exception as error:  # noqa: BLE001 - precompiling only saves time
+        # The timed launch compiles this candidate's configs itself.
+        logger.warning(
+            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
+        )
+        return False
     _COMPILED_AHEAD.setdefault(kernel, set()).add(key)
     return True
 
@@ -230,8 +240,15 @@ def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
         if not compiled_keys:
             del _COMPILED_AHEAD[kernel]
         return
-    with _compile_pool():
-        kernel.warmup(*args, grid=(1,), **kwargs)
+    try:
+        with _compile_pool():
+            kernel.warmup(*args, grid=(1,), **kwargs)
+    except Exception as error:  # noqa: BLE001 - precompiling only saves time
+        # The launch compiles and benchmarks the configs itself, as without
+        # precompiling, and reports a real problem there.
+        logger.warning(
+            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
+        )
 
 
 # Set while every @autotune_launch_param candidate makes one untimed call: the
