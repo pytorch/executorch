@@ -146,11 +146,10 @@ std::vector<uint8_t> make_q4_k_linear_program(
     const std::vector<flatbuffers::Offset<fbs::Output>> cache_outputs = {
         fbs::CreateOutputDirect(builder, "cache"),
     };
-    values.push_back(
-        fbs::CreateTensorValueDirect(
-            builder,
-            "cache",
-            create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 256})));
+    values.push_back(fbs::CreateTensorValueDirect(
+        builder,
+        "cache",
+        create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 256})));
     nodes.insert(
         nodes.begin(),
         fbs::CreateNodeDirect(
@@ -210,12 +209,11 @@ std::unique_ptr<GgmlEngineContext> make_context(
       packed_weight.begin(),
       packed_weight.end(),
       safetensors.end() - packed_weight.size());
-  auto package = std::make_shared<const Package>(Package::load(
-      OwnedBytes::from_vector(
-          testing::make_zip({
-              {kProgramEntry, program_bytes},
-              {kSafeTensorsEntry, std::move(safetensors)},
-          }))));
+  auto package = std::make_shared<const Package>(
+      Package::load(OwnedBytes::from_vector(testing::make_zip({
+          {kProgramEntry, program_bytes},
+          {kSafeTensorsEntry, std::move(safetensors)},
+      }))));
   auto program = std::make_shared<const Program>(
       Program::load(program_bytes.data(), program_bytes.size()));
   return host.create_ggml_context(std::move(program), std::move(package));
@@ -247,9 +245,8 @@ class TestProgram {
   void buffer(const std::string& name, const std::vector<int64_t>& shape) {
     placeholder(
         name, create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape));
-    buffers_.push_back(
-        fbs::CreateMutableBufferSpecDirect(
-            builder_, name.c_str(), name.c_str()));
+    buffers_.push_back(fbs::CreateMutableBufferSpecDirect(
+        builder_, name.c_str(), name.c_str()));
   }
 
   // Each execution ends by writing value `value` to buffer `name`.
@@ -266,9 +263,8 @@ class TestProgram {
     const auto meta =
         create_tensor_meta(builder_, fbs::ScalarType::BYTE, {1, 256}, quant);
     placeholder(name, meta);
-    bindings_.push_back(
-        fbs::CreateNamedTensorRefDirect(
-            builder_, name.c_str(), "weight", meta, fbs::InputKind::PARAMETER));
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_, name.c_str(), "weight", meta, fbs::InputKind::PARAMETER));
   }
 
   void call(
@@ -279,25 +275,20 @@ class TestProgram {
       const std::vector<int64_t>& shape) {
     std::vector<flatbuffers::Offset<fbs::NamedArgument>> named;
     for (const auto& [arg_name, arg] : args) {
-      named.push_back(
-          fbs::CreateNamedArgumentDirect(
-              builder_, arg_name.c_str(), create_arg(arg)));
+      named.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, arg_name.c_str(), create_arg(arg)));
     }
-    values_.push_back(
-        fbs::CreateTensorValueDirect(
-            builder_,
-            name.c_str(),
-            create_tensor_meta(builder_, dtype, shape)));
+    values_.push_back(fbs::CreateTensorValueDirect(
+        builder_, name.c_str(), create_tensor_meta(builder_, dtype, shape)));
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder_, name.c_str())};
-    nodes_.push_back(
-        fbs::CreateNodeDirect(
-            builder_,
-            name.c_str(),
-            fbs::OpKind::CALL_FUNCTION,
-            target,
-            &named,
-            &outputs));
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        target,
+        &named,
+        &outputs));
   }
 
   std::vector<uint8_t> finish(
@@ -312,13 +303,11 @@ class TestProgram {
         output_inputs;
     for (const auto& [name, value] : mutations_) {
       outputs.push_back(value);
-      returned.push_back(
-          fbs::CreateNamedArgumentDirect(
-              builder_, "", create_tensor_arg(builder_, value.c_str())));
+      returned.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, "", create_tensor_arg(builder_, value.c_str())));
     }
-    nodes_.push_back(
-        fbs::CreateNodeDirect(
-            builder_, "output", fbs::OpKind::OUTPUT, "", &returned));
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_, "output", fbs::OpKind::OUTPUT, "", &returned));
     const auto graph = fbs::CreateGraph(
         builder_,
         builder_.CreateVector(nodes_),
@@ -353,14 +342,13 @@ class TestProgram {
         fbs::CreateTensorValueDirect(builder_, name.c_str(), meta));
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder_, name.c_str())};
-    nodes_.push_back(
-        fbs::CreateNodeDirect(
-            builder_,
-            name.c_str(),
-            fbs::OpKind::PLACEHOLDER,
-            "",
-            nullptr,
-            &outputs));
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::PLACEHOLDER,
+        "",
+        nullptr,
+        &outputs));
   }
 
   // `user_output`, then one BufferMutation spec per mutate().
@@ -368,12 +356,11 @@ class TestProgram {
       flatbuffers::Offset<fbs::OutputSpec> user_output) {
     std::vector<flatbuffers::Offset<fbs::OutputSpec>> specs = {user_output};
     for (const auto& [name, value] : mutations_) {
-      specs.push_back(
-          fbs::CreateOutputSpecDirect(
-              builder_,
-              value.c_str(),
-              fbs::OutputKind::BUFFER_MUTATION,
-              name.c_str()));
+      specs.push_back(fbs::CreateOutputSpecDirect(
+          builder_,
+          value.c_str(),
+          fbs::OutputKind::BUFFER_MUTATION,
+          name.c_str()));
     }
     return specs;
   }
@@ -439,6 +426,7 @@ std::vector<uint8_t> make_cache_update_program(
   return program.finish("old");
 }
 
+// cppcheck-suppress syntaxError
 TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(*host, make_q4_k_linear_program());
