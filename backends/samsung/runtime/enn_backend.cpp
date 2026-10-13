@@ -18,6 +18,8 @@
 
 #include <memory>
 #include <queue>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
@@ -28,6 +30,9 @@ namespace executor {
 using executorch::runtime::NamedDataMap;
 
 const char ennWeightBufferKey[] = "enn_weight_buffer_hash_id";
+
+// Weight cache LUT for reusing FreeableBuffer across multiple init calls
+static std::unordered_map<std::string, FreeableBuffer*> g_weight_cache_lut;
 
 class EnnBackend final : public PyTorchBackendInterface {
  public:
@@ -61,20 +66,55 @@ class EnnBackend final : public PyTorchBackendInterface {
           return std::strcmp(spec.key, ennWeightBufferKey) == 0;
         });
 
+    const char* weight_buf_addr;
+    size_t weight_size;
+
     if (it != compile_specs.end()) {
       std::string weight_key = decode_spec_value(*it);
-      Result<FreeableBuffer> weight =
-          named_data_map->get_data(weight_key.c_str());
-      const char* weight_buf_addr =
-          reinterpret_cast<const char*>(weight->data());
-      size_t weight_size = weight->size();
 
-      ET_LOG(
-          Info, "EnnBackend, [%s] Weight Buffer Enabled for %s size(%ld), addr(%p)",
-                context.get_method_name(),
-                weight_key.c_str(), weight_size, weight_buf_addr);
+      // Check if weight buffer is already cached
+      FreeableBuffer* wgt = nullptr;
+      auto cache_it = g_weight_cache_lut.find(weight_key);
 
-      FreeableBuffer* wgt = new FreeableBuffer(std::move(weight.get()));
+      if (cache_it != g_weight_cache_lut.end()) {
+        weight_buf_addr =
+            reinterpret_cast<const char*>((cache_it->second)->data());
+        weight_size = (cache_it->second)->size();
+        wgt = cache_it->second;
+
+        ET_LOG(
+            Info,
+            "EnnBackend, [%s] Weight Buffer from Cache for %s size(%ld), addr(%p)",
+            context.get_method_name(),
+            weight_key.c_str(),
+            weight_size,
+            weight_buf_addr);
+
+        // For cached buffers, we don't own it, so don't store weight_key
+      } else {
+        // Load weight from named_data_map and cache it
+        Result<FreeableBuffer> weight =
+            named_data_map->get_data(weight_key.c_str());
+
+        weight_buf_addr = reinterpret_cast<const char*>(weight->data());
+        weight_size = weight->size();
+
+        ET_LOG(
+            Info,
+            "EnnBackend, [%s] Weight Buffer Loaded for %s size(%ld), addr(%p)",
+            context.get_method_name(),
+            weight_key.c_str(),
+            weight_size,
+            weight_buf_addr);
+
+        wgt = new FreeableBuffer(std::move(weight.get()));
+
+        // Cache the weight buffer
+        g_weight_cache_lut[weight_key] = wgt;
+
+        // Store the weight_key for cleanup in destroy
+        executor->set_weight_key(weight_key);
+      }
 
       Error err = executor->initialize(
           binary_buf_addr, buf_size, weight_buf_addr, weight_size, true);
@@ -130,6 +170,20 @@ class EnnBackend final : public PyTorchBackendInterface {
     EXYNOS_ATRACE_NAME_LINE("backend_destroy");
     if (handle != nullptr) {
       auto executor = static_cast<enn::EnnExecutor*>(handle);
+
+      // Find and remove the cached buffer that belongs to this executor
+      const std::string& weight_key = executor->get_weight_key();
+      if (!weight_key.empty()) {
+        auto it = g_weight_cache_lut.find(weight_key);
+        if (it != g_weight_cache_lut.end()) {
+          ET_LOG(
+              Info, "Deleting cached buffer for key: %s", weight_key.c_str());
+          delete it->second;
+          g_weight_cache_lut.erase(it);
+          ET_LOG(Info, "Cached buffer removed from LUT");
+        }
+      }
+
       executor->~EnnExecutor();
     }
   }
