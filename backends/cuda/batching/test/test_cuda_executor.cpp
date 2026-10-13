@@ -14,6 +14,7 @@
 
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/runner.h>
 
 #include <cuda_runtime.h>
@@ -167,6 +168,33 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
       out.push_back(c.prompt);
     }
     return out;
+  }
+
+  // Generates `new_tokens` greedily from `delta` on `session`, which may hold
+  // a reused prefix. A capture, if given, wraps the callback.
+  static std::vector<batching::Token> continue_on(
+      const batching::Session& session,
+      std::vector<batching::Token> delta,
+      int new_tokens,
+      batching::PrefixCache::PromptCapture* capture = nullptr) {
+    std::vector<batching::Token> tokens;
+    std::mutex mutex;
+    batching::GenConfig config;
+    config.max_new_tokens = new_tokens;
+    config.seed = 0;
+    batching::GenerationCallback on_update =
+        [&](const batching::GenerationUpdate& update) {
+          std::lock_guard<std::mutex> guard(mutex);
+          tokens.insert(tokens.end(), update.tokens.begin(), update.tokens.end());
+        };
+    if (capture != nullptr) {
+      on_update = capture->wrap(std::move(on_update));
+    }
+    auto handle =
+        session.generate_async(std::move(delta), config, std::move(on_update));
+    handle.wait();
+    EXPECT_EQ(handle.finish_reason(), batching::FinishReason::NewTokenLimit);
+    return tokens;
   }
 
   static std::unique_ptr<batching::Scheduler> scheduler() {
@@ -405,6 +433,55 @@ TEST_P(
     }
     EXPECT_TRUE(diverged);
   }
+}
+
+TEST_P(CudaExecutorTest, PrefixCacheResumesFromACapturedPrompt) {
+  // Each prompt's cold generation leaves a snapshot cloned at its prompt
+  // boundary. That snapshot then serves the same prompt again and a prompt
+  // extending it; both resume on the eager greedy path, so the clone carried
+  // the prompt's exact KV and later writes did not disturb it.
+  auto exec = executor();
+  ASSERT_NE(exec, nullptr);
+  batching::Runner runner(*exec, scheduler());
+  batching::PrefixCache prefixes(2);
+  constexpr int kKnown = 2;
+  for (const Case& c : cases_) {
+    if (c.prompt.size() < 2) {
+      continue;
+    }
+    {
+      auto cold = runner.open_session_async().get();
+      ASSERT_TRUE(cold.has_value());
+      auto capture = prefixes.capture_prompt(*cold, c.prompt);
+      EXPECT_EQ(continue_on(*cold, c.prompt, kNewTokens, &capture), c.expected);
+      EXPECT_TRUE(capture.collect());
+    }
+
+    auto same = prefixes.lookup(c.prompt);
+    ASSERT_TRUE(same.has_value());
+    EXPECT_EQ(same->matched_tokens, c.prompt.size() - 1);
+    EXPECT_EQ(
+        same->session.position(),
+        static_cast<batching::Position>(c.prompt.size() - 1));
+    EXPECT_EQ(
+        continue_on(same->session, {c.prompt.back()}, kNewTokens), c.expected);
+
+    std::vector<batching::Token> extended = c.prompt;
+    extended.insert(
+        extended.end(), c.expected.begin(), c.expected.begin() + kKnown);
+    auto longer = prefixes.lookup(extended);
+    ASSERT_TRUE(longer.has_value());
+    EXPECT_EQ(longer->matched_tokens, c.prompt.size());
+    const std::vector<batching::Token> suffix(
+        extended.begin() + longer->matched_tokens, extended.end());
+    EXPECT_EQ(
+        continue_on(longer->session, suffix, kNewTokens - kKnown),
+        std::vector<batching::Token>(
+            c.expected.begin() + kKnown, c.expected.end()));
+  }
+  prefixes.clear();
+  runner.shutdown();
+  EXPECT_EQ(runner.metrics().steps_failed, 0u);
 }
 
 TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {

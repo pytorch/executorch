@@ -13,11 +13,15 @@ from unittest import mock
 from unittest.mock import patch
 
 import torch
-from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_backend import (
+    _compile_time_cpu_clones,
+    CudaBackend,
+)
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch._inductor.graph import GraphLowering
 from torch.export import export
 
 
@@ -35,7 +39,6 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         self.assertIs(IndexingOptions.has_rmask, original_has_rmask)
 
     def test_low_memory_autotune_rehydrates_aliased_storage_for_full_run(self):
-        from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones
         from torch._inductor.runtime.triton_heuristics import CachingAutotuner
 
         base = torch.empty_strided((4, 4), (4, 1))
@@ -65,6 +68,97 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
 
         self.assertEqual(result, "run-result")
         self.assertEqual(base.untyped_storage().nbytes(), 0)
+
+    def test_low_memory_jit_rehydrates_aliases_before_input_extraction(self):
+        base = torch.empty_strided((4, 4), (4, 1))
+        view = base[:, 1:]
+        storage = base.untyped_storage()
+        storage.resize_(0)
+        graph = object.__new__(GraphLowering)
+        weight = torch.ones(3)
+        weight_ptr = weight.data_ptr()
+        graph.constants = {"base": base, "view": view, "weight": weight}
+        original_run = GraphLowering._run_jit_variant_for_autotune
+
+        def extract_real_inputs():
+            self.assertEqual(storage.nbytes(), 64)
+            self.assertEqual(torch.count_nonzero(base), 0)
+            return base, view
+
+        def jit_run(_graph, wrapper, kernel, extract, names):
+            self.assertIs(_graph, graph)
+            self.assertEqual((wrapper, kernel, names), ("wrapper", "kernel", ["k"]))
+            base_arg, view_arg = extract()
+            self.assertIs(base_arg, base)
+            self.assertIs(view_arg, view)
+            self.assertEqual(view_arg.untyped_storage()._cdata, storage._cdata)
+            self.assertEqual(view_arg.storage_offset(), 1)
+            base_arg.fill_(2)
+            torch.testing.assert_close(view_arg, torch.full((4, 3), 2.0))
+            self.assertEqual(weight.data_ptr(), weight_ptr)
+            torch.testing.assert_close(weight, torch.ones(3))
+            return "jit-result"
+
+        with mock.patch.object(GraphLowering, "_run_jit_variant_for_autotune", jit_run):
+            with _compile_time_cpu_clones(torch.device("cuda")):
+                result = graph._run_jit_variant_for_autotune(
+                    "wrapper", "kernel", extract_real_inputs, ["k"]
+                )
+            self.assertIs(GraphLowering._run_jit_variant_for_autotune, jit_run)
+        self.assertIs(GraphLowering._run_jit_variant_for_autotune, original_run)
+        self.assertEqual(result, "jit-result")
+        self.assertEqual(storage.nbytes(), 0)
+        self.assertEqual((base.shape, base.stride(), view.storage_offset()), ((4, 4), (4, 1), 1))
+
+    def test_low_memory_jit_failure_releases_backing_and_restores_hook(self):
+        tensor = torch.empty(4)
+        storage = tensor.untyped_storage()
+        storage.resize_(0)
+        graph = object.__new__(GraphLowering)
+        graph.constants = {"kv": tensor}
+        original_run = GraphLowering._run_jit_variant_for_autotune
+
+        def jit_run(_graph, _wrapper, _kernel, extract, _names):
+            self.assertGreater(storage.nbytes(), 0)
+            self.assertNotEqual(extract(), 0)
+            raise RuntimeError("JIT execution failed")
+
+        with mock.patch.object(GraphLowering, "_run_jit_variant_for_autotune", jit_run):
+            with self.assertRaisesRegex(RuntimeError, "JIT execution failed"):
+                with _compile_time_cpu_clones(torch.device("cuda")):
+                    graph._run_jit_variant_for_autotune(
+                        "wrapper", "kernel", tensor.data_ptr, ["k"]
+                    )
+            self.assertIs(GraphLowering._run_jit_variant_for_autotune, jit_run)
+        self.assertIs(GraphLowering._run_jit_variant_for_autotune, original_run)
+        self.assertEqual(storage.nbytes(), 0)
+
+    def test_low_memory_jit_does_not_rehydrate_on_another_thread(self):
+        tensor = torch.empty(4)
+        storage = tensor.untyped_storage()
+        storage.resize_(0)
+        graph = object.__new__(GraphLowering)
+        graph.constants = {"kv": tensor}
+        observed = []
+
+        def jit_run(_graph, _wrapper, _kernel, extract, _names):
+            return storage.nbytes(), extract()
+
+        def run():
+            observed.append(
+                graph._run_jit_variant_for_autotune(
+                    "wrapper", "kernel", lambda: "unchanged", ["k"]
+                )
+            )
+
+        with mock.patch.object(GraphLowering, "_run_jit_variant_for_autotune", jit_run):
+            with _compile_time_cpu_clones(torch.device("cuda")):
+                worker = threading.Thread(target=run)
+                worker.start()
+                worker.join(timeout=5)
+                self.assertFalse(worker.is_alive())
+        self.assertEqual(observed, [(0, "unchanged")])
+        self.assertEqual(storage.nbytes(), 0)
 
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
@@ -245,6 +339,30 @@ class TestCudaExport(unittest.TestCase):
         # Skip tests if CUDA is not available
         if not torch.cuda.is_available():
             self.skipTest("CUDA is not available")
+
+    def test_low_memory_jit_synchronizes_cuda_backing_before_release(self):
+        tensor = torch.empty(16, device="cuda")
+        storage = tensor.untyped_storage()
+        storage.resize_(0)
+        graph = object.__new__(GraphLowering)
+        graph.constants = {"kv": tensor}
+
+        def jit_run(_graph, _wrapper, _kernel, extract, _names):
+            self.assertNotEqual(extract(), 0)
+            tensor.fill_(3)
+            return "cuda-jit-result"
+
+        with mock.patch.object(GraphLowering, "_run_jit_variant_for_autotune", jit_run):
+            with mock.patch.object(
+                torch.cuda, "synchronize", wraps=torch.cuda.synchronize
+            ) as synchronize:
+                with _compile_time_cpu_clones(torch.device("cuda")):
+                    result = graph._run_jit_variant_for_autotune(
+                        "wrapper", "kernel", tensor.data_ptr, ["k"]
+                    )
+                synchronize.assert_called_once_with(tensor.device)
+        self.assertEqual(result, "cuda-jit-result")
+        self.assertEqual(storage.nbytes(), 0)
 
     def test_rehydrated_storage_is_synchronized_before_release(self):
         from executorch.backends.cuda.cuda_backend import _rehydrate_emptied_tensors
