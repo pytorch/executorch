@@ -36,7 +36,10 @@ from executorch.backends.cuda.tests.autotune_test_utils import (
     SaturatedCpu,
     summarize,
 )
-from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as int4_kernel
+from executorch.backends.cuda.triton.kernels import (
+    int4_quantized_gemm as int4_kernel,
+    quantized_gemm_family,
+)
 from executorch.backends.cuda.triton.kernels.int4_quantized_gemm import (
     int4_autotune_configs,
     INT4_QUANTIZED_GEMM,
@@ -49,6 +52,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
 from executorch.extension.llm.export.int4 import ExportableInt4Tensor
 from executorch.extension.llm.export.quant.quantize import quantize_weight
 from executorch.extension.llm.export.quant.recipe import QuantConfig
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 GROUP_SIZE = 32
 MODEL_SHAPES = (
@@ -97,6 +101,135 @@ def _check_close(test, out, ref):
     mean_rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
     test.assertLess(mean_rel.item(), 0.02)
 
+
+@unittest.skipIf(
+    quantized_gemm_family._async_compile is None,
+    "this Triton has no parallel compile",
+)
+class Int4ParallelPrecompileTest(unittest.TestCase):
+    """launch_split_k_gemm compiles an untuned shape's configs in parallel."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not torch.cuda.is_available():
+            raise unittest.SkipTest("CUDA required")
+
+    def _count_pooled(self):
+        counts = {"pooled": 0}
+        submit = quantized_gemm_family._async_compile.AsyncCompileMode.submit
+
+        def counting_submit(mode, *args, **kwargs):
+            counts["pooled"] += 1
+            return submit(mode, *args, **kwargs)
+
+        return counts, mock.patch.object(
+            quantized_gemm_family._async_compile.AsyncCompileMode,
+            "submit",
+            counting_submit,
+        )
+
+    @staticmethod
+    def _compiled(bucket: int) -> int:
+        fn = int4_kernel._BUCKET_KERNELS[bucket].fn
+        return len(fn.device_caches[torch.cuda.current_device()][0])
+
+    def test_an_untuned_shape_compiles_every_config_in_the_pool_first(self) -> None:
+        # A shape no other test tunes, so its key is not in the autotune cache.
+        n, k, bucket = 384, 2304, 2
+        weights = _packed(n, k, seed=7)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        counts, patch = self._count_pooled()
+        before = self._compiled(bucket)
+        with patch:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
+            pooled, compiled = counts["pooled"], self._compiled(bucket)
+            again = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
+        self.assertGreater(pooled, 1)
+        # Every kernel the benchmark ran was compiled in the pool (which may
+        # merge identical requests): a compile outside it adds a kernel the pool
+        # was never asked for.
+        self.assertGreater(compiled, before)
+        self.assertLessEqual(compiled - before, pooled)
+        # A tuned key is not compiled again.
+        self.assertEqual(counts["pooled"], pooled)
+        self.assertEqual(self._compiled(bucket), compiled)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+        self.assertTrue(torch.equal(out, again))
+
+    def test_every_split_candidate_compiles_on_one_pool(self) -> None:
+        # A shape no other test tunes; the split is timed, not given.
+        n, k, bucket = 320, 2560, 2
+        weights = _packed(n, k, seed=11)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        pools = {"count": 0}
+        compile_pool = quantized_gemm_family._compile_pool
+
+        def counting_pool():
+            pools["count"] += 1
+            return compile_pool()
+
+        counts, patch = self._count_pooled()
+        before = self._compiled(bucket)
+        with patch, mock.patch.object(
+            quantized_gemm_family, "_compile_pool", counting_pool
+        ), autotune_launch_params() as stats:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertEqual(stats.measured, 1)
+        self.assertGreater(len(stats.picks[0].times_us), 1)
+        self.assertEqual(pools["count"], 1)
+        # Every kernel the split candidates benchmarked came from that pool.
+        self.assertGreater(self._compiled(bucket), before)
+        self.assertLessEqual(self._compiled(bucket) - before, counts["pooled"])
+        self.assertFalse(quantized_gemm_family._COMPILED_AHEAD)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
+    def test_fake_tensors_are_not_precompiled(self) -> None:
+        # A full launch of a shape no other test tunes, so only the fake-tensor
+        # check can keep it off the pool: the same launch on real tensors uses it.
+        n, k, bucket = 384, 1792, 1
+        weights = _packed(n, k, seed=19)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        mode = FakeTensorMode()
+        fake = [mode.from_tensor(t) for t in (x, *weights)]
+        counts, patch = self._count_pooled()
+        with patch:
+            with mode:
+                int4_kernel._launch(bucket, *fake, GROUP_SIZE)
+            self.assertEqual(counts["pooled"], 0)
+            int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertGreater(counts["pooled"], 0)
+
+    def test_the_tuning_key_is_the_autotuners_cache_key(self) -> None:
+        # _tuning_key mirrors Triton's Autotuner.run; check it against the key
+        # Triton stored its pick under.
+        n, k, bucket = 384, 1280, 1
+        weights = _packed(n, k, seed=23)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        autotuner = int4_kernel._BUCKET_KERNELS[bucket]
+        launches = []
+        wrap = quantized_gemm_family.wrap_triton
+
+        def recording(kernel):
+            launcher = wrap(kernel)
+
+            class _Grid:
+                def __getitem__(self, grid):
+                    def call(*args, **kwargs):
+                        launches.append((kernel, args, kwargs))
+                        return launcher[grid](*args, **kwargs)
+
+                    return call
+
+            return _Grid()
+
+        # Through the op, whose eager path runs the autotuner itself (wrap_triton's
+        # eager path tunes a fresh copy on every call).
+        with mock.patch.object(quantized_gemm_family, "wrap_triton", recording):
+            INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
+        _, args, kwargs = next(l for l in launches if l[0] is autotuner)
+        self.assertIn(
+            quantized_gemm_family._tuning_key(autotuner, args, kwargs), autotuner.cache
+        )
 
 class Int4QuantizedGemmRulesTest(unittest.TestCase):
     def test_split_k_needs_one_k_tile_per_split(self) -> None:
