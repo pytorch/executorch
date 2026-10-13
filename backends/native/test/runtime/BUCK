@@ -15,6 +15,7 @@ fbcode_target(
     srcs = ["ptn_runner_main.cpp"],
     exported_headers = ["PtnRunner.h"],
     link_whole = True,
+    undefined_symbols = True,
     visibility = ["//executorch/backends/native/test/..."],
     exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
     deps = [
