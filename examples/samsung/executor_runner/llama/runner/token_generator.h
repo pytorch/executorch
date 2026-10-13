@@ -16,14 +16,19 @@
 
 namespace example {
 
+namespace llm = ::executorch::extension::llm;
+namespace runtime = ::executorch::runtime;
+namespace aten = ::executorch::aten;
+namespace extension = ::executorch::extension;
+
 class ET_EXPERIMENTAL TokenGenerator {
  public:
   TokenGenerator(
       ::tokenizers::Tokenizer* tokenizer,
-      executorch::extension::llm::TextDecoderRunner* text_decoder_runner,
+      llm::TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
-      executorch::extension::llm::Stats* stats)
+      llm::Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
         eos_ids_(std::move(eos_ids)),
@@ -46,7 +51,7 @@ class ET_EXPERIMENTAL TokenGenerator {
    * @param token_callback what to do after a token is generated.
    * @return how many tokens are generated.
    */
-  inline ::executorch::runtime::Result<int64_t> generate(
+  inline runtime::Result<int64_t> generate(
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t max_new_tokens,
@@ -74,8 +79,8 @@ class ET_EXPERIMENTAL TokenGenerator {
     }
 
     // initialize tensor wrappers
-    auto tokens_managed = executorch::extension::from_blob(
-        token_data.data(), token_shape, executorch::aten::ScalarType::Long);
+    auto tokens_managed = extension::from_blob(
+        token_data.data(), token_shape, aten::ScalarType::Long);
 
     should_stop_ = false;
 
@@ -103,7 +108,7 @@ class ET_EXPERIMENTAL TokenGenerator {
       } else {
         // push it to the back
         token_data.push_back(cur_token);
-        ET_CHECK_OK_OR_RETURN_ERROR(executorch::extension::resize_tensor_ptr(
+        ET_CHECK_OK_OR_RETURN_ERROR(extension::resize_tensor_ptr(
             tokens_managed, {1, static_cast<int>(token_data.size())}));
       }
 
@@ -135,9 +140,9 @@ class ET_EXPERIMENTAL TokenGenerator {
    * Load the necessary resources for TokenGenerator.
    * This method should be called before using the generate() method.
    */
-  ::executorch::runtime::Error load() {
+  runtime::Error load() {
     // return text_decoder_runner_->load();
-    return ::executorch::runtime::Error::Ok;
+    return runtime::Error::Ok;
   }
 
   /**
@@ -157,7 +162,7 @@ class ET_EXPERIMENTAL TokenGenerator {
    * pointers remain valid for the duration of its use.
    */
   ::tokenizers::Tokenizer* tokenizer_;
-  executorch::extension::llm::TextDecoderRunner* text_decoder_runner_;
+  llm::TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
 
@@ -165,7 +170,7 @@ class ET_EXPERIMENTAL TokenGenerator {
   bool should_stop_ = false;
 
   // stats
-  executorch::extension::llm::Stats* stats_;
+  llm::Stats* stats_;
 };
 
 } // namespace example

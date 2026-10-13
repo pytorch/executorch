@@ -145,26 +145,23 @@ set_target_properties(
              "${EXECUTORCH_ROOT}/build_samsung_android/lib/libcustom_ops.a"
 )
 
-set(__enn_executor_llama_runner__srcs ${_executor_runner__srcs})
-list(TRANSFORM __enn_executor_llama_runner__srcs
-     PREPEND "${EXECUTORCH_SOURCE_DIR}/"
-)
-list(FILTER __enn_executor_llama_runner__srcs EXCLUDE REGEX
-     ".*executor_runner.cpp$"
-)
-list(PREPEND __enn_executor_llama_runner_srcs
-     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_llama_runner.cpp
+set(enn_executor_llm_runner_srcs
+    ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_llm_runner.cpp
 )
 
-set(enn_executor_llama_runner_deps
+set(enn_executor_llm_runner_deps
     executorch_core extension_data_loader extension_module extension_tensor
     extension_flat_tensor lib_extension_llm_runner
 )
 
-add_executable(enn_executor_llama_runner ${__enn_executor_llama_runner_srcs})
+add_executable(enn_executor_llm_runner ${enn_executor_llm_runner_srcs})
+
+target_link_libraries(
+  enn_executor_llm_runner PRIVATE ${enn_executor_llm_runner_deps}
+)
 
 target_include_directories(
-  enn_executor_llama_runner
+  enn_executor_llm_runner
   PUBLIC ${_common_include_directories}
          ${EXECUTORCH_ROOT}/backends/samsung/runtime
          ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
@@ -195,13 +192,13 @@ list(APPEND _common_include_directories
 list(APPEND xnnpack_backend_libs quantized_kernels quantized_ops_lib)
 
 target_link_libraries(
-  enn_executor_llama_runner
+  enn_executor_llm_runner
   PUBLIC enn_llama_runner
   PRIVATE log
           gflags
           android
           lib_portable_ops
-          ${enn_executor_llama_runner_deps}
+          ${enn_executor_llm_runner_deps}
           ${xnnpack_backend_libs}
           sentencepiece
           re2

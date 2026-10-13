@@ -38,19 +38,6 @@ class ET_EXPERIMENTAL IOManager {
   virtual ~IOManager() = default;
 
   /**
-   * @brief Get the use_gemma configuration flag.
-   * @return True if using Gemma model specific processing, false by default.
-   *         Derived classes should override this to return their specific value.
-   */
-  virtual bool use_gemma() const {
-    return false;
-  }
-
-  virtual bool is_quantized() const {
-    return false;
-  }
-
-  /**
    * @brief Load the IO manager with method metadata for prefill and
    * decode operations.
    *

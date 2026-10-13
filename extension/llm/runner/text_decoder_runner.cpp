@@ -48,7 +48,11 @@ TextDecoderRunner::TextDecoderRunner(
 
   if (use_kv_cache) {
     auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
-        module_, start_pos, cache_positions, tokens->numel(), method_name_.c_str()));
+        module_,
+        start_pos,
+        cache_positions,
+        tokens->numel(),
+        method_name_.c_str()));
 
     std::vector<runtime::EValue> inputs;
     auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
