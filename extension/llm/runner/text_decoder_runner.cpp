@@ -46,6 +46,7 @@ TextDecoderRunner::TextDecoderRunner(
     return method_meta_result.error();
   }
   auto method_meta = std::move(*method_meta_result);
+
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 

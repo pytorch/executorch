@@ -43,7 +43,7 @@ Prefiller::Prefiller(
   // If prompt tokens exceed max_seq_len_, we need to chunk them
   ET_LOG(
       Info,
-      "Micro Batch: num_prompt(%d), max_seq_len(%ld), start_pos(%ld)",
+      "Micro Batch: num_prompt(%d), prefill::max_seq_len(%ld), start_pos(%ld)",
       num_prompt_tokens,
       max_seq_len_,
       start_pos);
@@ -69,7 +69,9 @@ Prefiller::Prefiller(
       ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
       cur_token = chunk_result.get();
 
-      start_pos += num_tokens_to_prefill_with;
+      if (enable_parallel_prefill_) {
+        start_pos += num_tokens_to_prefill_with;
+      }
       num_tokens_to_process += num_tokens_to_prefill_with;
     }
 
@@ -90,12 +92,10 @@ Prefiller::Prefiller(
   // store the token
   uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
-    // TODO (sicheon.oh) : embedding token
-
     // initialize tensor wrappers
     auto tokens = executorch::extension::from_blob(
         prompt_tokens.data(),
-        {1, num_prompt_tokens},
+        {1, static_cast<int>(prompt_tokens.size())},
         executorch::aten::ScalarType::Long);
 
     auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
@@ -119,6 +119,7 @@ Prefiller::Prefiller(
         start_pos);
 
     // initialize tensor wrappers
+    // TODO(sicheon.oh) : Set tensor size by metadata::get_prefill_ar_len
     auto tokens = executorch::extension::from_blob(
         &cur_token, {1, 1}, executorch::aten::ScalarType::Long);
 
