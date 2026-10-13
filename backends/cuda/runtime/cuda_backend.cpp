@@ -89,6 +89,15 @@ constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
 
+bool CudaGraphState::start_warmup() {
+  if (!CudaAllocator::memory_pools_supported(-1)) {
+    return false;
+  }
+  phase = CudaGraphPhase::Warmup;
+  warmup_remaining = kCudaGraphWarmupSteps;
+  return true;
+}
+
 // Advances the off-graph KV cache past a step's tokens. Every successful exit
 // of execute() ends here, and only those: a run that failed never wrote its
 // tokens, and committing them would desynchronise the cache's length from the
@@ -469,6 +478,10 @@ class ET_EXPERIMENTAL CudaBackend final
     ET_LOG(Info, "container_handle = %p", container_handle);
 
     handle->container_handle = container_handle;
+    if (has_fqn_weights) {
+      handle->offgraph_kv_sizes =
+          CudaWeightCache::offgraph_kv_sizes(fqn_weights);
+    }
 
     // Runtime-owned off-graph buffers must capture their AOTI names before
     // the serialized constants update installs the ordinary weight set.
@@ -539,15 +552,22 @@ class ET_EXPERIMENTAL CudaBackend final
         handle->get_cuda_stream(),
         method_name.c_str());
 
-    // Initialize CUDA graph state if enabled for this method.
+    // Initialize CUDA graph state if enabled for this method. Not on a device
+    // without memory pools, where the method runs without a graph.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
-      ET_LOG(
-          Info,
-          "CUDA graph enabled for method '%s' (warmup=%d)",
-          method_name.c_str(),
-          kCudaGraphWarmupSteps);
+      if (handle->cuda_graph_state.start_warmup()) {
+        ET_LOG(
+            Info,
+            "CUDA graph enabled for method '%s' (warmup=%d)",
+            method_name.c_str(),
+            kCudaGraphWarmupSteps);
+      } else {
+        ET_LOG(
+            Info,
+            "CUDA graph requested for method '%s' but this device has no "
+            "memory pools; running without a CUDA graph",
+            method_name.c_str());
+      }
     }
 
     mutable_state_note_handle(handle);

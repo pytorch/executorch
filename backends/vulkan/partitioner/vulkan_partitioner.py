@@ -14,6 +14,7 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
@@ -229,7 +230,15 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "fusable pattern requires 64-bit tensor downcasting")
             return False
 
-        if any(
+        # Asserts and the symbolic comparisons feeding them are removed during
+        # preprocessing, so their SymBool values never need to be represented.
+        is_assert_chain = node.target in RemoveAssertsTransform.assert_ops or (
+            len(node.users) > 0
+            and all(
+                user.target in RemoveAssertsTransform.assert_ops for user in node.users
+            )
+        )
+        if not is_assert_chain and any(
             isinstance(arg.meta.get("val"), (torch.SymFloat, torch.SymBool))
             for arg in [node, *node.all_input_nodes]
         ):

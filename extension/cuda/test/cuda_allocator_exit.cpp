@@ -92,6 +92,12 @@ cudaError_t cudaMemPoolTrimTo(cudaMemPool_t pool, size_t) {
 cudaError_t cudaDeviceGraphMemTrim(int) {
   return cudaSuccess;
 }
+
+// The pooled path, whatever the machine's device reports.
+cudaError_t cudaDeviceGetAttribute(int* value, cudaDeviceAttr, int) {
+  *value = 1;
+  return cudaSuccess;
+}
 }
 
 int main() {

@@ -10,14 +10,10 @@
 
 #include <algorithm>
 #include <limits>
-#include <new>
-#include <random>
 #include <utility>
 
-#include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/sampler/util.h>
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -33,140 +29,13 @@ using ::executorch::runtime::Result;
 
 namespace {
 
-struct SequenceGuard {
-  cache::BatchControl& control;
-  std::int32_t seq_id;
-  bool owned = true;
-
-  ~SequenceGuard() {
-    if (owned) {
-      control.seq_rm(seq_id);
-    }
-  }
-};
-
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
   using ScalarType = ::executorch::aten::ScalarType;
   return type == ScalarType::Float || type == ScalarType::Half ||
       type == ScalarType::BFloat16 || type == ScalarType::UInt16;
 }
 
-std::uint64_t nondeterministic_seed() {
-  std::random_device device;
-  return device();
-}
-
 } // namespace
-
-Result<ModuleExecutor::Step> ModuleExecutor::build_step(
-    const BatchInput& batch) {
-  // Flatten the batch and truncate whatever it reopens; execute() declares each
-  // slice to the cache as it runs it. A per-sequence cursor carries the batch's
-  // own writes, so consecutive chunks of one prompt abut and only the first can
-  // reopen committed ground. Every input is checked before any is truncated, so
-  // a refusal leaves the cache untouched.
-  Step step;
-  const std::size_t total = batch.size();
-  step.tokens.reserve(total);
-  step.positions.reserve(total);
-  step.logit_indices.reserve(batch.inputs.size());
-
-  step.seq_ids.reserve(total);
-  // Truncations the batch asks for, held until every input has been checked.
-  std::vector<std::pair<std::int32_t, int>> rewinds;
-  // Where each sequence stands mid-batch: the cache still reports what it held
-  // before the step, so the batch's own writes live here.
-  std::unordered_map<std::int32_t, int> cursor;
-
-  for (const Input& input : batch.inputs) {
-    const auto seq_it = sessions_.find(input.sid);
-    if (seq_it == sessions_.end()) {
-      ET_LOG(Error, "build_step: session %" PRId64 " is not open", input.sid);
-      return Error::InvalidArgument;
-    }
-    const std::int32_t seq_id = seq_it->second.seq_id;
-    const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
-    const auto* token_input = tokens && *tokens ? tokens->get() : nullptr;
-    if (input.size == 0 || !token_input || input.offset > token_input->size() ||
-        input.size > token_input->size() - input.offset) {
-      ET_LOG(
-          Error,
-          "build_step: session %" PRId64 " gave a slice its tokens do not hold",
-          input.sid);
-      return Error::InvalidArgument;
-    }
-
-    const std::int64_t start = static_cast<std::int64_t>(input.position) +
-        static_cast<std::int64_t>(input.offset);
-    const auto [cursor_it, first_for_seq] =
-        cursor.try_emplace(seq_id, ctl_->pos(seq_id));
-    int& at = cursor_it->second;
-    if (start > at) {
-      // Positions nothing attended, and nothing later reaches back to fill.
-      ET_LOG(
-          Error,
-          "build_step: session %" PRId64 " starts at %" PRId64
-          " over a sequence holding %d",
-          input.sid,
-          start,
-          at);
-      return Error::InvalidArgument;
-    }
-    if (start < at) {
-      if (!first_for_seq) {
-        // Its predecessor in this batch has already been laid down, so a
-        // rewind now would truncate committed cells for a step whose
-        // positions repeat and cannot be placed.
-        ET_LOG(
-            Error,
-            "build_step: session %" PRId64 " overlaps its earlier input",
-            input.sid);
-        return Error::InvalidArgument;
-      }
-      if (start == 0) {
-        // Emptying a sequence hands its id back, and the step names it.
-        ET_LOG(
-            Error,
-            "build_step: session %" PRId64 " reopens from the start",
-            input.sid);
-        return Error::InvalidArgument;
-      }
-      rewinds.emplace_back(seq_id, static_cast<int>(start));
-      at = static_cast<int>(start);
-    }
-
-    const std::int64_t end = start + static_cast<std::int64_t>(input.size);
-    if (end > max_session_tokens_) {
-      ET_LOG(
-          Error,
-          "build_step: session %" PRId64 " reaches %" PRId64 " of %d cells",
-          input.sid,
-          end,
-          max_session_tokens_);
-      return Error::OutOfResources;
-    }
-
-    const Token* slice = token_input->data() + input.offset;
-    for (std::size_t k = 0; k < input.size; ++k) {
-      step.tokens.push_back(static_cast<std::int64_t>(slice[k]));
-    }
-    for (std::size_t k = 0; k < input.size; ++k) {
-      step.positions.push_back(start + static_cast<std::int64_t>(k));
-    }
-    step.seq_ids.insert(step.seq_ids.end(), input.size, seq_id);
-    at = static_cast<int>(end);
-    step.logit_indices.push_back(
-        input.produce_output ? static_cast<int>(step.tokens.size()) - 1 : -1);
-  }
-
-  for (const auto& [seq_id, from] : rewinds) {
-    if (!ctl_->rewind(seq_id, from)) {
-      ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
-      return Error::Internal;
-    }
-  }
-  return step;
-}
 
 ModuleExecutor::ModuleExecutor(
     std::unique_ptr<Module> module,
@@ -181,13 +50,12 @@ ModuleExecutor::ModuleExecutor(
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
-      max_sessions_(max_sessions),
-      max_session_tokens_(max_session_tokens),
       backend_id_(std::move(backend_id)),
       method_(std::move(method)),
       vocab_size_(vocab_size),
       max_step_tokens_(max_step_tokens),
-      logits_to_keep_mode_(logits_to_keep_mode) {}
+      logits_to_keep_mode_(logits_to_keep_mode),
+      sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size) {}
 
 ModuleExecutor::~ModuleExecutor() = default;
 
@@ -405,116 +273,45 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
 }
 
 bool ModuleExecutor::initialize() {
-  // The delegate resolves the cache from this key while the method loads.
-  ::executorch::runtime::BackendOptions<1> options;
-  ::executorch::runtime::LoadBackendOptionsMap options_map;
-  if (install_guard_.set_option(options) != Error::Ok ||
-      options_map.set_options(backend_id_.c_str(), options.view()) !=
-          Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not name the cache to the backend");
-    return false;
-  }
-  if (module_->load_method(
-          method_,
-          /*planned_memory=*/nullptr,
-          /*event_tracer=*/nullptr,
-          &options_map) != Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not load %s", method_.c_str());
+  const auto error = load_method_with_cache(
+      *module_, method_, backend_id_.c_str(), install_guard_);
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: could not load %s with cache binding (0x%x)",
+        method_.c_str(),
+        static_cast<unsigned int>(error));
     return false;
   }
   return true;
 }
 
 std::optional<SessionId> ModuleExecutor::open_session() {
-  if (sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
-      next_session_ == 0) {
-    return std::nullopt;
-  }
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    const std::optional<std::int32_t> seq_id = ctl_->seq_new();
-    return seq_id ? publish_session(*seq_id, 0) : std::nullopt;
-#if ET_HAS_EXCEPTIONS
-  } catch (const std::bad_alloc&) {
-    return std::nullopt;
-  }
-#endif
-}
-
-std::optional<SessionId> ModuleExecutor::publish_session(
-    std::int32_t seq_id,
-    Position position) {
-  SequenceGuard guard{*ctl_, seq_id};
-  if (ctl_->pos(seq_id) != position) {
-    return std::nullopt;
-  }
-  const SessionId session = next_session_;
-  if (!sessions_.emplace(session, SessionState{seq_id, nullptr}).second) {
-    return std::nullopt;
-  }
-  guard.owned = false;
-  next_session_ =
-      session == std::numeric_limits<SessionId>::max() ? 0 : session + 1;
-  return session;
+  return sessions_.open();
 }
 
 void ModuleExecutor::close_session(SessionId session) {
-  const auto it = sessions_.find(session);
-  if (it == sessions_.end()) {
-    return;
-  }
-  // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second.seq_id);
-  sessions_.erase(it);
+  sessions_.close(session);
 }
 
 std::optional<SessionId> ModuleExecutor::clone(
     SessionId source,
     Position upto) {
-  const auto it = sessions_.find(source);
-  if (it == sessions_.end() || upto < 0 || upto > max_session_tokens_ ||
-      sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
-      next_session_ == 0) {
-    return std::nullopt;
-  }
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    if (upto > ctl_->pos(it->second.seq_id)) {
-      return std::nullopt;
-    }
-    const auto seq_id = ctl_->seq_clone(it->second.seq_id, upto);
-    return seq_id ? publish_session(*seq_id, upto) : std::nullopt;
-#if ET_HAS_EXCEPTIONS
-  } catch (const std::bad_alloc&) {
-    return std::nullopt;
-  }
-#endif
+  return sessions_.clone(source, upto);
 }
 
 void ModuleExecutor::set_sampling(
     SessionId session,
     const SamplingParams& params,
     std::optional<std::uint64_t> seed) {
-  const auto it = sessions_.find(session);
-  if (it == sessions_.end()) {
-    return;
-  }
-  // One sampler per generation, carrying its own generator state from here on.
-  it->second.sampler = std::make_unique<Sampler>(
-      vocab_size_,
-      params.temperature,
-      params.top_p,
-      seed.value_or(nondeterministic_seed()));
-  it->second.sampler->set_topk(params.top_k);
+  sessions_.set_sampling(session, params, seed);
 }
 
 bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  const Result<Step> step = build_step(batch);
+  const Result<util::PackedStep> step = sessions_.pack(batch);
   if (!step.ok()) {
     return false;
   }
@@ -540,28 +337,18 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         {n},
         std::vector<std::int64_t>(
             step->positions.begin() + off, step->positions.begin() + off + n));
-    std::vector<std::int64_t> selector_values;
-    std::vector<std::size_t> selected_inputs;
+    util::SliceRows selected;
     if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
-      for (std::size_t i = 0; i < step->logit_indices.size(); ++i) {
-        const int row = step->logit_indices[i];
-        if (row >= off && row < off + n) {
-          selector_values.push_back(row - off);
-          selected_inputs.push_back(i);
-        }
-      }
-      if (selector_values.empty()) {
-        selector_values.push_back(n - 1);
-      }
+      selected = util::select_rows(*step, off, n);
     }
 
     const int expected_rows = logits_to_keep_mode_ == LogitsToKeepMode::Selected
-        ? static_cast<int>(selector_values.size())
+        ? static_cast<int>(selected.selector.size())
         : n;
     auto result = [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
       if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
         auto selector =
-            make_tensor_ptr({expected_rows}, std::move(selector_values));
+            make_tensor_ptr({expected_rows}, std::move(selected.selector));
         return module_->execute(method_, {tokens, positions, selector});
       }
       return module_->execute(method_, {tokens, positions});
@@ -593,11 +380,11 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     }
 
     if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
-      for (std::size_t row = 0; row < selected_inputs.size(); ++row) {
-        const std::size_t input_index = selected_inputs[row];
+      for (std::size_t row = 0; row < selected.inputs.size(); ++row) {
+        const std::size_t input_index = selected.inputs[row];
         const SessionId session = batch.inputs[input_index].sid;
         const std::optional<Token> token =
-            sample_row(logits, static_cast<int>(row), session);
+            sessions_.sample(session, logits, static_cast<int>(row));
         if (!token) {
           return false;
         }
@@ -611,7 +398,7 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         }
         const SessionId session = batch.inputs[i].sid;
         const std::optional<Token> token =
-            sample_row(logits, row - off, session);
+            sessions_.sample(session, logits, row - off);
         if (!token) {
           return false;
         }
@@ -620,33 +407,6 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     }
   }
   return true;
-}
-
-std::optional<Token> ModuleExecutor::sample_row(
-    ::executorch::aten::Tensor& logits,
-    int row,
-    SessionId session) {
-  const auto it = sessions_.find(session);
-  if (it == sessions_.end() || it->second.sampler == nullptr) {
-    ET_LOG(
-        Error,
-        "ModuleExecutor: session %" PRId64 " has no sampling policy",
-        session);
-    return std::nullopt;
-  }
-  if (row >= logits.numel() / vocab_size_) {
-    ET_LOG(Error, "ModuleExecutor: logits hold no row %d", row);
-    return std::nullopt;
-  }
-  // A one-row view over the model's own output: sample_from_logits reduces in
-  // place and reads the last dimension.
-  auto one_row = make_tensor_ptr(
-      {vocab_size_},
-      static_cast<std::uint8_t*>(logits.mutable_data_ptr()) +
-          static_cast<std::size_t>(row) * vocab_size_ *
-              ::executorch::runtime::elementSize(logits.scalar_type()),
-      logits.scalar_type());
-  return static_cast<Token>(sample_from_logits(*one_row, *it->second.sampler));
 }
 
 } // namespace batching
