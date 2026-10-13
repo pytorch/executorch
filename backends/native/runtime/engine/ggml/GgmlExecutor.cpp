@@ -383,7 +383,9 @@ struct OutputSlot {
   ValueId id = kInvalid;
   TensorMeta meta;
   std::vector<int64_t> sizes;
-  std::vector<uint8_t> bytes;
+  // Points into the executable's output staging until the next execute.
+  const uint8_t* data = nullptr;
+  size_t nbytes = 0;
 };
 
 struct Upload {
@@ -609,6 +611,7 @@ class GgmlExecutable final : public EngineExecutable {
     }
     slot.sizes = sizes;
     slot.bytes.clear();
+    executed_ = false;
   }
 
   void set_input(size_t i, const void* data, size_t numel, ScalarType src_dtype)
@@ -632,16 +635,17 @@ class GgmlExecutable final : public EngineExecutable {
     if (nbytes != 0) {
       std::memcpy(slot.bytes.data(), data, nbytes);
     }
+    executed_ = false;
   }
 
   void execute() override {
+    executed_ = false;
     for (const InputSlot& input : inputs_) {
       if (input.bytes.size() != checked_nbytes(input.sizes, input.meta.dtype)) {
         throw std::logic_error("ggml: every input must be set before execute");
       }
     }
 
-    executed_ = false;
     if (options_.max_cached_graphs == 0) {
       ggml_backend_sched_reset(scheduler_.get());
       GraphInstance instance = build_graph();
@@ -765,15 +769,19 @@ class GgmlExecutable final : public EngineExecutable {
           "ggml: graph execution failed with status " +
           std::to_string(static_cast<int>(status)));
     }
+    size_t staged = 0;
+    for (const TensorRef& output : instance.outputs) {
+      staged += GGML_PAD(ggml_nbytes(output.tensor), kStagingAlignment);
+    }
+    uint8_t* staging = output_staging(staged);
     for (size_t i = 0; i < outputs_.size(); ++i) {
       OutputSlot& output = outputs_[i];
+      ggml_tensor* tensor = instance.outputs.at(i).tensor;
       output.sizes = instance.outputs.at(i).sizes;
-      output.bytes.resize(ggml_nbytes(instance.outputs.at(i).tensor));
-      ggml_backend_tensor_get(
-          instance.outputs.at(i).tensor,
-          output.bytes.data(),
-          0,
-          output.bytes.size());
+      output.data = staging;
+      output.nbytes = ggml_nbytes(tensor);
+      ggml_backend_tensor_get(tensor, staging, 0, output.nbytes);
+      staging += GGML_PAD(output.nbytes, kStagingAlignment);
     }
   }
 
@@ -1121,7 +1129,7 @@ class GgmlExecutable final : public EngineExecutable {
   copy_output(const OutputSlot& slot, void* destination, ScalarType dst_dtype) {
     const size_t count = checked_numel(slot.sizes);
     const bool narrowed = slot.meta.dtype == ScalarType::Long;
-    if (slot.bytes.size() !=
+    if (slot.nbytes !=
         (narrowed ? count * sizeof(int32_t)
                   : checked_nbytes(slot.sizes, slot.meta.dtype))) {
       throw std::logic_error(
@@ -1129,11 +1137,11 @@ class GgmlExecutable final : public EngineExecutable {
     }
     if (slot.meta.dtype == dst_dtype) {
       if (narrowed) {
-        const auto* src = reinterpret_cast<const int32_t*>(slot.bytes.data());
+        const auto* src = reinterpret_cast<const int32_t*>(slot.data);
         std::copy(src, src + count, static_cast<int64_t*>(destination));
         return;
       }
-      std::memcpy(destination, slot.bytes.data(), slot.bytes.size());
+      std::memcpy(destination, slot.data, slot.nbytes);
       return;
     }
     if (dst_dtype != ScalarType::Float) {
@@ -1143,14 +1151,14 @@ class GgmlExecutable final : public EngineExecutable {
     float* out = static_cast<float*>(destination);
     if (slot.meta.dtype == ScalarType::Half) {
       ggml_fp16_to_fp32_row(
-          reinterpret_cast<const ggml_fp16_t*>(slot.bytes.data()),
+          reinterpret_cast<const ggml_fp16_t*>(slot.data),
           out,
           static_cast<int64_t>(count));
       return;
     }
     if (slot.meta.dtype == ScalarType::BFloat16) {
       ggml_bf16_to_fp32_row(
-          reinterpret_cast<const ggml_bf16_t*>(slot.bytes.data()),
+          reinterpret_cast<const ggml_bf16_t*>(slot.data),
           out,
           static_cast<int64_t>(count));
       return;
@@ -1160,6 +1168,31 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   GraphInstance build_graph();
+
+  static constexpr size_t kStagingAlignment = 64;
+
+  // Device-to-host copies into pinned memory skip the driver's pageable
+  // bounce buffer. Devices without a host buffer type use plain memory.
+  uint8_t* output_staging(size_t bytes) {
+    if (bytes == 0) {
+      return nullptr;
+    }
+    ggml_backend_buffer_type_t host = ggml_backend_dev_host_buffer_type(
+        ggml_backend_get_device(primary_backend_));
+    if (host == nullptr) {
+      output_host_.resize(std::max(output_host_.size(), bytes));
+      return output_host_.data();
+    }
+    if (!output_staging_ ||
+        ggml_backend_buffer_get_size(output_staging_.get()) < bytes) {
+      output_staging_.reset(ggml_backend_buft_alloc_buffer(host, bytes));
+      if (!output_staging_) {
+        throw std::runtime_error("ggml: failed to allocate output staging");
+      }
+    }
+    return static_cast<uint8_t*>(
+        ggml_backend_buffer_get_base(output_staging_.get()));
+  }
 
   MutableKeyClaim mutable_key_claim_;
   // Accumulated while compiling, reported to the context at the end.
@@ -1175,6 +1208,8 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<CachedGraph> cached_graphs_;
   ggml_context_ptr persistent_context_;
   ggml_backend_buffer_ptr persistent_buffer_;
+  ggml_backend_buffer_ptr output_staging_;
+  std::vector<uint8_t> output_host_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
   bool executed_ = false;
   std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
