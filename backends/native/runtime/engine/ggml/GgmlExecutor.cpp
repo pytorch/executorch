@@ -522,6 +522,7 @@ class GgmlExecutable final : public EngineExecutable {
       const Package& package,
       const GgmlEngineOptions& options,
       size_t* materialized_constant_bytes,
+      size_t* heap_copied_constant_bytes,
       GgmlMutableKeyOwners& mutable_key_owners)
       : mutable_key_claim_(mutable_key_owners, method),
         method_(method),
@@ -531,6 +532,9 @@ class GgmlExecutable final : public EngineExecutable {
     initialize_backends();
     initialize_persistent_tensors(materialized_constant_bytes);
     index_rope_frequencies();
+    if (heap_copied_constant_bytes != nullptr) {
+      *heap_copied_constant_bytes += heap_copied_constant_bytes_;
+    }
     // Rejects unsupported ops and shapes at compile time.
     build_graph();
   }
@@ -797,18 +801,43 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  // Converters read some dtypes through typed pointers, so the package's bytes
+  // are viewed in place only when aligned to the element size.
+  std::optional<OwnedBytes> read_constant(const std::string& key) const {
+    const std::optional<ConstantInfo> info = package_.constant_info(key);
+    if (!info) {
+      return std::nullopt;
+    }
+    std::optional<OwnedBytes> view = package_.view_constant(key);
+    if (view &&
+        reinterpret_cast<uintptr_t>(view->span().data()) %
+                std::max<size_t>(element_size(info->dtype), 1) ==
+            0) {
+      return view;
+    }
+    return acquire_constant(key);
+  }
+
+  std::optional<OwnedBytes> acquire_constant(const std::string& key) const {
+    std::optional<OwnedBytes> bytes = package_.acquire_constant(key);
+    if (bytes) {
+      heap_copied_constant_bytes_ += bytes->span().size();
+    }
+    return bytes;
+  }
+
   std::vector<uint8_t> load_q4_0(const TensorMeta& meta, ByteSpan packed)
       const {
     const AffineGroupQuant& quant = q4_affine(meta);
     const std::optional<OwnedBytes> scales =
-        package_.acquire_constant(quant.scale_data_key);
+        read_constant(quant.scale_data_key);
     if (!scales) {
       throw std::runtime_error(
           "ggml: package is missing scales '" + quant.scale_data_key + "'");
     }
     if (!quant.zero_point_data_key.empty()) {
       const std::optional<OwnedBytes> zeros =
-          package_.acquire_constant(quant.zero_point_data_key);
+          read_constant(quant.zero_point_data_key);
       if (!zeros || std::ranges::any_of(zeros->span(), [](uint8_t byte) {
             return byte != 0;
           })) {
@@ -860,6 +889,8 @@ class GgmlExecutable final : public EngineExecutable {
       throw std::runtime_error("ggml: failed to allocate persistent tensors");
     }
 
+    const bool host_buffer =
+        ggml_backend_buffer_is_host(persistent_buffer_.get());
     size_t loaded = 0;
     for (const DataBinding& binding : method_.data_bindings) {
       const auto found = persistent_.find(binding.value_id);
@@ -873,27 +904,49 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const std::optional<ConstantInfo> info =
           package_.constant_info(binding.key);
-      const std::optional<OwnedBytes> bytes =
-          package_.acquire_constant(binding.key);
-      if (!info || !bytes) {
+      if (!info) {
         throw std::runtime_error(
             "ggml: package is missing constant '" + binding.key + "'");
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
       const size_t expected = stored_nbytes(meta);
-      ByteSpan span = bytes->span();
-      if (info->nbytes != expected || span.size() != expected) {
+      if (info->nbytes != expected) {
         throw std::runtime_error(
             "ggml: stored byte count disagrees with PTG tensor '" +
             binding.key + "'");
       }
+      const bool is_q4 = affine_quant(meta) != nullptr;
+      const bool narrow =
+          tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long;
+      if (!is_q4 && !narrow && host_buffer) {
+        if (ggml_nbytes(tensor) != expected) {
+          throw std::runtime_error(
+              "ggml: stored byte count disagrees with ggml tensor '" +
+              binding.key + "'");
+        }
+        package_.load_constant_into(
+            binding.key,
+            MutableByteSpan(static_cast<uint8_t*>(tensor->data), expected));
+        loaded += expected;
+        continue;
+      }
+      const std::optional<OwnedBytes> bytes = is_q4 || narrow
+          ? read_constant(binding.key)
+          // Device uploads go through a heap copy: ROCm fails to pin a
+          // file-backed mapping, and ggml_backend_tensor_set from one is
+          // several times slower.
+          : acquire_constant(binding.key);
+      if (!bytes) {
+        throw std::runtime_error(
+            "ggml: package is missing constant '" + binding.key + "'");
+      }
+      ByteSpan span = bytes->span();
       std::vector<uint8_t> converted;
-      if (affine_quant(meta) != nullptr) {
+      if (is_q4) {
         converted = load_q4_0(meta, span);
         span = converted;
-      } else if (
-          tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long) {
+      } else if (narrow) {
         converted = narrow_to_int32(span);
         span = converted;
       }
@@ -931,9 +984,8 @@ class GgmlExecutable final : public EngineExecutable {
             return candidate.value_id == inv_freq && candidate.has_data;
           });
       const std::optional<OwnedBytes> bytes =
-          binding == method_.data_bindings.end()
-          ? std::nullopt
-          : package_.acquire_constant(binding->key);
+          binding == method_.data_bindings.end() ? std::nullopt
+                                                 : read_constant(binding->key);
       if (!bytes) {
         throw std::runtime_error("ggml: rope inv_freq must be a constant");
       }
@@ -997,6 +1049,8 @@ class GgmlExecutable final : public EngineExecutable {
   GraphInstance build_graph();
 
   MutableKeyClaim mutable_key_claim_;
+  // Accumulated while compiling, reported to the context at the end.
+  mutable size_t heap_copied_constant_bytes_ = 0;
   const Method& method_;
   const Package& package_;
   GgmlEngineOptions options_;
@@ -2838,12 +2892,14 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Package& package,
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
+    size_t* heap_copied_constant_bytes,
     GgmlMutableKeyOwners& mutable_key_owners) {
   return std::make_unique<GgmlExecutable>(
       method,
       package,
       options,
       materialized_constant_bytes,
+      heap_copied_constant_bytes,
       mutable_key_owners);
 }
 

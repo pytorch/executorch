@@ -35,6 +35,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Package& package,
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
+    size_t* heap_copied_constant_bytes,
     GgmlMutableKeyOwners& mutable_key_owners);
 
 } // namespace ptn

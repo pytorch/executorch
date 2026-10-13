@@ -89,6 +89,7 @@ struct GgmlEngineContext::Impl {
 
   GgmlEngineOptions options;
   size_t materialized_constant_bytes = 0;
+  size_t heap_copied_constant_bytes = 0;
   GgmlMutableKeyOwners mutable_key_owners;
 };
 
@@ -108,11 +109,16 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       package(),
       impl_->options,
       &impl_->materialized_constant_bytes,
+      &impl_->heap_copied_constant_bytes,
       impl_->mutable_key_owners);
 }
 
 size_t GgmlEngineContext::materialized_constant_bytes() const {
   return impl_->materialized_constant_bytes;
+}
+
+size_t GgmlEngineContext::heap_copied_constant_bytes() const {
+  return impl_->heap_copied_constant_bytes;
 }
 
 } // namespace ptn

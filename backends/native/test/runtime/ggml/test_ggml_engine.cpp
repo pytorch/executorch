@@ -6,12 +6,17 @@
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
+#include <unistd.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -76,14 +81,25 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 
 constexpr size_t kQ4KBlockBytes = 144;
 
+// A [1, 256] x [256] linear with gguf:q4_k weights, or with symmetric int4
+// AffineGroup weights whose fp16 scales `weight_scale` cover groups of 32.
 // `cache` is an unused mutable buffer.
-std::vector<uint8_t> make_q4_k_linear_program(
+std::vector<uint8_t> make_linear_program(
     const char* target = "torch.ops.aten.linear.default",
-    bool with_cache = false) {
+    bool with_cache = false,
+    bool affine = false) {
   flatbuffers::FlatBufferBuilder builder;
-  const auto packed = fbs::CreatePackedQuantDirect(builder, "gguf:q4_k");
-  const auto quant = fbs::CreateQuantSpec(
-      builder, fbs::QuantScheme::PackedQuant, packed.Union());
+  const auto quant = affine
+      ? fbs::CreateQuantSpec(
+            builder,
+            fbs::QuantScheme::AffineGroup,
+            fbs::CreateAffineGroupDirect(
+                builder, "weight_scale", fbs::ScalarType::HALF, -8, 7, 32)
+                .Union())
+      : fbs::CreateQuantSpec(
+            builder,
+            fbs::QuantScheme::PackedQuant,
+            fbs::CreatePackedQuantDirect(builder, "gguf:q4_k").Union());
   const auto input_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 256});
   const auto weight_meta =
@@ -163,21 +179,47 @@ std::vector<uint8_t> make_q4_k_linear_program(
     mutable_buffers.push_back(
         fbs::CreateMutableBufferSpecDirect(builder, "cache", "cache"));
   }
+  std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> bindings = {
+      fbs::CreateNamedTensorRefDirect(
+          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
+  };
+  if (affine) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> scale_outputs = {
+        fbs::CreateOutputDirect(builder, "weight_scale"),
+    };
+    const auto scale_meta =
+        create_tensor_meta(builder, fbs::ScalarType::HALF, {1, 8});
+    values.push_back(
+        fbs::CreateTensorValueDirect(builder, "weight_scale", scale_meta));
+    nodes.insert(
+        nodes.begin(),
+        fbs::CreateNodeDirect(
+            builder,
+            "weight_scale",
+            fbs::OpKind::PLACEHOLDER,
+            "",
+            nullptr,
+            &scale_outputs));
+    bindings.push_back(
+        fbs::CreateNamedTensorRefDirect(
+            builder,
+            "weight_scale",
+            "weight_scale",
+            scale_meta,
+            fbs::InputKind::PARAMETER));
+  }
   const auto graph = fbs::CreateGraph(
       builder,
       builder.CreateVector(nodes),
       create_strings(builder, {"input"}),
       create_strings(builder, {"output"}),
       builder.CreateVector(values));
-  const auto binding = fbs::CreateNamedTensorRefDirect(
-      builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER);
   const auto output_spec = fbs::CreateOutputSpecDirect(builder, "output");
   const auto method = fbs::CreateMethod(
       builder,
       builder.CreateString("forward"),
       graph,
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<fbs::NamedTensorRef>>{binding}),
+      builder.CreateVector(bindings),
       builder.CreateVector(
           std::vector<flatbuffers::Offset<fbs::OutputSpec>>{output_spec}),
       builder.CreateVector(mutable_buffers));
@@ -443,7 +485,7 @@ std::vector<uint8_t> make_cache_update_program(
 
 TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
   auto host = GgmlEngineHost::create();
-  auto context = make_context(*host, make_q4_k_linear_program());
+  auto context = make_context(*host, make_linear_program());
   auto executable = context->compile("forward");
 
   EXPECT_EQ(context->materialized_constant_bytes(), kQ4KBlockBytes);
@@ -460,7 +502,7 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
 TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(
-      *host, make_q4_k_linear_program("torch.ops.aten.unsupported.default"));
+      *host, make_linear_program("torch.ops.aten.unsupported.default"));
   EXPECT_THROW(context->compile("forward"), std::runtime_error);
 }
 
@@ -468,7 +510,7 @@ TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(
       *host,
-      make_q4_k_linear_program(
+      make_linear_program(
           "torch.ops.aten.linear.default", /*with_cache=*/true));
   auto executable = context->compile("forward");
   EXPECT_THROW(context->compile("forward"), std::runtime_error);
@@ -570,7 +612,7 @@ TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(
       *host,
-      make_q4_k_linear_program(
+      make_linear_program(
           "torch.ops.aten.linear.default", /*with_cache=*/true));
   auto executable = context->compile("forward");
   executable.reset();
@@ -1204,6 +1246,76 @@ TEST(GgmlEngineTest, RejectsEmbeddingIndicesNotFromAnInput) {
   } catch (const std::runtime_error& error) {
     EXPECT_NE(std::string(error.what()).find("graph input"), std::string::npos)
         << error.what();
+  }
+}
+
+TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
+  for (const bool misaligned : {false, true}) {
+    SCOPED_TRACE(misaligned);
+    // Every weight is q = 1, stored as the nibble q + 8. The eight groups of 32
+    // alternate fp16 scales 0.5 and 1.0.
+    constexpr size_t kScaleBytes = 16;
+    constexpr size_t kWeightBytes = 128;
+    std::string header =
+        R"({"weight_scale":{"dtype":"F16","shape":[1,8],"data_offsets":[0,16]},)"
+        R"("weight":{"dtype":"U8","shape":[128],"data_offsets":[16,144]}})";
+    // The safetensors member comes first, so its payload starts right after
+    // the local header, name, size prefix and JSON header. read_constant views
+    // the scales in place only at an even offset.
+    const size_t payload_offset =
+        30 + std::strlen(kSafeTensorsEntry) + sizeof(uint64_t) + header.size();
+    header.append((payload_offset + misaligned) % 2, ' ');
+    std::vector<uint8_t> safetensors =
+        testing::make_safetensors(header, kScaleBytes + kWeightBytes);
+    uint8_t* scales =
+        safetensors.data() + safetensors.size() - kScaleBytes - kWeightBytes;
+    for (size_t group = 0; group < 8; ++group) {
+      scales[2 * group + 1] = group % 2 == 0 ? 0x38 : 0x3C;
+    }
+    std::fill_n(scales + kScaleBytes, kWeightBytes, uint8_t{0x99});
+    const std::vector<uint8_t> program_bytes = make_linear_program(
+        "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
+    const std::vector<uint8_t> zip = testing::make_zip({
+        {kSafeTensorsEntry, std::move(safetensors)},
+        {kProgramEntry, program_bytes},
+    });
+
+    struct TempFile {
+      std::filesystem::path path;
+      ~TempFile() {
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+      }
+    } file{
+        ::testing::TempDir() + "q4_0_linear_" + std::to_string(::getpid()) +
+        (misaligned ? "_misaligned.ptn" : ".ptn")};
+    std::ofstream(file.path, std::ios::binary)
+        .write(
+            reinterpret_cast<const char*>(zip.data()),
+            static_cast<std::streamsize>(zip.size()));
+    auto package =
+        std::make_shared<const Package>(Package::load(file.path.string()));
+    const std::optional<OwnedBytes> view =
+        package->view_constant("weight_scale");
+    ASSERT_TRUE(view.has_value());
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(view->span().data()) % 2, misaligned);
+
+    auto host = GgmlEngineHost::create();
+    auto context = host->create_ggml_context(
+        std::make_shared<const Program>(
+            Program::load(program_bytes.data(), program_bytes.size())),
+        std::move(package));
+    auto executable = context->compile("forward");
+    const std::vector<float> input(256, 1.0f);
+    executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+    executable->execute();
+    float output = 0.0f;
+    executable->get_output(0, &output, 1, ScalarType::Float);
+    // Q4_0 matmuls quantize the activations to Q8_0, whose scale is fp16.
+    EXPECT_NEAR(output, 128.0f * 0.5f + 128.0f * 1.0f, 5e-2f);
+    // Only misaligned fp16 scales are copied; byte-sized weights are aligned.
+    EXPECT_EQ(
+        context->heap_copied_constant_bytes(), misaligned ? kScaleBytes : 0);
   }
 }
 
