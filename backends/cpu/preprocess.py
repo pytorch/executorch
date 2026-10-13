@@ -16,6 +16,7 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from torch.utils._pytree import tree_leaves, tree_map
 
 
@@ -57,6 +58,7 @@ class CpuBackend(BackendDetails):
             )
         _validate_boundary_layouts(edge_program.graph_module)
         graph_module = deepcopy(edge_program.graph_module)
+        graph_module = DimOrderOpsRevertPass()(graph_module).graph_module
         for node in graph_module.graph.nodes:
             if "val" in node.meta:
                 node.meta["val"] = tree_map(

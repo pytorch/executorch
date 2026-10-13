@@ -17,8 +17,9 @@ from executorch.backends.cpu.partitioner import (
 from executorch.backends.cpu.preprocess import CpuBackend
 from executorch.backends.cpu.recipes import CPURecipeType
 from executorch.backends.native.serialization import deserialize_graph, serialize_graph
-from executorch.exir import to_edge_transform_and_lower
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.schema import DelegateCall, Tensor
 from executorch.export import export, ExportRecipe
 
@@ -140,6 +141,43 @@ class CPUAOTTest(unittest.TestCase):
                             tensor.dim_order,
                             "CPU payload layout must match the tensor passed to the delegate",
                         )
+
+    def test_preprocess_reverts_dim_order_ops(self):
+        class AllocateAndClone(torch.nn.Module):
+            def forward(self, x):
+                empty = torch.empty(x.shape, dtype=x.dtype, device=x.device)
+                return empty, x.clone()
+
+        edge = to_edge(
+            torch.export.export(AllocateAndClone(), (torch.randn(2, 3),))
+        ).exported_program()
+        dim_order_targets = {
+            exir_ops.edge.dim_order_ops._empty_dim_order.default,
+            exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        }
+        for target in dim_order_targets:
+            self.assertIn(target, {node.target for node in edge.graph.nodes})
+
+        result = CpuBackend.preprocess(
+            edge,
+            [
+                CompileSpec(
+                    "cpu_delegate_version",
+                    CPU_DELEGATE_VERSION.to_bytes(4, "little"),
+                )
+            ],
+        )
+        graph = deserialize_graph(bytes(result.processed_bytes))
+        targets = {node.target for node in graph.nodes}
+        self.assertTrue(
+            {
+                "torch.ops.aten.empty.memory_format",
+                "torch.ops.aten.clone.default",
+            }.issubset(targets)
+        )
+        self.assertFalse(
+            any(target and "dim_order_ops" in target for target in targets)
+        )
 
     def test_constants_have_recorded_readable_tail(self):
         model = torch.nn.Linear(2, 3).eval()

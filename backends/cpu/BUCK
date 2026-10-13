@@ -28,6 +28,7 @@ fbcode_target(
         "//executorch/exir/backend:compile_spec_schema",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
+        "//executorch/exir/passes:memory_format_ops_pass",
         "//executorch/export:lib",
     ],
 )
