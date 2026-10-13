@@ -350,11 +350,10 @@ void GraphBuilder::seed_values() {
     ggml_set_name(tensor, method_.graph.value(input.id).name.c_str());
     ggml_set_input(tensor);
     set(input.id, TensorRef{tensor, input.sizes});
-    instance_.uploads.push_back(
-        Upload{
-            .tensor = tensor,
-            .bytes = narrow ? narrow_to_int32(input.bytes) : input.bytes,
-            .input = i});
+    instance_.uploads.push_back(Upload{
+        .tensor = tensor,
+        .bytes = narrow ? narrow_to_int32(input.bytes) : input.bytes,
+        .input = i});
   }
   for (const auto& [id, tensor] : persistent_) {
     set(id, TensorRef{tensor, method_.graph.value(id).tensor_meta().sizes});
