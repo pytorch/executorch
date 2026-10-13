@@ -844,6 +844,10 @@ class MLXSequenceCacheV2 final : public MLXCache,
   int length() const {
     return length_;
   }
+  // Includes persistent growth in a partially constructed forward.
+  int reserved_length() const {
+    return pending_end_.value_or(length_);
+  }
   using QuerySpan = sequence_v2::AttentionLayer::QuerySpan;
 
   // Layout only: valid for placed overwrites and unfinished forwards too.
@@ -861,21 +865,25 @@ class MLXSequenceCacheV2 final : public MLXCache,
 
   // Append preflight only; no tensors are constructed or evaluated.
   // Temporary block tokens do not consume this sequence's persistent capacity.
-  bool can_admit(int kv_tokens) const {
+  std::optional<int> admission_growth(int kv_tokens) const {
     if (kv_tokens <= 0 || pending_end_ ||
         int64_t{length_} + kv_tokens > std::numeric_limits<int>::max()) {
-      return false;
+      return std::nullopt;
     }
     std::optional<int> growth;
     for (const auto& layer : layers_) {
       const auto admitted = layer.attention->admission(length_, kv_tokens);
       if (!admitted || *admitted < 0 || *admitted > kv_tokens ||
           *admitted > capacity_ - length_ || (growth && *growth != *admitted)) {
-        return false;
+        return std::nullopt;
       }
       growth = admitted;
     }
-    return true;
+    return growth;
+  }
+
+  bool can_admit(int kv_tokens) const {
+    return admission_growth(kv_tokens).has_value();
   }
 
   bool can_extend(int n = 1) const override {
@@ -979,11 +987,6 @@ class MLXSequenceCacheV2 final : public MLXCache,
       }
     }
     return factories;
-  }
-
-  // Includes persistent growth in a partially constructed forward.
-  int reserved_length() const {
-    return pending_end_.value_or(length_);
   }
 
   void reset_forward(int length) noexcept {

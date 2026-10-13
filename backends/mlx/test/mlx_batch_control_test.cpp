@@ -25,8 +25,13 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
+#include <numeric>
+#include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace ::executorch::backends::mlx;
@@ -56,11 +61,6 @@ class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
     ASSERT_NE(attention_, nullptr);
     EXPECT_EQ(owner_->as<cache::SequenceControl>(), nullptr);
     attention_->bind_controller_stream(::mlx::core::to_stream(s));
-  }
-
-  bool shares_capacity() const {
-    return GetParam() == cache::kind::kBatchedSequence ||
-        GetParam() == cache::kind::kBatchedCell;
   }
 
   array randn(int T, ::mlx::core::Dtype dt = ::mlx::core::float16) {
@@ -96,6 +96,87 @@ class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
         t,
         Shape{0, 0, off, 0},
         Shape{t.shape(0), t.shape(1), off + len, t.shape(3)});
+  }
+
+  static constexpr int kCloneMaxWrite = 3;
+
+  CacheArgs clone_config() {
+    auto args = flat_config(256, 2, H, D, kHalf, 2);
+    args.geometry.layers[1].policy = {cache::LayerPolicy::Kind::Ring, 4};
+    args.config.max_write = kCloneMaxWrite;
+    return args;
+  }
+
+  std::vector<uint64_t> clone_tokens(size_t count) {
+    std::vector<uint64_t> result(count);
+    std::iota(result.begin(), result.end(), uint64_t{1});
+    return result;
+  }
+
+  array clone_forward(
+      MLXCache& c,
+      cache::BatchControl* control,
+      int32_t seq,
+      const std::vector<uint64_t>& prompt,
+      size_t begin = 0,
+      int chunk_size = kCloneMaxWrite) {
+    using namespace ::mlx::core;
+    std::vector<array> outputs;
+    while (begin < prompt.size()) {
+      const size_t count =
+          std::min(static_cast<size_t>(chunk_size), prompt.size() - begin);
+      std::vector<int32_t> positions(count);
+      std::iota(
+          positions.begin(), positions.end(), static_cast<int32_t>(begin));
+      if (control) {
+        EXPECT_TRUE(control->declare_step(std::vector<int32_t>(count, seq)));
+      }
+      std::vector<float> values;
+      values.reserve(static_cast<size_t>(H * D) * count);
+      for (int h = 0; h < H; ++h) {
+        for (size_t i = begin; i < begin + count; ++i) {
+          for (int d = 0; d < D; ++d) {
+            values.push_back(std::sin(
+                static_cast<float>(prompt[i]) * 0.37f +
+                static_cast<float>(h) * 0.41f + static_cast<float>(d) * 0.19f));
+          }
+        }
+      }
+      array input = astype(
+          array(
+              values.data(), Shape{1, H, static_cast<int>(count), D}, float32),
+          float16,
+          s);
+      const float scale = 1.0f / std::sqrt(static_cast<float>(D));
+      // The SWA layer's K/V depend on full attention, including old tokens
+      // outside its window. Reusing a matching tail alone is insufficient.
+      array hidden =
+          add(input, c.attend(0, positions, input, input, input, scale, s), s);
+      array output = c.attend(1, positions, hidden, hidden, hidden, scale, s);
+      eval(output);
+      outputs.push_back(output);
+      begin += count;
+    }
+    return concatenate(outputs, 2, s);
+  }
+
+  void expect_cold_clone_match(
+      int32_t sequence,
+      size_t position,
+      const std::vector<uint64_t>& prompt) {
+    using namespace ::mlx::core;
+    ASSERT_LT(position, prompt.size());
+    ASSERT_EQ(batch_->pos(sequence), static_cast<int>(position));
+    array got = clone_forward(*attention_, batch_, sequence, prompt, position);
+    auto cold = make_cache<MLXSequenceCache>(clone_config());
+    array expected = clone_forward(cold, nullptr, 0, prompt, 0, 1);
+    expected = slice(
+        expected,
+        Shape{0, 0, static_cast<int>(position), 0},
+        Shape{1, H, static_cast<int>(prompt.size()), D},
+        s);
+    EXPECT_TRUE(allclose(got, expected, 1e-2f));
+    EXPECT_EQ(batch_->pos(sequence), static_cast<int>(prompt.size()));
   }
 
  private:
@@ -376,8 +457,8 @@ TEST_P(MLXBatchedCacheTest, RejectedDeclarationLeavesTheLastOneStanding) {
   EXPECT_EQ(batch_->pos(a), 1);
 }
 
-// batched-sequence and batched-cell share capacity; batched limits each
-// private history. Cell forks share their prefix without using more cells.
+// All kinds share capacity. Cell forks share their prefix without using
+// more cells; private-history forks consume their retained logical length.
 TEST_P(MLXBatchedCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
   ASSERT_NO_FATAL_FAILURE(
       create_cache(flat_config(/*capacity=*/4, 1, H, D, kHalf)));
@@ -392,13 +473,13 @@ TEST_P(MLXBatchedCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
   array q = randn(1), k = randn(1), v = randn(1);
   attention_->attend(0, {2}, q, k, v, kScale, s);
 
-  EXPECT_EQ(batch_->declare_step({a}), !shares_capacity());
-  EXPECT_EQ(batch_->declare_step({b}), !shares_capacity());
+  EXPECT_FALSE(batch_->declare_step({a}));
+  EXPECT_FALSE(batch_->declare_step({b}));
   const auto fork = batch_->seq_clone(a, std::nullopt);
-  EXPECT_EQ(fork.has_value(), GetParam() != cache::kind::kBatchedSequence);
+  EXPECT_EQ(fork.has_value(), GetParam() == cache::kind::kBatchedCell);
   if (fork) {
     EXPECT_EQ(batch_->pos(*fork), 3);
-    EXPECT_EQ(batch_->declare_step({*fork}), !shares_capacity());
+    EXPECT_FALSE(batch_->declare_step({*fork}));
     EXPECT_TRUE(batch_->seq_rm(*fork));
   }
 
@@ -407,6 +488,104 @@ TEST_P(MLXBatchedCacheTest, CapacityAndCloneAdmissionFollowCacheKind) {
   attention_->attend(0, {3}, q, k, v, kScale, s);
   EXPECT_EQ(batch_->pos(a), 4);
   EXPECT_FALSE(batch_->declare_step({a})); // a reached the capacity limit
+}
+
+TEST_P(MLXBatchedCacheTest, SharedCapacityDeclarationReplacement) {
+  ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(4, 1, H, D, kHalf)));
+  const int32_t a = *batch_->seq_new();
+  const int32_t b = *batch_->seq_new();
+  step({a, b, a}, {0, 0, 1}, randn(3), randn(3), randn(3));
+
+  ASSERT_TRUE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->declare_step({b})); // replaces, rather than adds to, a
+  EXPECT_FALSE(batch_->declare_step({a, b}));
+  if (GetParam() != cache::kind::kBatchedCell) {
+    EXPECT_FALSE(batch_->seq_clone(a, std::nullopt));
+  }
+  // Rejected declarations and clones leave b's admitted step intact.
+  EXPECT_NO_THROW(
+      attention_->attend(0, {1}, randn(1), randn(1), randn(1), kScale, s));
+  EXPECT_EQ(batch_->pos(a), 2);
+  EXPECT_EQ(batch_->pos(b), 2);
+  EXPECT_FALSE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->rewind(b, 1));
+  EXPECT_TRUE(batch_->declare_step({a}));
+}
+
+TEST_P(MLXBatchedCacheTest, SharedCapacityChargesRetainedClonePrefixes) {
+  if (GetParam() == cache::kind::kBatchedCell) {
+    GTEST_SKIP()
+        << "Cell clones share cells instead of charging logical prefixes";
+  }
+  ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(6, 1, H, D, kHalf)));
+  const int32_t a = *batch_->seq_new();
+  step({a, a, a}, {0, 1, 2}, randn(3), randn(3), randn(3));
+
+  ASSERT_TRUE(batch_->declare_step({a}));
+  const auto full = batch_->seq_clone(a, std::nullopt);
+  ASSERT_TRUE(full);
+  EXPECT_EQ(batch_->pos(*full), 3);
+  // A successful clone invalidates the now-unaffordable declaration.
+  EXPECT_ANY_THROW(
+      attention_->attend(0, {3}, randn(1), randn(1), randn(1), kScale, s));
+  EXPECT_FALSE(batch_->seq_clone(a, 1));
+  EXPECT_FALSE(batch_->declare_step({a}));
+
+  ASSERT_TRUE(batch_->rewind(*full, 1));
+  EXPECT_FALSE(batch_->seq_clone(a, std::nullopt));
+  const auto partial = batch_->seq_clone(a, 2);
+  ASSERT_TRUE(partial);
+  EXPECT_EQ(batch_->pos(*partial), 2);
+  EXPECT_FALSE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->seq_rm(*full));
+  EXPECT_TRUE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->seq_rm(*partial));
+  const auto replacement = batch_->seq_clone(a, std::nullopt);
+  ASSERT_TRUE(replacement);
+  EXPECT_FALSE(batch_->declare_step({a}));
+}
+
+TEST_P(MLXBatchedCacheTest, SharedCapacityIncludesPartialForwards) {
+  if (GetParam() != cache::kind::kBatched) {
+    GTEST_SKIP() << "V2 commits positions only after all layers have advanced";
+  }
+  ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(4, 2, H, D, kHalf)));
+  const int32_t a = *batch_->seq_new();
+  const int32_t b = *batch_->seq_new();
+  array q = randn(2), k = randn(2), v = randn(2);
+  ASSERT_TRUE(batch_->declare_step({a, a}));
+  for (int layer = 0; layer < 2; ++layer) {
+    attention_->attend(layer, {0, 1}, q, k, v, kScale, s);
+  }
+  ASSERT_EQ(batch_->pos(a), 2);
+  ASSERT_TRUE(batch_->declare_step({b, b}));
+  attention_->attend(0, {0, 1}, q, k, v, kScale, s);
+  EXPECT_EQ(batch_->pos(b), 0);
+  EXPECT_ANY_THROW(attention_->attend(2, {0, 1}, q, k, v, kScale, s));
+  EXPECT_FALSE(batch_->declare_step({a}));
+  EXPECT_FALSE(batch_->seq_clone(a, 1));
+  EXPECT_FALSE(batch_->rewind(b, 1));
+
+  // The remaining layer consumes the existing reservation, not new capacity.
+  attention_->attend(1, {0, 1}, q, k, v, kScale, s);
+  EXPECT_EQ(batch_->pos(b), 2);
+  ASSERT_TRUE(batch_->rewind(b, 1));
+  EXPECT_TRUE(batch_->declare_step({a}));
+  EXPECT_FALSE(batch_->declare_step({a, a}));
+
+  ASSERT_TRUE(batch_->rewind(b, 0));
+  ASSERT_TRUE(batch_->declare_step({b, b}));
+  attention_->attend(0, {0, 1}, q, k, v, kScale, s);
+  EXPECT_FALSE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->rewind(b, 0)); // releases an unfinished reservation
+  const auto fork = batch_->seq_clone(a, std::nullopt);
+  ASSERT_TRUE(fork);
+  EXPECT_FALSE(batch_->declare_step({a}));
+  ASSERT_TRUE(batch_->seq_rm(*fork));
+  EXPECT_TRUE(batch_->declare_step({a, a}));
+  batch_->clear();
+  const int32_t fresh = *batch_->seq_new();
+  EXPECT_TRUE(batch_->declare_step(std::vector<int32_t>(4, fresh)));
 }
 
 // Every test uses the registry; also check the exposed capacity and admission.
@@ -419,7 +598,9 @@ TEST_P(MLXBatchedCacheTest, RegistryBuildsSelectedLayout) {
   ASSERT_TRUE(b);
   std::vector<int32_t> ids(32, *a);
   ids.push_back(*b);
-  EXPECT_EQ(batch_->declare_step(ids), !shares_capacity());
+  EXPECT_FALSE(batch_->declare_step(ids));
+  ids.erase(ids.begin());
+  EXPECT_TRUE(batch_->declare_step(ids));
 }
 
 // Exercise the default registration through its public faces. The parameter
@@ -430,7 +611,7 @@ TEST_P(MLXBatchedCacheRegistryTest, GeometrySelectsPolicies) {
   using namespace ::mlx::core;
   constexpr int D = 8;
   const int block = GetParam();
-  auto args = flat_config(4, 2, 1, D, static_cast<int>(ScalarType::Half));
+  auto args = flat_config(8, 2, 1, D, static_cast<int>(ScalarType::Half));
   args.geometry.layers[1].policy = {cache::LayerPolicy::Kind::Ring, 2};
   args.config.max_write = 4;
   if (block >= 0) {
@@ -444,7 +625,7 @@ TEST_P(MLXBatchedCacheRegistryTest, GeometrySelectsPolicies) {
   ASSERT_NE(batch, nullptr);
   ASSERT_NE(attention, nullptr);
   EXPECT_EQ((*built)->as<cache::SequenceControl>(), nullptr);
-  EXPECT_EQ(batch->capacity(), 4);
+  EXPECT_EQ(batch->capacity(), 8);
   const auto a = batch->seq_new();
   const auto b = batch->seq_new();
   ASSERT_TRUE(a);
@@ -458,7 +639,7 @@ TEST_P(MLXBatchedCacheRegistryTest, GeometrySelectsPolicies) {
       positions.push_back(p);
     }
   }
-  // Each owner can fill its own capacity, even with temporary block tokens.
+  // Both owners fill the shared budget; temporary blocks do not consume it.
   ASSERT_TRUE(batch->declare_step(ids));
   const auto q = zeros({1, 1, 2 * queries, D}, float32);
   const auto k = zeros({1, 1, 2 * n, D}, float32);
@@ -484,12 +665,268 @@ TEST_P(MLXBatchedCacheRegistryTest, GeometrySelectsPolicies) {
   }
   EXPECT_EQ(batch->pos(*a), 4);
   EXPECT_EQ(batch->pos(*b), 4);
+  EXPECT_FALSE(batch->seq_clone(*a, 1));
+  EXPECT_FALSE(
+      batch->declare_step(std::vector<int32_t>(std::max(block, 0) + 1, *a)));
+  if (block > 0) {
+    // Repeated temporary-only forwards must fit without advancing either owner.
+    const auto temporary = zeros({1, 1, block, D}, float32);
+    std::vector<int32_t> temporary_positions;
+    for (int p = 4; p < 4 + block; ++p) {
+      temporary_positions.push_back(p);
+    }
+    for (int step = 0; step < 2; ++step) {
+      ASSERT_TRUE(batch->declare_step(std::vector<int32_t>(block, *a)));
+      for (int layer = 0; layer < 2; ++layer) {
+        eval(attention->attend(
+            layer,
+            temporary_positions,
+            temporary,
+            temporary,
+            temporary,
+            1.0f,
+            {}));
+      }
+      EXPECT_EQ(batch->pos(*a), 4);
+      EXPECT_EQ(batch->pos(*b), 4);
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
     BlockSizes,
     MLXBatchedCacheRegistryTest,
     ::testing::Values(-1, 0, 1, 2));
+
+class MLXDFlashBatchedCacheTest
+    : public ::testing::TestWithParam<std::tuple<std::string, int, int>> {
+ protected:
+  struct Row {
+    int32_t id;
+    std::vector<float> history;
+  };
+
+  int block() const {
+    return std::get<1>(GetParam());
+  }
+  int window() const {
+    return std::get<2>(GetParam());
+  }
+
+  bool create_cache() {
+    auto args = flat_config(64, 1, 1, 4, static_cast<int>(ScalarType::Half));
+    args.geometry.dflash_block_size = block();
+    args.config.max_write = 2;
+    if (window()) {
+      args.geometry.layers[0].policy = {
+          cache::LayerPolicy::Kind::Ring, window()};
+    }
+    const auto& kind = std::get<0>(GetParam());
+    if (kind != cache::kind::kBatched) {
+      try {
+        cache::CacheFactory::global().build(
+            kMLXBackendId, kind, args.geometry, args.config);
+        ADD_FAILURE() << kind << " accepted DFlash geometry";
+      } catch (const std::runtime_error& error) {
+        EXPECT_STREQ(
+            error.what(),
+            kind == cache::kind::kBatchedCell
+                ? "MLXCellCache: DFlash is unsupported"
+                : "MLXBatchedSequenceCache: DFlash is unsupported");
+      }
+      return false;
+    }
+    auto built = cache::CacheFactory::global().build(
+        kMLXBackendId, kind, args.geometry, args.config);
+    EXPECT_TRUE(built.ok());
+    if (!built.ok()) {
+      return false;
+    }
+    owner_ = *built;
+    batch_ = owner_->as<cache::BatchControl>();
+    attention_ = owner_->as<MLXCache>();
+    EXPECT_NE(batch_, nullptr);
+    EXPECT_NE(attention_, nullptr);
+    return batch_ && attention_;
+  }
+
+  Row new_row() {
+    const auto id = batch_->seq_new();
+    EXPECT_TRUE(id);
+    return {id.value_or(-1), {}};
+  }
+
+  void forward(std::vector<Row*> rows, int context = 2) {
+    using namespace ::mlx::core;
+    const int n = context + block();
+    std::vector<std::vector<float>> incoming;
+    std::vector<int> starts;
+    std::vector<float> means;
+    for (auto* row : rows) {
+      starts.push_back(static_cast<int>(row->history.size()));
+      std::vector<float> values;
+      for (int p = 0; p < context; ++p) {
+        values.push_back(
+            100 * (row->id + 1) + 10 * generation_ + starts.back() + p);
+      }
+      row->history.insert(row->history.end(), values.begin(), values.end());
+      // Only persistent context enters the host oracle's history.
+      const int retained = window()
+          ? std::min(window(), static_cast<int>(row->history.size()))
+          : static_cast<int>(row->history.size());
+      float sum = std::accumulate(
+          row->history.end() - retained, row->history.end(), 0.0f);
+      for (int p = 0; p < block(); ++p) {
+        const float temporary = 1000 + 100 * generation_ + 10 * row->id + p;
+        values.push_back(temporary);
+        sum += temporary;
+      }
+      means.push_back(sum / (retained + block()));
+      incoming.push_back(std::move(values));
+    }
+    ++generation_;
+
+    std::vector<int32_t> ids, positions;
+    std::vector<float> values, expected;
+    // Interleave every K/V token. Q contains only the corresponding block
+    // spans (the last dummy query for block zero), in the same packed order.
+    for (int p = 0; p < n; ++p) {
+      for (size_t r = 0; r < rows.size(); ++r) {
+        ids.push_back(rows[r]->id);
+        positions.push_back(starts[r] + p);
+        values.push_back(incoming[r][p]);
+        if (block() ? p >= context : p == n - 1) {
+          expected.push_back(means[r]);
+        }
+      }
+    }
+    ASSERT_TRUE(batch_->declare_step(ids));
+    const int kv_count = static_cast<int>(values.size());
+    const int q_count = static_cast<int>(expected.size());
+    const auto q = zeros({1, 1, q_count, 4}, float32);
+    const auto k = zeros({1, 1, kv_count, 4}, float32);
+    const auto v = broadcast_to(
+        array(values.data(), {1, 1, kv_count, 1}), {1, 1, kv_count, 4});
+    const auto want = broadcast_to(
+        array(expected.data(), {1, 1, q_count, 1}), {1, 1, q_count, 4});
+    const auto out = attention_->attend(0, positions, q, k, v, 1.0f, {});
+    EXPECT_EQ(out.shape(), want.shape());
+    EXPECT_TRUE(allclose(out, want, 1e-4f));
+    for (auto* row : rows) {
+      EXPECT_EQ(batch_->pos(row->id), row->history.size());
+    }
+  }
+
+  std::shared_ptr<cache::Cache> owner_;
+  cache::BatchControl* batch_ = nullptr;
+  MLXCache* attention_ = nullptr;
+  int generation_ = 0;
+};
+
+TEST_P(MLXDFlashBatchedCacheTest, InterleavedStepsExcludePreviousDrafts) {
+  if (!create_cache()) {
+    return;
+  }
+  auto a = new_row();
+  auto b = new_row();
+  // Offset subsequent two-token writes so they straddle the four-slot ring.
+  ASSERT_NO_FATAL_FAILURE(forward({&a, &b}, 1));
+  for (int step = 0; step < 5; ++step) {
+    ASSERT_NO_FATAL_FAILURE(forward({&a, &b}));
+  }
+  EXPECT_EQ(batch_->pos(a.id), 11);
+  EXPECT_EQ(batch_->pos(b.id), 11);
+  if (block()) {
+    ASSERT_NO_FATAL_FAILURE(forward({&a, &b}, 0));
+    ASSERT_NO_FATAL_FAILURE(forward({&a, &b}, 0));
+  }
+}
+
+TEST_P(MLXDFlashBatchedCacheTest, CloneAndRewindContinueRetainedHistory) {
+  if (!create_cache()) {
+    return;
+  }
+  auto source = new_row();
+  for (int step = 0; step < 4; ++step) {
+    ASSERT_NO_FATAL_FAILURE(forward({&source}));
+  }
+  const auto full_id = batch_->seq_clone(source.id, std::nullopt);
+  const auto partial_id = batch_->seq_clone(source.id, 7);
+  ASSERT_TRUE(full_id);
+  ASSERT_TRUE(partial_id);
+  Row full{*full_id, source.history};
+  Row partial{*partial_id, {source.history.begin(), source.history.end() - 1}};
+  const auto older = batch_->seq_clone(source.id, 6);
+  EXPECT_EQ(older.has_value(), window() == 0);
+  if (older) {
+    EXPECT_TRUE(batch_->seq_rm(*older));
+  }
+  ASSERT_NO_FATAL_FAILURE(forward({&source, &full, &partial}, 1));
+  ASSERT_TRUE(batch_->rewind(source.id, 8));
+  source.history.resize(8);
+  ASSERT_NO_FATAL_FAILURE(forward({&source}, 1));
+  EXPECT_EQ(batch_->rewind(source.id, 3), window() == 0);
+  if (!window()) {
+    source.history.resize(3);
+  }
+  EXPECT_EQ(batch_->pos(source.id), source.history.size());
+  ASSERT_NO_FATAL_FAILURE(forward({&source}, 1));
+  ASSERT_TRUE(batch_->seq_rm(source.id));
+  ASSERT_NO_FATAL_FAILURE(forward({&full, &partial}, 1));
+}
+
+TEST_P(MLXDFlashBatchedCacheTest, InterleavedQueriesKeepTheirOwnWeights) {
+  if (!create_cache()) {
+    return;
+  }
+  using namespace ::mlx::core;
+  const auto a = new_row();
+  const auto b = new_row();
+  const int n = 2 + block();
+  std::vector<int32_t> ids, positions;
+  std::vector<float> queries, keys, vals, expected;
+  for (int p = 0; p < n; ++p) {
+    for (int r = 0; r < 2; ++r) {
+      ids.push_back(r ? b.id : a.id);
+      positions.push_back(p);
+      keys.push_back(0.25f * (p + 1) * (r + 1));
+      vals.push_back(100 * r + 7 * p + 1);
+      if (block() ? p >= 2 : p == n - 1) {
+        const float query = 0.5f * (block() ? p - 1 : 1) + 0.25f * r;
+        queries.push_back(query);
+        float weighted = 0, weights = 0;
+        for (int j = 0; j < n; ++j) {
+          const float weight = std::exp(query * 0.25f * (j + 1) * (r + 1));
+          weighted += weight * (100 * r + 7 * j + 1);
+          weights += weight;
+        }
+        expected.push_back(weighted / weights);
+      }
+    }
+  }
+  const auto tensor = [](const std::vector<float>& data) {
+    const int count = static_cast<int>(data.size());
+    return broadcast_to(array(data.data(), {1, 1, count, 1}), {1, 1, count, 4});
+  };
+  ASSERT_TRUE(batch_->declare_step(ids));
+  // Four identical head dimensions and scale 1/4 give exp(query * key).
+  const auto out = attention_->attend(
+      0, positions, tensor(queries), tensor(keys), tensor(vals), 0.25f, {});
+  EXPECT_TRUE(allclose(out, tensor(expected), 1e-4f));
+  EXPECT_EQ(batch_->pos(a.id), 2);
+  EXPECT_EQ(batch_->pos(b.id), 2);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CachePolicies,
+    MLXDFlashBatchedCacheTest,
+    ::testing::Combine(
+        ::testing::Values(
+            cache::kind::kBatched,
+            cache::kind::kBatchedCell,
+            cache::kind::kBatchedSequence),
+        ::testing::Values(0, 2),
+        ::testing::Values(0, 3)));
 
 // Evicting rings refuse older prefixes; cell storage retains them even when
 // attention is windowed. Recent retained prefixes are available in all kinds.
@@ -555,6 +992,97 @@ TEST_P(MLXBatchedCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
   }
   EXPECT_EQ(batch_->pos(*b), 9);
   EXPECT_EQ(batch_->pos(a), 10);
+}
+
+TEST_P(MLXBatchedCacheTest, SnapshotSurvivesSourceAndForkWrites) {
+  ASSERT_NO_FATAL_FAILURE(create_cache(clone_config()));
+  const auto source = batch_->seq_new();
+  ASSERT_TRUE(source);
+  const auto prefix = clone_tokens(21);
+  clone_forward(*attention_, batch_, *source, prefix);
+  const auto snapshot = batch_->seq_clone(*source, 21);
+  ASSERT_TRUE(snapshot);
+  ASSERT_EQ(batch_->pos(*snapshot), 21);
+
+  // Overwrite every source ring slot after the snapshot, then release it.
+  clone_forward(*attention_, batch_, *source, clone_tokens(41), prefix.size());
+  ASSERT_TRUE(batch_->seq_rm(*source));
+
+  auto request = prefix;
+  request.insert(request.end(), {50, 51, 52, 53, 54, 55, 56});
+  const auto first = batch_->seq_clone(*snapshot, 21);
+  ASSERT_TRUE(first);
+  ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*first, 21, request));
+  ASSERT_TRUE(batch_->seq_rm(*first));
+
+  // The previous fork also wrapped; an equal prompt still replays its last
+  // token against the untouched snapshot to obtain fresh logits.
+  const auto equal = batch_->seq_clone(*snapshot, 20);
+  ASSERT_TRUE(equal);
+  ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*equal, 20, prefix));
+  ASSERT_TRUE(batch_->seq_rm(*equal));
+
+  request.back() = 90;
+  const auto independent = batch_->seq_clone(*snapshot, 21);
+  ASSERT_TRUE(independent);
+  ASSERT_TRUE(batch_->seq_rm(*snapshot));
+  ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*independent, 21, request));
+  EXPECT_TRUE(batch_->seq_rm(*independent));
+}
+
+TEST_P(MLXBatchedCacheTest, RetainedBoundaryAndOlderSnapshot) {
+  ASSERT_NO_FATAL_FAILURE(create_cache(clone_config()));
+  const auto source = batch_->seq_new();
+  ASSERT_TRUE(source);
+  clone_forward(*attention_, batch_, *source, clone_tokens(21));
+  const auto snapshot = batch_->seq_clone(*source, 21);
+  ASSERT_TRUE(snapshot);
+  ASSERT_EQ(batch_->pos(*snapshot), 21);
+  ASSERT_TRUE(batch_->seq_rm(*source));
+
+  // Ring size is 4 + 3 - 1 = 6. At position 21 it retains the keys needed
+  // to resume at 18; only cell storage also retains the prefix for 17.
+  auto boundary = clone_tokens(18);
+  boundary.insert(boundary.end(), {80, 81, 82, 83});
+  const auto hit = batch_->seq_clone(*snapshot, 18);
+  ASSERT_TRUE(hit);
+  ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*hit, 18, boundary));
+  ASSERT_TRUE(batch_->seq_rm(*hit));
+
+  const auto shortened = batch_->seq_clone(*snapshot, 18);
+  ASSERT_TRUE(shortened);
+  ASSERT_NO_FATAL_FAILURE(
+      expect_cold_clone_match(*shortened, 18, clone_tokens(19)));
+  ASSERT_TRUE(batch_->seq_rm(*shortened));
+
+  auto missing = clone_tokens(17);
+  missing.insert(missing.end(), {80, 81, 82});
+  const auto old_prefix = batch_->seq_clone(*snapshot, 17);
+  ASSERT_EQ(old_prefix.has_value(), GetParam() == cache::kind::kBatchedCell);
+  if (old_prefix) {
+    ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*old_prefix, 17, missing));
+    ASSERT_TRUE(batch_->seq_rm(*old_prefix));
+  }
+  EXPECT_EQ(batch_->pos(*snapshot), 21);
+
+  const auto older = batch_->seq_new();
+  ASSERT_TRUE(older);
+  clone_forward(*attention_, batch_, *older, clone_tokens(17));
+  const auto older_snapshot = batch_->seq_clone(*older, 17);
+  ASSERT_TRUE(older_snapshot);
+  ASSERT_EQ(batch_->pos(*older_snapshot), 17);
+  ASSERT_TRUE(batch_->seq_rm(*older));
+  const auto retry = batch_->seq_clone(*snapshot, 17);
+  EXPECT_EQ(retry.has_value(), GetParam() == cache::kind::kBatchedCell);
+  if (retry) {
+    EXPECT_TRUE(batch_->seq_rm(*retry));
+  }
+  const auto retained = batch_->seq_clone(*older_snapshot, 17);
+  ASSERT_TRUE(retained);
+  ASSERT_NO_FATAL_FAILURE(expect_cold_clone_match(*retained, 17, missing));
+  EXPECT_TRUE(batch_->seq_rm(*retained));
+  EXPECT_TRUE(batch_->seq_rm(*older_snapshot));
+  EXPECT_TRUE(batch_->seq_rm(*snapshot));
 }
 
 INSTANTIATE_TEST_SUITE_P(

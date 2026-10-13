@@ -28,7 +28,7 @@ namespace mlx {
 
 namespace cache = ::executorch::extension::llm::cache;
 
-// A private MLXSequenceCacheV2 per sequence, each with its own capacity limit.
+// A private MLXSequenceCacheV2 per sequence, sharing one logical token budget.
 // Packed spans attend over their sequence's history and rejoin in token order.
 // Interleaved spans of one owner are grouped into a single V2 call per layer.
 // IDs and positions cover K/V. Q follows the global packed order of the query
@@ -49,7 +49,7 @@ class MLXBatchedCache : public cache::Cache,
     (void)MLXSequenceCacheV2(geometry_, cfg_);
   }
 
-  // Maximum persistent logical length of each sequence, not a shared budget.
+  // Total persistent logical tokens across all sequences, including forks.
   int capacity() const override {
     return cfg_.capacity;
   }
@@ -95,9 +95,12 @@ class MLXBatchedCache : public cache::Cache,
            offset});
       i = j;
     }
+    int64_t required = reserved_tokens();
     for (const auto& group : groups) {
       const Span& last = spans[group.back()];
-      if (!rows_.at(last.seq_id).can_admit(last.group_at + last.q_len)) {
+      const auto growth =
+          rows_.at(last.seq_id).admission_growth(last.group_at + last.q_len);
+      if (!growth || (required += *growth) > cfg_.capacity) {
         return false;
       }
     }
@@ -130,7 +133,8 @@ class MLXBatchedCache : public cache::Cache,
     const int keep =
         upto ? std::min(*upto, it->second.length()) : it->second.length();
     // Checked here so the constructor is only given a position it can honour.
-    if (keep <= 0 || !it->second.can_fork(keep)) {
+    if (keep <= 0 || !it->second.can_fork(keep) ||
+        reserved_tokens() + keep > cfg_.capacity) {
       return std::nullopt;
     }
 
@@ -369,6 +373,14 @@ class MLXBatchedCache : public cache::Cache,
       length += span.q_len;
     }
     return length;
+  }
+
+  int64_t reserved_tokens() const {
+    int64_t total = 0;
+    for (const auto& row : rows_) {
+      total += row.second.reserved_length();
+    }
+    return total;
   }
 
   std::optional<int32_t> free_id() const {

@@ -159,8 +159,8 @@ MLX tests exercise direct clones against real attention/storage.
 
 ```bash
 cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON
-cmake --build cmake-out --config Release --target mlx_batched_cache_test
-ctest --test-dir cmake-out -C Release -R '^mlx_batched_cache_test$' \
+cmake --build cmake-out --config Release --target mlx_batch_control_test
+ctest --test-dir cmake-out -C Release -R '^mlx_batch_control_test$' \
   --output-on-failure
 ```
 
