@@ -333,27 +333,20 @@ class CrossEngineTest(unittest.TestCase):
         torch.nn.init.uniform_(model.norm.bias, -0.5, 0.5)
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower aten.native_layer_norm yet.
-        self._check_dynamic(model, steps, ({1: seq},), engines=("vulkan_ptn_runner",))
+        self._check_dynamic(model, steps, ({1: seq},))
 
     def test_inplace_gelu_and_sigmoid(self):
         torch.manual_seed(0)
         steps = [(torch.randn(1, s, 16),) for s in (5, 3)]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower aten.gelu yet.
-        self._check_dynamic(
-            _GeluSigmoid(), steps, ({1: seq},), engines=("vulkan_ptn_runner",)
-        )
+        self._check_dynamic(_GeluSigmoid(), steps, ({1: seq},))
 
     def test_conv1d_between_linears(self):
         torch.manual_seed(0)
         # Shrinking from 5 to 3 leaves the input texture longer than the input.
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower 1D convolution yet.
-        self._check_dynamic(
-            _ConvBetweenLinears(), steps, ({1: seq},), engines=("vulkan_ptn_runner",)
-        )
+        self._check_dynamic(_ConvBetweenLinears(), steps, ({1: seq},))
 
     def test_transposed_conv1d_is_refused(self):
         # ET-VK runs every rank-3 convolution as a forward conv1d.
@@ -371,22 +364,15 @@ class CrossEngineTest(unittest.TestCase):
         torch.manual_seed(0)
         steps = [(torch.randn(1, 8 * s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower aten.constant_pad_nd yet.
-        self._check_dynamic(
-            _StackFrames(), steps, ({1: 8 * seq},), engines=("vulkan_ptn_runner",)
-        )
+        self._check_dynamic(_StackFrames(), steps, ({1: 8 * seq},))
 
     def test_pad_between_linear_and_mean(self):
         torch.manual_seed(0)
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower aten.constant_pad_nd yet.
         for dynamic_shapes in (({1: seq},), None):
             self._check_dynamic(
-                _PadThenMean(),
-                steps if dynamic_shapes else steps[:1],
-                dynamic_shapes,
-                engines=("vulkan_ptn_runner",),
+                _PadThenMean(), steps if dynamic_shapes else steps[:1], dynamic_shapes
             )
 
     def test_padding_mask_of_dynamic_positions(self):
@@ -396,10 +382,7 @@ class CrossEngineTest(unittest.TestCase):
             for s, n in ((6, 4), (3, 3), (9, 2))
         ]
         seq = Dim("seq", min=2, max=12)
-        # ggml does not lower aten.lt yet.
-        self._check_dynamic(
-            _PaddingMask(), steps, ({1: seq}, {}), engines=("vulkan_ptn_runner",)
-        )
+        self._check_dynamic(_PaddingMask(), steps, ({1: seq}, {}))
 
     def test_inplace_relu_of_dynamic_view(self):
         torch.manual_seed(0)

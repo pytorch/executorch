@@ -616,6 +616,18 @@ void expect_compile_error(
   }
 }
 
+TEST(GgmlEngineTest, RejectsIntegerGelu) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::LONG, {2, 3});
+  program.call(
+      "y",
+      "torch.ops.aten.gelu.default",
+      {{"self", std::string("x")}},
+      fbs::ScalarType::LONG,
+      {2, 3});
+  expect_compile_error(program.finish("y"), "floating-point");
+}
+
 TEST(GgmlEngineTest, RejectsUserInputMutation) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {2, 3});
