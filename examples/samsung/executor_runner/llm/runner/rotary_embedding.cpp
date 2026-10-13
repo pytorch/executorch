@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/rotary_embedding.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/rotary_embedding.h>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -70,6 +70,7 @@ runtime::Error RotaryEmbedding::load(
   }
 
   file.close();
+  loaded_ = true;
   return runtime::Error::Ok;
 }
 
@@ -79,6 +80,10 @@ runtime::Error RotaryEmbedding::update(
     float* global_sin,
     float* local_cos,
     float* local_sin) {
+  if (!loaded_) {
+    ET_LOG(Error, "RotaryEmbedding::update() called before load() succeeded.");
+    return runtime::Error::InvalidState;
+  }
   if (pos_ids.empty()) {
     return runtime::Error::InvalidArgument;
   }

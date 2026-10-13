@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// A simple llama2 runner that includes preprocessing and post processing logic.
+// A simple LLM runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/extension/llm/runner/constants.h>
@@ -19,11 +19,11 @@
 #include <pytorch/tokenizers/sentencepiece.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/decoder.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/runner.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/decoder.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/io_manager.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/runner.h>
 #include <nlohmann/json.hpp>
 #include <fstream>
 
@@ -109,12 +109,12 @@ ET_EXPERIMENTAL std::unique_ptr<LLMRunner> create_llm_runner(
     RunnerConfig runner_config,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer);
 
-std::unique_ptr<llm::IRunner> create_llama_runner(
+std::unique_ptr<llm::IRunner> create_llm_runner(
     const RunnerPaths& runner_paths,
     RunnerConfig runner_config) {
   ET_LOG(
       Info,
-      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
+      "Creating LLM runner: model_path=%s, tokenizer_path=%s",
       runner_paths.model_path.c_str(),
       runner_paths.tokenizer_path.c_str());
 
@@ -135,7 +135,7 @@ std::unique_ptr<llm::IRunner> create_llama_runner(
   }
   ET_LOG(
       Info,
-      "[Create_test_llm_runner] %s %s",
+      "[create_llm_runner] %s %s",
       runner_paths.model_path.c_str(),
       runner_paths.data_path.has_value()
           ? runner_paths.data_path.value().c_str()
@@ -170,6 +170,7 @@ LLMRunner::LLMRunner(
     std::unique_ptr<example::TokenGenerator> text_token_generator,
     std::unique_ptr<llm::Stats> stats,
     std::unique_ptr<llm::IOManager> io_manager,
+    DecoderModelVersion model_version,
     float temperature)
     : tokenizer_(std::move(tokenizer)),
       metadata_(std::move(metadata)),
@@ -179,7 +180,8 @@ LLMRunner::LLMRunner(
       text_token_generator_(std::move(text_token_generator)),
       io_manager_(std::move(io_manager)),
       stats_(std::move(stats)),
-      temperature_(temperature) {
+      temperature_(temperature),
+      model_version_(model_version) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
 }
@@ -698,12 +700,21 @@ std::unique_ptr<LLMRunner> create_llm_runner(
   auto io_manager =
       std::make_unique<example::LlmIOManager>(*module.get(), conf);
 
-  if (runner_paths.pos_embedding_path.has_value()) {
-    if (io_manager->load_rotary_embedding(
-            runner_paths.pos_embedding_path.value()) !=
-        executorch::runtime::Error::Ok) {
-      ET_LOG(Error, "load pos_embedding file failed !");
-    }
+  // Every embedding_strategy (kGlobalOnly, kGlobalAndLocal) requires the
+  // global rotary embedding to be loaded, so a missing/failed load is fatal
+  // rather than something we can silently continue past.
+  if (!runner_paths.pos_embedding_path.has_value()) {
+    ET_LOG(Error, "pos_embedding_path is required to load rotary embedding.");
+    return nullptr;
+  }
+  if (io_manager->load_rotary_embedding(
+          runner_paths.pos_embedding_path.value()) !=
+      executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to load pos_embedding file at '%s'.",
+        runner_paths.pos_embedding_path.value().c_str());
+    return nullptr;
   }
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
@@ -750,6 +761,7 @@ std::unique_ptr<LLMRunner> create_llm_runner(
       std::move(text_token_generator),
       std::move(stats),
       std::move(io_manager),
+      runner_config.model_version,
       runner_config.temperature);
 
   runner->load();

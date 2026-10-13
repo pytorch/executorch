@@ -95,17 +95,17 @@ set_target_properties(
   enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden
 )
 
-# llama_runner library
-add_subdirectory(executor_runner/llama/runner)
+# LLM runner library
+add_subdirectory(executor_runner/llm/runner)
 
-target_link_directories(enn_llama_runner PRIVATE)
+target_link_directories(enn_llm_runner PRIVATE)
 
-add_library(lib_enn_llama_runner STATIC IMPORTED)
+add_library(lib_enn_llm_runner STATIC IMPORTED)
 set_target_properties(
-  lib_enn_llama_runner
+  lib_enn_llm_runner
   PROPERTIES
     IMPORTED_LOCATION
-    "${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/executor_runner/llama/runner/libenn_llama_runner.a"
+    "${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/executor_runner/llm/runner/libenn_llm_runner.a"
 )
 
 add_library(lib_tokenizer STATIC IMPORTED)
@@ -193,7 +193,7 @@ list(APPEND xnnpack_backend_libs quantized_kernels quantized_ops_lib)
 
 target_link_libraries(
   enn_executor_llm_runner
-  PUBLIC enn_llama_runner
+  PUBLIC enn_llm_runner
   PRIVATE log
           gflags
           android

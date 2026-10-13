@@ -12,7 +12,7 @@ CONFIG_PATH="/data/local/tmp/exynos_llama3_1b.json"
 
 SEQ_LEN=1024
 TEMPERATURE=0
-NUM_BOS=1op
+NUM_BOS=1
 INPUT_PROMPT="What is the capital of France?"
 
 chmod +x enn_executor_llm_runner
