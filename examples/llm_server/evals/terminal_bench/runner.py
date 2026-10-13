@@ -266,6 +266,7 @@ def metrics(log, context, reserve):
         )
     }
     result["requests"] = len(turns)
+    result["session_ids"] = sorted({turn["session_id"] for turn in turns})
     result["peak_prompt_tokens"] = max(
         (int(turn["prompt_tokens"]) for turn in turns), default=0
     )
@@ -409,6 +410,19 @@ def run(config, output, serve, harbor, probe):
         raise RuntimeError(
             "Missing server metrics or context limit exceeded; see metrics.json"
         )
+    if config["terminal_bench"]["concurrency"] > 1:
+        trial_ids = {
+            str(json.loads(path.read_text())["id"])
+            for path in (output / "harbor").glob("*/result.json")
+        }
+        session_ids = set(timing["session_ids"])
+        if session_ids != trial_ids:
+            raise RuntimeError(
+                "Concurrent session IDs do not match Harbor trial UUIDs: "
+                f"unexpected={sorted(session_ids - trial_ids)}, "
+                f"missing={sorted(trial_ids - session_ids)}; "
+                "see metrics.json and harbor/*/result.json"
+            )
 
 
 def main(argv=None):

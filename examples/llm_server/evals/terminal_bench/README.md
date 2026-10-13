@@ -53,6 +53,7 @@ Harbor's END hook before the trial slot is released, retrying transient failures
 for up to two minutes. Persistent cleanup errors stop the run to avoid reusing
 unreleased capacity. Harbor retains the same mini-SWE-agent loop and per-trial
 verification.
+The run also checks that evaluation session IDs match the Harbor trial UUIDs.
 
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns

@@ -15,6 +15,8 @@ import yaml
 
 from harbor.agents.installed.mini_swe_agent import MiniSweAgent
 
+RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+
 
 class SessionMiniSweAgent(MiniSweAgent):
     async def run(self, instruction, environment, context):
@@ -42,35 +44,36 @@ class SessionCleanup:
     async def on_trial_end(self, event):
         session_id = quote(str(event.trial_id), safe="")
         try:
-            async with asyncio.timeout(120):
-                async with httpx.AsyncClient(trust_env=False, timeout=20) as client:
-                    delay = 1
-                    while True:
-                        try:
-                            response = await client.delete(
-                                f"{self.base_url}/sessions/{session_id}"
-                            )
+            async with (
+                asyncio.timeout(120),
+                httpx.AsyncClient(trust_env=False, timeout=20) as client,
+            ):
+                delay = 1
+                while True:
+                    try:
+                        response = await client.delete(
+                            f"{self.base_url}/sessions/{session_id}"
+                        )
+                    except httpx.TransportError as error:
+                        reason = str(error)
+                    else:
+                        if response.status_code not in RETRYABLE_STATUS_CODES:
                             response.raise_for_status()
                             return
-                        except (httpx.TransportError, httpx.HTTPStatusError) as error:
-                            if isinstance(error, httpx.HTTPStatusError) and (
-                                error.response.status_code
-                                not in {408, 409, 429, 500, 502, 503, 504}
-                            ):
-                                raise
-                            logging.getLogger(__name__).warning(
-                                "Retrying session cleanup for trial %s (%s) in %ss: %s",
-                                event.trial_name,
-                                session_id,
-                                delay,
-                                error,
-                            )
-                            await asyncio.sleep(delay)
-                            delay = min(delay * 2, 5)
+                        reason = f"HTTP {response.status_code}"
+                    logging.getLogger(__name__).warning(
+                        "Retrying session cleanup for trial %s (%s) in %ss: %s",
+                        event.trial_name,
+                        session_id,
+                        delay,
+                        reason,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 5)
         except (httpx.HTTPError, TimeoutError) as error:
             raise RuntimeError(
                 f"Could not release session {session_id} for trial {event.trial_name}; "
-                "stopping before admitting more work against unreleased capacity"
+                "aborting evaluation to avoid silent session leaks"
             ) from error
 
     async def on_job_end(self, job_result):
