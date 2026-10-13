@@ -8,14 +8,19 @@
 
 #include <gflags/gflags.h>
 
-#include <executorch/examples/samsung/executor_runner/llm/runner/runner.h>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+#include <executorch/examples/samsung/executor_runner/exynos_llm_wrapper.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #endif
-
-namespace llm = ::executorch::extension::llm;
 
 DEFINE_string(
     model_path,
@@ -40,6 +45,18 @@ DEFINE_string(
     "Text placed before the image in the user turn (Gemma 4 multimodal).");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+
+DEFINE_string(system_prompt, "", "System prompt. Empty means none.");
+
+DEFINE_string(
+    prompt_file,
+    "",
+    "Read the prompt from this file instead of --prompt.");
+
+DEFINE_string(
+    system_prompt_file,
+    "",
+    "Read the system prompt from this file instead of --system_prompt.");
 
 DEFINE_double(
     temperature,
@@ -70,49 +87,69 @@ DEFINE_bool(is_warmup, false, "Whether to run a warmup run.");
 
 DEFINE_bool(is_decode_only, false, "Whether to run with decode method only.");
 
+DEFINE_int32(
+    max_token_limit,
+    0,
+    "If > 0, print each token from the callback and call enn_llm_stop() right after the N-th generated token. Used to verify the stop API.");
+
+struct StopContext {
+  enn_runner* runner;
+  int32_t limit;
+  int32_t num_pieces = 0;
+  int32_t num_tokens = 0;
+};
+
+static void on_token_with_limit(const char* text, int32_t len, void* userdata) {
+  auto* ctx = static_cast<StopContext*>(userdata);
+  fwrite(text, 1, static_cast<size_t>(len), stdout);
+  fflush(stdout);
+  // The first callback is the echoed input prompt, not a generated token.
+  if (ctx->num_pieces++ == 0) {
+    return;
+  }
+  // The runner emits a trailing "\n" after generation ends; ignore it.
+  if (ctx->num_tokens >= ctx->limit) {
+    return;
+  }
+  if (++ctx->num_tokens == ctx->limit) {
+    enn_llm_stop(ctx->runner);
+    printf("\n[STOP] enn_llm_stop called at token %d\n", ctx->num_tokens);
+    fflush(stdout);
+  }
+}
+
+static bool read_file(const std::string& path, std::string* out) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    ET_LOG(Error, "Failed to open %s", path.c_str());
+    return false;
+  }
+  std::stringstream ss;
+  ss << file.rdbuf();
+  *out = ss.str();
+  return true;
+}
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  const char* model_path = FLAGS_model_path.c_str();
 
-  std::optional<std::string> data_path = std::nullopt;
-  if (!FLAGS_data_path.empty()) {
-    data_path = FLAGS_data_path.c_str();
+  if ((!FLAGS_prompt_file.empty() &&
+       !read_file(FLAGS_prompt_file, &FLAGS_prompt)) ||
+      (!FLAGS_system_prompt_file.empty() &&
+       !read_file(FLAGS_system_prompt_file, &FLAGS_system_prompt))) {
+    return ENN_ERR_INVALID_ARG;
   }
-  const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
-
-  std::optional<std::string> pos_embedding_path = std::nullopt;
-  if (!FLAGS_pos_embedding_path.empty()) {
-    pos_embedding_path = FLAGS_pos_embedding_path;
-  }
-
-  const char* config_path = FLAGS_config_path.c_str();
-  std::optional<std::string> vision_model_path = std::nullopt;
-  if (!FLAGS_vision_model_path.empty()) {
-    vision_model_path = FLAGS_vision_model_path;
-  }
-
-  const char* prompt = FLAGS_prompt.c_str();
 
   if (FLAGS_prompt.empty()) {
     ET_LOG(Error, "Input prompt cannot be empty.");
-    return static_cast<int32_t>(executorch::runtime::Error::InvalidArgument);
+    return ENN_ERR_INVALID_ARG;
   }
-  ET_LOG(Info, "Input prompt message: %s", prompt);
-
-  float temperature = static_cast<float>(FLAGS_temperature);
-  int32_t seq_len = FLAGS_seq_len;
-  int32_t cpu_threads = FLAGS_cpu_threads;
-
-  bool is_warmup = FLAGS_is_warmup;
-  bool is_decode_only = FLAGS_is_decode_only;
-
-  int num_bos = FLAGS_num_bos;
-  int num_eos = FLAGS_num_eos;
+  ET_LOG(Info, "Input prompt message: %s", FLAGS_prompt.c_str());
 
 #if defined(ET_USE_THREADPOOL)
-  uint32_t num_performant_cores = cpu_threads == -1
+  uint32_t num_performant_cores = FLAGS_cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
-      : static_cast<uint32_t>(cpu_threads);
+      : static_cast<uint32_t>(FLAGS_cpu_threads);
   ET_LOG(
       Info, "Resetting threadpool with num threads = %d", num_performant_cores);
   if (num_performant_cores > 0) {
@@ -121,33 +158,42 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
 
-  example::RunnerPaths runner_paths{
-      .model_path = model_path,
-      .tokenizer_path = tokenizer_path,
-      .pos_embedding_path = pos_embedding_path,
-      .data_path = data_path,
-      .vision_model_path = vision_model_path};
-  example::RunnerConfig runner_config{
-      .config_path = config_path,
-      .is_decode_only = is_decode_only,
-      .verbose = true,
-      .image_path = FLAGS_image_path,
-      .prompt_before_image = FLAGS_prompt_before_image};
-  std::unique_ptr<llm::IRunner> runner =
-      example::create_llm_runner(runner_paths, std::move(runner_config));
+  enn_runner* runner = enn_llm_create(
+      FLAGS_model_path.c_str(),
+      FLAGS_data_path.c_str(),
+      FLAGS_tokenizer_path.c_str(),
+      FLAGS_pos_embedding_path.c_str(),
+      FLAGS_config_path.c_str(),
+      FLAGS_vision_model_path.c_str(),
+      FLAGS_is_decode_only);
   ET_CHECK_MSG(runner != nullptr, "Failed to create LLM runner");
 
   // TODO: support warmup interface
 
-  executorch::extension::llm::GenerationConfig config{
-      .seq_len = seq_len,
-      .temperature = temperature,
-      .num_bos = num_bos,
-      .num_eos = num_eos};
-  auto error = runner->generate(prompt, config, {}, {});
-  ET_CHECK_MSG(
-      error == executorch::runtime::Error::Ok,
-      "Failed to generate token from LLM runner");
+  const bool stop_test = FLAGS_max_token_limit > 0;
+  StopContext stop_ctx{runner, FLAGS_max_token_limit};
+  int32_t error = enn_llm_generate(
+      runner,
+      FLAGS_prompt.c_str(),
+      FLAGS_system_prompt.c_str(),
+      FLAGS_image_path.c_str(),
+      FLAGS_prompt_before_image.c_str(),
+      FLAGS_seq_len,
+      static_cast<float>(FLAGS_temperature),
+      FLAGS_num_bos,
+      FLAGS_num_eos,
+      /*echo=*/1,
+      /*verbose=*/!stop_test,
+      stop_test ? on_token_with_limit : nullptr,
+      stop_test ? &stop_ctx : nullptr);
+  enn_llm_destroy(runner);
+  if (stop_test) {
+    printf(
+        "\n[STOP] limit=%d, generated=%d\n",
+        stop_ctx.limit,
+        stop_ctx.num_tokens);
+  }
+  ET_CHECK_MSG(error == ENN_OK, "Failed to generate token from LLM runner");
 
   return 0;
 }

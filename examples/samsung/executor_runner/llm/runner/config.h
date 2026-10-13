@@ -494,6 +494,9 @@ class RunnerConfig {
   // Stream generated tokens to stdout (in addition to the token callback).
   bool verbose = false;
 
+  // Empty => no system prompt.
+  std::string system_prompt;
+
   // Vision inputs (Gemma 4 multimodal). Empty image_path => text-only.
   std::string image_path;
   std::string prompt_before_image;

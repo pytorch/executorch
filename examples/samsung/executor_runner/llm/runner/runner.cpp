@@ -56,13 +56,14 @@ std::string LLMRunner::get_formatted_prompt(
       break;
     case DecoderModelVersion::kGemma3:
       formatted_prompt.append("<start_of_turn>user\n");
+      // Gemma 3 has no system role; the template prepends it to the user turn.
+      if (!system_prompt.empty()) {
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("\n\n");
+      }
       formatted_prompt.append(prompt);
       formatted_prompt.append("<end_of_turn>\n");
       formatted_prompt.append("<start_of_turn>model\n");
-      if (!system_prompt.empty()) {
-        formatted_prompt.append(system_prompt);
-        formatted_prompt.append("<end_of_turn>\n");
-      }
       break;
     case DecoderModelVersion::kGemma4:
       if (!system_prompt.empty()) {
@@ -241,14 +242,15 @@ runtime::Error LLMRunner::generate_from_pos(
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
   stats_->inference_start_ms = llm::time_in_ms();
-  shouldStop_ = false;
+  text_token_generator_->clear_stop();
 
   ET_LOG(
       Info,
       "################ input prompt  ################\n %s\n",
       prompt.c_str());
 
-  std::string input_prompt = get_formatted_prompt(prompt, "", model_version_);
+  std::string input_prompt =
+      get_formatted_prompt(prompt, config_.system_prompt, model_version_);
   if (model_version_ == DecoderModelVersion::kGemma3) {
     replace_all_newlines(input_prompt);
   }
@@ -263,6 +265,14 @@ runtime::Error LLMRunner::generate_from_pos(
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens = encode_res.get();
+
+  // The Gemma 4 tokenizer's post-processor does not add BOS, so num_bos alone
+  // leaves the prompt without one.
+  if (model_version_ == DecoderModelVersion::kGemma4 && config.num_bos > 0 &&
+      (prompt_tokens.empty() ||
+       prompt_tokens.front() != tokenizer_->bos_tok())) {
+    prompt_tokens.insert(prompt_tokens.begin(), tokenizer_->bos_tok());
+  }
 
   // Gemma 4 multimodal: run the vision encoder and inject the image token
   // block. The user turn becomes:
@@ -503,6 +513,7 @@ runtime::Error LLMRunner::warmup(
 }
 
 void LLMRunner::stop() {
+  // Not gated on is_loaded(): it checks method "forward", absent here.
   if (text_token_generator_ != nullptr) {
     text_token_generator_->stop();
   }

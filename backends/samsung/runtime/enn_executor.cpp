@@ -35,6 +35,9 @@ Error EnnExecutor::initialize(
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   ET_CHECK_OR_RETURN_ERROR(
       enn_api_inst->isInitialized(), Internal, "Enn initialize failed.");
+  // EnnInitialize() resets the calling thread's preference on every call, so
+  // re-apply it right before opening the model.
+  enn_api_inst->applyPerfConfigFromSoc();
   EnnReturn ret = ENN_RET_SUCCESS;
 
   ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);

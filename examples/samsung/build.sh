@@ -19,7 +19,21 @@ echo ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}
 echo ANDROID_ABI=${ANDROID_ABI}
 echo ANDROID_PLATFORM=${ANDROID_PLATFORM}
 
+usage() {
+      echo "Usage: $0 [--llm-wrapper-so]"
+      echo "    --llm-wrapper-so    Also build libexynos_llm_wrapper.so and exynos_llm_wrapper_sample."
+}
+
 main() {
+      local build_llm_wrapper_so=OFF
+      for arg in "$@"; do
+          case "$arg" in
+          "--llm-wrapper-so") build_llm_wrapper_so=ON ;;
+          "--help"|"-h") usage; exit 0 ;;
+          *) echo "Unknown option: $arg"; usage; exit 1 ;;
+          esac
+      done
+
       cd "$PROJECT_DIR"
 
       if [[ -z ${ANDROID_NDK_ROOT} ]]; then
@@ -48,9 +62,15 @@ main() {
             -DANDROID_PLATFORM=$ANDROID_PLATFORM \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_BUILD_TYPE=Release \
+            -DEXYNOS_BUILD_LLM_WRAPPER_SO=${build_llm_wrapper_so} \
             -B"${build_dir_example}" \
             "$PROJECT_DIR/${example_root}"
       cmake --build ${build_dir_example} --config Release
+
+      if [[ ${build_llm_wrapper_so} == OFF ]]; then
+          rm -f "${build_dir_example}/libexynos_llm_wrapper.so" \
+                "${build_dir_example}/exynos_llm_wrapper_sample"
+      fi
 }
 
 main "$@"

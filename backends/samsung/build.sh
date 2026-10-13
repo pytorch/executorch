@@ -7,6 +7,7 @@ X86_64_BUILD_DIR=${PROJECT_DIR}/build_samsung
 ANDROID_BUILD_DIR=${PROJECT_DIR}/build_samsung_android
 BUILD_ARCH=all
 CLEAN_BUILD_DIR=false
+BUILD_VULKAN=OFF
 
 EXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT}
 ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}
@@ -26,6 +27,9 @@ function usage() {
 
     --build, -b     [x86_64, android, all]     Default is all, x86_64 target to offline compilation,
                                                android target to online execution.
+    --vulkan                                   Build the Vulkan backend into executor_runner (android, default is off).
+                                               Requires glslc from the Vulkan SDK (1.4.341.1+) in PATH, e.g.
+                                               export PATH=\$VULKAN_SDK/bin:\$PATH
     --clean, -c                                Clean the build cache.
     --help, -h                                 Print the usage information.
   "
@@ -104,6 +108,7 @@ function build_android() {
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED_PORTABLE=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_VULKAN=${BUILD_VULKAN} \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
@@ -125,6 +130,9 @@ do
     "--ndk")
       let i++
       ANDROID_NDK_ROOT="${!i}"
+      ;;
+    "--vulkan")
+      BUILD_VULKAN=ON
       ;;
     "--clean"|"-c")
       CLEAN_BUILD_DIR=true
