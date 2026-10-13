@@ -14,8 +14,10 @@ speculative drafting/verification remain inside the runner and executor.
 - Exact strict history extensions reuse the existing session. With prefix
   caching enabled, clean equal/shortened/mismatched histories can clone their
   longest common committed prefix and prefill the remaining suffix. Dirty
-  histories and cache misses cold-replay. If the live source cannot clone at
-  the matching boundary, retained prefix snapshots are tried first.
+  histories and cache misses cold-replay. If live-prefix reuse is unavailable,
+  the shared cache is searched against the full replacement prompt, even when
+  it shares no prefix with the live history. A snapshot from any session may
+  supply the matching prefix; its suffix must be accepted before reuse.
   Reset destroys the old session and reopens
   under the same reserved key; failed reopen leaves that key unavailable.
 - Prefix caching is optional and disabled by default. It supports both greedy
@@ -35,22 +37,30 @@ speculative drafting/verification remain inside the runner and executor.
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
 
-`--prefix-checkpoint-interval N` enables intermediate prompt snapshots in the
-module and Muse-Glimmer batching launchers; it requires `--prefix-cache-entries`
-and defaults to zero. The runtime requests capture at successful prefill-forward
-boundaries after approximately N committed positions, and at the initial prompt
-end. It does not capture subsequent decode steps. Boundaries can overshoot N;
-busy capture lanes skip points without waiting for storage maintenance.
+`--prefix-checkpoint-interval N` requests prompt snapshots at absolute multiples
+of N and at the initial prompt end. It requires `--prefix-cache-entries` and
+defaults to zero. Continuations use the same absolute grid. Busy capture lanes
+skip points, and clone refusal preserves generation; requested positions are
+exact, but retaining every checkpoint is not guaranteed.
 
-The runner's optional `on_prefill` observer queues a clone between forwards.
-The serving control thread collects the clone and inserts its exact prefix
-identity. Captures and prompt replacement share one transient executor row.
-Snapshots remain bounded by the existing entry budget. When evicting a matching
-history, an intermediate snapshot is preferred over its oldest prefix when
-possible; unrelated histories retain global LRU eviction. One entry cannot
-retain both early and recent state. Refusal, cancellation, and cache misses
-preserve cold replay. Snapshot memory and copy overhead depend on the executor;
-the interval and entry count should be measured with the deployed model.
+Callers can supply sorted absolute `GenConfig::prefill_breakpoints` within the
+newly processed input, including any carried pending token. The Runner splits
+prefill there and withholds later work for that session until `on_prefill` runs.
+Other sessions remain schedulable. The observer can enqueue a clone before the
+next forward; it must not wait for Runner work. With no breakpoints, existing
+prefill packing is unchanged. Extra boundaries can create smaller forwards.
+At prompt end a speculative executor may already have advanced beyond the
+requested state, so that clone can still be refused. No decode checkpoints are
+requested by the periodic serving policy.
+
+`PromptCapture` handles capture queueing and failure notification. Serving owns
+transient-row admission and control-thread collection into the prefix cache.
+Captures and prompt replacement share one transient executor row. Snapshots
+remain bounded by the entry budget. When evicting a matching history, an
+intermediate snapshot is preferred over its oldest prefix when possible;
+unrelated histories retain global LRU eviction. One entry cannot retain both
+early and recent state. Memory and copy costs depend on the executor.
+
 - Different sessions can run concurrently. Same-session transcript preparation,
   generation, native wire completion, and transcript commit remain ordered.
   Cancellation targets one request. Native output and completion-preparation

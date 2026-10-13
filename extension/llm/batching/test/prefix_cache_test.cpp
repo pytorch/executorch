@@ -307,7 +307,14 @@ class PrefixCacheTest : public ::testing::Test {
   std::unique_ptr<Runner> runner;
 };
 
-TEST_F(PrefixCacheTest, PrefillObserverClonesBeforeLaterWrites) {
+class PrefillBreakpointTest
+    : public PrefixCacheTest,
+      public ::testing::WithParamInterface<std::size_t> {};
+
+TEST_P(PrefillBreakpointTest, ClonesExactPositionsBeforeLaterWrites) {
+  runner.reset();
+  runner = std::make_unique<Runner>(
+      executor, DecodeFirstScheduler::create(64, 4, GetParam()));
   executor.retained_tail = 0;
   auto source = open();
   const Tokens prompt(40, 7);
@@ -315,6 +322,7 @@ TEST_F(PrefixCacheTest, PrefillObserverClonesBeforeLaterWrites) {
   std::vector<std::future<std::optional<Session>>> snapshots;
   GenConfig config;
   config.max_new_tokens = 4;
+  config.prefill_breakpoints = {5, 17, 31, 40};
   auto generation =
       source.generate_async(prompt, config, {}, {}, [&](Position position) {
         EXPECT_EQ(position, source.position());
@@ -323,12 +331,7 @@ TEST_F(PrefixCacheTest, PrefillObserverClonesBeforeLaterWrites) {
       });
   generation.wait();
   ASSERT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
-  ASSERT_GT(positions.size(), 1u);
-  EXPECT_LT(positions.front(), prompt.size());
-  EXPECT_EQ(positions.back(), prompt.size());
-  EXPECT_TRUE(std::is_sorted(positions.begin(), positions.end()));
-  EXPECT_EQ(
-      std::adjacent_find(positions.begin(), positions.end()), positions.end());
+  ASSERT_EQ(positions, config.prefill_breakpoints);
   EXPECT_FALSE(source.clone_async(positions.front()).get());
   PrefixCache cache(1);
   for (std::size_t i = 0; i < snapshots.size(); ++i) {
@@ -349,13 +352,138 @@ TEST_F(PrefixCacheTest, PrefillObserverClonesBeforeLaterWrites) {
   expect_cold_match(*match, changed);
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    ChunkSizes,
+    PrefillBreakpointTest,
+    ::testing::Values(4u, 13u, 40u));
+
+TEST_F(PrefixCacheTest, ContinuationBreakpointsIncludeThePendingToken) {
+  executor.retained_tail = 0;
+  auto source = open();
+  const Tokens initial(5, 3);
+  const auto first = generate(source, initial, 1);
+  ASSERT_EQ(source.position(), 5);
+  const Tokens delta(19, 7);
+  GenConfig config;
+  config.max_new_tokens = 2;
+  config.seed = 17;
+  config.prefill_breakpoints = periodic_prefill_breakpoints(5, 25, 8, true);
+  std::vector<Position> positions;
+  std::vector<std::future<std::optional<Session>>> snapshots;
+  Tokens output;
+  auto handle = source.generate_async(
+      delta,
+      config,
+      [&](const GenerationUpdate& update) {
+        output.insert(output.end(), update.tokens.begin(), update.tokens.end());
+      },
+      {},
+      [&](Position position) {
+        positions.push_back(position);
+        snapshots.push_back(source.clone_async(position));
+      });
+  handle.wait();
+  ASSERT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(positions, (std::vector<Position>{8, 16, 24, 25}));
+  for (auto& snapshot : snapshots) {
+    EXPECT_TRUE(snapshot.get());
+  }
+  Tokens full = initial;
+  full.insert(full.end(), first.tokens.begin(), first.tokens.end());
+  full.insert(full.end(), delta.begin(), delta.end());
+  auto cold = open();
+  EXPECT_EQ(output, generate(cold, full, 2).tokens);
+}
+
+TEST_F(PrefixCacheTest, InvalidBreakpointsFailBeforePrefill) {
+  auto source = open();
+  for (const std::vector<Position>& positions :
+       {std::vector<Position>{0}, {9}, {3, 3}, {4, 2}}) {
+    GenConfig config;
+    config.prefill_breakpoints = positions;
+    auto handle = source.generate_async(Tokens(8, 7), config, {});
+    handle.wait();
+    EXPECT_EQ(handle.finish_reason(), FinishReason::Failed);
+    EXPECT_EQ(
+        handle.error_message(),
+        "prefill breakpoints must increase within the generation's prefill range");
+    EXPECT_EQ(source.position(), 0);
+  }
+  EXPECT_TRUE(executor.seen().empty());
+}
+
+TEST_F(PrefixCacheTest, ClosingAtBreakpointDropsDeferredPrefill) {
+  auto source = open();
+  GenConfig config;
+  config.prefill_breakpoints = {5, 17};
+  auto handle = source.generate_async(
+      Tokens(40, 7), config, {}, {}, [&](Position position) {
+        EXPECT_EQ(position, 5);
+        source = Session{};
+      });
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  const auto seen = executor.seen();
+  ASSERT_FALSE(seen.empty());
+  EXPECT_EQ(seen.back().position + seen.back().tokens.size(), 5u);
+}
+
+TEST(PrefillCheckpointPolicyTest, AbsoluteIntervalsAndRangeBoundaries) {
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(0, 24, 8),
+      (std::vector<Position>{8, 16, 24}));
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(9, 26, 8, true),
+      (std::vector<Position>{16, 24, 26}));
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(16, 17, 8, true),
+      (std::vector<Position>{17}));
+  EXPECT_TRUE(periodic_prefill_breakpoints(16, 17, 8).empty());
+  EXPECT_TRUE(periodic_prefill_breakpoints(0, 8, 0).empty());
+  const auto end = std::numeric_limits<Position>::max();
+  EXPECT_EQ(
+      periodic_prefill_breakpoints(end - 1, end, end, true),
+      (std::vector<Position>{end}));
+}
+
+TEST_F(PrefixCacheTest, CaptureObserverHonorsAdmissionAndReportsQueueFailure) {
+  auto source = open();
+  generate(source, Tokens(4, 7), 1);
+  PrefixCache cache(1);
+  auto capture = cache.capture_prompt(source, Tokens(4, 7));
+  bool available = false;
+  std::vector<bool> queued;
+  auto observer = capture.observer(
+      [&] { return available; }, [&](bool value) { queued.push_back(value); });
+  observer(4);
+  EXPECT_TRUE(queued.empty());
+  EXPECT_TRUE(executor.clones().empty());
+  available = true;
+  observer(5); // Outside the supplied identity.
+  observer(4);
+  observer(4); // A capture is already pending.
+  EXPECT_EQ(queued, (std::vector<bool>{false, true, false}));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(executor.clones().size(), 1u);
+  executor.reject_clones = true;
+  observer(4);
+  EXPECT_TRUE(queued.back());
+  EXPECT_FALSE(capture.collect());
+  executor.reject_clones = false;
+  auto match = cache.lookup({7, 7, 7, 7, 9});
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 4u);
+}
+
 #if ET_HAS_EXCEPTIONS
 TEST_F(PrefixCacheTest, PrefillObserverExceptionFailsWithoutDeliveringTokens) {
   auto source = open();
   Tokens delivered;
+  GenConfig config;
+  config.prefill_breakpoints = {5, 17};
   auto generation = source.generate_async(
       Tokens(40, 7),
-      GenConfig{},
+      config,
       [&](const GenerationUpdate& update) {
         delivered.insert(
             delivered.end(), update.tokens.begin(), update.tokens.end());
@@ -366,6 +494,7 @@ TEST_F(PrefixCacheTest, PrefillObserverExceptionFailsWithoutDeliveringTokens) {
   EXPECT_EQ(generation.finish_reason(), FinishReason::Failed);
   EXPECT_EQ(generation.error_message(), "prefill observer threw");
   EXPECT_TRUE(delivered.empty());
+  EXPECT_EQ(source.position(), 5);
 }
 #endif
 
