@@ -49,6 +49,7 @@ std::array<uint8_t, 12> pack_q4_k_scales(
   return packed;
 }
 
+// cppcheck-suppress syntaxError
 TEST(ReferenceGgufKQuantTest, DecodesQ4KBlock) {
   const std::array<uint8_t, 8> scales = {1, 2, 3, 4, 17, 5, 33, 63};
   const std::array<uint8_t, 8> mins = {0, 1, 2, 3, 4, 18, 5, 40};
