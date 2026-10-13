@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <iterator>
@@ -36,6 +37,7 @@
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
@@ -43,6 +45,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
+#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -612,6 +615,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
     vulkan::lower_hf_attention(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
@@ -967,6 +971,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Package& package,
       const DataBinding& b,
       const Value& v) {
+    const auto gguf = v.attrs.find(vulkan::kReferenceGgufKQuantAttr);
+    if (gguf != v.attrs.end()) {
+      const auto* codec = std::any_cast<std::string>(&gguf->second);
+      if (codec == nullptr) {
+        throw std::runtime_error("vulkan: malformed GGUF K-quant annotation");
+      }
+      return gguf_kquant_buffer(package, b, v, *codec);
+    }
     if (v.tensor_meta().quant.has_value()) {
       throw std::runtime_error(
           "vulkan: quantized constant '" + b.key +
@@ -1029,7 +1041,84 @@ class VulkanEngineExecutable final : public EngineExecutable {
         bytes.data(), bytes.size(), release_owned_bytes, context);
   }
 
-  // The only place package bytes are acquired, so each owner is recorded once.
+  static void warn_reference_fallback(
+      const vulkan::ReferenceGgufKQuantFallback& fallback) {
+    if (fallback.constants == 0) {
+      return;
+    }
+    std::string codecs;
+    for (const std::string& codec : fallback.codecs) {
+      codecs += (codecs.empty() ? "" : ", ") + codec;
+    }
+    std::fprintf(
+        stderr,
+        "warning: vulkan: no native lowering for %s; decoding %zu constants "
+        "to %zu fp32 bytes with the slow reference decoder. This is a "
+        "correctness fallback, not a supported configuration.\n",
+        codecs.c_str(),
+        fallback.constants,
+        fallback.decoded_bytes);
+  }
+
+  // use_reference_gguf_kquant retyped this constant as the fp32 tensor that
+  // its stored GGUF K-quant blocks decode to.
+  executorch::runtime::FreeableBuffer gguf_kquant_buffer(
+      const Package& package,
+      const DataBinding& b,
+      const Value& v,
+      const std::string& codec) {
+    const TensorMeta& meta = v.tensor_meta();
+    const std::optional<ConstantInfo> info = package.constant_info(b.key);
+    if (!info) {
+      throw std::runtime_error(
+          "vulkan: package holds no constant for key '" + b.key + "'");
+    }
+    const int64_t cols = meta.sizes.empty() ? 0 : meta.sizes.back();
+    const int64_t rows = cols == 0 ? 0 : meta.numel() / cols;
+    const size_t decoded_nbytes = logical_nbytes(meta);
+    std::shared_ptr<OwnedBytes>& storage =
+        derived_constants_["gguf:" + info->owner];
+    if (!storage) {
+      std::optional<OwnedBytes> raw = load_constant(package, *info);
+      if (!raw) {
+        throw std::runtime_error(
+            "vulkan: package could not load constant for key '" + b.key + "'");
+      }
+      size_t stored_nbytes = 0;
+      if (__builtin_mul_overflow(
+              static_cast<size_t>(rows),
+              reference::gguf_kquant_row_nbytes(codec, cols),
+              &stored_nbytes) ||
+          raw->span().size() != stored_nbytes) {
+        throw std::runtime_error(
+            "vulkan: GGUF K-quant constant '" + b.key +
+            "' does not hold its declared shape");
+      }
+      std::vector<uint8_t> bytes(decoded_nbytes);
+      reference::decode_gguf_kquant(
+          codec,
+          raw->span().data(),
+          raw->span().size(),
+          rows,
+          cols,
+          reinterpret_cast<float*>(bytes.data()));
+      storage = std::make_shared<OwnedBytes>(
+          OwnedBytes::from_vector(std::move(bytes)));
+      materializations_.record(info->package_id, info->owner, info->nbytes);
+    }
+    if (storage->span().size() != decoded_nbytes) {
+      throw std::runtime_error(
+          "vulkan: GGUF K-quant constant '" + b.key +
+          "' does not match its declared size");
+    }
+    const ByteSpan bytes = storage->span();
+    auto* context = new std::shared_ptr<OwnedBytes>(storage);
+    return executorch::runtime::FreeableBuffer(
+        bytes.data(), bytes.size(), release_owned_bytes, context);
+  }
+
+  // Package bytes are acquired only here and in gguf_kquant_buffer; both
+  // record each owner's source bytes once.
   std::shared_ptr<OwnedBytes> source_constant(
       const Package& package,
       const DataBinding& binding) {
@@ -1717,6 +1806,34 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
   }
 
+  // A view only forwards its base, so a write through it stays private while
+  // every value up the alias chain has this single reader.
+  bool is_observed(ValueId id) const {
+    const Value& value = g().value(id);
+    if ((value.role != ValueRole::Intermediate &&
+         value.role != ValueRole::UserInput) ||
+        value.consumer_ids.size() != 1 ||
+        std::ranges::find(outputs_, id) != outputs_.end()) {
+      return true;
+    }
+    return valid(value.alias_id) && is_observed(value.alias_id);
+  }
+
+  // Functional in-place ops run out of place (detach_in_place_outputs), so
+  // their input is never written and must not keep a view of it from being
+  // materialized.
+  void unmark_functional_in_place_mutations() {
+    for (const NodeId nid : nodes_) {
+      Node& n = method_.graph.node(nid);
+      if (n.is_call() && is_functional_in_place(n.target) &&
+          !n.inputs.empty() && n.inputs[0].arg.kind() == ArgKind::Tensor &&
+          valid(n.inputs[0].arg.as_tensor().id) &&
+          !is_observed(n.inputs[0].arg.as_tensor().id)) {
+        n.inputs[0].mutated = false;
+      }
+    }
+  }
+
   // A functional kernel whose output views its input binds one storage for
   // both read and write. ET-VK records only the last binding's access, so the
   // write is forgotten and the next reader of the output gets no barrier. Such
@@ -1738,11 +1855,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         continue;
       }
       const Value& self = g().value(self_id);
-      const bool observed = (self.role != ValueRole::Intermediate &&
-                             self.role != ValueRole::UserInput) ||
-          valid(self.alias_id) || self.consumer_ids.size() != 1 ||
-          std::ranges::find(outputs_, self_id) != outputs_.end();
-      if (observed) {
+      if (is_observed(self_id)) {
         throw std::runtime_error(
             "vulkan: node '" + n.name + "' (" + n.target +
             "): in-place update of '" + self.name +
@@ -1772,11 +1885,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
       if (!is_active(value)) {
         continue;
       }
-      requests.push_back(AllocationRequest{
-          .value_id = id,
-          .size_bytes = logical_nbytes(value.tensor_meta()),
-          .memory_kind = memory_kind(storage_at(id)),
-      });
+      requests.push_back(
+          AllocationRequest{
+              .value_id = id,
+              .size_bytes = logical_nbytes(value.tensor_meta()),
+              .memory_kind = memory_kind(storage_at(id)),
+          });
     }
     memory_plan_ = plan_memory(g(), requests);
   }
@@ -1899,6 +2013,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void build(const Package& package) {
     check_mutation_outputs();
     assign_layouts();
+    unmark_functional_in_place_mutations();
     materialize_packed_views();
     detach_in_place_outputs();
     index_output_kinds();
