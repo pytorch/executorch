@@ -88,8 +88,10 @@ int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,
     const char* system_prompt,
+    const char* assistant_prefill_prompt,
     const char* image_path,
     const char* prompt_before_image,
+    int32_t raw_prompt,
     int32_t seq_len,
     float temperature,
     int32_t num_bos,
@@ -115,8 +117,11 @@ int32_t enn_llm_generate(
   // System prompt and image inputs are threaded through the runner's config
   // (read by generate).
   lrunner->get_config().system_prompt = str_or_empty(system_prompt);
+  lrunner->get_config().assistant_prefill_prompt =
+      str_or_empty(assistant_prefill_prompt);
   lrunner->get_config().image_path = str_or_empty(image_path);
   lrunner->get_config().prompt_before_image = str_or_empty(prompt_before_image);
+  lrunner->get_config().raw_prompt = raw_prompt != 0;
   lrunner->get_config().verbose = verbose != 0;
 
   llm::GenerationConfig gen_cfg{

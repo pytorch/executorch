@@ -104,6 +104,7 @@ class LLMRunner : public llm::IRunner {
   static std::string get_formatted_prompt(
       const std::string& prompt,
       const std::string& system_prompt,
+      const std::string& assistant_prefill_prompt,
       DecoderModelVersion version);
 
   void reset();
