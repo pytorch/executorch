@@ -11,9 +11,10 @@ speculative drafting/verification remain inside the runner and executor.
 - Prompts are full inputs, made from ordered text and exact token-ID segments.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
-- Exact strict history extensions reuse the existing session. With prefix
-  caching enabled, clean equal/shortened/mismatched histories can clone their
-  longest common committed prefix and prefill the remaining suffix. Dirty
+- Exact strict history extensions reuse the existing session when their
+  prepared suffix is available. With prefix caching enabled, clean
+  equal/shortened/mismatched histories and extensions with unavailable suffixes
+  can clone their longest common committed prefix and prefill the rest. Dirty
   histories and cache misses cold-replay. If live-prefix reuse is unavailable,
   the shared cache is searched against the full replacement prompt, even when
   it shares no prefix with the live history. A snapshot from any session may

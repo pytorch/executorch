@@ -898,11 +898,12 @@ struct ServingRuntime::Impl {
     }
     if (auto* outcome = std::get_if<Selection>(&selection); outcome &&
         *outcome == Selection::Selected && reset &&
-        (plan.reason == "mismatch" || plan.reason == "equal") &&
+        (plan.reason == "mismatch" || plan.reason == "equal" ||
+         plan.reason == "suffix_unavailable") &&
         config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
       // Share the snapshot capture's one transient row; never add another
       // row while a capture is still pending collection.
-      auto cold_delta = request->request.delta;
+      auto cold_delta = std::move(request->request.delta);
       selection = clone_prefix(request, key);
       if (auto* cloned = std::get_if<Selection>(&selection)) {
         if (*cloned == Selection::Selected) {

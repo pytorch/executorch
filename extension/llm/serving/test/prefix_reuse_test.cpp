@@ -692,6 +692,60 @@ INSTANTIATE_TEST_SUITE_P(
     MixedNamedFallbackTest,
     ::testing::Bool());
 
+class MixedExtensionSnapshotTest : public PrefixReuseTest,
+                                   public ::testing::WithParamInterface<bool> {
+};
+
+TEST_P(MixedExtensionSnapshotTest, RefusedExtensionUsesSnapshotWhenEnabled) {
+  config.prefix_cache_capacity = GetParam() ? 1 : 0;
+  config.default_stop_tokens = {101};
+  executor.reject_after_decode = true;
+  use_mixed_preparer();
+  start();
+  auto first = output();
+  submit(first, {1, 7, 7, 7, 2}, "s", 2).wait();
+  ASSERT_TRUE(first->terminal);
+  ASSERT_FALSE(first->terminal->error);
+  EXPECT_EQ(
+      first->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
+  executor.rejected_view_start = 7;
+  executor.full_accepts = 0;
+  executor.clear_feeds();
+  const auto before = executor.clone_calls.load();
+  auto extension = output();
+  const std::vector<Token> prompt{1, 7, 7, 7, 2, 100, 101, 3};
+  submit(extension, prompt).wait();
+  ASSERT_TRUE(extension->terminal);
+  ASSERT_FALSE(extension->terminal->error);
+  const std::size_t reused = GetParam() ? 5 : 0;
+  EXPECT_EQ(
+      extension->terminal->stats.session_reset_reason,
+      GetParam() ? "prefix_clone" : "suffix_unavailable");
+  EXPECT_EQ(extension->terminal->stats.reused_prompt_tokens, reused);
+  EXPECT_EQ(
+      extension->terminal->stats.prefilled_prompt_tokens,
+      prompt.size() - reused);
+  EXPECT_EQ(executor.full_accepts, GetParam() ? 1u : 2u);
+  EXPECT_EQ(executor.clone_calls.load(), before + (GetParam() ? 2 : 0));
+  const auto feeds = executor.feeds();
+  ASSERT_EQ(feeds.size(), 1u);
+  EXPECT_EQ(feeds.front().position, reused);
+  EXPECT_EQ(
+      feeds.front().tokens,
+      (std::vector<Token>(prompt.begin() + reused, prompt.end())));
+  EXPECT_EQ(runtime->info().active_sessions, 1u);
+  if (GetParam()) {
+    const auto clones = executor.clones();
+    ASSERT_EQ(clones.size(), 2u);
+    EXPECT_EQ(clones.back().source, clones.front().destination);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CacheDisabledAndEnabled,
+    MixedExtensionSnapshotTest,
+    ::testing::Bool());
+
 class MixedSnapshotViewTest
     : public PrefixReuseTest,
       public ::testing::WithParamInterface<std::pair<int, bool>> {};
