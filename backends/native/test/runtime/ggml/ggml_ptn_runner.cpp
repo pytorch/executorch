@@ -29,6 +29,7 @@ DEFINE_bool(
 
 namespace ptn::testing {
 
+// cppcheck-suppress unusedFunction
 std::unique_ptr<EngineHost> make_engine_host() {
   GgmlEngineOptions options;
   if (FLAGS_device == "gpu") {
