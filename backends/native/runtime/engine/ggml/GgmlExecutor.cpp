@@ -1,0 +1,2542 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// All rights reserved.
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
+
+#include <executorch/backends/native/runtime/engine/ggml/GgmlExecutor.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <numeric>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include <ggml-alloc.h>
+#include <ggml-backend.h>
+#include <ggml-cpp.h>
+#include <ggml-cpu.h>
+#include <ggml.h>
+
+#include <executorch/backends/native/runtime/Method.h>
+#include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
+#include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
+#include <executorch/backends/native/runtime/deserialize/Package.h>
+#include <executorch/backends/native/runtime/graph/Argument.h>
+#include <executorch/backends/native/runtime/graph/Graph.h>
+#include <executorch/backends/native/runtime/graph/Ids.h>
+#include <executorch/backends/native/runtime/graph/Node.h>
+#include <executorch/backends/native/runtime/graph/ScalarType.h>
+#include <executorch/backends/native/runtime/graph/TensorMeta.h>
+#include <executorch/backends/native/runtime/graph/Value.h>
+
+namespace ptn {
+namespace {
+
+constexpr std::string_view kTorchOpsPrefix = "torch.ops.";
+constexpr std::string_view kQ4KCodec = "gguf:q4_k";
+constexpr int64_t kQ4KBlockElements = 256;
+constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ40BlockElements = 32;
+
+struct BlockQ40 {
+  ggml_fp16_t d;
+  uint8_t qs[kQ40BlockElements / 2];
+};
+
+size_t checked_numel(const std::vector<int64_t>& sizes) {
+  size_t out = 1;
+  for (const int64_t size : sizes) {
+    if (size < 0 || static_cast<uint64_t>(size) > SIZE_MAX ||
+        (size != 0 && out > SIZE_MAX / static_cast<size_t>(size))) {
+      throw std::runtime_error("ggml: tensor shape is not representable");
+    }
+    out *= static_cast<size_t>(size);
+  }
+  return out;
+}
+
+size_t checked_nbytes(const std::vector<int64_t>& sizes, ScalarType dtype) {
+  const size_t numel = checked_numel(sizes);
+  const size_t width = element_size(dtype);
+  if (width != 0 && numel > SIZE_MAX / width) {
+    throw std::runtime_error("ggml: tensor byte size overflows");
+  }
+  return numel * width;
+}
+
+const PackedQuant* packed_quant(const TensorMeta& meta) {
+  if (!meta.quant) {
+    return nullptr;
+  }
+  return std::get_if<PackedQuant>(&*meta.quant);
+}
+
+size_t packed_nbytes(const TensorMeta& meta) {
+  const PackedQuant* packed = packed_quant(meta);
+  if (packed == nullptr || packed->codec != kQ4KCodec) {
+    throw std::runtime_error(
+        "ggml: only PackedQuant codec 'gguf:q4_k' is supported");
+  }
+  if (meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
+      meta.sizes[1] % kQ4KBlockElements != 0) {
+    throw std::runtime_error(
+        "ggml: Q4_K weight must have logical shape [O, I] with I divisible "
+        "by 256");
+  }
+  const size_t rows = static_cast<size_t>(meta.sizes[0]);
+  const size_t blocks = static_cast<size_t>(meta.sizes[1] / kQ4KBlockElements);
+  if (blocks > SIZE_MAX / kQ4KBlockBytes ||
+      rows > SIZE_MAX / (blocks * kQ4KBlockBytes)) {
+    throw std::runtime_error("ggml: Q4_K byte size overflows");
+  }
+  return rows * blocks * kQ4KBlockBytes;
+}
+
+const AffineGroupQuant* affine_quant(const TensorMeta& meta) {
+  if (!meta.quant) {
+    return nullptr;
+  }
+  return std::get_if<AffineGroupQuant>(&*meta.quant);
+}
+
+// Symmetric int4 groups that are whole multiples of 32 map onto Q4_0 blocks.
+// Q4_0 stores the scale as fp16, so scales are narrowed at load.
+const AffineGroupQuant& q4_affine(const TensorMeta& meta) {
+  const AffineGroupQuant* quant = affine_quant(meta);
+  if (quant == nullptr || quant->quant_min != -8 || quant->quant_max != 7 ||
+      quant->group_size <= 0 || quant->group_size % kQ40BlockElements != 0 ||
+      meta.sizes.size() != 2 || meta.sizes[0] <= 0 ||
+      meta.sizes[1] % quant->group_size != 0) {
+    throw std::runtime_error(
+        "ggml: affine weights must be int4 [N, K] with groups divisible by 32");
+  }
+  return *quant;
+}
+
+std::vector<float> to_float_vector(ByteSpan bytes, ScalarType dtype) {
+  const size_t count = bytes.size() / std::max<size_t>(element_size(dtype), 1);
+  std::vector<float> out(count);
+  switch (dtype) {
+    case ScalarType::Float:
+      std::memcpy(out.data(), bytes.data(), count * sizeof(float));
+      return out;
+    case ScalarType::Half:
+      ggml_fp16_to_fp32_row(
+          reinterpret_cast<const ggml_fp16_t*>(bytes.data()),
+          out.data(),
+          static_cast<int64_t>(count));
+      return out;
+    case ScalarType::BFloat16:
+      ggml_bf16_to_fp32_row(
+          reinterpret_cast<const ggml_bf16_t*>(bytes.data()),
+          out.data(),
+          static_cast<int64_t>(count));
+      return out;
+    default:
+      throw std::runtime_error(
+          "ggml: expected a floating-point constant, got " +
+          std::string(scalar_type_name(dtype)));
+  }
+}
+
+std::vector<uint8_t> affine_int4_to_q4_0(
+    const TensorMeta& meta,
+    ByteSpan packed,
+    const std::vector<float>& scales) {
+  static_assert(
+      sizeof(BlockQ40) == sizeof(ggml_fp16_t) + kQ40BlockElements / 2);
+  if (ggml_type_size(GGML_TYPE_Q4_0) != sizeof(BlockQ40) ||
+      ggml_blck_size(GGML_TYPE_Q4_0) != kQ40BlockElements) {
+    throw std::runtime_error("ggml: unexpected Q4_0 block layout");
+  }
+  const AffineGroupQuant& quant = q4_affine(meta);
+  const size_t rows = static_cast<size_t>(meta.sizes[0]);
+  const size_t cols = static_cast<size_t>(meta.sizes[1]);
+  const size_t groups = cols / static_cast<size_t>(quant.group_size);
+  if (packed.size() != rows * cols / 2 || scales.size() != rows * groups) {
+    throw std::runtime_error("ggml: int4 weight or scale size mismatch");
+  }
+  std::vector<uint8_t> out(
+      rows * (cols / kQ40BlockElements) * sizeof(BlockQ40));
+  auto* block = reinterpret_cast<BlockQ40*>(out.data());
+  // Column c sits in the low nibble when c is even, stored as q + 8: the same
+  // offset encoding Q4_0 uses, so only the nibble order changes.
+  for (size_t r = 0; r < rows; ++r) {
+    const uint8_t* row = packed.data() + r * cols / 2;
+    const auto nibble = [row](size_t c) -> uint8_t {
+      return (row[c / 2] >> (4 * (c & 1))) & 0xF;
+    };
+    for (size_t c0 = 0; c0 < cols; c0 += kQ40BlockElements, ++block) {
+      block->d = ggml_fp32_to_fp16(
+          scales[r * groups + c0 / static_cast<size_t>(quant.group_size)]);
+      for (size_t j = 0; j < kQ40BlockElements / 2; ++j) {
+        block->qs[j] = static_cast<uint8_t>(
+            nibble(c0 + j) | (nibble(c0 + j + kQ40BlockElements / 2) << 4));
+      }
+    }
+  }
+  return out;
+}
+
+ggml_type to_ggml_type(const TensorMeta& meta) {
+  if (affine_quant(meta) != nullptr) {
+    q4_affine(meta);
+    return GGML_TYPE_Q4_0;
+  }
+  if (packed_quant(meta) != nullptr) {
+    packed_nbytes(meta);
+    if (packed_quant(meta)->codec == kQ4KCodec) {
+      return GGML_TYPE_Q4_K;
+    }
+    throw std::runtime_error(
+        "ggml: unsupported PackedQuant codec '" + packed_quant(meta)->codec +
+        "'");
+  }
+  switch (meta.dtype) {
+    case ScalarType::Float:
+      return GGML_TYPE_F32;
+    case ScalarType::Half:
+      return GGML_TYPE_F16;
+    case ScalarType::BFloat16:
+      return GGML_TYPE_BF16;
+    case ScalarType::Int:
+      return GGML_TYPE_I32;
+    case ScalarType::Long:
+      return GGML_TYPE_I64;
+    // Byte, Char, Short and Double would be I8, I16 and F64, which ggml
+    // cannot convert to any other type.
+    default:
+      throw std::runtime_error(
+          "ggml: unsupported tensor dtype " +
+          std::string(scalar_type_name(meta.dtype)));
+  }
+}
+
+// ggml has no int64 kernels, so int64 values are carried as I32.
+ggml_type compute_type(const TensorMeta& meta) {
+  return meta.dtype == ScalarType::Long ? GGML_TYPE_I32 : to_ggml_type(meta);
+}
+
+std::array<int64_t, GGML_MAX_DIMS> reversed_extents(
+    const std::vector<int64_t>& sizes) {
+  if (sizes.size() > GGML_MAX_DIMS) {
+    throw std::runtime_error(
+        "ggml: only rank 0 through 4 tensors are supported");
+  }
+  std::array<int64_t, GGML_MAX_DIMS> ne{1, 1, 1, 1};
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    ne[i] = sizes[sizes.size() - 1 - i];
+  }
+  return ne;
+}
+
+ggml_tensor* new_tensor(
+    ggml_context* ctx,
+    ggml_type type,
+    const std::vector<int64_t>& sizes) {
+  const auto ne = reversed_extents(sizes);
+  return ggml_new_tensor(
+      ctx, type, std::max(1, static_cast<int>(sizes.size())), ne.data());
+}
+
+std::string op_key(std::string_view target) {
+  if (target.starts_with(kTorchOpsPrefix)) {
+    target.remove_prefix(kTorchOpsPrefix.size());
+  }
+  return std::string(target);
+}
+
+const NamedArgument*
+find_arg(const Node& node, std::string_view name, size_t positional) {
+  const auto named = std::find_if(
+      node.inputs.begin(), node.inputs.end(), [&](const NamedArgument& arg) {
+        return arg.name == name;
+      });
+  if (named != node.inputs.end()) {
+    return &*named;
+  }
+  return positional < node.inputs.size() ? &node.inputs[positional] : nullptr;
+}
+
+const NamedArgument&
+require_arg(const Node& node, std::string_view name, size_t positional) {
+  const NamedArgument* arg = find_arg(node, name, positional);
+  if (arg == nullptr) {
+    throw std::runtime_error(
+        "ggml: op '" + node.target + "' is missing argument '" +
+        std::string(name) + "'");
+  }
+  return *arg;
+}
+
+std::vector<ValueId> output_ids(const Node& node) {
+  std::vector<ValueId> ids;
+  for (const Output& output : node.outputs) {
+    if (output.kind == OutputValueKind::TensorList) {
+      for (const ValueId id : output.elem_ids) {
+        if (valid(id)) {
+          ids.push_back(id);
+        }
+      }
+    } else if (valid(output.value_id)) {
+      ids.push_back(output.value_id);
+    }
+  }
+  return ids;
+}
+
+std::vector<int64_t> broadcast_shape(
+    const std::vector<int64_t>& a,
+    const std::vector<int64_t>& b) {
+  const size_t rank = std::max(a.size(), b.size());
+  std::vector<int64_t> out(rank, 1);
+  for (size_t i = 0; i < rank; ++i) {
+    const int64_t x = i < rank - a.size() ? 1 : a[i - (rank - a.size())];
+    const int64_t y = i < rank - b.size() ? 1 : b[i - (rank - b.size())];
+    if (x != y && x != 1 && y != 1) {
+      throw std::runtime_error("ggml: incompatible broadcast shapes");
+    }
+    out[i] = x == 1 ? y : x;
+  }
+  return out;
+}
+
+int64_t normalize_dim(int64_t dim, size_t rank) {
+  if (dim < 0) {
+    dim += static_cast<int64_t>(rank);
+  }
+  if (dim < 0 || dim >= static_cast<int64_t>(rank)) {
+    throw std::runtime_error("ggml: tensor dimension is out of range");
+  }
+  return dim;
+}
+
+std::vector<uint8_t> narrow_to_int32(ByteSpan bytes) {
+  const size_t numel = bytes.size() / sizeof(int64_t);
+  std::vector<uint8_t> out(numel * sizeof(int32_t));
+  const auto* src = reinterpret_cast<const int64_t*>(bytes.data());
+  auto* dst = reinterpret_cast<int32_t*>(out.data());
+  for (size_t i = 0; i < numel; ++i) {
+    if (src[i] < std::numeric_limits<int32_t>::min() ||
+        src[i] > std::numeric_limits<int32_t>::max()) {
+      throw std::runtime_error("ggml: int64 input does not fit in int32");
+    }
+    dst[i] = static_cast<int32_t>(src[i]);
+  }
+  return out;
+}
+
+struct TensorRef {
+  ggml_tensor* tensor = nullptr;
+  std::vector<int64_t> sizes;
+};
+
+// A torchao activation quantize/dequantize chain in flight; `input` is the
+// float tensor it started from.
+struct DynamicQuant {
+  TensorRef input;
+};
+
+using RuntimeValue = std::
+    variant<std::monostate, TensorRef, DynamicQuant, int64_t, double, bool>;
+
+struct InputSlot {
+  ValueId id = kInvalid;
+  TensorMeta meta;
+  std::vector<int64_t> sizes;
+  std::vector<uint8_t> bytes;
+};
+
+struct OutputSlot {
+  ValueId id = kInvalid;
+  TensorMeta meta;
+  std::vector<int64_t> sizes;
+  std::vector<uint8_t> bytes;
+};
+
+struct Upload {
+  ggml_tensor* tensor = nullptr;
+  std::vector<uint8_t> bytes;
+};
+
+struct GraphInstance {
+  ggml_context_ptr context;
+  ggml_cgraph* graph = nullptr;
+  std::vector<Upload> uploads;
+  std::vector<TensorRef> outputs;
+};
+
+const ggml_tensor* storage_root(const ggml_tensor* tensor) {
+  while (tensor->view_src != nullptr) {
+    tensor = tensor->view_src;
+  }
+  return tensor;
+}
+
+// ggml's row gathers and scatters do not bounds-check: a stray row aborts on
+// the CPU and reads or writes out of bounds on GPUs. Input bytes are empty
+// while compiling.
+void check_row_indices(const InputSlot& input, int64_t rows) {
+  if (input.bytes.empty()) {
+    return;
+  }
+  const auto in_range = [rows](int64_t row) { return row >= 0 && row < rows; };
+  bool ok = true;
+  if (input.meta.dtype == ScalarType::Long) {
+    std::vector<int64_t> indices(input.bytes.size() / sizeof(int64_t));
+    std::memcpy(indices.data(), input.bytes.data(), input.bytes.size());
+    ok = std::ranges::all_of(indices, in_range);
+  } else {
+    std::vector<int32_t> indices(input.bytes.size() / sizeof(int32_t));
+    std::memcpy(indices.data(), input.bytes.data(), input.bytes.size());
+    ok = std::ranges::all_of(indices, in_range);
+  }
+  if (!ok) {
+    throw std::out_of_range(
+        "ggml: row index is outside [0, " + std::to_string(rows) + ")");
+  }
+}
+
+// Holds a method's non-empty mutable buffer keys in `owners` for the lifetime
+// of its executable.
+class MutableKeyClaim {
+ public:
+  MutableKeyClaim(GgmlMutableKeyOwners& owners, const Method& method)
+      : owners_(owners) {
+    for (const DataBinding& binding : method.data_bindings) {
+      if (!binding.mutated || binding.key.empty()) {
+        continue;
+      }
+      const auto owner = owners_.find(binding.key);
+      if (owner != owners_.end()) {
+        throw std::runtime_error(
+            "ggml: mutable buffer '" + binding.key + "' of method '" +
+            method.name +
+            "' is already bound by a live executable of method '" +
+            owner->second +
+            "'; sharing mutable buffers across executables is not implemented");
+      }
+    }
+    for (const DataBinding& binding : method.data_bindings) {
+      if (binding.mutated && !binding.key.empty() &&
+          owners_.try_emplace(binding.key, method.name).second) {
+        keys_.push_back(binding.key);
+      }
+    }
+  }
+
+  MutableKeyClaim(const MutableKeyClaim&) = delete;
+  MutableKeyClaim& operator=(const MutableKeyClaim&) = delete;
+
+  ~MutableKeyClaim() {
+    for (const std::string& key : keys_) {
+      owners_.erase(key);
+    }
+  }
+
+ private:
+  GgmlMutableKeyOwners& owners_;
+  std::vector<std::string> keys_;
+};
+
+ggml_tensor* reshape(
+    ggml_context* ctx,
+    ggml_tensor* tensor,
+    const std::vector<int64_t>& sizes) {
+  if (!ggml_is_contiguous(tensor)) {
+    tensor = ggml_cont(ctx, tensor);
+  }
+  const auto ne = reversed_extents(sizes);
+  switch (sizes.size()) {
+    case 0:
+    case 1:
+      return ggml_reshape_1d(ctx, tensor, ne[0]);
+    case 2:
+      return ggml_reshape_2d(ctx, tensor, ne[0], ne[1]);
+    case 3:
+      return ggml_reshape_3d(ctx, tensor, ne[0], ne[1], ne[2]);
+    case 4:
+      return ggml_reshape_4d(ctx, tensor, ne[0], ne[1], ne[2], ne[3]);
+    default:
+      throw std::runtime_error("ggml: reshape supports rank 0 through 4");
+  }
+}
+
+ggml_tensor* view_with_shape(
+    ggml_context* ctx,
+    ggml_tensor* tensor,
+    const std::vector<int64_t>& sizes,
+    size_t offset) {
+  const auto ne = reversed_extents(sizes);
+  switch (sizes.size()) {
+    case 0:
+    case 1:
+      return ggml_view_1d(ctx, tensor, ne[0], offset);
+    case 2:
+      return ggml_view_2d(ctx, tensor, ne[0], ne[1], tensor->nb[1], offset);
+    case 3:
+      return ggml_view_3d(
+          ctx,
+          tensor,
+          ne[0],
+          ne[1],
+          ne[2],
+          tensor->nb[1],
+          tensor->nb[2],
+          offset);
+    case 4:
+      return ggml_view_4d(
+          ctx,
+          tensor,
+          ne[0],
+          ne[1],
+          ne[2],
+          ne[3],
+          tensor->nb[1],
+          tensor->nb[2],
+          tensor->nb[3],
+          offset);
+    default:
+      throw std::runtime_error("ggml: view supports rank 0 through 4");
+  }
+}
+
+class GgmlExecutable final : public EngineExecutable {
+ public:
+  GgmlExecutable(
+      const Method& method,
+      const Package& package,
+      const GgmlEngineOptions& options,
+      size_t* materialized_constant_bytes,
+      GgmlMutableKeyOwners& mutable_key_owners)
+      : mutable_key_claim_(mutable_key_owners, method),
+        method_(method),
+        package_(package),
+        options_(options) {
+    index_signature();
+    initialize_backends();
+    initialize_persistent_tensors(materialized_constant_bytes);
+    index_rope_frequencies();
+    // Rejects unsupported ops and shapes at compile time.
+    build_graph();
+  }
+
+  ~GgmlExecutable() override {
+    if (scheduler_) {
+      ggml_backend_sched_synchronize(scheduler_.get());
+    }
+  }
+
+  size_t num_inputs() const override {
+    return inputs_.size();
+  }
+
+  size_t num_outputs() const override {
+    return outputs_.size();
+  }
+
+  std::vector<int64_t> input_sizes(size_t i) const override {
+    return inputs_.at(i).sizes;
+  }
+
+  std::vector<int64_t> output_sizes(size_t i) const override {
+    return outputs_.at(i).sizes;
+  }
+
+  ScalarType input_dtype(size_t i) const override {
+    return inputs_.at(i).meta.dtype;
+  }
+
+  ScalarType output_dtype(size_t i) const override {
+    return outputs_.at(i).meta.dtype;
+  }
+
+  void resize_input(size_t i, const std::vector<int64_t>& sizes) override {
+    InputSlot& slot = inputs_.at(i);
+    if (!slot.meta.accepts_sizes(sizes)) {
+      throw std::invalid_argument(
+          "ggml: input shape exceeds serialized bounds");
+    }
+    slot.sizes = sizes;
+    slot.bytes.clear();
+  }
+
+  void set_input(size_t i, const void* data, size_t numel, ScalarType src_dtype)
+      override {
+    InputSlot& slot = inputs_.at(i);
+    const size_t expected = checked_numel(slot.sizes);
+    if (numel != expected) {
+      throw std::invalid_argument(
+          "ggml: input element count does not match shape");
+    }
+    if (src_dtype != slot.meta.dtype) {
+      throw std::invalid_argument(
+          "ggml: input conversion is unsupported; input dtype must match "
+          "the graph");
+    }
+    const size_t nbytes = checked_nbytes(slot.sizes, src_dtype);
+    if (nbytes != 0 && data == nullptr) {
+      throw std::invalid_argument("ggml: input data is null");
+    }
+    slot.bytes.resize(nbytes);
+    if (nbytes != 0) {
+      std::memcpy(slot.bytes.data(), data, nbytes);
+    }
+  }
+
+  void execute() override {
+    for (const InputSlot& input : inputs_) {
+      if (input.bytes.size() != checked_nbytes(input.sizes, input.meta.dtype)) {
+        throw std::logic_error("ggml: every input must be set before execute");
+      }
+    }
+
+    ggml_backend_sched_reset(scheduler_.get());
+    GraphInstance instance = build_graph();
+    // The scheduler otherwise keeps graph inputs on the CPU backend and copies
+    // them into GPU splits once per consuming view.
+    for (const Upload& upload : instance.uploads) {
+      ggml_backend_sched_set_tensor_backend(
+          scheduler_.get(), upload.tensor, primary_backend_);
+    }
+    if (!ggml_backend_sched_alloc_graph(scheduler_.get(), instance.graph)) {
+      ggml_backend_sched_reset(scheduler_.get());
+      throw std::runtime_error("ggml: failed to allocate execution graph");
+    }
+    try {
+      for (const Upload& upload : instance.uploads) {
+        if (upload.tensor->buffer == nullptr) {
+          continue;
+        }
+        ggml_backend_tensor_set(
+            upload.tensor, upload.bytes.data(), 0, upload.bytes.size());
+      }
+      const ggml_status status =
+          ggml_backend_sched_graph_compute(scheduler_.get(), instance.graph);
+      if (status != GGML_STATUS_SUCCESS) {
+        throw std::runtime_error(
+            "ggml: graph execution failed with status " +
+            std::to_string(static_cast<int>(status)));
+      }
+      for (size_t i = 0; i < outputs_.size(); ++i) {
+        OutputSlot& output = outputs_[i];
+        output.sizes = instance.outputs.at(i).sizes;
+        output.bytes.resize(ggml_nbytes(instance.outputs.at(i).tensor));
+        ggml_backend_tensor_get(
+            instance.outputs.at(i).tensor,
+            output.bytes.data(),
+            0,
+            output.bytes.size());
+      }
+    } catch (...) {
+      ggml_backend_sched_reset(scheduler_.get());
+      throw;
+    }
+    ggml_backend_sched_reset(scheduler_.get());
+    executed_ = true;
+  }
+
+  void get_output(size_t i, void* data, size_t numel, ScalarType dst_dtype)
+      override {
+    const OutputSlot& slot = outputs_.at(i);
+    if (!executed_) {
+      throw std::logic_error("ggml: output requested before execute");
+    }
+    if (numel != checked_numel(slot.sizes)) {
+      throw std::invalid_argument(
+          "ggml: output element count does not match shape");
+    }
+    if (numel != 0 && data == nullptr) {
+      throw std::invalid_argument("ggml: output destination is null");
+    }
+    copy_output(slot, data, dst_dtype);
+  }
+
+ private:
+  void index_signature() {
+    for (const ValueId id : method_.graph.input_ids) {
+      const TensorMeta& meta = contiguous_meta(id);
+      if (meta.quant) {
+        throw std::runtime_error(
+            "ggml: quantized graph inputs are unsupported");
+      }
+      inputs_.push_back(InputSlot{.id = id, .meta = meta, .sizes = meta.sizes});
+    }
+    if (method_.output_specs.size() != method_.graph.output_ids.size()) {
+      throw std::runtime_error("ggml: inconsistent output specifications");
+    }
+    for (size_t i = 0; i < method_.graph.output_ids.size(); ++i) {
+      const OutputKind kind = method_.output_specs[i].kind;
+      if (kind == OutputKind::UserInputMutation) {
+        throw std::runtime_error("ggml: user input mutation is unsupported");
+      }
+      if (kind != OutputKind::UserOutput) {
+        continue;
+      }
+      const ValueId id = method_.graph.output_ids[i];
+      const TensorMeta& meta = contiguous_meta(id);
+      if (meta.quant) {
+        throw std::runtime_error(
+            "ggml: quantized graph outputs are unsupported");
+      }
+      outputs_.push_back(
+          OutputSlot{.id = id, .meta = meta, .sizes = meta.sizes});
+    }
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (binding.has_data && valid(binding.value_id) &&
+          method_.graph.value(binding.value_id).is_tensor()) {
+        contiguous_meta(binding.value_id);
+      }
+    }
+  }
+
+  // Bytes that cross the engine boundary are laid out as dim_order_hint says.
+  const TensorMeta& contiguous_meta(ValueId id) const {
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    if (!meta.is_contiguous()) {
+      throw std::runtime_error(
+          "ggml: tensor '" + method_.graph.value(id).name +
+          "' has a non-contiguous dim order");
+    }
+    return meta;
+  }
+
+  void initialize_backends() {
+    if (options_.device == GgmlDevice::Gpu) {
+      ggml_backend_dev_t device = select_ggml_gpu_device(options_);
+      ggml_backend_ptr gpu(ggml_backend_dev_init(device, nullptr));
+      if (!gpu) {
+        throw std::runtime_error(
+            std::string("ggml: failed to initialize ") +
+            ggml_backend_dev_name(device));
+      }
+      primary_backend_ = gpu.get();
+      backends_.push_back(std::move(gpu));
+    }
+    ggml_backend_ptr cpu(ggml_backend_cpu_init());
+    if (!cpu) {
+      throw std::runtime_error("ggml: failed to initialize CPU backend");
+    }
+    if (options_.cpu_threads > 0) {
+      ggml_backend_cpu_set_n_threads(cpu.get(), options_.cpu_threads);
+    }
+    if (primary_backend_ == nullptr) {
+      primary_backend_ = cpu.get();
+    }
+    backends_.push_back(std::move(cpu));
+
+    std::vector<ggml_backend_t> raw;
+    raw.reserve(backends_.size());
+    for (const auto& backend : backends_) {
+      raw.push_back(backend.get());
+    }
+    scheduler_.reset(ggml_backend_sched_new(
+        raw.data(),
+        nullptr,
+        static_cast<int>(raw.size()),
+        options_.graph_size,
+        /*parallel=*/false,
+        /*op_offload=*/true));
+    if (!scheduler_) {
+      throw std::runtime_error("ggml: failed to create backend scheduler");
+    }
+  }
+
+  // Quantization parameters are bound but only read through their weight.
+  bool is_used(ValueId id) const {
+    const std::vector<ValueId>& outputs = method_.graph.output_ids;
+    return !method_.graph.value(id).consumer_ids.empty() ||
+        std::find(outputs.begin(), outputs.end(), id) != outputs.end();
+  }
+
+  bool is_persistent(const DataBinding& binding) const {
+    return valid(binding.value_id) &&
+        method_.graph.value(binding.value_id).is_tensor() &&
+        is_used(binding.value_id);
+  }
+
+  static size_t stored_nbytes(const TensorMeta& meta) {
+    if (packed_quant(meta) != nullptr) {
+      return packed_nbytes(meta);
+    }
+    if (affine_quant(meta) != nullptr) {
+      return checked_numel(meta.sizes) / 2;
+    }
+    return checked_nbytes(meta.sizes, meta.dtype);
+  }
+
+  void check_q4_consumers(ValueId id, const std::string& key) const {
+    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
+      const Node& node = method_.graph.node(consumer);
+      const std::string op = op_key(node.target);
+      const NamedArgument* weight = op == "aten.linear.default"
+          ? find_arg(node, "weight", 1)
+          : op == "aten.embedding.default" ? find_arg(node, "weight", 0)
+                                           : nullptr;
+      if (weight == nullptr || weight->arg.kind() != ArgKind::Tensor ||
+          weight->arg.as_tensor().id != id) {
+        throw std::runtime_error(
+            "ggml: quantized weight '" + key +
+            "' may only feed linear or embedding weights, not '" + node.target +
+            "'");
+      }
+    }
+  }
+
+  std::vector<uint8_t> load_q4_0(const TensorMeta& meta, ByteSpan packed)
+      const {
+    const AffineGroupQuant& quant = q4_affine(meta);
+    const std::optional<OwnedBytes> scales =
+        package_.acquire_constant(quant.scale_data_key);
+    if (!scales) {
+      throw std::runtime_error(
+          "ggml: package is missing scales '" + quant.scale_data_key + "'");
+    }
+    if (!quant.zero_point_data_key.empty()) {
+      const std::optional<OwnedBytes> zeros =
+          package_.acquire_constant(quant.zero_point_data_key);
+      if (!zeros || std::ranges::any_of(zeros->span(), [](uint8_t byte) {
+            return byte != 0;
+          })) {
+        throw std::runtime_error(
+            "ggml: Q4_0 needs zero points of zero, see '" +
+            quant.zero_point_data_key + "'");
+      }
+    }
+    return affine_int4_to_q4_0(
+        meta, packed, to_float_vector(scales->span(), quant.scale_dtype));
+  }
+
+  void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
+    const size_t count = static_cast<size_t>(std::ranges::count_if(
+        method_.data_bindings,
+        [this](const DataBinding& binding) { return is_persistent(binding); }));
+    if (count == 0) {
+      return;
+    }
+    ggml_init_params params{
+        .mem_size = ggml_tensor_overhead() * (count + 16),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    persistent_context_.reset(ggml_init(params));
+    if (!persistent_context_) {
+      throw std::runtime_error(
+          "ggml: failed to create persistent tensor context");
+    }
+
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (!is_persistent(binding)) {
+        continue;
+      }
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
+        check_q4_consumers(binding.value_id, binding.key);
+      }
+      ggml_tensor* tensor =
+          new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
+      ggml_set_name(tensor, binding.key.c_str());
+      persistent_.emplace(binding.value_id, tensor);
+    }
+
+    persistent_buffer_.reset(ggml_backend_alloc_ctx_tensors(
+        persistent_context_.get(), primary_backend_));
+    if (!persistent_buffer_) {
+      throw std::runtime_error("ggml: failed to allocate persistent tensors");
+    }
+
+    size_t loaded = 0;
+    for (const DataBinding& binding : method_.data_bindings) {
+      const auto found = persistent_.find(binding.value_id);
+      if (found == persistent_.end()) {
+        continue;
+      }
+      ggml_tensor* tensor = found->second;
+      if (!binding.has_data) {
+        ggml_backend_tensor_memset(tensor, 0, 0, ggml_nbytes(tensor));
+        continue;
+      }
+      const std::optional<ConstantInfo> info =
+          package_.constant_info(binding.key);
+      const std::optional<OwnedBytes> bytes =
+          package_.acquire_constant(binding.key);
+      if (!info || !bytes) {
+        throw std::runtime_error(
+            "ggml: package is missing constant '" + binding.key + "'");
+      }
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      const size_t expected = stored_nbytes(meta);
+      ByteSpan span = bytes->span();
+      if (info->nbytes != expected || span.size() != expected) {
+        throw std::runtime_error(
+            "ggml: stored byte count disagrees with PTG tensor '" +
+            binding.key + "'");
+      }
+      std::vector<uint8_t> converted;
+      if (affine_quant(meta) != nullptr) {
+        converted = load_q4_0(meta, span);
+        span = converted;
+      } else if (
+          tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long) {
+        converted = narrow_to_int32(span);
+        span = converted;
+      }
+      if (ggml_nbytes(tensor) != span.size()) {
+        throw std::runtime_error(
+            "ggml: converted byte count disagrees with tensor '" + binding.key +
+            "'");
+      }
+      ggml_backend_tensor_set(tensor, span.data(), 0, span.size());
+      loaded += span.size();
+    }
+    ggml_backend_buffer_set_usage(
+        persistent_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    if (materialized_constant_bytes != nullptr) {
+      *materialized_constant_bytes += loaded;
+    }
+  }
+
+  void index_rope_frequencies() {
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (!node.is_call() || op_key(node.target) != "native.rope.default") {
+        continue;
+      }
+      const Argument& arg = require_arg(node, "inv_freq", 2).arg;
+      if (arg.kind() != ArgKind::Tensor) {
+        throw std::runtime_error("ggml: rope inv_freq must be a tensor");
+      }
+      const ValueId inv_freq = arg.as_tensor().id;
+      if (rope_freq_factors_.contains(inv_freq)) {
+        continue;
+      }
+      const auto binding = std::ranges::find_if(
+          method_.data_bindings, [inv_freq](const DataBinding& candidate) {
+            return candidate.value_id == inv_freq && candidate.has_data;
+          });
+      const std::optional<OwnedBytes> bytes =
+          binding == method_.data_bindings.end()
+          ? std::nullopt
+          : package_.acquire_constant(binding->key);
+      if (!bytes) {
+        throw std::runtime_error("ggml: rope inv_freq must be a constant");
+      }
+      std::vector<float> factors = to_float_vector(
+          bytes->span(), method_.graph.value(inv_freq).tensor_meta().dtype);
+      // ggml_rope_ext with freq_base 1 computes theta = pos / factor.
+      for (float& factor : factors) {
+        if (factor == 0.0f) {
+          throw std::runtime_error("ggml: rope inv_freq has a zero entry");
+        }
+        factor = 1.0f / factor;
+      }
+      std::vector<uint8_t> raw(factors.size() * sizeof(float));
+      std::memcpy(raw.data(), factors.data(), raw.size());
+      rope_freq_factors_.emplace(inv_freq, std::move(raw));
+    }
+  }
+
+  static void
+  copy_output(const OutputSlot& slot, void* destination, ScalarType dst_dtype) {
+    const size_t count = checked_numel(slot.sizes);
+    const bool narrowed = slot.meta.dtype == ScalarType::Long;
+    if (slot.bytes.size() !=
+        (narrowed ? count * sizeof(int32_t)
+                  : checked_nbytes(slot.sizes, slot.meta.dtype))) {
+      throw std::logic_error(
+          "ggml: output byte count disagrees with its dtype");
+    }
+    if (slot.meta.dtype == dst_dtype) {
+      if (narrowed) {
+        const auto* src = reinterpret_cast<const int32_t*>(slot.bytes.data());
+        std::copy(src, src + count, static_cast<int64_t*>(destination));
+        return;
+      }
+      std::memcpy(destination, slot.bytes.data(), slot.bytes.size());
+      return;
+    }
+    if (dst_dtype != ScalarType::Float) {
+      throw std::invalid_argument(
+          "ggml: output conversion only supports conversion to Float");
+    }
+    float* out = static_cast<float*>(destination);
+    if (slot.meta.dtype == ScalarType::Half) {
+      ggml_fp16_to_fp32_row(
+          reinterpret_cast<const ggml_fp16_t*>(slot.bytes.data()),
+          out,
+          static_cast<int64_t>(count));
+      return;
+    }
+    if (slot.meta.dtype == ScalarType::BFloat16) {
+      ggml_bf16_to_fp32_row(
+          reinterpret_cast<const ggml_bf16_t*>(slot.bytes.data()),
+          out,
+          static_cast<int64_t>(count));
+      return;
+    }
+    throw std::invalid_argument(
+        "ggml: unsupported output dtype conversion to Float");
+  }
+
+  GraphInstance build_graph();
+
+  MutableKeyClaim mutable_key_claim_;
+  const Method& method_;
+  const Package& package_;
+  GgmlEngineOptions options_;
+  std::vector<InputSlot> inputs_;
+  std::vector<OutputSlot> outputs_;
+  std::vector<ggml_backend_ptr> backends_;
+  ggml_backend_t primary_backend_ = nullptr;
+  ggml_backend_sched_ptr scheduler_;
+  ggml_context_ptr persistent_context_;
+  ggml_backend_buffer_ptr persistent_buffer_;
+  std::unordered_map<ValueId, ggml_tensor*> persistent_;
+  bool executed_ = false;
+  std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
+};
+
+class GraphBuilder {
+ public:
+  GraphBuilder(
+      const Method& method,
+      const std::vector<InputSlot>& inputs,
+      const std::vector<OutputSlot>& outputs,
+      const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+      const std::unordered_map<ValueId, std::vector<uint8_t>>&
+          rope_factor_bytes,
+      size_t graph_size)
+      : method_(method),
+        inputs_(inputs),
+        outputs_(outputs),
+        persistent_(persistent),
+        rope_factor_bytes_(rope_factor_bytes),
+        graph_size_(graph_size),
+        values_(method.graph.values.size()) {}
+
+  GraphInstance build() {
+    // Metadata room for the tensors lowering creates: a generous allowance per
+    // value and per node for views, casts and shape helpers, plus a reserve for
+    // per-graph tensors such as masks. ggml aborts if a graph outgrows it.
+    constexpr size_t kTensorsPerValue = 12;
+    constexpr size_t kTensorsPerNode = 8;
+    constexpr size_t kReservedTensors = 256;
+    const size_t tensor_budget =
+        method_.graph.values.size() * kTensorsPerValue +
+        method_.graph.nodes.size() * kTensorsPerNode + kReservedTensors;
+    ggml_init_params params{
+        .mem_size = ggml_tensor_overhead() * tensor_budget +
+            ggml_graph_overhead_custom(graph_size_, false),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    instance_.context.reset(ggml_init(params));
+    if (!instance_.context) {
+      throw std::runtime_error("ggml: failed to allocate graph metadata");
+    }
+    instance_.graph = ggml_new_graph_custom(
+        instance_.context.get(), graph_size_, /*grads=*/false);
+    if (instance_.graph == nullptr) {
+      throw std::runtime_error("ggml: failed to create cgraph");
+    }
+
+    seed_values();
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (node.is_call()) {
+        lower(node);
+      }
+    }
+    // In-place writes are already in the graph (expand_write); write-backs run
+    // after every output.
+    for (const OutputSlot& output : outputs_) {
+      TensorRef value = tensor(output.id);
+      value.tensor = as_output(value.tensor, output.meta);
+      ggml_set_output(value.tensor);
+      ggml_build_forward_expand(instance_.graph, value.tensor);
+      instance_.outputs.push_back(value);
+    }
+    std::vector<ggml_tensor*> copies;
+    for (size_t i = 0; i < method_.output_specs.size(); ++i) {
+      if (method_.output_specs[i].kind == OutputKind::BufferMutation) {
+        if (ggml_tensor* copy = write_back(
+                method_.graph.output_ids[i],
+                method_.output_specs[i].target_id)) {
+          copies.push_back(copy);
+        }
+      }
+    }
+    for (ggml_tensor* copy : copies) {
+      ggml_build_forward_expand(instance_.graph, copy);
+    }
+    return std::move(instance_);
+  }
+
+ private:
+  // Outputs leave through a byte copy, so they must be contiguous and of the
+  // declared type. int64 is widened on the host.
+  ggml_tensor* as_output(ggml_tensor* result, const TensorMeta& meta) {
+    const ggml_type type = compute_type(meta);
+    if (result->type != type) {
+      return ggml_cast(instance_.context.get(), result, type);
+    }
+    return ggml_is_contiguous(result)
+        ? result
+        : ggml_cont(instance_.context.get(), result);
+  }
+
+  // ggml runs nodes in the order they enter the graph. An in-place write enters
+  // as soon as it is lowered, after every earlier op that reads the storage it
+  // writes, so those reads see the old value as the schedule says.
+  void expand_write(ggml_tensor* write) {
+    const ggml_tensor* root = storage_root(write);
+    ggml_context* ctx = instance_.context.get();
+    for (ggml_tensor* t = ggml_get_first_tensor(ctx); t != nullptr;
+         t = ggml_get_next_tensor(ctx, t)) {
+      if (t == write || t->op == GGML_OP_NONE || t->op == GGML_OP_VIEW ||
+          t->op == GGML_OP_RESHAPE || t->op == GGML_OP_PERMUTE ||
+          t->op == GGML_OP_TRANSPOSE) {
+        continue;
+      }
+      if (std::ranges::any_of(t->src, [root](const ggml_tensor* src) {
+            return src != nullptr && storage_root(src) == root;
+          })) {
+        ggml_build_forward_expand(instance_.graph, t);
+      }
+    }
+    ggml_build_forward_expand(instance_.graph, write);
+  }
+
+  // In-place lowerings already wrote their buffer; anything else is copied
+  // back after every output has read the old value. The returned copy must
+  // enter the graph after every write-back's value, so that no value reads a
+  // buffer another write-back has already overwritten.
+  ggml_tensor* write_back(ValueId value_id, ValueId target_id) {
+    const auto target = persistent_.find(target_id);
+    if (target == persistent_.end()) {
+      throw std::runtime_error(
+          "ggml: mutated buffer is not a persistent tensor");
+    }
+    ggml_tensor* value = tensor(value_id).tensor;
+    if (value == target->second || value->view_src == target->second) {
+      return nullptr;
+    }
+    value = snapshot(value);
+    ggml_build_forward_expand(instance_.graph, value);
+    return ggml_cpy(instance_.context.get(), value, target->second);
+  }
+
+  // `tensor`, or a copy of it if it shares persistent storage, which
+  // write-backs and in-place writes may overwrite.
+  ggml_tensor* snapshot(ggml_tensor* tensor) {
+    const ggml_tensor* root = storage_root(tensor);
+    for (const auto& [id, persistent] : persistent_) {
+      if (persistent == root) {
+        return ggml_cont(instance_.context.get(), tensor);
+      }
+    }
+    return tensor;
+  }
+
+  void seed_values() {
+    for (size_t i = 0; i < inputs_.size(); ++i) {
+      const InputSlot& input = inputs_[i];
+      const bool narrow = input.meta.dtype == ScalarType::Long;
+      ggml_tensor* tensor = new_tensor(
+          instance_.context.get(), compute_type(input.meta), input.sizes);
+      ggml_set_name(tensor, method_.graph.value(input.id).name.c_str());
+      ggml_set_input(tensor);
+      set(input.id, TensorRef{tensor, input.sizes});
+      instance_.uploads.push_back(
+          Upload{tensor, narrow ? narrow_to_int32(input.bytes) : input.bytes});
+    }
+    for (const auto& [id, tensor] : persistent_) {
+      set(id, TensorRef{tensor, method_.graph.value(id).tensor_meta().sizes});
+    }
+    for (ValueId id = 0; id < static_cast<ValueId>(method_.graph.values.size());
+         ++id) {
+      const Value& value = method_.graph.value(id);
+      if (!value.is_scalar()) {
+        continue;
+      }
+      const Scalar& scalar = value.scalar();
+      if (scalar.is_int()) {
+        set(id, scalar.to_int());
+      } else if (scalar.is_double()) {
+        set(id, scalar.to_double());
+      } else {
+        set(id, scalar.to_bool());
+      }
+    }
+  }
+
+  void set(ValueId id, RuntimeValue value) {
+    if (!in_bounds(id, values_.size())) {
+      throw std::runtime_error("ggml: value id is out of range");
+    }
+    const auto* ref = std::get_if<TensorRef>(&value);
+    if (ref != nullptr) {
+      const auto ne = reversed_extents(ref->sizes);
+      if (!std::equal(ne.begin(), ne.end(), ref->tensor->ne)) {
+        throw std::logic_error(
+            "ggml: lowered tensor shape disagrees with value '" +
+            method_.graph.value(id).name + "'");
+      }
+    }
+    values_.at(static_cast<size_t>(id)) = std::move(value);
+  }
+
+  const RuntimeValue& value(ValueId id) const {
+    if (!in_bounds(id, values_.size())) {
+      throw std::runtime_error("ggml: argument value id is out of range");
+    }
+    return values_.at(static_cast<size_t>(id));
+  }
+
+  TensorRef tensor(ValueId id) const {
+    const TensorRef* ref = std::get_if<TensorRef>(&value(id));
+    if (ref == nullptr || ref->tensor == nullptr) {
+      throw std::runtime_error("ggml: argument does not resolve to a tensor");
+    }
+    return *ref;
+  }
+
+  TensorRef
+  tensor_arg(const Node& node, std::string_view name, size_t positional) const {
+    const Argument& arg = require_arg(node, name, positional).arg;
+    if (arg.kind() != ArgKind::Tensor || !valid(arg.as_tensor().id)) {
+      throw std::runtime_error(
+          "ggml: argument '" + std::string(name) + "' must be a tensor");
+    }
+    return tensor(arg.as_tensor().id);
+  }
+
+  int64_t int_value(const Argument& arg) const {
+    if (arg.kind() != ArgKind::Int) {
+      throw std::runtime_error("ggml: expected integer argument");
+    }
+    const IntArg& integer = arg.as_int();
+    if (!valid(integer.id)) {
+      return integer.value;
+    }
+    const RuntimeValue& resolved = value(integer.id);
+    if (const auto* i = std::get_if<int64_t>(&resolved)) {
+      return *i;
+    }
+    throw std::runtime_error("ggml: symbolic integer is unresolved");
+  }
+
+  int64_t int_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional,
+      int64_t fallback,
+      bool optional = false) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() == ArgKind::None) {
+      if (optional) {
+        return fallback;
+      }
+      throw std::runtime_error(
+          "ggml: op '" + node.target + "' is missing integer argument '" +
+          std::string(name) + "'");
+    }
+    return int_value(found->arg);
+  }
+
+  double float_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional,
+      double fallback,
+      bool optional = false) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() == ArgKind::None) {
+      if (optional) {
+        return fallback;
+      }
+      throw std::runtime_error("ggml: missing floating-point argument");
+    }
+    if (found->arg.kind() == ArgKind::Float) {
+      const FloatArg& arg = found->arg.as_float();
+      if (!valid(arg.id)) {
+        return arg.value;
+      }
+      const RuntimeValue& resolved = value(arg.id);
+      if (const auto* f = std::get_if<double>(&resolved)) {
+        return *f;
+      }
+    }
+    if (found->arg.kind() == ArgKind::Int) {
+      return static_cast<double>(int_value(found->arg));
+    }
+    throw std::runtime_error("ggml: floating-point argument is unresolved");
+  }
+
+  bool bool_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional,
+      bool fallback) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() == ArgKind::None) {
+      return fallback;
+    }
+    if (found->arg.kind() != ArgKind::Bool) {
+      throw std::runtime_error("ggml: expected boolean argument");
+    }
+    const BoolArg& arg = found->arg.as_bool();
+    if (!valid(arg.id)) {
+      return arg.value;
+    }
+    const RuntimeValue& resolved = value(arg.id);
+    if (const auto* b = std::get_if<bool>(&resolved)) {
+      return *b;
+    }
+    throw std::runtime_error("ggml: symbolic boolean is unresolved");
+  }
+
+  std::vector<int64_t> int_list(const Argument& arg) const {
+    if (arg.kind() != ArgKind::IntList) {
+      throw std::runtime_error("ggml: expected integer-list argument");
+    }
+    const IntListArg& list = arg.as_int_list();
+    std::vector<int64_t> out = list.values;
+    if (list.ids.empty()) {
+      return out;
+    }
+    if (list.ids.size() != out.size()) {
+      throw std::runtime_error("ggml: malformed symbolic integer list");
+    }
+    for (size_t i = 0; i < out.size(); ++i) {
+      if (valid(list.ids[i])) {
+        const RuntimeValue& resolved = value(list.ids[i]);
+        const auto* integer = std::get_if<int64_t>(&resolved);
+        if (integer == nullptr) {
+          throw std::runtime_error("ggml: symbolic list element is unresolved");
+        }
+        out[i] = *integer;
+      }
+    }
+    return out;
+  }
+
+  void set_single_output(const Node& node, TensorRef result) {
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error(
+          "ggml: op '" + node.target + "' must produce one tensor");
+    }
+    set(ids.front(), std::move(result));
+  }
+
+  void lower(const Node& node) {
+    const std::string key = op_key(node.target);
+    if (key == "aten.linear.default") {
+      lower_linear(node);
+    } else if (key == "aten.embedding.default") {
+      lower_embedding(node);
+    } else if (key == "aten.rms_norm.default") {
+      lower_rms_norm(node);
+    } else if (
+        key == "aten.view_copy.default" || key == "aten.reshape.default" ||
+        key == "aten._unsafe_view.default" || key == "aten.view.default") {
+      lower_reshape(node);
+    } else if (
+        key == "aten.permute_copy.default" || key == "aten.permute.default") {
+      lower_permute(node);
+    } else if (key == "aten.transpose_copy.int") {
+      lower_transpose(node);
+    } else if (
+        key == "aten.clone.default" || key == "aten.contiguous.default" ||
+        key == "aten.alias.default") {
+      lower_copy_or_alias(node, key == "aten.alias.default");
+    } else if (key == "aten._to_copy.default") {
+      lower_cast(node);
+    } else if (
+        key == "aten.add.Tensor" || key == "aten.mul.Tensor" ||
+        key == "aten.sub.Tensor" || key == "aten.div.Tensor") {
+      lower_binary(node, key);
+    } else if (key == "aten.silu.default") {
+      lower_unary(node, ggml_silu);
+    } else if (key == "aten.sigmoid.default") {
+      lower_unary(node, ggml_sigmoid);
+    } else if (key == "aten.neg.default") {
+      lower_unary(node, ggml_neg);
+    } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
+      lower_slice(node, key == "aten.slice_copy.Tensor");
+    } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
+      lower_select(node, key == "aten.select_copy.int");
+    } else if (
+        key == "aten.unsqueeze_copy.default" ||
+        key == "aten.unsqueeze.default") {
+      lower_unsqueeze(node);
+    } else if (key == "aten.squeeze_copy.dims" || key == "aten.squeeze.dims") {
+      lower_squeeze(node);
+    } else if (
+        key == "aten.expand_copy.default" || key == "aten.expand.default") {
+      lower_expand(node);
+    } else if (key == "aten.cat.default") {
+      lower_cat(node);
+    } else if (
+        key == "aten.matmul.default" || key == "aten.mm.default" ||
+        key == "aten.bmm.default") {
+      lower_matmul(node);
+    } else if (key == "llama.update_cache.default") {
+      lower_update_cache(node);
+    } else if (key == "llama.custom_sdpa.default") {
+      lower_custom_sdpa(node);
+    } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
+      lower_le(node);
+    } else if (key == "aten.arange.start_step") {
+      lower_arange(node);
+    } else if (key == "torchao.choose_qparams_affine.default") {
+      lower_choose_qparams(node);
+    } else if (key == "torchao.quantize_affine.default") {
+      lower_quantize_affine(node);
+    } else if (key == "torchao.dequantize_affine.default") {
+      lower_dequantize_affine(node);
+    } else if (key == "native.rope.default") {
+      lower_rope(node);
+    } else if (key == "aten.index_put_.default") {
+      lower_index_put(node);
+    } else if (key == "aten.scaled_dot_product_attention.default") {
+      lower_sdpa(node);
+    } else if (key == "aten.sym_size.int") {
+      lower_sym_size(node);
+    } else if (
+        key == "_operator.add" || key == "_operator.sub" ||
+        key == "_operator.mul" || key == "_operator.floordiv") {
+      lower_symbolic(node, key);
+    } else {
+      throw std::runtime_error(
+          "ggml: unsupported PTG op '" + node.target + "'");
+    }
+  }
+
+  void lower_linear(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const TensorRef weight = tensor_arg(node, "weight", 1);
+    if (weight.sizes.size() != 2 || input.sizes.empty() ||
+        input.sizes.back() != weight.sizes[1]) {
+      throw std::runtime_error("ggml: invalid linear shapes");
+    }
+    ggml_tensor* result =
+        ggml_mul_mat(instance_.context.get(), weight.tensor, input.tensor);
+    const NamedArgument* bias = find_arg(node, "bias", 2);
+    if (bias != nullptr && bias->arg.kind() == ArgKind::Tensor &&
+        valid(bias->arg.as_tensor().id)) {
+      const TensorRef bias_value = tensor(bias->arg.as_tensor().id);
+      if (bias_value.sizes != std::vector<int64_t>{weight.sizes[0]}) {
+        throw std::runtime_error(
+            "ggml: linear bias must hold one value per output feature");
+      }
+      result = ggml_add(instance_.context.get(), result, bias_value.tensor);
+    }
+    std::vector<int64_t> sizes = input.sizes;
+    sizes.back() = weight.sizes[0];
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_embedding(const Node& node) {
+    const TensorRef weight = tensor_arg(node, "weight", 0);
+    TensorRef indices = tensor_arg(node, "indices", 1);
+    check_row_indices(
+        require_arg(node, "indices", 1).arg.as_tensor().id, weight.sizes.at(0));
+    if (indices.tensor->type != GGML_TYPE_I32) {
+      indices.tensor =
+          ggml_cast(instance_.context.get(), indices.tensor, GGML_TYPE_I32);
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* flat =
+        reshape(ctx, indices.tensor, {ggml_nelements(indices.tensor)});
+    std::vector<int64_t> sizes = indices.sizes;
+    sizes.push_back(weight.sizes.at(1));
+    ggml_tensor* result =
+        reshape(ctx, ggml_get_rows(ctx, weight.tensor, flat), sizes);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  // Row indices are checked on the host, which needs them to come from a
+  // graph input, possibly through integer casts and views; any other source
+  // is rejected.
+  void check_row_indices(ValueId id, int64_t rows) const {
+    static const std::unordered_set<std::string> kSameValues = {
+        "aten._to_copy.default",
+        "aten.alias.default",
+        "aten.clone.default",
+        "aten.contiguous.default",
+        "aten.expand.default",
+        "aten.expand_copy.default",
+        "aten.permute.default",
+        "aten.permute_copy.default",
+        "aten.reshape.default",
+        "aten._unsafe_view.default",
+        "aten.select.int",
+        "aten.select_copy.int",
+        "aten.slice.Tensor",
+        "aten.slice_copy.Tensor",
+        "aten.squeeze.dims",
+        "aten.squeeze_copy.dims",
+        "aten.transpose_copy.int",
+        "aten.unsqueeze.default",
+        "aten.unsqueeze_copy.default",
+        "aten.view.default",
+        "aten.view_copy.default",
+    };
+    const auto is_index = [this](ValueId value) {
+      const ScalarType dtype = method_.graph.value(value).tensor_meta().dtype;
+      return dtype == ScalarType::Long || dtype == ScalarType::Int;
+    };
+    while (is_index(id)) {
+      const auto input = std::ranges::find(inputs_, id, &InputSlot::id);
+      if (input != inputs_.end()) {
+        ::ptn::check_row_indices(*input, rows);
+        return;
+      }
+      const NodeId producer = method_.graph.value(id).producer_id;
+      if (!valid(producer)) {
+        break;
+      }
+      const Node& node = method_.graph.node(producer);
+      const NamedArgument* source = find_arg(node, "self", 0);
+      if (!node.is_call() || !kSameValues.contains(op_key(node.target)) ||
+          source == nullptr || source->arg.kind() != ArgKind::Tensor) {
+        break;
+      }
+      id = source->arg.as_tensor().id;
+    }
+    throw std::runtime_error(
+        "ggml: row indices must come from a graph input, through integer "
+        "casts and views only");
+  }
+
+  void lower_rms_norm(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const std::vector<int64_t> normalized =
+        int_list(require_arg(node, "normalized_shape", 1).arg);
+    if (input.sizes.empty() || normalized.size() != 1 ||
+        normalized[0] != input.sizes.back()) {
+      throw std::runtime_error("ggml: rms_norm only normalizes the last dim");
+    }
+    const double eps =
+        float_arg(node, "eps", 3, std::numeric_limits<float>::epsilon(), true);
+    ggml_tensor* result = ggml_rms_norm(
+        instance_.context.get(), input.tensor, static_cast<float>(eps));
+    const NamedArgument* weight = find_arg(node, "weight", 2);
+    if (weight != nullptr && weight->arg.kind() == ArgKind::Tensor &&
+        valid(weight->arg.as_tensor().id)) {
+      result = ggml_mul(
+          instance_.context.get(),
+          result,
+          tensor(weight->arg.as_tensor().id).tensor);
+    }
+    set_single_output(node, TensorRef{result, input.sizes});
+  }
+
+  void lower_reshape(const Node& node) {
+    TensorRef input = tensor_arg(node, "self", 0);
+    if (op_key(node.target) == "aten.view_copy.default") {
+      input.tensor = snapshot(input.tensor);
+    }
+    std::vector<int64_t> sizes = int_list(require_arg(node, "shape", 1).arg);
+    int64_t inferred = -1;
+    size_t known = 1;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+      if (sizes[i] == -1) {
+        if (inferred != -1) {
+          throw std::runtime_error("ggml: reshape has multiple inferred dims");
+        }
+        inferred = static_cast<int64_t>(i);
+      } else if (sizes[i] < 0) {
+        throw std::runtime_error("ggml: reshape has invalid dimension");
+      } else {
+        known *= static_cast<size_t>(sizes[i]);
+      }
+    }
+    if (inferred >= 0) {
+      const size_t total = checked_numel(input.sizes);
+      if (known == 0 || total % known != 0) {
+        throw std::runtime_error("ggml: reshape cannot infer dimension");
+      }
+      sizes[static_cast<size_t>(inferred)] =
+          static_cast<int64_t>(total / known);
+    }
+    if (checked_numel(sizes) != checked_numel(input.sizes)) {
+      throw std::runtime_error("ggml: reshape changes the element count");
+    }
+    set_single_output(
+        node,
+        TensorRef{
+            reshape(instance_.context.get(), input.tensor, sizes), sizes});
+  }
+
+  void lower_permute(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const std::vector<int64_t> dims =
+        int_list(require_arg(node, "dims", 1).arg);
+    if (dims.size() != input.sizes.size() || dims.size() > 4) {
+      throw std::runtime_error("ggml: invalid permutation rank");
+    }
+    std::array<int, 4> axes{0, 1, 2, 3};
+    std::vector<int64_t> sizes(dims.size());
+    std::vector<bool> seen(dims.size());
+    for (size_t out_dim = 0; out_dim < dims.size(); ++out_dim) {
+      const int64_t src_dim = normalize_dim(dims[out_dim], dims.size());
+      if (seen[static_cast<size_t>(src_dim)]) {
+        throw std::runtime_error("ggml: repeated permutation dimension");
+      }
+      seen[static_cast<size_t>(src_dim)] = true;
+      sizes[out_dim] = input.sizes[static_cast<size_t>(src_dim)];
+    }
+    // ggml_permute maps source axis i to result axis axes[i].
+    for (size_t out_dim = 0; out_dim < dims.size(); ++out_dim) {
+      const int64_t src_dim = normalize_dim(dims[out_dim], dims.size());
+      axes[dims.size() - 1 - static_cast<size_t>(src_dim)] =
+          static_cast<int>(dims.size() - 1 - out_dim);
+    }
+    ggml_tensor* result = ggml_permute(
+        instance_.context.get(),
+        input.tensor,
+        axes[0],
+        axes[1],
+        axes[2],
+        axes[3]);
+    result = ggml_cont(instance_.context.get(), result);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_transpose(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const int64_t d0 =
+        normalize_dim(int_arg(node, "dim0", 1, 0), input.sizes.size());
+    const int64_t d1 =
+        normalize_dim(int_arg(node, "dim1", 2, 0), input.sizes.size());
+    std::vector<int64_t> dims(input.sizes.size());
+    std::iota(dims.begin(), dims.end(), 0);
+    std::swap(dims[static_cast<size_t>(d0)], dims[static_cast<size_t>(d1)]);
+    Node synthetic = node;
+    synthetic.inputs = {
+        {.name = "self", .arg = require_arg(node, "self", 0).arg},
+        {.name = "dims", .arg = IntListArg{dims, {}}},
+    };
+    lower_permute(synthetic);
+  }
+
+  void lower_copy_or_alias(const Node& node, bool alias) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* in = input.tensor;
+    ggml_tensor* result = nullptr;
+    if (alias) {
+      // ggml_view_tensor sets only view_src, so the graph would not reach the
+      // producer of the aliased tensor.
+      result = ggml_view_4d(
+          ctx,
+          in,
+          in->ne[0],
+          in->ne[1],
+          in->ne[2],
+          in->ne[3],
+          in->nb[1],
+          in->nb[2],
+          in->nb[3],
+          0);
+    } else {
+      result = ggml_cont(ctx, in);
+    }
+    set_single_output(node, TensorRef{result, input.sizes});
+  }
+
+  void lower_cast(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error("ggml: cast must produce one output");
+    }
+    const TensorMeta& meta = method_.graph.value(ids.front()).tensor_meta();
+    ggml_tensor* result =
+        ggml_cast(instance_.context.get(), input.tensor, compute_type(meta));
+    set(ids.front(), TensorRef{result, input.sizes});
+  }
+
+  ggml_tensor* as_f32(ggml_tensor* tensor) {
+    return tensor->type == GGML_TYPE_F32
+        ? tensor
+        : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_F32);
+  }
+
+  ggml_tensor* as_i32(ggml_tensor* tensor) {
+    return tensor->type == GGML_TYPE_I32
+        ? tensor
+        : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_I32);
+  }
+
+  ggml_tensor* contiguous(ggml_tensor* tensor) {
+    return ggml_is_contiguous(tensor)
+        ? tensor
+        : ggml_cont(instance_.context.get(), tensor);
+  }
+
+  struct BinaryOperands {
+    ggml_tensor* lhs = nullptr;
+    ggml_tensor* rhs = nullptr;
+    std::vector<int64_t> sizes;
+  };
+
+  BinaryOperands tensor_operands(
+      const TensorRef& left,
+      const TensorRef& right,
+      bool force_f32) {
+    BinaryOperands out{
+        .lhs = left.tensor,
+        .rhs = right.tensor,
+        .sizes = broadcast_shape(left.sizes, right.sizes),
+    };
+    if (force_f32 || out.lhs->type != out.rhs->type) {
+      out.lhs = as_f32(out.lhs);
+      out.rhs = as_f32(out.rhs);
+    }
+    // ggml only broadcasts the right operand.
+    if (reversed_extents(left.sizes) != reversed_extents(out.sizes)) {
+      ggml_context* ctx = instance_.context.get();
+      out.lhs =
+          ggml_repeat(ctx, out.lhs, new_tensor(ctx, out.lhs->type, out.sizes));
+    }
+    return out;
+  }
+
+  void lower_binary(const Node& node, const std::string& key) {
+    const TensorRef left = tensor_arg(node, "self", 0);
+    const NamedArgument& rhs_arg = require_arg(node, "other", 1);
+    if (float_arg(node, "alpha", 2, 1.0, true) != 1.0) {
+      throw std::runtime_error("ggml: add/sub alpha must be one");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* result = nullptr;
+    std::vector<int64_t> sizes = left.sizes;
+    if (rhs_arg.arg.kind() == ArgKind::Tensor) {
+      BinaryOperands operands = tensor_operands(
+          left, tensor(rhs_arg.arg.as_tensor().id), /*force_f32=*/false);
+      ggml_tensor* lhs = operands.lhs;
+      ggml_tensor* right = operands.rhs;
+      sizes = std::move(operands.sizes);
+      if (key == "aten.add.Tensor") {
+        result = ggml_add(ctx, lhs, right);
+      } else if (key == "aten.mul.Tensor") {
+        result = ggml_mul(ctx, lhs, right);
+      } else if (key == "aten.sub.Tensor") {
+        result = ggml_sub(ctx, lhs, right);
+      } else {
+        result = ggml_div(ctx, lhs, right);
+      }
+    } else {
+      const float scalar = static_cast<float>(float_arg(node, "other", 1, 0));
+      // ggml_scale only takes contiguous F32.
+      ggml_tensor* lhs = contiguous(as_f32(left.tensor));
+      if (key == "aten.mul.Tensor") {
+        result = ggml_scale(ctx, lhs, scalar);
+      } else if (key == "aten.div.Tensor") {
+        result = ggml_scale(ctx, lhs, 1.0f / scalar);
+      } else if (key == "aten.add.Tensor") {
+        result = ggml_scale_bias(ctx, lhs, 1.0f, scalar);
+      } else {
+        result = ggml_scale_bias(ctx, lhs, 1.0f, -scalar);
+      }
+    }
+    // Bools are carried as 0/1 floats, and Bool add is a logical or.
+    const std::vector<ValueId> ids = output_ids(node);
+    if (key == "aten.add.Tensor" && ids.size() == 1 &&
+        method_.graph.value(ids.front()).tensor_meta().dtype ==
+            ScalarType::Bool) {
+      result = ggml_step(ctx, result);
+    }
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  // ggml-cpu's unary kernels abort on integer tensors.
+  static void require_float(const Node& node, const ggml_tensor* tensor) {
+    if (tensor->type == GGML_TYPE_I8 || tensor->type == GGML_TYPE_I16 ||
+        tensor->type == GGML_TYPE_I32 || tensor->type == GGML_TYPE_I64) {
+      throw std::runtime_error(
+          "ggml: op '" + node.target +
+          "' supports floating-point tensors only");
+    }
+  }
+
+  using Unary = ggml_tensor* (*)(ggml_context*, ggml_tensor*);
+
+  void lower_unary(const Node& node, Unary fn) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    require_float(node, input.tensor);
+    set_single_output(
+        node,
+        TensorRef{fn(instance_.context.get(), input.tensor), input.sizes});
+  }
+
+  void lower_slice(const Node& node, bool copy) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const int64_t dim =
+        normalize_dim(int_arg(node, "dim", 1, 0), input.sizes.size());
+    int64_t start = int_arg(node, "start", 2, 0, true);
+    int64_t end =
+        int_arg(node, "end", 3, input.sizes[static_cast<size_t>(dim)], true);
+    const int64_t step = int_arg(node, "step", 4, 1, true);
+    if (step != 1) {
+      throw std::runtime_error("ggml: slice step must be one");
+    }
+    const int64_t extent = input.sizes[static_cast<size_t>(dim)];
+    start = std::clamp(start < 0 ? start + extent : start, int64_t{0}, extent);
+    end = std::clamp(end < 0 ? end + extent : end, start, extent);
+    std::vector<int64_t> sizes = input.sizes;
+    sizes[static_cast<size_t>(dim)] = end - start;
+    const size_t gdim = sizes.size() - 1 - static_cast<size_t>(dim);
+    ggml_tensor* result = view_with_shape(
+        instance_.context.get(),
+        input.tensor,
+        sizes,
+        static_cast<size_t>(start) * input.tensor->nb[gdim]);
+    if (copy) {
+      result = ggml_cont(instance_.context.get(), result);
+    }
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_select(const Node& node, bool copy) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const int64_t dim =
+        normalize_dim(int_arg(node, "dim", 1, 0), input.sizes.size());
+    int64_t index = int_arg(node, "index", 2, 0);
+    const int64_t extent = input.sizes[static_cast<size_t>(dim)];
+    index = index < 0 ? index + extent : index;
+    if (index < 0 || index >= extent) {
+      throw std::runtime_error("ggml: select index is out of range");
+    }
+    std::vector<int64_t> view_sizes = input.sizes;
+    view_sizes[static_cast<size_t>(dim)] = 1;
+    const size_t gdim = view_sizes.size() - 1 - static_cast<size_t>(dim);
+    ggml_tensor* result = view_with_shape(
+        instance_.context.get(),
+        input.tensor,
+        view_sizes,
+        static_cast<size_t>(index) * input.tensor->nb[gdim]);
+    if (copy || !ggml_is_contiguous(result)) {
+      result = ggml_cont(instance_.context.get(), result);
+    }
+    std::vector<int64_t> sizes = input.sizes;
+    sizes.erase(sizes.begin() + dim);
+    result = reshape(instance_.context.get(), result, sizes);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_unsqueeze(const Node& node) {
+    TensorRef input = tensor_arg(node, "self", 0);
+    if (op_key(node.target) == "aten.unsqueeze_copy.default") {
+      input.tensor = snapshot(input.tensor);
+    }
+    int64_t dim = int_arg(node, "dim", 1, 0);
+    const int64_t rank = static_cast<int64_t>(input.sizes.size() + 1);
+    if (dim < 0) {
+      dim += rank;
+    }
+    if (dim < 0 || dim >= rank) {
+      throw std::runtime_error("ggml: unsqueeze dimension is out of range");
+    }
+    std::vector<int64_t> sizes = input.sizes;
+    sizes.insert(sizes.begin() + dim, 1);
+    set_single_output(
+        node,
+        TensorRef{
+            reshape(instance_.context.get(), input.tensor, sizes), sizes});
+  }
+
+  void lower_squeeze(const Node& node) {
+    TensorRef input = tensor_arg(node, "self", 0);
+    if (op_key(node.target) == "aten.squeeze_copy.dims") {
+      input.tensor = snapshot(input.tensor);
+    }
+    std::vector<int64_t> dims = int_list(require_arg(node, "dim", 1).arg);
+    std::vector<bool> remove(input.sizes.size());
+    for (int64_t dim : dims) {
+      dim = normalize_dim(dim, input.sizes.size());
+      if (input.sizes[static_cast<size_t>(dim)] == 1) {
+        remove[static_cast<size_t>(dim)] = true;
+      }
+    }
+    std::vector<int64_t> sizes;
+    for (size_t i = 0; i < input.sizes.size(); ++i) {
+      if (!remove[i]) {
+        sizes.push_back(input.sizes[i]);
+      }
+    }
+    set_single_output(
+        node,
+        TensorRef{
+            reshape(instance_.context.get(), input.tensor, sizes), sizes});
+  }
+
+  void lower_expand(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    std::vector<int64_t> sizes = int_list(require_arg(node, "size", 1).arg);
+    if (sizes.size() < input.sizes.size()) {
+      throw std::runtime_error("ggml: expand cannot drop dimensions");
+    }
+    const size_t offset = sizes.size() - input.sizes.size();
+    for (size_t i = 0; i < sizes.size(); ++i) {
+      const int64_t in = i < offset ? 1 : input.sizes[i - offset];
+      if (sizes[i] == -1 && i >= offset) {
+        sizes[i] = in;
+      }
+      if (sizes[i] < 0 || (in != 1 && in != sizes[i])) {
+        throw std::runtime_error(
+            "ggml: expand size is incompatible with input");
+      }
+    }
+    ggml_tensor* shape =
+        new_tensor(instance_.context.get(), input.tensor->type, sizes);
+    ggml_tensor* result =
+        ggml_repeat(instance_.context.get(), input.tensor, shape);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_cat(const Node& node) {
+    const Argument& tensors_arg = require_arg(node, "tensors", 0).arg;
+    if (tensors_arg.kind() != ArgKind::TensorList) {
+      throw std::runtime_error("ggml: cat expects a tensor list");
+    }
+    const std::vector<ValueId>& ids = tensors_arg.as_tensor_list().ids;
+    if (ids.empty()) {
+      throw std::runtime_error("ggml: cat tensor list is empty");
+    }
+    TensorRef result = tensor(ids.front());
+    const int64_t dim =
+        normalize_dim(int_arg(node, "dim", 1, 0, true), result.sizes.size());
+    const int gdim = static_cast<int>(result.sizes.size() - 1 - dim);
+    // Producers may carry one dtype as different ggml types (an F16 linear
+    // result is F32), so mismatched operands take the output's type. ggml
+    // converts I32 only to F32.
+    const auto to_output_type = [&](ggml_tensor* t) {
+      ggml_context* ctx = instance_.context.get();
+      const ggml_type type = compute_type(
+          method_.graph.value(output_ids(node).at(0)).tensor_meta());
+      if (t->type == GGML_TYPE_I32 && type != GGML_TYPE_I32) {
+        t = ggml_cast(ctx, t, GGML_TYPE_F32);
+      }
+      return t->type == type ? t : ggml_cast(ctx, t, type);
+    };
+    for (size_t i = 1; i < ids.size(); ++i) {
+      TensorRef next = tensor(ids[i]);
+      bool compatible = next.sizes.size() == result.sizes.size();
+      for (size_t d = 0; compatible && d < next.sizes.size(); ++d) {
+        compatible =
+            d == static_cast<size_t>(dim) || next.sizes[d] == result.sizes[d];
+      }
+      if (!compatible) {
+        throw std::runtime_error(
+            "ggml: cat inputs must match in rank and every other dim");
+      }
+      if (next.tensor->type != result.tensor->type) {
+        result.tensor = to_output_type(result.tensor);
+        next.tensor = to_output_type(next.tensor);
+      }
+      result.tensor = ggml_concat(
+          instance_.context.get(), result.tensor, next.tensor, gdim);
+      result.sizes[static_cast<size_t>(dim)] +=
+          next.sizes.at(static_cast<size_t>(dim));
+    }
+    set_single_output(node, std::move(result));
+  }
+
+  void lower_matmul(const Node& node) {
+    const TensorRef left = tensor_arg(node, "self", 0);
+    const TensorRef right = tensor_arg(node, "other", 1);
+    if (left.sizes.size() < 2 || right.sizes.size() < 2) {
+      throw std::runtime_error("ggml: matmul requires rank >= 2");
+    }
+    if (left.sizes.back() != right.sizes[right.sizes.size() - 2]) {
+      throw std::runtime_error("ggml: matmul contracted dims differ");
+    }
+    // mul_mat broadcasts only its first operand, here the right batch.
+    const size_t left_batch = left.sizes.size() - 2;
+    const size_t right_batch = right.sizes.size() - 2;
+    bool broadcastable = right_batch <= left_batch;
+    for (size_t i = 1; broadcastable && i <= right_batch; ++i) {
+      const int64_t dim = right.sizes[right_batch - i];
+      broadcastable = dim == 1 || dim == left.sizes[left_batch - i];
+    }
+    if (!broadcastable) {
+      throw std::runtime_error("ggml: matmul cannot broadcast the left batch");
+    }
+    ggml_context* ctx = instance_.context.get();
+    // mul_mat(a, b) contracts ne[0] of both, so [M,K] @ [K,N] is
+    // mul_mat(cont(right^T), left).
+    ggml_tensor* right_t = ggml_cont(ctx, ggml_transpose(ctx, right.tensor));
+    ggml_tensor* result = ggml_mul_mat(ctx, right_t, left.tensor);
+    std::vector<int64_t> sizes = left.sizes;
+    sizes.back() = right.sizes.back();
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  void lower_update_cache(const Node& node) {
+    const TensorRef update = tensor_arg(node, "value", 0);
+    const TensorRef cache = tensor_arg(node, "cache", 1);
+    const int64_t start = int_arg(node, "start_pos", 2, 0);
+    if (cache.sizes.size() != update.sizes.size() || cache.sizes.size() != 4 ||
+        update.sizes[0] != cache.sizes[0] ||
+        update.sizes[2] != cache.sizes[2] ||
+        update.sizes[3] != cache.sizes[3] || start < 0 ||
+        start > cache.sizes[1] - update.sizes[1]) {
+      throw std::runtime_error("ggml: invalid KV cache update");
+    }
+    std::vector<int64_t> sizes = cache.sizes;
+    sizes[1] = update.sizes[1];
+    const size_t offset = static_cast<size_t>(start) * cache.tensor->nb[2];
+    ggml_tensor* destination =
+        view_with_shape(instance_.context.get(), cache.tensor, sizes, offset);
+    ggml_tensor* write =
+        ggml_cpy(instance_.context.get(), update.tensor, destination);
+    expand_write(write);
+    const std::vector<ValueId> ids = output_ids(node);
+    if (!ids.empty()) {
+      set(ids.front(), TensorRef{write, sizes});
+    }
+  }
+
+  TensorRef active_cache(const TensorRef& cache, int64_t length) {
+    if (cache.sizes.size() != 4 || length <= 0 || length > cache.sizes[1]) {
+      throw std::runtime_error("ggml: invalid active KV-cache length");
+    }
+    std::vector<int64_t> sizes = cache.sizes;
+    sizes[1] = length;
+    return TensorRef{
+        view_with_shape(instance_.context.get(), cache.tensor, sizes, 0),
+        sizes};
+  }
+
+  TensorRef causal_mask(int64_t tokens, int64_t keys, int64_t start) {
+    const std::vector<int64_t> sizes{1, 1, tokens, keys};
+    ggml_tensor* mask =
+        new_tensor(instance_.context.get(), GGML_TYPE_F16, sizes);
+    ggml_set_input(mask);
+    Upload upload;
+    upload.tensor = mask;
+    upload.bytes.resize(
+        static_cast<size_t>(tokens * keys) * sizeof(ggml_fp16_t));
+    auto* data = reinterpret_cast<ggml_fp16_t*>(upload.bytes.data());
+    for (int64_t query = 0; query < tokens; ++query) {
+      for (int64_t key = 0; key < keys; ++key) {
+        const float value = key <= start + query
+            ? 0.0f
+            : -std::numeric_limits<float>::infinity();
+        data[query * keys + key] = ggml_fp32_to_fp16(value);
+      }
+    }
+    instance_.uploads.push_back(std::move(upload));
+    return TensorRef{mask, sizes};
+  }
+
+  void lower_custom_sdpa(const Node& node) {
+    const TensorRef query = tensor_arg(node, "query", 0);
+    const TensorRef key_cache = tensor_arg(node, "key", 1);
+    const TensorRef value_cache = tensor_arg(node, "value", 2);
+    if (query.sizes.size() != 4) {
+      throw std::runtime_error("ggml: custom_sdpa query must be [B,T,H,D]");
+    }
+    if (key_cache.sizes.size() != 4 || value_cache.sizes != key_cache.sizes ||
+        key_cache.sizes[0] != query.sizes[0] ||
+        key_cache.sizes[3] != query.sizes[3] || key_cache.sizes[2] <= 0 ||
+        query.sizes[2] % key_cache.sizes[2] != 0) {
+      throw std::runtime_error(
+          "ggml: custom_sdpa q/k/v shapes are incompatible");
+    }
+    const int64_t start = int_arg(node, "start_pos", 3, 0);
+    const int64_t tokens = query.sizes[1];
+    if (start < 0 || start > key_cache.sizes[1] - tokens) {
+      throw std::runtime_error(
+          "ggml: custom_sdpa start_pos is outside the KV cache");
+    }
+    const NamedArgument* mask_arg = find_arg(node, "attn_mask", 4);
+    const bool masked = mask_arg != nullptr &&
+        mask_arg->arg.kind() == ArgKind::Tensor &&
+        valid(mask_arg->arg.as_tensor().id);
+    // As in ExecuTorch's kernel, a masked call ignores start_pos and attends
+    // the whole cache.
+    const int64_t keys = masked ? key_cache.sizes[1] : start + tokens;
+    const bool is_causal = bool_arg(node, "is_causal", 6, false);
+    if (float_arg(node, "dropout_p", 5, 0.0, true) != 0.0) {
+      throw std::runtime_error("ggml: custom_sdpa dropout is unsupported");
+    }
+    const TensorRef key = active_cache(key_cache, keys);
+    const TensorRef val = active_cache(value_cache, keys);
+    // flash_attn_ext kernels read the query as F32.
+    ggml_tensor* q = query.tensor->type == GGML_TYPE_F32
+        ? query.tensor
+        : ggml_cast(instance_.context.get(), query.tensor, GGML_TYPE_F32);
+    q = ggml_permute(instance_.context.get(), q, 0, 2, 1, 3);
+    ggml_tensor* k =
+        ggml_permute(instance_.context.get(), key.tensor, 0, 2, 1, 3);
+    ggml_tensor* v =
+        ggml_permute(instance_.context.get(), val.tensor, 0, 2, 1, 3);
+
+    ggml_tensor* mask = nullptr;
+    if (masked) {
+      if (is_causal) {
+        throw std::runtime_error(
+            "ggml: custom_sdpa cannot take a mask and is_causal");
+      }
+      const TensorRef attn_mask = tensor(mask_arg->arg.as_tensor().id);
+      const size_t rank = attn_mask.sizes.size();
+      // flash_attn_ext reads [tokens, keys] mask rows without bounds checks.
+      if (rank < 2 || attn_mask.sizes[rank - 2] < tokens ||
+          attn_mask.sizes[rank - 1] < keys) {
+        throw std::runtime_error(
+            "ggml: custom_sdpa mask does not cover every query and key");
+      }
+      mask =
+          ggml_cast(instance_.context.get(), attn_mask.tensor, GGML_TYPE_F16);
+    } else if (is_causal && tokens > 1) {
+      mask = causal_mask(tokens, keys, start).tensor;
+    }
+    const double default_scale =
+        1.0 / std::sqrt(static_cast<double>(query.sizes.back()));
+    const float scale =
+        static_cast<float>(float_arg(node, "scale", 7, default_scale, true));
+    ggml_tensor* result = ggml_flash_attn_ext(
+        instance_.context.get(), q, k, v, mask, scale, 0.0f, 0.0f);
+    ggml_prec_set_acc(result, GGML_PREC_F32);
+    set_single_output(node, TensorRef{result, query.sizes});
+  }
+
+  // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b).
+  void lower_le(const Node& node) {
+    const TensorRef left = tensor_arg(node, "self", 0);
+    const NamedArgument& other = require_arg(node, "other", 1);
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* difference = nullptr;
+    std::vector<int64_t> sizes = left.sizes;
+    if (other.arg.kind() == ArgKind::Tensor) {
+      BinaryOperands operands = tensor_operands(
+          left, tensor(other.arg.as_tensor().id), /*force_f32=*/true);
+      difference = ggml_sub(ctx, operands.lhs, operands.rhs);
+      sizes = std::move(operands.sizes);
+    } else {
+      difference = ggml_scale_bias(
+          ctx,
+          contiguous(as_f32(left.tensor)),
+          1.0f,
+          -static_cast<float>(float_arg(node, "other", 1, 0)));
+    }
+    ggml_tensor* result =
+        ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  // The result is F32, which holds integers exactly up to 2^24, and ggml
+  // derives the length from the F32 bounds.
+  void lower_arange(const Node& node) {
+    const double start = float_arg(node, "start", 0, 0.0);
+    const double end = float_arg(node, "end", 1, 0.0);
+    const double step = float_arg(node, "step", 2, 1.0, true);
+    if (step <= 0.0 || end <= start) {
+      throw std::runtime_error(
+          "ggml: arange needs a positive step and end above start");
+    }
+    constexpr double kExactF32 = 1 << 24;
+    if (std::abs(start) > kExactF32 || std::abs(end) > kExactF32) {
+      throw std::runtime_error("ggml: arange bounds must be within 2^24");
+    }
+    ggml_tensor* result = ggml_arange(
+        instance_.context.get(),
+        static_cast<float>(start),
+        static_cast<float>(end),
+        static_cast<float>(step));
+    if (result->ne[0] !=
+        static_cast<int64_t>(std::ceil((end - start) / step))) {
+      throw std::runtime_error("ggml: arange length changes in F32");
+    }
+    set_single_output(node, TensorRef{result, {result->ne[0]}});
+  }
+
+  DynamicQuant dynamic_quant_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional) const {
+    const Argument& arg = require_arg(node, name, positional).arg;
+    const auto* quant = arg.kind() == ArgKind::Tensor
+        ? std::get_if<DynamicQuant>(&value(arg.as_tensor().id))
+        : nullptr;
+    if (quant == nullptr) {
+      throw std::runtime_error(
+          "ggml: '" + node.target +
+          "' is only supported inside a dynamic activation quant chain");
+    }
+    return *quant;
+  }
+
+  void set_dynamic_quant(const Node& node, const DynamicQuant& quant) {
+    for (const ValueId id : output_ids(node)) {
+      set(id, quant);
+    }
+  }
+
+  // ggml backends quantize the activations of a quantized matmul themselves,
+  // in their own block format, so torchao's per-token int8 round trip is
+  // dropped rather than emulated.
+  void lower_choose_qparams(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const Argument& target_dtype = require_arg(node, "target_dtype", 3).arg;
+    if (target_dtype.kind() != ArgKind::ScalarType ||
+        target_dtype.as_scalar_type().value != ScalarType::Char) {
+      throw std::runtime_error(
+          "ggml: dynamic activation quantization must target int8");
+    }
+    std::vector<int64_t> per_token(input.sizes.size(), 1);
+    per_token.back() = input.sizes.back();
+    if (int_list(require_arg(node, "block_size", 2).arg) != per_token) {
+      throw std::runtime_error(
+          "ggml: only per-token dynamic activation quantization is supported");
+    }
+    set_dynamic_quant(node, DynamicQuant{input});
+  }
+
+  void lower_quantize_affine(const Node& node) {
+    const DynamicQuant quant = dynamic_quant_arg(node, "scale", 2);
+    if (tensor_arg(node, "input", 0).tensor != quant.input.tensor) {
+      throw std::runtime_error(
+          "ggml: quantize_affine input differs from its qparams source");
+    }
+    set_dynamic_quant(node, quant);
+  }
+
+  void lower_dequantize_affine(const Node& node) {
+    const DynamicQuant quant = dynamic_quant_arg(node, "input", 0);
+    if (dynamic_quant_arg(node, "scale", 2).input.tensor !=
+        quant.input.tensor) {
+      throw std::runtime_error(
+          "ggml: dequantize_affine scale differs from its input chain");
+    }
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error(
+          "ggml: dequantize_affine must produce one tensor");
+    }
+    if (std::ranges::find(method_.graph.output_ids, ids.front()) !=
+        method_.graph.output_ids.end()) {
+      throw std::runtime_error(
+          "ggml: dynamically quantized activations must not be graph outputs");
+    }
+    for (const NodeId consumer :
+         method_.graph.value(ids.front()).consumer_ids) {
+      const Node& linear = method_.graph.node(consumer);
+      const NamedArgument* input = find_arg(linear, "input", 0);
+      if (op_key(linear.target) != "aten.linear.default" || input == nullptr ||
+          input->arg.kind() != ArgKind::Tensor ||
+          input->arg.as_tensor().id != ids.front() ||
+          !ggml_is_quantized(tensor_arg(linear, "weight", 1).tensor->type)) {
+        throw std::runtime_error(
+            "ggml: dynamically quantized activations must feed quantized "
+            "linear inputs");
+      }
+    }
+    set(ids.front(), quant.input);
+  }
+
+  ggml_tensor* rope_factor_tensor(ValueId inv_freq) {
+    if (const auto cached = rope_factor_tensors_.find(inv_freq);
+        cached != rope_factor_tensors_.end()) {
+      return cached->second;
+    }
+    const auto found = rope_factor_bytes_.find(inv_freq);
+    if (found == rope_factor_bytes_.end()) {
+      throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
+    }
+    ggml_tensor* factors = ggml_new_tensor_1d(
+        instance_.context.get(),
+        GGML_TYPE_F32,
+        static_cast<int64_t>(found->second.size() / sizeof(float)));
+    ggml_set_input(factors);
+    instance_.uploads.push_back(Upload{factors, found->second});
+    rope_factor_tensors_.emplace(inv_freq, factors);
+    return factors;
+  }
+
+  void lower_rope(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const TensorRef positions = tensor_arg(node, "position_ids", 1);
+    ggml_tensor* factors =
+        rope_factor_tensor(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+    const bool interleaved = bool_arg(node, "interleaved", 3, false);
+    const double scale = float_arg(node, "attention_scale", 4, 1.0, true);
+    const int n_dims = 2 * static_cast<int>(ggml_nelements(factors));
+    if (input.sizes.size() != 4 || positions.sizes.size() != 2 ||
+        positions.sizes[0] != 1 || positions.sizes[1] != input.sizes[2] ||
+        n_dims > input.sizes[3]) {
+      throw std::runtime_error(
+          "ggml: rope expects input [B,H,T,D] and position_ids [1,T]");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* pos = ggml_reshape_1d(
+        ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+    // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
+    ggml_tensor* rotated = ggml_rope_ext(
+        ctx,
+        ggml_permute(ctx, input.tensor, 0, 2, 1, 3),
+        pos,
+        factors,
+        n_dims,
+        interleaved ? GGML_ROPE_TYPE_NORMAL : GGML_ROPE_TYPE_NEOX,
+        /*n_ctx_orig=*/0,
+        /*freq_base=*/1.0f,
+        /*freq_scale=*/1.0f,
+        /*ext_factor=*/0.0f,
+        static_cast<float>(scale),
+        /*beta_fast=*/0.0f,
+        /*beta_slow=*/0.0f);
+    ggml_tensor* result =
+        ggml_cont(ctx, ggml_permute(ctx, rotated, 0, 2, 1, 3));
+    set_single_output(node, TensorRef{result, input.sizes});
+  }
+
+  void lower_index_put(const Node& node) {
+    const TensorRef self = tensor_arg(node, "self", 0);
+    const Argument& indices_arg = require_arg(node, "indices", 1).arg;
+    const TensorRef values = tensor_arg(node, "values", 2);
+    const size_t rank = self.sizes.size();
+    const std::vector<ValueId> indices =
+        indices_arg.kind() == ArgKind::OptionalTensorList
+        ? indices_arg.as_optional_tensor_list().ids
+        : std::vector<ValueId>{};
+    const auto is_index = [](ValueId id) { return valid(id); };
+    const bool rows_only = rank >= 2 && indices.size() == rank - 1 &&
+        is_index(indices.back()) &&
+        std::none_of(indices.begin(), indices.end() - 1, is_index);
+    const TensorRef index = rows_only ? tensor(indices.back()) : TensorRef{};
+    std::vector<int64_t> row_sizes = self.sizes;
+    if (rows_only && index.sizes.size() == 1) {
+      row_sizes[rank - 2] = index.sizes[0];
+    }
+    if (!rows_only || index.sizes.size() != 1 || values.sizes != row_sizes ||
+        bool_arg(node, "accumulate", 3, false)) {
+      throw std::runtime_error(
+          "ggml: index_put_ only supports writing whole rows along dim -2");
+    }
+    const ScalarType index_dtype =
+        method_.graph.value(indices.back()).tensor_meta().dtype;
+    if (index_dtype != ScalarType::Long && index_dtype != ScalarType::Int) {
+      throw std::runtime_error(
+          "ggml: index_put_ indices must be int64 or int32");
+    }
+    check_row_indices(indices.back(), self.sizes[rank - 2]);
+    ggml_tensor* rows = values.tensor->type == GGML_TYPE_F16
+        ? values.tensor
+        : as_f32(values.tensor);
+    ggml_tensor* result = ggml_set_rows(
+        instance_.context.get(),
+        self.tensor,
+        contiguous(rows),
+        as_i32(index.tensor));
+    expand_write(result);
+    set_single_output(node, TensorRef{result, self.sizes});
+  }
+
+  ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys) {
+    const TensorRef mask = tensor(id);
+    if (mask.sizes.size() < 2 || mask.sizes[mask.sizes.size() - 2] != tokens ||
+        mask.sizes.back() != keys) {
+      throw std::runtime_error("ggml: attention mask must end in [T, S]");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* additive = mask.tensor;
+    if (method_.graph.value(id).tensor_meta().dtype == ScalarType::Bool) {
+      // max - max is exactly 0; -max saturates to -inf in F16.
+      constexpr float kMax = std::numeric_limits<float>::max();
+      additive =
+          ggml_scale_bias(ctx, contiguous(as_f32(mask.tensor)), kMax, -kMax);
+    }
+    // flash_attn_ext needs a contiguous F16 mask.
+    return additive->type == GGML_TYPE_F16
+        ? contiguous(additive)
+        : ggml_cast(ctx, additive, GGML_TYPE_F16);
+  }
+
+  void lower_sdpa(const Node& node) {
+    const TensorRef query = tensor_arg(node, "query", 0);
+    const TensorRef key = tensor_arg(node, "key", 1);
+    const TensorRef val = tensor_arg(node, "value", 2);
+    const bool is_causal = bool_arg(node, "is_causal", 5, false);
+    if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
+        val.sizes.size() != 4 ||
+        float_arg(node, "dropout_p", 4, 0.0, true) != 0.0) {
+      throw std::runtime_error(
+          "ggml: scaled_dot_product_attention expects [B,H,T,D] without dropout");
+    }
+    if (key.sizes[0] != query.sizes[0] || val.sizes[0] != query.sizes[0] ||
+        key.sizes[1] != val.sizes[1] || key.sizes[1] <= 0 ||
+        query.sizes[1] % key.sizes[1] != 0 || key.sizes[2] != val.sizes[2] ||
+        key.sizes[3] != query.sizes[3]) {
+      throw std::runtime_error(
+          "ggml: scaled_dot_product_attention q/k/v shapes are incompatible");
+    }
+    const int64_t tokens = query.sizes[2];
+    const int64_t keys = key.sizes[2];
+    ggml_tensor* mask = nullptr;
+    const NamedArgument* mask_arg = find_arg(node, "attn_mask", 3);
+    if (mask_arg != nullptr && mask_arg->arg.kind() == ArgKind::Tensor &&
+        valid(mask_arg->arg.as_tensor().id)) {
+      if (is_causal) {
+        throw std::runtime_error("ggml: sdpa cannot take a mask and is_causal");
+      }
+      mask = attention_mask(mask_arg->arg.as_tensor().id, tokens, keys);
+    } else if (is_causal) {
+      mask = causal_mask(tokens, keys, 0).tensor;
+    }
+    const double default_scale =
+        1.0 / std::sqrt(static_cast<double>(query.sizes.back()));
+    const float scale =
+        static_cast<float>(float_arg(node, "scale", 6, default_scale, true));
+    ggml_context* ctx = instance_.context.get();
+    // The CPU kernel reads the query as F32.
+    ggml_tensor* result = ggml_flash_attn_ext(
+        ctx,
+        as_f32(query.tensor),
+        key.tensor,
+        val.tensor,
+        mask,
+        scale,
+        0.0f,
+        0.0f);
+    ggml_prec_set_acc(result, GGML_PREC_F32);
+    // flash_attn_ext returns [Dv, H, T, B]; torch order is [B, H, T, Dv].
+    result = ggml_cont(ctx, ggml_permute(ctx, result, 0, 2, 1, 3));
+    set_single_output(
+        node,
+        TensorRef{
+            result, {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}});
+  }
+
+  void lower_sym_size(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const int64_t dim =
+        normalize_dim(int_arg(node, "dim", 1, 0), input.sizes.size());
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error("ggml: sym_size must produce one value");
+    }
+    set(ids.front(), input.sizes[static_cast<size_t>(dim)]);
+  }
+
+  int64_t symbolic_operand(const Argument& arg) const {
+    if (arg.kind() == ArgKind::Int) {
+      return int_value(arg);
+    }
+    throw std::runtime_error("ggml: symbolic arithmetic expects integers");
+  }
+
+  void lower_symbolic(const Node& node, const std::string& key) {
+    if (node.inputs.size() < 2) {
+      throw std::runtime_error("ggml: symbolic arithmetic is missing operands");
+    }
+    const int64_t a = symbolic_operand(node.inputs[0].arg);
+    const int64_t b = symbolic_operand(node.inputs[1].arg);
+    int64_t result = 0;
+    bool overflow = false;
+    if (key == "_operator.add") {
+      overflow = __builtin_add_overflow(a, b, &result);
+    } else if (key == "_operator.sub") {
+      overflow = __builtin_sub_overflow(a, b, &result);
+    } else if (key == "_operator.mul") {
+      overflow = __builtin_mul_overflow(a, b, &result);
+    } else {
+      if (b == 0) {
+        throw std::runtime_error("ggml: symbolic floor division by zero");
+      }
+      overflow = a == std::numeric_limits<int64_t>::min() && b == -1;
+      result = overflow ? 0 : a / b;
+      if (!overflow && a % b != 0 && (a < 0) != (b < 0)) {
+        --result;
+      }
+    }
+    if (overflow) {
+      throw std::runtime_error("ggml: symbolic integer arithmetic overflows");
+    }
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error("ggml: symbolic op must produce one value");
+    }
+    set(ids.front(), result);
+  }
+
+  const Method& method_;
+  const std::vector<InputSlot>& inputs_;
+  const std::vector<OutputSlot>& outputs_;
+  const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
+  const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
+  size_t graph_size_;
+  std::vector<RuntimeValue> values_;
+  std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
+  GraphInstance instance_;
+};
+
+GraphInstance GgmlExecutable::build_graph() {
+  return GraphBuilder(
+             method_,
+             inputs_,
+             outputs_,
+             persistent_,
+             rope_freq_factors_,
+             options_.graph_size)
+      .build();
+}
+
+} // namespace
+
+ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options) {
+  int remaining = options.device_index;
+  for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+    ggml_backend_dev_t device = ggml_backend_dev_get(i);
+    const enum ggml_backend_dev_type type = ggml_backend_dev_type(device);
+    if (type != GGML_BACKEND_DEVICE_TYPE_GPU &&
+        type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+      continue;
+    }
+    if (remaining-- == 0) {
+      return device;
+    }
+  }
+  throw std::runtime_error(
+      "ggml: GPU device " + std::to_string(options.device_index) +
+      " is unavailable (" + std::to_string(options.device_index - remaining) +
+      " GPU devices registered by the linked ggml backends)");
+}
+
+std::unique_ptr<EngineExecutable> make_ggml_executable(
+    const Method& method,
+    const Package& package,
+    const GgmlEngineOptions& options,
+    size_t* materialized_constant_bytes,
+    GgmlMutableKeyOwners& mutable_key_owners) {
+  return std::make_unique<GgmlExecutable>(
+      method,
+      package,
+      options,
+      materialized_constant_bytes,
+      mutable_key_owners);
+}
+
+} // namespace ptn
