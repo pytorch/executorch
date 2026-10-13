@@ -12,12 +12,15 @@
 // Usage:
 //   ggml_ptn_runner --package M.ptn --inputs a.bin,b.bin --outputs out0.bin
 //                   [--input_sizes 1x6,6] [--device gpu]
+//                   [--warmup 3 --iterations 20]
 //   ggml_ptn_runner --package M.ptn --inputs a0.bin,b0.bin;a1.bin,b1.bin
 //                   --outputs out0.bin;out1.bin --input_sizes 1x6,6;1x1,1
 //
 // Exit: 0 success, 1 usage, 2 error.
 
+#include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -60,6 +63,11 @@ DEFINE_string(
     "cpu",
     "ggml device: cpu, or gpu for the GPU backend this binary links.");
 DEFINE_int32(cpu_threads, 0, "ggml CPU threads; 0 keeps ggml's default.");
+DEFINE_int32(warmup, 0, "Untimed executions before the timed ones.");
+DEFINE_int32(
+    iterations,
+    1,
+    "Timed executions; above one, prints median and min latency.");
 
 namespace {
 
@@ -148,7 +156,26 @@ void run_step(
     executable.set_input(i, bytes.data(), numel, dtype);
   }
 
-  executable.execute();
+  for (int i = 0; i < FLAGS_warmup; ++i) {
+    executable.execute();
+  }
+  std::vector<double> latencies_ms;
+  for (int i = 0; i < FLAGS_iterations; ++i) {
+    const auto start = std::chrono::steady_clock::now();
+    executable.execute();
+    latencies_ms.push_back(
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start)
+            .count());
+  }
+  if (latencies_ms.size() > 1) {
+    std::ranges::sort(latencies_ms);
+    std::printf(
+        "latency_ms: median %.3f min %.3f (%zu iterations)\n",
+        latencies_ms[latencies_ms.size() / 2],
+        latencies_ms.front(),
+        latencies_ms.size());
+  }
 
   for (size_t i = 0; i < outputs.size(); ++i) {
     const ptn::ScalarType dtype = executable.output_dtype(i);
@@ -192,6 +219,10 @@ void run() {
         std::to_string(output_steps.size()) + " output steps and " +
         std::to_string(size_steps.size()) + " size steps");
   }
+  // Repeated executions advance mutable buffers such as KV caches.
+  if (input_steps.size() > 1 && (FLAGS_warmup > 0 || FLAGS_iterations > 1)) {
+    throw std::invalid_argument("--warmup and --iterations need one step");
+  }
   for (size_t step = 0; step < input_steps.size(); ++step) {
     run_step(
         *executable,
@@ -208,6 +239,10 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_package.empty()) {
     std::fprintf(stderr, "error: --package is required\n");
+    return 1;
+  }
+  if (FLAGS_warmup < 0 || FLAGS_iterations < 1) {
+    std::fprintf(stderr, "error: --warmup must be >= 0, --iterations >= 1\n");
     return 1;
   }
   try {

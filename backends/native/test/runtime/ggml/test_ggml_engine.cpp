@@ -520,6 +520,52 @@ TEST(GgmlEngineTest, RejectsCustomSdpaDropout) {
   expect_compile_error(program.finish("attention"), "dropout");
 }
 
+// conv2d of a [1, 2, 4, 4] input with [2, 2, 3, 3] weights.
+std::vector<uint8_t> make_convolution_program(
+    const std::vector<int64_t>& bias_shape,
+    const std::vector<int64_t>& stride) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 2, 4, 4});
+  program.input("w", fbs::ScalarType::FLOAT, {2, 2, 3, 3});
+  program.input("b", fbs::ScalarType::FLOAT, bias_shape);
+  program.call(
+      "y",
+      "torch.ops.aten.convolution.default",
+      {{"input", std::string("x")},
+       {"weight", std::string("w")},
+       {"bias", std::string("b")},
+       {"stride", stride},
+       {"padding", std::vector<int64_t>{1, 1}},
+       {"dilation", std::vector<int64_t>{1, 1}}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 4, 4});
+  return program.finish("y");
+}
+
+TEST(GgmlEngineTest, RejectsMalformedConvolutionAndBatchNorm) {
+  auto host = GgmlEngineHost::create();
+  EXPECT_NO_THROW(make_context(*host, make_convolution_program({2}, {1, 1}))
+                      ->compile("forward"));
+  expect_compile_error(make_convolution_program({3}, {1, 1}), "bias");
+  expect_compile_error(make_convolution_program({2}, {-1, 1}), "stride");
+
+  TestProgram norm;
+  norm.input("x", fbs::ScalarType::FLOAT, {1, 2, 4, 4});
+  norm.input("mean", fbs::ScalarType::FLOAT, {3});
+  norm.input("var", fbs::ScalarType::FLOAT, {2});
+  norm.call(
+      "y",
+      "torch.ops.aten._native_batch_norm_legit_no_training.default",
+      {{"input", std::string("x")},
+       {"weight", std::monostate{}},
+       {"bias", std::monostate{}},
+       {"running_mean", std::string("mean")},
+       {"running_var", std::string("var")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 4, 4});
+  expect_compile_error(norm.finish("y"), "one value per channel");
+}
+
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(
@@ -672,6 +718,101 @@ TEST(GgmlEngineTest, RejectsDtypesGgmlCannotConvert) {
           << error.what();
     }
   }
+}
+
+// rms_norm of x = 2 with a Half weight of 0.5 gives 0.5, for a Half or a
+// Float x.
+TEST(GgmlEngineTest, RmsNormWithAHalfWeight) {
+  for (const bool half_input : {true, false}) {
+    SCOPED_TRACE(half_input);
+    const fbs::ScalarType dtype =
+        half_input ? fbs::ScalarType::HALF : fbs::ScalarType::FLOAT;
+    TestProgram program;
+    program.input("x", dtype, {2, 16});
+    program.input("w", fbs::ScalarType::HALF, {16});
+    program.call(
+        "y",
+        "torch.ops.aten.rms_norm.default",
+        {{"input", std::string("x")},
+         {"normalized_shape", std::vector<int64_t>{16}},
+         {"weight", std::string("w")},
+         {"eps", 1e-6}},
+        dtype,
+        {2, 16});
+    auto host = GgmlEngineHost::create();
+    auto context = make_context(*host, program.finish("y"));
+    auto executable = context->compile("forward");
+    // IEEE half bit patterns of 2.0 and 0.5.
+    const std::vector<uint16_t> half_x(32, 0x4000);
+    const std::vector<float> float_x(32, 2.0f);
+    const std::vector<uint16_t> w(16, 0x3800);
+    if (half_input) {
+      executable->set_input(0, half_x.data(), 32, ScalarType::Half);
+    } else {
+      executable->set_input(0, float_x.data(), 32, ScalarType::Float);
+    }
+    executable->set_input(1, w.data(), w.size(), ScalarType::Half);
+    executable->execute();
+    std::vector<float> y(32);
+    executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+    for (const float element : y) {
+      EXPECT_NEAR(element, 0.5f, 1e-3f);
+    }
+  }
+}
+
+// x = 1, w = 1 and b = 0.5, all Half, so each output is 4.5.
+TEST(GgmlEngineTest, HalfLinearAddsAHalfBias) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::HALF, {1, 4});
+  program.input("w", fbs::ScalarType::HALF, {2, 4});
+  program.input("b", fbs::ScalarType::HALF, {2});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")},
+       {"weight", std::string("w")},
+       {"bias", std::string("b")}},
+      fbs::ScalarType::HALF,
+      {1, 2});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("y"));
+  auto executable = context->compile("forward");
+  // IEEE half bit patterns of 1.0 and 0.5.
+  const std::vector<uint16_t> x(4, 0x3C00);
+  const std::vector<uint16_t> w(8, 0x3C00);
+  const std::vector<uint16_t> b(2, 0x3800);
+  executable->set_input(0, x.data(), x.size(), ScalarType::Half);
+  executable->set_input(1, w.data(), w.size(), ScalarType::Half);
+  executable->set_input(2, b.data(), b.size(), ScalarType::Half);
+  executable->execute();
+  std::vector<float> y(2);
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  EXPECT_EQ(y, std::vector<float>(2, 4.5f));
+}
+
+// make_context's Q4_K weight against a Half input of 1s, as in
+// ExecutesPackedQ4KLinear.
+TEST(GgmlEngineTest, Q4KLinearOfAHalfInput) {
+  TestProgram program;
+  program.q4_k_weight("weight");
+  program.input("x", fbs::ScalarType::HALF, {1, 256});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::HALF,
+      {1, 1});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("y"));
+  auto executable = context->compile("forward");
+  // The IEEE half bit pattern of 1.0.
+  const std::vector<uint16_t> x(256, 0x3C00);
+  executable->set_input(0, x.data(), x.size(), ScalarType::Half);
+  executable->execute();
+  float y = 0.0f;
+  executable->get_output(0, &y, 1, ScalarType::Float);
+  EXPECT_NEAR(y, 128.0f * 1.0f + 128.0f * 2.0f, 0.5f);
 }
 
 TEST(GgmlEngineTest, RejectsKvCacheUpdateOutsideCache) {
