@@ -146,11 +146,8 @@ std::vector<uint8_t> make_add_program(
       fbs::CreateTensorValueDirect(builder, "sum", meta),
   };
   if (!unused_shape.empty()) {
-    tensor_values.push_back(
-        fbs::CreateTensorValueDirect(
-            builder,
-            "unused",
-            create_tensor_meta(builder, dtype, unused_shape)));
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder, "unused", create_tensor_meta(builder, dtype, unused_shape)));
   }
 
   const std::vector<flatbuffers::Offset<fbs::Output>> left_outputs = {
@@ -171,17 +168,14 @@ std::vector<uint8_t> make_add_program(
   std::vector<std::string> graph_outputs;
   std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs;
   if (include_mutation_output) {
-    output_inputs.push_back(
-        fbs::CreateNamedArgumentDirect(
-            builder, "", create_tensor_arg(builder, "left")));
+    output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+        builder, "", create_tensor_arg(builder, "left")));
     graph_outputs.push_back("left");
-    output_specs.push_back(
-        fbs::CreateOutputSpecDirect(
-            builder, "left", fbs::OutputKind::USER_INPUT_MUTATION, "left"));
+    output_specs.push_back(fbs::CreateOutputSpecDirect(
+        builder, "left", fbs::OutputKind::USER_INPUT_MUTATION, "left"));
   }
-  output_inputs.push_back(
-      fbs::CreateNamedArgumentDirect(
-          builder, "", create_tensor_arg(builder, "sum")));
+  output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+      builder, "", create_tensor_arg(builder, "sum")));
   graph_outputs.push_back("sum");
   output_specs.push_back(fbs::CreateOutputSpecDirect(builder, "sum"));
   const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
@@ -408,17 +402,14 @@ std::vector<uint8_t> make_state_program(
     std::vector<std::string> graph_outputs;
     std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs;
     if (return_state) {
-      output_inputs.push_back(
-          fbs::CreateNamedArgumentDirect(
-              builder, "", create_tensor_arg(builder, "state")));
+      output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "state")));
       graph_outputs.push_back("state");
-      output_specs.push_back(
-          fbs::CreateOutputSpecDirect(
-              builder, "state", fbs::OutputKind::BUFFER_MUTATION, fqn.c_str()));
+      output_specs.push_back(fbs::CreateOutputSpecDirect(
+          builder, "state", fbs::OutputKind::BUFFER_MUTATION, fqn.c_str()));
     }
-    output_inputs.push_back(
-        fbs::CreateNamedArgumentDirect(
-            builder, "", create_tensor_arg(builder, "sum")));
+    output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+        builder, "", create_tensor_arg(builder, "sum")));
     graph_outputs.push_back("sum");
     output_specs.push_back(
         write_back_sum
@@ -454,14 +445,13 @@ std::vector<uint8_t> make_state_program(
     const std::vector<flatbuffers::Offset<fbs::MutableBufferSpec>>
         mutable_buffers = {
             fbs::CreateMutableBufferSpecDirect(builder, "state", fqn.c_str())};
-    method_offsets.push_back(
-        fbs::CreateMethod(
-            builder,
-            builder.CreateString(name),
-            graph,
-            0,
-            builder.CreateVector(output_specs),
-            builder.CreateVector(mutable_buffers)));
+    method_offsets.push_back(fbs::CreateMethod(
+        builder,
+        builder.CreateString(name),
+        graph,
+        0,
+        builder.CreateVector(output_specs),
+        builder.CreateVector(mutable_buffers)));
   }
   const auto program = fbs::CreateProgram(
       builder,
@@ -509,9 +499,8 @@ std::vector<uint8_t> make_inplace_relu_program(
   std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs = {
       fbs::CreateOutputSpecDirect(builder, "relu")};
   if (output_mutated) {
-    output_inputs.push_back(
-        fbs::CreateNamedArgumentDirect(
-            builder, "", create_tensor_arg(builder, mutated)));
+    output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+        builder, "", create_tensor_arg(builder, mutated)));
     graph_outputs.emplace_back(mutated);
     output_specs.push_back(fbs::CreateOutputSpecDirect(builder, mutated));
   }
@@ -519,26 +508,23 @@ std::vector<uint8_t> make_inplace_relu_program(
       builder, "input", fbs::OpKind::PLACEHOLDER, "", nullptr, &input_outputs)};
   if (from_sum) {
     tensor_values.push_back(fbs::CreateTensorValueDirect(builder, "sum", meta));
-    nodes.push_back(
-        fbs::CreateNodeDirect(
-            builder,
-            "sum",
-            fbs::OpKind::CALL_FUNCTION,
-            "torch.ops.aten.add.Tensor",
-            &add_inputs,
-            &sum_outputs));
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        "sum",
+        fbs::OpKind::CALL_FUNCTION,
+        "torch.ops.aten.add.Tensor",
+        &add_inputs,
+        &sum_outputs));
   }
-  nodes.push_back(
-      fbs::CreateNodeDirect(
-          builder,
-          "relu",
-          fbs::OpKind::CALL_FUNCTION,
-          "torch.ops.aten.relu_.default",
-          &relu_inputs,
-          &relu_outputs));
-  nodes.push_back(
-      fbs::CreateNodeDirect(
-          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder,
+      "relu",
+      fbs::OpKind::CALL_FUNCTION,
+      "torch.ops.aten.relu_.default",
+      &relu_inputs,
+      &relu_outputs));
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
   const auto graph = fbs::CreateGraph(
       builder,
       builder.CreateVector(nodes),
@@ -1402,16 +1388,14 @@ std::vector<uint8_t> make_hf_attention_program() {
   const auto tensor = [&](const char* name,
                           ScalarType dtype,
                           const std::vector<int64_t>& shape) {
-    tensor_values.push_back(
-        fbs::CreateTensorValueDirect(
-            builder, name, create_tensor_meta(builder, dtype, shape)));
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder, name, create_tensor_meta(builder, dtype, shape)));
   };
   const auto placeholder = [&](const char* name) {
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder, name)};
-    nodes.push_back(
-        fbs::CreateNodeDirect(
-            builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
   };
   const auto call =
       [&](const char* name,
@@ -1420,14 +1404,13 @@ std::vector<uint8_t> make_hf_attention_program() {
           const char* alias_of = nullptr) {
         const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
             fbs::CreateOutputDirect(builder, name, alias_of)};
-        nodes.push_back(
-            fbs::CreateNodeDirect(
-                builder,
-                name,
-                fbs::OpKind::CALL_FUNCTION,
-                target,
-                &inputs,
-                &outputs));
+        nodes.push_back(fbs::CreateNodeDirect(
+            builder,
+            name,
+            fbs::OpKind::CALL_FUNCTION,
+            target,
+            &inputs,
+            &outputs));
       };
   const auto arg = [&](const char* name,
                        flatbuffers::Offset<fbs::Argument> value,
@@ -1591,9 +1574,8 @@ std::vector<uint8_t> make_hf_attention_program() {
       arg("", create_tensor_arg(builder, "k_all")),
       arg("", create_tensor_arg(builder, "v_all")),
       arg("", create_tensor_arg(builder, "out"))};
-  nodes.push_back(
-      fbs::CreateNodeDirect(
-          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
 
   const auto graph = fbs::CreateGraph(
       builder,
