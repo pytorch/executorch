@@ -90,11 +90,19 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
  * prompt starts fresh.
  *
  * @param runner Handle from enn_llm_create.
- * @param prompt User prompt text (required, non-empty).
- * @param system_prompt System prompt text, or NULL/"" => none.
+ * @param prompt User prompt text (required, non-empty). When raw_prompt is
+ *   non-zero, this is the already-formatted prompt (BOS, turn/tool special
+ *   tokens, system turn) and is fed to the model verbatim.
+ * @param system_prompt System prompt text, or NULL/"" => none. Ignored when
+ *   raw_prompt is non-zero.
+ * @param assistant_prefill_prompt Text appended verbatim to the very end of the
+ *   rendered prompt, after the assistant turn header (a pre-filled start of the
+ *   model's reply), or NULL/"" => none. Ignored when raw_prompt is non-zero.
  * @param image_path Image file for this turn, or NULL => text-only.
  * @param prompt_before_image Text placed before the image in the user turn
  *   (Gemma 4 multimodal); ignored when image_path is NULL.
+ * @param raw_prompt Non-zero => prompt is already fully formatted; skip the
+ *   internal chat-template wrapping and system_prompt.
  * @param seq_len Total token budget (prompt + generated), capped by the model's
  *   max context length; -1 => use the model's max context length.
  * @param temperature Sampling temperature.
@@ -111,8 +119,10 @@ EXYNOS_LLM_WRAPPER_API int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,
     const char* system_prompt,
+    const char* assistant_prefill_prompt,
     const char* image_path,
     const char* prompt_before_image,
+    int32_t raw_prompt,
     int32_t seq_len,
     float temperature,
     int32_t num_bos,

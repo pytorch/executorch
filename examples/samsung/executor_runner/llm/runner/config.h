@@ -497,6 +497,15 @@ class RunnerConfig {
   // Empty => no system prompt.
   std::string system_prompt;
 
+  // Text appended verbatim to the very end of the rendered prompt (after the
+  // assistant turn header), i.e. a pre-filled assistant response. Ignored in
+  // raw_prompt mode where the caller supplies the full prompt already.
+  std::string assistant_prefill_prompt;
+
+  // Treat the prompt as already fully formatted: skip chat-template wrapping
+  // and system_prompt so a caller can feed raw special-token input verbatim.
+  bool raw_prompt = false;
+
   // Vision inputs (Gemma 4 multimodal). Empty image_path => text-only.
   std::string image_path;
   std::string prompt_before_image;

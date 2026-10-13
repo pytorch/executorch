@@ -39,6 +39,7 @@ using json = nlohmann::json;
 std::string LLMRunner::get_formatted_prompt(
     const std::string& prompt,
     const std::string& system_prompt,
+    const std::string& assistant_prefill_prompt,
     DecoderModelVersion version) {
   std::string formatted_prompt;
   switch (version) {
@@ -53,6 +54,9 @@ std::string LLMRunner::get_formatted_prompt(
       formatted_prompt.append(prompt);
       formatted_prompt.append(
           "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
+      // Pre-fill: text placed right after the assistant header as the start of
+      // the model's reply.
+      formatted_prompt.append(assistant_prefill_prompt);
       break;
     case DecoderModelVersion::kGemma3:
       formatted_prompt.append("<start_of_turn>user\n");
@@ -64,6 +68,8 @@ std::string LLMRunner::get_formatted_prompt(
       formatted_prompt.append(prompt);
       formatted_prompt.append("<end_of_turn>\n");
       formatted_prompt.append("<start_of_turn>model\n");
+      // Pre-fill: text placed right after the model turn header.
+      formatted_prompt.append(assistant_prefill_prompt);
       break;
     case DecoderModelVersion::kGemma4:
       if (!system_prompt.empty()) {
@@ -75,12 +81,16 @@ std::string LLMRunner::get_formatted_prompt(
       formatted_prompt.append(prompt);
       formatted_prompt.append("<turn|>\n");
       formatted_prompt.append("<|turn>model\n");
+      // Pre-fill: text placed right after the model turn header.
+      formatted_prompt.append(assistant_prefill_prompt);
       break;
     case DecoderModelVersion::kGeneral:
       formatted_prompt.append(prompt);
+      formatted_prompt.append(assistant_prefill_prompt);
       break;
     default:
       formatted_prompt.append(prompt);
+      formatted_prompt.append(assistant_prefill_prompt);
       break;
   }
   return formatted_prompt;
@@ -249,9 +259,16 @@ runtime::Error LLMRunner::generate_from_pos(
       "################ input prompt  ################\n %s\n",
       prompt.c_str());
 
-  std::string input_prompt =
-      get_formatted_prompt(prompt, config_.system_prompt, model_version_);
-  if (model_version_ == DecoderModelVersion::kGemma3) {
+  // Raw prompts are already fully formatted (special tokens, system turn, tool
+  // declaration); feed them verbatim and skip every template transformation.
+  std::string input_prompt = config_.raw_prompt
+      ? prompt
+      : get_formatted_prompt(
+            prompt,
+            config_.system_prompt,
+            config_.assistant_prefill_prompt,
+            model_version_);
+  if (!config_.raw_prompt && model_version_ == DecoderModelVersion::kGemma3) {
     replace_all_newlines(input_prompt);
   }
 
