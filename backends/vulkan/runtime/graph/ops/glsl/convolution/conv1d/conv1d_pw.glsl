@@ -67,11 +67,11 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#include "linear_fp_input_tile.glslh"
-#include "linear_fp_weight_tile.glslh"
-#include "linear_fp_output_tile.glslh"
-#include "linear_fp_packed_weight_tile_load.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_weight_tile.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile.glslh"
+#include "gemm/tile_utils/linear_fp_packed_weight_tile_load.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 
 // Conv1d pointwise is matrix multiplication with swapped texture coordinates.
 // Linear: input ivec3(k4, m, b), output ivec3(n4, m, b)  [width-packed]

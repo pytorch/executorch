@@ -67,7 +67,7 @@ layout(push_constant) uniform restrict Block {
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "conv2d_fp_im2col_block_load.glslh"
-#include "linear_int8_input_block.glslh"
+#include "gemm/tile_utils/linear_int8_input_block.glslh"
 
 void main() {
   // The quantized and packed im2col matrix can be conceptualized as a 2D matrix
