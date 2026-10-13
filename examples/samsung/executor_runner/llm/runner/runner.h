@@ -42,17 +42,16 @@ class LLMRunner : public llm::IRunner {
       DecoderModelVersion model_version,
       float temperature = -1.0f);
 
-  bool is_loaded() const;
+  bool is_loaded() const override;
 
-  runtime::Error load();
+  runtime::Error load() override;
 
   runtime::Error generate(
       const std::string& prompt,
       const llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const llm::Stats&)> stats_callback = {});
+      std::function<void(const llm::Stats&)> stats_callback = {}) override;
 
-  // TODO (brucekk.kim): consider removing unncessary args
   runtime::Error generate_from_pos(
       const std::string& prompt,
       int64_t start_pos,
@@ -62,7 +61,7 @@ class LLMRunner : public llm::IRunner {
 
   runtime::Error warmup(const std::string& prompt, int32_t max_new_tokens);
 
-  void stop();
+  void stop() override;
 
   const RunnerConfig& get_config() const {
     return config_;
@@ -100,14 +99,13 @@ class LLMRunner : public llm::IRunner {
     return vision_encoder_.get();
   }
 
-  // TODO (brucekk.kim): should it be static?
   static std::string get_formatted_prompt(
       const std::string& prompt,
       const std::string& system_prompt,
       const std::string& assistant_prefill_prompt,
       DecoderModelVersion version);
 
-  void reset();
+  void reset() override;
 
  private:
   RunnerConfig config_;

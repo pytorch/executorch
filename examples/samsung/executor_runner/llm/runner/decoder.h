@@ -43,6 +43,8 @@ class ET_EXPERIMENTAL Decoder : public llm::TextDecoderRunner {
 
   runtime::Error load() override;
 
+  bool is_method_loaded() override;
+
   inline void set_method(std::string& method) {
     method_names_.insert(method);
   }
@@ -52,7 +54,12 @@ class ET_EXPERIMENTAL Decoder : public llm::TextDecoderRunner {
   std::string decode_method_;
   std::unordered_set<std::string> method_names_;
   std::unique_ptr<SharedMethodMemory> shared_method_memory_;
+  // Keeps the TensorImpl of the logits view returned by step() alive.
+  extension::TensorPtr last_logits_;
 
+  runtime::Result<aten::Tensor> slice_kth_token(
+      const runtime::EValue& output,
+      int64_t k);
   void extract_llm_methods();
   runtime::Error load_io_manager();
   runtime::Error create_shared_planned_memory();

@@ -83,7 +83,7 @@ DEFINE_double(
 DEFINE_int32(
     seq_len,
     128,
-    "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+    "Total number of tokens to generate (prompt + output). If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
 
 DEFINE_int32(
     cpu_threads,
@@ -99,8 +99,6 @@ DEFINE_int32(
     num_eos,
     0,
     "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
-
-DEFINE_bool(is_warmup, false, "Whether to run a warmup run.");
 
 DEFINE_bool(is_decode_only, false, "Whether to run with decode method only.");
 
@@ -169,7 +167,10 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Input prompt cannot be empty.");
     return ENN_ERR_INVALID_ARG;
   }
-  ET_LOG(Info, "Input prompt message: %s", effective_prompt.c_str());
+  if (FLAGS_cpu_threads < -1) {
+    ET_LOG(Error, "--cpu_threads must be -1 or a non-negative count.");
+    return ENN_ERR_INVALID_ARG;
+  }
 
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = FLAGS_cpu_threads == -1
@@ -191,9 +192,10 @@ int32_t main(int32_t argc, char** argv) {
       FLAGS_config_path.c_str(),
       FLAGS_vision_model_path.c_str(),
       FLAGS_is_decode_only);
-  ET_CHECK_MSG(runner != nullptr, "Failed to create LLM runner");
-
-  // TODO: support warmup interface
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create LLM runner");
+    return ENN_ERR_LOAD;
+  }
 
   const bool stop_test = FLAGS_max_token_limit > 0;
   StopContext stop_ctx{runner, FLAGS_max_token_limit};
@@ -220,7 +222,8 @@ int32_t main(int32_t argc, char** argv) {
         stop_ctx.limit,
         stop_ctx.num_tokens);
   }
-  ET_CHECK_MSG(error == ENN_OK, "Failed to generate token from LLM runner");
-
-  return 0;
+  if (error != ENN_OK) {
+    ET_LOG(Error, "Failed to generate token from LLM runner");
+  }
+  return error;
 }

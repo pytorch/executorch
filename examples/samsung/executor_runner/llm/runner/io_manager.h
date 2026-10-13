@@ -127,20 +127,14 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
   }
 
   size_t get_attention_setup_tensor_count() const;
-  /**
-   * Calculates the total number of tensor slots required in the model's input
-   * buffer.
-   *
-   * Memory Layout Layout:
-   * [0]                  : Token/Prompt IDs
-   * [1 ... N]            : Attention Setup Overheads (Masks, RoPE Sin/Cos
-   * Tensors) [N+1 ... End]        : Alternating Key and Value Cache Tensors for
-   * all Layers
-   */
+
+  // [tokens, (Gemma 4: inputs_embeds, mm_mask), masks, RoPE cos/sin, K x L,
+  //  V x L]
   size_t get_input_reserve_size() const {
-    auto model_config = getModelVersionConfig(config_.model_version);
-    return model_config.v_cache_tensor_index +
-        model_config.kv_cache_tensor_count;
+    const size_t prelude =
+        config_.model_version == DecoderModelVersion::kGemma4 ? 2 : 0;
+    return 1 + prelude + get_attention_setup_tensor_count() +
+        2 * static_cast<size_t>(config_.model_args->get_n_layers());
   }
 
   size_t current_pos() const {
@@ -148,21 +142,7 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
   }
 
  private:
-  void dump_buffer(
-      const std::string& tag,
-      size_t layer,
-      const char* data,
-      size_t size);
-  void dump_kv_input(const std::string& phase);
-  void dump_kv_output(
-      const std::string& phase,
-      const std::vector<executorch::runtime::EValue>& model_outputs);
-
   void allocate_buffers();
-
-  bool dump_enabled_ = false;
-  mutable size_t dump_step_ = 0;
-  std::string dump_dir_ = "/data/local/tmp/kv_cache_dump";
 
   /**
    * Copy prefill output KV cache (layout [1,H,prefill_cache_len,D]) into
@@ -173,35 +153,30 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
   void copy_prefill_to_decode_input();
 
   /**
-   * Copy model KV-cache outputs into the given buffers and dump them.
+   * Copy model KV-cache outputs into the given buffers.
    *
    * @param model_outputs  [logits, k0..k_{L-1}, v0..v_{L-1}]
    * @param k_bufs  per-layer K cache buffers (input/output)
    * @param v_bufs  per-layer V cache buffers (input/output)
    * @param cache_len  length of each cache buffer
    * @param new_len  number of new tokens to copy (prefill_seq_len or 1)
-   * @param phase  dump label ("prefill" or "decode")
    */
-  void update_kv_cache(
+  ET_NODISCARD runtime::Error update_kv_cache(
       const std::vector<executorch::runtime::EValue>& model_outputs,
       std::vector<std::vector<char>>& k_bufs,
       std::vector<std::vector<char>>& v_bufs,
       size_t cache_len,
-      size_t new_len,
-      const std::string& phase);
+      size_t new_len);
 
   /**
-   * Copy new cache entries from source data (layout [1,H,new_len,D]) into the
-   * cache buffer (layout [1,H,cache_len,D]) at the given position.
-   *
-   * For each head h:
-   *   cache[h * cache_len * D + pos * D .. + (pos + new_len) * D]
-   *     = src[h * new_len * D .. + new_len * D]
+   * Copy the first `rows` of new cache entries from source data (layout
+   * [1,H,new_len,D]) into the cache buffer (layout [1,H,cache_len,D]) at pos.
    */
   template <typename T>
   void copy_to_cache(
       const T* src,
       size_t new_len,
+      size_t rows,
       char* cache,
       size_t cache_len,
       size_t pos,
@@ -210,23 +185,8 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
       const T* src_head = src + h * new_len * head_dim;
       char* dst_head = cache + h * cache_len * head_dim * sizeof(T) +
           pos * head_dim * sizeof(T);
-      std::memcpy(dst_head, src_head, new_len * head_dim * sizeof(T));
+      std::memcpy(dst_head, src_head, rows * head_dim * sizeof(T));
     }
-  }
-
-  /**
-   * Copy tensor data to cache buffer, dispatching based on kv_scalar_type.
-   * Handles both Half (float16) and Float (float32) types.
-   */
-  void copy_tensor_to_cache(
-      const executorch::aten::Tensor& tensor,
-      size_t new_len,
-      char* cache,
-      size_t cache_len,
-      size_t pos,
-      size_t head_dim) {
-    const float* data = tensor.const_data_ptr<float>();
-    copy_to_cache<float>(data, new_len, cache, cache_len, pos, head_dim);
   }
 
   /**

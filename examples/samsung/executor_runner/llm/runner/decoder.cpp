@@ -11,66 +11,79 @@
 #include <executorch/examples/samsung/executor_runner/llm/runner/decoder.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/kernels/portable/cpu/util/arange_util.h>
 
-#include <ctime>
+#include <cinttypes>
 #include <string>
+#include <vector>
 
 namespace example {
 
 namespace runtime = executorch::runtime;
 
-class IExecutionIOBinder {
-  virtual ~IExecutionIOBinder() = default;
-  virtual void beforeExecution() = 0;
-  virtual void afterExecution() = 0;
-};
+namespace {
 
-runtime::Result<aten::Tensor> slice_kth_token(
-    const runtime::EValue& output_evalue,
+runtime::Error validate_inputs(
+    const runtime::MethodMeta& method_meta,
+    const std::vector<runtime::EValue>& inputs) {
+  ET_CHECK_OR_RETURN_ERROR(
+      inputs.size() == method_meta.num_inputs(),
+      InvalidProgram,
+      "Method %s expects %zu inputs but the runner prepared %zu",
+      method_meta.name(),
+      method_meta.num_inputs(),
+      inputs.size());
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    if (!inputs[i].isTensor()) {
+      continue;
+    }
+    auto expected = ET_UNWRAP(method_meta.input_tensor_meta(i));
+    const auto prepared_rank = inputs[i].toTensor().dim();
+    ET_CHECK_OR_RETURN_ERROR(
+        static_cast<size_t>(prepared_rank) == expected.sizes().size(),
+        InvalidProgram,
+        "Method %s input %zu: expected rank %zu, prepared rank %zu",
+        method_meta.name(),
+        i,
+        expected.sizes().size(),
+        static_cast<size_t>(prepared_rank));
+  }
+  return runtime::Error::Ok;
+}
+
+} // namespace
+
+runtime::Result<aten::Tensor> Decoder::slice_kth_token(
+    const runtime::EValue& output,
     int64_t k) {
-  ET_CHECK_MSG(
-      output_evalue.isTensor(), "The provided EValue is not a tensor.");
-  aten::Tensor logits = output_evalue.toTensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      output.isTensor(), InvalidProgram, "Logits output is not a tensor");
+  aten::Tensor logits = output.toTensor();
 
   constexpr int64_t kExpectedNumDim = 3;
   constexpr int64_t kSequenceDim = 1;
-  const int64_t max_seq_len = logits.size(kSequenceDim);
-  const int64_t actual_dim = logits.dim();
-
-  const auto strides = logits.strides();
-  const auto sizes = logits.sizes();
-
-  ET_CHECK_MSG(
-      k >= 0 && k < max_seq_len,
-      "Index k (%ld) out of bounds (max: %ld)",
-      k,
-      max_seq_len);
-
-  ET_CHECK_MSG(
-      actual_dim == kExpectedNumDim,
-      "num dim shape of logit(%ld) is not expected(%ld)",
-      actual_dim,
+  ET_CHECK_OR_RETURN_ERROR(
+      logits.dim() == kExpectedNumDim,
+      InvalidProgram,
+      "Logits rank %zu is not %" PRId64,
+      static_cast<size_t>(logits.dim()),
       kExpectedNumDim);
+  const int64_t seq_len = logits.size(kSequenceDim);
+  ET_CHECK_OR_RETURN_ERROR(
+      k >= 0 && k < seq_len,
+      InvalidArgument,
+      "Token index %" PRId64 " out of bounds for %" PRId64 " logits rows",
+      k,
+      seq_len);
 
-  // Calculate Memory Offset (zero-copy)
-  int64_t offset = k * strides[kSequenceDim];
-
-  // Define New Shape for the k-th token (1, 1, VocabSize)
-  // Using a fixed-size array or vector that matches SizesType
+  const auto sizes = logits.sizes();
   std::vector<aten::SizesType> new_sizes = {
       static_cast<aten::SizesType>(sizes[0]),
-      1, // Target single token
+      1,
       static_cast<aten::SizesType>(sizes[2])};
-
-  // Create TensorPtr and dereference it to return Result<Tensor>
-  auto tensor_ptr = extension::from_blob(
-      logits.mutable_data_ptr<float>() + offset,
-      new_sizes,
-      logits.scalar_type());
-
-  // Dereference the shared_ptr to get the Tensor object
-  return *tensor_ptr;
+  uint8_t* row = logits.mutable_data_ptr<uint8_t>() +
+      k * logits.strides()[kSequenceDim] * logits.element_size();
+  last_logits_ = extension::from_blob(row, new_sizes, logits.scalar_type());
+  return *last_logits_;
 }
 
 runtime::Error Decoder::load() {
@@ -126,249 +139,60 @@ runtime::Error Decoder::load() {
   return ret;
 }
 
+bool Decoder::is_method_loaded() {
+  return !prefill_method_.empty() && !decode_method_.empty() &&
+      module_->is_method_loaded(prefill_method_) &&
+      module_->is_method_loaded(decode_method_);
+}
+
 runtime::Result<aten::Tensor> Decoder::step(
     extension::TensorPtr& tokens,
     int64_t start_pos) {
-  std::string method_stage;
-  if (tokens->numel() > 1) {
-    method_stage = prefill_method_;
-  } else {
-    method_stage = decode_method_;
-  }
+  const bool is_prefill = tokens->numel() > 1;
+  const std::string& method_stage =
+      is_prefill ? prefill_method_ : decode_method_;
 
   auto method_meta = ET_UNWRAP(module_->method_meta(method_stage.c_str()));
-  const size_t total_input_count = method_meta.num_inputs();
 
-  bool use_kv_cache = total_input_count > 1;
-  if (use_kv_cache) {
-    auto* llm_io_manager = static_cast<example::LlmIOManager*>(io_manager_);
-    const auto& config = llm_io_manager->get_config();
-    auto model_version_config = getModelVersionConfig(config.model_version);
-
-    //
-    // Validate attention-mask tensors.
-    //
-    for (size_t i = 0; i < model_version_config.attention_mask_tensor_count;
-         ++i) {
-      const size_t tensor_index =
-          model_version_config.attention_mask_tensor_index + i;
-
-      auto tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(tensor_index));
-
-      const auto tensor_shape = tensor_meta.sizes();
-
-      ET_CHECK_OR_RETURN_ERROR(
-          tensor_shape.size() == model_version_config.attention_mask_rank,
-          InvalidProgram,
-          "Unexpected attention mask rank at input %zu. "
-          "Expected %zu, got %zu.",
-          tensor_index,
-          model_version_config.attention_mask_rank,
-          tensor_shape.size());
-    }
-
-    //
-    // Validate position / RoPE tensors.
-    //
-    // Gemma3:
-    //   position[0], position[1]
-    //
-    // Gemma4:
-    //   global_cos, global_sin, local_cos, local_sin
-    //
-    for (size_t i = 0; i < model_version_config.position_tensor_count; ++i) {
-      const size_t tensor_index =
-          model_version_config.position_tensor_index + i;
-
-      auto tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(tensor_index));
-
-      const auto tensor_shape = tensor_meta.sizes();
-
-      ET_CHECK_OR_RETURN_ERROR(
-          tensor_shape.size() == model_version_config.position_rank,
-          InvalidProgram,
-          "Unexpected position tensor rank at input %zu. "
-          "Expected %zu, got %zu.",
-          tensor_index,
-          model_version_config.position_rank,
-          tensor_shape.size());
-    }
-
-    //
-    // Validate KV-cache tensors.
-    //
-    // We only need one cache tensor to determine/validate the common
-    // KV-cache layout [B, H, S, D], assuming all cache leaves use
-    // the same rank/layout.
-    //
-    auto k_cache_tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(
-        model_version_config.k_cache_tensor_index));
-
-    const auto k_cache_shape = k_cache_tensor_meta.sizes();
-
-    ET_CHECK_OR_RETURN_ERROR(
-        k_cache_shape.size() == model_version_config.kv_cache_rank,
-        InvalidProgram,
-        "Unexpected K-cache rank. Expected %zu, got %zu.",
-        model_version_config.kv_cache_rank,
-        k_cache_shape.size());
-
-    auto v_cache_tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(
-        model_version_config.v_cache_tensor_index));
-
-    const auto v_cache_shape = v_cache_tensor_meta.sizes();
-
-    ET_CHECK_OR_RETURN_ERROR(
-        v_cache_shape.size() == model_version_config.kv_cache_rank,
-        InvalidProgram,
-        "Unexpected V-cache rank. Expected %zu, got %zu.",
-        model_version_config.kv_cache_rank,
-        v_cache_shape.size());
-
-    //
-    // Validate the configured KV-cache axes before indexing them.
-    //
-    ET_CHECK_OR_RETURN_ERROR(
-        model_version_config.heads_dim_index < k_cache_shape.size(),
-        InvalidProgram,
-        "KV heads dimension index %zu exceeds cache rank %zu.",
-        model_version_config.heads_dim_index,
-        k_cache_shape.size());
-
-    ET_CHECK_OR_RETURN_ERROR(
-        model_version_config.head_size_dim_index < k_cache_shape.size(),
-        InvalidProgram,
-        "KV head-size dimension index %zu exceeds cache rank %zu.",
-        model_version_config.head_size_dim_index,
-        k_cache_shape.size());
-
-    const auto num_kv_heads =
-        k_cache_shape[model_version_config.heads_dim_index];
-
-    const auto kv_head_size =
-        k_cache_shape[model_version_config.head_size_dim_index];
-
-    ET_LOG(
-        Debug,
-        "KV cache: K base=%zu, V base=%zu, count=%zu, "
-        "heads=%d, head_size=%d",
-        model_version_config.k_cache_tensor_index,
-        model_version_config.v_cache_tensor_index,
-        model_version_config.kv_cache_tensor_count,
-        num_kv_heads,
-        kv_head_size);
-
-    //
-    // Optional sanity check that the final V-cache input actually
-    // exists in this PTE method.
-    //
-    const size_t last_v_cache_index =
-        model_version_config.v_cache_tensor_index +
-        model_version_config.kv_cache_tensor_count - 1;
-
-    ET_CHECK_OR_RETURN_ERROR(
-        last_v_cache_index < method_meta.num_inputs(),
-        InvalidProgram,
-        "KV cache layout exceeds PTE input count. "
-        "Last V-cache input=%zu, num_inputs=%zu.",
-        last_v_cache_index,
-        method_meta.num_inputs());
-
-    // Assuming model is exported with input_pos, create a tensor with size 1
-    extension::TensorPtr start_pos_tensor;
-    std::vector<aten::SizesType> start_pos_sizes = {1};
-    start_pos_tensor = extension::from_blob(
-        &start_pos, start_pos_sizes, aten::ScalarType::Long);
-    std::vector<runtime::EValue> inputs;
-    if (method_stage == prefill_method_) {
-      auto inputs_res = io_manager_->prepare_prefill(tokens, start_pos_tensor);
-      ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
-      inputs = inputs_res.get();
-
-      ET_LOG(
-          Info,
-          "Prepared %zu inputs, PTE expects %zu inputs",
-          inputs.size(),
-          method_meta.num_inputs());
-
-      const size_t count = std::min(inputs.size(), method_meta.num_inputs());
-
-      for (size_t i = 0; i < count; ++i) {
-        if (!inputs[i].isTensor()) {
-          ET_LOG(Info, "input[%zu]: prepared EValue is not Tensor", i);
-          continue;
-        }
-
-        const auto prepared_tensor = inputs[i].toTensor();
-        const auto prepared_sizes = prepared_tensor.sizes();
-
-        auto expected_meta = ET_UNWRAP(method_meta.input_tensor_meta(i));
-        const auto expected_sizes = expected_meta.sizes();
-
-        ET_LOG(
-            Info,
-            "input[%zu]: prepared_rank=%zu expected_rank=%zu",
-            i,
-            prepared_sizes.size(),
-            expected_sizes.size());
-
-        for (size_t d = 0; d < prepared_sizes.size(); ++d) {
-          ET_LOG(Info, "  prepared[%zu]=%d", d, prepared_sizes[d]);
-        }
-
-        for (size_t d = 0; d < expected_sizes.size(); ++d) {
-          ET_LOG(Info, "  expected[%zu]=%d", d, expected_sizes[d]);
-        }
-      }
-
-    } else if (method_stage == decode_method_) {
-      auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
-      ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
-      inputs = inputs_res.get();
-    } else {
-      ET_LOG(
-          Debug,
-          "Skipping IO prepare for non-execution method stage: %s",
-          method_stage.c_str());
-    }
-
-    auto outputs_res = module_->execute(method_stage.c_str(), inputs);
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    if (method_stage == prefill_method_) {
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          io_manager_->update_prefill(outputs_res.get()),
-          "Failed to update prefill output by io_manager");
-    } else if (method_stage == decode_method_) {
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          io_manager_->update_decode(outputs_res.get()),
-          "Failed to update decode output by io_manager");
-    } else {
-      ET_LOG(
-          Debug,
-          "Skipping IO update for non-execution method stage: %s",
-          method_stage.c_str());
-    }
-    // Return the logits tensor
-    return slice_kth_token(outputs_res.get()[0], (tokens->numel() - 1));
-  } else { // kv cache is not used, when input is 1
-    (void)start_pos;
+  if (method_meta.num_inputs() <= 1) {
     auto outputs_res = module_->execute(method_stage.c_str(), tokens);
-    ET_LOG(Info, "After module forward");
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    // Return the logits tensor
+    ET_CHECK_OR_RETURN_ERROR(
+        outputs_res.get().size() == 1 && outputs_res.get()[0].isTensor(),
+        InvalidProgram,
+        "Expected a single logits tensor from %s",
+        method_stage.c_str());
     return outputs_res.get()[0].toTensor();
   }
+
+  std::vector<aten::SizesType> start_pos_sizes = {1};
+  auto start_pos_tensor =
+      extension::from_blob(&start_pos, start_pos_sizes, aten::ScalarType::Long);
+  auto inputs_res = is_prefill
+      ? io_manager_->prepare_prefill(tokens, start_pos_tensor, method_stage)
+      : io_manager_->prepare_decode(tokens, start_pos_tensor, method_stage);
+  ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
+  std::vector<runtime::EValue> inputs = std::move(inputs_res.get());
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_inputs(method_meta, inputs));
+
+  auto outputs_res = module_->execute(method_stage.c_str(), inputs);
+  ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+  ET_CHECK_OR_RETURN_ERROR(
+      !outputs_res.get().empty(),
+      InvalidProgram,
+      "%s returned no outputs",
+      method_stage.c_str());
+
+  if (is_prefill) {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        io_manager_->update_prefill(outputs_res.get(), method_stage),
+        "Failed to update prefill output by io_manager");
+  } else {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        io_manager_->update_decode(outputs_res.get(), method_stage),
+        "Failed to update decode output by io_manager");
+  }
+  return slice_kth_token(outputs_res.get()[0], tokens->numel() - 1);
 }
 
 void Decoder::extract_llm_methods() {
@@ -419,7 +243,7 @@ runtime::Error Decoder::create_shared_planned_memory() {
 
   ET_LOG(
       Info,
-      "Prefill_bufs(%ld), decode_bufs(%ld) num_buffers(%ld)",
+      "Prefill_bufs(%zu), decode_bufs(%zu) num_buffers(%zu)",
       prefill_bufs,
       decode_bufs,
       num_buffers);
@@ -429,16 +253,18 @@ runtime::Error Decoder::create_shared_planned_memory() {
   shared_method_memory_->spans.reserve(num_buffers);
 
   for (size_t i = 0; i < num_buffers; ++i) {
-    int64_t prefill_size = (i < prefill_bufs)
-        ? prefill_meta->memory_planned_buffer_size(i).get()
-        : 0;
-    int64_t decode_size = (i < decode_bufs)
-        ? decode_meta->memory_planned_buffer_size(i).get()
-        : 0;
+    int64_t prefill_size = 0;
+    if (i < prefill_bufs) {
+      prefill_size = ET_UNWRAP(prefill_meta->memory_planned_buffer_size(i));
+    }
+    int64_t decode_size = 0;
+    if (i < decode_bufs) {
+      decode_size = ET_UNWRAP(decode_meta->memory_planned_buffer_size(i));
+    }
     size_t max_size = static_cast<size_t>(std::max(prefill_size, decode_size));
     ET_LOG(
         Info,
-        "Prefill_size(%ld), decode_size(%ld) max_size(%ld)",
+        "Prefill_size(%" PRId64 "), decode_size(%" PRId64 ") max_size(%zu)",
         prefill_size,
         decode_size,
         max_size);

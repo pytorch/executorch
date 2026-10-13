@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved.
 #

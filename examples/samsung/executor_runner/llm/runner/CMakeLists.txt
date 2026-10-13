@@ -4,31 +4,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-message("###### Build ENN LLM runner ######")
-message(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
-message(EXECUTORCH_ROOT ${EXECUTORCH_ROOT})
-message(CMAKE_CURRENT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-message(CMAKE_CURRENT_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
-message(CMAKE_CURRENT_LIST_DIR ${CMAKE_CURRENT_LIST_DIR})
-
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../../tools/cmake/Utils.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../../tools/cmake/Codegen.cmake)
 
-list(TRANSFORM _enn_llm_runner__srcs
-     PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.."
+# stb_image: same pinned revision as examples/models/gemma3. deprecated/ holds
+# stb_image_resize.h.
+include(FetchContent)
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
 )
-list(
-  PREPEND
-  _enn_llm_runner__srcs
-  ${CMAKE_CURRENT_LIST_DIR}/runner.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/config.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/decoder.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/prefiller.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/io_manager.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/rotary_embedding.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/vision_encoder.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/stb_image_impl.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp
+FetchContent_MakeAvailable(stb)
+
+set(_enn_llm_runner__srcs
+    ${CMAKE_CURRENT_LIST_DIR}/runner.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/config.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/decoder.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/prefiller.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/io_manager.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/rotary_embedding.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/vision_encoder.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/stb_image_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp
 )
 
 target_include_directories(
@@ -75,6 +73,7 @@ set(enn_llm_runner_deps
     extension_flat_tensor lib_extension_llm_runner
 )
 
+target_compile_options(enn_llm_runner PRIVATE ${_llm_compile_options})
 target_link_libraries(enn_llm_runner PUBLIC ${enn_llm_runner_deps})
 target_link_libraries(enn_llm_runner PUBLIC tokenizers::tokenizers)
 target_link_libraries(enn_llm_runner PUBLIC lib_tokenizer)
@@ -89,6 +88,7 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../extension/llm/tokenizers/third-party/json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/samsung/executor_runner/llm/runner
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../third-party/stb
+    ${stb_SOURCE_DIR}
+    ${stb_SOURCE_DIR}/deprecated
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../extension/llm/runner
 )

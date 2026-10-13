@@ -2,6 +2,9 @@
  * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
  * C API implementation over the Exynos LLM runner. Keeps the model(s) loaded
  * across generate() calls so consecutive inferences do not re-prepare.
  */

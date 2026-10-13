@@ -59,8 +59,10 @@ class ET_EXPERIMENTAL TokenGenerator {
       int32_t max_new_tokens,
       float temperature = 0.0f,
       const std::function<void(const std::string&)>& token_callback = {}) {
-    ET_CHECK_MSG(
-        !tokens.empty(), "Token generation loop shouldn't take empty tokens");
+    ET_CHECK_OR_RETURN_ERROR(
+        !tokens.empty(),
+        InvalidArgument,
+        "Token generation loop shouldn't take empty tokens");
     int64_t pos = start_pos; // position in the sequence
 
     std::vector<uint64_t> token_data; // allocate space for the tokens
