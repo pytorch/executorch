@@ -307,6 +307,13 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       muse_glimmer_batching_worker PRIVATE muse_glimmer_batching_runtime
                                            ${_batching_transport}
     )
+    add_executable(
+      muse_glimmer_batching_bench
+      runtime/runners/muse_glimmer_batching_bench.cpp
+    )
+    target_link_libraries(
+      muse_glimmer_batching_bench PRIVATE muse_glimmer_batching_runtime
+    )
     if(_batching_backend STREQUAL "cuda")
       if(NOT APPLE AND NOT MSVC)
         # CUDA AOTI blobs resolve symbols from the host executable.
@@ -316,10 +323,14 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
         target_link_options(
           muse_glimmer_batching_worker PRIVATE "LINKER:--export-dynamic"
         )
+        target_link_options(
+          muse_glimmer_batching_bench PRIVATE "LINKER:--export-dynamic"
+        )
       endif()
     else()
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
+      executorch_target_copy_mlx_metallib(muse_glimmer_batching_bench)
     endif()
   endif()
 
