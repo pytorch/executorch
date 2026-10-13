@@ -73,7 +73,7 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
     // chip caches.
     const auto [chunk_size_binding, num_chunks_binding] =
         at::native::vec_logsoftmax_chunk_size_and_num_chunks<
-            float,
+            IN_T,
             /*BLOCK_SIZE=*/64 * 1024>(inner_size, dim_size);
     // Work around "capturing a structured binding is not yet supported in
     // OpenMP".
