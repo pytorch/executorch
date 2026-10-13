@@ -792,7 +792,7 @@ def get_node_tensor_specs(
     if node.target in (memory.view, memory.slice):
         base = node.args[0]
         assert isinstance(base, torch.fx.Node)
-        return get_node_tensor_specs(base)
+        specs = base.meta.get("spec")
     else:
         specs = node.meta.get("spec")
 
@@ -811,7 +811,7 @@ def get_node_tensor_specs(
             while isinstance(spec, _ViewSpec):
                 spec = spec._base
             allocation_specs.append(spec)
-        return allocation_specs
+        specs = allocation_specs
 
     if scratch := memory.delegate_scratch_specs(node):
         return list(specs) + scratch
