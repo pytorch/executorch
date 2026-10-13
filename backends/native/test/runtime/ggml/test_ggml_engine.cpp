@@ -257,14 +257,16 @@ class TestProgram {
     mutations_.emplace_back(name, value);
   }
 
-  // make_context's packaged block_q4_K as a [1, 256] parameter.
-  void q4_k_weight(const std::string& name) {
+  // make_context's packaged block_q4_K as a parameter, by default [1, 256].
+  void q4_k_weight(
+      const std::string& name,
+      const std::vector<int64_t>& shape = {1, 256}) {
     const auto quant = fbs::CreateQuantSpec(
         builder_,
         fbs::QuantScheme::PackedQuant,
         fbs::CreatePackedQuantDirect(builder_, "gguf:q4_k").Union());
     const auto meta =
-        create_tensor_meta(builder_, fbs::ScalarType::BYTE, {1, 256}, quant);
+        create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
     placeholder(name, meta);
     bindings_.push_back(
         fbs::CreateNamedTensorRefDirect(
@@ -967,6 +969,44 @@ TEST(GgmlEngineTest, ChecksEmbeddingIndicesOnTheHost) {
     executable->set_input(0, ids.data(), 2, ScalarType::Long);
     EXPECT_THROW(executable->execute(), std::out_of_range);
   }
+}
+
+TEST(GgmlEngineTest, RejectsPackedWeightOutsideLinearOrEmbedding) {
+  TestProgram program;
+  program.q4_k_weight("weight");
+  program.input("x", fbs::ScalarType::FLOAT, {1, 1});
+  program.call(
+      "product",
+      "torch.ops.aten.mm.default",
+      {{"self", std::string("x")}, {"other", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 256});
+  expect_compile_error(program.finish("product"), "linear or embedding");
+}
+
+TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
+  TestProgram program;
+  program.q4_k_weight("weight", {1, 100});
+  program.input("x", fbs::ScalarType::FLOAT, {1, 100});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 1});
+  expect_compile_error(program.finish("y"), "divisible by 256");
+}
+
+TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 256});
+  program.call(
+      "y",
+      "torch.ops.aten.unsupported.default",
+      {{"self", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {1, 256});
+  expect_compile_error(program.finish("y"), "unsupported PTG op");
 }
 
 TEST(GgmlEngineTest, RejectsEmbeddingIndicesNotFromAnInput) {

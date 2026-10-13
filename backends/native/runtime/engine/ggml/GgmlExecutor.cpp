@@ -35,6 +35,7 @@
 #endif
 
 #include <executorch/backends/native/runtime/Method.h>
+#include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
 #include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 #include <executorch/backends/native/runtime/graph/Argument.h>
@@ -52,6 +53,12 @@ constexpr std::string_view kTorchOpsPrefix = "torch.ops.";
 constexpr std::string_view kQ4KCodec = "gguf:q4_k";
 constexpr int64_t kQ4KBlockElements = 256;
 constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ40BlockElements = 32;
+
+struct BlockQ40 {
+  ggml_fp16_t d;
+  uint8_t qs[kQ40BlockElements / 2];
+};
 
 size_t checked_numel(const std::vector<int64_t>& sizes) {
   size_t out = 1;
@@ -102,8 +109,99 @@ size_t packed_nbytes(const TensorMeta& meta) {
   return rows * blocks * kQ4KBlockBytes;
 }
 
+const AffineGroupQuant* affine_quant(const TensorMeta& meta) {
+  if (!meta.quant) {
+    return nullptr;
+  }
+  return std::get_if<AffineGroupQuant>(&*meta.quant);
+}
+
+// Symmetric int4 groups that are whole multiples of 32 map onto Q4_0 blocks.
+// Q4_0 stores the scale as fp16, so scales are narrowed at load.
+const AffineGroupQuant& q4_affine(const TensorMeta& meta) {
+  const AffineGroupQuant* quant = affine_quant(meta);
+  if (quant == nullptr || quant->quant_min != -8 || quant->quant_max != 7 ||
+      quant->group_size <= 0 || quant->group_size % kQ40BlockElements != 0 ||
+      meta.sizes.size() != 2 || meta.sizes[0] <= 0 ||
+      meta.sizes[1] % quant->group_size != 0) {
+    throw std::runtime_error(
+        "ggml: affine weights must be int4 [N, K] with groups divisible by 32");
+  }
+  return *quant;
+}
+
+std::vector<float> to_float_vector(ByteSpan bytes, ScalarType dtype) {
+  const size_t count = bytes.size() / std::max<size_t>(element_size(dtype), 1);
+  std::vector<float> out(count);
+  switch (dtype) {
+    case ScalarType::Float:
+      std::memcpy(out.data(), bytes.data(), count * sizeof(float));
+      return out;
+    case ScalarType::Half:
+      ggml_fp16_to_fp32_row(
+          reinterpret_cast<const ggml_fp16_t*>(bytes.data()),
+          out.data(),
+          static_cast<int64_t>(count));
+      return out;
+    case ScalarType::BFloat16:
+      ggml_bf16_to_fp32_row(
+          reinterpret_cast<const ggml_bf16_t*>(bytes.data()),
+          out.data(),
+          static_cast<int64_t>(count));
+      return out;
+    default:
+      throw std::runtime_error(
+          "ggml: expected a floating-point constant, got " +
+          std::string(scalar_type_name(dtype)));
+  }
+}
+
+std::vector<uint8_t> affine_int4_to_q4_0(
+    const TensorMeta& meta,
+    ByteSpan packed,
+    const std::vector<float>& scales) {
+  static_assert(
+      sizeof(BlockQ40) == sizeof(ggml_fp16_t) + kQ40BlockElements / 2);
+  if (ggml_type_size(GGML_TYPE_Q4_0) != sizeof(BlockQ40) ||
+      ggml_blck_size(GGML_TYPE_Q4_0) != kQ40BlockElements) {
+    throw std::runtime_error("ggml: unexpected Q4_0 block layout");
+  }
+  const AffineGroupQuant& quant = q4_affine(meta);
+  const size_t rows = static_cast<size_t>(meta.sizes[0]);
+  const size_t cols = static_cast<size_t>(meta.sizes[1]);
+  const size_t groups = cols / static_cast<size_t>(quant.group_size);
+  if (packed.size() != rows * cols / 2 || scales.size() != rows * groups) {
+    throw std::runtime_error("ggml: int4 weight or scale size mismatch");
+  }
+  std::vector<uint8_t> out(
+      rows * (cols / kQ40BlockElements) * sizeof(BlockQ40));
+  auto* block = reinterpret_cast<BlockQ40*>(out.data());
+  // Column c sits in the low nibble when c is even, stored as q + 8: the same
+  // offset encoding Q4_0 uses, so only the nibble order changes.
+  for (size_t r = 0; r < rows; ++r) {
+    const uint8_t* row = packed.data() + r * cols / 2;
+    const auto nibble = [row](size_t c) -> uint8_t {
+      return (row[c / 2] >> (4 * (c & 1))) & 0xF;
+    };
+    for (size_t c0 = 0; c0 < cols; c0 += kQ40BlockElements, ++block) {
+      block->d = ggml_fp32_to_fp16(
+          scales[r * groups + c0 / static_cast<size_t>(quant.group_size)]);
+      for (size_t j = 0; j < kQ40BlockElements / 2; ++j) {
+        block->qs[j] = static_cast<uint8_t>(
+            nibble(c0 + j) | (nibble(c0 + j + kQ40BlockElements / 2) << 4));
+      }
+    }
+  }
+  return out;
+}
+
 ggml_type to_ggml_type(const TensorMeta& meta) {
+  if (affine_quant(meta) != nullptr) {
+    q4_affine(meta);
+    return GGML_TYPE_Q4_0;
+  }
   if (packed_quant(meta) != nullptr) {
+    packed_nbytes(meta);
     if (packed_quant(meta)->codec == kQ4KCodec) {
       return GGML_TYPE_Q4_K;
     }
@@ -230,7 +328,7 @@ int64_t normalize_dim(int64_t dim, size_t rank) {
   return dim;
 }
 
-std::vector<uint8_t> narrow_to_int32(const std::vector<uint8_t>& bytes) {
+std::vector<uint8_t> narrow_to_int32(ByteSpan bytes) {
   const size_t numel = bytes.size() / sizeof(int64_t);
   std::vector<uint8_t> out(numel * sizeof(int32_t));
   const auto* src = reinterpret_cast<const int64_t*>(bytes.data());
@@ -250,8 +348,14 @@ struct TensorRef {
   std::vector<int64_t> sizes;
 };
 
-using RuntimeValue =
-    std::variant<std::monostate, TensorRef, int64_t, double, bool>;
+// A torchao activation quantize/dequantize chain in flight; `input` is the
+// float tensor it started from.
+struct DynamicQuant {
+  TensorRef input;
+};
+
+using RuntimeValue = std::
+    variant<std::monostate, TensorRef, DynamicQuant, int64_t, double, bool>;
 
 struct InputSlot {
   ValueId id = kInvalid;
@@ -654,14 +758,75 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
-  void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
-    size_t count = 0;
-    for (const DataBinding& binding : method_.data_bindings) {
-      if (valid(binding.value_id) &&
-          method_.graph.value(binding.value_id).is_tensor()) {
-        ++count;
+  // Quantization parameters are bound but only read through their weight.
+  bool is_used(ValueId id) const {
+    const std::vector<ValueId>& outputs = method_.graph.output_ids;
+    return !method_.graph.value(id).consumer_ids.empty() ||
+        std::find(outputs.begin(), outputs.end(), id) != outputs.end();
+  }
+
+  bool is_persistent(const DataBinding& binding) const {
+    return valid(binding.value_id) &&
+        method_.graph.value(binding.value_id).is_tensor() &&
+        is_used(binding.value_id);
+  }
+
+  static size_t stored_nbytes(const TensorMeta& meta) {
+    if (packed_quant(meta) != nullptr) {
+      return packed_nbytes(meta);
+    }
+    if (affine_quant(meta) != nullptr) {
+      return checked_numel(meta.sizes) / 2;
+    }
+    return checked_nbytes(meta.sizes, meta.dtype);
+  }
+
+  void check_q4_consumers(ValueId id, const std::string& key) const {
+    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
+      const Node& node = method_.graph.node(consumer);
+      const std::string op = op_key(node.target);
+      const NamedArgument* weight = op == "aten.linear.default"
+          ? find_arg(node, "weight", 1)
+          : op == "aten.embedding.default" ? find_arg(node, "weight", 0)
+                                           : nullptr;
+      if (weight == nullptr || weight->arg.kind() != ArgKind::Tensor ||
+          weight->arg.as_tensor().id != id) {
+        throw std::runtime_error(
+            "ggml: quantized weight '" + key +
+            "' may only feed linear or embedding weights, not '" + node.target +
+            "'");
       }
     }
+  }
+
+  std::vector<uint8_t> load_q4_0(const TensorMeta& meta, ByteSpan packed)
+      const {
+    const AffineGroupQuant& quant = q4_affine(meta);
+    const std::optional<OwnedBytes> scales =
+        package_.acquire_constant(quant.scale_data_key);
+    if (!scales) {
+      throw std::runtime_error(
+          "ggml: package is missing scales '" + quant.scale_data_key + "'");
+    }
+    if (!quant.zero_point_data_key.empty()) {
+      const std::optional<OwnedBytes> zeros =
+          package_.acquire_constant(quant.zero_point_data_key);
+      if (!zeros || std::ranges::any_of(zeros->span(), [](uint8_t byte) {
+            return byte != 0;
+          })) {
+        throw std::runtime_error(
+            "ggml: Q4_0 needs zero points of zero, see '" +
+            quant.zero_point_data_key + "'");
+      }
+    }
+    return affine_int4_to_q4_0(
+        meta, packed, to_float_vector(scales->span(), quant.scale_dtype));
+  }
+
+  void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
+    const size_t count = static_cast<size_t>(std::ranges::count_if(
+        method_.data_bindings,
+        [this](const DataBinding& binding) { return is_persistent(binding); }));
     if (count == 0) {
       return;
     }
@@ -677,16 +842,16 @@ class GgmlExecutable final : public EngineExecutable {
     }
 
     for (const DataBinding& binding : method_.data_bindings) {
-      if (!valid(binding.value_id)) {
+      if (!is_persistent(binding)) {
         continue;
       }
-      const Value& value = method_.graph.value(binding.value_id);
-      if (!value.is_tensor()) {
-        continue;
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
+        check_q4_consumers(binding.value_id, binding.key);
       }
-      const TensorMeta& meta = value.tensor_meta();
       ggml_tensor* tensor =
-          new_tensor(persistent_context_.get(), to_ggml_type(meta), meta.sizes);
+          new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
     }
@@ -718,15 +883,26 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      const size_t expected = packed_quant(meta) != nullptr
-          ? packed_nbytes(meta)
-          : checked_nbytes(meta.sizes, meta.dtype);
-      const ByteSpan span = bytes->span();
-      if (info->nbytes != expected || span.size() != expected ||
-          ggml_nbytes(tensor) != expected) {
+      const size_t expected = stored_nbytes(meta);
+      ByteSpan span = bytes->span();
+      if (info->nbytes != expected || span.size() != expected) {
         throw std::runtime_error(
             "ggml: stored byte count disagrees with PTG tensor '" +
             binding.key + "'");
+      }
+      std::vector<uint8_t> converted;
+      if (affine_quant(meta) != nullptr) {
+        converted = load_q4_0(meta, span);
+        span = converted;
+      } else if (
+          tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long) {
+        converted = narrow_to_int32(span);
+        span = converted;
+      }
+      if (ggml_nbytes(tensor) != span.size()) {
+        throw std::runtime_error(
+            "ggml: converted byte count disagrees with tensor '" + binding.key +
+            "'");
       }
       ggml_backend_tensor_set(tensor, span.data(), 0, span.size());
       loaded += span.size();
@@ -1180,6 +1356,12 @@ class GraphBuilder {
       lower_update_cache(node);
     } else if (key == "llama.custom_sdpa.default") {
       lower_custom_sdpa(node);
+    } else if (key == "torchao.choose_qparams_affine.default") {
+      lower_choose_qparams(node);
+    } else if (key == "torchao.quantize_affine.default") {
+      lower_quantize_affine(node);
+    } else if (key == "torchao.dequantize_affine.default") {
+      lower_dequantize_affine(node);
     } else if (key == "aten.sym_size.int") {
       lower_sym_size(node);
     } else if (
@@ -1827,6 +2009,90 @@ class GraphBuilder {
         instance_.context.get(), q, k, v, mask, scale, 0.0f, 0.0f);
     ggml_prec_set_acc(result, GGML_PREC_F32);
     set_single_output(node, TensorRef{result, query.sizes});
+  }
+
+  DynamicQuant dynamic_quant_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional) const {
+    const Argument& arg = require_arg(node, name, positional).arg;
+    const auto* quant = arg.kind() == ArgKind::Tensor
+        ? std::get_if<DynamicQuant>(&value(arg.as_tensor().id))
+        : nullptr;
+    if (quant == nullptr) {
+      throw std::runtime_error(
+          "ggml: '" + node.target +
+          "' is only supported inside a dynamic activation quant chain");
+    }
+    return *quant;
+  }
+
+  void set_dynamic_quant(const Node& node, const DynamicQuant& quant) {
+    for (const ValueId id : output_ids(node)) {
+      set(id, quant);
+    }
+  }
+
+  // ggml backends quantize the activations of a quantized matmul themselves,
+  // in their own block format, so torchao's per-token int8 round trip is
+  // dropped rather than emulated.
+  void lower_choose_qparams(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const Argument& target_dtype = require_arg(node, "target_dtype", 3).arg;
+    if (target_dtype.kind() != ArgKind::ScalarType ||
+        target_dtype.as_scalar_type().value != ScalarType::Char) {
+      throw std::runtime_error(
+          "ggml: dynamic activation quantization must target int8");
+    }
+    std::vector<int64_t> per_token(input.sizes.size(), 1);
+    per_token.back() = input.sizes.back();
+    if (int_list(require_arg(node, "block_size", 2).arg) != per_token) {
+      throw std::runtime_error(
+          "ggml: only per-token dynamic activation quantization is supported");
+    }
+    set_dynamic_quant(node, DynamicQuant{input});
+  }
+
+  void lower_quantize_affine(const Node& node) {
+    const DynamicQuant quant = dynamic_quant_arg(node, "scale", 2);
+    if (tensor_arg(node, "input", 0).tensor != quant.input.tensor) {
+      throw std::runtime_error(
+          "ggml: quantize_affine input differs from its qparams source");
+    }
+    set_dynamic_quant(node, quant);
+  }
+
+  void lower_dequantize_affine(const Node& node) {
+    const DynamicQuant quant = dynamic_quant_arg(node, "input", 0);
+    if (dynamic_quant_arg(node, "scale", 2).input.tensor !=
+        quant.input.tensor) {
+      throw std::runtime_error(
+          "ggml: dequantize_affine scale differs from its input chain");
+    }
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error(
+          "ggml: dequantize_affine must produce one tensor");
+    }
+    if (std::ranges::find(method_.graph.output_ids, ids.front()) !=
+        method_.graph.output_ids.end()) {
+      throw std::runtime_error(
+          "ggml: dynamically quantized activations must not be graph outputs");
+    }
+    for (const NodeId consumer :
+         method_.graph.value(ids.front()).consumer_ids) {
+      const Node& linear = method_.graph.node(consumer);
+      const NamedArgument* input = find_arg(linear, "input", 0);
+      if (op_key(linear.target) != "aten.linear.default" || input == nullptr ||
+          input->arg.kind() != ArgKind::Tensor ||
+          input->arg.as_tensor().id != ids.front() ||
+          !ggml_is_quantized(tensor_arg(linear, "weight", 1).tensor->type)) {
+        throw std::runtime_error(
+            "ggml: dynamically quantized activations must feed quantized "
+            "linear inputs");
+      }
+    }
+    set(ids.front(), quant.input);
   }
 
   void lower_sym_size(const Node& node) {

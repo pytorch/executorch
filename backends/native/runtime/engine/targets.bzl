@@ -33,6 +33,7 @@ def define_common_targets():
         deps = [
             "//executorch/backends/native/runtime:method",
             "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:byte_span",
             "//executorch/backends/native/runtime/deserialize:package",
             "//executorch/backends/native/runtime/graph:argument",
             "//executorch/backends/native/runtime/graph:graph",
@@ -59,6 +60,7 @@ def define_common_targets():
         deps = [
             "//executorch/backends/native/runtime:method",
             "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:byte_span",
             "//executorch/backends/native/runtime/deserialize:package",
             "//executorch/backends/native/runtime/graph:argument",
             "//executorch/backends/native/runtime/graph:graph",
