@@ -233,9 +233,9 @@ void GraphBuilder::lower_mean(const Node& node) {
     dims.resize(rank);
     std::iota(dims.begin(), dims.end(), 0);
   }
-  for (int64_t& dim : dims) {
-    dim = normalize_dim(dim, rank);
-  }
+  std::ranges::transform(dims, dims.begin(), [rank](int64_t dim) {
+    return normalize_dim(dim, rank);
+  });
   std::ranges::sort(dims);
   const size_t first = rank - dims.size();
   for (size_t i = 0; i < dims.size(); ++i) {

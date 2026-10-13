@@ -68,9 +68,9 @@ GraphBuilder::causal_mask(int64_t tokens, int64_t keys, int64_t start) {
   auto* data = reinterpret_cast<ggml_fp16_t*>(upload.bytes.data());
   for (int64_t query = 0; query < tokens; ++query) {
     for (int64_t key = 0; key < keys; ++key) {
-      const float value =
+      const float bias =
           key <= start + query ? 0.0f : -std::numeric_limits<float>::infinity();
-      data[query * keys + key] = ggml_fp32_to_fp16(value);
+      data[query * keys + key] = ggml_fp32_to_fp16(bias);
     }
   }
   instance_.uploads.push_back(std::move(upload));

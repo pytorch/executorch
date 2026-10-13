@@ -14,6 +14,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -49,11 +50,13 @@ namespace {
 using namespace ggml_detail;
 
 // Multiplies each slice of the leading dimension by its scale.
-void scale_slices(float* data, size_t count, const std::vector<float>& scales) {
+// data is a byte buffer holding count floats, as ggml tensor data is.
+void scale_slices(void* data, size_t count, const std::vector<float>& scales) {
+  float* values = static_cast<float*>(data);
   const size_t slice = count / scales.size();
   for (size_t c = 0; c < scales.size(); ++c) {
     for (size_t i = 0; i < slice; ++i) {
-      data[c * slice + i] *= scales[c];
+      values[c * slice + i] *= scales[c];
     }
   }
 }
@@ -247,10 +250,11 @@ class GgmlExecutable final : public EngineExecutable {
 
   void execute() override {
     executed_ = false;
-    for (const InputSlot& input : inputs_) {
-      if (input.bytes.size() != checked_nbytes(input.sizes, input.meta.dtype)) {
-        throw std::logic_error("ggml: every input must be set before execute");
-      }
+    if (std::ranges::any_of(inputs_, [](const InputSlot& input) {
+          return input.bytes.size() !=
+              checked_nbytes(input.sizes, input.meta.dtype);
+        })) {
+      throw std::logic_error("ggml: every input must be set before execute");
     }
 
     if (options_.max_cached_graphs == 0) {
@@ -385,10 +389,14 @@ class GgmlExecutable final : public EngineExecutable {
           "ggml: graph execution failed with status " +
           std::to_string(static_cast<int>(status)));
     }
-    size_t staged = 0;
-    for (const TensorRef& output : instance.outputs) {
-      staged += GGML_PAD(ggml_nbytes(output.tensor), kStagingAlignment);
-    }
+    const size_t staged = std::accumulate(
+        instance.outputs.begin(),
+        instance.outputs.end(),
+        size_t{0},
+        [](size_t total, const TensorRef& output) {
+          return total +
+              GGML_PAD(ggml_nbytes(output.tensor), kStagingAlignment);
+        });
     uint8_t* staging = output_staging(staged);
     for (size_t i = 0; i < outputs_.size(); ++i) {
       OutputSlot& output = outputs_[i];
@@ -479,11 +487,10 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   ggml_backend_sched_ptr make_scheduler() const {
-    std::vector<ggml_backend_t> raw;
-    raw.reserve(backends_.size());
-    for (const auto& backend : backends_) {
-      raw.push_back(backend.get());
-    }
+    std::vector<ggml_backend_t> raw(backends_.size());
+    std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
+      return backend.get();
+    });
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
@@ -600,13 +607,16 @@ class GgmlExecutable final : public EngineExecutable {
         })) {
       return nullptr;
     }
-    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
-      for (const NamedArgument& input : method_.graph.node(consumer).inputs) {
-        if (input.mutated && input.arg.kind() == ArgKind::Tensor &&
-            input.arg.as_tensor().id == id) {
-          return nullptr;
-        }
-      }
+    const auto mutates_id = [id](const NamedArgument& input) {
+      return input.mutated && input.arg.kind() == ArgKind::Tensor &&
+          input.arg.as_tensor().id == id;
+    };
+    if (std::ranges::any_of(
+            method_.graph.value(id).consumer_ids, [&](NodeId consumer) {
+              return std::ranges::any_of(
+                  method_.graph.node(consumer).inputs, mutates_id);
+            })) {
+      return nullptr;
     }
     return &*binding;
   }
@@ -889,10 +899,7 @@ class GgmlExecutable final : public EngineExecutable {
             binding.key,
             MutableByteSpan(static_cast<uint8_t*>(tensor->data), expected));
         if (scaled) {
-          scale_slices(
-              static_cast<float*>(tensor->data),
-              expected / sizeof(float),
-              scales->second);
+          scale_slices(tensor->data, expected / sizeof(float), scales->second);
         }
         loaded += expected;
         continue;
@@ -918,9 +925,7 @@ class GgmlExecutable final : public EngineExecutable {
       } else if (scaled) {
         converted.assign(span.begin(), span.end());
         scale_slices(
-            reinterpret_cast<float*>(converted.data()),
-            converted.size() / sizeof(float),
-            scales->second);
+            converted.data(), converted.size() / sizeof(float), scales->second);
         span = converted;
       }
       if (ggml_nbytes(tensor) != span.size()) {
@@ -1175,10 +1180,8 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   std::vector<int64_t> full_key_extents() const {
-    std::vector<int64_t> out;
-    for (const MaskExtent& mask : mask_extents_) {
-      out.push_back(mask.keys);
-    }
+    std::vector<int64_t> out(mask_extents_.size());
+    std::ranges::transform(mask_extents_, out.begin(), &MaskExtent::keys);
     return out;
   }
 
@@ -1350,6 +1353,7 @@ ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options) {
       " GPU devices registered by the linked ggml backends)");
 }
 
+// cppcheck-suppress unusedFunction
 std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Method& method,
     const Package& package,

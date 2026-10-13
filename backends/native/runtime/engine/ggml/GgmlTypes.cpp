@@ -43,6 +43,7 @@ size_t checked_numel(const std::vector<int64_t>& sizes) {
   return out;
 }
 
+// cppcheck-suppress unusedFunction
 size_t checked_nbytes(const std::vector<int64_t>& sizes, ScalarType dtype) {
   const size_t numel = checked_numel(sizes);
   const size_t width = element_size(dtype);
@@ -112,6 +113,7 @@ const AffineGroupQuant& q4_affine(const TensorMeta& meta) {
   return *quant;
 }
 
+// cppcheck-suppress unusedFunction
 std::vector<float> to_float_vector(ByteSpan bytes, ScalarType dtype) {
   const size_t count = bytes.size() / std::max<size_t>(element_size(dtype), 1);
   std::vector<float> out(count);
@@ -138,6 +140,7 @@ std::vector<float> to_float_vector(ByteSpan bytes, ScalarType dtype) {
   }
 }
 
+// cppcheck-suppress unusedFunction
 std::vector<uint8_t> affine_int4_to_q4_0(
     const TensorMeta& meta,
     ByteSpan packed,
@@ -215,6 +218,7 @@ static ggml_type to_ggml_type(const TensorMeta& meta) {
 }
 
 // ggml has no int64 kernels, so int64 values are carried as I32.
+// cppcheck-suppress unusedFunction
 ggml_type compute_type(const TensorMeta& meta) {
   return meta.dtype == ScalarType::Long ? GGML_TYPE_I32 : to_ggml_type(meta);
 }
@@ -232,6 +236,7 @@ std::array<int64_t, GGML_MAX_DIMS> reversed_extents(
   return ne;
 }
 
+// cppcheck-suppress unusedFunction
 ggml_tensor* new_tensor(
     ggml_context* ctx,
     ggml_type type,
@@ -241,6 +246,7 @@ ggml_tensor* new_tensor(
       ctx, type, std::max(1, static_cast<int>(sizes.size())), ne.data());
 }
 
+// cppcheck-suppress unusedFunction
 std::vector<uint8_t> narrow_to_int32(ByteSpan bytes) {
   const size_t numel = bytes.size() / sizeof(int64_t);
   std::vector<uint8_t> out(numel * sizeof(int32_t));

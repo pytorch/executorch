@@ -15,6 +15,7 @@
 
 namespace ptn::vulkan {
 
+// cppcheck-suppress unusedFunction
 ReferenceGgufKQuantFallback use_reference_gguf_kquant(Method& method) {
   ReferenceGgufKQuantFallback fallback;
   for (const DataBinding& binding : method.data_bindings) {
