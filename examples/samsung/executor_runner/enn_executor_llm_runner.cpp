@@ -49,6 +49,12 @@ DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 DEFINE_string(system_prompt, "", "System prompt. Empty means none.");
 
 DEFINE_string(
+    assistant_prefill_prompt,
+    "",
+    "Assistant pre-fill appended verbatim to the very end of the rendered "
+    "prompt (after the assistant turn header). Ignored with --raw_prompt.");
+
+DEFINE_string(
     prompt_file,
     "",
     "Read the prompt from this file instead of --prompt.");
@@ -57,6 +63,17 @@ DEFINE_string(
     system_prompt_file,
     "",
     "Read the system prompt from this file instead of --system_prompt.");
+
+// Raw mode: an already-formatted prompt (special tokens, system turn, tool
+// declaration) fed verbatim, skipping chat-template wrapping. Supply it inline
+// with --raw_prompt or from a file with --raw_prompt_file; either overrides
+// --prompt / --system_prompt.
+DEFINE_string(raw_prompt, "", "Inline raw (pre-formatted) prompt.");
+
+DEFINE_string(
+    raw_prompt_file,
+    "",
+    "Read the raw (pre-formatted) prompt from this file instead of --raw_prompt.");
 
 DEFINE_double(
     temperature,
@@ -136,15 +153,23 @@ int32_t main(int32_t argc, char** argv) {
   if ((!FLAGS_prompt_file.empty() &&
        !read_file(FLAGS_prompt_file, &FLAGS_prompt)) ||
       (!FLAGS_system_prompt_file.empty() &&
-       !read_file(FLAGS_system_prompt_file, &FLAGS_system_prompt))) {
+       !read_file(FLAGS_system_prompt_file, &FLAGS_system_prompt)) ||
+      (!FLAGS_raw_prompt_file.empty() &&
+       !read_file(FLAGS_raw_prompt_file, &FLAGS_raw_prompt))) {
     return ENN_ERR_INVALID_ARG;
   }
 
-  if (FLAGS_prompt.empty()) {
+  // A non-empty raw prompt (inline or from file) is fed verbatim and overrides
+  // the templated --prompt / --system_prompt path.
+  const bool raw_mode = !FLAGS_raw_prompt.empty();
+  const std::string& effective_prompt =
+      raw_mode ? FLAGS_raw_prompt : FLAGS_prompt;
+
+  if (effective_prompt.empty()) {
     ET_LOG(Error, "Input prompt cannot be empty.");
     return ENN_ERR_INVALID_ARG;
   }
-  ET_LOG(Info, "Input prompt message: %s", FLAGS_prompt.c_str());
+  ET_LOG(Info, "Input prompt message: %s", effective_prompt.c_str());
 
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = FLAGS_cpu_threads == -1
@@ -174,10 +199,12 @@ int32_t main(int32_t argc, char** argv) {
   StopContext stop_ctx{runner, FLAGS_max_token_limit};
   int32_t error = enn_llm_generate(
       runner,
-      FLAGS_prompt.c_str(),
-      FLAGS_system_prompt.c_str(),
+      effective_prompt.c_str(),
+      raw_mode ? "" : FLAGS_system_prompt.c_str(),
+      raw_mode ? "" : FLAGS_assistant_prefill_prompt.c_str(),
       FLAGS_image_path.c_str(),
       FLAGS_prompt_before_image.c_str(),
+      /*raw_prompt=*/raw_mode ? 1 : 0,
       FLAGS_seq_len,
       static_cast<float>(FLAGS_temperature),
       FLAGS_num_bos,
