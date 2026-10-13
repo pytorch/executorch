@@ -503,10 +503,8 @@ runtime::Error LLMRunner::warmup(
 }
 
 void LLMRunner::stop() {
-  if (is_loaded()) {
+  if (text_token_generator_ != nullptr) {
     text_token_generator_->stop();
-  } else {
-    ET_LOG(Error, "Token generator is not loaded, cannot stop");
   }
 }
 

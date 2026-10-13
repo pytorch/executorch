@@ -75,6 +75,10 @@ void enn_llm_destroy(enn_runner* runner) {
   delete runner;
 }
 
+void enn_llm_stop(enn_runner* runner) {
+  runner->impl->stop();
+}
+
 int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,

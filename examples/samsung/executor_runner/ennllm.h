@@ -70,6 +70,9 @@ ENN_API enn_runner* enn_llm_create(
 /** Destroy the runner and release all resources. Safe to call with NULL. */
 ENN_API void enn_llm_destroy(enn_runner* runner);
 
+/** Request the runner to stop current generation. */
+ENN_API void enn_llm_stop(enn_runner* runner);
+
 /**
  * Generate a response for prompt (optionally with an image). The models stay
  * prepared across calls; KV-cache is reset before each generation so every
