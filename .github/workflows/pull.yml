@@ -838,6 +838,27 @@ jobs:
       id-token: write
       contents: read
 
+  android-split-backends:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'extension/android') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/backend') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/threadpool') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/custom_ops/CMakeLists.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'scripts/build_android_library.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_android.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_android.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      split-backends: true
+
   llm-server:
     needs: [changed-files, run-decision]
     if: |
