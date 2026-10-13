@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -441,6 +442,338 @@ void check_index_bytes(const InputSlot& input, int64_t rows) {
   }
 }
 
+// A small integer tensor computed on the host, contiguous and row-major.
+struct HostInts {
+  std::vector<int64_t> sizes;
+  std::vector<int64_t> data;
+};
+
+constexpr size_t kHostEvalMaxElements = size_t{1} << 16;
+
+// a op b for equal shapes, or with b a single value; nullopt if fn overflows.
+std::optional<HostInts> broadcast_ints(
+    const HostInts& a,
+    const HostInts& b,
+    bool (*fn)(int64_t, int64_t, int64_t*)) {
+  if (a.sizes != b.sizes && b.data.size() != 1) {
+    return std::nullopt;
+  }
+  HostInts out = a;
+  for (size_t i = 0; i < out.data.size(); ++i) {
+    if (fn(a.data[i], b.data[b.data.size() == 1 ? 0 : i], &out.data[i])) {
+      return std::nullopt;
+    }
+  }
+  return out;
+}
+
+// Evaluates small integer subgraphs of graph inputs and constants on the
+// host, e.g. cache positions and key indices, with the current input values.
+// Returns nullopt for anything outside its op set or element budget.
+class HostIntEvaluator {
+ public:
+  using ConstantReader = std::function<std::optional<HostInts>(ValueId)>;
+  // Values that read no graph input are the same on every call.
+  using StaticCache = std::unordered_map<ValueId, std::optional<HostInts>>;
+
+  HostIntEvaluator(
+      const Method& method,
+      const std::vector<InputSlot>& inputs,
+      ConstantReader constants,
+      StaticCache& static_values)
+      : method_(method),
+        inputs_(inputs),
+        constants_(std::move(constants)),
+        static_values_(static_values) {}
+
+  // nullptr when the value is outside the op set or element budget. The
+  // pointee lives as long as this evaluator (or the static cache).
+  const HostInts* tensor(ValueId id) {
+    if (const auto found = static_values_.find(id);
+        found != static_values_.end()) {
+      return found->second ? &*found->second : nullptr;
+    }
+    if (const auto found = memo_.find(id); found != memo_.end()) {
+      // Only input-dependent values are memoized per call.
+      reads_input_ = true;
+      return found->second ? &*found->second : nullptr;
+    }
+    const bool outer_reads_input = reads_input_;
+    reads_input_ = false;
+    std::optional<HostInts> result;
+    try {
+      result = compute(id);
+    } catch (const std::exception&) {
+      result.reset();
+    }
+    if (result && result->data.size() > kHostEvalMaxElements) {
+      result.reset();
+    }
+    auto& cache = reads_input_ ? memo_ : static_values_;
+    reads_input_ = reads_input_ || outer_reads_input;
+    const auto it = cache.insert_or_assign(id, std::move(result)).first;
+    return it->second ? &*it->second : nullptr;
+  }
+
+ private:
+  std::optional<int64_t> integer(const Argument& arg) {
+    if (arg.kind() != ArgKind::Int) {
+      return std::nullopt;
+    }
+    const IntArg& value = arg.as_int();
+    if (!valid(value.id)) {
+      return value.value;
+    }
+    const NodeId producer = method_.graph.value(value.id).producer_id;
+    if (!valid(producer)) {
+      return std::nullopt;
+    }
+    const Node& node = method_.graph.node(producer);
+    const std::string op = op_key(node.target);
+    if (op == "aten.sym_size.int") {
+      const NamedArgument* self = find_arg(node, "self", 0);
+      const NamedArgument* dim = find_arg(node, "dim", 1);
+      if (self == nullptr || self->arg.kind() != ArgKind::Tensor ||
+          dim == nullptr) {
+        return std::nullopt;
+      }
+      const std::optional<std::vector<int64_t>> sizes =
+          runtime_sizes(self->arg.as_tensor().id);
+      const std::optional<int64_t> d = integer(dim->arg);
+      if (!sizes || !d) {
+        return std::nullopt;
+      }
+      return (*sizes)[normalize_dim(*d, sizes->size())];
+    }
+    return std::nullopt;
+  }
+
+  // Shapes of graph inputs are known before evaluating any value.
+  std::optional<std::vector<int64_t>> runtime_sizes(ValueId id) {
+    const auto input = std::ranges::find(inputs_, id, &InputSlot::id);
+    if (input != inputs_.end()) {
+      reads_input_ = true;
+      return input->sizes;
+    }
+    const HostInts* value = tensor(id);
+    return value ? std::optional(value->sizes) : std::nullopt;
+  }
+
+  const HostInts*
+  arg_tensor(const Node& node, std::string_view name, size_t positional) {
+    const NamedArgument* arg = find_arg(node, name, positional);
+    if (arg == nullptr || arg->arg.kind() != ArgKind::Tensor ||
+        !valid(arg->arg.as_tensor().id)) {
+      return nullptr;
+    }
+    return tensor(arg->arg.as_tensor().id);
+  }
+
+  std::optional<int64_t> arg_int(
+      const Node& node,
+      std::string_view name,
+      size_t positional,
+      std::optional<int64_t> fallback = std::nullopt) {
+    const NamedArgument* arg = find_arg(node, name, positional);
+    if (arg == nullptr || arg->arg.kind() == ArgKind::None) {
+      return fallback;
+    }
+    return integer(arg->arg);
+  }
+
+  std::optional<HostInts> compute(ValueId id) {
+    const auto input = std::ranges::find(inputs_, id, &InputSlot::id);
+    if (input != inputs_.end()) {
+      reads_input_ = true;
+      HostInts out{input->sizes, {}};
+      if (input->meta.dtype == ScalarType::Long) {
+        out.data.resize(input->bytes.size() / sizeof(int64_t));
+        std::memcpy(out.data.data(), input->bytes.data(), input->bytes.size());
+      } else if (input->meta.dtype == ScalarType::Int) {
+        std::vector<int32_t> narrow(input->bytes.size() / sizeof(int32_t));
+        std::memcpy(narrow.data(), input->bytes.data(), input->bytes.size());
+        out.data.assign(narrow.begin(), narrow.end());
+      } else {
+        return std::nullopt;
+      }
+      if (out.data.size() != checked_numel(out.sizes)) {
+        return std::nullopt;
+      }
+      return out;
+    }
+    const NodeId producer = method_.graph.value(id).producer_id;
+    if (!valid(producer) || !method_.graph.node(producer).is_call()) {
+      return constants_(id);
+    }
+    const Node& node = method_.graph.node(producer);
+    const std::string op = op_key(node.target);
+    if (op == "aten.arange.start_step" || op == "aten.arange.start" ||
+        op == "aten.arange.default") {
+      const bool has_start = op != "aten.arange.default";
+      const std::optional<int64_t> start =
+          has_start ? arg_int(node, "start", 0) : std::optional<int64_t>(0);
+      const std::optional<int64_t> end =
+          arg_int(node, "end", has_start ? 1 : 0);
+      const std::optional<int64_t> step = op == "aten.arange.start_step"
+          ? arg_int(node, "step", 2, 1)
+          : std::optional<int64_t>(1);
+      if (!start || !end || !step || *step <= 0 || *end < *start ||
+          static_cast<size_t>((*end - *start + *step - 1) / *step) >
+              kHostEvalMaxElements) {
+        return std::nullopt;
+      }
+      HostInts out;
+      for (int64_t v = *start; v < *end; v += *step) {
+        out.data.push_back(v);
+      }
+      out.sizes = {static_cast<int64_t>(out.data.size())};
+      return out;
+    }
+    if (op == "aten.add.Tensor" || op == "aten.sub.Tensor") {
+      const HostInts* self = arg_tensor(node, "self", 0);
+      if (self == nullptr || arg_int(node, "alpha", 2, 1) != 1) {
+        return std::nullopt;
+      }
+      const NamedArgument* other = find_arg(node, "other", 1);
+      HostInts scalar;
+      const HostInts* rhs = nullptr;
+      if (other != nullptr && other->arg.kind() == ArgKind::Tensor) {
+        rhs = tensor(other->arg.as_tensor().id);
+      } else if (other != nullptr) {
+        if (const std::optional<int64_t> value = integer(other->arg)) {
+          scalar = HostInts{{}, {*value}};
+          rhs = &scalar;
+        }
+      }
+      if (rhs == nullptr) {
+        return std::nullopt;
+      }
+      using Fn = bool (*)(int64_t, int64_t, int64_t*);
+      const Fn fn = op == "aten.add.Tensor"
+          ? Fn([](int64_t a, int64_t b, int64_t* out) {
+              return __builtin_add_overflow(a, b, out);
+            })
+          : Fn([](int64_t a, int64_t b, int64_t* out) {
+              return __builtin_sub_overflow(a, b, out);
+            });
+      return broadcast_ints(*self, *rhs, fn);
+    }
+    if (op == "aten.clone.default" || op == "aten.alias.default" ||
+        op == "aten.alias_copy.default" || op == "aten.contiguous.default") {
+      const HostInts* self = arg_tensor(node, "self", 0);
+      return self ? std::optional(*self) : std::nullopt;
+    }
+    if (op == "aten.unsqueeze.default" || op == "aten.unsqueeze_copy.default") {
+      const HostInts* self = arg_tensor(node, "self", 0);
+      std::optional<int64_t> dim = arg_int(node, "dim", 1);
+      if (self == nullptr || !dim) {
+        return std::nullopt;
+      }
+      const int64_t rank = static_cast<int64_t>(self->sizes.size()) + 1;
+      if (*dim < 0) {
+        *dim += rank;
+      }
+      if (*dim < 0 || *dim >= rank) {
+        return std::nullopt;
+      }
+      HostInts out = *self;
+      out.sizes.insert(out.sizes.begin() + *dim, 1);
+      return out;
+    }
+    if (op == "aten.view.default" || op == "aten.view_copy.default" ||
+        op == "aten.reshape.default" || op == "aten._unsafe_view.default") {
+      const HostInts* self = arg_tensor(node, "self", 0);
+      const NamedArgument* shape = find_arg(node, "shape", 1);
+      if (self == nullptr || shape == nullptr ||
+          shape->arg.kind() != ArgKind::IntList) {
+        return std::nullopt;
+      }
+      std::vector<int64_t> sizes;
+      for (size_t i = 0; i < shape->arg.as_int_list().values.size(); ++i) {
+        const IntListArg& list = shape->arg.as_int_list();
+        const std::optional<int64_t> v = list.ids.empty() || !valid(list.ids[i])
+            ? std::optional<int64_t>(list.values[i])
+            : integer(IntArg{list.values[i], list.ids[i]});
+        if (!v) {
+          return std::nullopt;
+        }
+        sizes.push_back(*v);
+      }
+      const auto inferred = std::ranges::find(sizes, -1);
+      if (inferred != sizes.end()) {
+        *inferred = 1;
+        const size_t known = checked_numel(sizes);
+        if (known == 0 || self->data.size() % known != 0) {
+          return std::nullopt;
+        }
+        *inferred = static_cast<int64_t>(self->data.size() / known);
+      }
+      if (checked_numel(sizes) != self->data.size()) {
+        return std::nullopt;
+      }
+      return HostInts{std::move(sizes), self->data};
+    }
+    return std::nullopt;
+  }
+
+  const Method& method_;
+  const std::vector<InputSlot>& inputs_;
+  ConstantReader constants_;
+  StaticCache& static_values_;
+  std::unordered_map<ValueId, std::optional<HostInts>> memo_;
+  bool reads_input_ = false;
+};
+
+// An attention mask written as a comparison between a per-key index and
+// per-query positions, both small integer functions of the graph inputs (the
+// causal mask of a static KV cache, for instance), attends only keys below a
+// host-computable extent: past it every query is masked. Attention, and the
+// mask, can then cover just that key prefix exactly. Extents round up to a
+// bucket so replays keep reusing one graph while the prefix grows.
+constexpr int64_t kKeyExtentBucket = 256;
+
+struct MaskExtent {
+  std::string compare; // le or lt
+  bool key_lhs = true;
+  ValueId key_operand = kInvalid;
+  ValueId query_operand = kInvalid;
+  int64_t keys = 0;
+  // The SDPA mask, then each value up to and including the compare output.
+  std::vector<ValueId> chain;
+};
+
+// The bucketed prefix of keys that some query attends.
+int64_t attended_key_extent(
+    const MaskExtent& mask,
+    const HostInts& key_index,
+    const HostInts& query) {
+  if (key_index.data.size() != static_cast<size_t>(mask.keys) ||
+      query.data.empty()) {
+    return mask.keys;
+  }
+  // Key j is attended by some query iff compare(key[j], query) holds for
+  // the extreme query value; compare(query, key) is the mirrored
+  // compare(key, query).
+  const auto [lo, hi] = std::ranges::minmax(query.data);
+  const std::string& op = mask.compare;
+  const auto attended = [&](int64_t key) {
+    if (op == "le") {
+      return mask.key_lhs ? key <= hi : key >= lo;
+    }
+    return mask.key_lhs ? key < hi : key > lo;
+  };
+  int64_t last = -1;
+  for (int64_t j = mask.keys - 1; j >= 0 && last < 0; --j) {
+    if (attended(key_index.data[static_cast<size_t>(j)])) {
+      last = j;
+    }
+  }
+  const int64_t needed = std::max<int64_t>(last + 1, 1);
+  return std::min(
+      mask.keys,
+      (needed + kKeyExtentBucket - 1) / kKeyExtentBucket * kKeyExtentBucket);
+}
+
 // Holds a method's non-empty mutable buffer keys in `owners` for the lifetime
 // of its executable.
 class MutableKeyClaim {
@@ -562,11 +895,12 @@ class GgmlExecutable final : public EngineExecutable {
     initialize_backends();
     initialize_persistent_tensors(materialized_constant_bytes);
     index_rope_frequencies();
+    index_mask_extents();
     if (heap_copied_constant_bytes != nullptr) {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
     // Rejects unsupported ops and shapes at compile time.
-    build_graph();
+    build_graph(full_key_extents());
   }
 
   ~GgmlExecutable() override {
@@ -648,7 +982,7 @@ class GgmlExecutable final : public EngineExecutable {
 
     if (options_.max_cached_graphs == 0) {
       ggml_backend_sched_reset(scheduler_.get());
-      GraphInstance instance = build_graph();
+      GraphInstance instance = build_graph(evaluate_key_extents());
       allocate(scheduler_.get(), instance);
       try {
         run(scheduler_.get(), instance);
@@ -689,15 +1023,22 @@ class GgmlExecutable final : public EngineExecutable {
  private:
   struct CachedGraph {
     std::vector<std::vector<int64_t>> input_sizes;
+    // Attention key extents follow input values (positions), so they are
+    // part of the key along with the input shapes.
+    std::vector<int64_t> key_extents;
     GraphInstance instance;
     ggml_backend_sched_ptr scheduler;
   };
 
-  // Lowering depends only on input shapes and constants, so a graph built for
-  // the current shapes replays with fresh input bytes. The most recently used
-  // graph is last.
+  // Lowering depends on input shapes, constants and the attention key extents
+  // computed from input values, so a graph built for the same key replays
+  // with fresh input bytes. The most recently used graph is last.
   CachedGraph& cached_graph() {
-    const auto same_input_sizes = [this](const CachedGraph& cached) {
+    std::vector<int64_t> key_extents = evaluate_key_extents();
+    const auto same_key = [this, &key_extents](const CachedGraph& cached) {
+      if (cached.key_extents != key_extents) {
+        return false;
+      }
       for (size_t i = 0; i < inputs_.size(); ++i) {
         if (cached.input_sizes[i] != inputs_[i].sizes) {
           return false;
@@ -705,7 +1046,7 @@ class GgmlExecutable final : public EngineExecutable {
       }
       return true;
     };
-    const auto hit = std::ranges::find_if(cached_graphs_, same_input_sizes);
+    const auto hit = std::ranges::find_if(cached_graphs_, same_key);
     if (hit != cached_graphs_.end()) {
       std::rotate(hit, hit + 1, cached_graphs_.end());
       refresh_inputs(cached_graphs_.back().instance);
@@ -716,7 +1057,9 @@ class GgmlExecutable final : public EngineExecutable {
       cached_graphs_.erase(cached_graphs_.begin());
     }
     CachedGraph cached{
-        .instance = build_graph(), .scheduler = make_scheduler()};
+        .key_extents = key_extents,
+        .instance = build_graph(key_extents),
+        .scheduler = make_scheduler()};
     for (const InputSlot& input : inputs_) {
       cached.input_sizes.push_back(input.sizes);
     }
@@ -1167,7 +1510,227 @@ class GgmlExecutable final : public EngineExecutable {
         "ggml: unsupported output dtype conversion to Float");
   }
 
-  GraphInstance build_graph();
+  GraphInstance build_graph(const std::vector<int64_t>& key_extents);
+
+  static std::optional<int64_t> static_dim(const TensorMeta& meta, size_t i) {
+    if (i >= meta.sizes.size() ||
+        (!meta.lower_bounds.empty() &&
+         meta.lower_bounds.at(i) != meta.sizes[i])) {
+      return std::nullopt;
+    }
+    return meta.sizes[i];
+  }
+
+  // Matches mask = wrappers(compare(key_index, query)) with key_index varying
+  // only along the last (key) axis and query constant along it. Every value
+  // in the chain must feed nothing but the next wrapper, or SDPA masks.
+  std::optional<MaskExtent> match_mask_extent(ValueId mask_id, int64_t keys)
+      const {
+    const Graph& graph = method_.graph;
+    // A boolean mask, where true means attend; additive masks never match.
+    if (!graph.value(mask_id).is_tensor() ||
+        graph.value(mask_id).tensor_meta().dtype != ScalarType::Bool) {
+      return std::nullopt;
+    }
+    MaskExtent out;
+    out.keys = keys;
+    ValueId id = mask_id;
+    for (size_t depth = 0; depth < 16; ++depth) {
+      const Value& value = graph.value(id);
+      if (!value.is_tensor() ||
+          static_dim(value.tensor_meta(), value.tensor_meta().ndim() - 1) !=
+              keys ||
+          std::ranges::find(graph.output_ids, id) != graph.output_ids.end()) {
+        return std::nullopt;
+      }
+      out.chain.push_back(id);
+      const NodeId producer = value.producer_id;
+      if (!valid(producer) || !graph.node(producer).is_call()) {
+        return std::nullopt;
+      }
+      const Node& node = graph.node(producer);
+      const std::string op = op_key(node.target);
+      const NamedArgument* self = find_arg(node, "self", 0);
+      if (self == nullptr || self->arg.kind() != ArgKind::Tensor) {
+        return std::nullopt;
+      }
+      if (op == "aten.le.Tensor" || op == "aten.lt.Tensor") {
+        const NamedArgument* other = find_arg(node, "other", 1);
+        if (other == nullptr || other->arg.kind() != ArgKind::Tensor) {
+          return std::nullopt;
+        }
+        const auto is_key = [&](ValueId operand) {
+          const TensorMeta& meta = graph.value(operand).tensor_meta();
+          for (size_t i = 0; i + 1 < meta.ndim(); ++i) {
+            if (static_dim(meta, i) != 1) {
+              return false;
+            }
+          }
+          return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == keys;
+        };
+        const auto is_query = [&](ValueId operand) {
+          const TensorMeta& meta = graph.value(operand).tensor_meta();
+          return meta.ndim() > 0 && static_dim(meta, meta.ndim() - 1) == 1;
+        };
+        const ValueId a = self->arg.as_tensor().id;
+        const ValueId b = other->arg.as_tensor().id;
+        out.compare = op.substr(5, 2);
+        if (is_key(a) && is_query(b)) {
+          out.key_operand = a;
+          out.query_operand = b;
+        } else if (is_key(b) && is_query(a)) {
+          out.key_lhs = false;
+          out.key_operand = b;
+          out.query_operand = a;
+        } else {
+          return std::nullopt;
+        }
+        break;
+      }
+      if (op == "aten.expand.default" || op == "aten.expand_copy.default") {
+        // The target size of the key axis is rewritten with the extent.
+        const NamedArgument* size = find_arg(node, "size", 1);
+        if (size == nullptr || size->arg.kind() != ArgKind::IntList) {
+          return std::nullopt;
+        }
+        const IntListArg& list = size->arg.as_int_list();
+        if (list.values.empty() ||
+            (!list.ids.empty() && valid(list.ids.back())) ||
+            (list.values.back() != -1 && list.values.back() != keys)) {
+          return std::nullopt;
+        }
+      } else if (
+          op != "aten.unsqueeze.default" &&
+          op != "aten.unsqueeze_copy.default" && op != "aten.alias.default" &&
+          op != "aten.clone.default") {
+        return std::nullopt;
+      }
+      id = self->arg.as_tensor().id;
+    }
+    if (out.compare.empty()) {
+      return std::nullopt;
+    }
+    for (size_t i = 0; i < out.chain.size(); ++i) {
+      for (const NodeId consumer : graph.value(out.chain[i]).consumer_ids) {
+        const Node& node = graph.node(consumer);
+        const bool next_wrapper =
+            i > 0 && graph.value(out.chain[i - 1]).producer_id == consumer;
+        const NamedArgument* mask = find_arg(node, "attn_mask", 3);
+        const bool sdpa_mask = i == 0 && node.is_call() &&
+            op_key(node.target) ==
+                "aten.scaled_dot_product_attention.default" &&
+            mask != nullptr && mask->arg.kind() == ArgKind::Tensor &&
+            mask->arg.as_tensor().id == out.chain[i];
+        if (!next_wrapper && !sdpa_mask) {
+          return std::nullopt;
+        }
+      }
+    }
+    return out;
+  }
+
+  void index_mask_extents() {
+    std::unordered_map<ValueId, std::optional<MaskExtent>> by_mask;
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (!node.is_call() ||
+          op_key(node.target) != "aten.scaled_dot_product_attention.default") {
+        continue;
+      }
+      const NamedArgument* mask = find_arg(node, "attn_mask", 3);
+      const NamedArgument* key = find_arg(node, "key", 1);
+      if (mask == nullptr || mask->arg.kind() != ArgKind::Tensor ||
+          !valid(mask->arg.as_tensor().id) || key == nullptr ||
+          key->arg.kind() != ArgKind::Tensor) {
+        continue;
+      }
+      const TensorMeta& key_meta =
+          method_.graph.value(key->arg.as_tensor().id).tensor_meta();
+      const std::optional<int64_t> keys = static_dim(key_meta, 2);
+      const ValueId mask_id = mask->arg.as_tensor().id;
+      auto [it, inserted] = by_mask.try_emplace(mask_id);
+      if (inserted) {
+        if (key_meta.ndim() == 4 && keys) {
+          it->second = match_mask_extent(mask_id, *keys);
+        }
+      } else if (it->second && it->second->keys != keys) {
+        // Every attention reading this mask must cover the same keys.
+        it->second.reset();
+      }
+    }
+    for (auto& [mask_id, extent] : by_mask) {
+      if (extent) {
+        mask_extents_.push_back(std::move(*extent));
+      }
+    }
+  }
+
+  std::vector<int64_t> full_key_extents() const {
+    std::vector<int64_t> out;
+    for (const MaskExtent& mask : mask_extents_) {
+      out.push_back(mask.keys);
+    }
+    return out;
+  }
+
+  std::vector<int64_t> evaluate_key_extents() {
+    if (mask_extents_.empty()) {
+      return full_key_extents();
+    }
+    HostIntEvaluator host(
+        method_,
+        inputs_,
+        [this](ValueId id) { return host_constant(id); },
+        host_static_values_);
+    std::vector<int64_t> out;
+    for (const MaskExtent& mask : mask_extents_) {
+      const HostInts* key_index = host.tensor(mask.key_operand);
+      const HostInts* query = host.tensor(mask.query_operand);
+      out.push_back(
+          key_index != nullptr && query != nullptr
+              ? attended_key_extent(mask, *key_index, *query)
+              : mask.keys);
+    }
+    return out;
+  }
+
+  // Small integer constants, e.g. a key offset, read once from the package.
+  std::optional<HostInts> host_constant(ValueId id) {
+    if (const auto found = host_constants_.find(id);
+        found != host_constants_.end()) {
+      return found->second;
+    }
+    std::optional<HostInts> out;
+    const auto binding = std::ranges::find_if(
+        method_.data_bindings, [id](const DataBinding& candidate) {
+          return candidate.value_id == id && candidate.has_data &&
+              !candidate.mutated;
+        });
+    const TensorMeta* meta = method_.graph.value(id).is_tensor()
+        ? &method_.graph.value(id).tensor_meta()
+        : nullptr;
+    if (binding != method_.data_bindings.end() && meta != nullptr &&
+        !meta->quant && checked_numel(meta->sizes) <= 64 &&
+        (meta->dtype == ScalarType::Long || meta->dtype == ScalarType::Int)) {
+      if (const std::optional<OwnedBytes> bytes = read_constant(binding->key)) {
+        out = HostInts{meta->sizes, {}};
+        const ByteSpan span = bytes->span();
+        if (meta->dtype == ScalarType::Long) {
+          out->data.resize(span.size() / sizeof(int64_t));
+          std::memcpy(out->data.data(), span.data(), span.size());
+        } else {
+          std::vector<int32_t> narrow(span.size() / sizeof(int32_t));
+          std::memcpy(narrow.data(), span.data(), span.size());
+          out->data.assign(narrow.begin(), narrow.end());
+        }
+        if (out->data.size() != checked_numel(meta->sizes)) {
+          out.reset();
+        }
+      }
+    }
+    host_constants_.emplace(id, out);
+    return out;
+  }
 
   static constexpr size_t kStagingAlignment = 64;
 
@@ -1206,6 +1769,9 @@ class GgmlExecutable final : public EngineExecutable {
   ggml_backend_t primary_backend_ = nullptr;
   ggml_backend_sched_ptr scheduler_;
   std::vector<CachedGraph> cached_graphs_;
+  std::vector<MaskExtent> mask_extents_;
+  std::unordered_map<ValueId, std::optional<HostInts>> host_constants_;
+  HostIntEvaluator::StaticCache host_static_values_;
   ggml_context_ptr persistent_context_;
   ggml_backend_buffer_ptr persistent_buffer_;
   ggml_backend_buffer_ptr output_staging_;
@@ -1224,12 +1790,14 @@ class GraphBuilder {
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
       const std::unordered_map<ValueId, std::vector<uint8_t>>&
           rope_factor_bytes,
+      std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size)
       : method_(method),
         inputs_(inputs),
         outputs_(outputs),
         persistent_(persistent),
         rope_factor_bytes_(rope_factor_bytes),
+        key_extents_(std::move(key_extents)),
         graph_size_(graph_size),
         values_(method.graph.values.size()) {
     for (const auto& [id, tensor] : persistent) {
@@ -1507,6 +2075,38 @@ class GraphBuilder {
           "ggml: op '" + node.target + "' must produce one tensor");
     }
     set_view(ids.front(), std::move(result));
+  }
+
+  // The key extent a mask value is computed over, if truncated.
+  std::optional<int64_t> key_extent_of(const Node& node) const {
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      return std::nullopt;
+    }
+    const auto found = key_extents_.find(ids.front());
+    return found == key_extents_.end() ? std::nullopt
+                                       : std::optional(found->second);
+  }
+
+  // The first `extent` entries along the last axis.
+  TensorRef last_axis_prefix(TensorRef ref, int64_t extent) {
+    if (ref.sizes.empty() || ref.sizes.back() <= extent) {
+      return ref;
+    }
+    ggml_tensor* t = ref.tensor;
+    ref.tensor = ggml_view_4d(
+        instance_.context.get(),
+        t,
+        extent,
+        t->ne[1],
+        t->ne[2],
+        t->ne[3],
+        t->nb[1],
+        t->nb[2],
+        t->nb[3],
+        0);
+    ref.sizes.back() = extent;
+    return ref;
   }
 
   int64_t int_value(const Argument& arg) const {
@@ -2769,6 +3369,10 @@ class GraphBuilder {
     if (sizes.size() < input.sizes.size()) {
       throw std::runtime_error("ggml: expand cannot drop dimensions");
     }
+    // A mask expanded over its key prefix only (see key_extents_).
+    if (const std::optional<int64_t> extent = key_extent_of(node)) {
+      sizes.back() = *extent;
+    }
     const size_t offset = sizes.size() - input.sizes.size();
     for (size_t i = 0; i < sizes.size(); ++i) {
       const int64_t in = i < offset ? 1 : input.sizes[i - offset];
@@ -3007,14 +3611,21 @@ class GraphBuilder {
   // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
   // step(b - a).
   void lower_compare(const Node& node, bool strict) {
-    const TensorRef left = tensor_arg(node, "self", 0);
+    TensorRef left = tensor_arg(node, "self", 0);
     const NamedArgument& other = require_arg(node, "other", 1);
     ggml_context* ctx = instance_.context.get();
     ggml_tensor* difference = nullptr;
     std::vector<int64_t> sizes = left.sizes;
     if (other.arg.kind() == ArgKind::Tensor) {
-      BinaryOperands operands = tensor_operands(
-          left, tensor(other.arg.as_tensor().id), /*force_f32=*/true);
+      TensorRef right = tensor(other.arg.as_tensor().id);
+      if (const std::optional<int64_t> extent = key_extent_of(node)) {
+        // An attention mask over a key prefix: only the per-key operand
+        // spans the key axis.
+        left = last_axis_prefix(left, *extent);
+        right = last_axis_prefix(right, *extent);
+      }
+      BinaryOperands operands =
+          tensor_operands(left, right, /*force_f32=*/true);
       difference = ggml_sub(ctx, operands.lhs, operands.rhs);
       sizes = std::move(operands.sizes);
     } else {
@@ -3342,7 +3953,28 @@ class GraphBuilder {
       if (is_causal) {
         throw std::runtime_error("ggml: sdpa cannot take a mask and is_causal");
       }
-      mask = attention_mask(mask_arg->arg.as_tensor().id, tokens, keys);
+      const ValueId mask_id = mask_arg->arg.as_tensor().id;
+      if (const auto extent = key_extents_.find(mask_id);
+          extent != key_extents_.end()) {
+        // Every query masks the keys past the extent: attend the prefix.
+        keys = extent->second;
+        const auto prefix = [&](ggml_tensor* t) {
+          return ggml_view_4d(
+              instance_.context.get(),
+              t,
+              t->ne[0],
+              keys,
+              t->ne[2],
+              t->ne[3],
+              t->nb[1],
+              t->nb[2],
+              t->nb[3],
+              0);
+        };
+        k = prefix(k);
+        v = prefix(v);
+      }
+      mask = attention_mask(mask_id, tokens, keys);
     } else if (is_causal) {
       mask = causal_mask(tokens, keys, 0).tensor;
     }
@@ -3428,6 +4060,8 @@ class GraphBuilder {
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
   const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
+  // Mask values (and their producers) computed over a key prefix only.
+  std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
@@ -3446,13 +4080,23 @@ class GraphBuilder {
   GraphInstance instance_;
 };
 
-GraphInstance GgmlExecutable::build_graph() {
+GraphInstance GgmlExecutable::build_graph(
+    const std::vector<int64_t>& key_extents) {
+  std::unordered_map<ValueId, int64_t> truncated;
+  for (size_t i = 0; i < mask_extents_.size(); ++i) {
+    if (key_extents.at(i) < mask_extents_[i].keys) {
+      for (const ValueId id : mask_extents_[i].chain) {
+        truncated.emplace(id, key_extents[i]);
+      }
+    }
+  }
   GraphInstance instance = GraphBuilder(
                                method_,
                                inputs_,
                                outputs_,
                                persistent_,
                                rope_freq_factors_,
+                               std::move(truncated),
                                options_.graph_size)
                                .build();
   if (options_.print_graph_ops) {

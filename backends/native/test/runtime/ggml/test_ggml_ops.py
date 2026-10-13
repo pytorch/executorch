@@ -1133,6 +1133,74 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def test_sdpa_key_prefix_of_a_transposed_key(self):
+        # When every query masks the keys past its position, attention covers
+        # only the 256-key buckets of k and v up to the last position; k
+        # arrives with its head dim strided. The last mask attends the keys
+        # from each position on, so no prefix may be taken.
+        masks = {
+            "key <= position": lambda key, pos: key[None, :] <= pos[:, None],
+            "key < position": lambda key, pos: key[None, :] < pos[:, None],
+            "position <= key": lambda key, pos: pos[:, None] <= key[None, :],
+        }
+        tensors = (
+            torch.randn(1, 2, 2, 32),
+            torch.randn(1, 2, 32, 512),
+            torch.randn(1, 2, 512, 32),
+        )
+        steps = [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])]
+        for name, mask in masks.items():
+            with self.subTest(mask=name):
+
+                def forward(q, k_t, v, positions, mask=mask):
+                    return F.scaled_dot_product_attention(
+                        q,
+                        k_t.transpose(2, 3),
+                        v,
+                        attn_mask=mask(torch.arange(512), positions),
+                    )
+
+                model = Lambda(forward).eval()
+                ops = collections.Counter()
+                with tempfile.TemporaryDirectory() as tmp:
+                    outdir = Path(tmp)
+                    package = outdir / "model.ptn"
+                    to_native(torch.export.export(model, steps[0])).save(str(package))
+                    actual = _run_ggml(package, steps, outdir, 1, graph_ops=ops)
+                for step, [(raw, shape)] in zip(steps, actual):
+                    with torch.no_grad():
+                        expected = model(*step)
+                    torch.testing.assert_close(
+                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
+                            shape
+                        ),
+                        expected,
+                        atol=1e-2,
+                        rtol=1e-2,
+                    )
+                # The compile-time graph and the first step's; a prefix in the
+                # first step makes the second step's wider extent build a third.
+                prefix = name != "position <= key"
+                self.assertEqual(ops["FLASH_ATTN_EXT"], 3 if prefix else 2)
+
+    def test_sdpa_key_prefix_of_overflowing_positions(self):
+        # The host folds positions + 1 for the key extent before the engine
+        # range-checks the int64 input, so the fold must not overflow.
+        def forward(q, k, v, positions):
+            mask = torch.arange(512)[None, :] <= (positions + 1)[:, None]
+            return F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+        example = (
+            torch.randn(1, 2, 2, 32),
+            torch.randn(1, 2, 512, 32),
+            torch.randn(1, 2, 512, 32),
+            torch.tensor([3, 4]),
+        )
+        with self.assertRaisesRegex(AssertionError, "does not fit in int32"):
+            self._run_exported(
+                Lambda(forward), example, (*example[:3], torch.tensor([3, 2**63 - 1]))
+            )
+
     def test_sdpa_causal_fewer_queries(self):
         self._check(
             Lambda(
@@ -1441,10 +1509,24 @@ class GgmlLlamaTest(unittest.TestCase):
     MAX_SEQ = 16
 
     def test_tiny_llama_8da4w(self):
+        self._check_steps(self.MAX_SEQ, prefill=7, decode=2)
+
+    def test_tiny_llama_attends_key_prefix(self):
+        # A cache longer than the engine's 256-key extent bucket: attention
+        # covers only the attended prefix, which grows into a second bucket
+        # when position 256 is decoded. Random weights over a long context
+        # leave near-tied logits, so picks are checked within tolerance.
+        ops = collections.Counter()
+        self._check_steps(600, prefill=255, decode=2, exact_pick=False, graph_ops=ops)
+        # Two layers per graph. Besides the compile-time graph and the prefill,
+        # each decode builds its own: the second one's prefix is longer.
+        self.assertEqual(ops["FLASH_ATTN_EXT"], 2 * 4)
+
+    def _check_steps(self, max_seq, prefill, decode, exact_pick=True, graph_ops=None):
         torch.manual_seed(0)
-        model = TinyLlama(self.MAX_SEQ).eval()
+        model = TinyLlama(max_seq).eval()
         example = (torch.zeros(1, 6, dtype=torch.long), torch.arange(6))
-        seq = Dim("seq", min=1, max=self.MAX_SEQ - 1)
+        seq = Dim("seq", min=1, max=max_seq - 1)
         with torch.no_grad():
             ep = torch.export.export(
                 model,
@@ -1452,11 +1534,10 @@ class GgmlLlamaTest(unittest.TestCase):
                 dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
                 strict=True,
             )
-        prompt = torch.randint(0, 512, (1, 9))
-        steps = [
-            (prompt[:, :7], torch.arange(7)),
-            (prompt[:, 7:8], torch.tensor([7])),
-            (prompt[:, 8:9], torch.tensor([8])),
+        prompt = torch.randint(0, 512, (1, prefill + decode))
+        steps = [(prompt[:, :prefill], torch.arange(prefill))] + [
+            (prompt[:, i : i + 1], torch.tensor([i]))
+            for i in range(prefill, prefill + decode)
         ]
         eager = copy.deepcopy(model)
         with torch.no_grad():
@@ -1465,7 +1546,9 @@ class GgmlLlamaTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "tiny_llama.ptn"
             to_native(ep).save(str(package))
-            outputs = _run_ggml(package, steps, outdir, 1, resize=True)
+            outputs = _run_ggml(
+                package, steps, outdir, 1, resize=True, graph_ops=graph_ops
+            )
         # ggml-cuda applies Q4_0's -8 offset through an fp16 sum of each Q8_1
         # block, where the CPU subtracts it in integers.
         gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
@@ -1479,7 +1562,7 @@ class GgmlLlamaTest(unittest.TestCase):
                 actual = actual.reshape(shape)
                 atol = tolerance * reference.abs().max().item()
                 torch.testing.assert_close(actual, reference, atol=atol, rtol=0)
-                if gpu:
+                if gpu or not exact_pick:
                     # Near-ties may flip on the GPU, so ggml's pick only has
                     # to be within tolerance of eager's best logit.
                     chosen = reference[0, -1, actual[0, -1].argmax()]
