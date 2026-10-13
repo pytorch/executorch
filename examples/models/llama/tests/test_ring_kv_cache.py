@@ -30,6 +30,45 @@ class TestRingKVCache(unittest.TestCase):
         except (RuntimeError, torch.AcceleratorError) as error:
             self.skipTest(f"CUDA kernels are not usable: {error}")
 
+    def test_legacy_constructor_preserves_window_and_capacity(self):
+        for dynamic_shape in (False, True):
+            with self.subTest(dynamic_shape=dynamic_shape):
+                cache = RingKVCache(1, 4, 2, 8, dynamic_shape, torch.float64)
+                self.assertEqual(cache.window_size, 4)
+                self.assertEqual(cache.max_context_length, 8)
+                self.assertEqual(cache.k_cache.shape, (1, 2, 8, 8))
+                self.assertEqual(cache.k_cache.dtype, torch.float64)
+
+                keys = torch.randn(1, 2, 12, 8, dtype=torch.float64)
+                values = torch.randn_like(keys)
+                for start_pos in (0, 4, 8):
+                    k_out, v_out = cache.update(
+                        torch.tensor([start_pos]),
+                        keys[:, :, start_pos : start_pos + 4],
+                        values[:, :, start_pos : start_pos + 4],
+                    )
+                    positions = cache.cache_positions_manager.cache_positions
+                    if start_pos == 0:
+                        expected_positions = torch.tensor([0, 1, 2, 3, -1, -1, -1, -1])
+                    elif start_pos == 4:
+                        expected_positions = torch.arange(8)
+                    else:
+                        expected_positions = torch.tensor([8, 9, 10, 11, 4, 5, 6, 7])
+                    torch.testing.assert_close(positions, expected_positions)
+                    valid = positions >= 0
+                    torch.testing.assert_close(
+                        k_out[:, :, valid], keys[:, :, positions[valid]]
+                    )
+                    torch.testing.assert_close(
+                        v_out[:, :, valid], values[:, :, positions[valid]]
+                    )
+                    queries = torch.arange(start_pos, start_pos + 4).unsqueeze(1)
+                    expected = (
+                        valid & (positions <= queries) & (positions > queries - 4)
+                    )
+                    mask = cache.create_causal_mask_for_ring_buffer(start_pos, 4)
+                    torch.testing.assert_close(torch.isfinite(mask), expected)
+
     def test_dynamic_kv_cache_update_on_cuda(self):
         self._require_usable_cuda()
         cache = KVCache(

@@ -759,9 +759,12 @@ class QuantizedRingKVCache(QuantizedKVCache):
         use_custom_update_cache_op: bool = False,
         return_float_values: bool = True,
         *,
-        window_size: int,
+        window_size: Optional[int] = None,
         max_seq_len: Optional[int] = None,
     ):
+        if window_size is None:
+            window_size = max_context_length
+            max_context_length *= 2
         self.full_context_length = max_context_length
         self.max_seq_len = (
             max_context_length if max_seq_len is None else int(max_seq_len)

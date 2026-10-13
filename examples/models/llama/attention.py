@@ -285,7 +285,7 @@ class RingKVCache(KVCache):
         enable_dynamic_shape: bool,
         dtype=torch.float32,
         *,
-        window_size: int,
+        window_size: Optional[int] = None,
         max_seq_len: Optional[int] = None,
     ):
         """
@@ -293,6 +293,9 @@ class RingKVCache(KVCache):
         prefill chunk. Its size is window_size + max_seq_len, capped by the
         full-context cache. If max_seq_len is omitted, the full context length
         is used.
+
+        Without window_size, max_context_length is the sliding window and
+        the cache retains twice that many slots for legacy callers.
 
         Reason why a cache larger than the sliding window is needed:
         Sliding window attention without ringbuffer
@@ -338,6 +341,9 @@ class RingKVCache(KVCache):
         to attend to pos = 1, mask calculaton has to account for the sliding window
         size.
         """
+        if window_size is None:
+            window_size = max_context_length
+            max_context_length *= 2
         self.window_size = window_size
         self.full_context_length = max_context_length
         self.max_seq_len = (

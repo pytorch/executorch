@@ -147,6 +147,30 @@ class TestReplaceKVCache(unittest.TestCase):
         expected = (positions <= queries) & (positions > queries - window_size)
         torch.testing.assert_close(torch.isfinite(mask), expected)
 
+    def test_quantized_ring_kv_cache_legacy_constructor(self):
+        cache = QuantizedRingKVCache(
+            1,
+            4,
+            self.n_kv_heads,
+            self.head_dim,
+            QuantizedCacheType.AffineAsymmetric,
+            False,
+            False,
+        )
+        self.assertEqual(cache.window_size, 4)
+        self.assertEqual(cache.max_context_length, 8)
+        self.assertEqual(cache.k_cache.shape, (1, 8, self.n_kv_heads, self.head_dim))
+        self.assertFalse(cache.use_custom_update_cache_op)
+        self.assertFalse(cache.return_float_values)
+        cache.cache_positions_manager.calculate_positions_and_update_indices(
+            torch.tensor([0]), 8
+        )
+        mask = cache.create_causal_mask_for_ring_buffer(4, 4)
+        positions = torch.arange(8)
+        queries = torch.arange(4, 8).unsqueeze(1)
+        expected = (positions <= queries) & (positions > queries - 4)
+        torch.testing.assert_close(torch.isfinite(mask), expected)
+
     def test_ring_cache_window_larger_than_context(self):
         self.batch_size = self.args.max_batch_size = 1
         window_size = 2 * self.max_context_len
