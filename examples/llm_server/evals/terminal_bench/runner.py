@@ -62,6 +62,7 @@ def load_config(path):
     defaults = {
         "tasks": ["fix-git"],
         "attempts": 1,
+        "concurrency": 1,
         "step_limit": 100,
         "max_output_tokens": 512,
         "temperature": 0.0,
@@ -83,7 +84,24 @@ def load_config(path):
     affinity = options["session_affinity"]
     if affinity is not None and (not isinstance(affinity, str) or not affinity.strip()):
         raise ValueError("[terminal_bench].session_affinity must be a nonempty string")
+    resolve_concurrency(server, options)
     return config
+
+
+def resolve_concurrency(server, options):
+    concurrency = options["concurrency"]
+    if type(concurrency) is not int or concurrency < 1:
+        raise ValueError("[terminal_bench].concurrency must be a positive integer")
+    if concurrency > 1:
+        if options["session_affinity"] is not None:
+            raise ValueError(
+                "Remove [terminal_bench].session_affinity for concurrent trials"
+            )
+        for key in ("max_sessions", "max_inflight_requests", "max_decode_sequences"):
+            limit = server.setdefault(key, concurrency)
+            minimum = 1 if key == "max_decode_sequences" else concurrency
+            if type(limit) is not int or limit < minimum:
+                raise ValueError(f"[server].{key} must be an integer >= {minimum}")
 
 
 def commands(config, output):
@@ -140,7 +158,7 @@ def commands(config, output):
         "--ae",
         f"no_proxy={agent_host}",
         "--n-concurrent",
-        "1",
+        str(options["concurrency"]),
         "--n-attempts",
         str(options["attempts"]),
         "--max-retries",
@@ -150,6 +168,18 @@ def commands(config, output):
         "--job-name",
         "harbor",
     ]
+    if options["concurrency"] > 1:
+        module = "executorch.examples.llm_server.evals.terminal_bench.sessions"
+        harbor[harbor.index("--agent") + 1] = f"{module}:SessionMiniSweAgent"
+        host = "127.0.0.1" if server["host"] == "0.0.0.0" else server["host"]
+        harbor.extend(
+            [
+                "--plugin",
+                f"{module}:SessionCleanup",
+                "--plugin-kwarg",
+                f"base_url=http://{host}:{server['port']}/v1",
+            ]
+        )
     for task in options["tasks"]:
         harbor.extend(["--include-task-name", task])
     probe = [
@@ -342,6 +372,7 @@ def run(config, output, serve, harbor, probe):
             print("Generation preflight passed.", flush=True)
             job = subprocess.Popen(
                 harbor,
+                env=env,
                 stdout=harbor_log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,

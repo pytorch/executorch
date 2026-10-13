@@ -44,6 +44,17 @@ Configuration details:
 - Optional `session_affinity` sends an `x-session-affinity` header for KV reuse.
   It requires worker support for named sessions; sequential trials share the ID.
 
+For concurrent tasks, set `[terminal_bench].concurrency` (default `1`), remove
+`session_affinity`, and select a batching server and compatible export. When
+concurrency exceeds `1`, missing `[server].max_sessions`, `max_inflight_requests`,
+and `max_decode_sequences` default to the concurrency. Explicit overrides are
+preserved: session/request limits must accommodate the concurrency, while
+`max_decode_sequences` may be lower to limit the decode batch. Resolved limits
+are recorded in `run.json`.
+The harness gives each trial/attempt its own KV session and releases it after
+container shutdown, including failed and timed-out trials. Harbor retains the
+same mini-SWE-agent loop and per-trial verification.
+
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns
 its server process.
@@ -60,3 +71,5 @@ its server process.
 
 Model revisions, export/build commands, and dependency versions are not captured;
 retain them alongside results.
+With concurrency, `metrics.json` sums per-request timings, which overlap;
+these sums are not elapsed engine time or aggregate throughput.
