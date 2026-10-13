@@ -7,7 +7,7 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Tuple
+from typing import Any, Dict, Enum, List, Optional, Tuple, Union
 
 from executorch.exir._warnings import experimental
 
@@ -313,6 +313,7 @@ def _load_program(
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
     data_path: Optional[str] = None,
+    backend_options: Dict[str, Dict[str, Union[bool, int, str]]] = ...,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _load_program_from_buffer(
@@ -321,6 +322,7 @@ def _load_program_from_buffer(
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
     data_path: Optional[str] = None,
+    backend_options: Dict[str, Dict[str, Union[bool, int, str]]] = ...,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:
@@ -331,6 +333,14 @@ def _is_available(backend_name: str) -> bool:
     """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
+def _set_option(
+    backend_name: str, options: Dict[str, Union[bool, int, str]]
+) -> None: ...
+@experimental("This API is experimental and subject to change without notice.")
+def _get_option(
+    backend_name: str, options: Dict[str, Union[bool, int, str]]
+) -> Dict[str, Union[bool, int, str]]: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _get_operator_names() -> List[str]:
     """

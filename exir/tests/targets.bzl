@@ -469,6 +469,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir:memory",
             "//executorch/exir/capture:config",
+            "//executorch/exir/dialects:lib",
             "//executorch/exir/passes:lib",
         ],
     )

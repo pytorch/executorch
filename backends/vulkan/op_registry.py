@@ -248,7 +248,7 @@ def register_clamp():
 
 
 # =============================================================================
-# BinaryOp.cpp
+# binary/BinaryOp.cpp
 # =============================================================================
 
 
@@ -302,7 +302,7 @@ def register_comparison_ops():
 
 
 # =============================================================================
-# BinaryOp.cpp (bitwise)
+# binary/BinaryOp.cpp (bitwise)
 # =============================================================================
 
 
@@ -325,7 +325,7 @@ def register_bool_binary_ops():
 
 
 # =============================================================================
-# BinaryScalarOp.cpp
+# binary/BinaryScalarOp.cpp
 # =============================================================================
 
 
@@ -339,7 +339,12 @@ def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
     return True
 
 
-@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
+@update_features(
+    [
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.mul.Scalar,
+    ]
+)
 def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
@@ -412,7 +417,7 @@ def register_softmax_cpp_ops():
 
 
 # =============================================================================
-# MatMul.cpp
+# gemm/matmul/MatMul.cpp
 # =============================================================================
 
 
@@ -432,7 +437,7 @@ def register_matmul_cpp_ops():
 
 
 # =============================================================================
-# Linear.cpp
+# gemm/linear/Linear.cpp
 # =============================================================================
 
 
@@ -452,7 +457,7 @@ def register_linear_cpp_ops():
 
 
 # =============================================================================
-# QuantizedLinearQCSNW.cpp
+# gemm/linear/qw/{q8csw,legacy}/*.cpp
 # =============================================================================
 
 
@@ -472,7 +477,7 @@ def register_quantizedlinearqcsnw_cpp_ops():
 
 
 # =============================================================================
-# QuantizedLinear.cpp
+# gemm/linear/qw/{q4gsw,dq8ca_q4gsw,legacy}/**/*.cpp
 # =============================================================================
 
 
@@ -622,7 +627,7 @@ def register_torchao_choose_qparams_affine():
 
 
 # =============================================================================
-# Q8taBinary.cpp
+# binary/q8ta/Q8taBinary.cpp
 # =============================================================================
 
 
@@ -725,9 +730,8 @@ def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     if isinstance(dims_reduced, (list, tuple)) and not 1 <= len(dims_reduced) <= 2:
         return False
 
-    keepdim = get_keepdim_setting(node)
-    # keepdim = False is not supported yet for general implementation
-    if isinstance(keepdim, bool) and not keepdim:
+    # any.dim can repack the reduced texture after removing the reduction axis.
+    if not get_keepdim_setting(node) and node.target != exir_ops.edge.aten.any.dim:
         return False
 
     if utils.ndim_of(node.args[0]) == 4:
@@ -817,6 +821,20 @@ def register_reduce_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: (
+            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+        ),
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
 # =============================================================================
 # ArgReduce.cpp
 # =============================================================================
@@ -878,7 +896,7 @@ def register_max_pool2d_with_indices():
 
 
 # =============================================================================
-# Convolution.cpp
+# convolution/Convolution.cpp
 # =============================================================================
 
 
@@ -971,7 +989,7 @@ def register_convolution_cpp_ops():
 
 
 # =============================================================================
-# Q8taConv2d*.cpp
+# convolution/conv2d/q8ta/**/Q8taConv2d*.cpp
 # =============================================================================
 
 
@@ -1074,7 +1092,7 @@ def register_q8ta_conv2d_transposed_op():
 
 
 # =============================================================================
-# Q8taLinear.cpp
+# gemm/linear/q8ta/Q8taLinear.cpp
 # =============================================================================
 
 
@@ -1366,7 +1384,7 @@ def register_expand_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
-        supports_resize=False,
+        supports_resize=True,
         supports_highdim=True,
     )
 
@@ -1612,6 +1630,10 @@ def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: node.target
+        not in (exir_ops.edge.aten.full.default, exir_ops.edge.aten.full_like.default)
+        or is_scalar_value_supported(node.args[1], node.meta["val"].dtype),
     )
 
 
@@ -1690,9 +1712,12 @@ def register_grid_priors():
 
 @update_features(exir_ops.edge.aten.grid_sampler_2d.default)
 def register_grid_sampler_2d():
-    # The Vulkan implementation only supports the configuration used by RIFE's
-    # WarpModule: bilinear interpolation (0), border padding (1),
-    # align_corners=True. The C++ side has VK_CHECK_COND asserts for these,
+    # The Vulkan implementation supports bilinear interpolation (0) with
+    # either zeros (0) or border (1) padding and either align_corners. That
+    # covers RIFE's WarpModule (border, align_corners=True) and the deformable
+    # attention in DETR derivatives (zeros, align_corners=False). Reflection
+    # padding and nearest/bicubic interpolation are not implemented.
+    # The C++ side has VK_CHECK_COND asserts for these,
     # but those abort the whole inference at graph build — for any other model
     # that contains a differently-configured grid_sampler_2d we want graceful
     # CPU fallback, so we gate delegation here.
@@ -1732,8 +1757,10 @@ def register_grid_sampler_2d():
         if interp is None or padding is None or align_corners is None:
             return False
 
-        # mode: 0 = bilinear; padding: 1 = border; align_corners must be True.
-        return interp == 0 and padding == 1 and bool(align_corners) is True
+        # mode: 0 = bilinear. padding: 0 = zeros, 1 = border (2 = reflection
+        # needs a coordinate fold the shader does not implement).
+        # align_corners is free: both settings are specialization constants.
+        return interp == 0 and padding in (0, 1)
 
     return OpFeatures(
         inputs_storage=[

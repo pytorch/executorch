@@ -1026,10 +1026,15 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions extension_llm_cache)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
   list(APPEND _executorch_extensions extension_llm_batching
-       extension_llm_batching_module
+       extension_llm_batching_util extension_llm_batching_module
   )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/serving)
   list(APPEND _executorch_extensions extension_llm_serving)
+  if(EXECUTORCH_BUILD_CUDA)
+    # The CUDA batching executor implements extension/llm/batching's seam, so it
+    # builds here rather than with backends/cuda.
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda/batching)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -1366,8 +1371,12 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    # CUDA uses SlimTensor-based shims
-    list(APPEND _dep_libs aoti_cuda_backend)
+    # CUDA uses SlimTensor-based shims. Not on Windows: a CUDA program cannot be
+    # lowered there, only run, so the delegate ships for C++ applications and
+    # the Python extension stays free of any CUDA dependency.
+    if(NOT WIN32)
+      list(APPEND _dep_libs aoti_cuda_backend)
+    endif()
   elseif(EXECUTORCH_BUILD_METAL)
     # Metal still uses ETensor-based shims (for now)
     list(APPEND _dep_libs aoti_common)

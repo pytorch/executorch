@@ -33,8 +33,8 @@ struct ET_EXPERIMENTAL PrefixMatch {
 };
 
 // Caller-thread policy over retained, idle snapshot sessions. Scope one cache
-// to one Runner and immutable model/configuration; token-only keys cannot
-// describe external embeddings or changes to adapters/positional semantics.
+// to one Runner and immutable model/configuration; identities must describe
+// all token and opaque content under those fixed execution semantics.
 // Serialize cache calls externally. lookup() and PromptCapture::collect() may
 // wait for cloning and must never run in a Runner callback. Keep this object
 // outside the Runner: its Sessions keep the runner's internals alive.
@@ -93,7 +93,8 @@ class ET_EXPERIMENTAL PrefixCache {
       try {
 #endif
         auto snapshot = state->snapshot.get();
-        return snapshot && cache_->insert(state->tokens, std::move(*snapshot));
+        return snapshot &&
+            cache_->insert_identity(state->tokens, std::move(*snapshot));
 #if ET_HAS_EXCEPTIONS
       } catch (const std::bad_alloc&) {
         return false;
@@ -105,7 +106,7 @@ class ET_EXPERIMENTAL PrefixCache {
     friend class PrefixCache;
     struct State {
       std::function<std::future<std::optional<Session>>()> request_clone;
-      std::vector<Token> tokens;
+      PrefixIdentity tokens;
       std::future<std::optional<Session>> snapshot;
       bool attempted = false;
     };
@@ -129,8 +130,14 @@ class ET_EXPERIMENTAL PrefixCache {
   PromptCapture capture_prompt(
       const Session& source,
       const std::vector<Token>& tokens) {
+    return capture_identity(source, copy_tokens(tokens));
+  }
+
+  PromptCapture capture_identity(
+      const Session& source,
+      const PrefixIdentity& tokens) {
     PromptCapture capture;
-    if (max_entries_ == 0 || tokens.empty() || !source.valid() ||
+    if (max_entries_ == 0 || !tokens.size() || !source.valid() ||
         tokens.size() >
             static_cast<std::size_t>(std::numeric_limits<Position>::max())) {
       return capture;
@@ -159,14 +166,19 @@ class ET_EXPERIMENTAL PrefixCache {
   // later. Refusal releases the supplied snapshot and leaves existing entries
   // intact.
   bool insert(const std::vector<Token>& tokens, Session snapshot) {
-    if (max_entries_ == 0 || tokens.empty() || !snapshot.valid() ||
+    return insert_identity(copy_tokens(tokens), std::move(snapshot));
+  }
+
+  bool insert_identity(const PrefixIdentity& tokens, Session snapshot) {
+    if (max_entries_ == 0 || !tokens.size() || !snapshot.valid() ||
         tokens.size() >
             static_cast<std::size_t>(std::numeric_limits<Position>::max()) ||
         snapshot.position() != static_cast<Position>(tokens.size())) {
       return false;
     }
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-      if (it->tokens == tokens) {
+      if (it->tokens.size() == tokens.size() &&
+          common_prefix(it->tokens, tokens) == tokens.size()) {
         entries_.splice(entries_.begin(), entries_, it);
         return true;
       }
@@ -192,6 +204,10 @@ class ET_EXPERIMENTAL PrefixCache {
   // a forward under the new generation's sampling policy.
   // The returned session is independently writable and survives eviction.
   std::optional<PrefixMatch> lookup(const std::vector<Token>& request) {
+    return lookup_identity(copy_tokens(request));
+  }
+
+  std::optional<PrefixMatch> lookup_identity(const PrefixIdentity& request) {
     if (request.size() < 2 || entries_.empty()) {
       return std::nullopt;
     }
@@ -207,11 +223,8 @@ class ET_EXPERIMENTAL PrefixCache {
       candidates.reserve(entries_.size());
       std::size_t rank = 0;
       for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
-        const auto limit = std::min(it->tokens.size(), request.size() - 1);
-        std::size_t matched = 0;
-        while (matched < limit && it->tokens[matched] == request[matched]) {
-          ++matched;
-        }
+        const auto matched =
+            std::min(common_prefix(it->tokens, request), request.size() - 1);
         if (matched > 0) {
           candidates.push_back(Candidate{it, matched, rank});
         }
@@ -252,8 +265,23 @@ class ET_EXPERIMENTAL PrefixCache {
   }
 
  private:
+  PrefixIdentity copy_tokens(const std::vector<Token>& tokens) const {
+    if (!max_entries_ || tokens.empty()) {
+      return {};
+    }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      return token_identity(std::make_shared<const std::vector<Token>>(tokens));
+#if ET_HAS_EXCEPTIONS
+    } catch (const std::bad_alloc&) {
+      return {};
+    }
+#endif
+  }
+
   struct Entry {
-    std::vector<Token> tokens;
+    PrefixIdentity tokens;
     Session snapshot;
   };
 

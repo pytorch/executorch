@@ -97,12 +97,16 @@ using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::pybindings::PyDataLoader;
+using ::executorch::runtime::BackendOption;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::DeviceMemoryBuffer;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
 using ::executorch::runtime::HierarchicalAllocator;
+using ::executorch::runtime::kMaxOptionKeyLength;
+using ::executorch::runtime::kMaxOptionValueLength;
+using ::executorch::runtime::LoadBackendOptionsMap;
 using ::executorch::runtime::MemoryAllocator;
 using ::executorch::runtime::MemoryManager;
 using ::executorch::runtime::prof_result_t;
@@ -746,6 +750,10 @@ struct ProgramState final {
   // loaded it. Both stay alive as long as any method does.
   std::unique_ptr<DataLoader> data_map_loader_;
   std::unique_ptr<FlatTensorDataMap> data_map_;
+  // Load options for every method of this program. The map's spans point into
+  // the storage.
+  std::vector<std::vector<BackendOption>> backend_option_storage_;
+  LoadBackendOptionsMap backend_options_;
 
   explicit ProgramState(
       std::unique_ptr<DataLoader> loader,
@@ -1432,11 +1440,52 @@ struct PyModule final {
   }
 };
 
+std::vector<BackendOption> to_backend_options(const py::handle& options) {
+  if (!py::isinstance<py::dict>(options)) {
+    throw py::type_error("Backend options must be a dict");
+  }
+  std::vector<BackendOption> result;
+  for (const auto& [key, value] : py::reinterpret_borrow<py::dict>(options)) {
+    BackendOption option{};
+    const auto name = py::cast<std::string>(key);
+    if (name.size() >= kMaxOptionKeyLength) {
+      throw py::value_error("Backend option key is too long: " + name);
+    }
+    std::strncpy(option.key, name.c_str(), kMaxOptionKeyLength - 1);
+    // A Python bool is also an int, so it is checked first.
+    if (py::isinstance<py::bool_>(value)) {
+      option.value = py::cast<bool>(value);
+    } else if (py::isinstance<py::int_>(value)) {
+      const auto number = py::cast<int64_t>(value);
+      if (number < std::numeric_limits<int>::min() ||
+          number > std::numeric_limits<int>::max()) {
+        throw py::value_error(
+            "Backend option " + name + " does not fit an int");
+      }
+      option.value = static_cast<int>(number);
+    } else if (py::isinstance<py::str>(value)) {
+      const auto text = py::cast<std::string>(value);
+      if (text.size() >= kMaxOptionValueLength) {
+        throw py::value_error("Backend option " + name + " is too long");
+      }
+      std::array<char, kMaxOptionValueLength> chars{};
+      std::strncpy(chars.data(), text.c_str(), kMaxOptionValueLength - 1);
+      option.value = chars;
+    } else {
+      throw py::type_error(
+          "Backend option " + name + " must be a bool, int or str");
+    }
+    result.push_back(option);
+  }
+  return result;
+}
+
 inline std::shared_ptr<ProgramState> load_program(
     std::unique_ptr<DataLoader> loader,
     Program::Verification program_verification,
     std::optional<const std::string> data_path = std::nullopt,
-    std::optional<py::bytes> program_buffer = std::nullopt) {
+    std::optional<py::bytes> program_buffer = std::nullopt,
+    const py::dict& backend_options = py::dict()) {
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
@@ -1460,12 +1509,27 @@ inline std::shared_ptr<ProgramState> load_program(
         static_cast<uint32_t>(map_res.error()));
     data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
   }
-  return std::make_shared<ProgramState>(
+  auto state = std::make_shared<ProgramState>(
       std::move(loader),
       std::make_unique<Program>(std::move(res.get())),
       std::move(data_map_loader),
       std::move(data_map),
       std::move(program_buffer));
+  // Reserved up front so adding an entry never moves the ones the map spans.
+  state->backend_option_storage_.reserve(backend_options.size());
+  for (const auto& [backend, options] : backend_options) {
+    const auto backend_name = py::cast<std::string>(backend);
+    auto& owned = state->backend_option_storage_.emplace_back(
+        to_backend_options(options));
+    const Error error = state->backend_options_.set_options(
+        backend_name.c_str(), Span<BackendOption>(owned.data(), owned.size()));
+    THROW_IF_ERROR(
+        error,
+        "Failed to set load options for backend %s, error: 0x%" PRIx32,
+        backend_name.c_str(),
+        static_cast<uint32_t>(error));
+  }
+  return state;
 }
 
 /// A wrapper/util class for executorch memory allocations/manager.
@@ -1857,8 +1921,10 @@ struct PyMethod final {
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
     for (int i = 0; i < output_storages_.size(); ++i) {
-      output_storage_spans[i] =
-          Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
+      output_storage_spans[i] = device_output_storages_[i].size() > 0
+          ? device_output_storages_[i].as_span()
+          : Span<uint8_t>(
+                output_storages_[i].data(), output_storages_[i].size());
     }
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
@@ -1945,6 +2011,9 @@ struct PyMethod final {
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
+  // Backs the outputs the program places on a device without planning them,
+  // indexed like output_storages_. Empty for every other output.
+  std::vector<DeviceMemoryBuffer> device_output_storages_;
 
   void allocate_output_storages() {
     const auto num_outputs = method_->outputs_size();
@@ -1952,9 +2021,14 @@ struct PyMethod final {
     if (output_storages_.size() == num_outputs) {
       return;
     }
+    // Built in locals and moved in only once every output has its buffer, so
+    // an allocation that throws partway leaves nothing behind for the next
+    // call to append to.
+    std::vector<std::vector<uint8_t>> output_storages;
+    std::vector<DeviceMemoryBuffer> device_output_storages(num_outputs);
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
-    output_storages_.reserve(num_outputs);
+    output_storages.reserve(num_outputs);
     auto meta = method_->method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {
       auto output_type = meta.output_tag(i);
@@ -1962,7 +2036,7 @@ struct PyMethod final {
           output_type.error(), "Failed to get output type for output %zu", i);
       if (output_type.get() != Tag::Tensor) {
         // Skip allocating storage for non-tensor outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       const auto& output_tensor_meta =
@@ -1973,13 +2047,38 @@ struct PyMethod final {
           i);
       if (output_tensor_meta.get().is_memory_planned()) {
         // Skip allocating storage for planned memory outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       // Allocate storage for the output tensor.
       const size_t output_size = output_tensor_meta.get().nbytes();
-      output_storages_.emplace_back(output_size);
+#ifndef USE_ATEN_LIB
+      // The delegate and the output clone treat a device-tagged output as
+      // device memory. A host buffer there only works on a device that can
+      // read pageable host memory, and fails everywhere else. An empty output
+      // needs no memory on any device, and whether an allocator accepts a zero
+      // size is up to the allocator, so it keeps the empty host buffer below,
+      // which setup_output_storage skips.
+      const auto device = method_->get_output(i).toTensor().device();
+      if (!device.is_cpu() && output_size > 0) {
+        auto buffer = DeviceMemoryBuffer::create(
+            output_size, device.type(), device.index());
+        THROW_IF_ERROR(
+            buffer.error(),
+            "Failed to allocate %zu bytes on device %d:%d for output %zu",
+            output_size,
+            static_cast<int>(device.type()),
+            static_cast<int>(device.index()),
+            i);
+        device_output_storages[i] = std::move(buffer.get());
+        output_storages.emplace_back();
+        continue;
+      }
+#endif
+      output_storages.emplace_back(output_size);
     }
+    output_storages_ = std::move(output_storages);
+    device_output_storages_ = std::move(device_output_storages);
   }
 
   py::list get_outputs_as_py_list(
@@ -2031,12 +2130,14 @@ struct PyProgram final {
       Program::Verification program_verification =
           Program::Verification::Minimal,
       std::optional<const std::string> data_path = std::nullopt,
-      std::optional<py::bytes> program_buffer = std::nullopt)
+      std::optional<py::bytes> program_buffer = std::nullopt,
+      const py::dict& backend_options = py::dict())
       : state_(load_program(
             std::move(loader),
             program_verification,
             data_path,
-            std::move(program_buffer))),
+            std::move(program_buffer),
+            backend_options)),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
     // Figure out the size of each non_const layer we need to support every
@@ -2090,7 +2191,8 @@ struct PyProgram final {
       size_t debug_buffer_size,
       Program::Verification program_verification =
           Program::Verification::Minimal,
-      std::optional<const std::string> data_path = std::nullopt) {
+      std::optional<const std::string> data_path = std::nullopt,
+      const py::dict& backend_options = py::dict()) {
     std::unique_ptr<DataLoader> loader = loader_from_buffer(
         buffer.cast<std::string_view>().data(), py::len(buffer));
     return std::make_unique<PyProgram>(
@@ -2100,7 +2202,8 @@ struct PyProgram final {
         debug_buffer_size,
         program_verification,
         data_path,
-        buffer);
+        buffer,
+        backend_options);
   }
 
   static std::unique_ptr<PyProgram> load_from_file(
@@ -2109,7 +2212,8 @@ struct PyProgram final {
       size_t debug_buffer_size,
       Program::Verification program_verification =
           Program::Verification::Minimal,
-      std::optional<const std::string> data_path = std::nullopt) {
+      std::optional<const std::string> data_path = std::nullopt,
+      const py::dict& backend_options = py::dict()) {
     std::unique_ptr<DataLoader> loader = loader_from_file(path);
     return std::make_unique<PyProgram>(
         std::move(loader),
@@ -2117,7 +2221,9 @@ struct PyProgram final {
                       : nullptr,
         debug_buffer_size,
         program_verification,
-        data_path);
+        data_path,
+        std::nullopt,
+        backend_options);
   }
 
   PyProgram(const PyProgram&) = delete;
@@ -2156,7 +2262,8 @@ struct PyProgram final {
         method_name.c_str(),
         memory->mem_manager(),
         event_tracer_.get(),
-        state_->data_map_.get());
+        state_->data_map_.get(),
+        &state_->backend_options_);
     THROW_IF_ERROR(
         res.error(),
         "Failed to load method %s, error: 0x:%" PRIx32,
@@ -2259,6 +2366,43 @@ py::bool_ is_available(const std::string& backend_name) {
   return backend->is_available();
 }
 
+void set_option(const std::string& backend_name, const py::dict& options) {
+  auto backend_options = to_backend_options(options);
+  const Error error = ::executorch::ET_RUNTIME_NAMESPACE::set_option(
+      backend_name.c_str(),
+      Span<BackendOption>(backend_options.data(), backend_options.size()));
+  THROW_IF_ERROR(
+      error,
+      "Failed to set options for backend %s, error: 0x%" PRIx32,
+      backend_name.c_str(),
+      static_cast<uint32_t>(error));
+}
+
+py::dict get_option(const std::string& backend_name, const py::dict& options) {
+  auto backend_options = to_backend_options(options);
+  const Error error = ::executorch::ET_RUNTIME_NAMESPACE::get_option(
+      backend_name.c_str(),
+      Span<BackendOption>(backend_options.data(), backend_options.size()));
+  THROW_IF_ERROR(
+      error,
+      "Failed to get options for backend %s, error: 0x%" PRIx32,
+      backend_name.c_str(),
+      static_cast<uint32_t>(error));
+  py::dict result;
+  for (const auto& option : backend_options) {
+    if (const auto* flag = std::get_if<bool>(&option.value)) {
+      result[option.key] = *flag;
+    } else if (const auto* number = std::get_if<int>(&option.value)) {
+      result[option.key] = *number;
+    } else {
+      result[option.key] =
+          std::get<std::array<char, kMaxOptionValueLength>>(option.value)
+              .data();
+    }
+  }
+  return result;
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -2348,6 +2492,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       call_guard);
   m.def("_get_operator_names", &get_operator_names);
   m.def("_is_available", &is_available, py::arg("backend_name"), call_guard);
+  m.def(
+      "_set_option",
+      &set_option,
+      py::arg("backend_name"),
+      py::arg("options"),
+      call_guard);
+  m.def(
+      "_get_option",
+      &get_option,
+      py::arg("backend_name"),
+      py::arg("options"),
+      call_guard);
   m.def("_create_profile_block", &create_profile_block, call_guard);
   m.def(
       "_reset_profile_results",
@@ -2461,6 +2617,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
       py::arg("data_path") = std::nullopt,
+      py::arg("backend_options") = py::dict(),
       call_guard);
   m.def(
       "_load_program_from_buffer",
@@ -2470,6 +2627,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
       py::arg("data_path") = std::nullopt,
+      py::arg("backend_options") = py::dict(),
       call_guard);
   py::class_<PyProgram>(m, "ExecuTorchProgram")
       .def("num_methods", &PyProgram::num_methods, call_guard)
