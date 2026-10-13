@@ -4,14 +4,14 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-// Runs one method of a .ptn on the ggml CPU engine. Inputs and outputs are raw
+// Runs one method of a .ptn on the ggml engine. Inputs and outputs are raw
 // little-endian bytes in the method's own dtypes. Semicolons separate steps,
 // which run in order on one executable, so mutable buffers such as KV caches
 // carry over. Prints one line of space-separated sizes per output per step.
 //
 // Usage:
 //   ggml_ptn_runner --package M.ptn --inputs a.bin,b.bin --outputs out0.bin
-//                   [--input_sizes 1x6,6]
+//                   [--input_sizes 1x6,6] [--device gpu]
 //   ggml_ptn_runner --package M.ptn --inputs a0.bin,b0.bin;a1.bin,b1.bin
 //                   --outputs out0.bin;out1.bin --input_sizes 1x6,6;1x1,1
 //
@@ -55,6 +55,11 @@ DEFINE_string(
     "Comma-separated input shapes such as 1x6, in graph order, for methods "
     "with dynamic shapes; semicolons separate steps. Defaults to the "
     "serialized shapes.");
+DEFINE_string(
+    device,
+    "cpu",
+    "ggml device: cpu, or gpu for the GPU backend this binary links.");
+DEFINE_int32(cpu_threads, 0, "ggml CPU threads; 0 keeps ggml's default.");
 
 namespace {
 
@@ -166,7 +171,14 @@ void run() {
   const ptn::ByteSpan program_bytes = package->program_bytes();
   const auto program = std::make_shared<const ptn::Program>(
       ptn::Program::load(program_bytes.data(), program_bytes.size()));
-  const auto host = ptn::GgmlEngineHost::create();
+  ptn::GgmlEngineOptions options;
+  if (FLAGS_device == "gpu") {
+    options.device = ptn::GgmlDevice::Gpu;
+  } else if (FLAGS_device != "cpu") {
+    throw std::invalid_argument("--device must be cpu or gpu");
+  }
+  options.cpu_threads = FLAGS_cpu_threads;
+  const auto host = ptn::GgmlEngineHost::create(options);
   const auto context = host->create_ggml_context(program, package);
   const auto executable = context->compile(FLAGS_method);
 

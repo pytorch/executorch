@@ -16,7 +16,9 @@ namespace ptn {
 
 enum class GgmlDevice {
   Cpu,
-  Cuda,
+  // The GPU backend is whichever one the linked ggml variant registers (CUDA,
+  // HIP, ...); device_index counts GPU devices only.
+  Gpu,
 };
 
 struct GgmlEngineOptions {
