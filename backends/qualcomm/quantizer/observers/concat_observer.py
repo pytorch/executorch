@@ -116,13 +116,11 @@ class ConcatFakeQuantize(FakeQuantize):
 
 
 def concat_observer_ctr(node_name, graph, output_activation):
-    """Build the observer/fake-quant ctr for a cat's output qspec.
-
-    Under PTQ ``output_activation``'s ctr is a plain observer, so the cat
-    output stays a ``ConcatObserver`` as before. Under QAT it is a
-    ``FakeQuantize``, so swap in ``ConcatFakeQuantize`` instead, which keeps
-    the output fake-quantized like every other activation while giving it the
-    same max-range-of-all-inputs behavior ConcatObserver gives PTQ.
+    """
+    Under PTQ, the concat output continues to use ConcatObserver for range collection.
+    Under QAT, it is replaced with ConcatFakeQuantize,
+    which preserves the same max-range-across-inputs behavior
+    while ensuring the output remains fake-quantized during training.
     """
     kwargs = {"node_name": node_name, "graph": graph}
     ctr = output_activation.observer_or_fake_quant_ctr
