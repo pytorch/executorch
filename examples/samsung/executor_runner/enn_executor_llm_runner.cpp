@@ -64,15 +64,17 @@ DEFINE_bool(is_decode_only, false, "Whether to run with decode method only.");
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   const char* model_path = FLAGS_model_path.c_str();
+
   std::optional<std::string> data_path = std::nullopt;
   if (!FLAGS_data_path.empty()) {
     data_path = FLAGS_data_path.c_str();
   }
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
-  std::optional<const std::string> pos_embedding_path =
-      FLAGS_pos_embedding_path.empty()
-      ? std::nullopt
-      : std::make_optional(FLAGS_pos_embedding_path.c_str());
+
+  std::optional<std::string> pos_embedding_path = std::nullopt;
+  if (!FLAGS_pos_embedding_path.empty()) {
+    pos_embedding_path = FLAGS_pos_embedding_path;
+  }
 
   const char* config_path = FLAGS_config_path.c_str();
 
@@ -114,7 +116,7 @@ int32_t main(int32_t argc, char** argv) {
   example::RunnerConfig runner_config{
       .config_path = config_path, .is_decode_only = is_decode_only};
   std::unique_ptr<llm::IRunner> runner =
-      example::create_llm_runner(runner_paths, runner_config);
+      example::create_llm_runner(runner_paths, std::move(runner_config));
   ET_CHECK_MSG(runner != nullptr, "Failed to create LLM runner");
 
   // TODO: support warmup interface

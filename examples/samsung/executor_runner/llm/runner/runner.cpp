@@ -9,7 +9,7 @@
 // A simple LLM runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/extension/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -19,7 +19,7 @@
 #include <pytorch/tokenizers/sentencepiece.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/decoder.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/io_manager.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
@@ -64,6 +64,17 @@ std::string LLMRunner::get_formatted_prompt(
         formatted_prompt.append("<end_of_turn>\n");
       }
       break;
+    case DecoderModelVersion::kGemma4:
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|turn>system ");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<turn|>\n");
+      }
+      formatted_prompt.append("<|turn>user ");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<turn|>\n");
+      formatted_prompt.append("<|turn>model\n");
+      break;
     case DecoderModelVersion::kGeneral:
       formatted_prompt.append(prompt);
       break;
@@ -75,39 +86,13 @@ std::string LLMRunner::get_formatted_prompt(
 }
 
 /**
- * @brief Loads a tokenizer from the specified path
- *
  * This function creates and initializes a tokenizer from a file based on the
  * specified type. Supported types are: "bpe", "tiktoken", "hf", and "sp".
- *
- * @param type Type of tokenizer to load ("bpe", "tiktoken", "hf", or "sp")
- * @param tokenizer_path Path to the tokenizer file
- * @param version Version of the tokenizer (used for tiktoken type)
- * @return std::unique_ptr<tokenizers::Tokenizer> Initialized tokenizer
- * instance, or nullptr on failure
  */
 ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     const std::string& type,
     const std::string& tokenizer_path,
     Version version);
-
-/**
- * @brief Creates a LLMRunner instance with the specified model and
- * tokenizer
- *
- * This factory function creates and initializes a LLMRunner with all
- * necessary components for text generation using the specified model and
- * tokenizer.
- *
- * @param paths RunnerPaths containing model and tokenizer paths
- * @param config RunnerConfig containing runtime configuration
- * @param tokenizer Initialized tokenizer instance
- * @return std::unique_ptr<LLMRunner> Initialized LLMRunner instance
- */
-ET_EXPERIMENTAL std::unique_ptr<LLMRunner> create_llm_runner(
-    const RunnerPaths& runner_paths,
-    RunnerConfig runner_config,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer);
 
 std::unique_ptr<llm::IRunner> create_llm_runner(
     const RunnerPaths& runner_paths,
@@ -120,7 +105,6 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
 
   runner_config.load_from_json();
 
-  // Create and load tokenizer
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer = load_tokenizer(
       runner_config.tokenizer_type,
       runner_paths.tokenizer_path,
@@ -170,9 +154,11 @@ LLMRunner::LLMRunner(
     std::unique_ptr<example::TokenGenerator> text_token_generator,
     std::unique_ptr<llm::Stats> stats,
     std::unique_ptr<llm::IOManager> io_manager,
+    RunnerConfig config,
     DecoderModelVersion model_version,
     float temperature)
-    : tokenizer_(std::move(tokenizer)),
+    : config_(std::move(config)),
+      tokenizer_(std::move(tokenizer)),
       metadata_(std::move(metadata)),
       module_(std::move(module)),
       text_decoder_runner_(std::move(text_decoder_runner)),
@@ -216,105 +202,6 @@ void replace_all_newlines(std::string& str) {
   }
 }
 
-void RunnerConfig::load_from_json() {
-  if (config_path.empty()) {
-    ET_LOG(Info, "Config path is empty, skipping JSON load");
-    return;
-  }
-
-  std::ifstream file(config_path);
-  if (!file.is_open()) {
-    ET_LOG(Error, "Could not open config file: %s", config_path.c_str());
-    return;
-  }
-
-  json j = json::parse(file, nullptr, false);
-  if (j.is_discarded()) {
-    ET_LOG(
-        Error, "Invalid JSON format in config file: %s", config_path.c_str());
-    return;
-  }
-
-  if (j.contains("hidden_dim") && j["hidden_dim"].is_number_integer()) {
-    hidden_dim = j["hidden_dim"].get<int64_t>();
-  }
-  if (j.contains("n_heads") && j["n_heads"].is_number_integer()) {
-    n_heads = j["n_heads"].get<int64_t>();
-  }
-  if (j.contains("n_kv_heads") && j["n_kv_heads"].is_number_integer()) {
-    n_kv_heads = j["n_kv_heads"].get<int64_t>();
-  }
-  if (j.contains("n_layers") && j["n_layers"].is_number_integer()) {
-    n_layers = j["n_layers"].get<int64_t>();
-  }
-  if (j.contains("head_dim") && j["head_dim"].is_number_integer()) {
-    head_dim = j["head_dim"].get<int64_t>();
-  }
-  if (j.contains("vocab_size") && j["vocab_size"].is_number_integer()) {
-    vocab_size = j["vocab_size"].get<int64_t>();
-  }
-  if (j.contains("max_seq_len") && j["max_seq_len"].is_number_integer()) {
-    max_seq_len = j["max_seq_len"].get<int64_t>();
-  }
-  if (j.contains("max_context_len") &&
-      j["max_context_len"].is_number_integer()) {
-    max_context_len = j["max_context_len"].get<int64_t>();
-  }
-  if (j.contains("prefill_seq_len") &&
-      j["prefill_seq_len"].is_number_integer()) {
-    prefill_seq_len = j["prefill_seq_len"].get<int64_t>();
-  }
-  if (j.contains("decode_seq_len") && j["decode_seq_len"].is_number_integer()) {
-    decode_seq_len = j["decode_seq_len"].get<int64_t>();
-  }
-  if (j.contains("attn_mask_rows") && j["attn_mask_rows"].is_number_integer()) {
-    attn_mask_rows = j["attn_mask_rows"].get<int64_t>();
-  }
-  if (j.contains("attn_mask_cols") && j["attn_mask_cols"].is_number_integer()) {
-    attn_mask_cols = j["attn_mask_cols"].get<int64_t>();
-  }
-  if (j.contains("sliding_window") && j["sliding_window"].is_number_integer()) {
-    sliding_window = j["sliding_window"].get<int64_t>();
-  } else {
-    sliding_window = std::nullopt;
-  }
-
-  if (j.contains("embedding_strategy") && j["embedding_strategy"].is_string()) {
-    std::string strategy = j["embedding_strategy"].get<std::string>();
-    if (strategy == "global_only") {
-      embedding_strategy = EmbeddingStrategy::kGlobalOnly;
-    } else if (strategy == "global_and_local") {
-      embedding_strategy = EmbeddingStrategy::kGlobalAndLocal;
-    }
-  }
-
-  if (j.contains("masking_strategy") && j["masking_strategy"].is_string()) {
-    std::string strategy = j["masking_strategy"].get<std::string>();
-    if (strategy == "causal") {
-      masking_strategy = MaskingStrategy::kCausal;
-    } else if (strategy == "causal_local") {
-      masking_strategy = MaskingStrategy::kCausalLocal;
-    } else if (strategy == "hybrid_conv") {
-      masking_strategy = MaskingStrategy::kHybridConvAttention;
-    }
-  }
-
-  if (j.contains("model_version") && j["model_version"].is_string()) {
-    std::string version_str = j["model_version"].get<std::string>();
-    if (version_str == "llama3") {
-      model_version = DecoderModelVersion::kLlama3;
-    } else if (version_str == "gemma3") {
-      model_version = DecoderModelVersion::kGemma3;
-    } else if (version_str == "general") {
-      model_version = DecoderModelVersion::kGeneral;
-    }
-  }
-
-  if (j.contains("tokenizer_type") && j["tokenizer_type"].is_string()) {
-    tokenizer_type = j["tokenizer_type"].get<std::string>();
-  }
-}
-
 runtime::Error LLMRunner::generate_from_pos(
     const std::string& prompt,
     int64_t start_pos,
@@ -350,9 +237,9 @@ runtime::Error LLMRunner::generate_from_pos(
           token_callback(piece);
         }
       };
+
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
-
   stats_->inference_start_ms = llm::time_in_ms();
   shouldStop_ = false;
 
@@ -379,6 +266,7 @@ runtime::Error LLMRunner::generate_from_pos(
   int num_prompt_tokens = prompt_tokens.size();
 
   // Reduce max_context_len by start_pos
+  // TODO(brucekk.kim): Check where to fetch from: metatdata or runner_config
   int64_t max_context_len = metadata_.at(llm::kMaxContextLen) - start_pos;
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
@@ -555,16 +443,23 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
   // Initialize metadata from JSON config values
   std::unordered_map<std::string, int64_t> metadata({
       {kMetadataMap.at(llm::kEnableDynamicShape), false},
-      {kMetadataMap.at(llm::kMaxSeqLen), config.max_seq_len},
-      {kMetadataMap.at(llm::kMaxContextLen), config.max_context_len},
+      {kMetadataMap.at(llm::kMaxSeqLen),
+       config.model_args ? config.model_args->get_max_seq_len() : 128},
+      {kMetadataMap.at(llm::kMaxContextLen),
+       config.model_args ? config.model_args->get_max_context_len() : 128},
       {kMetadataMap.at(llm::kUseKVCache), true},
       {kMetadataMap.at(llm::kUseSDPAWithKVCache), false},
       {kMetadataMap.at(example::kPrefillArLen), 0},
-      {kMetadataMap.at(example::kNumOfHiddenDim), config.hidden_dim},
-      {kMetadataMap.at(example::kNumOfHeads), config.n_heads},
-      {kMetadataMap.at(example::kNumOfKVHeads), config.n_kv_heads},
-      {kMetadataMap.at(example::kNumOfLayers), config.n_layers},
-      {kMetadataMap.at(llm::kHeadDim), config.head_dim},
+      {kMetadataMap.at(example::kNumOfHiddenDim),
+       config.model_args ? config.model_args->get_hidden_dim() : 0},
+      {kMetadataMap.at(example::kNumOfHeads),
+       config.model_args ? config.model_args->get_n_heads() : 0},
+      {kMetadataMap.at(example::kNumOfKVHeads),
+       config.model_args ? config.model_args->get_n_kv_heads() : 0},
+      {kMetadataMap.at(example::kNumOfLayers),
+       config.model_args ? config.model_args->get_n_layers() : 0},
+      {kMetadataMap.at(llm::kHeadDim),
+       config.model_args ? config.model_args->get_head_dim() : 0},
   });
 
   auto method_names_result = module->method_names();
@@ -588,7 +483,7 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
           method_name.c_str(),
           value);
     }
-    ET_LOG(Debug, "Metadata: %s = %" PRId64, method_name.c_str(), value);
+    ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
@@ -624,7 +519,7 @@ std::unordered_set<uint64_t> get_eos_ids(
   return eos_ids;
 }
 
-std::unique_ptr<LLMRunner> create_llm_runner(
+std::unique_ptr<llm::IRunner> create_llm_runner(
     const RunnerPaths& runner_paths,
     RunnerConfig runner_config,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer) {
@@ -632,6 +527,10 @@ std::unique_ptr<LLMRunner> create_llm_runner(
     ET_LOG(Error, "Tokenizer is null or not loaded");
     return nullptr;
   }
+
+  DecoderModelVersion model_version = runner_config.model_version;
+  float temperature = runner_config.temperature;
+  bool is_decode_only = runner_config.is_decode_only;
 
   std::unique_ptr<extension::Module> module;
   if (runner_paths.data_path.has_value()) {
@@ -652,14 +551,14 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   auto methods = methods_res.get();
   std::vector<std::string> register_methods;
-  if (runner_config.is_decode_only) {
+  if (is_decode_only) {
     register_methods.emplace_back(default_method_name_decode);
   } else {
     for (auto method : methods) {
       if (kMetadataMap.find(method) != kMetadataMap.end()) {
         continue;
       }
-      ET_LOG(Info, "Register method \"%s\" to decoder", method.c_str());
+      ET_LOG(Info, "Register method: \"%s\"", method.c_str());
       register_methods.emplace_back(method);
     }
   }
@@ -668,71 +567,48 @@ std::unique_ptr<LLMRunner> create_llm_runner(
   auto metadata =
       get_llm_metadata(tokenizer.get(), module.get(), runner_config);
 
-  example::LlmIOManager::Config conf;
-  conf.n_layers = metadata.at(example::kNumOfLayers);
-  conf.n_heads = runner_config.n_heads;
-  conf.n_kv_heads = metadata.at(example::kNumOfKVHeads);
-  conf.hidden_dim = runner_config.hidden_dim;
-  conf.vocab_size = runner_config.vocab_size;
-  conf.max_seq_len = runner_config.max_seq_len;
-  conf.max_context_len = runner_config.max_context_len;
-  conf.decode_seq_len = runner_config.decode_seq_len;
-  conf.prefill_seq_len = (metadata.at(example::kPrefillArLen) > 1)
-      ? (metadata.at(example::kPrefillArLen))
-      : (runner_config.prefill_seq_len != 0 ? runner_config.prefill_seq_len
-                                            : metadata.at(llm::kMaxSeqLen));
-  conf.embedding_strategy = runner_config.embedding_strategy;
-  conf.masking_strategy = runner_config.masking_strategy;
-  conf.attn_mask_rows = runner_config.attn_mask_rows;
-  conf.attn_mask_cols = runner_config.attn_mask_cols;
-  conf.sliding_window = runner_config.sliding_window;
+  auto stats = std::make_unique<llm::Stats>();
+  llm::Stats* stats_ptr = stats.get();
 
-  if (runner_config.is_decode_only) {
-    conf.prefill_seq_len = 1;
-  }
+  ET_LOG(Info, "Instantiate LLMRunner with null placeholders");
+  std::unique_ptr<LLMRunner> runner = std::make_unique<LLMRunner>(
+      std::move(metadata),
+      std::move(tokenizer),
+      std::move(module),
+      nullptr, // text_decoder_runner placeholder
+      nullptr, // text_prefiller placeholder
+      nullptr, // text_token_generator placeholder
+      std::move(stats),
+      nullptr, // io_manager placeholder
+      std::move(runner_config),
+      model_version,
+      temperature);
 
-  if (metadata.count(llm::kHeadDim)) {
-    conf.head_dim = metadata.at(llm::kHeadDim);
-  } else {
-    conf.head_dim = runner_config.head_dim;
-  }
+  const auto& config = runner->get_config();
 
+  ET_LOG(Info, "Instantiate IO Manager");
   auto io_manager =
-      std::make_unique<example::LlmIOManager>(*module.get(), conf);
+      std::make_unique<example::LlmIOManager>(*runner->get_module(), config);
 
-  // Every embedding_strategy (kGlobalOnly, kGlobalAndLocal) requires the
-  // global rotary embedding to be loaded, so a missing/failed load is fatal
-  // rather than something we can silently continue past.
-  if (!runner_paths.pos_embedding_path.has_value()) {
-    ET_LOG(Error, "pos_embedding_path is required to load rotary embedding.");
-    return nullptr;
-  }
-  if (io_manager->load_rotary_embedding(
-          runner_paths.pos_embedding_path.value()) !=
+  ET_LOG(Info, "Start loading Rotary Embedding");
+  if (io_manager->load_rotary_embedding(runner_paths.pos_embedding_path) !=
       executorch::runtime::Error::Ok) {
-    ET_LOG(
-        Error,
-        "Failed to load pos_embedding file at '%s'.",
-        runner_paths.pos_embedding_path.value().c_str());
+    ET_LOG(Error, "Failed to load or precompute pos_embedding.");
     return nullptr;
   }
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
-      get_eos_ids(tokenizer.get(), module.get()));
+      get_eos_ids(runner->get_tokenizer(), runner->get_module()));
 
-  // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
-  // TextPrefiller and TextTokenGenerator
-  auto text_decoder_runner =
-      std::make_unique<example::Decoder>(module.get(), io_manager.get());
+  auto text_decoder_runner = std::make_unique<example::Decoder>(
+      runner->get_module(), io_manager.get());
 
   for (auto method : register_methods) {
     text_decoder_runner->set_method(method);
   }
 
-  // TODO(brucekkim): Refactor to use dynamic runtime checks (e.g., tracking the
-  // loop step counter). Relying solely on configuration properties will fail if
-  // a single-token prompt is processed.
-  bool separated_prefill_decode = (conf.prefill_seq_len > 1);
+  bool separated_prefill_decode =
+      (config.model_args->get_prefill_seq_len() > 1);
   ET_LOG(
       Info,
       "separated_prefill_decode(%s)",
@@ -740,29 +616,22 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   auto text_prefiller = std::make_unique<example::Prefiller>(
       text_decoder_runner.get(),
-      metadata.at(llm::kUseKVCache),
-      metadata.at(llm::kEnableDynamicShape) | (separated_prefill_decode),
-      conf.prefill_seq_len);
+      runner->get_metadata().at(llm::kUseKVCache),
+      runner->get_metadata().at(llm::kEnableDynamicShape) |
+          (separated_prefill_decode),
+      config.model_args->get_prefill_seq_len());
 
-  auto stats = std::make_unique<llm::Stats>();
   auto text_token_generator = std::make_unique<example::TokenGenerator>(
-      tokenizer.get(),
+      runner->get_tokenizer(),
       text_decoder_runner.get(),
-      metadata.at(llm::kUseKVCache),
+      runner->get_metadata().at(llm::kUseKVCache),
       std::move(eos_ids),
-      stats.get());
+      stats_ptr);
 
-  std::unique_ptr<LLMRunner> runner = std::make_unique<LLMRunner>(
-      std::move(metadata),
-      std::move(tokenizer),
-      std::move(module),
-      std::move(text_decoder_runner),
-      std::move(text_prefiller),
-      std::move(text_token_generator),
-      std::move(stats),
-      std::move(io_manager),
-      runner_config.model_version,
-      runner_config.temperature);
+  runner->set_io_manager(std::move(io_manager));
+  runner->set_text_decoder_runner(std::move(text_decoder_runner));
+  runner->set_text_prefiller(std::move(text_prefiller));
+  runner->set_text_token_generator(std::move(text_token_generator));
 
   runner->load();
 

@@ -21,6 +21,7 @@ list(
   PREPEND
   _enn_llm_runner__srcs
   ${CMAKE_CURRENT_LIST_DIR}/runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/config.cpp
   ${CMAKE_CURRENT_LIST_DIR}/decoder.cpp
   ${CMAKE_CURRENT_LIST_DIR}/prefiller.cpp
   ${CMAKE_CURRENT_LIST_DIR}/io_manager.cpp
