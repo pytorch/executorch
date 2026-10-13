@@ -139,6 +139,23 @@ void RunnerConfig::load_from_json() {
           src["sliding_window"].is_number_integer()) {
         args->text_config.sliding_window = src["sliding_window"].get<int64_t>();
       }
+      if (src.contains("num_kv_shared_layers") &&
+          src["num_kv_shared_layers"].is_number_integer()) {
+        args->num_kv_shared_layers = src["num_kv_shared_layers"].get<int64_t>();
+      }
+      if (src.contains("sliding_window_pattern") &&
+          src["sliding_window_pattern"].is_number_integer()) {
+        args->sliding_window_pattern =
+            src["sliding_window_pattern"].get<int64_t>();
+      }
+      if (src.contains("layer_types") && src["layer_types"].is_array()) {
+        args->is_full_attention.clear();
+        for (const auto& layer_type : src["layer_types"]) {
+          args->is_full_attention.push_back(
+              layer_type.is_string() &&
+              layer_type.get<std::string>() == "full_attention");
+        }
+      }
       model_args = std::move(args);
       break;
     }

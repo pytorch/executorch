@@ -19,6 +19,7 @@
 #include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/token_generator.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/vision_encoder.h>
 
 namespace example {
 
@@ -66,6 +67,9 @@ class LLMRunner : public llm::IRunner {
   const RunnerConfig& get_config() const {
     return config_;
   }
+  RunnerConfig& get_config() {
+    return config_;
+  }
   extension::Module* get_module() const {
     return module_.get();
   }
@@ -89,6 +93,12 @@ class LLMRunner : public llm::IRunner {
       std::unique_ptr<example::TokenGenerator> generator) {
     text_token_generator_ = std::move(generator);
   }
+  void set_vision_encoder(std::unique_ptr<VisionEncoder> encoder) {
+    vision_encoder_ = std::move(encoder);
+  }
+  VisionEncoder* get_vision_encoder() const {
+    return vision_encoder_.get();
+  }
 
   // TODO (brucekk.kim): should it be static?
   static std::string get_formatted_prompt(
@@ -96,7 +106,7 @@ class LLMRunner : public llm::IRunner {
       const std::string& system_prompt,
       DecoderModelVersion version);
 
-  void reset() {};
+  void reset();
 
  private:
   bool shouldStop_{false};
@@ -109,6 +119,8 @@ class LLMRunner : public llm::IRunner {
   std::unique_ptr<llm::TextPrefiller> text_prefiller_;
   std::unique_ptr<example::TokenGenerator> text_token_generator_;
   std::unique_ptr<llm::IOManager> io_manager_;
+
+  std::unique_ptr<VisionEncoder> vision_encoder_;
 
   std::unique_ptr<llm::Stats> stats_;
 
