@@ -8,14 +8,61 @@ import copy
 import unittest
 
 import torch
+from executorch.examples.models.llama.attention import AttentionMHA, RingKVCache
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.rope import Rope
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
     CachePositionsManagerWithSink,
+    enable_attention_sink,
     KVCacheWithAttentionSink,
     RopeWithAttentionSink,
 )
 from parameterized import parameterized
+
+
+class EnableAttentionSinkTest(unittest.TestCase):
+    @parameterized.expand([(16, 8, 16), (64, 4, 12), (12, 8, 16)])
+    def test_zero_sink_uses_ring_cache(self, context_size, chunk_size, cache_size):
+        params = ModelArgs(
+            dim=16,
+            n_layers=1,
+            n_heads=2,
+            head_dim=8,
+            vocab_size=32,
+            max_context_len=context_size,
+            max_seq_len=chunk_size,
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+        )
+        model = torch.nn.Module()
+        model.rope = Rope(params)
+        model.attention = AttentionMHA(params, 0, model.rope)
+        model.double()
+        enable_attention_sink(model, params, sink_size=0, window_size=8)
+
+        cache = model.attention.kv_cache
+        self.assertIsInstance(cache, RingKVCache)
+        self.assertTrue(cache.is_ring_buffer)
+        self.assertEqual(cache.k_cache.shape, (1, 2, cache_size, 8))
+        self.assertEqual(cache.k_cache.dtype, torch.float64)
+        self.assertEqual(model.rope.ring_size, cache_size)
+
+        cos, sin = model.rope.get_freqs(torch.tensor([cache_size - 2]), 4)
+        positions = [cache_size - 2, cache_size - 1, 0, 1]
+        torch.testing.assert_close(cos, model.rope.freqs_cos[positions])
+        torch.testing.assert_close(sin, model.rope.freqs_sin[positions])
+
+        for start in range(0, 2 * cache_size, chunk_size):
+            values = torch.arange(start, start + chunk_size, dtype=torch.float64)
+            values = values.reshape(1, 1, chunk_size, 1).expand(1, 2, -1, 8)
+            cache.update(torch.tensor([start]), values, values)
+            mask = cache.create_causal_mask_for_ring_buffer(start, chunk_size)
+            visible_positions = cache.k_cache[0, 0, :, 0][mask[0] == 0]
+            torch.testing.assert_close(
+                visible_positions.sort().values,
+                torch.arange(max(0, start - 7), start + 1, dtype=torch.float64),
+            )
 
 
 class RopeWithAttentionSinkTest(unittest.TestCase):

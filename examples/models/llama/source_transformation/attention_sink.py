@@ -18,6 +18,7 @@ from executorch.examples.models.llama.attention import (
     _create_causal_mask_for_ring_buffer,
     AttentionMHA,
     KVCache,
+    RingKVCache,
 )
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
@@ -378,18 +379,31 @@ def _replace_attention(
 
         if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
-            child_module.kv_cache = KVCacheWithAttentionSink(
-                n_heads=kv_cache.n_heads,
-                head_dim=kv_cache.head_dim,
-                enable_dynamic_shape=kv_cache.enable_dynamic_shape,
-                rope=rope_with_attention_sink,
-                max_batch_size=kv_cache.max_batch_size,
-                window_size=window_size,
-                sink_size=sink_size,
-                max_context_length=kv_cache.max_context_length,
-                max_seq_len=max_seq_len,
-                dtype=kv_cache.k_cache.dtype,
-            )
+            if sink_size == 0:
+                # Match the RoPE modulus, including the input chunk headroom.
+                child_module.kv_cache = RingKVCache(
+                    n_heads=kv_cache.n_heads,
+                    head_dim=kv_cache.head_dim,
+                    enable_dynamic_shape=kv_cache.enable_dynamic_shape,
+                    max_batch_size=kv_cache.max_batch_size,
+                    window_size=window_size,
+                    max_context_length=rope_with_attention_sink.ring_size,
+                    max_seq_len=max_seq_len,
+                    dtype=kv_cache.k_cache.dtype,
+                )
+            else:
+                child_module.kv_cache = KVCacheWithAttentionSink(
+                    n_heads=kv_cache.n_heads,
+                    head_dim=kv_cache.head_dim,
+                    enable_dynamic_shape=kv_cache.enable_dynamic_shape,
+                    rope=rope_with_attention_sink,
+                    max_batch_size=kv_cache.max_batch_size,
+                    window_size=window_size,
+                    sink_size=sink_size,
+                    max_context_length=kv_cache.max_context_length,
+                    max_seq_len=max_seq_len,
+                    dtype=kv_cache.k_cache.dtype,
+                )
             # Don't replace forward - let the original AttentionMHA.forward handle it
             # since our KVCache has is_ring_buffer=True, it will use the ring buffer mask
 
