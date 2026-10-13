@@ -24,7 +24,14 @@ DEFINE_string(
 
 DEFINE_string(data_path, "", "Data file for the model.");
 
+DEFINE_string(
+    tokenizer_type,
+    "tiktoken",
+    "Tokenizer type. One of ['bpe', 'tiktoken'].");
+
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
+
+DEFINE_string(pos_embedding_path, "", "rotary embedding stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
@@ -57,6 +64,8 @@ DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
 DEFINE_bool(decode_only, false, "Whether to run with decode method only.");
 
+DEFINE_bool(use_gemma, false, "Use Gemma model specific processing.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -70,7 +79,13 @@ int32_t main(int32_t argc, char** argv) {
     data_path = FLAGS_data_path.c_str();
   }
 
+  const char* tokenizer_type = FLAGS_tokenizer_type.c_str();
+
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
+
+  std::optional<const std::string> pos_embedding_path =
+      FLAGS_pos_embedding_path.empty() ? std::nullopt
+                                       : std::make_optional(FLAGS_pos_embedding_path.c_str());
 
   ET_LOG(Info, "prompt : %s", FLAGS_prompt.c_str());
   const char* prompt = FLAGS_prompt.c_str();
@@ -85,6 +100,12 @@ int32_t main(int32_t argc, char** argv) {
 
   bool decode_only = FLAGS_decode_only;
 
+  bool use_gemma = FLAGS_use_gemma;
+
+  int num_bos = FLAGS_num_bos;
+
+  int num_eos = FLAGS_num_eos;
+
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
@@ -98,8 +119,16 @@ int32_t main(int32_t argc, char** argv) {
 #endif
 
   // create llama runner
-  std::unique_ptr<llm::IRunner> runner =
-      example::create_llama_runner(model_path, tokenizer_path, data_path, decode_only);
+  example::RunnerPaths runner_paths{
+      .model_path = model_path,
+      .tokenizer_path = tokenizer_path,
+      .pos_embedding_path = pos_embedding_path,
+      .data_path = data_path};
+  example::RunnerConfig runner_config{
+      .tokenizer_type = tokenizer_type,
+      .decode_only = decode_only,
+      .use_gemma = use_gemma};
+  std::unique_ptr<llm::IRunner> runner = example::create_llama_runner(runner_paths, runner_config);
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");
@@ -121,7 +150,8 @@ int32_t main(int32_t argc, char** argv) {
 
   // generate
   executorch::extension::llm::GenerationConfig config{
-      .seq_len = seq_len, .temperature = temperature};
+      .seq_len = seq_len, .temperature = temperature,
+      .num_bos = num_bos, .num_eos = num_eos};
   auto error = runner->generate(prompt, config, {}, {});
   if (error != executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate token from llama runner");

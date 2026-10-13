@@ -10,12 +10,12 @@
 
 #pragma once
 
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/platform/compiler.h>
-#include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/hierarchical_allocator.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace example {
 
@@ -33,8 +33,7 @@ class ET_EXPERIMENTAL Decoder
   explicit Decoder(
       executorch::extension::Module* module,
       llm::IOManager* io_manager)
-      : TextDecoderRunner(module, io_manager),
-      shared_method_memory_(nullptr) {}
+      : TextDecoderRunner(module, io_manager), shared_method_memory_(nullptr) {}
 
   virtual ::executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& input,
@@ -42,7 +41,6 @@ class ET_EXPERIMENTAL Decoder
 
   inline ::executorch::runtime::Error load() override {
     executorch::runtime::Error ret = executorch::runtime::Error::Ok;
-
 
     if (methods_.num > 1) {
       ret = create_shared_planned_memory();
@@ -61,7 +59,8 @@ class ET_EXPERIMENTAL Decoder
       }
 
       if (shared_method_memory_) {
-        ret = module_->load_method(method, shared_method_memory_->allocator.get());
+        ret = module_->load_method(
+            method, shared_method_memory_->allocator.get());
         if (ret != executorch::runtime::Error::Ok) {
           ET_LOG(Error, "Failed to load method");
           return ret;
@@ -98,9 +97,9 @@ class ET_EXPERIMENTAL Decoder
 
     ET_LOG(Info, "method[%d] : %s", methods_.num - 1, method.c_str());
 
-    int i = 0;
     for (int i = 0; i < methods_.num; i++) {
-      ET_LOG(Info, "Registered method[%d] : \"%s\"", i, methods_.name[i].c_str());
+      ET_LOG(
+          Info, "Registered method[%d] : \"%s\"", i, methods_.name[i].c_str());
     }
   }
 

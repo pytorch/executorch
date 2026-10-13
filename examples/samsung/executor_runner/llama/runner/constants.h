@@ -17,7 +17,7 @@ inline constexpr auto kNumOfHiddenDim = "get_hidden_dim";
 inline constexpr auto kNumOfHeads = "get_n_heads";
 inline constexpr auto kNumOfKVHeads = "get_n_kv_heads";
 
-static constexpr auto default_method_name = "forward";
-static constexpr auto default_method_name_prefill = "prefill_forward";
-static constexpr auto default_method_name_decode = "decode_forward";
-} // namespace executorch::extension::llm
+inline constexpr auto default_method_name = "forward";
+inline constexpr auto default_method_name_prefill = "prefill_forward";
+inline constexpr auto default_method_name_decode = "decode_forward";
+} // namespace example

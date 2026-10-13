@@ -8,10 +8,12 @@
 
 #pragma once
 
+#include <cstring>
 #include <vector>
 
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llama/runner/rotary_embedding.h>
 
 namespace example {
 
@@ -43,14 +45,17 @@ namespace example {
 class ET_EXPERIMENTAL LlmIOManager
     : public executorch::extension::llm::IOManager {
  public:
-   struct Config {
+  struct Config {
     size_t max_seq_len;
     size_t prefill_seq_len;
+    size_t decode_seq_len;
     size_t n_layers;
     size_t n_kv_heads;
     size_t head_dim;
     size_t attn_mask_rows = 128;
     size_t attn_mask_cols = 1024;
+    size_t sliding_window = 512;
+    bool use_gemma = false;
   };
 
   /**
@@ -60,17 +65,38 @@ class ET_EXPERIMENTAL LlmIOManager
    */
   LlmIOManager(executorch::extension::Module& module, Config config)
       : IOManager(module), module_(module), config_(config) {
-    ET_LOG(Info,
-            "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
-            head_dim(%ld) prefill_seq_len(%ld)",
-            ET_FUNCTION, config_.n_layers, config_.n_kv_heads,
-            config_.max_seq_len, config_.head_dim, config_.prefill_seq_len);
+    rotary_embedding_ = std::make_unique<RotaryEmbedding>(RotaryEmbedding::Config{config_.head_dim, config_.max_seq_len, config_.use_gemma});
+    ET_LOG(
+        Info,
+        "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
+        head_dim(%ld) prefill_seq_len(%ld) use_gemma(%d)",
+        ET_FUNCTION,
+        config_.n_layers,
+        config_.n_kv_heads,
+        config_.max_seq_len,
+        config_.head_dim,
+        config_.prefill_seq_len,
+        config_.use_gemma);
     (void)module_;
 
     prefill_cache_len_ = config_.max_seq_len - config_.prefill_seq_len;
     decode_cache_len_ = config_.max_seq_len - 1;
 
     allocate_buffers();
+  }
+
+  /**
+   * @brief Load pos_embedding files..
+   * @param pos_embedding_path Pos_embedding file, that include global_cos.bin, global_sin.bin, local_cos.bin, local_sin.bin.
+   */
+  ET_NODISCARD virtual executorch::runtime::Error load_rotary_embedding(std::optional<const std::string> pos_embedding_path);
+
+  /**
+   * @brief Get the use_gemma configuration flag.
+   * @return True if using Gemma model specific processing, false otherwise.
+   */
+  bool use_gemma() const {
+    return config_.use_gemma;
   }
 
   /**
@@ -89,10 +115,14 @@ class ET_EXPERIMENTAL LlmIOManager
       const std::string& prefill_method,
       const std::string& decode_method) override {
     ET_LOG(Info,
-            "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
-            head_dim(%ld) prefill_seq_len(%ld)",
-            ET_FUNCTION, config_.n_layers, config_.n_kv_heads,
-            config_.max_seq_len, config_.head_dim, config_.prefill_seq_len);
+          "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
+          head_dim(%ld) prefill_seq_len(%ld)",
+          ET_FUNCTION,
+          config_.n_layers,
+          config_.n_kv_heads,
+          config_.max_seq_len,
+          config_.head_dim,
+          config_.prefill_seq_len);
 
     return executorch::runtime::Error::Ok;
   }
@@ -116,13 +146,13 @@ class ET_EXPERIMENTAL LlmIOManager
 
     for (size_t l = 0; l < config_.n_layers; l++) {
       std::fill(
-          prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0.0f);
+          prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
       std::fill(
-          prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0.0f);
+          prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
       std::fill(
-          decode_k_input_[l].begin(), decode_k_input_[l].end(), 0.0f);
+          decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
       std::fill(
-          decode_v_input_[l].begin(), decode_v_input_[l].end(), 0.0f);
+          decode_v_input_[l].begin(), decode_v_input_[l].end(), 0);
     }
     std::fill(attn_mask_.begin(), attn_mask_.end(), 0.0f);
 
@@ -246,10 +276,10 @@ class ET_EXPERIMENTAL LlmIOManager
   }
 
  private:
- void dump_buffer(
+  void dump_buffer(
       const std::string& tag,
       size_t layer,
-      const _Float16* data,
+      const char* data,
       size_t size);
   void dump_kv_input(const std::string& phase);
   void dump_kv_output(
@@ -258,11 +288,27 @@ class ET_EXPERIMENTAL LlmIOManager
 
   void allocate_buffers();
 
+  /**
+   * @brief Calculate the number of inputs to reserve for prefill/decode.
+   *
+   * The total depends on whether the model is Gemma:
+   *   - Gemma: 7 + n_layers * 2
+   *   - Non-Gemma: 4 + n_layers * 2
+   *
+   * @return The reserve size for the inputs vector.
+   */
+  size_t get_input_reserve_size() const {
+    if (config_.use_gemma)
+      return 7 + config_.n_layers * 2;
+    else
+      return 4 + config_.n_layers * 2;
+  }
+
   bool dump_enabled_ = false;
   mutable size_t dump_step_ = 0;
   std::string dump_dir_ = "/data/local/tmp/kv_cache_dump";
 
-    /**
+  /**
    * Copy prefill output KV cache (layout [1,H,prefill_cache_len,D]) into
    * the decode input buffer (layout [1,H,decode_cache_len,D]).
    *
@@ -271,15 +317,73 @@ class ET_EXPERIMENTAL LlmIOManager
   void copy_prefill_to_decode_input();
 
   /**
-   * Copy new cache entries from output (layout [1,H,new_len,D]) into the
-   * decode input buffer (layout [1,H,cache_len,D]) at the given position.
+   * Copy model KV-cache outputs into the given buffers and dump them.
+   *
+   * @param model_outputs  [logits, k0..k_{L-1}, v0..v_{L-1}]
+   * @param k_bufs  per-layer K cache buffers (input/output)
+   * @param v_bufs  per-layer V cache buffers (input/output)
+   * @param cache_len  length of each cache buffer
+   * @param new_len  number of new tokens to copy (prefill_seq_len or 1)
+   * @param phase  dump label ("prefill" or "decode")
+   */
+  void update_kv_cache(
+      const std::vector<executorch::runtime::EValue>& model_outputs,
+      std::vector<std::vector<char>>& k_bufs,
+      std::vector<std::vector<char>>& v_bufs,
+      size_t cache_len,
+      size_t new_len,
+      const std::string& phase);
+
+  /**
+   * Copy new cache entries from source data (layout [1,H,new_len,D]) into the
+   * cache buffer (layout [1,H,cache_len,D]) at the given position.
    *
    * For each head h:
    *   cache[h * cache_len * D + pos * D .. + (pos + new_len) * D]
    *     = src[h * new_len * D .. + new_len * D]
    */
-  void copy_to_cache(const _Float16* src, size_t new_len,
-      _Float16* cache, size_t cache_len, size_t pos);
+  template <typename T>
+  void copy_to_cache(const T* src, size_t new_len,
+      char* cache, size_t cache_len, size_t pos) {
+    for (size_t h = 0; h < config_.n_kv_heads; h++) {
+      const T* src_head = src + h * new_len * config_.head_dim;
+      char* dst_head =
+          cache + h * cache_len * config_.head_dim * sizeof(T)
+              + pos * config_.head_dim * sizeof(T);
+      std::memcpy(
+          dst_head, src_head, new_len * config_.head_dim * sizeof(T));
+    }
+  }
+
+  /**
+   * Copy tensor data to cache buffer, dispatching based on kv_scalar_type.
+   * Handles both Half (float16) and Float (float32) types.
+   */
+  void copy_tensor_to_cache(
+      const executorch::aten::Tensor& tensor,
+      size_t new_len,
+      char* cache,
+      size_t cache_len,
+      size_t pos) {
+    const float* data = tensor.const_data_ptr<float>();
+    copy_to_cache<float>(data, new_len, cache, cache_len, pos);
+  }
+
+  /**
+   * Append KV-cache input tensors for all layers.
+   *
+   * For each layer l, creates k and v tensors from the given buffers
+   * (shape [1, n_kv_heads, cache_len, head_dim]) and appends them
+   * to both the per-phase tensor wrappers and the model inputs vector.
+   */
+  void append_kv_input_tensors(
+      std::vector<std::vector<char>>& k_bufs,
+      std::vector<std::vector<char>>& v_bufs,
+      std::vector<executorch::extension::TensorPtr>& k_tensors,
+      std::vector<executorch::extension::TensorPtr>& v_tensors,
+      executorch::aten::ScalarType kv_scalar_type,
+      size_t cache_len,
+      std::vector<executorch::runtime::EValue>& inputs) const;
 
   /**
    * Update the attention mask for a causal (lower-triangular) pattern.
@@ -287,6 +391,28 @@ class ET_EXPERIMENTAL LlmIOManager
    * positions [0, pos + r] (value 1) and masks future positions (value 0).
    */
   void update_attn_mask(size_t pos, size_t seq_len);
+
+  /**
+   * @brief Prepare rotary embedding inputs for quantized models.
+   *
+   * This helper function computes and adds the rotary embedding tensors
+   * (global_cos, global_sin, local_cos, local_sin) to the inputs vector.
+   * It is used by both prepare_prefill and prepare_decode to avoid code
+   * duplication.
+   *
+   * @param seq_len The sequence length to use for the embedding computation.
+   * @param inputs Vector of EValue inputs to append the embedding tensors to.
+   */
+  void prepare_rotary_embedding_inputs(
+      size_t seq_len,
+      std::vector<executorch::runtime::EValue>& inputs);
+
+  /**
+   * Update the local_attention mask for a causal (lower-triangular) pattern.
+   * For each query row r in [0, seq_len), the mask allows attending to
+   * positions [0, pos + r] (value 1) and masks future positions (value 0).
+   */
+  void update_local_attn_mask(size_t pos, size_t seq_len);
 
   /**
    * @brief Reference to the Module used for method metadata and execution.
@@ -303,14 +429,29 @@ class ET_EXPERIMENTAL LlmIOManager
   std::vector<int64_t> pos_ids_;
 
   // Per-layer input buffers: [1, n_kv_heads, cache_len, head_dim] flattened
-  std::vector<std::vector<_Float16>> prefill_k_input_;
-  std::vector<std::vector<_Float16>> prefill_v_input_;
-  std::vector<std::vector<_Float16>> decode_k_input_;
-  std::vector<std::vector<_Float16>> decode_v_input_;
+  // Use std::vector<char> to support both float and half (float16) data types
+  std::vector<std::vector<char>> prefill_k_input_;
+  std::vector<std::vector<char>> prefill_v_input_;
+  std::vector<std::vector<char>> decode_k_input_;
+  std::vector<std::vector<char>> decode_v_input_;
+
+  std::unique_ptr<example::RotaryEmbedding> rotary_embedding_;
+
+  std::vector<float> global_cos_data_;
+  std::vector<float> global_sin_data_;
+  std::vector<float> local_cos_data_;
+  std::vector<float> local_sin_data_;
+
+  executorch::extension::TensorPtr global_cos_tensor_;
+  executorch::extension::TensorPtr global_sin_tensor_;
+  executorch::extension::TensorPtr local_cos_tensor_;
+  executorch::extension::TensorPtr local_sin_tensor_;
 
   // Attention mask buffer: [attn_mask_rows, attn_mask_cols] flattened
   std::vector<float> attn_mask_;
+  std::vector<float> local_attn_mask_;
   executorch::extension::TensorPtr attn_mask_tensor_;
+  executorch::extension::TensorPtr local_attn_mask_tensor_;
 
   // Tensor wrappers (kept alive between prepare and model execution)
   std::vector<executorch::extension::TensorPtr> prefill_k_input_tensors_;

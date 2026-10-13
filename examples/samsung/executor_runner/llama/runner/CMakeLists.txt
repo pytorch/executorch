@@ -24,6 +24,7 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/decoder.cpp
   ${CMAKE_CURRENT_LIST_DIR}/prefiller.cpp
   ${CMAKE_CURRENT_LIST_DIR}/io_manager.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/rotary_embedding.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../examples/models/llama/tokenizer/llama_tiktoken.cpp
 )
 

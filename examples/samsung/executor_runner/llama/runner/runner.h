@@ -23,6 +23,26 @@ namespace example {
 
 namespace llm = ::executorch::extension::llm;
 
+/**
+ * @brief Holds path-related configuration for creating a llama runner.
+ */
+struct RunnerPaths {
+  std::string model_path;
+  std::string tokenizer_path;
+  std::optional<std::string> pos_embedding_path = std::nullopt;
+  std::optional<std::string> data_path = std::nullopt;
+};
+
+/**
+ * @brief Holds non-path configuration for creating a llama runner.
+ */
+struct RunnerConfig {
+  std::string tokenizer_type;
+  bool decode_only = false;
+  bool use_gemma = false;
+  float temperature = -1.0f;
+};
+
 class LLMRunner : public llm::IRunner {
  public:
   /**
@@ -174,13 +194,7 @@ class LLMRunner : public llm::IRunner {
 };
 
 std::unique_ptr<llm::IRunner> create_llama_runner(
-    const std::string& model_path,
-    const std::string& tokenizer_path,
-    std::optional<const std::string> data_path = std::nullopt,
-    bool decode_only = false,
-    float temperature = -1.0f);
-
-std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
-    const std::string& tokenizer_path);
+    const RunnerPaths& paths,
+    const RunnerConfig& config);
 
 } // namespace example
