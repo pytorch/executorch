@@ -300,7 +300,10 @@ class TestProgram {
             &outputs));
   }
 
-  std::vector<uint8_t> finish(const std::string& output) {
+  std::vector<uint8_t> finish(
+      const std::string& output,
+      fbs::OutputKind kind = fbs::OutputKind::USER_OUTPUT,
+      const char* target = "") {
     const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
         fbs::CreateNamedArgumentDirect(
             builder_, "", create_tensor_arg(builder_, output.c_str()))};
@@ -323,7 +326,7 @@ class TestProgram {
         create_strings(builder_, outputs),
         builder_.CreateVector(values_));
     const auto output_spec =
-        fbs::CreateOutputSpecDirect(builder_, output.c_str());
+        fbs::CreateOutputSpecDirect(builder_, output.c_str(), kind, target);
     const auto method = fbs::CreateMethod(
         builder_,
         builder_.CreateString("forward"),
@@ -467,6 +470,52 @@ TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
           "torch.ops.aten.linear.default", /*with_cache=*/true));
   auto executable = context->compile("forward");
   EXPECT_THROW(context->compile("forward"), std::runtime_error);
+}
+
+void expect_compile_error(
+    const std::vector<uint8_t>& program,
+    const std::string& message) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program);
+  try {
+    context->compile("forward");
+    FAIL() << "compile accepted the program";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(std::string(error.what()).find(message), std::string::npos)
+        << error.what();
+  }
+}
+
+TEST(GgmlEngineTest, RejectsUserInputMutation) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {2, 3});
+  program.call(
+      "doubled",
+      "torch.ops.aten.add.Tensor",
+      {{"self", std::string("x")}, {"other", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {2, 3});
+  expect_compile_error(
+      program.finish("doubled", fbs::OutputKind::USER_INPUT_MUTATION, "x"),
+      "user input mutation");
+}
+
+TEST(GgmlEngineTest, RejectsCustomSdpaDropout) {
+  TestProgram program;
+  program.input("query", fbs::ScalarType::FLOAT, {1, 2, 2, 8});
+  program.buffer("key", {1, 8, 2, 8});
+  program.buffer("value", {1, 8, 2, 8});
+  program.call(
+      "attention",
+      "torch.ops.llama.custom_sdpa.default",
+      {{"query", std::string("query")},
+       {"key", std::string("key")},
+       {"value", std::string("value")},
+       {"start_pos", int64_t{0}},
+       {"dropout_p", 0.5}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 2, 8});
+  expect_compile_error(program.finish("attention"), "dropout");
 }
 
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
