@@ -156,7 +156,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter 0.10.0')\n"
+        "    print('model-converter 0.11.0')\n"
         "    raise SystemExit(0)\n"
         "raise SystemExit(1)\n",
     )
@@ -168,7 +168,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
 
     assert result.status == check_env.STATUS_OK
     assert str(converter) in result.detail
-    assert "0.10.0" in result.detail
+    assert "0.11.0" in result.detail
 
 
 def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
@@ -177,7 +177,7 @@ def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter 0.9.0')\n"
+        "    print('model-converter 0.10.0')\n"
         "    raise SystemExit(0)\n"
         "raise SystemExit(1)\n",
     )
@@ -188,8 +188,8 @@ def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
     result = check_env._check_model_converter()
 
     assert result.status == check_env.STATUS_FAIL
-    assert "0.9.0" in result.detail
     assert "0.10.0" in result.detail
+    assert "0.11.0" in result.detail
     assert result.action is not None
 
 
@@ -212,7 +212,7 @@ def test_model_converter_check_fails_when_version_is_unparseable(monkeypatch, tm
     assert result.status == check_env.STATUS_FAIL
     assert "could not be parsed" in result.detail
     assert result.action is not None
-    assert "0.10.0" in result.action
+    assert "0.11.0" in result.action
 
 
 def test_get_model_converter_version_text(monkeypatch, tmp_path):
@@ -279,7 +279,7 @@ def test_below_minimum_model_converter_reason(monkeypatch, tmp_path):
         requirement_name="the copied RIFE VGF quant tests",
     ) == (
         "model-converter d8c1b8e is below the minimum supported version "
-        "0.10.0 required for the copied RIFE VGF quant tests"
+        "0.11.0 required for the copied RIFE VGF quant tests"
     )
 
 
@@ -626,7 +626,11 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
         "raise SystemExit(0)\n",
     )
 
-    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(converter))
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: tmp_path,
+    )
 
     preflight = check_env._check_model_converter()
     compiled = vgf_backend.vgf_compile(
@@ -637,3 +641,103 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
     assert preflight.status == check_env.STATUS_OK
     assert str(converter) in preflight.detail
     assert compiled == b"compiled-vgf"
+
+
+def test_model_converter_resolution_ignores_path_and_environment(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    trusted_converter = _make_executable(
+        trusted_scripts / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 99\n",
+    )
+
+    # Both mechanisms are at an attacker-controlled
+    # executable. Neither is allowed to participate in executable selection.
+    monkeypatch.setenv("PATH", str(attacker_dir))
+    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(attacker_converter))
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    resolved = model_converter.find_model_converter_binary()
+
+    assert resolved == str(trusted_converter.resolve())
+    assert resolved != str(attacker_converter.resolve())
+
+
+def test_model_converter_resolution_does_not_fall_back_to_path(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    monkeypatch.setenv("PATH", str(attacker_dir))
+    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(attacker_converter))
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    assert model_converter.find_model_converter_binary() is None
+
+
+def test_model_converter_resolver_rejects_bare_command_name():
+    assert model_converter.resolve_model_converter_executable("model-converter") is None
+    assert model_converter.resolve_model_converter_executable("model_converter") is None
+
+
+def test_model_converter_resolution_rejects_symlink(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    trusted_name = trusted_scripts / "model-converter"
+
+    try:
+        trusted_name.symlink_to(attacker_converter)
+    except OSError:
+        pytest.skip("symlinks are not supported in this environment")
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    assert model_converter.find_model_converter_binary() is None

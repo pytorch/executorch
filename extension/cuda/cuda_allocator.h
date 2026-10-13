@@ -63,7 +63,10 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
   // --- Async (stream-based) operations for SlimTensor/Storage layer ---
 
   /**
-   * Allocate device memory asynchronously on the given CUDA stream.
+   * Allocate device memory asynchronously on the given CUDA stream, from this
+   * allocator's pool for the device. On a device without memory pools it falls
+   * back to cudaMalloc, which the caller's stream ordering still covers, and
+   * refuses while `stream` is capturing a CUDA graph.
    */
   static executorch::runtime::Result<void*> allocate_async(
       size_t nbytes,
@@ -71,9 +74,48 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
       cudaStream_t stream);
 
   /**
-   * Deallocate device memory asynchronously on the given CUDA stream.
+   * Deallocate device memory asynchronously on the given CUDA stream. Memory on
+   * a device without memory pools is released with cudaFree instead, except
+   * while `stream` is capturing a CUDA graph, when it is kept because the graph
+   * may still use it.
    */
   static void deallocate_async(
+      void* ptr,
+      executorch::runtime::etensor::DeviceIndex index,
+      cudaStream_t stream);
+
+  /**
+   * Whether a device supports the stream-ordered allocator (memory pools).
+   * Data-center GPUs in TCC mode on Windows do not; there cudaMallocAsync and
+   * CUDA graph memory are unavailable, and allocations fall back to cudaMalloc.
+   * Always true on ROCm.
+   *
+   * @param index Device to query, or a negative value for the current one.
+   */
+  static bool memory_pools_supported(
+      executorch::runtime::etensor::DeviceIndex index);
+
+  /**
+   * Stream-ordered scratch from the device default pool, which is what
+   * cudaMallocAsync on `stream` gives, for callers that do not want this
+   * allocator's retaining pool. On a device without memory pools it falls back
+   * to cudaMalloc, and refuses while `stream` is capturing a CUDA graph, since
+   * a synchronous allocation cannot be recorded into one.
+   *
+   * @param index The device `stream` belongs to.
+   */
+  static executorch::runtime::Result<void*> allocate_stream_ordered(
+      size_t nbytes,
+      executorch::runtime::etensor::DeviceIndex index,
+      cudaStream_t stream);
+
+  /**
+   * Frees memory from allocate_stream_ordered on the same device and stream.
+   * Returns Error::Internal when the free fails (cudaFreeAsync, or cudaFree on
+   * a device without memory pools), and Error::NotSupported when such a device
+   * keeps the block because `stream` is capturing a CUDA graph.
+   */
+  static executorch::runtime::Error deallocate_stream_ordered(
       void* ptr,
       executorch::runtime::etensor::DeviceIndex index,
       cudaStream_t stream);

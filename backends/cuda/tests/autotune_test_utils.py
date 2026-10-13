@@ -1,0 +1,164 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Helpers to check AOTInductor's autotune picks while the CPU is saturated."""
+
+import contextlib
+import multiprocessing
+import os
+import signal
+import statistics
+import time
+from typing import Iterator, NamedTuple
+
+import torch
+from executorch.backends.cuda.autotune import cuda_graph_timing as cgt
+from torch._inductor.runtime.triton_heuristics import CachingAutotuner
+from torch._inductor.select_algorithm import AlgorithmSelectorCache
+
+
+class Pick(NamedTuple):
+    kind: (
+        str  # "inductor", "template" (matmul choice) or "custom" (our triton.autotune)
+    )
+    name: str
+    candidates: int
+    regret: float  # _regret() of the pick's and the best's reference times
+    best_us: float  # the best candidate's reference time
+
+
+# Event timing is quantized: cudaEventElapsedTime steps by 0.512 us on the A10G
+# CI GPU (CUDA documents about 0.5 us), hipEventElapsedTime by about 1 us. For
+# a kernel of a few microseconds one step reads as a large ratio (3.072 us vs
+# 2.560 us is 1.2x) although quantization alone can produce it.
+_EVENT_TICK_MS = 1e-3 if torch.version.hip is not None else 0.512e-3
+_FLOAT32_EPS = 2.0**-23
+
+
+def _regret(pick_ms: float, best_ms: float) -> float:
+    """pick / best, scored with one event tick of tolerance.
+
+    A reading is the difference of two quantized timestamps, so it can fall
+    either side of the true time by about a tick. Crediting the best one extra
+    tick keeps a difference the timer cannot resolve from counting as a worse
+    pick; it is a tolerance, not a bound. The margins absorb the float32
+    rounding of the two event times (at most one float32 epsilon each)."""
+    credited = best_ms * (1.0 + 2 * _FLOAT32_EPS) + 1.001 * _EVENT_TICK_MS
+    return max(pick_ms / credited, 1.0)
+
+
+def _spin(stop_at: float) -> None:
+    while time.time() < stop_at:
+        pass
+
+
+class SaturatedCpu:
+    """One busy-loop process per core; can be paused to measure a reference."""
+
+    def __init__(self) -> None:
+        stop_at = time.time() + 3600
+        self.workers = [
+            multiprocessing.Process(target=_spin, args=(stop_at,), daemon=True)
+            for _ in range(os.cpu_count() or 1)
+        ]
+
+    def __enter__(self) -> "SaturatedCpu":
+        for w in self.workers:
+            w.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        for w in self.workers:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(w.pid, signal.SIGCONT)
+            w.terminate()
+        for w in self.workers:
+            w.join(timeout=10)
+
+    @contextlib.contextmanager
+    def paused(self) -> Iterator[None]:
+        for w in self.workers:
+            os.kill(w.pid, signal.SIGSTOP)
+        try:
+            yield
+        finally:
+            for w in self.workers:
+                os.kill(w.pid, signal.SIGCONT)
+
+
+@contextlib.contextmanager
+def record_autotune_picks(
+    cpu: SaturatedCpu, picks: list, measure: bool = True
+) -> Iterator[None]:
+    """For each autotune decision taken inside the context, re-time every
+    candidate with the CPU paused (CUDA-graph timing, best of two) and append
+    a ``Pick`` scoring the pick against the best candidate (see _regret).
+
+    With ``measure=False`` nothing is re-timed: each decision is recorded with
+    its candidate count and a regret of 1.0."""
+    orig_kernel = CachingAutotuner.benchmark_all_configs
+    orig_choices = AlgorithmSelectorCache.benchmark_choices
+
+    def record(kind, name, timings, reference):
+        valid = {c: t for c, t in reference.items() if t != float("inf")}
+        used = {c: t for c, t in timings.items() if c in valid and t != float("inf")}
+        if len(valid) < 2 or not used:
+            return
+        pick = min(used, key=used.get)
+        best = min(valid.values())
+        regret = _regret(valid[pick], best)
+        picks.append(Pick(kind, str(name), len(valid), regret, best * 1000.0))
+
+    def kernel_hook(self, *args, **kwargs):
+        timings = orig_kernel(self, *args, **kwargs)
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    launcher: min(
+                        self.bench(launcher, *args, **kwargs) for _ in range(2)
+                    )
+                    for launcher in timings
+                }
+            self.reset_to_zero_args(*args, **kwargs)
+        kind = "custom" if self.custom_kernel else "inductor"
+        record(kind, self.inductor_meta.get("kernel_name"), timings, reference)
+        return timings
+
+    def choices_hook(cls, choices, autotune_args, *args, **kwargs):
+        timings = orig_choices.__func__(cls, choices, autotune_args, *args, **kwargs)
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
+                    for c in timings
+                }
+        record("template", type(next(iter(timings))).__name__, timings, reference)
+        return timings
+
+    CachingAutotuner.benchmark_all_configs = kernel_hook
+    AlgorithmSelectorCache.benchmark_choices = classmethod(choices_hook)
+    try:
+        yield
+    finally:
+        CachingAutotuner.benchmark_all_configs = orig_kernel
+        AlgorithmSelectorCache.benchmark_choices = orig_choices
+
+
+def summarize(picks: list) -> str:
+    if not picks:
+        return "no autotune decisions recorded"
+    regrets = [p.regret for p in picks]
+    kinds = {
+        k: sum(1 for p in picks if p.kind == k)
+        for k in ("inductor", "template", "custom")
+    }
+    return (
+        f"{len(picks)} decisions {kinds}: mean regret {statistics.mean(regrets):.3f}x, "
+        f"worst {max(regrets):.3f}x, >1.10x: {sum(r > 1.10 for r in regrets)}, "
+        f"fastest kernel {min(p.best_us for p in picks):.1f} us"
+    )

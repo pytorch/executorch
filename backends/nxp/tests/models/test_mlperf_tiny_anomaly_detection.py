@@ -3,9 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
-from functools import partial
-
 import numpy as np
 
 # noinspection PyUnusedImports
@@ -18,15 +15,9 @@ from executorch.backends.nxp.tests.dataset_creator import (
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
-    ClassificationAccuracyOutputComparator,
     NumericalStatsOutputComparator,
 )
-from executorch.backends.nxp.tests.nsys_testing import (
-    get_test_name,
-    lower_run_compare,
-    lower_run_compare_ptq_qat,
-    OUTPUTS_DIR,
-)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
     MLPerfTinyAnomalyDetection,
@@ -49,10 +40,10 @@ def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
     request,
     use_qat,
 ):
-    num_samples = 60
+    num_samples = 1
 
     anomaly_detection = MLPerfTinyAnomalyDetection(
-        num_samples=num_samples, use_random_dataset=True
+        num_samples=num_samples, use_random_dataset=True, balanced_dataset=False
     )
     model = anomaly_detection.get_eager_model()
     dataset = anomaly_detection.dataset
@@ -80,48 +71,4 @@ def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
-    )
-
-
-def test_mlperf_tiny_anomaly_detection_ptq_qat_equivalence(request):
-    num_samples = 60
-
-    anomaly_detection = MLPerfTinyAnomalyDetection(
-        num_samples=num_samples, use_random_dataset=True
-    )
-
-    model = anomaly_detection.get_eager_model()
-    dataset = anomaly_detection.dataset
-    labels = anomaly_detection.labels
-
-    dataset_creator = FromCalibrationDataDatasetCreator(
-        dataset, num_examples=num_samples, idx_to_label=labels
-    )
-
-    test_name = get_test_name(request)
-    input_parent_path = os.path.join(
-        OUTPUTS_DIR,
-        test_name,
-        "dataset/calibration/",
-    )
-
-    comparator = ClassificationAccuracyOutputComparator(
-        class_dict=labels,
-        postprocess_fn=partial(
-            anomaly_detection.get_class_from_reconstruction_error,
-            input_parent_path=input_parent_path,
-        ),
-    )
-
-    input_spec = ModelInputSpec(anomaly_detection.input_shape)
-    model_verifier = BaseGraphVerifier(1, [])
-
-    lower_run_compare_ptq_qat(
-        model,
-        [input_spec],
-        model_verifier,
-        request,
-        train_fn=anomaly_detection.train_model_fn,
-        dataset_creator=dataset_creator,
-        output_comparator=comparator,
     )

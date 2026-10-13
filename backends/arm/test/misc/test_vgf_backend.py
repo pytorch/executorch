@@ -1,10 +1,10 @@
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
-# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from unittest import mock
@@ -23,6 +23,8 @@ from executorch.backends.arm.vgf.backend import (
     _copy_failure_artifacts,
     _format_repro_command,
     _replace_converter_input_path,
+    _safe_output_path,
+    _validate_tag_name,
     vgf_compile,
 )
 from executorch.exir.backend.backend_details import PreprocessResult
@@ -175,6 +177,83 @@ def test_compile_tosa_flatbuffer_does_not_duplicate_emit_debug_info(
 
     assert result == b"vgf"
     assert captured_flags == ["--emit-debug-info"]
+
+
+@pytest.mark.parametrize(
+    "tag_name",
+    [
+        "",
+        "delegate_0",
+        "delegate-1",
+        "delegate.2",
+        "Partition_A-1.2",
+    ],
+)
+def test_validate_tag_name_accepts_safe_values(tag_name):
+    assert _validate_tag_name(tag_name) == tag_name
+
+
+@pytest.mark.parametrize(
+    "tag_name",
+    [
+        "..",
+        "../escape",
+        "../../escape",
+        "delegate/../../../escape",
+        "/absolute/escape",
+        r"..\escape",
+        r"delegate\..\..\escape",
+        r"C:\temp\escape",
+        "delegate name",
+        "delegate:name",
+        "delegate$evil",
+    ],
+)
+def test_validate_tag_name_rejects_unsafe_path_values(tag_name):
+    with pytest.raises(ValueError, match="Invalid VGF delegation tag"):
+        _validate_tag_name(tag_name)
+
+
+def test_safe_output_path_accepts_child_path(tmp_path):
+    output_path = _safe_output_path(str(tmp_path), "output.tosa")
+
+    assert output_path == os.path.realpath(tmp_path / "output.tosa")
+
+
+def test_safe_output_path_rejects_parent_traversal(tmp_path):
+    with pytest.raises(
+        ValueError,
+        match="escapes the intended directory",
+    ):
+        _safe_output_path(str(tmp_path), "../outside.tosa")
+
+
+def test_copy_failure_artifacts_rejects_unsafe_tag_name(tmp_path):
+    tosa_path = tmp_path / "input.tosa"
+    artifact_path = tmp_path / "artifacts"
+    tosa_path.write_bytes(b"tosa bytes")
+
+    with pytest.raises(ValueError, match="Invalid VGF delegation tag"):
+        _copy_failure_artifacts(
+            str(tosa_path),
+            str(artifact_path),
+            tag_name="../../outside",
+        )
+
+    assert not list(tmp_path.glob("outside*"))
+
+
+@mock.patch("executorch.backends.arm.vgf.backend.subprocess.run")
+def test_vgf_compile_rejects_unsafe_tag_before_converter_is_invoked(mock_run):
+    with pytest.raises(ValueError, match="Invalid VGF delegation tag"):
+        vgf_compile(
+            b"serialized tosa",
+            [],
+            artifact_path=None,
+            tag_name="../../outside",
+        )
+
+    mock_run.assert_not_called()
 
 
 def test_format_repro_command_quotes_shell_metacharacters():
@@ -348,7 +427,8 @@ def test_vgf_compile_failure_includes_temp_repro_command_without_artifact_path(
     assert "Vgf compiler failed." in error
     assert "Repro command:" in error
     assert "model-converter --some-flag -i" in error
-    assert "output_delegate_0.tosa.vgf" in error
+    assert "output.tosa.vgf" in error
+    assert "output_delegate_0.tosa" not in error
     assert "failed_model_converter_input_delegate_0.tosa" not in error
     assert "Stderr:\nconverter stderr" in error
     assert "Stdout:\nconverter stdout" in error
@@ -390,3 +470,64 @@ def test_vgf_compile_failure_preserves_converter_error_when_artifact_copy_fails(
     assert "cannot copy artifact" in error
     assert "Stderr:\nconverter stderr" in error
     assert "Stdout:\nconverter stdout" in error
+
+
+@mock.patch("executorch.backends.arm.vgf.backend.model_converter_env")
+@mock.patch("executorch.backends.arm.vgf.backend.require_model_converter_executable")
+@mock.patch("executorch.backends.arm.vgf.backend.subprocess.run")
+def test_vgf_compile_success_artifacts_are_distinct_per_tag(
+    mock_run,
+    mock_require_model_converter_executable,
+    mock_model_converter_env,
+    tmp_path,
+):
+    artifact_path = tmp_path / "artifacts"
+
+    mock_require_model_converter_executable.return_value = "model-converter"
+    mock_model_converter_env.return_value = {"PATH": "/test/bin"}
+
+    def fake_converter_run(command, **kwargs):
+        input_path = command[command.index("-i") + 1]
+        output_path = command[command.index("-o") + 1]
+
+        # Make the generated VGF content depend on the TOSA input so the test
+        # verifies both compilation results independently.
+        input_bytes = Path(input_path).read_bytes()
+        Path(output_path).write_bytes(b"vgf:" + input_bytes)
+
+        return backend.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=b"",
+            stderr=b"",
+        )
+
+    mock_run.side_effect = fake_converter_run
+
+    tag0_result = vgf_compile(
+        b"partition zero",
+        [],
+        artifact_path=str(artifact_path),
+        tag_name="tag0",
+    )
+    tag1_result = vgf_compile(
+        b"partition one",
+        [],
+        artifact_path=str(artifact_path),
+        tag_name="tag1",
+    )
+
+    tag0_artifact = artifact_path / "output_tag0.tosa.vgf"
+    tag1_artifact = artifact_path / "output_tag1.tosa.vgf"
+
+    assert tag0_result == b"vgf:partition zero"
+    assert tag1_result == b"vgf:partition one"
+
+    assert tag0_artifact.read_bytes() == b"vgf:partition zero"
+    assert tag1_artifact.read_bytes() == b"vgf:partition one"
+
+    # Regression check: successful compilations must not collapse back onto
+    # the basename of the fixed temporary converter output.
+    assert not (artifact_path / "output.tosa.vgf").exists()
+
+    assert mock_run.call_count == 2

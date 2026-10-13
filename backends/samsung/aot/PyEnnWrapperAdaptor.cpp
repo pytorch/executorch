@@ -16,12 +16,17 @@ namespace enn {
 PYBIND11_MODULE(PyEnnWrapperAdaptor, m) {
   pybind11::class_<PyEnnWrapper, std::shared_ptr<PyEnnWrapper>>(m, "EnnWrapper")
       .def(pybind11::init())
-      .def("Init", &PyEnnWrapper::Init)
+      .def("Init", pybind11::overload_cast<>(&PyEnnWrapper::Init))
+      .def(
+          "Init",
+          pybind11::overload_cast<const py::bytes&>(&PyEnnWrapper::Init))
+      .def("SetOptions", &PyEnnWrapper::SetOptions)
       .def("IsNodeSupportedByBackend", &PyEnnWrapper::IsNodeSupportedByBackend)
       .def(
           "Compile",
           &PyEnnWrapper::Compile,
           "Ahead of time compilation for serialized graph.")
+      .def("GetWeights", &PyEnnWrapper::GetWeights, "Get separated weights.")
       .def("Destroy", &PyEnnWrapper::Destroy, "Release resources.");
 }
 } // namespace enn

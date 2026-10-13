@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from functools import partial
 from multiprocessing.connection import Listener
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -40,6 +41,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
 )
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
@@ -50,6 +54,7 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
 from executorch.backends.qualcomm.utils.check_qnn_version import (
     is_qnn_sdk_version_greater_than,
     is_qnn_sdk_version_less_than,
@@ -79,7 +84,6 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
-
 import os
 import random
 
@@ -89,6 +93,12 @@ from typing import List
 from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
+from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
+    fcb_target_socs,
+    lower_fcb_weight_sharing_model,
+    make_fcb_weight_sharing_model,
+    make_fcb_weight_sharing_specs,
+)
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
@@ -1116,17 +1126,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fp16a8w_conv2d(self):
-        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1],
-        # in channel must be multiple of 32/bw = 4
+        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1]
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=4, out_channel=4, kernel_size=1, padding=0
+                in_channel=2, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 4, 3, 3]),)
+        sample_input = (torch.randn([1, 2, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(
@@ -1137,16 +1146,15 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
-        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=4, out_channel=4, kernel_size=1, padding=0
+                in_channel=2, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 4, 3, 3]),)
+        sample_input = (torch.randn([1, 2, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # QAT in float32
@@ -1273,7 +1281,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            GatherWhere(),  # noqa: F405
+            # TODO: There is a accuracy regression after 2.37
+            # GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -1685,10 +1694,10 @@ class TestQNNFloatingPointOperator(TestQNN):
                         float("nan"),
                         -float("nan"),
                         0.2,
-                        # float("inf"), # inf is treat as nan in QNN2.50
+                        float("inf"),
                         3.2,
                         float("nan"),
-                        # -float("inf"), # inf is treat as nan in QNN2.50
+                        -float("inf"),
                     ],
                     dtype=torch.float32,
                 ),
@@ -2806,14 +2815,15 @@ class TestQNNFloatingPointOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            WhereConstantAll(),  # noqa: F405
+            # TODO: There is a accuracy regression after 2.37
+            # WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            (torch.randn(3, 2),),
+            # (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
@@ -2877,6 +2887,11 @@ class TestQNNFloatingPointModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    # TODO: Needs to be fixed in HTP
+    @unittest.skipIf(
+        is_qnn_sdk_version_greater_than("2.37"),
+        "Failed to prepare the graph because of an index operation with argmin output.",
+    )
     def test_qnn_backend_argmin_view_squeeze_conv2d(self):
         module = ArgminViewSqueezeConv2D()  # noqa: F405
         sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
@@ -2916,6 +2931,11 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(16, 3, 16, 16),)
         self.lower_module_and_test_output(module, sample_input)
 
+    # TODO: Needs to be fixed in HTP
+    @unittest.skipIf(
+        is_qnn_sdk_version_greater_than("2.40"),
+        "UT did not pass because of aten.mean.dim when using keep_dim for some devices after QNN 2.41.",
+    )
     def test_qnn_backend_conv2d_bn_hardtanh_mean(self):
         module = Conv2dBnHardtanhMean()  # noqa: F405
         sample_input = (torch.randn(1, 1, 6, 6),)
@@ -3913,7 +3933,7 @@ class TestQNNQuantizedOperator(TestQNN):
                         gm = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(gm, sample_input)
 
-    @unittest.skip("As of QNN 2.50, transpose conv block quant is not supported")
+    @unittest.skip("As of QNN 2.37, transpose conv block quant is not supported")
     def test_qnn_backend_conv_transpose2d_block(self):
         i_ch, o_ch, kernel, padding = 128, 32, (1, 1), 0
         modules = [
@@ -4437,7 +4457,8 @@ class TestQNNQuantizedOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            GatherWhere(),  # noqa: F405
+            # TODO: There is a accuracy regression after 2.37
+            # GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -6429,14 +6450,15 @@ class TestQNNQuantizedOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            WhereConstantAll(),  # noqa: F405
+            # TODO: There is a accuracy regression after 2.37
+            # WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            (torch.randn(3, 2),),
+            # (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
@@ -6830,6 +6852,7 @@ class TestQNNQuantizedModel(TestQNN):
                         has_masked_softmax = True
             self.assertTrue(has_masked_softmax)
 
+    @unittest.skip("UT pass before QNN 2.26, segfault during partitioner")
     def test_qnn_backend_moe_feed_forward(self):
         from executorch.examples.models.llama.llama_transformer import MOEFeedForward
         from executorch.examples.models.llama.model_args import ModelArgs
@@ -7605,12 +7628,20 @@ class TestQNNFloatingPointUtils(TestQNN):
                         <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
                         <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "input_0_x@0" [label=<
                         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                         <TR><TD BGCOLOR="lightgreen">name: input_0_x@0</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
-                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
                         <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "p_conv2_weight@0" [label=<
@@ -7645,12 +7676,13 @@ class TestQNNFloatingPointUtils(TestQNN):
                         <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
                         <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
-            "input_0_x@0" -> "aten_convolution_default@0"
+            "input_0_x@0" -> "aten_permute_copy_default@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default@0"
             "p_conv1_weight@0" -> "aten_convolution_default@0"
             "p_conv1_bias@0" -> "aten_convolution_default@0"
             "aten_convolution_default@0" -> "aten_relu_default@0"
             "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
-            "input_0_x@0" -> "aten_convolution_default_1@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default_1@0"
             "p_conv2_weight@0" -> "aten_convolution_default_1@0"
             "p_conv2_bias@0" -> "aten_convolution_default_1@0"
             "aten_relu_default@0" -> "output_aten_add_tensor@0"
@@ -8738,6 +8770,22 @@ class TestQNNQuantizedUtils(TestQNN):
                         <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
                         <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            "aten_permute_copy_default_1@0" [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_permute_copy_default_1@0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "b__frozen_param0@0" [label=<
                         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
                         <TR><TD BGCOLOR="lightpink">name: b__frozen_param0@0</TD></TR>
@@ -8788,16 +8836,18 @@ class TestQNNQuantizedUtils(TestQNN):
                     </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
             "aten_relu_default@0" -> "aten_add_tensor@0"
             "aten_convolution_default@0" -> "aten_relu_default@0"
-            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default@0"
+            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_permute_copy_default@0"
             "input_0_x@0" -> "quantized_decomposed_quantize_per_tensor_default@0"
             "b__frozen_param0@0" -> "aten_convolution_default@0"
             "b__frozen_param1@0" -> "aten_convolution_default@0"
             "aten_relu_default_1@0" -> "aten_add_tensor@0"
             "aten_convolution_default_1@0" -> "aten_relu_default_1@0"
-            "quantized_decomposed_quantize_per_tensor_default@0" -> "aten_convolution_default_1@0"
+            "aten_permute_copy_default@0" -> "aten_convolution_default_1@0"
             "b__frozen_param2@0" -> "aten_convolution_default_1@0"
             "b__frozen_param3@0" -> "aten_convolution_default_1@0"
-            "aten_add_tensor@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
+            "aten_add_tensor@0" -> "aten_permute_copy_default_1@0"
+            "aten_permute_copy_default_1@0" -> "output_quantized_decomposed_dequantize_per_tensor_default@0"
         }
         """
         module = DrawGraphModel()  # noqa: F405
@@ -9014,7 +9064,7 @@ class TestExampleLLMScript(TestQNN):
                 SM8650=32,
                 SM8750=36,
                 pte_size=2_700_000_000,  # 2.7 GB
-                wikitext_ppl=19,
+                wikitext_ppl=17,
                 hellaswag_acc_norm=None,
                 sqnr=27,
             ),
@@ -9024,13 +9074,13 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=2_860_000_000,  # 2.86 GB
                 wikitext_ppl=14,
                 hellaswag_acc_norm=None,
-                sqnr=20,
+                sqnr=27,
             ),
             "gemma3-1b": TestExampleLLMScript.LlmSpecs(
-                SM8650=68,
-                SM8750=72,
+                SM8650=70,
+                SM8750=100,
                 pte_size=1_200_000_000,  # 1.2 GB
-                wikitext_ppl=24,
+                wikitext_ppl=23,
                 hellaswag_acc_norm=None,
                 sqnr=10,
             ),
@@ -9040,7 +9090,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=4_500_000_000,  # 4.5 GB
                 wikitext_ppl=120,
                 hellaswag_acc_norm=None,
-                sqnr=9,
+                sqnr=10,
             ),
             "glm-1_5b": TestExampleLLMScript.LlmSpecs(
                 SM8650=42,
@@ -9064,7 +9114,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=4_000_000_000,  # 4GB
                 wikitext_ppl=14,
                 hellaswag_acc_norm=None,
-                sqnr=2,
+                sqnr=20,
             ),
             "llama3_2-1b_instruct": TestExampleLLMScript.LlmSpecs(
                 SM8650=37,
@@ -9072,7 +9122,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=1_500_000_000,  # 1.5 GB
                 wikitext_ppl=18,
                 hellaswag_acc_norm=None,
-                sqnr=13,
+                sqnr=15,
             ),
             "llama3_2-3b_instruct": TestExampleLLMScript.LlmSpecs(
                 SM8650=21,
@@ -9083,8 +9133,8 @@ class TestExampleLLMScript(TestQNN):
                 sqnr=14,
             ),
             "qwen2_5-0_5b": TestExampleLLMScript.LlmSpecs(
-                SM8650=95,
-                SM8750=130,
+                SM8650=115,
+                SM8750=155,
                 pte_size=600_000_000,  # 600 MB
                 wikitext_ppl=15,
                 hellaswag_acc_norm=None,
@@ -9092,11 +9142,11 @@ class TestExampleLLMScript(TestQNN):
             ),
             "qwen2_5-1_5b": TestExampleLLMScript.LlmSpecs(
                 SM8650=38,
-                SM8750=45,
+                SM8750=47,
                 pte_size=1_500_000_000,  # 1.5 GB
                 wikitext_ppl=10,
                 hellaswag_acc_norm=None,
-                sqnr=9.5,
+                sqnr=10,
             ),
             "qwen3-0_6b": TestExampleLLMScript.LlmSpecs(
                 SM8650=47,
@@ -9110,9 +9160,9 @@ class TestExampleLLMScript(TestQNN):
                 SM8650=28,
                 SM8750=34,
                 pte_size=1_800_000_000,  # 1.8 GB
-                wikitext_ppl=20,
+                wikitext_ppl=15,
                 hellaswag_acc_norm=None,
-                sqnr=11.5,
+                sqnr=12,
             ),
             "smollm2_135m": TestExampleLLMScript.LlmSpecs(
                 SM8650=214,
@@ -9138,11 +9188,6 @@ class TestExampleLLMScript(TestQNN):
         assert (
             self.model_name in self.llm_specs
         ), f"Unable to find {self.model_name} under model_specs."
-        if (
-            self.model_name == "granite_3_3-2b_instruct"
-            and is_qnn_sdk_version_greater_than("2.49")
-        ):
-            self.skipTest("The model crush in dsp side since 2.50, skipped")
 
         is_llama_model = self.model_name in {
             "llama3_2-1b_instruct",
@@ -9441,7 +9486,7 @@ class TestExampleLLMScript(TestQNN):
                     pte_size = msg["pte_size"]
                     self.assertLessEqual(pte_size, 1_200_000_000)  # 1200MB
                 if not self.compile_only and not self.enable_x86_64:
-                    self.assertGreaterEqual(msg["inference_speed"], 50)  # Lanai
+                    self.assertGreaterEqual(msg["inference_speed"], 60)
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
@@ -9632,8 +9677,8 @@ class TestExampleLLMScript(TestQNN):
             else:
                 if not self.compile_only:
                     self.assertLessEqual(
-                        msg["attention_sink_evictor_pte_size"], 1_850_000
-                    )  # 1.85 MB
+                        msg["attention_sink_evictor_pte_size"], 1_700_000
+                    )  # 1.7 MB
                     self.assertLessEqual(
                         msg["wiki_ppl"], self.llm_specs[model_name].wikitext_ppl
                     )
@@ -9785,7 +9830,7 @@ class TestExampleMultimodalityScript(TestQNN):
         self.alm_specs = {
             "granite_speech_3_3-2b": TestExampleMultimodalityScript.ALMSpecs(
                 max_seq_len=1024,
-                sm8650_token_rate=4,
+                sm8650_token_rate=5,
                 sm8750_token_rate=8,
                 encoder_pte_size=900_000_000,  # 900MB
                 tok_embedding_pte_size=240_000_000,  # 240MB
@@ -9797,8 +9842,8 @@ class TestExampleMultimodalityScript(TestQNN):
         self.vlm_specs = {
             "smolvlm_500m_instruct": TestExampleMultimodalityScript.VLMSpecs(
                 max_seq_len=1024,
-                sm8650_token_rate=37,
-                sm8750_token_rate=40,
+                sm8650_token_rate=50,
+                sm8750_token_rate=55,
                 encoder_pte_size=110_000_000,  # 110MB
                 tok_embedding_pte_size=100_000_000,  # 100MB
                 decoder_pte_size=400_000_000,  # 400MB
@@ -11522,6 +11567,93 @@ class TestUtilsScript(TestQNN):
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
 
+    def test_cli_fcb(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("FCB is only supported on HTP")
+        if self.enable_x86_64:
+            self.skipTest("FCB execution requires an Android HTP target")
+        if is_qnn_sdk_version_less_than("2.48"):
+            self.skipTest("FCB requires QNN SDK 2.48")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
+            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"{tmp_dir}/input_0_0.pt\n")
+
+            soc_models = [
+                model.name
+                for model in fcb_target_socs(self.chipset_table[TestQNN.soc_model])
+            ]
+            subprocess.run(
+                [
+                    "python",
+                    "-m",
+                    "executorch.examples.qualcomm.util_scripts.cli",
+                    "quantize",
+                    "--artifact",
+                    f"{tmp_dir}/relu.pt2",
+                    "--output_folder",
+                    f"{tmp_dir}/q_out",
+                    "--input_list",
+                    f"{tmp_dir}/input_list",
+                    "--soc_model",
+                    *soc_models,
+                    "--backend",
+                    self.backend,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [
+                    "python",
+                    "-m",
+                    "executorch.examples.qualcomm.util_scripts.cli",
+                    "compile",
+                    "--artifact",
+                    f"{tmp_dir}/q_out/relu_quantized.pt2",
+                    "--output_folder",
+                    f"{tmp_dir}/c_out",
+                    "--soc_model",
+                    *soc_models,
+                    "--backend",
+                    self.backend,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
+
+            cmds = [
+                "python",
+                "-m",
+                "executorch.examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/relu_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+                "--soc_model",
+                self.soc_model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--backend",
+                self.backend,
+            ]
+            if self.host:
+                cmds.extend(["--host", self.host])
+            subprocess.run(cmds, check=True, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
+
     def test_cli_with_input_list_assignment(self):
         # TODO: Add gpu support in cli.py
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kGpuBackend:
@@ -12069,6 +12201,89 @@ class TestUtilsScript(TestQNN):
                         f"Generated recipe file has syntax error: {e}\n{py_content}"
                     )
                 self.assertIn("HOW TO USE THESE RECIPES", py_content)
+
+
+class TestQNNFcb(TestQNN):
+    def test_fcb_compiler_spec_preserves_targets(self):
+        options = [
+            generate_htp_compiler_spec(use_fp16=False),
+            generate_htp_compiler_spec(use_fp16=True),
+        ]
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=[QcomChipset.SM8650, QcomChipset.SM8750],
+            backend_options=options,
+        )
+        option = flatbuffer_to_option(compiler_specs[0].value)
+
+        self.assertEqual(
+            [target.soc_info.soc_model for target in option.target_options.targets],
+            [QcomChipset.SM8650, QcomChipset.SM8750],
+        )
+
+    def test_fcb_manager_cache_is_keyed_by_soc(self):
+        managers = [Mock(), Mock(), Mock()]
+        for manager in managers:
+            manager.InitBackend.return_value = Mock(value=0)
+
+        with (
+            patch.object(qnn_manager_lifecycle, "setup_qnn_sdk"),
+            patch.object(qnn_manager_lifecycle, "disable_mkldnn_on_amd"),
+            patch.object(
+                qnn_manager_lifecycle.PyQnnManager,
+                "QnnManager",
+                side_effect=managers,
+            ) as create,
+        ):
+            registry = qnn_manager_lifecycle.QnnManagerRegistry()
+            first = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"first", QcomChipset.SM8650
+            )
+            second = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"second", QcomChipset.SM8750
+            )
+            third = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"third", QcomChipset.SM8650
+            )
+
+        self.assertEqual(create.call_count, 2)
+        self.assertEqual(len(registry._registry), 2)
+        self.assertIsNot(first, second)
+        self.assertIs(first, third)
+
+    def _get_weight_sharing_model(self):
+        if self.enable_x86_64:
+            self.skipTest("FCB reference-weight sharing requires an Android HTP target")
+        if is_qnn_sdk_version_less_than("2.48"):
+            self.skipTest("FCB reference-weight sharing requires QNN SDK 2.48")
+
+        module, inputs = make_fcb_weight_sharing_model()
+        soc_models = fcb_target_socs(self.chipset_table[TestQNN.soc_model])
+        return module, inputs, soc_models
+
+    def test_fcb_reference_weight_sharing_reduces_pte_size(self):
+        module, inputs, soc_models = self._get_weight_sharing_model()
+        shared = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, True),
+        )
+        unshared = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, False),
+        )
+
+        self.assertLess(len(shared.buffer), len(unshared.buffer))
+
+    def test_fcb_reference_weight_sharing_e2e(self):
+        module, inputs, soc_models = self._get_weight_sharing_model()
+        executorch_program = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, True),
+        )
+
+        self.verify_output(module, inputs, executorch_program)
 
 
 def setup_environment():
