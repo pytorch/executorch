@@ -167,10 +167,9 @@ void run_step(
   for (int i = 0; i < FLAGS_iterations; ++i) {
     const auto start = std::chrono::steady_clock::now();
     executable.execute();
-    latencies_ms.push_back(
-        std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - start)
-            .count());
+    latencies_ms.push_back(std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - start)
+                               .count());
   }
   if (latencies_ms.size() > 1) {
     std::ranges::sort(latencies_ms);
