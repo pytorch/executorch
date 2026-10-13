@@ -28,8 +28,16 @@ class IExecutionIOBinder {
 ::executorch::runtime::Result<executorch::aten::Tensor> Decoder::step(
     executorch::extension::TensorPtr& tokens,
     int64_t start_pos) {
+
+  std::string method_stage;
+  if (tokens->numel() > 1) {
+    method_stage = methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)];
+  } else {
+    method_stage = methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)];
+  }
+
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
-  auto method_meta = ET_UNWRAP(module_->method_meta("forward"));
+  auto method_meta = ET_UNWRAP(module_->method_meta(method_stage.c_str()));
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 
@@ -50,54 +58,51 @@ class IExecutionIOBinder {
     auto numel = sizes[0];
     std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
 
+    auto n_inputs = method_meta.num_inputs();
+    auto input_info = ET_UNWRAP(method_meta.input_tensor_meta(2));
+    sizes = input_info.sizes();
+    if (sizes.size() != 2) ET_LOG(Error, "third input of %zu is invalid dimension : %zu", n_inputs, sizes.size());
+
+    input_info = ET_UNWRAP(method_meta.input_tensor_meta(3));
+    sizes = input_info.sizes();
+    if (sizes.size() != 4) ET_LOG(Error, "forth input of %zu is invalid dimension : %zu", n_inputs, sizes.size());
+
     executorch::extension::TensorPtr start_pos_tensor;
 
-    // TODO(sicheon.oh) : manage tensor for in/out
+    // Assuming model is exported with input_pos, create a tensor with size 1
+    start_pos_tensor = executorch::extension::from_blob(
+        &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
 
-    int64_t dummy_pos = 1;
-    std::vector<::executorch::aten::SizesType> dummy_sizes_vec = {1};
-    executorch::extension::TensorPtr dummy_io_tensor =
-        executorch::extension::empty(
-            dummy_sizes_vec, executorch::aten::ScalarType::Long);
+    std::vector<executorch::runtime::EValue> inputs;
 
-    if (numel > 1) {
-      // If we are here, model is exported with cache_positions, create a tensor
-      // with the same length as input_ids. Assuming the last dimension is the
-      // one with the variable token length, for example [1, S] or [1, 1, S]
-      sizes_vec[sizes_vec.size() - 1] = tokens->numel();
-      start_pos_tensor = executorch::extension::empty(
-          sizes_vec, ::executorch::aten::ScalarType::Long);
-      torch::executor::native::arange_out_impl(
-          start_pos, start_pos + tokens->numel(), 1.0, *start_pos_tensor);
-    } else {
-      // Assuming model is exported with input_pos, create a tensor with size 1
-      start_pos_tensor = executorch::extension::from_blob(
-          &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
+    if (method_stage == methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)]) {
+      auto inputs_res =
+          io_manager_->prepare_prefill(tokens, start_pos_tensor);
+      ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
+      inputs = inputs_res.get();
+    } else if (method_stage == methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)]) {
+      auto inputs_res =
+          io_manager_->prepare_decode(tokens, start_pos_tensor);
+      ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
+      inputs = inputs_res.get();
     }
-    ET_LOG(
-        Debug,
-        "Start pos tensor numel: %zu, tokens numel: %zu",
-        start_pos_tensor->numel(),
-        tokens->numel());
 
-    // TODO(sicheon.oh) : manage tensor for in/out
-    auto inputs_res =
-        io_manager_->prepare_decode(dummy_io_tensor, start_pos_tensor);
-    ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
-
-    auto outputs_res = module_->forward({tokens, start_pos_tensor});
+    auto outputs_res = module_->execute(method_stage.c_str(), inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
     ET_CHECK_MSG(
         outputs_res.get()[0].isTensor(),
         "Non Tensor Output returned from executing LLM");
 
-    // TODO(sicheon.oh) : manage tensor for in/out
-    if (io_manager_->update_decode(outputs_res.get(), "forward") !=
-        executorch::runtime::Error::Ok) {
-      ET_LOG(Error, "Failed to updated output by io_manager");
+    if (method_stage == methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)]) {
+      if (io_manager_->update_prefill(outputs_res.get()) !=
+          executorch::runtime::Error::Ok) {
+        ET_LOG(Error, "Failed to updated prefill output by io_manager");
+      }
+    } else if (method_stage == methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)]) {
+      if (io_manager_->update_decode(outputs_res.get()) !=
+          executorch::runtime::Error::Ok) {
+        ET_LOG(Error, "Failed to updated decode output by io_manager");
+      }
     }
 
     // Return the logits tensor
@@ -105,7 +110,8 @@ class IExecutionIOBinder {
   } else { // no kv cache
     (void)start_pos; // unused
 
-    auto outputs_res = module_->forward(tokens);
+    auto outputs_res = module_->execute(method_stage.c_str(), tokens);
+    ET_LOG(Info, "After module forward");
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
@@ -118,5 +124,62 @@ class IExecutionIOBinder {
     return outputs_res.get()[0].toTensor();
   }
 }
+
+::executorch::runtime::Error Decoder::create_shared_planned_memory() {
+  executorch::runtime::Error ret = executorch::runtime::Error::Ok;
+
+  if (shared_method_memory_ != nullptr) {
+    ET_LOG(Info, "Shared Planned memory is already created");
+    return ret;
+  }
+
+  auto prefill_meta = module_->method_meta(
+          methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)].c_str());
+  auto decode_meta = module_->method_meta(
+          methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)].c_str());
+  if (!prefill_meta.ok() || !decode_meta.ok()) {
+    ET_LOG(Error, "Failed to get method metadata for shared memory setup");
+    return executorch::runtime::Error::InvalidArgument;
+  }
+
+  size_t prefill_bufs = prefill_meta->num_memory_planned_buffers();
+  size_t decode_bufs = decode_meta->num_memory_planned_buffers();
+  size_t num_buffers = std::max(prefill_bufs, decode_bufs);
+
+  ET_LOG(Info, "Prefill_bufs(%ld), decode_bufs(%ld) num_buffers(%ld)",
+          prefill_bufs, decode_bufs, num_buffers);
+
+  shared_method_memory_ =
+        std::make_unique<SharedMethodMemory>();
+  shared_method_memory_->buffers.reserve(num_buffers);
+  shared_method_memory_->spans.reserve(num_buffers);
+
+  for (size_t i = 0; i < num_buffers; ++i) {
+    int64_t prefill_size =
+        (i < prefill_bufs)
+        ? prefill_meta->memory_planned_buffer_size(i).get()
+        : 0;
+    int64_t decode_size =
+        (i < decode_bufs)
+        ? decode_meta->memory_planned_buffer_size(i).get()
+        : 0;
+    size_t max_size = static_cast<size_t>(std::max(prefill_size, decode_size));
+    ET_LOG(Info, "Prefill_size(%ld), decode_size(%ld) max_size(%ld)",
+                  prefill_size, decode_size, max_size);
+
+    shared_method_memory_->buffers.emplace_back(max_size);
+    shared_method_memory_->spans.emplace_back(
+        shared_method_memory_->buffers.back().data(), max_size);
+  }
+
+  shared_method_memory_->allocator =
+      std::make_unique<::executorch::runtime::HierarchicalAllocator>(
+          ::executorch::runtime::Span<::executorch::runtime::Span<uint8_t>>(
+              shared_method_memory_->spans.data(),
+              shared_method_memory_->spans.size()));
+  return ret;
+}
+
+
 
 } // namespace example

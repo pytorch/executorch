@@ -23,6 +23,8 @@
 #include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/runner.h>
+#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
+
 
 namespace example {
 
@@ -63,6 +65,7 @@ ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
  * @param model_path Path to the model file
  * @param tokenizer Initialized tokenizer instance
  * @param data_path Optional path to additional data required by the model
+ * @param decode_only Optional flag to run with decode method only
  * @param temperature Optional temperature parameter for controlling randomness
  * (deprecated)
  * @return std::unique_ptr<LLMRunner> Initialized LLMRunner instance
@@ -71,6 +74,7 @@ ET_EXPERIMENTAL std::unique_ptr<LLMRunner> create_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path = std::nullopt,
+    bool decode_only = false,
     float temperature = -1.0f);
 
 std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
@@ -84,6 +88,7 @@ std::unique_ptr<llm::IRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     std::optional<const std::string> data_path,
+    bool decode_only,
     float temperature) {
   ET_LOG(
       Info,
@@ -106,7 +111,7 @@ std::unique_ptr<llm::IRunner> create_llama_runner(
       "[Create_test_llm_runner] %s %s",
       model_path.c_str(),
       data_path->c_str());
-  return create_llm_runner(model_path, std::move(tokenizer), data_path);
+  return create_llm_runner(model_path, std::move(tokenizer), data_path, decode_only);
 }
 
 static const std::unordered_map<std::string, std::string> kMetadataMap{
@@ -117,14 +122,20 @@ static const std::unordered_map<std::string, std::string> kMetadataMap{
     {llm::kMaxContextLen, "get_max_context_len"},
     {llm::kVocabSize, "get_vocab_size"},
     {llm::kUseKVCache, "use_kv_cache"},
-    {llm::kUseSDPAWithKVCache, "use_sdpa_with_kv_cache"}};
+    {llm::kUseSDPAWithKVCache, "use_sdpa_with_kv_cache"},
+    {example::kPrefillArLen, "get_prefill_ar_len"},
+    {example::kNumOfHiddenDim, "get_hidden_dim"},
+    {example::kNumOfHeads, "get_n_heads"},
+    {example::kNumOfKVHeads, "get_n_kv_heads"},
+    {example::kNumOfLayers, "get_n_layers"}
+};
 
 LLMRunner::LLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::unique_ptr<::executorch::extension::Module> module,
     std::unique_ptr<llm::TextDecoderRunner> text_decoder_runner,
-    std::unique_ptr<example::Prefiller> text_prefiller,
+    std::unique_ptr<llm::TextPrefiller> text_prefiller,
     std::unique_ptr<example::TokenGenerator> text_token_generator,
     std::unique_ptr<llm::Stats> stats,
     std::unique_ptr<llm::IOManager> io_manager,
@@ -367,12 +378,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     size_t bos_token_index,
     size_t eos_token_index) {
   ::executorch::runtime::runtime_init();
-  auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
-  if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded json tokenizer");
-    return json_tokenizer;
-  }
-  std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
+ std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
   if (special_tokens != nullptr && !pattern.has_value()) {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
         std::move(special_tokens), bos_token_index, eos_token_index);
@@ -385,9 +391,16 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   } else {
     tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
   }
+
   if (tiktoken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded TikToken tokenizer");
     return tiktoken_tokenizer;
+  }
+
+  auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
+  if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded json tokenizer");
+    return json_tokenizer;
   }
 
   auto sp_tokenizer = std::make_unique<::tokenizers::SPTokenizer>();
@@ -415,6 +428,12 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
       {kMetadataMap.at(llm::kMaxContextLen), 128},
       {kMetadataMap.at(llm::kUseKVCache), true},
       {kMetadataMap.at(llm::kUseSDPAWithKVCache), false},
+      {kMetadataMap.at(example::kPrefillArLen), 0},
+      //Params.json for llama3.2-1B
+      {kMetadataMap.at(example::kNumOfHiddenDim), 2048},
+      {kMetadataMap.at(example::kNumOfHeads), 32},
+      {kMetadataMap.at(example::kNumOfKVHeads), 8},
+      {kMetadataMap.at(example::kNumOfLayers), 16},
   });
 
   // Read metadata from the model
@@ -479,6 +498,7 @@ std::unique_ptr<LLMRunner> create_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
+    bool decode_only,
     float temperature) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
@@ -504,21 +524,41 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   auto methods = methods_res.get();
   std::vector<std::string> register_methods;
-  for (auto method : methods) {
-    if (kMetadataMap.find(method) != kMetadataMap.end()) {
-      ET_LOG(Info, "It is not method(%s)", method.c_str());
-      break;
+  if (decode_only) {
+    register_methods.emplace_back(default_method_name_decode);
+  } else {
+    for (auto method : methods) {
+      if (kMetadataMap.find(method) != kMetadataMap.end()) {
+        ET_LOG(Info, "It is not method(%s)", method.c_str());
+        continue;
+      }
+      ET_LOG(Info, "Register method \"%s\" to decoder", method.c_str());
+      register_methods.emplace_back(method);
     }
-    ET_LOG(Info, "Register method \"%s\" to decoder", method.c_str());
-    register_methods.emplace_back(method);
-  }
-
-  // Create IO Manager
-  auto io_manager = std::make_unique<example::LlmIOManager>(*module.get());
+ }
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
   auto metadata = get_llm_metadata(tokenizer.get(), module.get());
+
+  // Create IO Manager
+  example::LlmIOManager::Config conf;
+  conf.n_layers = metadata.at(example::kNumOfLayers);
+  conf.n_kv_heads = metadata.at(example::kNumOfKVHeads);
+  conf.max_seq_len = metadata.at(llm::kMaxSeqLen);
+  conf.prefill_seq_len = (metadata.at(example::kPrefillArLen) > 1) ?
+                            (metadata.at(example::kPrefillArLen)) :
+                            (metadata.at(llm::kMaxSeqLen));
+
+  if (decode_only) {
+    conf.prefill_seq_len = 1;
+  }
+
+  size_t dim = metadata.at(example::kNumOfHiddenDim);
+  size_t n_heads = metadata.at(example::kNumOfHeads);
+  conf.head_dim = dim / n_heads;
+
+  auto io_manager = std::make_unique<example::LlmIOManager>(*module.get(), conf);
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       get_eos_ids(tokenizer.get(), module.get()));
@@ -533,12 +573,16 @@ std::unique_ptr<LLMRunner> create_llm_runner(
     text_decoder_runner->register_method(method);
   }
 
+  // TODO(sicheon.oh) : Need to find proper flag to distinguish separaged prefill/decode opion.
+  bool separated_prefill_decode = (conf.prefill_seq_len > 1);
+  ET_LOG(Info, "separated_prefill_decode(%s)", (separated_prefill_decode)?"True":"False");
+
   // Create text_prefiller
   auto text_prefiller = std::make_unique<example::Prefiller>(
       text_decoder_runner.get(),
       metadata.at(llm::kUseKVCache),
-      metadata.at(llm::kEnableDynamicShape),
-      metadata.at(llm::kMaxSeqLen));
+      metadata.at(llm::kEnableDynamicShape) | (separated_prefill_decode),
+      conf.prefill_seq_len);
 
   // Create text_token_generator with stats
   auto stats = std::make_unique<llm::Stats>();

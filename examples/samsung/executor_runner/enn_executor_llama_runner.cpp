@@ -55,6 +55,8 @@ DEFINE_int32(
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
+DEFINE_bool(decode_only, false, "Whether to run with decode method only.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -81,6 +83,8 @@ int32_t main(int32_t argc, char** argv) {
 
   bool warmup = FLAGS_warmup;
 
+  bool decode_only = FLAGS_decode_only;
+
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
@@ -95,7 +99,7 @@ int32_t main(int32_t argc, char** argv) {
 
   // create llama runner
   std::unique_ptr<llm::IRunner> runner =
-      example::create_llama_runner(model_path, tokenizer_path, data_path);
+      example::create_llama_runner(model_path, tokenizer_path, data_path, decode_only);
 
   if (runner == nullptr) {
     ET_LOG(Error, "Failed to create llama runner");

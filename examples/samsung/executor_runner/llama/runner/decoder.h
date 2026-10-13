@@ -13,22 +13,27 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
-
+#include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
 
 namespace example {
 
 namespace llm = ::executorch::extension::llm;
 
-static constexpr auto default_method_name = "forward";
-
 class ET_EXPERIMENTAL Decoder
     : public executorch::extension::llm::TextDecoderRunner {
  public:
+  struct SharedMethodMemory {
+    std::vector<std::vector<uint8_t>> buffers;
+    std::vector<executorch::runtime::Span<uint8_t>> spans;
+    std::unique_ptr<executorch::runtime::HierarchicalAllocator> allocator;
+  };
+
   explicit Decoder(
       executorch::extension::Module* module,
       llm::IOManager* io_manager)
-      : TextDecoderRunner(module, io_manager) {}
+      : TextDecoderRunner(module, io_manager),
+      shared_method_memory_(nullptr) {}
 
   virtual ::executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& input,
@@ -36,6 +41,14 @@ class ET_EXPERIMENTAL Decoder
 
   inline ::executorch::runtime::Error load() override {
     executorch::runtime::Error ret = executorch::runtime::Error::Ok;
+
+
+    if (methods_.num > 1) {
+      ret = create_shared_planned_memory();
+      if (ret != executorch::runtime::Error::Ok) {
+        ET_LOG(Error, "Failed to create share planned memory");
+      }
+    }
 
     /**
      * Dealing with multiple method.
@@ -46,10 +59,12 @@ class ET_EXPERIMENTAL Decoder
         continue;
       }
 
-      ret = module_->load_method(method);
-      if (ret != executorch::runtime::Error::Ok) {
-        ET_LOG(Error, "Failed to load method");
-        return ret;
+      if (shared_method_memory_) {
+        ret = module_->load_method(method, shared_method_memory_->allocator.get());
+        if (ret != executorch::runtime::Error::Ok) {
+          ET_LOG(Error, "Failed to load method");
+          return ret;
+        }
       }
 
       ET_LOG(Info, "Loading Method (%s)", method.c_str());
@@ -79,8 +94,12 @@ class ET_EXPERIMENTAL Decoder
 
   inline void register_method(std::string& method) {
     methods_.name[methods_.num++] = method;
-    for (auto method : methods_.name) {
-      ET_LOG(Info, "Registered method : \"%s\"", method.c_str());
+
+    ET_LOG(Info, "method[%d] : %s", methods_.num - 1, method.c_str());
+
+    int i = 0;
+    for (int i = 0; i < methods_.num; i++) {
+      ET_LOG(Info, "Registered method[%d] : \"%s\"", i, methods_.name[i].c_str());
     }
   }
 
@@ -88,12 +107,21 @@ class ET_EXPERIMENTAL Decoder
   inline ::executorch::runtime::Error load_io_manager() {
     executorch::runtime::Error ret = executorch::runtime::Error::Ok;
 
-    return io_manager_->load(
-        methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)],
-        methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)]);
+    if (methods_.num > 1) {
+      ret = io_manager_->load(
+          methods_.name[static_cast<std::size_t>(DecoderMode::PREFILL)],
+          methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)]);
+    } else {
+      ret = io_manager_->load(
+          methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)],
+          methods_.name[static_cast<std::size_t>(DecoderMode::DECODE)]);
+    }
+    return ret;
   }
 
-  enum class DecoderMode : int { PREFILL = 0, DECODE = 1 };
+  ::executorch::runtime::Error create_shared_planned_memory();
+
+  enum class DecoderMode : int { PREFILL = 1, DECODE = 0 };
 
   struct RegisterdMethod {
     uint32_t num = 0;
@@ -105,6 +133,8 @@ class ET_EXPERIMENTAL Decoder
 
  private:
   RegisterdMethod methods_;
+
+  std::unique_ptr<SharedMethodMemory> shared_method_memory_;
 };
 
 } // namespace example
