@@ -8,14 +8,13 @@
 
 // Given inputs, run a text decoder and return logits.
 
-#include <executorch/kernels/portable/cpu/util/arange_util.h>
-#include <string>
-
-#include <ctime>
-
 #include <executorch/examples/samsung/executor_runner/llm/runner/decoder.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/kernels/portable/cpu/util/arange_util.h>
+
+#include <ctime>
+#include <string>
 
 namespace example {
 
@@ -138,85 +137,190 @@ runtime::Result<aten::Tensor> Decoder::step(
   }
 
   auto method_meta = ET_UNWRAP(module_->method_meta(method_stage.c_str()));
-
   const size_t total_input_count = method_meta.num_inputs();
-  bool use_kv_cache =
-      total_input_count > 1; // kv cache is not used, when input is 1
+
+  bool use_kv_cache = total_input_count > 1;
   if (use_kv_cache) {
-    // Size of the position tracking argument. This could be either input_pos or
-    // cache_positions
-    constexpr int64_t kExpectedPositionDimensions = 3;
-    constexpr int64_t kPositionTensorIndex = 3;
-    constexpr int64_t kAttentionSetupTensorIndex = 1;
-
-    constexpr int64_t kKVCacheExpectedDimensions = 4;
-    constexpr int64_t kHeadsDimIndex = 1;
-    constexpr int64_t kHeadSizeDimIndex = 3;
-
-    // Check if we are using cache positions instead of input pos.
-    auto position_tensor_meta =
-        ET_UNWRAP(method_meta.input_tensor_meta(kPositionTensorIndex));
-    auto position_shape = position_tensor_meta.sizes();
-    ET_CHECK_OR_RETURN_ERROR(
-        position_shape.size() == kExpectedPositionDimensions,
-        InvalidProgram,
-        "The pos input tensor is not expected. Got dimension (%zu)",
-        position_shape.size());
-    std::vector<aten::SizesType> sizes_vec = {position_shape[0]};
-
-    auto attention_setup_tensor_meta =
-        ET_UNWRAP(method_meta.input_tensor_meta(kAttentionSetupTensorIndex));
-    auto attention_setup_shape = attention_setup_tensor_meta.sizes();
     auto* llm_io_manager = static_cast<example::LlmIOManager*>(io_manager_);
     const auto& config = llm_io_manager->get_config();
-    const size_t kv_cache_tensor_index = kAttentionSetupTensorIndex +
-        llm_io_manager->get_attention_setup_tensor_count();
+    auto model_version_config = getModelVersionConfig(config.model_version);
 
-    auto kv_cache_tensor_meta =
-        ET_UNWRAP(method_meta.input_tensor_meta(kv_cache_tensor_index));
-    auto kv_cache_shape = kv_cache_tensor_meta.sizes();
+    //
+    // Validate attention-mask tensors.
+    //
+    for (size_t i = 0; i < model_version_config.attention_mask_tensor_count;
+         ++i) {
+      const size_t tensor_index =
+          model_version_config.attention_mask_tensor_index + i;
+
+      auto tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(tensor_index));
+
+      const auto tensor_shape = tensor_meta.sizes();
+
+      ET_CHECK_OR_RETURN_ERROR(
+          tensor_shape.size() == model_version_config.attention_mask_rank,
+          InvalidProgram,
+          "Unexpected attention mask rank at input %zu. "
+          "Expected %zu, got %zu.",
+          tensor_index,
+          model_version_config.attention_mask_rank,
+          tensor_shape.size());
+    }
+
+    //
+    // Validate position / RoPE tensors.
+    //
+    // Gemma3:
+    //   position[0], position[1]
+    //
+    // Gemma4:
+    //   global_cos, global_sin, local_cos, local_sin
+    //
+    for (size_t i = 0; i < model_version_config.position_tensor_count; ++i) {
+      const size_t tensor_index =
+          model_version_config.position_tensor_index + i;
+
+      auto tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(tensor_index));
+
+      const auto tensor_shape = tensor_meta.sizes();
+
+      ET_CHECK_OR_RETURN_ERROR(
+          tensor_shape.size() == model_version_config.position_rank,
+          InvalidProgram,
+          "Unexpected position tensor rank at input %zu. "
+          "Expected %zu, got %zu.",
+          tensor_index,
+          model_version_config.position_rank,
+          tensor_shape.size());
+    }
+
+    //
+    // Validate KV-cache tensors.
+    //
+    // We only need one cache tensor to determine/validate the common
+    // KV-cache layout [B, H, S, D], assuming all cache leaves use
+    // the same rank/layout.
+    //
+    auto k_cache_tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(
+        model_version_config.k_cache_tensor_index));
+
+    const auto k_cache_shape = k_cache_tensor_meta.sizes();
+
     ET_CHECK_OR_RETURN_ERROR(
-        static_cast<int64_t>(kv_cache_shape.size()) ==
-            kKVCacheExpectedDimensions,
-        InvalidArgument,
-        "Input tensor at index %" PRId64
-        " (KV cache slot) has invalid dimensionality: %" PRId64
-        " (expected %" PRId64 ")",
-        kv_cache_tensor_index,
-        static_cast<int64_t>(kv_cache_shape.size()),
-        kKVCacheExpectedDimensions);
+        k_cache_shape.size() == model_version_config.kv_cache_rank,
+        InvalidProgram,
+        "Unexpected K-cache rank. Expected %zu, got %zu.",
+        model_version_config.kv_cache_rank,
+        k_cache_shape.size());
+
+    auto v_cache_tensor_meta = ET_UNWRAP(method_meta.input_tensor_meta(
+        model_version_config.v_cache_tensor_index));
+
+    const auto v_cache_shape = v_cache_tensor_meta.sizes();
 
     ET_CHECK_OR_RETURN_ERROR(
-        static_cast<size_t>(kv_cache_shape[kHeadsDimIndex]) ==
-            config.n_kv_heads,
-        InvalidArgument,
-        "KV cache tensor head count mismatch at index %" PRId64
-        ": found %" PRId64 " (expected %" PRId64 " via configuration)",
-        kv_cache_tensor_index,
-        static_cast<size_t>(kv_cache_shape[kHeadsDimIndex]),
-        config.n_kv_heads);
+        v_cache_shape.size() == model_version_config.kv_cache_rank,
+        InvalidProgram,
+        "Unexpected V-cache rank. Expected %zu, got %zu.",
+        model_version_config.kv_cache_rank,
+        v_cache_shape.size());
+
+    //
+    // Validate the configured KV-cache axes before indexing them.
+    //
+    ET_CHECK_OR_RETURN_ERROR(
+        model_version_config.heads_dim_index < k_cache_shape.size(),
+        InvalidProgram,
+        "KV heads dimension index %zu exceeds cache rank %zu.",
+        model_version_config.heads_dim_index,
+        k_cache_shape.size());
 
     ET_CHECK_OR_RETURN_ERROR(
-        static_cast<size_t>(kv_cache_shape[kHeadSizeDimIndex]) ==
-            config.head_dim,
-        InvalidArgument,
-        "KV cache tensor head dimension size mismatch at index %" PRId64
-        ": found %" PRId64 " (expected %" PRId64 " via configuration)",
-        kv_cache_tensor_index,
-        static_cast<size_t>(kv_cache_shape[kHeadSizeDimIndex]),
-        config.head_dim);
+        model_version_config.head_size_dim_index < k_cache_shape.size(),
+        InvalidProgram,
+        "KV head-size dimension index %zu exceeds cache rank %zu.",
+        model_version_config.head_size_dim_index,
+        k_cache_shape.size());
 
-    extension::TensorPtr start_pos_tensor;
+    const auto num_kv_heads =
+        k_cache_shape[model_version_config.heads_dim_index];
+
+    const auto kv_head_size =
+        k_cache_shape[model_version_config.head_size_dim_index];
+
+    ET_LOG(
+        Debug,
+        "KV cache: K base=%zu, V base=%zu, count=%zu, "
+        "heads=%d, head_size=%d",
+        model_version_config.k_cache_tensor_index,
+        model_version_config.v_cache_tensor_index,
+        model_version_config.kv_cache_tensor_count,
+        num_kv_heads,
+        kv_head_size);
+
+    //
+    // Optional sanity check that the final V-cache input actually
+    // exists in this PTE method.
+    //
+    const size_t last_v_cache_index =
+        model_version_config.v_cache_tensor_index +
+        model_version_config.kv_cache_tensor_count - 1;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        last_v_cache_index < method_meta.num_inputs(),
+        InvalidProgram,
+        "KV cache layout exceeds PTE input count. "
+        "Last V-cache input=%zu, num_inputs=%zu.",
+        last_v_cache_index,
+        method_meta.num_inputs());
+
     // Assuming model is exported with input_pos, create a tensor with size 1
-    start_pos_tensor =
-        extension::from_blob(&start_pos, sizes_vec, aten::ScalarType::Long);
-
+    extension::TensorPtr start_pos_tensor;
+    std::vector<aten::SizesType> start_pos_sizes = {1};
+    start_pos_tensor = extension::from_blob(
+        &start_pos, start_pos_sizes, aten::ScalarType::Long);
     std::vector<runtime::EValue> inputs;
-
     if (method_stage == prefill_method_) {
       auto inputs_res = io_manager_->prepare_prefill(tokens, start_pos_tensor);
       ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
       inputs = inputs_res.get();
+
+      ET_LOG(
+          Info,
+          "Prepared %zu inputs, PTE expects %zu inputs",
+          inputs.size(),
+          method_meta.num_inputs());
+
+      const size_t count = std::min(inputs.size(), method_meta.num_inputs());
+
+      for (size_t i = 0; i < count; ++i) {
+        if (!inputs[i].isTensor()) {
+          ET_LOG(Info, "input[%zu]: prepared EValue is not Tensor", i);
+          continue;
+        }
+
+        const auto prepared_tensor = inputs[i].toTensor();
+        const auto prepared_sizes = prepared_tensor.sizes();
+
+        auto expected_meta = ET_UNWRAP(method_meta.input_tensor_meta(i));
+        const auto expected_sizes = expected_meta.sizes();
+
+        ET_LOG(
+            Info,
+            "input[%zu]: prepared_rank=%zu expected_rank=%zu",
+            i,
+            prepared_sizes.size(),
+            expected_sizes.size());
+
+        for (size_t d = 0; d < prepared_sizes.size(); ++d) {
+          ET_LOG(Info, "  prepared[%zu]=%d", d, prepared_sizes[d]);
+        }
+
+        for (size_t d = 0; d < expected_sizes.size(); ++d) {
+          ET_LOG(Info, "  expected[%zu]=%d", d, expected_sizes[d]);
+        }
+      }
+
     } else if (method_stage == decode_method_) {
       auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
       ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
@@ -250,9 +354,8 @@ runtime::Result<aten::Tensor> Decoder::step(
     }
     // Return the logits tensor
     return slice_kth_token(outputs_res.get()[0], (tokens->numel() - 1));
-  } else { // no kv cache
-    (void)start_pos; // unused
-
+  } else { // kv cache is not used, when input is 1
+    (void)start_pos;
     auto outputs_res = module_->execute(method_stage.c_str(), tokens);
     ET_LOG(Info, "After module forward");
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
