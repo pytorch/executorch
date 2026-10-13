@@ -45,11 +45,12 @@ def main(args):
     os.makedirs(args.artifact, exist_ok=True)
     logging.info(f"Loading {args.decoder_model_id}...")
     model = build_model(args.decoder_model_id, args.max_seq_len)
+    soc_list = [args.soc_model, "SC8380XP", "QCS9100"]
     if not args.pre_gen_pte:
         quantizer = None
         if not args.use_fp16:
             quantizer = make_quantizer(
-                backend=get_backend_type(args.backend), soc_model=args.soc_model
+                backend=get_backend_type(args.backend), soc_model=soc_list
             )
             quant_recipe = get_quant_recipe(args.decoder_model_id)
             quantizer.set_recipe(quant_recipe.recipe)
@@ -58,10 +59,10 @@ def main(args):
         tokenizer = AutoTokenizer.from_pretrained(args.decoder_model_id)
         token_list = tokenizer.encode(args.prompt, bos=True, eos=False)
         et_program_manager = ExecutorchExporter().export(
-            model,
-            None,
-            ExecutorchQnnConfig(
-                soc_model=args.soc_model,
+            model=model,
+            sample_inputs=token_list,
+            config=ExecutorchQnnConfig(
+                soc_models=soc_list,
                 calibration_dataset=[token_list],
                 pt2e_quantizer=quantizer,
                 backend="qnn",
