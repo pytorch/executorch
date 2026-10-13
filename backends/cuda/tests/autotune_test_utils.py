@@ -14,6 +14,7 @@ import statistics
 import time
 from typing import Iterator, NamedTuple
 
+import triton
 from executorch.backends.cuda.autotune import cuda_graph_timing as cgt
 from torch._inductor.runtime.triton_heuristics import CachingAutotuner
 from torch._inductor.select_algorithm import AlgorithmSelectorCache
@@ -26,6 +27,7 @@ class Pick(NamedTuple):
     name: str
     candidates: int
     regret: float  # reference time of the pick / reference time of the best candidate
+    key: tuple = ()  # our triton.autotune decisions: the autotuner's cache key
 
 
 def _spin(stop_at: float) -> None:
@@ -69,20 +71,21 @@ class SaturatedCpu:
 
 @contextlib.contextmanager
 def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
-    """For each autotune decision taken inside the context, re-time every
-    candidate with the CPU paused (CUDA-graph timing, best of two) and append
-    a ``Pick`` with what the pick costs against the best candidate."""
+    """For each autotune decision taken inside the context (Inductor's, and our
+    kernels' own triton.autotune), re-time every candidate with the CPU paused
+    (best of two) and append a ``Pick`` with what the pick costs against the
+    best candidate."""
     orig_kernel = CachingAutotuner.benchmark_all_configs
     orig_choices = AlgorithmSelectorCache.benchmark_choices
 
-    def record(kind, name, timings, reference):
+    def record(kind, name, timings, reference, key=()):
         valid = {c: t for c, t in reference.items() if t != float("inf")}
         used = {c: t for c, t in timings.items() if c in valid and t != float("inf")}
         if len(valid) < 2 or not used:
             return
         pick = min(used, key=used.get)
         picks.append(
-            Pick(kind, str(name), len(valid), valid[pick] / min(valid.values()))
+            Pick(kind, str(name), len(valid), valid[pick] / min(valid.values()), key)
         )
 
     def kernel_hook(self, *args, **kwargs):
@@ -107,13 +110,49 @@ def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
         record("template", type(next(iter(timings))).__name__, timings, reference)
         return timings
 
+    orig_triton_run = triton.runtime.Autotuner.run
+
+    def triton_hook(self, *args, **kwargs):
+        # Our kernels' configs are picked by their own triton.autotune (during
+        # the launch-parameter timing), and AOTI traces only the pick.
+        tuned = set(self.cache)
+        result = orig_triton_run(self, *args, **kwargs)
+        new_keys = set(self.cache) - tuned
+        if not new_keys:
+            return result
+        timings = {
+            c: t[0] if isinstance(t, (list, tuple)) else t
+            for c, t in self.configs_timings.items()
+        }
+
+        def graph_timed(kernel_call, quantiles):
+            # The CUDA-graph timing the Inductor hook above uses for its reference.
+            ms = cgt.time_with_cuda_graph_us(kernel_call) / 1000.0
+            return [ms] * len(quantiles)
+
+        self.nargs = dict(zip(self.arg_names, args))
+        self.__dict__["do_bench"] = graph_timed
+        try:
+            with cpu.paused():
+                reference = {
+                    c: min(self._bench(*args, config=c, **kwargs)[0] for _ in range(2))
+                    for c in timings
+                }
+        finally:
+            del self.__dict__["do_bench"]
+            self.nargs = None
+        record("custom", self.base_fn.__name__, timings, reference, next(iter(new_keys)))
+        return result
+
     CachingAutotuner.benchmark_all_configs = kernel_hook
     AlgorithmSelectorCache.benchmark_choices = classmethod(choices_hook)
+    triton.runtime.Autotuner.run = triton_hook
     try:
         yield
     finally:
         CachingAutotuner.benchmark_all_configs = orig_kernel
         AlgorithmSelectorCache.benchmark_choices = orig_choices
+        triton.runtime.Autotuner.run = orig_triton_run
 
 
 def summarize(picks: list) -> str:

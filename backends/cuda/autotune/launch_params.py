@@ -57,7 +57,7 @@ import math
 import statistics
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Iterator, Sequence, TypeVar
+from typing import Any, Callable, ContextManager, Iterable, Iterator, Sequence, TypeVar
 
 import torch
 from executorch.backends.cuda.autotune.cuda_graph_timing import (
@@ -199,6 +199,7 @@ def _time_candidates(
     candidates: tuple[Any, ...],
     args: tuple,
     kwargs: dict,
+    candidate_prepass: Callable[[], ContextManager[Any]] | None,
 ) -> tuple[dict[Any, float], dict[Any, str]]:
     # Leave export's fake / functional / proxy modes, and launch the Triton
     # kernels directly, as triton_op's eager path does: through wrap_triton's
@@ -216,6 +217,13 @@ def _time_candidates(
         with torch.cuda.device(device), torch.cuda.stream(stream):
             real_args = tuple(_random_like(a) for a in args)
             real_kwargs = {k: _random_like(v) for k, v in kwargs.items()}
+            if candidate_prepass is not None:
+                with candidate_prepass():
+                    for value in candidates:
+                        try:
+                            fn(*real_args, **real_kwargs, **{param: value})
+                        except InvalidLaunchParam:
+                            pass
             for value in candidates:
 
                 def run(value: Any = value) -> Any:
@@ -249,23 +257,30 @@ def _time_candidates_within_memory(
     args: tuple,
     kwargs: dict,
     stats: LaunchParamStats,
+    candidate_prepass: Callable[[], ContextManager[Any]] | None,
 ) -> tuple[dict[Any, float] | None, dict[Any, str]]:
     """``_time_candidates``, retried after freeing the device's cache and then
     with the offload tensors parked on the CPU. Returns no times when the device
     still runs out of memory."""
     try:
-        return _time_candidates(fn, param, candidates, args, kwargs)
+        return _time_candidates(
+            fn, param, candidates, args, kwargs, candidate_prepass
+        )
     except torch.OutOfMemoryError:
         _free_device_memory()
     try:
-        return _time_candidates(fn, param, candidates, args, kwargs)
+        return _time_candidates(
+            fn, param, candidates, args, kwargs, candidate_prepass
+        )
     except torch.OutOfMemoryError:
         _free_device_memory()
     if _STATE.offload is not None:
         try:
             with _parked_on_cpu(_STATE.offload()):
                 stats.offloads += 1
-                return _time_candidates(fn, param, candidates, args, kwargs)
+                return _time_candidates(
+                    fn, param, candidates, args, kwargs, candidate_prepass
+                )
         except torch.OutOfMemoryError:
             _free_device_memory()
     logger.warning(
@@ -278,9 +293,18 @@ def _time_candidates_within_memory(
     return None, {}
 
 
-def autotune_launch_param(param: str, candidates: Sequence[Any]) -> Callable[[F], F]:
+def autotune_launch_param(
+    param: str,
+    candidates: Sequence[Any],
+    *,
+    candidate_prepass: Callable[[], ContextManager[Any]] | None = None,
+) -> Callable[[F], F]:
     """Fills keyword argument ``param`` of the decorated launch function with
-    the fastest of ``candidates`` during AOTI compile (see the module doc)."""
+    the fastest of ``candidates`` during AOTI compile (see the module doc).
+
+    If provided, ``candidate_prepass`` scopes one untimed call of every
+    candidate before normal launch and timing.
+    """
     candidates = tuple(candidates)
     if not candidates:
         raise ValueError("autotune_launch_param needs at least one candidate")
@@ -314,7 +338,14 @@ def autotune_launch_param(param: str, candidates: Sequence[Any]) -> Callable[[F]
                     times = None
                 else:
                     times, rejected = _time_candidates_within_memory(
-                        fn, name, param, candidates, args, kwargs, stats
+                        fn,
+                        name,
+                        param,
+                        candidates,
+                        args,
+                        kwargs,
+                        stats,
+                        candidate_prepass,
                     )
                     if times is None:
                         stats.out_of_memory += 1

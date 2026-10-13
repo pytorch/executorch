@@ -24,14 +24,32 @@ split-K workspace allocation, the grid, and the reduce after the main kernel.
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
+import contextvars
 import inspect
+import logging
+import os
+import threading
 import typing
+import weakref
 from typing import Callable, Optional, Sequence
 
 import torch
 import triton
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import splitk_reduce
 from torch.library import triton_op, wrap_triton
+
+try:
+    from triton.runtime import _async_compile
+except ImportError:  # A Triton without parallel compile compiles each config on first use.
+    _async_compile = None
+
+# Threads that compile one kernel's autotune configs. Compiling is mostly ptxas
+# and LLVM, which run outside the GIL.
+_MAX_COMPILE_THREADS = 32
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _resolved_signature(prototype) -> inspect.Signature:
@@ -126,6 +144,172 @@ class QuantizedGemmFamily:
             raise RuntimeError(f"{self.name}_m{bucket}: {reason}")
 
 
+def _tuning_key(kernel, args: Sequence, kwargs: dict) -> tuple:
+    # Mirrors the key triton.runtime.Autotuner.run caches its pick under (built
+    # the same way in the Triton 3.5 to 3.9 in fbsource). Should Triton change
+    # it, lookups miss and work is redone, never skipped;
+    # test_the_tuning_key_is_the_autotuners_cache_key catches the change.
+    named = {**dict(zip(kernel.arg_names, args)), **kwargs}
+    named = {k: v for k, v in named.items() if k in kernel.arg_names}
+    key = [named[k] for k in kernel.keys if k in named]
+    key += [str(v.dtype) for v in named.values() if hasattr(v, "dtype")]
+    return tuple(key)
+
+
+def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
+    """Whether ``kernel`` is about to benchmark configs it could compile ahead:
+    an autotuner with several configs, a key it has not tuned, and tensors with
+    real CUDA storage (tracing passes fake or functional tensors, which the
+    launch itself handles)."""
+    if not isinstance(kernel, triton.runtime.Autotuner) or len(kernel.configs) <= 1:
+        return False
+    for arg in (*args, *kwargs.values()):
+        if isinstance(arg, torch.Tensor) and (
+            type(arg) not in (torch.Tensor, torch.nn.Parameter)
+            or arg.device.type != "cuda"
+        ):
+            return False
+    return _tuning_key(kernel, args, kwargs) not in kernel.cache
+
+
+# Tuning keys whose configs a candidate prepass compiled. Weak kernel keys and
+# one-shot values keep this bookkeeping bounded and prevent stale object-id hits.
+_COMPILED_AHEAD: weakref.WeakKeyDictionary[object, set[tuple]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+_COMPILE_THREADS_LOCK = threading.Lock()
+_compile_thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
+    """The compile threads, started on first use and shared by every shape."""
+    global _compile_thread_pool
+    with _COMPILE_THREADS_LOCK:
+        if _compile_thread_pool is None:
+            _compile_thread_pool = concurrent.futures.ThreadPoolExecutor(
+                min(_MAX_COMPILE_THREADS, os.cpu_count() or 1), thread_name_prefix="quantized_gemm_compile"
+            )
+        return _compile_thread_pool
+
+
+@contextlib.contextmanager
+def _compile_pool():
+    with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
+        yield
+
+
+def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
+    """Queues the configs ``kernel`` is about to benchmark on the active compile
+    pool; False if there is no pool or nothing to compile."""
+    if _async_compile is None or _async_compile.active_mode.get() is None:
+        return False
+    if not _has_untuned_configs(kernel, args, kwargs):
+        return False
+    key = _tuning_key(kernel, args, kwargs)
+    try:
+        kernel.warmup(*args, grid=(1,), **kwargs)
+    except Exception as error:  # noqa: BLE001 - precompiling only saves time
+        # The timed launch compiles this candidate's configs itself.
+        logger.warning(
+            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
+        )
+        return False
+    _COMPILED_AHEAD.setdefault(kernel, set()).add(key)
+    return True
+
+
+def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
+    """Compiles every config an autotuned kernel is about to benchmark, in parallel.
+
+    triton.autotune compiles each config on its first benchmark call, one after
+    another, and at compile time that is most of a shape's autotune. Compiling
+    the pruned configs on a thread pool first leaves the benchmark, and so the
+    pick, unchanged; it then times kernels that are already compiled. A config
+    that fails to compile fails again in the benchmark, which skips it as before.
+    """
+    if _async_compile is None or _async_compile.active_mode.get() is not None:
+        return
+    if not _has_untuned_configs(kernel, args, kwargs):
+        return
+    key = _tuning_key(kernel, args, kwargs)
+    compiled_keys = _COMPILED_AHEAD.get(kernel)
+    if compiled_keys is not None and key in compiled_keys:
+        compiled_keys.remove(key)
+        if not compiled_keys:
+            del _COMPILED_AHEAD[kernel]
+        return
+    try:
+        with _compile_pool():
+            kernel.warmup(*args, grid=(1,), **kwargs)
+    except Exception as error:  # noqa: BLE001 - precompiling only saves time
+        # The launch compiles and benchmarks the configs itself, as without
+        # precompiling, and reports a real problem there.
+        logger.warning(
+            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
+        )
+
+
+# Set while every @autotune_launch_param candidate makes one untimed call: the
+# launches then only queue their configs on one shared compile pool.
+_QUEUING_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "quantized_gemm_queuing_only", default=False
+)
+
+
+@contextlib.contextmanager
+def _compile_every_candidate_at_once():
+    """Compiles what all launch-parameter candidates (e.g. every split-K) will
+    benchmark on one pool, rather than one candidate's configs at a time; leaving
+    waits for all of them. Timing then runs as before on compiled kernels."""
+    if _async_compile is None or _async_compile.active_mode.get() is not None:
+        yield
+        return
+    with _compile_pool():
+        token = _QUEUING_ONLY.set(True)
+        try:
+            yield
+        finally:
+            _QUEUING_ONLY.reset(token)
+
+
+# kernel -> {config key: the kernel restricted to that one config}. One object
+# per (kernel, config), so every call site of a tuned shape traces the same
+# kernel and PyTorch's per-kernel caches keep working.
+_SINGLE_CONFIG_KERNELS: weakref.WeakKeyDictionary[object, dict] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _tuned_kernel(kernel, args: Sequence, kwargs: dict):
+    """``kernel`` restricted to the config its autotuner already picked for
+    this call's key, or ``kernel`` itself if it has not tuned the key.
+
+    Traced, an autotuned kernel hands Inductor every config, and AOTI then
+    compiles and benchmarks all of them again for the same shapes; restricted
+    to the pick, Inductor compiles that one config and benchmarks nothing.
+    Called eagerly it launches the same config the autotuner would.
+    """
+    if not isinstance(kernel, triton.runtime.Autotuner) or len(kernel.configs) <= 1:
+        return kernel
+    try:
+        config = kernel.cache.get(_tuning_key(kernel, args, kwargs))
+    except TypeError:
+        # A symbolic size in the key (a dynamic M the kernel tunes on): no
+        # concrete pick to restrict to.
+        return kernel
+    if config is None or config.pre_hook is not None:
+        return kernel
+    config_key = tuple(sorted(config.all_kwargs().items()))
+    variants = _SINGLE_CONFIG_KERNELS.setdefault(kernel, {})
+    tuned = variants.get(config_key)
+    if tuned is None:
+        tuned = triton.autotune(configs=[config], key=[])(kernel.fn)
+        variants[config_key] = tuned
+    return tuned
+
+
 def launch_split_k_gemm(
     kernel,
     *,
@@ -176,16 +360,15 @@ def launch_split_k_gemm(
             return (n_tiles, m_tiles)
         return (n_tiles, m_tiles, split_k)
 
-    wrap_triton(kernel)[grid](
-        *inputs,
-        partial,
-        *shape_args,
-        stride_os,
-        partial.stride(-2),
-        partial.stride(-1),
-        SPLIT_K=split_k,
-        **constexprs,
-    )
+    args = (*inputs, partial, *shape_args, stride_os, partial.stride(-2), partial.stride(-1))
+    kwargs = {"SPLIT_K": split_k, **constexprs}
+    if _QUEUING_ONLY.get():
+        if _async_compile is None or _async_compile.active_mode.get() is None:
+            raise RuntimeError("candidate prepass lost its active compile pool")
+        _queue_untuned_configs(kernel, args, kwargs)
+        return out
+    _precompile_untuned_configs(kernel, args, kwargs)
+    wrap_triton(_tuned_kernel(kernel, args, kwargs))[grid](*args, **kwargs)
     if split_k > 1:
         splitk_reduce(partial, out, block_m, reduce_block_n)
     return out
