@@ -263,6 +263,20 @@ class BackendRegistry:
         """
         return self._legacy_module._is_available(backend_name)
 
+    def set_option(
+        self, backend_name: str, options: Dict[str, Union[bool, int, str]]
+    ) -> None:
+        """Sets process-wide options of a backend, for example
+        ``set_option("XnnpackBackend", {"weight_cache_enabled": True})``."""
+        self._legacy_module._set_option(backend_name, options)
+
+    def get_option(
+        self, backend_name: str, options: Dict[str, Union[bool, int, str]]
+    ) -> Dict[str, Union[bool, int, str]]:
+        """Returns the backend's current values for the keys of ``options``,
+        whose values set the expected types."""
+        return self._legacy_module._get_option(backend_name, options)
+
 
 class OperatorRegistry:
     """The registry of operators that are available to the runtime."""
@@ -311,6 +325,7 @@ class Runtime:
         enable_etdump: bool = False,
         debug_buffer_size: int = 0,
         data_path: Optional[Union[Path, str]] = None,
+        backend_options: Optional[Dict[str, Dict[str, Union[bool, int, str]]]] = None,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
@@ -325,6 +340,8 @@ class Runtime:
                 Only used when enable_etdump=True. Default is 0.
             data_path: Path to a .ptd file holding data the program keeps outside the PTE,
                 such as the weights a CUDA export writes to a separate file.
+            backend_options: Load-time options for each backend, keyed by backend name,
+                used by every method loaded from this program.
 
         Returns:
             The loaded Program instance.
@@ -336,6 +353,7 @@ class Runtime:
                 debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
                 data_path=str(data_path) if data_path is not None else None,
+                backend_options=backend_options or {},
             )
             return Program(p, data=None)
         elif isinstance(data, bytes):
@@ -355,6 +373,7 @@ class Runtime:
             debug_buffer_size=debug_buffer_size,
             program_verification=verification,
             data_path=str(data_path) if data_path is not None else None,
+            backend_options=backend_options or {},
         )
 
         return Program(p, data=data_bytes)

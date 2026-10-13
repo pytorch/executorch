@@ -128,6 +128,7 @@ def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
         edge_ep.graph_signature,
         edge_ep.state_dict,
         edge_ep.constants,
+        edge_ep.range_constraints,
     )
     method = deserialize_program(data).methods[0]
     # Baseline invariants asserted for every roundtrip so each test starts from a
@@ -510,6 +511,21 @@ class DynamicShapeTest(unittest.TestCase):
         self.assertEqual(len(il.refs), len(il.values))
         self.assertTrue(any(r for r in il.refs))
         self.assertTrue(any(not r for r in il.refs))
+
+    def test_dynamic_dim_keeps_declared_min(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([x, x]) * 2
+
+        graph = _roundtrip(
+            M(),
+            (torch.randn(4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("b", min=1, max=16)}},
+        ).graph
+        ranges = {
+            (d.min, d.max) for tv in graph.tensor_values or [] for d in tv.meta.sizes
+        }
+        self.assertEqual(ranges, {(1, 16), (2, 32)})
 
     def test_dynamic_dim_not_frozen_in_tensor_meta(self):
         # int(sym) would specialize to the hint and freeze the dim; TensorMeta must

@@ -1,3 +1,4 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -17,7 +18,7 @@ def define_common_targets():
         name = "arm_backend",
         srcs = [
             "EthosUBackend.cpp",
-            "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_CoreDriver.cpp",
             "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],
@@ -40,8 +41,10 @@ def define_common_targets():
         name = "vgf_backend",
         srcs = [
             "VGFBackend.cpp",
+            "VGFExecutionStats.cpp",
             "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
+            "VGFZeroCopy.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
@@ -49,10 +52,13 @@ def define_common_targets():
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFExecutionStats.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFVulkanFeatures.h",
+            "VGFZeroCopy.h",
         ],
+        platforms = CXX,
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,
@@ -68,7 +74,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
-            "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+            "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],

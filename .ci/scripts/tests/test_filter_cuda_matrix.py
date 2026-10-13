@@ -284,7 +284,7 @@ class TestPublishedSets(unittest.TestCase):
     """
 
     def test_published_cuda_versions(self):
-        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu130", "cu132", "cu134"])
+        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu132", "cu134"])
 
     def test_published_cuda_versions_are_documented(self):
         # The install table on the getting started page is the only place a user is told

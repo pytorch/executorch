@@ -170,6 +170,15 @@ endif()
 
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
+  # nvcc compiles host code with cl.exe on Windows, and the CCCL that ships with
+  # CUDA 13.2 and newer stops with an #error under cl.exe's traditional
+  # preprocessor. The standard one is what CCCL asks for, and older toolkits
+  # accept it too.
+  if(WIN32)
+    add_compile_options(
+      "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>"
+    )
+  endif()
 endif()
 
 # Centralize Windows/MSVC checks used throughout this file.
@@ -240,22 +249,14 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
-  list(
-    APPEND
-    _aoti_cuda_shim_sources
-    runtime/shims/int4mm.cu
-    runtime/shims/int4_plain_mm.cu
-    runtime/shims/int5_plain_mm.cu
-    runtime/shims/int6_plain_mm.cu
-    runtime/shims/int8_plain_mm.cu
-    runtime/shims/sort.cu
-    runtime/shims/rand.cu
+  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
+       runtime/shims/sort.cu runtime/shims/rand.cu
   )
 endif()
 
@@ -335,7 +336,22 @@ endif()
 # appends to any INSTALL_RPATH the caller set rather than replacing it, so a
 # source install keeps its own paths.
 if(EXECUTORCH_BUILD_SHARED)
+  if(_cuda_is_windows_msvc)
+    # In the shared layout the delegate is its own DLL and imports the stream
+    # guard functions (get/set/peek/clearCurrentCUDAStream) from this one. They
+    # carry no AOTI_SHIM_EXPORT, so the annotations alone would not export them;
+    # export everything, as every other shipped DLL does.
+    set_target_properties(
+      aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+  endif()
   executorch_target_shipped_runtime_path(aoti_cuda_shims)
+  if(_cuda_is_msvc_toolchain)
+    # cuda_platform already resolves the runtime from the shared library here;
+    # the helper also puts it first on the link line, as the delegate and
+    # extension_cuda do.
+    executorch_target_link_shared_runtime(aoti_cuda_shims)
+  endif()
 endif()
 
 install(
@@ -349,10 +365,11 @@ set(_aoti_cuda_backend_sources
     runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
     runtime/cuda_weight_cache.cpp
 )
-if(_cuda_is_msvc_toolchain)
-  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
-  # symbols exported from aoti_cuda_shims.dll.
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
+# The off-graph KV cache builds on the LLM extension's neutral cache.
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
+       runtime/cuda_kv_pool.cpp
+  )
 endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
@@ -401,6 +418,12 @@ target_link_libraries(
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
          extension_cuda ${CMAKE_DL_LIBS}
 )
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
+  target_compile_definitions(
+    aoti_cuda_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
+  )
+endif()
 
 if(_cuda_is_msvc_toolchain)
   # cuda_backend.cpp uses SlimTensor CUDA utilities (e.g. getCurrentCUDAStream)
@@ -470,4 +493,21 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+  # sort.cu and rand.cu are compiled only under this condition (see
+  # _aoti_cuda_shim_sources), so the test that calls them is too.
+  if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
+    et_cxx_test(
+      test_cuda_sort_rand SOURCES runtime/test/test_cuda_sort_rand.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
+
+  if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    et_cxx_test(
+      test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+  endif()
 endif()

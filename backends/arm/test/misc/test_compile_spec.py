@@ -127,6 +127,16 @@ def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
     assert roundtripped.tosa_dev_mode is True
 
 
+def test_emit_debug_info_roundtrip_vgf_FP_INT():
+    disabled = VgfCompileSpec()
+    disabled_roundtripped = VgfCompileSpec._from_list(disabled._to_list())
+    assert disabled_roundtripped.emit_debug_info is False
+
+    enabled = VgfCompileSpec(emit_debug_info=True)
+    enabled_roundtripped = VgfCompileSpec._from_list(enabled._to_list())
+    assert enabled_roundtripped.emit_debug_info is True
+
+
 def test_preserve_io_quantization_warns_for_u55_INT():
     with warns(
         UserWarning,

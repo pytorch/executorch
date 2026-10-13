@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 import os
 import tempfile
@@ -22,15 +23,22 @@ from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_
 from executorch.backends.qualcomm.debugger.utils import DrawGraph as _DrawGraphTool
 from executorch.backends.qualcomm.export_utils import (
     convert_pt2e,
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
     make_quantizer,
     prepare_pt2e,
     prepare_qat_pt2e,
+    QcomChipset,
     QuantDtype,
     to_edge_transform_and_lower_to_qnn,
+)
+from executorch.backends.qualcomm.partition.utils import (
+    warn_if_dilated_conv_may_not_fit_vtcm,
 )
 from executorch.backends.qualcomm.tests.rework.conftest import (
     calibrate,
     check_exception,
+    default_property,
     EXCEPTION_FROM_PREPROCESS,
 )
 from executorch.backends.qualcomm.tests.utils import validate_context_binary
@@ -41,6 +49,7 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
 )
 from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
@@ -352,6 +361,180 @@ class DrawGraph:
             assert sorted(__class__._golden.split()) == sorted(
                 result.split()
             ), "Generated .dot file does not match the golden file."
+
+
+class DilatedConvVtcmWarning:
+    """The partitioner's advisory warning for dilated convs that may not tile.
+
+    fp16 HTP does not reject a dilated convolution it failed to tile into VTCM;
+    it emits a context binary that stops the DSP at execute. The partitioner
+    therefore logs a warning naming the operator, without changing whether it is
+    delegated. See https://github.com/pytorch/executorch/issues/23096.
+    """
+
+    _VTCM_8MB = 8
+
+    @staticmethod
+    def _conv_node(cin, cout, kernel, dilation, hw, groups=1, padding=None):
+        """One `aten.convolution` node with the metadata the check reads.
+
+        Traced rather than hand-built so the argument order and `val` metadata
+        come from the real decomposition. Meta device: only shapes are needed,
+        and these convs reach several MB of weights.
+        """
+        if padding is None:
+            padding = dilation * (kernel - 1) // 2
+
+        class _Conv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    cin,
+                    cout,
+                    kernel_size=kernel,
+                    padding=padding,
+                    dilation=dilation,
+                    groups=groups,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        with torch.device("meta"):
+            module = _Conv().eval()
+            inputs = (torch.randn(1, cin, hw, hw),)
+
+        edge = torch.export.export(module, inputs, strict=True).run_decompositions()
+        for node in edge.graph_module.graph.nodes:
+            if node.target is torch.ops.aten.convolution.default:
+                # The partitioner sees the edge dialect's overload.
+                node.target = exir_ops.edge.aten.convolution.default
+                return node
+        raise AssertionError("no convolution node in the exported graph")
+
+    @staticmethod
+    def test(subtests, caplog):
+        vtcm = __class__._VTCM_8MB
+        # The reported convolution: 960 -> 256, 3x3, dilation 36, 65x65 input.
+        reported = {"cin": 960, "cout": 256, "kernel": 3, "dilation": 36, "hw": 65}
+
+        with subtests.test(msg="warns_and_names_the_operator"):
+            node = __class__._conv_node(**reported)
+            with caplog.at_level(logging.WARNING):
+                caplog.clear()
+                estimate = warn_if_dilated_conv_may_not_fit_vtcm(node, vtcm)
+            assert estimate is not None
+            # Must be actionable: the node, both byte counts, and the issue.
+            for expected in (
+                node.name,
+                str(estimate),
+                str(vtcm * 1024 * 1024),
+                "23096",
+            ):
+                assert expected in caplog.text
+
+        # Anything that is not the pathological shape must stay silent, or the
+        # warning becomes noise in every export log.
+        silent_cases = [
+            # The Conv2d shape the op tests already sweep.
+            (
+                "small_dilated",
+                {"cin": 1, "cout": 6, "kernel": 3, "dilation": 2, "hw": 8},
+                vtcm,
+            ),
+            # Wide and heavy, but dilation 1 tiles down to the kernel.
+            ("undilated", {**reported, "dilation": 1, "padding": 1}, vtcm),
+            # Depthwise: the channel volume driving the failure is not present.
+            (
+                "grouped",
+                {
+                    "cin": 960,
+                    "cout": 960,
+                    "kernel": 3,
+                    "dilation": 36,
+                    "hw": 65,
+                    "groups": 960,
+                },
+                vtcm,
+            ),
+            # SocInfo defaults vtcm_size_in_mb to 0, which means "unknown" and
+            # must not be read as "no space available".
+            ("unknown_vtcm_size", reported, 0),
+        ]
+        for label, kwargs, vtcm_mb in silent_cases:
+            with subtests.test(msg=label):
+                node = __class__._conv_node(**kwargs)
+                with caplog.at_level(logging.WARNING):
+                    caplog.clear()
+                    assert (
+                        warn_if_dilated_conv_may_not_fit_vtcm(node, vtcm_mb) is None
+                    ), f"{label} should not warn"
+                assert caplog.text == ""
+
+        with subtests.test(msg="threshold_follows_the_soc"):
+            # 4 MB parts (e.g. SAR2230P, SW6100) hit this at lower cin, so the
+            # check must read VTCM from the SoC rather than hardcode 8 MB.
+            node = __class__._conv_node(cin=256, cout=64, kernel=3, dilation=36, hw=65)
+            assert warn_if_dilated_conv_may_not_fit_vtcm(node, 8) is None
+            assert warn_if_dilated_conv_may_not_fit_vtcm(node, 1) is not None
+
+
+class DilatedConvTcmFitSentinel:
+    """Alarm for when HTP learns to tile the convolution from #23096.
+
+    This asserts the *desired* end state -- that the reported convolution
+    compiles -- so it fails today and is marked xfail at the call site. When the
+    backend fix lands it starts passing, and `xfail(strict=True)` turns that
+    XPASS into a failure, which is the notification to delete this, the
+    partitioner warning in `warn_if_dilated_conv_may_not_fit_vtcm`, and the
+    troubleshooting entry in `docs/source/backends-qualcomm.md`.
+
+    a16w8 rather than fp16 because the quantized path is where the TCM-fit check
+    actually runs: it fails on the x86 host at finalize with `not sufficiently
+    tiled to fit in TCM`, so no device is involved. The fp16 path skips the check
+    and only fails on-device, which would mean deliberately hanging a DSP on
+    every CI run.
+
+    Two things this does not cover:
+
+    * It only fires when the test runs against a QNN SDK carrying the fix. With
+      a pinned SDK version it stays xfail however long the backend takes, so the
+      real trigger is an SDK upgrade rather than the fix itself.
+    * It watches the tiling defect. If the backend instead only makes fp16
+      perform the check it currently skips -- the cheaper of the two fixes --
+      a16w8 keeps failing and this stays xfail, even though the warning has by
+      then become redundant, since users would get a compile error.
+
+    It is also a sentinel rather than a correctness test: it flips for any change
+    that stops this shape raising, including one in the quantizer path or in how
+    the SDK reports the failure.
+    """
+
+    @staticmethod
+    def test():
+        # The reported shape. padding == dilation keeps the output spatially the
+        # same size as the input, which is what ASPP does.
+        module = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                960, 256, kernel_size=3, padding=36, dilation=36, bias=False
+            )
+        ).eval()
+        inputs = (torch.randn(1, 960, 65, 65),)
+
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_16a8w,
+            soc_model=default_property().soc_model,
+        )
+        compile_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=getattr(QcomChipset, default_property().soc_model),
+            backend_options=generate_htp_compiler_spec(use_fp16=False),
+        )
+
+        with calibrate(module, [inputs], quantizer) as quantized:
+            # Raises today: graph prepare cannot tile this into VTCM and reports
+            # `Requires 8638464 bytes` against 8388608 available on an 8 MB part.
+            to_edge_transform_and_lower_to_qnn(quantized, inputs, compile_spec)
 
 
 class FixedPointFloatingPointMixedPrecision:

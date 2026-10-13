@@ -53,6 +53,7 @@ from executorch.exir.passes import (
     OpReplacePass,
     remove_unused_parameters_pass,
 )
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -208,7 +209,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
@@ -753,11 +756,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
 
 

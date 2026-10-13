@@ -6,7 +6,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, cast, Optional
 
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
@@ -32,8 +32,8 @@ from torch.export import ExportedProgram
 
 
 class CortexMQuantize(Quantize):
-    def __init__(self, calibration_samples=None):
-        quantizer = CortexMQuantizer()
+    def __init__(self, calibration_samples=None, use_explicit_layout: bool = False):
+        quantizer = CortexMQuantizer(use_explicit_layout=use_explicit_layout)
         super().__init__(quantizer, calibration_samples=calibration_samples)
 
 
@@ -117,14 +117,17 @@ class CortexMTester(TesterBase):
         else:
             resolved_example_inputs = example_inputs
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
+        self.target_config = target_config
         stage_classes: dict[StageType, Callable[..., Any]] = dict(
             cortex_m_stage_classes
         )
-        stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
-            target_config=target_config
+        stage_classes[StageType.RUN_PASSES] = lambda use_explicit_layout=False: (
+            CortexMRunPasses(
+                target_config=target_config, use_explicit_layout=use_explicit_layout
+            )
         )
-        stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
-            lambda: CortexMToEdgeTransformAndLower(target_config=target_config)
+        stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = lambda: (
+            CortexMToEdgeTransformAndLower(target_config=target_config)
         )
         stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
             target_config=target_config, timeout=timeout
@@ -139,49 +142,90 @@ class CortexMTester(TesterBase):
         atol=1e-03,
         calibration_samples=None,
         ops_absent_after_transforms=None,
+        use_explicit_layout: bool = False,
+        compare_outputs: bool = True,
     ):
         """
         Test the python dialect op implementation.
         """
-        if calibration_samples is not None:
-            quantization_stage = CortexMQuantize(
-                calibration_samples=calibration_samples
-            )
+        if calibration_samples is None and not use_explicit_layout:
+            self.quantize()
         else:
-            quantization_stage = None
-        self.quantize(quantization_stage)
+            quantization_stage = cast(
+                Quantize,
+                self._get_default_stage(
+                    StageType.QUANTIZE,
+                    calibration_samples=calibration_samples,
+                    use_explicit_layout=use_explicit_layout,
+                ),
+            )
+            self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.check_count(ops_before_transforms)
-        self.run_passes()
+        if use_explicit_layout:
+            self.run_passes(
+                cast(
+                    RunPasses,
+                    self._get_default_stage(
+                        StageType.RUN_PASSES, use_explicit_layout=True
+                    ),
+                )
+            )
+        else:
+            self.run_passes()
         self.check_count(ops_after_transforms)
         if ops_absent_after_transforms:
             self.check_not(ops_absent_after_transforms)
-        self.run_method_and_compare_outputs(
-            inputs=self.example_inputs, qtol=qtol, atol=atol
-        )
+        if compare_outputs:
+            self.run_method_and_compare_outputs(
+                inputs=self.example_inputs, qtol=qtol, atol=atol
+            )
 
-    def test_implementation(self, qtol=0, atol=1e-03, calibration_samples=None):
+    def test_implementation(
+        self,
+        qtol=0,
+        atol=1e-03,
+        calibration_samples=None,
+        use_explicit_layout: bool = False,
+        compare_outputs: bool = True,
+    ):
         """
         Test the optimized op implementation in simulation
         """
 
-        if calibration_samples is not None:
-            quantization_stage = CortexMQuantize(
-                calibration_samples=calibration_samples
-            )
+        if calibration_samples is None and not use_explicit_layout:
+            self.quantize()
         else:
-            quantization_stage = None
-
-        self.quantize(quantization_stage)
+            self.quantize(
+                cast(
+                    Quantize,
+                    self._get_default_stage(
+                        StageType.QUANTIZE,
+                        calibration_samples=calibration_samples,
+                        use_explicit_layout=use_explicit_layout,
+                    ),
+                )
+            )
         self.export()
         self.to_edge()
-        self.run_passes()
+        if use_explicit_layout:
+            self.run_passes(
+                cast(
+                    RunPasses,
+                    self._get_default_stage(
+                        StageType.RUN_PASSES, use_explicit_layout=True
+                    ),
+                )
+            )
+        else:
+            self.run_passes()
         self.to_executorch()
         self.serialize()
-        self.run_method_and_compare_outputs(
-            inputs=self.example_inputs, qtol=qtol, atol=atol
-        )
+        if compare_outputs:
+            self.run_method_and_compare_outputs(
+                inputs=self.example_inputs, qtol=qtol, atol=atol
+            )
 
 
 @dataclass
@@ -189,10 +233,22 @@ class McuTestCase:
     model: torch.nn.Module
     example_inputs: tuple[Any, ...] | Callable[[], tuple[Any, ...]]
 
-    def get_example_inputs(self) -> tuple[Any, ...]:
-        if callable(self.example_inputs):
-            return self.example_inputs()
-        return self.example_inputs
+    def get_example_inputs(self, use_explicit_layout: bool = False) -> tuple[Any, ...]:
+        inputs = (
+            self.example_inputs()
+            if callable(self.example_inputs)
+            else self.example_inputs
+        )
+        if use_explicit_layout:
+            return tuple(
+                (
+                    input_value.clone(memory_format=torch.contiguous_format)
+                    if isinstance(input_value, torch.Tensor)
+                    else input_value
+                )
+                for input_value in inputs
+            )
+        return inputs
 
 
 def ramp_tensor(start: float, end: float, shape: tuple[int, ...]) -> torch.Tensor:

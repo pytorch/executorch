@@ -48,8 +48,12 @@ Tensor& cat_out(
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
-  torch::executor::get_cat_out_target_size(
-      tensors, dim, expected_out_size, &expected_out_dim);
+  ET_KERNEL_CHECK(
+      ctx,
+      torch::executor::get_cat_out_target_size(
+          tensors, dim, expected_out_size, &expected_out_dim),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx,

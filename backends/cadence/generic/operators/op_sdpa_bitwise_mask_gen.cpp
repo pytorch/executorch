@@ -69,10 +69,20 @@ namespace native {
   } else if (dtype == ::executorch::aten::ScalarType::Float) {
     const float* __restrict mask_data = mask.mutable_data_ptr<float>();
     uint8_t* __restrict out_data = out.mutable_data_ptr<uint8_t>();
+    // Compare in float. Xtensa DSP cores here have a single-precision FPU but
+    // no double-precision hardware, so `float < double` promotes via two
+    // soft-float library calls (__extendsfdf2, __ltdf2) on every element.
+    //
+    // This assumes the threshold is exactly representable in float, which is
+    // what AOT emits and what every producer passes today (all pass 0.0). A
+    // threshold that is not representable rounds to nearest and can move the
+    // boundary by up to half an ULP. The HiFi TIE kernel already rounds the
+    // same way, so the two kernels agree either way.
+    const float f_threshold = static_cast<float>(threshold);
     for (int64_t i = 0, out_index = 0; i < numel; i += 8, out_index++) {
       uint8_t packed_mask = 0;
       for (int64_t j = 0; j < 8; j++) {
-        packed_mask |= (mask_data[i + j] < threshold) << j;
+        packed_mask |= (mask_data[i + j] < f_threshold) << j;
       }
       out_data[out_index] = packed_mask;
     }

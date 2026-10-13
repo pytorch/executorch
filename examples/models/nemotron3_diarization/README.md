@@ -4,15 +4,15 @@
 # From the repository root:
 python -m pip install git+https://github.com/huggingface/transformers "librosa>=0.10"
 
-# Choose mlx (Apple Silicon), xnnpack (CPU), or cuda (NVIDIA GPU).
+# Choose mlx (Apple Silicon), xnnpack (CPU), cuda (NVIDIA GPU), or vulkan (GPU).
 BACKEND=mlx
-# Export: BF16 by default. Add --dtype fp32 to use FP32.
+# Export: FP32 for Vulkan, BF16 for other backends. Add --dtype fp32 to use FP32.
 python -m executorch.examples.models.nemotron3_diarization.export_nemotron \
   --hf-model nvidia/Nemotron-3-Diarization \
   --backend "$BACKEND" \
   --output-dir "nemotron_exports/$BACKEND"
 
-# Build the matching runner.
+# Build the matching runner (Vulkan requires the Vulkan SDK and glslc).
 make "nemotron3-diarization-${BACKEND/xnnpack/cpu}"
 
 # Convert to mono 16 kHz PCM16 and run
@@ -28,6 +28,9 @@ cmake-out/examples/models/nemotron3_diarization/nemotron3_diarization_runner \
   --preset=offline \
   --output=segments.json
 ```
+
+Vulkan export uses FP32. The preprocessor runs on CPU with XNNPACK;
+`pre_encode` and `encode` each run in one Vulkan partition.
 
 CUDA export requires a CUDA-enabled PyTorch installation and a CUDA toolkit.
 The preprocessor runs on CPU with XNNPACK; `pre_encode` and `encode` run on CUDA,

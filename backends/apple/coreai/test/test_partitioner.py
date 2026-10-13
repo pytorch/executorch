@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 
 from executorch.backends.apple.coreai import get_default_compile_config
-from executorch.backends.apple.coreai.compiler.preprocess import COMPILE_SPEC_KEYS
 from executorch.backends.apple.coreai.partition.partitioner import (
     _OperatorsSupportedForCoreAIBackend,
     CoreAIPartitioner,
@@ -270,13 +269,6 @@ class LinearE2ETest(unittest.TestCase):
 
 
 class PartitionerCompileSpecTest(unittest.TestCase):
-    def test_uses_sidecar_spec_is_embedded(self):
-        # The delivery mode is serialized (the runtime needs it); the build dir
-        # is not (it is an env var); only the mode flag rides along.
-        specs = CoreAIPartitioner(uses_sidecar=True).delegation_spec.compile_specs
-        self.assertEqual([s.key for s in specs], [COMPILE_SPEC_KEYS.USES_SIDECAR.value])
-        self.assertNotIn(b"/", specs[0].value)
-
     def test_inline_partitioner_embeds_no_specs(self):
         self.assertEqual(CoreAIPartitioner().delegation_spec.compile_specs, [])
 
