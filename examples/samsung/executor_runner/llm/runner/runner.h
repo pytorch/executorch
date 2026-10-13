@@ -16,9 +16,9 @@
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/token_generator.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/token_generator.h>
 
 namespace example {
 
@@ -27,7 +27,7 @@ namespace runtime = ::executorch::runtime;
 namespace extension = ::executorch::extension;
 
 /**
- * @brief Holds path-related configuration for creating a llama runner.
+ * @brief Holds path-related configuration for creating an LLM runner.
  */
 struct RunnerPaths {
   std::string model_path;
@@ -37,7 +37,7 @@ struct RunnerPaths {
 };
 
 /**
- * @brief Holds non-path configuration for creating a llama runner.
+ * @brief Holds non-path configuration for creating an LLM runner.
  */
 struct RunnerConfig {
   std::string config_path;
@@ -89,6 +89,7 @@ class LLMRunner : public llm::IRunner {
    * @param stats Statistics tracking object for performance monitoring
    * @param io_manager IOManager manages input/output operations for LLM
    * inference.
+   * @param model_version Decoder model family selecting the prompt template
    * @param temperature Temperature parameter for controlling randomness in
    * generation (deprecated). Please use GenerationConfig.temperature instead.
    */
@@ -101,6 +102,7 @@ class LLMRunner : public llm::IRunner {
       std::unique_ptr<example::TokenGenerator> text_token_generator,
       std::unique_ptr<llm::Stats> stats,
       std::unique_ptr<llm::IOManager> io_manager,
+      DecoderModelVersion model_version,
       float temperature = -1.0f);
 
   /**
@@ -227,10 +229,10 @@ class LLMRunner : public llm::IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
-  DecoderModelVersion model_version_ = DecoderModelVersion::kLlama3;
+  DecoderModelVersion model_version_;
 };
 
-std::unique_ptr<llm::IRunner> create_llama_runner(
+std::unique_ptr<llm::IRunner> create_llm_runner(
     const RunnerPaths& paths,
     RunnerConfig config);
 

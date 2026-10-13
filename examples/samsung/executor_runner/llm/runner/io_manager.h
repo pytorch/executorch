@@ -11,8 +11,8 @@
 #include <cstring>
 #include <vector>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/rotary_embedding.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/rotary_embedding.h>
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 
 namespace example {
@@ -419,7 +419,7 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
    * @param seq_len The sequence length to use for the embedding computation.
    * @param inputs Vector of EValue inputs to append the embedding tensors to.
    */
-  void prepare_rotary_embedding_inputs(
+  ET_NODISCARD runtime::Error prepare_rotary_embedding_inputs(
       size_t seq_len,
       std::vector<executorch::runtime::EValue>& inputs);
 

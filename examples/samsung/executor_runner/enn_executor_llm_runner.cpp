@@ -8,7 +8,7 @@
 
 #include <gflags/gflags.h>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/runner.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/runner.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -19,7 +19,7 @@ namespace llm = ::executorch::extension::llm;
 
 DEFINE_string(
     model_path,
-    "llama2.pte",
+    "model.pte",
     "Model serialized in flatbuffer format.");
 
 DEFINE_string(data_path, "", "Data file for the model.");
@@ -114,8 +114,8 @@ int32_t main(int32_t argc, char** argv) {
   example::RunnerConfig runner_config{
       .config_path = config_path, .is_decode_only = is_decode_only};
   std::unique_ptr<llm::IRunner> runner =
-      example::create_llama_runner(runner_paths, runner_config);
-  ET_CHECK_MSG(runner != nullptr, "Failed to create llama runner");
+      example::create_llm_runner(runner_paths, runner_config);
+  ET_CHECK_MSG(runner != nullptr, "Failed to create LLM runner");
 
   // TODO: support warmup interface
 
@@ -127,7 +127,7 @@ int32_t main(int32_t argc, char** argv) {
   auto error = runner->generate(prompt, config, {}, {});
   ET_CHECK_MSG(
       error == executorch::runtime::Error::Ok,
-      "Failed to generate token from llama runner");
+      "Failed to generate token from LLM runner");
 
   return 0;
 }

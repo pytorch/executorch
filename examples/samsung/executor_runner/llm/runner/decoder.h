@@ -12,7 +12,7 @@
 
 #include <unordered_set>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/io_manager.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>

@@ -13,7 +13,7 @@
 
 #include <ctime>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/decoder.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/decoder.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 

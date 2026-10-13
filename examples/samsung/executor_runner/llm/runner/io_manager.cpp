@@ -8,8 +8,8 @@
 
 #include <cstring>
 
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/io_manager.h>
 
 namespace example {
 
@@ -134,7 +134,8 @@ LlmIOManager::prepare_prefill(
       break;
   }
 
-  prepare_rotary_embedding_inputs(config_.prefill_seq_len, inputs);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      prepare_rotary_embedding_inputs(config_.prefill_seq_len, inputs));
 
   prefill_k_input_tensors_.clear();
   prefill_v_input_tensors_.clear();
@@ -195,7 +196,8 @@ LlmIOManager::prepare_decode(
   pos_ids_.clear();
   pos_ids_.resize(config_.decode_seq_len);
   pos_ids_[0] = current_pos_;
-  prepare_rotary_embedding_inputs(config_.decode_seq_len, inputs);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      prepare_rotary_embedding_inputs(config_.decode_seq_len, inputs));
 
   decode_k_input_tensors_.clear();
   decode_v_input_tensors_.clear();
@@ -504,7 +506,7 @@ void LlmIOManager::dump_kv_output(
   }
 }
 
-void LlmIOManager::prepare_rotary_embedding_inputs(
+executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(
     size_t seq_len,
     std::vector<executorch::runtime::EValue>& inputs) {
   const size_t element_size = seq_len * config_.head_dim;
@@ -519,13 +521,15 @@ void LlmIOManager::prepare_rotary_embedding_inputs(
       break;
   }
 
-  if (rotary_embedding_->update(
-          pos_ids_,
-          global_cos_data_.data(),
-          global_sin_data_.data(),
-          local_cos_data_.data(),
-          local_sin_data_.data()) != executorch::runtime::Error::Ok) {
+  auto update_err = rotary_embedding_->update(
+      pos_ids_,
+      global_cos_data_.data(),
+      global_sin_data_.data(),
+      local_cos_data_.data(),
+      local_sin_data_.data());
+  if (update_err != executorch::runtime::Error::Ok) {
     ET_LOG(Error, "update pos_embedding failed !");
+    return update_err;
   }
 
   global_cos_tensor_ = executorch::extension::from_blob(
@@ -565,6 +569,8 @@ void LlmIOManager::prepare_rotary_embedding_inputs(
       inputs.emplace_back(local_sin_tensor_);
       break;
   }
+
+  return executorch::runtime::Error::Ok;
 }
 
 } // namespace example
