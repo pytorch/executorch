@@ -137,6 +137,12 @@ class GgmlOpsTest(unittest.TestCase):
     def test_add_broadcast(self):
         self._check(Lambda(torch.add), (torch.randn(2, 3, 4), torch.randn(4)))
 
+    def test_sub_broadcast_left(self):
+        self._check(Lambda(torch.sub), (torch.randn(3, 1), torch.randn(2, 3, 4)))
+
+    def test_div_broadcast_both(self):
+        self._check(Lambda(torch.div), (torch.randn(2, 1, 4), torch.rand(3, 1) + 0.5))
+
     def test_add_scalar(self):
         self._check(Lambda(lambda x: x + 2.0), (torch.randn(2, 3, 4),))
 
