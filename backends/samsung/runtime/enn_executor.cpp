@@ -38,6 +38,12 @@ Error EnnExecutor::initialize(
   // EnnInitialize() resets the calling thread's preference on every call, so
   // re-apply it right before opening the model.
   enn_api_inst->applyPerfConfigFromSoc();
+  ET_CHECK_OR_RETURN_ERROR(
+      buf_size <= UINT32_MAX && weight_size <= UINT32_MAX,
+      InvalidArgument,
+      "Model (%zu) or weight (%zu) buffer exceeds the 4GiB ENN limit",
+      buf_size,
+      weight_size);
   EnnReturn ret = ENN_RET_SUCCESS;
 
   ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);
@@ -48,6 +54,10 @@ Error EnnExecutor::initialize(
     if (pte_buffer->va == binary_buf_addr &&
         !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(pte_buffer, &fd)) {
       if (use_weight_fd) {
+        ET_CHECK_OR_RETURN_ERROR(
+            enn_api_inst->EnnOpenModelFromFdWithWeight != nullptr,
+            NotSupported,
+            "This ENN runtime cannot open models with external weights.");
         EnnBufferPtr ptd_buffer = nullptr;
         ET_CHECK_OR_RETURN_ERROR(
             sm_instance->query(&ptd_buffer, weight_buf_addr, weight_size),
@@ -63,7 +73,9 @@ Error EnnExecutor::initialize(
         ret = enn_api_inst->EnnOpenModelFromFdWithWeight(
             fd, buf_size, pte_buffer->offset, &ptd_buffer, 1, &model_id_);
         ET_CHECK_OR_RETURN_ERROR(
-            ret == ENN_RET_SUCCESS, Internal, "Open model with weights failed.");
+            ret == ENN_RET_SUCCESS,
+            Internal,
+            "Open model with weights failed.");
         ET_LOG(Info, "Opened model from file descriptor with weights");
         sm_instance->free(pte_buffer->va);
       } else {

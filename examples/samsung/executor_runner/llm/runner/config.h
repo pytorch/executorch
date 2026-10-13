@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/core/error.h>
 
 #include <cstddef>
 #include <memory>
@@ -25,6 +26,7 @@ inline constexpr auto kNumOfLayers = "get_n_layers";
 inline constexpr auto kNumOfHiddenDim = "get_hidden_dim";
 inline constexpr auto kNumOfHeads = "get_n_heads";
 inline constexpr auto kNumOfKVHeads = "get_n_kv_heads";
+inline constexpr auto kHeadDim = "get_head_dim";
 
 inline constexpr auto default_method_name = "forward";
 inline constexpr auto default_method_name_prefill = "prefill_forward";
@@ -45,138 +47,6 @@ enum class DecoderModelVersion {
   kGemma4,
   kGeneral,
 };
-
-struct ModelVersionConfig {
-  size_t position_rank;
-  size_t attention_mask_rank;
-  size_t kv_cache_rank;
-
-  size_t attention_mask_tensor_index;
-  size_t attention_mask_tensor_count;
-
-  size_t position_tensor_index;
-  size_t position_tensor_count;
-
-  size_t k_cache_tensor_index;
-  size_t v_cache_tensor_index;
-  size_t kv_cache_tensor_count;
-
-  size_t heads_dim_index;
-  size_t head_size_dim_index;
-
-  bool has_local_global_rope;
-  bool has_partial_rope;
-  bool has_shared_kv;
-
-  size_t sliding_window;
-};
-
-inline ModelVersionConfig getModelVersionConfig(DecoderModelVersion version) {
-  switch (version) {
-    case DecoderModelVersion::kGemma3:
-      return {
-          .position_rank = 3,
-          .attention_mask_rank = 3,
-          .kv_cache_rank = 4,
-
-          // Flat PTE:
-          // 0      input_ids
-          // 1-2    attention_setup
-          // 3-4    masks
-          // 5-6    position
-          // 7-32   k_cache_0..25
-          // 33-58  v_cache_0..25
-          .attention_mask_tensor_index = 3,
-          .attention_mask_tensor_count = 2,
-
-          .position_tensor_index = 5,
-          .position_tensor_count = 2,
-
-          .k_cache_tensor_index = 7,
-          .v_cache_tensor_index = 33,
-          .kv_cache_tensor_count = 26,
-
-          .heads_dim_index = 1,
-          .head_size_dim_index = 3,
-
-          .has_local_global_rope = true,
-          .has_partial_rope = false,
-          .has_shared_kv = false,
-          .sliding_window = 512,
-      };
-
-    case DecoderModelVersion::kGemma4:
-      return {
-          .position_rank = 3,
-          .attention_mask_rank = 4,
-          .kv_cache_rank = 4,
-
-          // Flat PTE:
-          // 0      input_ids
-          // 1      inputs_embeds
-          // 2      mm_mask
-          // 3      attn_mask_full
-          // 4      attn_mask_sliding
-          // 5      pos_emb_global_cos
-          // 6      pos_emb_global_sin
-          // 7      pos_emb_local_cos
-          // 8      pos_emb_local_sin
-          // 9-43   k_cache_0..34
-          // 44-78  v_cache_0..34
-          .attention_mask_tensor_index = 3,
-          .attention_mask_tensor_count = 2,
-
-          .position_tensor_index = 5,
-          .position_tensor_count = 4,
-
-          .k_cache_tensor_index = 9,
-          .v_cache_tensor_index = 44,
-          .kv_cache_tensor_count = 35,
-
-          .heads_dim_index = 1,
-          .head_size_dim_index = 3,
-
-          .has_local_global_rope = true,
-          .has_partial_rope = true,
-          .has_shared_kv = true,
-          .sliding_window = 512,
-      };
-
-    case DecoderModelVersion::kLlama3:
-      return {
-          .position_rank = 3,
-          .attention_mask_rank = 4,
-          .kv_cache_rank = 4,
-
-          .attention_mask_tensor_index = 1,
-          .attention_mask_tensor_count = 1,
-
-          .position_tensor_index = 2,
-          .position_tensor_count = 2,
-
-          .k_cache_tensor_index = 4,
-          .v_cache_tensor_index = 20,
-          .kv_cache_tensor_count = 16,
-
-          .heads_dim_index = 1,
-          .head_size_dim_index = 3,
-
-          .has_local_global_rope = false,
-          .has_partial_rope = false,
-          .has_shared_kv = false,
-          .sliding_window = 0,
-      };
-    default:
-      return {
-          .position_rank = 3,
-          .kv_cache_rank = 4,
-          .has_local_global_rope = false,
-          .has_partial_rope = false,
-          .has_shared_kv = false,
-          .sliding_window = 0,
-      };
-  }
-}
 
 enum class EmbeddingStrategy {
   kGlobalOnly,
@@ -516,10 +386,13 @@ class RunnerConfig {
 
   std::string tokenizer_type;
 
-  DecoderModelVersion model_version;
+  DecoderModelVersion model_version = DecoderModelVersion::kGeneral;
   std::unique_ptr<BaseModelArgs> model_args;
 
-  void load_from_json();
+  ET_NODISCARD executorch::runtime::Error load_from_json();
+
+ private:
+  ET_NODISCARD executorch::runtime::Error validate() const;
 };
 
 } // namespace example

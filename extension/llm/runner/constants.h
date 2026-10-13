@@ -24,7 +24,6 @@ inline constexpr auto kHeadDims = "get_head_dims";
 inline constexpr auto kWindows = "get_windows";
 inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
-inline constexpr auto kHeadDim = "get_head_dim";
 
 // Multimodal method name conventions
 inline constexpr auto kVisionEncoderMethod = "vision_encoder";

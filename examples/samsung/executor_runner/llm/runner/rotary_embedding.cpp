@@ -7,10 +7,10 @@
  */
 
 #include <cassert>
+#include <cinttypes>
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/rotary_embedding.h>
 
@@ -57,7 +57,6 @@ RotaryEmbedding::RotaryEmbedding(const RunnerConfig& config)
     }
   }
 
-  // TODO(brucekk.kim): size should be configurable
   global_bytes_ = config_.model_args->get_max_seq_len() *
       normalized_global_head_dim_ * sizeof(float);
   local_bytes_ = config_.model_args->get_max_seq_len() *
@@ -132,6 +131,8 @@ runtime::Error RotaryEmbedding::load_from_file(const std::string& path) {
     file.read(local_cos_.get(), local_bytes_);
     file.read(local_sin_.get(), local_bytes_);
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      file.good(), InvalidArgument, "Failed to read '%s'.", path.c_str());
 
   loaded_ = true;
   return runtime::Error::Ok;
@@ -148,13 +149,13 @@ runtime::Error RotaryEmbedding::load_by_precompute_rope_tables() {
       reinterpret_cast<uintptr_t>(global_sin_ptr) % alignof(float) == 0 &&
       "global_sin_ is misaligned for float access!");
 
-  compute_rope_table(
+  ET_CHECK_OK_OR_RETURN_ERROR(compute_rope_table(
       global_cos_ptr,
       global_sin_ptr,
       seq_len_,
       normalized_global_head_dim_,
       base_freq_global_,
-      rope_percentage_);
+      rope_percentage_));
 
   if (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal) {
     float* local_cos_ptr = reinterpret_cast<float*>(local_cos_.get());
@@ -169,13 +170,13 @@ runtime::Error RotaryEmbedding::load_by_precompute_rope_tables() {
 
     // Sliding/local layers use full RoPE; the partial rotary factor applies
     // only to the global (full-attention) layers.
-    compute_rope_table(
+    ET_CHECK_OK_OR_RETURN_ERROR(compute_rope_table(
         local_cos_ptr,
         local_sin_ptr,
         seq_len_,
         normalized_local_head_dim_,
         base_freq_local_,
-        /*rope_pct=*/1.0f);
+        /*rope_pct=*/1.0f));
   }
   loaded_ = true;
   ET_LOG(Info, "Rotary Embedding tables precomputed successfully.");
@@ -293,6 +294,14 @@ runtime::Error RotaryEmbedding::update(
     return runtime::Error::InvalidArgument;
   }
 
+  ET_CHECK_OR_RETURN_ERROR(
+      pos_ids[0] >= 0 &&
+          static_cast<size_t>(pos_ids[0]) + pos_ids.size() <= seq_len_,
+      InvalidArgument,
+      "RoPE positions [%" PRId64 ", +%zu) exceed the %zu-entry table",
+      pos_ids[0],
+      pos_ids.size(),
+      seq_len_);
   size_t pos = static_cast<size_t>(pos_ids[0]);
   size_t length = pos_ids.size();
 
@@ -307,7 +316,7 @@ runtime::Error RotaryEmbedding::update(
 
   // Local Copy
   if (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal) {
-    size_t l_head_dim = config_.model_args->get_head_dim();
+    size_t l_head_dim = normalized_local_head_dim_;
     size_t l_bytes_to_copy = length * l_head_dim * sizeof(float);
     size_t l_element_offset = pos * l_head_dim * sizeof(float);
     std::memcpy(

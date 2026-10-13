@@ -7,34 +7,36 @@
  */
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
-#include <executorch/runtime/platform/runtime.h>
+#include <executorch/runtime/platform/log.h>
 #include <nlohmann/json.hpp>
-#include <fstream>
 
-#include <executorch/runtime/platform/runtime.h>
+#include <cinttypes>
+#include <fstream>
 
 namespace example {
 
 using json = nlohmann::json;
+using executorch::runtime::Error;
 
-void RunnerConfig::load_from_json() {
-  if (config_path.empty()) {
-    ET_LOG(Info, "Config path is empty, skipping JSON load");
-    return;
-  }
+Error RunnerConfig::load_from_json() {
+  ET_CHECK_OR_RETURN_ERROR(
+      !config_path.empty(),
+      InvalidArgument,
+      "A runner config path is required");
 
   std::ifstream file(config_path);
-  if (!file.is_open()) {
-    ET_LOG(Error, "Could not open config file: %s", config_path.c_str());
-    return;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      file.is_open(),
+      InvalidArgument,
+      "Could not open config file: %s",
+      config_path.c_str());
 
   json j = json::parse(file, nullptr, false);
-  if (j.is_discarded()) {
-    ET_LOG(
-        Error, "Invalid JSON format in config file: %s", config_path.c_str());
-    return;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      !j.is_discarded(),
+      InvalidArgument,
+      "Invalid JSON format in config file: %s",
+      config_path.c_str());
 
   if (j.contains("embedding_strategy") && j["embedding_strategy"].is_string()) {
     std::string strategy = j["embedding_strategy"].get<std::string>();
@@ -325,5 +327,63 @@ void RunnerConfig::load_from_json() {
     default:
       break;
   }
+  return validate();
+}
+
+Error RunnerConfig::validate() const {
+  ET_CHECK_OR_RETURN_ERROR(
+      model_args != nullptr,
+      InvalidArgument,
+      "%s: model_version must be one of llama3, gemma3, gemma4",
+      config_path.c_str());
+  const BaseModelArgs& args = *model_args;
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_n_layers() > 0 && args.get_n_kv_heads() > 0 &&
+          args.get_hidden_dim() > 0,
+      InvalidArgument,
+      "%s: n_layers, n_kv_heads and hidden_dim must be positive",
+      config_path.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_head_dim() > 0 && args.get_head_dim() % 2 == 0 &&
+          args.get_global_head_dim() > 0 && args.get_global_head_dim() % 2 == 0,
+      InvalidArgument,
+      "%s: head dims must be positive and even",
+      config_path.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_num_kv_shared_layers() >= 0 &&
+          args.get_num_kv_shared_layers() < args.get_n_layers(),
+      InvalidArgument,
+      "%s: num_kv_shared_layers (%" PRId64 ") must be in [0, n_layers)",
+      config_path.c_str(),
+      args.get_num_kv_shared_layers());
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_prefill_seq_len() >= 1 &&
+          args.get_prefill_seq_len() <= args.get_max_seq_len(),
+      InvalidArgument,
+      "%s: prefill_seq_len (%" PRId64 ") must be in [1, max_seq_len (%" PRId64
+      ")]",
+      config_path.c_str(),
+      args.get_prefill_seq_len(),
+      args.get_max_seq_len());
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_decode_seq_len() == 1,
+      InvalidArgument,
+      "%s: only decode_seq_len == 1 is supported",
+      config_path.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      args.get_attn_mask_rows() == args.get_prefill_seq_len() &&
+          args.get_attn_mask_cols() == args.get_max_seq_len(),
+      InvalidArgument,
+      "%s: attention mask must be [prefill_seq_len, max_seq_len]",
+      config_path.c_str());
+  const bool needs_sliding_window =
+      masking_strategy == MaskingStrategy::kCausalLocal ||
+      masking_strategy == MaskingStrategy::kHybridConvAttention;
+  ET_CHECK_OR_RETURN_ERROR(
+      !needs_sliding_window || args.get_sliding_window().value_or(0) > 0,
+      InvalidArgument,
+      "%s: the selected masking strategy needs a positive sliding_window",
+      config_path.c_str());
+  return Error::Ok;
 }
 } // namespace example

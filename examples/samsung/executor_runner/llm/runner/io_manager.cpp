@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstring>
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
@@ -46,18 +47,7 @@ LlmIOManager::LlmIOManager(
     : IOManager(module), config_(config) {
   rotary_embedding_ = std::make_unique<RotaryEmbedding>(config);
 
-  ET_CHECK_MSG(
-      config_.model_args->get_max_seq_len() >=
-          config_.model_args->get_prefill_seq_len(),
-      "Inconsistent configuration: max_seq_len (%zu) must be greater than or equal to prefill_seq_len (%zu)",
-      config_.model_args->get_max_seq_len(),
-      config_.model_args->get_prefill_seq_len());
-
-  ET_CHECK_MSG(
-      config_.model_args->get_max_seq_len() >= 1,
-      "Inconsistent configuration: max_seq_len must be at least 1, but got %zu",
-      config_.model_args->get_max_seq_len());
-
+  // RunnerConfig::validate() guarantees 1 <= prefill_seq_len <= max_seq_len.
   prefill_cache_len_ = config_.model_args->get_max_seq_len() -
       config_.model_args->get_prefill_seq_len();
   decode_cache_len_ = config_.model_args->get_max_seq_len() - 1;
@@ -138,7 +128,6 @@ ET_NODISCARD runtime::Error LlmIOManager::reset(
   (void)prefill_method;
   (void)decode_method;
 
-  dump_step_ = 0;
   current_pos_ = 0;
   prefill_done_ = false;
 
@@ -190,8 +179,18 @@ LlmIOManager::prepare_prefill(
 
   append_prelude_inputs(prefill_seq_len, inputs);
 
-  const int64_t* start_position = start_pos->const_data_ptr<int64_t>();
-  current_pos_ = *start_position;
+  const int64_t start_position = *start_pos->const_data_ptr<int64_t>();
+  ET_CHECK_OR_RETURN_ERROR(
+      start_position >= 0 &&
+          static_cast<size_t>(start_position) + prompt_token_len <=
+              prefill_cache_len_,
+      InvalidArgument,
+      "Prompt does not fit: chunk at position %" PRId64
+      " with %zu tokens exceeds the %zu-token prefill cache",
+      start_position,
+      prompt_token_len,
+      prefill_cache_len_);
+  current_pos_ = static_cast<size_t>(start_position);
   pos_ids_.resize(prefill_seq_len);
   for (size_t i = 0; i < prefill_seq_len; ++i) {
     pos_ids_[i] = current_pos_ + static_cast<int64_t>(i);
@@ -246,8 +245,6 @@ LlmIOManager::prepare_prefill(
       prefill_cache_len_,
       prefill_dummy_kv_,
       inputs);
-  dump_kv_input("prefill");
-
   return inputs;
 }
 executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
@@ -256,12 +253,19 @@ LlmIOManager::prepare_decode(
     const executorch::extension::TensorPtr& start_pos,
     const std::string& decode_method) {
   (void)decode_method;
+  const int64_t start_position = *start_pos->const_data_ptr<int64_t>();
+  ET_CHECK_OR_RETURN_ERROR(
+      start_position >= 0 &&
+          static_cast<size_t>(start_position) <= decode_cache_len_,
+      InvalidArgument,
+      "Decode position %" PRId64 " exceeds max_seq_len %" PRId64,
+      start_position,
+      config_.model_args->get_max_seq_len());
   if (!prefill_done_) {
     copy_prefill_to_decode_input();
     prefill_done_ = true;
   }
-  const int64_t* start_position = start_pos->mutable_data_ptr<int64_t>();
-  current_pos_ = *start_position;
+  current_pos_ = static_cast<size_t>(start_position);
   update_attn_mask(current_pos_, config_.model_args->get_decode_seq_len());
   std::vector<executorch::runtime::EValue> inputs;
   inputs.reserve(get_input_reserve_size());
@@ -314,37 +318,26 @@ LlmIOManager::prepare_decode(
       decode_cache_len_,
       decode_dummy_kv_,
       inputs);
-  dump_kv_input("decode");
-
   return inputs;
 }
 executorch::runtime::Error LlmIOManager::update_prefill(
     const std::vector<executorch::runtime::EValue>& model_outputs,
     const std::string& prefill_method) {
   (void)prefill_method;
-  update_kv_cache(
+  return update_kv_cache(
       model_outputs,
       prefill_k_input_,
       prefill_v_input_,
       prefill_cache_len_,
-      config_.model_args->get_prefill_seq_len(),
-      "prefill");
-  return executorch::runtime::Error::Ok;
+      config_.model_args->get_prefill_seq_len());
 }
 executorch::runtime::Error LlmIOManager::update_decode(
     const std::vector<executorch::runtime::EValue>& model_outputs,
     const std::string& decode_method) {
   (void)decode_method;
-  update_kv_cache(
-      model_outputs,
-      decode_k_input_,
-      decode_v_input_,
-      decode_cache_len_,
-      1,
-      "decode");
-  return executorch::runtime::Error::Ok;
+  return update_kv_cache(
+      model_outputs, decode_k_input_, decode_v_input_, decode_cache_len_, 1);
 }
-// TOOD: sizeof(float) dtype hard-codes the buffer dtype to be float.
 void LlmIOManager::allocate_buffers() {
   const size_t n_kv_heads = config_.model_args->get_n_kv_heads();
   const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
@@ -459,32 +452,20 @@ void LlmIOManager::update_attn_mask(size_t pos, size_t seq_len) {
 
   const size_t rows = config_.model_args->get_attn_mask_rows();
   const size_t cols = config_.model_args->get_attn_mask_cols();
-  const size_t start_col = cols - rows;
   const size_t total_size = rows * cols;
 
-  // Initialize entire mask to maskFalse (uses memset for 0.0f)
   fill_float_region(attn_mask_.data(), 0, total_size, maskFalse);
 
   if (seq_len > 1) {
-    // Prefill phase
-    const size_t rows = config_.model_args->get_attn_mask_rows();
-    const size_t cols = config_.model_args->get_attn_mask_cols();
-    const size_t start_col = config_.model_args->get_attn_mask_cols() -
-        config_.model_args->get_attn_mask_rows();
-
-    for (int i = 0; i < seq_len; ++i) {
-      int start_idx = cols - rows;
-      int end_idx = start_idx + seq_len;
-
-      for (int j = start_idx; j < end_idx && j <= start_idx + i; ++j) {
-        attn_mask_[i * cols + j] = maskTrue;
-      }
+    // Prefill: past positions [0, pos) and the causal block for the chunk,
+    // which occupies the last `rows` columns.
+    const size_t start_col = cols - rows;
+    for (size_t i = 0; i < seq_len; ++i) {
+      fill_float_region(
+          attn_mask_.data(), i * cols + start_col, i + 1, maskTrue);
     }
-
-    for (int i = 0; i < rows; ++i) {
-      for (int j = 0; j < pos; ++j) {
-        attn_mask_[i * cols + j] = maskTrue;
-      }
+    for (size_t i = 0; i < rows; ++i) {
+      fill_float_region(attn_mask_.data(), i * cols, pos, maskTrue);
     }
   } else {
     const size_t left_len = std::min(pos, cols);
@@ -551,100 +532,57 @@ void LlmIOManager::update_local_attn_mask(size_t pos, size_t seq_len) {
     }
 
     if (cols > 0) {
-      attn_mask_[cols - 1] = maskTrue;
+      local_attn_mask_[cols - 1] = maskTrue;
     }
   }
 }
 
-void LlmIOManager::dump_buffer(
-    const std::string& tag,
-    size_t layer,
-    const char* data,
-    size_t size) {
-  if (!dump_enabled_) {
-    return;
-  }
-  char filename[512];
-  std::snprintf(
-      filename,
-      sizeof(filename),
-      "%s/%s_layer%zu_pos%zu_step%zu.bin",
-      dump_dir_.c_str(),
-      tag.c_str(),
-      layer,
-      current_pos_,
-      dump_step_);
-  FILE* f = std::fopen(filename, "wb");
-  if (f) {
-    std::fwrite(data, 1, size, f);
-    std::fclose(f);
-  }
-}
-void LlmIOManager::dump_kv_input(const std::string& phase) {
-  if (!dump_enabled_) {
-    return;
-  }
-  const bool is_prefill = (phase == "prefill");
-  const auto& k_bufs = is_prefill ? prefill_k_input_ : decode_k_input_;
-  const auto& v_bufs = is_prefill ? prefill_v_input_ : decode_v_input_;
-  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
-  for (size_t l = 0; l < num_cache_layers; l++) {
-    dump_buffer(phase + "_k_input", l, k_bufs[l].data(), k_bufs[l].size());
-    dump_buffer(phase + "_v_input", l, v_bufs[l].data(), v_bufs[l].size());
-  }
-}
-void LlmIOManager::update_kv_cache(
+executorch::runtime::Error LlmIOManager::update_kv_cache(
     const std::vector<executorch::runtime::EValue>& model_outputs,
     std::vector<std::vector<char>>& k_bufs,
     std::vector<std::vector<char>>& v_bufs,
     size_t cache_len,
-    size_t new_len,
-    const std::string& phase) {
+    size_t new_len) {
   // model_outputs: [logits, k0..k_{C-1}, v0..v_{C-1}] where C is the number of
   // cached (self-decoder) layers; KV-shared layers emit no new cache.
   const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
-  for (size_t l = 0; l < num_cache_layers; l++) {
-    copy_tensor_to_cache(
-        model_outputs[1 + l].toTensor(),
+  ET_CHECK_OR_RETURN_ERROR(
+      model_outputs.size() == 1 + 2 * num_cache_layers,
+      InvalidProgram,
+      "Expected %zu outputs (logits + K/V for %zu layers), got %zu",
+      1 + 2 * num_cache_layers,
+      num_cache_layers,
+      model_outputs.size());
+  // The last decode step may run at pos == cache_len; its KV is never read.
+  if (current_pos_ >= cache_len) {
+    return executorch::runtime::Error::Ok;
+  }
+  const size_t rows = std::min(new_len, cache_len - current_pos_);
+  const size_t n_kv_heads = config_.model_args->get_n_kv_heads();
+  for (size_t i = 0; i < 2 * num_cache_layers; i++) {
+    const size_t l = i % num_cache_layers;
+    const size_t head_dim = config_.model_args->get_head_dim_for_layer(l);
+    const runtime::EValue& out = model_outputs[1 + i];
+    ET_CHECK_OR_RETURN_ERROR(
+        out.isTensor() &&
+            out.toTensor().scalar_type() == aten::ScalarType::Float &&
+            static_cast<size_t>(out.toTensor().numel()) ==
+                n_kv_heads * new_len * head_dim,
+        InvalidProgram,
+        "KV output %zu must be a float tensor of %zu elements",
+        1 + i,
+        n_kv_heads * new_len * head_dim);
+    auto& bufs = i < num_cache_layers ? k_bufs : v_bufs;
+    copy_to_cache<float>(
+        out.toTensor().const_data_ptr<float>(),
         new_len,
-        k_bufs[l].data(),
+        rows,
+        bufs[l].data(),
         cache_len,
         current_pos_,
-        config_.model_args->get_head_dim_for_layer(l));
+        head_dim);
   }
-  for (size_t l = 0; l < num_cache_layers; l++) {
-    copy_tensor_to_cache(
-        model_outputs[1 + num_cache_layers + l].toTensor(),
-        new_len,
-        v_bufs[l].data(),
-        cache_len,
-        current_pos_,
-        config_.model_args->get_head_dim_for_layer(l));
-  }
-  dump_kv_output(phase, model_outputs);
-  dump_step_++;
-}
-void LlmIOManager::dump_kv_output(
-    const std::string& phase,
-    const std::vector<executorch::runtime::EValue>& model_outputs) {
-  if (!dump_enabled_) {
-    return;
-  }
-  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
-  for (size_t l = 0; l < num_cache_layers; l++) {
-    const auto& k_out = model_outputs[1 + l].toTensor();
-    const auto& v_out = model_outputs[1 + num_cache_layers + l].toTensor();
-    dump_buffer(
-        phase + "_k_output",
-        l,
-        reinterpret_cast<const char*>(k_out.const_data_ptr<float>()),
-        k_out.numel() * sizeof(float));
-    dump_buffer(
-        phase + "_v_output",
-        l,
-        reinterpret_cast<const char*>(v_out.const_data_ptr<float>()),
-        v_out.numel() * sizeof(float));
-  }
+  return executorch::runtime::Error::Ok;
 }
 
 executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(

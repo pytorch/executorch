@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+# Copyright (c) 2026 Samsung Electronics Co. LTD
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Precompute the Gemma4 RoPE position-embedding .bin for the Exynos LLM runner.
 
 Reproduces the RoPE convention from gemma4_attention.py: inv_freq denominator is
@@ -15,7 +20,8 @@ head_dim 256).
 import argparse
 
 import torch
-from gemma4_config import Gemma4Config
+
+from executorch.examples.models.gemma4.text_decoder.gemma4_config import Gemma4Config
 
 
 def rope_table(

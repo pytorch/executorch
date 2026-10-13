@@ -7,12 +7,12 @@
  *
  */
 #pragma once
+
 #include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/enn_type.h>
+
 #include <string>
 #include <vector>
-
-#include <executorch/runtime/core/freeable_buffer.h>
 
 namespace torch {
 namespace executor {
@@ -44,10 +44,6 @@ class EnnExecutor {
     return num_of_outputs_;
   }
 
-  executorch::runtime::FreeableBuffer* get_weight() const {
-    return weight_;
-  }
-
   void set_weight_key(const std::string& key) {
     weight_key_ = key;
   }
@@ -63,7 +59,6 @@ class EnnExecutor {
   EnnBufferPtr* alloc_buffer_ = nullptr;
   int32_t num_of_inputs_ = 0;
   int32_t num_of_outputs_ = 0;
-  executorch::runtime::FreeableBuffer* weight_ = nullptr;
   std::string weight_key_;
 };
 

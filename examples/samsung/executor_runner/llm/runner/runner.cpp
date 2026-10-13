@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Samsung Platforms, Inc. and affiliates.
+ * Copyright (c) 2025 Samsung Electronics Co. LTD
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -9,7 +9,6 @@
 // A simple LLM runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -25,6 +24,8 @@
 #include <executorch/examples/samsung/executor_runner/llm/runner/prefiller.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/runner.h>
 #include <nlohmann/json.hpp>
+
+#include <algorithm>
 #include <fstream>
 
 namespace example {
@@ -114,7 +115,9 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
       runner_paths.model_path.c_str(),
       runner_paths.tokenizer_path.c_str());
 
-  runner_config.load_from_json();
+  if (runner_config.load_from_json() != runtime::Error::Ok) {
+    return nullptr;
+  }
 
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer = load_tokenizer(
       runner_config.tokenizer_type,
@@ -148,7 +151,7 @@ static const std::unordered_map<std::string, std::string> kMetadataMap{
     {llm::kVocabSize, "get_vocab_size"},
     {llm::kUseKVCache, "use_kv_cache"},
     {llm::kUseSDPAWithKVCache, "use_sdpa_with_kv_cache"},
-    {llm::kHeadDim, "get_head_dim"},
+    {example::kHeadDim, "get_head_dim"},
     {example::kPrefillArLen, "get_prefill_ar_len"},
     {example::kNumOfHiddenDim, "get_hidden_dim"},
     {example::kNumOfHeads, "get_n_heads"},
@@ -221,7 +224,8 @@ runtime::Error LLMRunner::generate_from_pos(
     std::function<void(const llm::Stats&)> stats_callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
-  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
+  ET_CHECK_OR_RETURN_ERROR(
+      !prompt.empty(), InvalidArgument, "Prompt cannot be empty");
   if (!is_loaded()) {
     stats_->model_load_start_ms = llm::time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -253,11 +257,6 @@ runtime::Error LLMRunner::generate_from_pos(
   // return a response token.
   stats_->inference_start_ms = llm::time_in_ms();
   text_token_generator_->clear_stop();
-
-  ET_LOG(
-      Info,
-      "################ input prompt  ################\n %s\n",
-      prompt.c_str());
 
   // Raw prompts are already fully formatted (special tokens, system turn, tool
   // declaration); feed them verbatim and skip every template transformation.
@@ -300,7 +299,6 @@ runtime::Error LLMRunner::generate_from_pos(
   if (model_version_ == DecoderModelVersion::kGemma4 &&
       vision_encoder_ != nullptr && !config_.image_path.empty()) {
     auto* llm_io = static_cast<example::LlmIOManager*>(io_manager_.get());
-    ET_CHECK_MSG(llm_io != nullptr, "IOManager is null");
 
     // Vision embeddings are injected only by the multi-token prefill method;
     // single-token steps go through decode and would silently drop them.
@@ -357,9 +355,12 @@ runtime::Error LLMRunner::generate_from_pos(
 
   int num_prompt_tokens = prompt_tokens.size();
 
-  // Reduce max_context_len by start_pos
-  // TODO(brucekk.kim): Check where to fetch from: metatdata or runner_config
-  int64_t max_context_len = metadata_.at(llm::kMaxContextLen) - start_pos;
+  // The KV cache and RoPE tables only hold max_seq_len positions, whatever
+  // context length the model was trained with.
+  int64_t max_context_len =
+      std::min(
+          metadata_.at(llm::kMaxContextLen), metadata_.at(llm::kMaxSeqLen)) -
+      start_pos;
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
@@ -424,8 +425,6 @@ runtime::Error LLMRunner::generate_from_pos(
   ::tokenizers::Result<std::vector<uint64_t>> newline_token =
       tokenizer_->encode("\n");
 
-  ET_LOG(Info, "[ENN] first token %lu\n", cur_token);
-
   ET_LOG(
       Info,
       "################ The start of token generation ################\n");
@@ -456,7 +455,7 @@ runtime::Error LLMRunner::generate_from_pos(
       };
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       prompt_tokens,
-      num_prompt_tokens,
+      pos,
       max_new_tokens - 1,
       temperature_ == -1.0f ? config.temperature : temperature_,
       collect_callback));
@@ -541,10 +540,11 @@ void LLMRunner::reset() {
   if (llm_io == nullptr) {
     return;
   }
-  auto err = llm_io->reset(
-      example::default_method_name_prefill,
-      example::default_method_name_decode);
-  (void)err;
+  if (llm_io->reset(
+          example::default_method_name_prefill,
+          example::default_method_name_decode) != runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to reset the KV cache");
+  }
 }
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
@@ -596,7 +596,7 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
        config.model_args ? config.model_args->get_n_kv_heads() : 0},
       {kMetadataMap.at(example::kNumOfLayers),
        config.model_args ? config.model_args->get_n_layers() : 0},
-      {kMetadataMap.at(llm::kHeadDim),
+      {kMetadataMap.at(example::kHeadDim),
        config.model_args ? config.model_args->get_head_dim() : 0},
   });
 
@@ -613,6 +613,10 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
 
     if (method_names.count(method_name)) {
       auto get_result = module->get(method_name);
+      if (!get_result.ok()) {
+        ET_LOG(Error, "Failed to read metadata %s", method_name.c_str());
+        continue;
+      }
       value = get_result.get().toScalar().to<decltype(metadata)::mapped_type>();
     } else {
       ET_LOG(
@@ -684,7 +688,11 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
   executorch::runtime::Result<std::unordered_set<std::string>> methods_res =
       module->method_names();
   if (methods_res.error() != executorch::runtime::Error::Ok) {
-    ET_CHECK_MSG(false, "Failed to get method names");
+    ET_LOG(
+        Error,
+        "Failed to get method names from %s",
+        runner_paths.model_path.c_str());
+    return nullptr;
   }
 
   auto methods = methods_res.get();
@@ -746,7 +754,7 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
   }
 
   bool separated_prefill_decode =
-      (config.model_args->get_prefill_seq_len() > 1);
+      !is_decode_only && config.model_args->get_prefill_seq_len() > 1;
   ET_LOG(
       Info,
       "separated_prefill_decode(%s)",
@@ -785,7 +793,10 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
     runner->set_vision_encoder(std::move(vision_encoder));
   }
 
-  runner->load();
+  if (runner->load() != executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to load the LLM runner.");
+    return nullptr;
+  }
 
   return runner;
 }
