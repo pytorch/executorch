@@ -11,6 +11,7 @@
 
 namespace ptn::testing {
 
+// cppcheck-suppress unusedFunction
 std::unique_ptr<EngineHost> make_engine_host() {
   return VulkanEngineHost::create();
 }
