@@ -1902,12 +1902,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
       if (!is_active(value)) {
         continue;
       }
-      requests.push_back(
-          AllocationRequest{
-              .value_id = id,
-              .size_bytes = logical_nbytes(value.tensor_meta()),
-              .memory_kind = memory_kind(storage_at(id)),
-          });
+      requests.push_back(AllocationRequest{
+          .value_id = id,
+          .size_bytes = logical_nbytes(value.tensor_meta()),
+          .memory_kind = memory_kind(storage_at(id)),
+      });
     }
     memory_plan_ = plan_memory(g(), requests);
   }
