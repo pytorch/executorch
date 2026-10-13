@@ -215,7 +215,12 @@ def _shape_text(inputs) -> str:
 
 
 def _run_ggml(
-    package: Path, steps, outdir: Path, num_outputs: int, resize: bool = False
+    package: Path,
+    steps,
+    outdir: Path,
+    num_outputs: int,
+    resize: bool = False,
+    max_cached_graphs: int = 1,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs."""
@@ -237,6 +242,7 @@ def _run_ggml(
         f"--package={package}",
         f"--inputs={';'.join(input_steps)}",
         f"--outputs={';'.join(output_steps)}",
+        f"--max_cached_graphs={max_cached_graphs}",
     ]
     if resize:
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
@@ -698,6 +704,64 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_index_put_cache_write(self):
         self._check(CacheWrite(), (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])))
+
+    def test_cached_graphs_refresh_inputs_and_persistent_cache(self):
+        t = Dim("t", min=1, max=8)
+        ep = torch.export.export(
+            CacheWrite(),
+            (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])),
+            dynamic_shapes={"values": {2: t}, "positions": {0: t}},
+        )
+        # Alternating shapes exercise replays and evictions.
+        steps = [
+            (torch.full((1, 2, 3, 4), 1.0), torch.tensor([5, 1, 6])),
+            (torch.full((1, 2, 1, 4), 2.0), torch.tensor([3])),
+            (torch.full((1, 2, 3, 4), 3.0), torch.tensor([6, 0, 7])),
+            (torch.full((1, 2, 1, 4), 4.0), torch.tensor([1])),
+            (torch.full((1, 2, 1, 4), 5.0), torch.tensor([2])),
+        ]
+        expected, cache = [], torch.zeros(1, 2, 8, 4)
+        for values, positions in steps:
+            cache.index_copy_(2, positions, values)
+            expected.append(cache.clone())
+        for max_cached_graphs in (0, 1, 2):
+            with self.subTest(max_cached_graphs=max_cached_graphs):
+                with tempfile.TemporaryDirectory() as tmp:
+                    outdir = Path(tmp)
+                    package = outdir / "model.ptn"
+                    to_native(ep).save(str(package))
+                    actual = _run_ggml(
+                        package,
+                        steps,
+                        outdir,
+                        1,
+                        resize=True,
+                        max_cached_graphs=max_cached_graphs,
+                    )
+                for [(raw, shape)], reference in zip(actual, expected):
+                    self.assertEqual(shape, tuple(reference.shape))
+                    torch.testing.assert_close(
+                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
+                            shape
+                        ),
+                        reference,
+                        rtol=0,
+                        atol=0,
+                    )
+
+    def test_cached_graph_rechecks_row_indices(self):
+        inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(CacheWrite(), inputs)).save(str(package))
+            with self.assertRaisesRegex(AssertionError, "outside"):
+                _run_ggml(
+                    package,
+                    [inputs, (inputs[0], torch.tensor([5, 1, 8]))],
+                    outdir,
+                    1,
+                )
 
     def test_index_put_rejects_out_of_range(self):
         inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))

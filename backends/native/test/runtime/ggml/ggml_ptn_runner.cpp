@@ -63,6 +63,10 @@ DEFINE_string(
     "cpu",
     "ggml device: cpu, or gpu for the GPU backend this binary links.");
 DEFINE_int32(cpu_threads, 0, "ggml CPU threads; 0 keeps ggml's default.");
+DEFINE_int32(
+    max_cached_graphs,
+    1,
+    "Graphs kept per executable by input shapes; 0 rebuilds every call.");
 DEFINE_int32(warmup, 0, "Untimed executions before the timed ones.");
 DEFINE_int32(
     iterations,
@@ -205,6 +209,10 @@ void run() {
     throw std::invalid_argument("--device must be cpu or gpu");
   }
   options.cpu_threads = FLAGS_cpu_threads;
+  if (FLAGS_max_cached_graphs < 0) {
+    throw std::invalid_argument("--max_cached_graphs must be non-negative");
+  }
+  options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
   const auto host = ptn::GgmlEngineHost::create(options);
   const auto context = host->create_ggml_context(program, package);
   const auto executable = context->compile(FLAGS_method);
