@@ -130,8 +130,9 @@ class ET_EXPERIMENTAL GenerationHandle {
   // and moved-from handles.
   bool valid() const noexcept;
 
-  // Requests cancellation, which lands within one step. A no-op on an invalid
-  // handle.
+  // Requests cancellation, which lands within one execution step. It does not
+  // interrupt an in-progress Executor::execute() call, including any work the
+  // executor performs within that call. A no-op on an invalid handle.
   void cancel() const;
 
   // Becomes true after the terminal callback returns or throws, without
@@ -257,6 +258,9 @@ class ET_EXPERIMENTAL Session {
 
 enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
 
+enum class ET_EXPERIMENTAL AcceptanceError { Unavailable, Failed };
+using AcceptanceResult ET_EXPERIMENTAL = std::variant<bool, AcceptanceError>;
+
 class ET_EXPERIMENTAL Runner {
  public:
   // Takes the scheduler, one per runner, which also supplies the prefill chunk
@@ -282,6 +286,16 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
+
+  // Any thread. Checks metadata compatibility on the initialized engine thread
+  // without opening or changing sessions. Returns true for accepted input and
+  // false for rejected or null input. Stopping or failed initialization returns
+  // AcceptanceError::Unavailable; an exception from accepts() returns
+  // AcceptanceError::Failed.
+  // Acceptance reserves no capacity and does not guarantee execution
+  // success. The command releases its input reference before the future becomes
+  // ready. Never wait for this future in a callback serviced by this runner.
+  std::future<AcceptanceResult> accepts_async(PreparedInputPtr input);
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

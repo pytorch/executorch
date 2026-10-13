@@ -11,7 +11,7 @@ reference on the stored CudaCoalescedInt4Tensor weights and stay in the W4A8
 precision class against the W4A16 reference; the ops must compile with
 Inductor, statically and for a dynamic M, and match eager; and the config
 AOTInductor picks at compile time must be the fastest one even while the CPU
-is saturated.
+is saturated (on CUDA; see Int4AutotunePickTest for ROCm).
 
     python -m pytest backends/cuda/tests/test_int4_quantized_gemm.py -v
 """
@@ -59,6 +59,7 @@ MODEL_SHAPES = (
     (256, 6656),
 )
 SMALL_SHAPES = ((768, 256), (256, 768), (1536, 512))
+W4A8_BUCKETS = (1, 2, 3, 4)
 
 
 def _packed_with_dense(n: int, k: int, seed: int = 0):
@@ -198,7 +199,7 @@ class Int4QuantizedGemmLegalityTest(unittest.TestCase):
             "group size": (lambda a: a.__setitem__(6, 64), "group_size must be 32"),
             "static M": (
                 lambda a: a.__setitem__(0, torch.cat([a[0], a[0]])),
-                "static M must equal",
+                "static M must be within",
             ),
             "rank": (lambda a: a.__setitem__(0, a[0].unsqueeze(0)), "rank-2"),
             "contiguous": (
@@ -241,7 +242,7 @@ class Int4QuantizedGemmLegalityTest(unittest.TestCase):
 
     def test_op_validates_before_launching(self) -> None:
         args = self._args(m=2)
-        with self.assertRaisesRegex(RuntimeError, "static M must equal"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT4_QUANTIZED_GEMM.op(1)(*args)
 
 
@@ -254,7 +255,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
     def test_every_candidate_matches_dequant_matmul(self) -> None:
         for n, k in ((768, 256), (257, 512), (512, 8192)):
             weights = _packed(n, k, seed=n + k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in W4A8_BUCKETS:
                 x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
                 ref = _dequant_matmul(x, *weights, GROUP_SIZE)
                 for config in int4_autotune_configs(bucket):
@@ -308,9 +309,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
                     _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
 
     def test_every_bucket_matches_dequant_matmul_on_model_shapes(self) -> None:
+        # Buckets 8-64 are covered on model shapes by test_int4_large_quantized_gemm.
         for n, k in MODEL_SHAPES:
             weights = _packed(n, k, seed=n ^ k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in W4A8_BUCKETS:
                 with self.subTest(bucket=bucket, n=n, k=k):
                     x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
                     out = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
@@ -372,7 +374,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
 
     def test_every_split_matches_dequant_matmul(self) -> None:
         weights = _packed(256, 4096, seed=91)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in W4A8_BUCKETS:
             x = torch.randn(bucket, 4096, dtype=torch.bfloat16, device="cuda")
             ref = _dequant_matmul(x, *weights, GROUP_SIZE)
             for split in SPLIT_K_CANDIDATES:
@@ -389,7 +391,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             int4_kernel._launch(1, x, *weights, GROUP_SIZE, split_k=4)
 
     def test_ops_are_registered_per_bucket(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
+        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4, 8, 16, 32, 64))
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(
                 hasattr(torch.ops.triton, f"int4_quantized_gemm_m{bucket}"), bucket
@@ -399,10 +401,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
         ):
             INT4_QUANTIZED_GEMM.op(5)
 
-    def test_rejects_an_input_that_is_not_its_bucket(self) -> None:
+    def test_rejects_an_input_above_its_bucket(self) -> None:
         weights = _packed(256, 256)
-        x = torch.randn(3, 256, dtype=torch.bfloat16, device="cuda")
-        with self.assertRaises(RuntimeError):
+        x = torch.randn(5, 256, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT4_QUANTIZED_GEMM.op(4)(x, *weights, GROUP_SIZE)
 
     def test_rejects_other_group_sizes(self) -> None:
@@ -515,7 +517,7 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
         try:
             for shape_index, (n, k) in enumerate(MODEL_SHAPES + SMALL_SHAPES):
                 dense, weights = _packed_with_dense(n, k, seed=1200 + shape_index)
-                for bucket in SUPPORTED_BUCKETS:
+                for bucket in W4A8_BUCKETS:
                     for outliers in (False, True):
                         label = (
                             f"M={bucket},N={n},K={k},"
@@ -537,7 +539,7 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
     def test_logits_top1_and_cosine(self) -> None:
         n, k = 32768, 6656
         _, weights = _packed_with_dense(n, k, seed=4242)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in W4A8_BUCKETS:
             with self.subTest(bucket=bucket):
                 x = self._activation(bucket, k, seed=4300 + bucket, outliers=True)
                 a8 = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE).float()
@@ -548,7 +550,10 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
                 self.assertGreaterEqual(cosine.min().item(), 0.999)
 
 
-_GUARD_SHAPES = ((2048, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
+# Every weight packs at least 6 MiB of INT4 data, so each decode kernel runs
+# for many event ticks (one tick is ~0.5 us) and a pick's regret reflects the
+# kernel rather than the timer.
+_GUARD_SHAPES = ((8192, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
 _GUARD_BUCKETS = (1, 4)
 
 
@@ -581,7 +586,13 @@ class _Int4Decode(torch.nn.Module):
 class Int4AutotunePickTest(unittest.TestCase):
     """The config AOTInductor picks for each INT4 kernel while compiling is the
     fastest one, measured afterwards with the CPU idle, even though the compile
-    ran with every core busy."""
+    ran with every core busy.
+
+    On ROCm the CUDA backend times Triton configs without CUDA graphs (see
+    cuda_graph_autotune_timing in cuda_backend.py), so their ranking under a
+    busy CPU is not promised there: the test checks that every INT4 kernel is
+    autotuned, with a candidate count the pruning allows, but not which config
+    wins."""
 
     MAX_REGRET = 1.10
     MAX_MEAN_REGRET = 1.03
@@ -606,11 +617,12 @@ class Int4AutotunePickTest(unittest.TestCase):
         with torch.no_grad():
             program = torch.export.export(module, inputs, strict=True)
         picks = []
+        measure_picks = torch.version.hip is None
         specs = [CudaBackend.generate_method_name_compile_spec("forward")]
         with torch.compiler.config.patch(
             force_disable_caches=True
         ), SaturatedCpu() as cpu:
-            with record_autotune_picks(cpu, picks):
+            with record_autotune_picks(cpu, picks, measure=measure_picks):
                 to_edge_transform_and_lower(
                     program,
                     partitioner=[CudaPartitioner(specs)],
@@ -636,11 +648,12 @@ class Int4AutotunePickTest(unittest.TestCase):
                 if split <= k // 256
             }
             self.assertIn(p.candidates, allowed, p)
-        worst = max(int4, key=lambda p: p.regret)
-        self.assertLessEqual(worst.regret, self.MAX_REGRET, worst)
-        self.assertLessEqual(
-            statistics.mean(p.regret for p in int4), self.MAX_MEAN_REGRET, int4
-        )
+        if measure_picks:
+            worst = max(int4, key=lambda p: p.regret)
+            self.assertLessEqual(worst.regret, self.MAX_REGRET, worst)
+            self.assertLessEqual(
+                statistics.mean(p.regret for p in int4), self.MAX_MEAN_REGRET, int4
+            )
 
 
 if __name__ == "__main__":

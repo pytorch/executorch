@@ -50,7 +50,7 @@ jobs:
       with-cuda: enable
       with-cpu: disable
       with-rocm: disable
-      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      python-versions: '["3.11", "3.12", "3.13", "3.14", "3.15"]'
 
   # The same filter the Linux CUDA rows use: only the trains this project supports, and one row
   # on a pull request. It fails rather than emitting an empty matrix, because a workflow with no
