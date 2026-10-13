@@ -20,6 +20,7 @@ Nothing here is tuned per architecture or per shape.
 
 from __future__ import annotations
 
+import logging
 from typing import Iterable, Optional, Sequence
 
 import torch
@@ -36,6 +37,8 @@ from triton.language.extra import libdevice
 # kernel compiles: Inductor compiles in forked subprocesses that cannot
 # initialize CUDA. Inductor inlines the value into the kernel source it builds.
 _IS_HIP = tl.constexpr(torch.version.hip is not None)
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 # Activation quantization granularity: one INT8 scale per K32 block, launched in
 # K256 tiles.
@@ -354,6 +357,21 @@ AUTOTUNE_WARMUP_MS = 5
 AUTOTUNE_REP_MS = 20
 
 
+_graph_timing_fallback_warned = False
+
+
+def _warn_graph_timing_fallback(error: RuntimeError) -> None:
+    global _graph_timing_fallback_warned
+    if not _graph_timing_fallback_warned:
+        _graph_timing_fallback_warned = True
+        logger.warning(
+            "CUDA-graph timing of a quantized GEMM config failed (%s); timing "
+            "configs with Triton's event-based do_bench instead, which a busy "
+            "CPU can skew. Further fallbacks are not reported.",
+            error,
+        )
+
+
 def autotune_do_bench(kernel_call, quantiles):
     """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``.
 
@@ -367,8 +385,8 @@ def autotune_do_bench(kernel_call, quantiles):
     if torch.cuda.current_stream().cuda_stream != 0:
         try:
             ms = time_with_cuda_graph_us(kernel_call) / 1000.0
-        except RuntimeError:
-            pass
+        except RuntimeError as error:
+            _warn_graph_timing_fallback(error)
         else:
             return [ms] * len(quantiles) if quantiles else ms
     return triton.testing.do_bench(

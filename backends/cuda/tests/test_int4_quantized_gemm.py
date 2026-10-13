@@ -199,6 +199,19 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
         self.assertGreater(counts["pooled"], 0)
 
+    def test_a_failing_precompile_does_not_block_the_launch(self) -> None:
+        # A shape no other test tunes, so the launch tries to precompile it.
+        n, k, bucket = 320, 1792, 1
+        weights = _packed(n, k, seed=29)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        autotuner = int4_kernel._BUCKET_KERNELS[bucket]
+        with mock.patch.object(
+            autotuner, "warmup", side_effect=RuntimeError("no precompile")
+        ), self.assertLogs(quantized_gemm_family.logger, "WARNING") as logs:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertIn("no precompile", "\n".join(logs.output))
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
     def test_the_tuning_key_is_the_autotuners_cache_key(self) -> None:
         # _tuning_key mirrors Triton's Autotuner.run; check it against the key
         # Triton stored its pick under.
@@ -585,6 +598,28 @@ class Int4QuantizedGemmTest(unittest.TestCase):
         for bucket, actual, expected in zip(SUPPORTED_BUCKETS, compiled, eager):
             with self.subTest(bucket=bucket):
                 _check_close(self, actual, expected)
+
+    def test_a_failing_cuda_graph_timing_falls_back_and_says_so_once(self) -> None:
+        from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
+
+        x = torch.randn(1 << 16, device="cuda")
+
+        def kernel_call():
+            x.mul_(1.0)
+
+        stream = torch.cuda.Stream()
+        with torch.cuda.stream(stream), mock.patch.object(
+            quantized_gemm_utils,
+            "time_with_cuda_graph_us",
+            side_effect=RuntimeError("capture failed"),
+        ), mock.patch.object(
+            quantized_gemm_utils, "_graph_timing_fallback_warned", False
+        ), self.assertLogs(quantized_gemm_utils.logger, "WARNING") as logs:
+            for _ in range(2):
+                ms = quantized_gemm_utils.autotune_do_bench(kernel_call, (0.5,))
+                self.assertGreater(ms[0], 0)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("capture failed", logs.output[0])
 
     def test_a_tuned_shape_traces_only_its_picked_config(self) -> None:
         """Once the autotuner has picked a config for a shape, tracing hands
