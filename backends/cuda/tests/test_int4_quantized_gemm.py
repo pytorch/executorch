@@ -145,13 +145,43 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             pooled, compiled = counts["pooled"], self._compiled(bucket)
             again = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
         self.assertGreater(pooled, 1)
-        # Every kernel the benchmark ran was compiled in the pool.
-        self.assertEqual(compiled - before, pooled)
+        # Every kernel the benchmark ran was compiled in the pool (which may
+        # merge identical requests): a compile outside it adds a kernel the pool
+        # was never asked for.
+        self.assertGreater(compiled, before)
+        self.assertLessEqual(compiled - before, pooled)
         # A tuned key is not compiled again.
         self.assertEqual(counts["pooled"], pooled)
         self.assertEqual(self._compiled(bucket), compiled)
         _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
         self.assertTrue(torch.equal(out, again))
+
+    def test_every_split_candidate_compiles_on_one_pool(self) -> None:
+        # A shape no other test tunes; the split is timed, not given.
+        n, k, bucket = 320, 2560, 2
+        weights = _packed(n, k, seed=11)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        pools = {"count": 0}
+        compile_pool = quantized_gemm_family._compile_pool
+
+        def counting_pool():
+            pools["count"] += 1
+            return compile_pool()
+
+        counts, patch = self._count_pooled()
+        before = self._compiled(bucket)
+        with patch, mock.patch.object(
+            quantized_gemm_family, "_compile_pool", counting_pool
+        ), autotune_launch_params() as stats:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertEqual(stats.measured, 1)
+        self.assertGreater(len(stats.picks[0].times_us), 1)
+        self.assertEqual(pools["count"], 1)
+        # Every kernel the split candidates benchmarked came from that pool.
+        self.assertGreater(self._compiled(bucket), before)
+        self.assertLessEqual(self._compiled(bucket) - before, counts["pooled"])
+        self.assertFalse(quantized_gemm_family._COMPILED_AHEAD)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
 
     def test_fake_tensors_are_not_precompiled(self) -> None:
         # A full launch of a shape no other test tunes, so only the fake-tensor
