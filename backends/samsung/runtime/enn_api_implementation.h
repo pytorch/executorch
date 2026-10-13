@@ -39,6 +39,13 @@ class EnnApi {
       const uint32_t size,
       EnnModelId* model_id);
   EnnReturn (*EnnOpenModelFromFd)(int _fd, EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelFromFdWithWeight)(
+      const int fd,
+      const uint32_t size,
+      const uint32_t offset,
+      EnnBufferPtr* weights,
+      uint32_t n_weights,
+      EnnModelId* model_id);
   EnnReturn (*EnnSetFastIpc)(void);
   EnnReturn (*EnnUnsetFastIpc)(void);
   EnnReturn (*EnnExecuteModelFastIpc)(
@@ -136,6 +143,13 @@ typedef EnnReturn (*EnnReleaseBuffer_fn)(EnnBufferPtr buf);
 typedef EnnReturn (
     *EnnGetFileDescriptorFromEnnBuffer_fn)(EnnBufferPtr buffer, int32_t* fd);
 typedef EnnReturn (*EnnOpenModelFromFd_fn)(int _fd, EnnModelId* model_id);
+typedef EnnReturn (*EnnOpenModelFromFdWithWeight_fn)(
+    const int fd,
+    const uint32_t size,
+    const uint32_t offset,
+    EnnBufferPtr* weights,
+    uint32_t n_weights,
+    EnnModelId* model_id);
 
 } // namespace enn
 } // namespace executor

@@ -96,7 +96,7 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(
       libenn_public_api_, EnnGetFileDescriptorFromEnnBuffer, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFd, this);
-
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFdWithWeight, this);
   return Error::Ok;
 }
 
