@@ -94,13 +94,12 @@ TEST(MaterializeViewCopiesTest, LeavesMutatedViewAsAlias) {
   Graph graph = make_view_graph();
   graph.values.emplace_back(
       "updated", ScalarType::Half, std::vector<int64_t>{});
-  graph.nodes.push_back(
-      Node{
-          .name = "update",
-          .target = "test.update",
-          .inputs = {{.name = "self", .arg = TensorArg{1}, .mutated = true}},
-          .outputs = {{.value_id = 2}},
-      });
+  graph.nodes.push_back(Node{
+      .name = "update",
+      .target = "test.update",
+      .inputs = {{.name = "self", .arg = TensorArg{1}, .mutated = true}},
+      .outputs = {{.value_id = 2}},
+  });
   graph.schedule.push_back(1);
   graph.rebuild_def_use();
 
@@ -113,13 +112,12 @@ TEST(MaterializeViewCopiesTest, LeavesViewOfMutatedSourceAsAlias) {
   Graph graph = make_view_graph();
   graph.values.emplace_back(
       "updated", ScalarType::Half, std::vector<int64_t>{});
-  graph.nodes.push_back(
-      Node{
-          .name = "update",
-          .target = "test.update",
-          .inputs = {{.name = "self", .arg = TensorArg{0}, .mutated = true}},
-          .outputs = {{.value_id = 2}},
-      });
+  graph.nodes.push_back(Node{
+      .name = "update",
+      .target = "test.update",
+      .inputs = {{.name = "self", .arg = TensorArg{0}, .mutated = true}},
+      .outputs = {{.value_id = 2}},
+  });
   graph.schedule.push_back(1);
   graph.rebuild_def_use();
 
@@ -135,13 +133,12 @@ TEST(MaterializeViewCopiesTest, LeavesViewWithMutatedSiblingAsAlias) {
   graph.values[2].alias_id = 0;
   graph.values.emplace_back(
       "updated", ScalarType::Half, std::vector<int64_t>{});
-  graph.nodes.push_back(
-      Node{
-          .name = "update",
-          .target = "test.update",
-          .inputs = {{.name = "self", .arg = TensorArg{2}, .mutated = true}},
-          .outputs = {{.value_id = 3}},
-      });
+  graph.nodes.push_back(Node{
+      .name = "update",
+      .target = "test.update",
+      .inputs = {{.name = "self", .arg = TensorArg{2}, .mutated = true}},
+      .outputs = {{.value_id = 3}},
+  });
   graph.schedule.push_back(1);
   graph.rebuild_def_use();
 
@@ -240,13 +237,12 @@ TEST(MaterializeViewCopiesTest, LeavesMutatedPermuteOfDynamicSourceAsAlias) {
   Graph graph = make_permute_graph(/*dynamic_source=*/true);
   graph.values.emplace_back(
       "updated", ScalarType::Float, std::vector<int64_t>{});
-  graph.nodes.push_back(
-      Node{
-          .name = "update",
-          .target = "test.update",
-          .inputs = {{.name = "self", .arg = TensorArg{1}, .mutated = true}},
-          .outputs = {{.value_id = 2}},
-      });
+  graph.nodes.push_back(Node{
+      .name = "update",
+      .target = "test.update",
+      .inputs = {{.name = "self", .arg = TensorArg{1}, .mutated = true}},
+      .outputs = {{.value_id = 2}},
+  });
   graph.schedule.push_back(1);
   graph.rebuild_def_use();
 
