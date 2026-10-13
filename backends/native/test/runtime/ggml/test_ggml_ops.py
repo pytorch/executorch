@@ -24,6 +24,11 @@ from torchao.quantization import (
     quantize_,
 )
 from torchao.quantization.granularity import PerGroup
+from transformers import LlamaConfig
+from transformers.models.llama.modeling_llama import (
+    apply_rotary_pos_emb,
+    LlamaRotaryEmbedding,
+)
 
 
 class Lambda(torch.nn.Module):
@@ -69,6 +74,51 @@ class RMSNorm(torch.nn.Module):
 
     def forward(self, x):
         return F.rms_norm(x, (16,), self.weight, eps=1e-6)
+
+
+class Rope(torch.nn.Module):
+    def __init__(self, config: LlamaConfig):
+        super().__init__()
+        self.rotary = LlamaRotaryEmbedding(config)
+
+    def forward(self, x, position_ids):
+        cos, sin = self.rotary(x, position_ids)
+        q, _ = apply_rotary_pos_emb(x, x, cos, sin)
+        return q
+
+
+class CastIndexCacheWrite(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(1, 2, 8, 4))
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions.to(torch.int32).long(), values)
+        return self.cache * 1.0
+
+
+class SnapshotThenWrite(torch.nn.Module):
+    """Reads the cache, then writes it in place: the read sees the old rows."""
+
+    def __init__(self, clone: bool):
+        super().__init__()
+        self.clone = clone
+        self.register_buffer("cache", torch.zeros(1, 2, 4, 2))
+
+    def forward(self, values, positions):
+        old = self.cache.clone() if self.clone else self.cache * 1.0
+        self.cache.index_copy_(2, positions, values)
+        return old
+
+
+class CacheWrite(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(1, 2, 8, 4))
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions, values)
+        return self.cache * 1.0
 
 
 def _quantize_8da4w(
@@ -144,6 +194,19 @@ class GgmlOpsTest(unittest.TestCase):
                 actual.reshape(shape), reference, atol=atol, rtol=rtol
             )
 
+    def _run_exported(self, model, example, inputs):
+        """Exports `model` at `example`, before any eager call writes its
+        buffers, and returns its float outputs on `inputs`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, example)).save(str(package))
+            outputs = _run_ggml(package, inputs, outdir, 1)
+        return [
+            torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape)
+            for raw, shape in outputs
+        ]
+
     def _binary(self, fn):
         self._check(Lambda(fn), (torch.randn(2, 3, 4), torch.randn(2, 3, 4)))
 
@@ -173,8 +236,24 @@ class GgmlOpsTest(unittest.TestCase):
     def test_div_broadcast_both(self):
         self._check(Lambda(torch.div), (torch.randn(2, 1, 4), torch.rand(3, 1) + 0.5))
 
+    def test_add_bool_is_logical_or(self):
+        self._check(
+            Lambda(lambda x, y, z: (x.le(y) + x.le(z)).to(x.dtype)),
+            (
+                torch.zeros(4),
+                torch.tensor([1.0, 1.0, -1.0, -1.0]),
+                torch.tensor([1.0, -1.0, 1.0, -1.0]),
+            ),
+        )
+
     def test_add_scalar(self):
         self._check(Lambda(lambda x: x + 2.0), (torch.randn(2, 3, 4),))
+
+    def test_sub_scalar(self):
+        self._check(Lambda(lambda x: x - 2.0), (torch.randn(2, 3, 4),))
+
+    def test_add_scalar_permuted(self):
+        self._check(Lambda(lambda x: x.permute(1, 0) + 1.0), (torch.randn(2, 3),))
 
     def test_mul_scalar(self):
         self._check(Lambda(lambda x: x * 0.5), (torch.randn(2, 3, 4),))
@@ -323,6 +402,12 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "alpha"):
             self._binary(lambda x, y: torch.add(x, y, alpha=2.0))
 
+    def test_alias_of_intermediate(self):
+        self._check(
+            Lambda(lambda x, y: torch.ops.aten.alias.default(x + y) * 0.5),
+            (torch.randn(2, 3), torch.randn(2, 3)),
+        )
+
     def test_linear_8da4w(self):
         model = torch.nn.Linear(128, 16)
         _quantize_8da4w(model, group_size=64)
@@ -353,6 +438,175 @@ class GgmlOpsTest(unittest.TestCase):
         _quantize_8da4w(model, group_size=64, embedding_mapping=MappingType.ASYMMETRIC)
         with self.assertRaisesRegex(AssertionError, "zero points of zero"):
             self._check(model, (torch.tensor([[1, 3, 9]]),))
+
+    def test_sdpa_bool_mask_gqa(self):
+        scores = torch.rand(3, 8)
+        scores[:, 0] = 0.0
+        self._check(
+            Lambda(
+                lambda q, k, v, m: F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=m.le(0.7), enable_gqa=True
+                )
+            ),
+            (
+                torch.randn(1, 4, 3, 64),
+                torch.randn(1, 2, 8, 64),
+                torch.randn(1, 2, 8, 64),
+                scores,
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_sdpa_causal(self):
+        self._check(
+            Lambda(
+                lambda q, k, v: F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            ),
+            (
+                torch.randn(1, 2, 5, 32),
+                torch.randn(1, 2, 5, 32),
+                torch.randn(1, 2, 5, 32),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_sdpa_float_mask(self):
+        self._check(
+            Lambda(
+                lambda q, k, v, m: F.scaled_dot_product_attention(q, k, v, attn_mask=m)
+            ),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(3, 8),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_sdpa_le_tensor_mask(self):
+        self._check(
+            Lambda(
+                lambda q, k, v, m, n: F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=m.le(n)
+                )
+            ),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.arange(8.0).repeat(3, 1),
+                torch.tensor([[2.0], [4.0], [7.0]]),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_sdpa_causal_fewer_queries(self):
+        self._check(
+            Lambda(
+                lambda q, k, v: F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            ),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 5, 32),
+                torch.randn(1, 2, 5, 32),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_index_put_cache_write(self):
+        self._check(CacheWrite(), (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])))
+
+    def test_index_put_rejects_out_of_range(self):
+        inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(CacheWrite(), inputs)).save(str(package))
+            with self.assertRaisesRegex(AssertionError, "outside"):
+                _run_ggml(package, (inputs[0], torch.tensor([5, 1, 8])), outdir, 1)
+
+    def test_read_before_index_put_sees_old_rows(self):
+        inputs = (torch.ones(1, 2, 1, 2), torch.tensor([1]))
+        for clone in (False, True):
+            with self.subTest(clone=clone):
+                (old,) = self._run_exported(SnapshotThenWrite(clone), inputs, inputs)
+                torch.testing.assert_close(old, torch.zeros(1, 2, 4, 2))
+
+    def test_check_keeps_eager_writes_out_of_package(self):
+        inputs = (torch.ones(1, 2, 1, 2), torch.tensor([1]))
+        self._check(SnapshotThenWrite(clone=False), inputs)
+
+    def test_index_put_checks_cast_indices(self):
+        inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))
+        self._check(CastIndexCacheWrite(), inputs)
+        with self.assertRaisesRegex(AssertionError, "outside"):
+            self._run_exported(
+                CastIndexCacheWrite(), inputs, (inputs[0], torch.tensor([5, 1, 8]))
+            )
+
+    def test_sdpa_rejects_zero_kv_heads(self):
+        with self.assertRaisesRegex(AssertionError, "incompatible"):
+            self._check(
+                Lambda(
+                    lambda q, k, v: F.scaled_dot_product_attention(
+                        q, k, v, enable_gqa=True
+                    )
+                ),
+                (
+                    torch.randn(1, 4, 3, 8),
+                    torch.randn(1, 0, 3, 8),
+                    torch.randn(1, 0, 3, 8),
+                ),
+            )
+
+    def test_arange_rejects_bounds_beyond_exact_f32(self):
+        with self.assertRaisesRegex(AssertionError, "arange"):
+            self._check(
+                Lambda(
+                    lambda x: x + torch.arange(16777216, 16777219, dtype=torch.float32)
+                ),
+                (torch.randn(3),),
+            )
+
+    def test_cat_int64_of_mixed_ggml_types(self):
+        # The int64 input is I32 in ggml; the int64 arange result is F32.
+        self._check(
+            Lambda(lambda x: torch.cat([x, torch.arange(1, 7, 2)])),
+            (torch.tensor([7, 8, 9]),),
+        )
+
+    def test_arange(self):
+        self._check(
+            Lambda(lambda x: x + torch.arange(1, 7, 2, dtype=torch.float32)),
+            (torch.randn(2, 3),),
+        )
+
+    def test_rope_llama3(self):
+        config = LlamaConfig(
+            hidden_size=256,
+            num_attention_heads=4,
+            head_dim=64,
+            rope_theta=500000.0,
+            rope_scaling={
+                "rope_type": "llama3",
+                "factor": 32.0,
+                "high_freq_factor": 4.0,
+                "low_freq_factor": 1.0,
+                "original_max_position_embeddings": 8192,
+            },
+        )
+        self._check(
+            Rope(config),
+            (torch.randn(1, 4, 5, 64), torch.tensor([[3, 4, 5, 6, 7]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
 
 
 if __name__ == "__main__":
