@@ -55,6 +55,26 @@ unreleased capacity. Harbor retains the same mini-SWE-agent loop and per-trial
 verification.
 The run also checks that evaluation session IDs match the Harbor trial UUIDs.
 
+Enable experimental [CliffCompaction](https://arxiv.org/abs/2609.26779) with
+`[terminal_bench].compaction = "cliff"` (default `"none"`). The direct
+mini-SWE-agent hook uses an **8,192-token estimate** (request JSON characters / 4).
+It preserves the system/task and six recent complete turns, retains older
+reasoning and commands, and drops older tool outputs longer than 4,096 characters.
+Each compaction replaces the previous compacted block. The trigger is a soft
+threshold; retained content can exceed it.
+
+To test prefix reuse, enable `[server].prefix_cache_entries` on a rebuilt batching
+worker with clone support. Optional `prefix_checkpoint_interval` captures
+intermediate prompt checkpoints; see [cache behavior](../../spec/batching.md).
+For a single-task comparison, set `concurrency = 1` and the same `session_affinity`
+in both configs. Concurrent trials already have distinct sessions. Compare
+`compaction = "none"` versus `"cliff"` with identical server/sampling settings,
+then compare checkpoint intervals separately. Missing retained state falls back
+to full prefill; content after the first changed token is re-prefilled.
+
+Full trajectories retain usage and compaction events under `info.compaction`.
+Inspect `server.log` for actual reused/prefilled tokens and `reason=prefix_clone`.
+
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns
 its server process.
