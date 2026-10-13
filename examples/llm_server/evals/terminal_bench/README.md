@@ -45,12 +45,9 @@ Configuration details:
   It requires worker support for named sessions; sequential trials share the ID.
 
 For concurrent tasks, set `[terminal_bench].concurrency` (default `1`), remove
-`session_affinity`, and select a batching server and compatible export. When
-concurrency exceeds `1`, missing `[server].max_sessions`, `max_inflight_requests`,
-and `max_decode_sequences` default to the concurrency. Explicit overrides are
-preserved: session/request limits must accommodate the concurrency, while
-`max_decode_sequences` may be lower to limit the decode batch. Resolved limits
-are recorded in `run.json`.
+`session_affinity`, and select a batching server and compatible export. Server
+limits use the launcher's defaults. Keep task concurrency within the server's
+session and request capacity; configure `[server]` options as needed.
 The harness gives each trial/attempt its own KV session and releases it after
 container shutdown, including failed and timed-out trials. Harbor retains the
 same mini-SWE-agent loop and per-trial verification.

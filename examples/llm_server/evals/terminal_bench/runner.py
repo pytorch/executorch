@@ -84,24 +84,14 @@ def load_config(path):
     affinity = options["session_affinity"]
     if affinity is not None and (not isinstance(affinity, str) or not affinity.strip()):
         raise ValueError("[terminal_bench].session_affinity must be a nonempty string")
-    resolve_concurrency(server, options)
-    return config
-
-
-def resolve_concurrency(server, options):
     concurrency = options["concurrency"]
     if type(concurrency) is not int or concurrency < 1:
         raise ValueError("[terminal_bench].concurrency must be a positive integer")
-    if concurrency > 1:
-        if options["session_affinity"] is not None:
-            raise ValueError(
-                "Remove [terminal_bench].session_affinity for concurrent trials"
-            )
-        for key in ("max_sessions", "max_inflight_requests", "max_decode_sequences"):
-            limit = server.setdefault(key, concurrency)
-            minimum = 1 if key == "max_decode_sequences" else concurrency
-            if type(limit) is not int or limit < minimum:
-                raise ValueError(f"[server].{key} must be an integer >= {minimum}")
+    if concurrency > 1 and affinity is not None:
+        raise ValueError(
+            "Remove [terminal_bench].session_affinity for concurrent trials"
+        )
+    return config
 
 
 def commands(config, output):

@@ -19,5 +19,5 @@ max_output_tokens = 4096
 temperature = 0.8
 step_limit = 100
 attempts = 1
-concurrency = 4 # Defaults the server's session, request, and decode limits to 4.
+concurrency = 4
 # agent_host = "host.lima.internal" # Override automatic Docker host detection.

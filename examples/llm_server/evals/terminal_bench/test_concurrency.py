@@ -68,10 +68,12 @@ class ConfigurationTest(unittest.TestCase):
         )
         self.assertIn("base_url=http://127.0.0.1:8000/v1", command)
         for key in ("max_sessions", "max_inflight_requests", "max_decode_sequences"):
-            self.assertEqual(config["server"][key], 2)
-            self.assertIn("--" + key.replace("_", "-") + "=2", serve)
+            self.assertNotIn(key, config["server"])
+            self.assertFalse(
+                any(arg.startswith("--" + key.replace("_", "-")) for arg in serve)
+            )
 
-    def test_explicit_limits_override_defaults(self):
+    def test_explicit_server_options_pass_through(self):
         config = self.load(
             "concurrency=4",
             "max_sessions=8\nmax_inflight_requests=6\nmax_decode_sequences=2",
@@ -93,20 +95,6 @@ class ConfigurationTest(unittest.TestCase):
                 self.load(f"concurrency={value}")
         with self.assertRaisesRegex(ValueError, "session_affinity"):
             self.load('concurrency=2\nsession_affinity="shared"')
-
-    def test_requires_sufficient_capacity(self):
-        for limits, missing in [
-            ("max_sessions=1\nmax_inflight_requests=2", "max_sessions"),
-            ("max_sessions=2\nmax_inflight_requests=1", "max_inflight_requests"),
-            ('max_sessions="2"\nmax_inflight_requests=2', "max_sessions"),
-            ("max_decode_sequences=0", "max_decode_sequences"),
-            ("max_decode_sequences=true", "max_decode_sequences"),
-            ("max_decode_sequences=1.5", "max_decode_sequences"),
-        ]:
-            with self.subTest(limits=limits), self.assertRaisesRegex(
-                ValueError, missing
-            ):
-                self.load("concurrency=2", limits)
 
 
 class SessionLifecycleTest(unittest.IsolatedAsyncioTestCase):
