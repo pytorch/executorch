@@ -626,7 +626,11 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
         "raise SystemExit(0)\n",
     )
 
-    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(converter))
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: tmp_path,
+    )
 
     preflight = check_env._check_model_converter()
     compiled = vgf_backend.vgf_compile(
@@ -637,3 +641,103 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
     assert preflight.status == check_env.STATUS_OK
     assert str(converter) in preflight.detail
     assert compiled == b"compiled-vgf"
+
+
+def test_model_converter_resolution_ignores_path_and_environment(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    trusted_converter = _make_executable(
+        trusted_scripts / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 99\n",
+    )
+
+    # Both mechanisms are at an attacker-controlled
+    # executable. Neither is allowed to participate in executable selection.
+    monkeypatch.setenv("PATH", str(attacker_dir))
+    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(attacker_converter))
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    resolved = model_converter.find_model_converter_binary()
+
+    assert resolved == str(trusted_converter.resolve())
+    assert resolved != str(attacker_converter.resolve())
+
+
+def test_model_converter_resolution_does_not_fall_back_to_path(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    monkeypatch.setenv("PATH", str(attacker_dir))
+    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(attacker_converter))
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    assert model_converter.find_model_converter_binary() is None
+
+
+def test_model_converter_resolver_rejects_bare_command_name():
+    assert model_converter.resolve_model_converter_executable("model-converter") is None
+    assert model_converter.resolve_model_converter_executable("model_converter") is None
+
+
+def test_model_converter_resolution_rejects_symlink(
+    monkeypatch,
+    tmp_path,
+):
+    trusted_scripts = tmp_path / "trusted-scripts"
+    trusted_scripts.mkdir()
+
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+
+    attacker_converter = _make_executable(
+        attacker_dir / "model-converter",
+        "#!/bin/sh\nexit 0\n",
+    )
+
+    trusted_name = trusted_scripts / "model-converter"
+
+    try:
+        trusted_name.symlink_to(attacker_converter)
+    except OSError:
+        pytest.skip("symlinks are not supported in this environment")
+
+    monkeypatch.setattr(
+        model_converter,
+        "_model_converter_scripts_dir",
+        lambda: trusted_scripts,
+    )
+
+    assert model_converter.find_model_converter_binary() is None

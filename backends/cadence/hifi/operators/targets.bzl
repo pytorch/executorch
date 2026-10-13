@@ -245,6 +245,16 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_log2",
+        srcs = ["op_log2.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS + ["//executorch/kernels/portable/cpu:op_log2"],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_maximum",
         srcs = ["op_maximum.cpp"],
         exported_headers = ["operators.h"],
