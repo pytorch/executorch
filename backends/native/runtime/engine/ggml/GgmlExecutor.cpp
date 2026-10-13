@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -305,11 +306,10 @@ std::vector<ValueId> output_ids(const Node& node) {
   std::vector<ValueId> ids;
   for (const Output& output : node.outputs) {
     if (output.kind == OutputValueKind::TensorList) {
-      for (const ValueId id : output.elem_ids) {
-        if (valid(id)) {
-          ids.push_back(id);
-        }
-      }
+      std::ranges::copy_if(
+          output.elem_ids, std::back_inserter(ids), [](ValueId id) {
+            return valid(id);
+          });
     } else if (valid(output.value_id)) {
       ids.push_back(output.value_id);
     }
@@ -635,10 +635,11 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void execute() override {
-    for (const InputSlot& input : inputs_) {
-      if (input.bytes.size() != checked_nbytes(input.sizes, input.meta.dtype)) {
-        throw std::logic_error("ggml: every input must be set before execute");
-      }
+    if (std::ranges::any_of(inputs_, [](const InputSlot& input) {
+          return input.bytes.size() !=
+              checked_nbytes(input.sizes, input.meta.dtype);
+        })) {
+      throw std::logic_error("ggml: every input must be set before execute");
     }
 
     executed_ = false;
@@ -855,11 +856,10 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   ggml_backend_sched_ptr make_scheduler() const {
-    std::vector<ggml_backend_t> raw;
-    raw.reserve(backends_.size());
-    for (const auto& backend : backends_) {
-      raw.push_back(backend.get());
-    }
+    std::vector<ggml_backend_t> raw(backends_.size());
+    std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
+      return backend.get();
+    });
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
@@ -2049,11 +2049,11 @@ class GraphBuilder {
       throw std::runtime_error(
           "ggml: '" + std::string(name) + "' must have one or two entries");
     }
-    for (const int64_t value : values) {
-      if (value < min_value || value > std::numeric_limits<int>::max()) {
-        throw std::runtime_error(
-            "ggml: '" + std::string(name) + "' entry is out of range");
-      }
+    if (std::ranges::any_of(values, [min_value](int64_t entry) {
+          return entry < min_value || entry > std::numeric_limits<int>::max();
+        })) {
+      throw std::runtime_error(
+          "ggml: '" + std::string(name) + "' entry is out of range");
     }
     // PyTorch lists are (height, width); ggml takes width first.
     return {static_cast<int>(values.back()), static_cast<int>(values.front())};
@@ -2271,9 +2271,9 @@ class GraphBuilder {
       dims.resize(rank);
       std::iota(dims.begin(), dims.end(), 0);
     }
-    for (int64_t& dim : dims) {
-      dim = normalize_dim(dim, rank);
-    }
+    std::ranges::transform(dims, dims.begin(), [rank](int64_t dim) {
+      return normalize_dim(dim, rank);
+    });
     std::ranges::sort(dims);
     const size_t first = rank - dims.size();
     for (size_t i = 0; i < dims.size(); ++i) {
@@ -2560,10 +2560,10 @@ class GraphBuilder {
     auto* data = reinterpret_cast<ggml_fp16_t*>(upload.bytes.data());
     for (int64_t query = 0; query < tokens; ++query) {
       for (int64_t key = 0; key < keys; ++key) {
-        const float value = key <= start + query
+        const float bias = key <= start + query
             ? 0.0f
             : -std::numeric_limits<float>::infinity();
-        data[query * keys + key] = ggml_fp32_to_fp16(value);
+        data[query * keys + key] = ggml_fp32_to_fp16(bias);
       }
     }
     instance_.uploads.push_back(std::move(upload));
@@ -3077,6 +3077,7 @@ ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options) {
       " GPU devices registered by the linked ggml backends)");
 }
 
+// cppcheck-suppress unusedFunction
 std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Method& method,
     const Package& package,
