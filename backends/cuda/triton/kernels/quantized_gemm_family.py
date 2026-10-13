@@ -24,7 +24,10 @@ split-K workspace allocation, the grid, and the reduce after the main kernel.
 
 from __future__ import annotations
 
+import concurrent.futures
 import inspect
+import os
+import threading
 import typing
 from typing import Callable, Optional, Sequence
 
@@ -32,6 +35,15 @@ import torch
 import triton
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import splitk_reduce
 from torch.library import triton_op, wrap_triton
+
+try:
+    from triton.runtime import _async_compile
+except ImportError:  # A Triton without parallel compile compiles each config on first use.
+    _async_compile = None
+
+# Threads that compile one kernel's autotune configs. Compiling is mostly ptxas
+# and LLVM, which run outside the GIL.
+_MAX_COMPILE_THREADS = 32
 
 
 def _resolved_signature(prototype) -> inspect.Signature:
@@ -126,6 +138,63 @@ class QuantizedGemmFamily:
             raise RuntimeError(f"{self.name}_m{bucket}: {reason}")
 
 
+def _tuning_key(kernel, args: Sequence, kwargs: dict) -> tuple:
+    # Mirrors the key triton.runtime.Autotuner.run caches its pick under (built
+    # the same way in the Triton 3.5 to 3.9 in fbsource). Should Triton change
+    # it, lookups miss and work is redone, never skipped;
+    # test_the_tuning_key_is_the_autotuners_cache_key catches the change.
+    named = {**dict(zip(kernel.arg_names, args)), **kwargs}
+    named = {k: v for k, v in named.items() if k in kernel.arg_names}
+    key = [named[k] for k in kernel.keys if k in named]
+    key += [str(v.dtype) for v in named.values() if hasattr(v, "dtype")]
+    return tuple(key)
+
+
+_COMPILE_THREADS_LOCK = threading.Lock()
+_compile_thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
+    """The compile threads, started on first use and shared by every shape."""
+    global _compile_thread_pool
+    with _COMPILE_THREADS_LOCK:
+        if _compile_thread_pool is None:
+            _compile_thread_pool = concurrent.futures.ThreadPoolExecutor(
+                min(_MAX_COMPILE_THREADS, os.cpu_count() or 1), thread_name_prefix="quantized_gemm_compile"
+            )
+        return _compile_thread_pool
+
+
+def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
+    """Compiles every config an autotuned kernel is about to benchmark, in parallel.
+
+    triton.autotune compiles each config on its first benchmark call, one after
+    another, and at compile time that is most of a shape's autotune. Compiling
+    the pruned configs on a thread pool first leaves the benchmark, and so the
+    pick, unchanged; it then times kernels that are already compiled. A config
+    that fails to compile fails again in the benchmark, which skips it as before.
+    """
+    if (
+        _async_compile is None
+        or not isinstance(kernel, triton.runtime.Autotuner)
+        or len(kernel.configs) <= 1
+        or _async_compile.active_mode.get() is not None
+    ):
+        return
+    # Only real CUDA storage can be compiled against: tracing passes fake or
+    # functional tensors (subclasses), which the launch itself handles.
+    for arg in (*args, *kwargs.values()):
+        if isinstance(arg, torch.Tensor) and (
+            type(arg) not in (torch.Tensor, torch.nn.Parameter)
+            or arg.device.type != "cuda"
+        ):
+            return
+    if _tuning_key(kernel, args, kwargs) in kernel.cache:
+        return
+    with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
+        kernel.warmup(*args, grid=(1,), **kwargs)
+
+
 def launch_split_k_gemm(
     kernel,
     *,
@@ -176,16 +245,9 @@ def launch_split_k_gemm(
             return (n_tiles, m_tiles)
         return (n_tiles, m_tiles, split_k)
 
-    wrap_triton(kernel)[grid](
-        *inputs,
-        partial,
-        *shape_args,
-        stride_os,
-        partial.stride(-2),
-        partial.stride(-1),
-        SPLIT_K=split_k,
-        **constexprs,
-    )
+    args = (*inputs, partial, *shape_args, stride_os, partial.stride(-2), partial.stride(-1))
+    _precompile_untuned_configs(kernel, args, {"SPLIT_K": split_k, **constexprs})
+    wrap_triton(kernel)[grid](*args, SPLIT_K=split_k, **constexprs)
     if split_k > 1:
         splitk_reduce(partial, out, block_m, reduce_block_n)
     return out
