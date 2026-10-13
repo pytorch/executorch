@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <iterator>
@@ -21,6 +22,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/native/runtime/Method.h>
@@ -36,6 +39,7 @@
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
@@ -43,6 +47,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
+#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -140,6 +145,21 @@ size_t logical_nbytes(const TensorMeta& meta) {
   return numel * element_bytes;
 }
 
+// In-place unary ops and the functional ET-VK kernels they run as.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 3>
+    kInPlaceKernels{{
+        {"aten.gelu_.default", "aten.gelu.default"},
+        {"aten.relu_.default", "aten.relu.default"},
+        {"aten.sigmoid_.default", "aten.sigmoid.default"},
+    }};
+
+const std::pair<std::string_view, std::string_view>* in_place_kernel(
+    std::string_view key) {
+  const auto it = std::ranges::find_if(
+      kInPlaceKernels, [&](const auto& entry) { return entry.first == key; });
+  return it == kInPlaceKernels.end() ? nullptr : &*it;
+}
+
 // ET-VK operator-registry key for a native fx target: strips the leading
 // "torch.ops." namespace (torch.ops.aten.add.Tensor -> aten.add.Tensor) and
 // renames targets whose ET-VK kernel is registered under another key.
@@ -147,8 +167,8 @@ std::string registry_key(const std::string& target) {
   constexpr std::string_view kPrefix = "torch.ops.";
   std::string key =
       target.starts_with(kPrefix) ? target.substr(kPrefix.size()) : target;
-  if (key == "aten.relu_.default") {
-    key = "aten.relu.default";
+  if (const auto* in_place = in_place_kernel(key)) {
+    key = std::string(in_place->second);
   } else if (key == "llama.update_cache.default") {
     key = "update_cache.default";
   } else if (key == "aten.sym_size.int") {
@@ -170,8 +190,11 @@ std::string registry_key(const std::string& target) {
 
 // In-place targets that registry_key maps to a functional ET-VK kernel.
 bool is_functional_in_place(const std::string& target) {
-  return target == "torch.ops.aten.relu_.default" ||
-      target == "aten.relu_.default";
+  constexpr std::string_view kPrefix = "torch.ops.";
+  const std::string_view key = target.starts_with(kPrefix)
+      ? std::string_view(target).substr(kPrefix.size())
+      : std::string_view(target);
+  return in_place_kernel(key) != nullptr;
 }
 
 // Ops whose ET-VK implementations require width-packed operands. This list
@@ -216,10 +239,11 @@ bool is_activation_input(std::string_view key, std::string_view input) {
 }
 
 bool preserves_packed_layout(std::string_view key) {
-  constexpr std::array<std::string_view, 5> kOps{
+  constexpr std::array<std::string_view, 6> kOps{
       "aten._to_copy.default",
       "aten.add.Tensor",
       "aten.mul.Tensor",
+      "aten.native_layer_norm.default",
       "aten.sigmoid.default",
       "aten.sub.Tensor"};
   return std::ranges::find(kOps, key) != kOps.end();
@@ -554,6 +578,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
   // Chosen memory layout per native value; channels-packed backbone by default.
   std::vector<utils::GPUMemoryLayout> layout_;
   std::vector<utils::StorageType> storage_;
+  // Views of dynamically shaped sources that now run as copies. They keep
+  // their source's layout as the views did, while other copies, such as
+  // clone, may convert layouts.
+  std::unordered_set<NodeId> view_copies_;
   MemoryPlan memory_plan_;
   VkRef none_ref_ = -1;
   // Staging refs, aligned to inputs_ / outputs_.
@@ -612,6 +640,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
     vulkan::lower_hf_attention(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
@@ -867,7 +896,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
       for (const NodeId node_id : nodes_) {
         const Node& node = g().node(node_id);
         if (node.is_call() &&
-            preserves_packed_layout(registry_key(node.target)) &&
+            (preserves_packed_layout(registry_key(node.target)) ||
+             view_copies_.contains(node_id)) &&
             node_is_width(node)) {
           changed |= mark_node_width(node);
         }
@@ -936,6 +966,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
           changed = true;
         }
       }
+      // ET-VK's copy kernels for these views read and write one storage type.
+      for (const NodeId node_id : view_copies_) {
+        const Node& node = g().node(node_id);
+        const ValueId in_id = node.inputs.at(0).arg.as_tensor().id;
+        const ValueId out_id = node.outputs.at(0).value_id;
+        if (storage_at(in_id) != storage_at(out_id)) {
+          storage_at(in_id) = utils::kBuffer;
+          storage_at(out_id) = utils::kBuffer;
+          changed = true;
+        }
+      }
     } while (changed);
   }
 
@@ -967,6 +1008,14 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Package& package,
       const DataBinding& b,
       const Value& v) {
+    const auto gguf = v.attrs.find(vulkan::kReferenceGgufKQuantAttr);
+    if (gguf != v.attrs.end()) {
+      const auto* codec = std::any_cast<std::string>(&gguf->second);
+      if (codec == nullptr) {
+        throw std::runtime_error("vulkan: malformed GGUF K-quant annotation");
+      }
+      return gguf_kquant_buffer(package, b, v, *codec);
+    }
     if (v.tensor_meta().quant.has_value()) {
       throw std::runtime_error(
           "vulkan: quantized constant '" + b.key +
@@ -1029,7 +1078,84 @@ class VulkanEngineExecutable final : public EngineExecutable {
         bytes.data(), bytes.size(), release_owned_bytes, context);
   }
 
-  // The only place package bytes are acquired, so each owner is recorded once.
+  static void warn_reference_fallback(
+      const vulkan::ReferenceGgufKQuantFallback& fallback) {
+    if (fallback.constants == 0) {
+      return;
+    }
+    std::string codecs;
+    for (const std::string& codec : fallback.codecs) {
+      codecs += (codecs.empty() ? "" : ", ") + codec;
+    }
+    std::fprintf(
+        stderr,
+        "warning: vulkan: no native lowering for %s; decoding %zu constants "
+        "to %zu fp32 bytes with the slow reference decoder. This is a "
+        "correctness fallback, not a supported configuration.\n",
+        codecs.c_str(),
+        fallback.constants,
+        fallback.decoded_bytes);
+  }
+
+  // use_reference_gguf_kquant retyped this constant as the fp32 tensor that
+  // its stored GGUF K-quant blocks decode to.
+  executorch::runtime::FreeableBuffer gguf_kquant_buffer(
+      const Package& package,
+      const DataBinding& b,
+      const Value& v,
+      const std::string& codec) {
+    const TensorMeta& meta = v.tensor_meta();
+    const std::optional<ConstantInfo> info = package.constant_info(b.key);
+    if (!info) {
+      throw std::runtime_error(
+          "vulkan: package holds no constant for key '" + b.key + "'");
+    }
+    const int64_t cols = meta.sizes.empty() ? 0 : meta.sizes.back();
+    const int64_t rows = cols == 0 ? 0 : meta.numel() / cols;
+    const size_t decoded_nbytes = logical_nbytes(meta);
+    std::shared_ptr<OwnedBytes>& storage =
+        derived_constants_["gguf:" + info->owner];
+    if (!storage) {
+      std::optional<OwnedBytes> raw = load_constant(package, *info);
+      if (!raw) {
+        throw std::runtime_error(
+            "vulkan: package could not load constant for key '" + b.key + "'");
+      }
+      size_t stored_nbytes = 0;
+      if (__builtin_mul_overflow(
+              static_cast<size_t>(rows),
+              reference::gguf_kquant_row_nbytes(codec, cols),
+              &stored_nbytes) ||
+          raw->span().size() != stored_nbytes) {
+        throw std::runtime_error(
+            "vulkan: GGUF K-quant constant '" + b.key +
+            "' does not hold its declared shape");
+      }
+      std::vector<uint8_t> bytes(decoded_nbytes);
+      reference::decode_gguf_kquant(
+          codec,
+          raw->span().data(),
+          raw->span().size(),
+          rows,
+          cols,
+          reinterpret_cast<float*>(bytes.data()));
+      storage = std::make_shared<OwnedBytes>(
+          OwnedBytes::from_vector(std::move(bytes)));
+      materializations_.record(info->package_id, info->owner, info->nbytes);
+    }
+    if (storage->span().size() != decoded_nbytes) {
+      throw std::runtime_error(
+          "vulkan: GGUF K-quant constant '" + b.key +
+          "' does not match its declared size");
+    }
+    const ByteSpan bytes = storage->span();
+    auto* context = new std::shared_ptr<OwnedBytes>(storage);
+    return executorch::runtime::FreeableBuffer(
+        bytes.data(), bytes.size(), release_owned_bytes, context);
+  }
+
+  // Package bytes are acquired only here and in gguf_kquant_buffer; both
+  // record each owner's source bytes once.
   std::shared_ptr<OwnedBytes> source_constant(
       const Package& package,
       const DataBinding& binding) {
@@ -1717,6 +1843,34 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
   }
 
+  // A view only forwards its base, so a write through it stays private while
+  // every value up the alias chain has this single reader.
+  bool is_observed(ValueId id) const {
+    const Value& value = g().value(id);
+    if ((value.role != ValueRole::Intermediate &&
+         value.role != ValueRole::UserInput) ||
+        value.consumer_ids.size() != 1 ||
+        std::ranges::find(outputs_, id) != outputs_.end()) {
+      return true;
+    }
+    return valid(value.alias_id) && is_observed(value.alias_id);
+  }
+
+  // Functional in-place ops run out of place (detach_in_place_outputs), so
+  // their input is never written and must not keep a view of it from being
+  // materialized.
+  void unmark_functional_in_place_mutations() {
+    for (const NodeId nid : nodes_) {
+      Node& n = method_.graph.node(nid);
+      if (n.is_call() && is_functional_in_place(n.target) &&
+          !n.inputs.empty() && n.inputs[0].arg.kind() == ArgKind::Tensor &&
+          valid(n.inputs[0].arg.as_tensor().id) &&
+          !is_observed(n.inputs[0].arg.as_tensor().id)) {
+        n.inputs[0].mutated = false;
+      }
+    }
+  }
+
   // A functional kernel whose output views its input binds one storage for
   // both read and write. ET-VK records only the last binding's access, so the
   // write is forgotten and the next reader of the output gets no barrier. Such
@@ -1738,11 +1892,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         continue;
       }
       const Value& self = g().value(self_id);
-      const bool observed = (self.role != ValueRole::Intermediate &&
-                             self.role != ValueRole::UserInput) ||
-          valid(self.alias_id) || self.consumer_ids.size() != 1 ||
-          std::ranges::find(outputs_, self_id) != outputs_.end();
-      if (observed) {
+      if (is_observed(self_id)) {
         throw std::runtime_error(
             "vulkan: node '" + n.name + "' (" + n.target +
             "): in-place update of '" + self.name +
@@ -1772,11 +1922,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
       if (!is_active(value)) {
         continue;
       }
-      requests.push_back(AllocationRequest{
-          .value_id = id,
-          .size_bytes = logical_nbytes(value.tensor_meta()),
-          .memory_kind = memory_kind(storage_at(id)),
-      });
+      requests.push_back(
+          AllocationRequest{
+              .value_id = id,
+              .size_bytes = logical_nbytes(value.tensor_meta()),
+              .memory_kind = memory_kind(storage_at(id)),
+          });
     }
     memory_plan_ = plan_memory(g(), requests);
   }
@@ -1898,6 +2049,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
   void build(const Package& package) {
     check_mutation_outputs();
+    // Unmarking first lets views that feed a functional in-place op become
+    // copies too; layout assignment then sees the final aliases.
+    unmark_functional_in_place_mutations();
+    for (const NodeId id :
+         vulkan::materialize_dynamic_view_copies(method_.graph)) {
+      view_copies_.insert(id);
+    }
     assign_layouts();
     materialize_packed_views();
     detach_in_place_outputs();
