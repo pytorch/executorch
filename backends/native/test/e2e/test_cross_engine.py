@@ -148,7 +148,54 @@ def _gguf_weights(model: LlamaForCausalLM) -> list[tuple[str, torch.Tensor]]:
     return pairs
 
 
+class _ViewRelu(torch.nn.Module):
+    """relu over a reshaping view of a linear output: the in-place relu the
+    native passes emit writes through a view nothing else reads."""
+
+    def __init__(self):
+        super().__init__()
+        self.up = torch.nn.Linear(16, 32)
+        self.down = torch.nn.Linear(8, 4)
+
+    def forward(self, x):
+        y = self.up(x)
+        return self.down(torch.relu(y.view(1, 4 * x.shape[1], 8)))
+
+
 class CrossEngineTest(unittest.TestCase):
+    def _check_dynamic(self, model, steps, dynamic_shapes, atol_fraction=1e-4):
+        """Exports `model` once with `dynamic_shapes`, then runs every step, each
+        at its own sizes, on one executable per engine against eager."""
+        model = model.eval().requires_grad_(False)
+        with torch.no_grad():
+            expected = [model(*inputs) for inputs in steps]
+            ep = torch.export.export(
+                model, steps[0], dynamic_shapes=dynamic_shapes, strict=True
+            )
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            for runner in _ENGINES:
+                with self.subTest(engine=runner):
+                    outputs = _run(runner, package, steps, outdir, resize=True)
+                    self.assertEqual(len(outputs), len(expected))
+                    for step, (actual, reference) in enumerate(zip(outputs, expected)):
+                        self.assertEqual(actual.shape, reference.shape)
+                        torch.testing.assert_close(
+                            actual,
+                            reference,
+                            atol=atol_fraction * reference.abs().max().item(),
+                            rtol=0,
+                            msg=lambda m, step=step: f"step {step}: {m}",
+                        )
+
+    def test_inplace_relu_of_dynamic_view(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        self._check_dynamic(_ViewRelu(), steps, ({1: seq},))
+
     def _check_engines(self, package, steps, expected, outdir, atol_fraction, engines):
         tokens = {}
         for runner in engines:
