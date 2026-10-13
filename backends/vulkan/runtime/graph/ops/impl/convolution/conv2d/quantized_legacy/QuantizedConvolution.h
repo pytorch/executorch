@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/ConvolutionUtils.h>
 
 namespace vkcompute {
 
