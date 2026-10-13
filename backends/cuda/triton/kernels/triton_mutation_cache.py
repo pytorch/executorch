@@ -49,15 +49,32 @@ _installed = False
 _UNKEYABLE = object()
 
 
+_lazy_types: Optional[Tuple[Tuple[type, ...], Tuple[type, ...]]] = None
+
+
+def _symbolic_and_traced_tensor_types() -> Tuple[Tuple[type, ...], Tuple[type, ...]]:
+    """The symbolic-value and fake/Inductor tensor types, imported on first use:
+    this module is installed when the kernels package is imported, and importing
+    Inductor there would load it for every kernel import."""
+    global _lazy_types
+    if _lazy_types is None:
+        import sympy
+        from torch._inductor.ir import TensorBox
+        from torch._subclasses.fake_tensor import FakeTensor
+
+        _lazy_types = (
+            (torch.SymInt, torch.SymFloat, torch.SymBool, sympy.Expr),
+            (FakeTensor, TensorBox),
+        )
+    return _lazy_types
+
+
 def _argument_key(value: Any) -> Any:
     """What ``generate_ttir`` makes of ``value``, as a hashable key."""
-    import sympy
-    from torch._inductor.ir import TensorBox
-    from torch._subclasses.fake_tensor import FakeTensor
-
-    if isinstance(value, (torch.SymInt, torch.SymFloat, torch.SymBool, sympy.Expr)):
+    symbolic, traced_tensor = _symbolic_and_traced_tensor_types()
+    if isinstance(value, symbolic):
         return ("symbolic",)
-    if isinstance(value, (FakeTensor, TensorBox)):
+    if isinstance(value, traced_tensor):
         # generate_ttir replaces these with torch.empty(2, dtype=value.dtype):
         # their shape, strides and device do not reach the analysis.
         return ("tensor", value.dtype)

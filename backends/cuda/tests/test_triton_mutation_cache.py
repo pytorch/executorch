@@ -241,6 +241,3 @@ class TritonMutationCacheTest(unittest.TestCase):
             uncached = exported_code()
         self.assertEqual(cached, uncached)
 
-
-if __name__ == "__main__":
-    unittest.main()
