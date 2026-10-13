@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.24)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(samsung_example)
+
+message(EXECUTORCH_ROOT ${EXECUTORCH_ROOT})
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
@@ -31,15 +33,48 @@ endif()
 
 # prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
+find_package(tokenizers REQUIRED)
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-add_compile_options(-Wall -Werror -fPIC)
+#
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
+#
+executorch_load_build_variables()
+
+set(EXECUTORCH_SRCS_FILE
+    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
+)
+
+get_filename_component(
+  EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
+)
+
+add_compile_options(
+  -Wall
+  -Werror
+  -Wno-deprecated-declarations
+  -Wno-unused-const-variable
+  -Wno-unused-variable
+  -Wno-inconsistent-missing-override
+  -fPIC
+)
 
 message("Build Samsung Android Examples")
+
+link_directories(${EXECUTORCH_ROOT}/build_samsung_android/lib)
+
+add_library(lib_portable_ops STATIC IMPORTED)
+
+set_target_properties(
+  lib_portable_ops
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/lib/libportable_ops_lib.a"
+)
 
 set(__enn_executor_runner__srcs
     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_runner.cpp
@@ -58,4 +93,123 @@ target_link_libraries(
 
 set_target_properties(
   enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden
+)
+
+# llama_runner library
+add_subdirectory(executor_runner/llama/runner)
+
+target_link_directories(enn_llama_runner PRIVATE)
+
+add_library(lib_enn_llama_runner STATIC IMPORTED)
+set_target_properties(
+  lib_enn_llama_runner
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/executor_runner/llama/runner/libenn_llama_runner.a"
+)
+
+add_library(lib_tokenizer STATIC IMPORTED)
+set_target_properties(
+  lib_tokenizer
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/extension/llm/tokenizers/libtokenizers.a"
+)
+
+add_library(lib_extension_llm_runner STATIC IMPORTED)
+set_target_properties(
+  lib_extension_llm_runner
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/extension/llm/runner/libextension_llm_runner.a"
+)
+
+add_library(lib_enn_backend STATIC IMPORTED)
+set_target_properties(
+  lib_enn_backend
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libenn_backend.a"
+)
+
+add_library(lib_executorch STATIC IMPORTED)
+set_target_properties(
+  lib_executorch
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libexecutorch.a"
+)
+
+add_library(lib_custom_op STATIC IMPORTED)
+set_target_properties(
+  lib_custom_op
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libcustom_ops.a"
+)
+
+set(__enn_executor_llama_runner__srcs ${_executor_runner__srcs})
+list(TRANSFORM __enn_executor_llama_runner__srcs
+     PREPEND "${EXECUTORCH_SOURCE_DIR}/"
+)
+list(FILTER __enn_executor_llama_runner__srcs EXCLUDE REGEX
+     ".*executor_runner.cpp$"
+)
+list(PREPEND __enn_executor_llama_runner_srcs
+     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_llama_runner.cpp
+)
+
+set(enn_executor_llama_runner_deps
+    executorch_core extension_data_loader extension_module extension_tensor
+    extension_flat_tensor lib_extension_llm_runner
+)
+
+add_executable(enn_executor_llama_runner ${__enn_executor_llama_runner_srcs})
+
+target_include_directories(
+  enn_executor_llama_runner
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/backends/samsung/runtime
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
+
+set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod
+                         extension_threadpool pthreadpool kleidiai
+)
+
+list(
+  APPEND
+  xnnpack_backend_libs
+  optimized_native_cpu_ops_lib
+  optimized_kernels
+  portable_kernels
+  cpublas
+  eigen_blas
+)
+
+# Extra sources for cpuinfo
+set(XNNPACK_ROOT ${EXECUTORCH_ROOT}/backends/xnnpack)
+list(APPEND xnnpack_backend_libs cpuinfo)
+list(APPEND _common_include_directories
+     ${XNNPACK_ROOT}/third-party/cpuinfo/include
+)
+
+# quantized_ops_lib: Register quantized op kernels into the runtime
+list(APPEND xnnpack_backend_libs quantized_kernels quantized_ops_lib)
+
+target_link_libraries(
+  enn_executor_llama_runner
+  PUBLIC enn_llama_runner
+  PRIVATE log
+          gflags
+          android
+          lib_portable_ops
+          ${enn_executor_llama_runner_deps}
+          ${xnnpack_backend_libs}
+          sentencepiece
+          re2
+          lib_tokenizer
+          -Wl,--whole-archive
+          lib_executorch
+          lib_custom_op
+          lib_enn_backend
+          enn_logging
+          -Wl,--no-whole-archive
 )
