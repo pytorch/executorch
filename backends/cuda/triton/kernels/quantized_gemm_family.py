@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import inspect
+import logging
 import os
 import threading
 import typing
@@ -44,6 +45,8 @@ except ImportError:  # A Triton without parallel compile compiles each config on
 # Threads that compile one kernel's autotune configs. Compiling is mostly ptxas
 # and LLVM, which run outside the GIL.
 _MAX_COMPILE_THREADS = 32
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _resolved_signature(prototype) -> inspect.Signature:
@@ -191,8 +194,15 @@ def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
             return
     if _tuning_key(kernel, args, kwargs) in kernel.cache:
         return
-    with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
-        kernel.warmup(*args, grid=(1,), **kwargs)
+    try:
+        with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
+            kernel.warmup(*args, grid=(1,), **kwargs)
+    except Exception as error:  # noqa: BLE001 - precompiling only saves time
+        # The launch compiles and benchmarks the configs itself, as without
+        # precompiling, and reports a real problem there.
+        logger.warning(
+            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
+        )
 
 
 def launch_split_k_gemm(
