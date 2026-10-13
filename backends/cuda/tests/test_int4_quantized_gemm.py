@@ -59,6 +59,7 @@ MODEL_SHAPES = (
     (256, 6656),
 )
 SMALL_SHAPES = ((768, 256), (256, 768), (1536, 512))
+W4A8_BUCKETS = (1, 2, 3, 4)
 
 
 def _packed_with_dense(n: int, k: int, seed: int = 0):
@@ -198,7 +199,7 @@ class Int4QuantizedGemmLegalityTest(unittest.TestCase):
             "group size": (lambda a: a.__setitem__(6, 64), "group_size must be 32"),
             "static M": (
                 lambda a: a.__setitem__(0, torch.cat([a[0], a[0]])),
-                "static M must equal",
+                "static M must be within",
             ),
             "rank": (lambda a: a.__setitem__(0, a[0].unsqueeze(0)), "rank-2"),
             "contiguous": (
@@ -241,7 +242,7 @@ class Int4QuantizedGemmLegalityTest(unittest.TestCase):
 
     def test_op_validates_before_launching(self) -> None:
         args = self._args(m=2)
-        with self.assertRaisesRegex(RuntimeError, "static M must equal"):
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT4_QUANTIZED_GEMM.op(1)(*args)
 
 
@@ -254,7 +255,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
     def test_every_candidate_matches_dequant_matmul(self) -> None:
         for n, k in ((768, 256), (257, 512), (512, 8192)):
             weights = _packed(n, k, seed=n + k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in W4A8_BUCKETS:
                 x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
                 ref = _dequant_matmul(x, *weights, GROUP_SIZE)
                 for config in int4_autotune_configs(bucket):
@@ -308,9 +309,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
                     _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
 
     def test_every_bucket_matches_dequant_matmul_on_model_shapes(self) -> None:
+        # Buckets 8-64 are covered on model shapes by test_int4_large_quantized_gemm.
         for n, k in MODEL_SHAPES:
             weights = _packed(n, k, seed=n ^ k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in W4A8_BUCKETS:
                 with self.subTest(bucket=bucket, n=n, k=k):
                     x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
                     out = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
@@ -372,7 +374,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
 
     def test_every_split_matches_dequant_matmul(self) -> None:
         weights = _packed(256, 4096, seed=91)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in W4A8_BUCKETS:
             x = torch.randn(bucket, 4096, dtype=torch.bfloat16, device="cuda")
             ref = _dequant_matmul(x, *weights, GROUP_SIZE)
             for split in SPLIT_K_CANDIDATES:
@@ -389,7 +391,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             int4_kernel._launch(1, x, *weights, GROUP_SIZE, split_k=4)
 
     def test_ops_are_registered_per_bucket(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
+        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4, 8, 16, 32, 64))
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(
                 hasattr(torch.ops.triton, f"int4_quantized_gemm_m{bucket}"), bucket
@@ -399,10 +401,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
         ):
             INT4_QUANTIZED_GEMM.op(5)
 
-    def test_rejects_an_input_that_is_not_its_bucket(self) -> None:
+    def test_rejects_an_input_above_its_bucket(self) -> None:
         weights = _packed(256, 256)
-        x = torch.randn(3, 256, dtype=torch.bfloat16, device="cuda")
-        with self.assertRaises(RuntimeError):
+        x = torch.randn(5, 256, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaisesRegex(RuntimeError, "static M must be within"):
             INT4_QUANTIZED_GEMM.op(4)(x, *weights, GROUP_SIZE)
 
     def test_rejects_other_group_sizes(self) -> None:
@@ -515,7 +517,7 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
         try:
             for shape_index, (n, k) in enumerate(MODEL_SHAPES + SMALL_SHAPES):
                 dense, weights = _packed_with_dense(n, k, seed=1200 + shape_index)
-                for bucket in SUPPORTED_BUCKETS:
+                for bucket in W4A8_BUCKETS:
                     for outliers in (False, True):
                         label = (
                             f"M={bucket},N={n},K={k},"
@@ -537,7 +539,7 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
     def test_logits_top1_and_cosine(self) -> None:
         n, k = 32768, 6656
         _, weights = _packed_with_dense(n, k, seed=4242)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in W4A8_BUCKETS:
             with self.subTest(bucket=bucket):
                 x = self._activation(bucket, k, seed=4300 + bucket, outliers=True)
                 a8 = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE).float()

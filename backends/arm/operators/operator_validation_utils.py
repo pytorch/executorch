@@ -9,7 +9,7 @@ allowed dtypes, and compute pooling padding adjustments.
 
 """
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 import torch
 import tosa_serializer as ts
@@ -86,7 +86,7 @@ def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[in
         )
 
 
-def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = None):
+def validate_same_dtype(op_name: str, tensors: List[Any]):
     """Validate that all given tensors have the same dtype.
 
     This function checks whether all items in the ``tensors`` list have the
@@ -97,8 +97,6 @@ def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = No
             is being performed. Used in the error message to provide context.
         tensors (List[Any]): A list of tensors to be validated, each assumed to
             have a ``dtype`` attribute.
-        ts (Optional[Any]): TOSA serializer (optional) to improve readability of
-            dtype names in error messages.
 
     Raises:
         ValueError: If the dtype of any item in the list does not match the
@@ -130,7 +128,7 @@ def validate_same_dtype(op_name: str, tensors: List[Any], ts: Optional[Any] = No
 
 
 def validate_valid_dtype(
-    op_name: str, tensors: Any | List[Any], valid_dtypes: Any | List[Any], tosa_spec
+    op_name: str, tensors: Any | List[Any], valid_dtypes: Any | List[Any]
 ):
     """Validate that one or more tensors have allowed dtypes.
 
@@ -145,9 +143,6 @@ def validate_valid_dtype(
             validated.
         valid_dtypes (Any | List[Any]): A dtype enum or list of dtype enums
             representing allowed dtype values.
-        tosa_spec (Any): A TosaSpecification instance indicating which TOSA
-            version is targeted. This determines which serializer to use for
-            dtype name resolution.
 
     Raises:
         ValueError: If no tensors are provided, or if any tensor has a dtype not
@@ -162,7 +157,6 @@ def validate_valid_dtype(
             self.target,
             [*inputs, output],
             [ts.DType.INT8, ts.DType.INT32],
-            self.tosa_spec,
         )
 
     """
