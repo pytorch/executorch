@@ -123,8 +123,9 @@ void setPerfConfigFromSoc(const EnnApi* enn_api) {
   if (config.config_id == kPerfConfigIdDefault) {
     return;
   }
-  if (enn_api->EnnSetPreferencePerfConfigId(config.config_id) !=
-      ENN_RET_SUCCESS) {
+  if (enn_api->EnnSetPreferencePerfConfigId == nullptr ||
+      enn_api->EnnSetPreferencePerfConfigId(config.config_id) !=
+          ENN_RET_SUCCESS) {
     ENN_LOG_WARN(
         "Failed to set ENN perf config id %u, falling back to PERFORMANCE mode.",
         config.config_id);
@@ -175,7 +176,6 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnInitialize, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetPreferencePerfMode, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnGetPreferencePerfMode, this);
-  ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetPreferencePerfConfigId, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModel, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromMemory, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetFastIpc, this);
@@ -198,7 +198,13 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(
       libenn_public_api_, EnnGetFileDescriptorFromEnnBuffer, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFd, this);
-  ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFdWithWeight, this);
+  // Optional: only newer ENN releases export these.
+  EnnSetPreferencePerfConfigId =
+      reinterpret_cast<EnnSetPreferencePerfConfigId_fn>(loadApiFunction(
+          libenn_public_api_, "EnnSetPreferencePerfConfigId", true));
+  EnnOpenModelFromFdWithWeight =
+      reinterpret_cast<EnnOpenModelFromFdWithWeight_fn>(loadApiFunction(
+          libenn_public_api_, "EnnOpenModelFromFdWithWeight", true));
   return Error::Ok;
 }
 

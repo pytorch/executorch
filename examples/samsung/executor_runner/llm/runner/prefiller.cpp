@@ -37,7 +37,8 @@ Prefiller::Prefiller(
 runtime::Result<uint64_t> Prefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
-  ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
+  ET_CHECK_OR_RETURN_ERROR(
+      !prompt_tokens.empty(), InvalidArgument, "Prompt cannot be empty");
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
   }
@@ -117,8 +118,6 @@ runtime::Result<uint64_t> Prefiller::prefill_chunk(
         cur_token,
         start_pos);
 
-    // initialize tensor wrappers
-    // TODO(sicheon.oh) : Set tensor size by metadata::get_prefill_ar_len
     auto tokens =
         extension::from_blob(&cur_token, {1, 1}, aten::ScalarType::Long);
 

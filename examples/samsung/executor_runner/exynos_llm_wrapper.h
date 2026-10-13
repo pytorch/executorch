@@ -2,6 +2,9 @@
  * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
  * Public C API wrapping the Exynos LLM runner.
  *
  * Provided as a reference for porting the Exynos LLM runner into an Android
@@ -73,7 +76,11 @@ EXYNOS_LLM_WRAPPER_API enn_runner* enn_llm_create(
     const char* vision_model_path,
     int32_t is_decode_only);
 
-/** Destroy the runner and release all resources. Safe to call with NULL. */
+/**
+ * Destroy the runner and release all resources. Safe to call with NULL. Must
+ * not run concurrently with enn_llm_generate or enn_llm_stop on the same
+ * handle.
+ */
 EXYNOS_LLM_WRAPPER_API void enn_llm_destroy(enn_runner* runner);
 
 /**
@@ -87,7 +94,8 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
 /**
  * Generate a response for prompt (optionally with an image). The models stay
  * prepared across calls; KV-cache is reset before each generation so every
- * prompt starts fresh.
+ * prompt starts fresh. Not reentrant: at most one generation may run on a
+ * handle at a time.
  *
  * @param runner Handle from enn_llm_create.
  * @param prompt User prompt text (required, non-empty). When raw_prompt is
@@ -104,7 +112,8 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
  * @param raw_prompt Non-zero => prompt is already fully formatted; skip the
  *   internal chat-template wrapping and system_prompt.
  * @param seq_len Total token budget (prompt + generated), capped by the model's
- *   max context length; -1 => use the model's max context length.
+ *   max sequence length; -1 => use the model's max sequence length. Must be
+ *   -1 or larger than the prompt length.
  * @param temperature Sampling temperature.
  * @param num_bos BOS tokens to prepend to the prompt.
  * @param num_eos EOS tokens to append to the prompt.

@@ -2,6 +2,9 @@
  * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
  * Sample CLI consuming the public exynos_llm_wrapper C API
  * (exynos_llm_wrapper.h). This mirrors how an Android app drives
  * libexynos_llm_wrapper.so: create once, generate repeatedly, destroy at
@@ -24,8 +27,11 @@
  *   - `--*_prompt_file <file>`: read the file and use its contents.
  *   - `--image_file <path>` : the value IS the image path passed as image_path.
  *   The system/user/prefill texts are fed together (raw_prompt=0) as one
- *   generate call, along with any image. Any may be omitted. Repeating runs
- *   sequentially on the same handle, so the model stays prepared across calls.
+ *   generate call, along with any image. The user prompt is required; system
+ *   and prefill may be omitted. A raw prompt always runs on its own, so a
+ *   following system/user/prefill option starts the next generation. Repeating
+ *   runs sequentially on the same handle, so the model stays prepared across
+ *   calls.
  *
  * STREAMING=1 (default): the on_token callback prints each token as generated.
  * STREAMING=0: the on_token callback appends to a std::string and the full
@@ -43,7 +49,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <chrono>
+#include <condition_variable>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -147,10 +155,18 @@ static int run_one(
 
   // Timer-based stopper thread imitating a user interrupt. Replaced by the
   // token-count stop test when max_output_tokens is given.
+  std::mutex stop_mutex;
+  std::condition_variable stop_cv;
+  bool generation_done = false;
   std::thread stopper;
   if (stop_after_sec > 0) {
-    stopper = std::thread([r, stop_after_sec]() {
-      std::this_thread::sleep_for(std::chrono::seconds(stop_after_sec));
+    stopper = std::thread([&]() {
+      std::unique_lock<std::mutex> lock(stop_mutex);
+      if (stop_cv.wait_for(lock, std::chrono::seconds(stop_after_sec), [&]() {
+            return generation_done;
+          })) {
+        return;
+      }
       printf(
           "\n[Stopper] triggering enn_llm_stop() after %d s\n", stop_after_sec);
       fflush(stdout);
@@ -176,6 +192,11 @@ static int run_one(
       &ctx);
 
   if (stopper.joinable()) {
+    {
+      std::lock_guard<std::mutex> lock(stop_mutex);
+      generation_done = true;
+    }
+    stop_cv.notify_one();
     stopper.join();
   }
 
@@ -271,27 +292,32 @@ int main(int argc, char** argv) {
       content = optarg;
     }
 
+    const bool starts_templated = opt == OPT_SYS || opt == OPT_SYS_FILE ||
+        opt == OPT_USR || opt == OPT_USR_FILE || opt == OPT_PRE ||
+        opt == OPT_PRE_FILE;
+    const bool starts_raw = opt == OPT_RAW || opt == OPT_RAW_FILE;
+    if (have && (starts_raw || (starts_templated && !raw.empty()))) {
+      rc_total |= run_one(
+          r,
+          raw,
+          sys,
+          usr,
+          pre,
+          image,
+          max_output_tokens,
+          stop_after_sec,
+          echo);
+      raw.clear();
+      sys.clear();
+      usr.clear();
+      pre.clear();
+      image.clear();
+      have = false;
+    }
+
     switch (opt) {
       case OPT_RAW:
       case OPT_RAW_FILE:
-        if (have) {
-          rc_total |= run_one(
-              r,
-              raw,
-              sys,
-              usr,
-              pre,
-              image,
-              max_output_tokens,
-              stop_after_sec,
-              echo);
-          raw.clear();
-          sys.clear();
-          usr.clear();
-          pre.clear();
-          image.clear();
-          have = false;
-        }
         raw = content;
         have = true;
         break;

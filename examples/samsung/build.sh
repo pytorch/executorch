@@ -20,27 +20,24 @@ echo ANDROID_ABI=${ANDROID_ABI}
 echo ANDROID_PLATFORM=${ANDROID_PLATFORM}
 
 usage() {
-      echo "Usage: $0 [--llm-wrapper-so]"
-      echo "    --llm-wrapper-so    Also build libexynos_llm_wrapper.so and exynos_llm_wrapper_sample."
+      echo "Usage: $0 [--llm] [--llm-wrapper-so]"
+      echo "    --llm               Also build enn_executor_llm_runner."
+      echo "    --llm-wrapper-so    Also build libexynos_llm_wrapper.so and exynos_llm_wrapper_sample (implies --llm)."
 }
 
 main() {
+      local build_llm_runner=OFF
       local build_llm_wrapper_so=OFF
       for arg in "$@"; do
           case "$arg" in
-          "--llm-wrapper-so") build_llm_wrapper_so=ON ;;
+          "--llm") build_llm_runner=ON ;;
+          "--llm-wrapper-so") build_llm_runner=ON; build_llm_wrapper_so=ON ;;
           "--help"|"-h") usage; exit 0 ;;
           *) echo "Unknown option: $arg"; usage; exit 1 ;;
           esac
       done
 
       cd "$PROJECT_DIR"
-
-      if [[ -z ${ANDROID_NDK_ROOT} ]]; then
-          echo "Please export ANDROID_NDK_ROOT by setting andrid NDK path"
-          echo "$ export ANDROID_NDK_ROOT = path of android NDK"
-          exit 1
-      fi
 
       if [[ -z ${ANDROID_NDK} ]]; then
           ANDROID_NDK=${ANDROID_NDK_ROOT}
@@ -62,6 +59,7 @@ main() {
             -DANDROID_PLATFORM=$ANDROID_PLATFORM \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_BUILD_TYPE=Release \
+            -DEXYNOS_BUILD_LLM_RUNNER=${build_llm_runner} \
             -DEXYNOS_BUILD_LLM_WRAPPER_SO=${build_llm_wrapper_so} \
             -B"${build_dir_example}" \
             "$PROJECT_DIR/${example_root}"

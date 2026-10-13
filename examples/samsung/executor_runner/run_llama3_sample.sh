@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved.
 #
@@ -26,5 +27,4 @@ chmod +x enn_executor_llm_runner
     --prompt="$INPUT_PROMPT" \
     --temperature=$TEMPERATURE \
     --seq_len=$SEQ_LEN \
-    --num_bos=$NUM_BOS \
-    
+    --num_bos=$NUM_BOS
