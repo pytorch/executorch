@@ -14,6 +14,8 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+#include <atomic>
+
 namespace example {
 
 namespace llm = ::executorch::extension::llm;
@@ -82,10 +84,12 @@ class ET_EXPERIMENTAL TokenGenerator {
     auto tokens_managed = extension::from_blob(
         token_data.data(), token_shape, aten::ScalarType::Long);
 
-    should_stop_ = false;
-
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
+      if (should_stop_.load()) {
+        break;
+      }
+
       // Run the model
       auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
@@ -116,10 +120,6 @@ class ET_EXPERIMENTAL TokenGenerator {
       token_callback(
           ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
 
-      if (should_stop_) {
-        break;
-      }
-
       // data-dependent terminating condition: we have n_eos_ number of EOS
       if (eos_ids_->find(cur_token) != eos_ids_->end()) {
         // ET_LOG(Info, "Reached to the end of generation");
@@ -133,7 +133,11 @@ class ET_EXPERIMENTAL TokenGenerator {
    * Stop the generation loop.
    */
   inline void stop() {
-    should_stop_ = true;
+    should_stop_.store(true);
+  }
+
+  inline void clear_stop() {
+    should_stop_.store(false);
   }
 
   /**
@@ -167,7 +171,7 @@ class ET_EXPERIMENTAL TokenGenerator {
   bool use_kv_cache_;
 
   // state machine
-  bool should_stop_ = false;
+  std::atomic<bool> should_stop_{false};
 
   // stats
   llm::Stats* stats_;

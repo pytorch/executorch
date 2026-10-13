@@ -46,7 +46,8 @@ enn_runner* enn_llm_create(
     const char* tokenizer_path,
     const char* pos_embedding_path,
     const char* config_path,
-    const char* vision_model_path) {
+    const char* vision_model_path,
+    int32_t is_decode_only) {
   if (model_path == nullptr || tokenizer_path == nullptr ||
       config_path == nullptr) {
     ET_LOG(Error, "enn_llm_create: model/tokenizer/config path required");
@@ -60,7 +61,8 @@ enn_runner* enn_llm_create(
       .data_path = opt_or_null(data_path),
       .vision_model_path = opt_or_null(vision_model_path)};
 
-  example::RunnerConfig cfg{.config_path = config_path};
+  example::RunnerConfig cfg{
+      .config_path = config_path, .is_decode_only = is_decode_only != 0};
 
   auto runner = example::create_llm_runner(paths, std::move(cfg));
   if (runner == nullptr) {
@@ -76,18 +78,23 @@ void enn_llm_destroy(enn_runner* runner) {
 }
 
 void enn_llm_stop(enn_runner* runner) {
+  if (runner == nullptr) {
+    return;
+  }
   runner->impl->stop();
 }
 
 int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,
+    const char* system_prompt,
     const char* image_path,
     const char* prompt_before_image,
     int32_t seq_len,
     float temperature,
     int32_t num_bos,
     int32_t num_eos,
+    int32_t echo,
     int32_t verbose,
     enn_token_cb on_token,
     void* userdata) {
@@ -105,12 +112,15 @@ int32_t enn_llm_generate(
   // Start each generation from a clean KV-cache.
   lrunner->reset();
 
-  // Image inputs are threaded through the runner's config (read by generate).
+  // System prompt and image inputs are threaded through the runner's config
+  // (read by generate).
+  lrunner->get_config().system_prompt = str_or_empty(system_prompt);
   lrunner->get_config().image_path = str_or_empty(image_path);
   lrunner->get_config().prompt_before_image = str_or_empty(prompt_before_image);
   lrunner->get_config().verbose = verbose != 0;
 
   llm::GenerationConfig gen_cfg{
+      .echo = echo != 0,
       .seq_len = seq_len >= 0 ? seq_len : -1,
       .temperature = temperature,
       .num_bos = num_bos,

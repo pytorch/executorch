@@ -32,3 +32,10 @@ Ensure these files are pushed to the target device (e.g., to `/data/local/tmp/`)
 an Android app: a small public C API (`exynos_llm_wrapper.h`) that hides the
 runner internals behind an opaque handle. `exynos_llm_wrapper_sample` is a CLI
 that exercises the same API on-device.
+
+`enn_executor_llm_runner` always drives the runner through this C API, but the
+`.so` and the sample are only produced when requested:
+
+```bash
+./examples/samsung/build.sh --llm-wrapper-so
+```

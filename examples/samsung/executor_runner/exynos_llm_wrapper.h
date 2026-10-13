@@ -60,6 +60,8 @@ typedef struct enn_runner enn_runner;
  * @param pos_embedding_path Precomputed rotary embeddings, or NULL.
  * @param config_path Runner config file (required).
  * @param vision_model_path Vision encoder .pte, or NULL => text-only runner.
+ * @param is_decode_only Non-zero runs the prompt through the decode method only
+ *   (no prefill method).
  * @return A handle on success, NULL on failure.
  */
 EXYNOS_LLM_WRAPPER_API enn_runner* enn_llm_create(
@@ -68,12 +70,18 @@ EXYNOS_LLM_WRAPPER_API enn_runner* enn_llm_create(
     const char* tokenizer_path,
     const char* pos_embedding_path,
     const char* config_path,
-    const char* vision_model_path);
+    const char* vision_model_path,
+    int32_t is_decode_only);
 
 /** Destroy the runner and release all resources. Safe to call with NULL. */
 EXYNOS_LLM_WRAPPER_API void enn_llm_destroy(enn_runner* runner);
 
-/** Request the runner to stop current generation. */
+/**
+ * Request the in-flight enn_llm_generate on runner to stop. Thread-safe; may
+ * be called from any thread, including from on_token. Generation returns
+ * ENN_OK before the next decode step. A no-op when no generation is running
+ * or runner is NULL.
+ */
 EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
 
 /**
@@ -83,6 +91,7 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
  *
  * @param runner Handle from enn_llm_create.
  * @param prompt User prompt text (required, non-empty).
+ * @param system_prompt System prompt text, or NULL/"" => none.
  * @param image_path Image file for this turn, or NULL => text-only.
  * @param prompt_before_image Text placed before the image in the user turn
  *   (Gemma 4 multimodal); ignored when image_path is NULL.
@@ -91,6 +100,8 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
  * @param temperature Sampling temperature.
  * @param num_bos BOS tokens to prepend to the prompt.
  * @param num_eos EOS tokens to append to the prompt.
+ * @param echo Non-zero also passes the rendered input prompt to on_token
+ *   before the generated tokens.
  * @param verbose Non-zero also streams tokens to stdout.
  * @param on_token Per-piece callback, or NULL to discard output.
  * @param userdata Opaque pointer passed through to on_token.
@@ -99,12 +110,14 @@ EXYNOS_LLM_WRAPPER_API void enn_llm_stop(enn_runner* runner);
 EXYNOS_LLM_WRAPPER_API int32_t enn_llm_generate(
     enn_runner* runner,
     const char* prompt,
+    const char* system_prompt,
     const char* image_path,
     const char* prompt_before_image,
     int32_t seq_len,
     float temperature,
     int32_t num_bos,
     int32_t num_eos,
+    int32_t echo,
     int32_t verbose,
     enn_token_cb on_token,
     void* userdata);
