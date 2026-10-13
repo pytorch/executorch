@@ -69,9 +69,9 @@ Prefiller::Prefiller(
       ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
       cur_token = chunk_result.get();
 
-      if (enable_parallel_prefill_) {
-        start_pos += num_tokens_to_prefill_with;
-      }
+      //if (enable_parallel_prefill_) {
+      //  start_pos += num_tokens_to_prefill_with;
+      //}
       num_tokens_to_process += num_tokens_to_prefill_with;
     }
 
