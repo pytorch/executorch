@@ -91,6 +91,7 @@ fbcode_target(
         ":arm_vela",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
+        "//executorch/exir:_warnings",
         "//executorch/exir/_serialize:lib",
     ],
 )
