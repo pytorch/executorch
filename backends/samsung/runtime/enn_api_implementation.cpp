@@ -7,8 +7,14 @@
  *
  */
 #include <dlfcn.h>
+#include <sys/system_properties.h>
+
 #include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/logging.h>
+
+#include <cstring>
+#include <string>
+#include <unordered_map>
 
 #define ENN_LOAD_API_FUNC(handle, name, enn_api_ptr)                         \
   enn_api_ptr->name =                                                        \
@@ -36,6 +42,101 @@ void* loadApiFunction(void* handle, const char* name, bool optional) {
 EnnApi* EnnApi::getEnnApiInstance() {
   static EnnApi enn_api;
   return &enn_api;
+}
+
+namespace {
+
+constexpr uint32_t kPerfConfigIdDefault = 0;
+
+struct PerfConfig {
+  PerfModePreference mode;
+  uint32_t config_id;
+};
+
+// Primary source: ro.hardware. Falls back to ro.soc.model if unavailable.
+std::string getHwName() {
+  char prop_value[PROP_VALUE_MAX] = {};
+  if (__system_property_get("ro.hardware", prop_value) > 0) {
+    return std::string(prop_value);
+  }
+  return "";
+}
+
+std::string getSocName() {
+  char prop_value[PROP_VALUE_MAX] = {};
+  if (__system_property_get("ro.soc.model", prop_value) > 0) {
+    return std::string(prop_value);
+  }
+  return "";
+}
+
+// Extracts trailing digits, e.g. "exynos9955" -> "9955", "s5e9965" -> "9965".
+bool trimToTrailingDigits(std::string& value) {
+  const char* digits = "0123456789";
+  auto last = value.find_last_of(digits);
+  if (last == std::string::npos) {
+    return false;
+  }
+  auto first = last;
+  while (first > 0 && std::strchr(digits, value[first - 1]) != nullptr) {
+    first--;
+  }
+  value = value.substr(first, last - first + 1);
+  return true;
+}
+
+const std::unordered_map<std::string, PerfConfig>& getSocPerfConfigMap() {
+  static const std::unordered_map<std::string, PerfConfig> kSocPerfConfig = {
+      {"9955", {ENN_PREF_MODE_PERFORMANCE, kPerfConfigIdDefault}},
+      {"9965", {ENN_PREF_MODE_CUSTOM, 100111}},
+  };
+  return kSocPerfConfig;
+}
+
+PerfConfig getPerfConfigForSoc() {
+  std::string key = getHwName();
+  if (key.empty()) {
+    key = getSocName();
+  }
+  if (!key.empty()) {
+    trimToTrailingDigits(key);
+  }
+
+  const auto& map = getSocPerfConfigMap();
+  auto it = map.find(key);
+  if (it != map.end()) {
+    return it->second;
+  }
+  return {ENN_PREF_MODE_PERFORMANCE, kPerfConfigIdDefault};
+}
+
+// Mirrors LiteRT's litert::samsung::SetGenAiPerfConfigFromSoc: detect the
+// SoC from Android system properties and apply its known-good perf mode,
+// instead of leaving the ENN runtime on its own default.
+void setPerfConfigFromSoc(const EnnApi* enn_api) {
+  PerfConfig config = getPerfConfigForSoc();
+  if (enn_api->EnnSetPreferencePerfMode(static_cast<uint32_t>(config.mode)) !=
+      ENN_RET_SUCCESS) {
+    ENN_LOG_ERROR("Failed to set ENN preference perf mode.");
+    return;
+  }
+  if (config.config_id == kPerfConfigIdDefault) {
+    return;
+  }
+  if (enn_api->EnnSetPreferencePerfConfigId(config.config_id) !=
+      ENN_RET_SUCCESS) {
+    ENN_LOG_WARN(
+        "Failed to set ENN perf config id %u, falling back to PERFORMANCE mode.",
+        config.config_id);
+    enn_api->EnnSetPreferencePerfMode(
+        static_cast<uint32_t>(ENN_PREF_MODE_PERFORMANCE));
+  }
+}
+
+} // namespace
+
+void EnnApi::applyPerfConfigFromSoc() const {
+  setPerfConfigFromSoc(this);
 }
 
 EnnApi::EnnApi() {
@@ -74,6 +175,7 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnInitialize, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetPreferencePerfMode, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnGetPreferencePerfMode, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetPreferencePerfConfigId, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModel, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromMemory, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetFastIpc, this);

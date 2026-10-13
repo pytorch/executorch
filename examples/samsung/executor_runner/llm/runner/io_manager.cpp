@@ -513,22 +513,15 @@ void LlmIOManager::update_local_attn_mask(size_t pos, size_t seq_len) {
       local_attn_mask_.data(), attn_mask_.data(), total_size * sizeof(float));
 
   if (seq_len > 1) {
-    // Prefill phase with sliding window
-    if ((pos + seq_len) >= sliding_window) {
-      // Mask out positions before the sliding window
-      const size_t mask_start = sliding_window - seq_len;
-      const size_t mask_end = pos; // 512
-      const size_t mask_len = mask_end - mask_start;
-
-      if (mask_len > 0) {
-        for (size_t i = 0; i < rows; ++i) {
-          fill_float_region(
-              local_attn_mask_.data(),
-              i * cols + mask_start,
-              mask_len,
-              maskFalse);
-        }
+    // Prefill phase with sliding window: row i sits at position pos + i and
+    // sees the last sliding_window keys, so mask the oldest cached columns.
+    for (size_t i = 0; i < rows; ++i) {
+      const size_t query_pos = pos + i;
+      if (query_pos + 1 <= sliding_window) {
+        continue;
       }
+      const size_t mask_len = std::min(query_pos + 1 - sliding_window, pos);
+      fill_float_region(local_attn_mask_.data(), i * cols, mask_len, maskFalse);
     }
   } else {
     // Decode phase (single token)

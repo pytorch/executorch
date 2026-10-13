@@ -109,8 +109,6 @@ class LLMRunner : public llm::IRunner {
   void reset();
 
  private:
-  bool shouldStop_{false};
-
   RunnerConfig config_;
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
