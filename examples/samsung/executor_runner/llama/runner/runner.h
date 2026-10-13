@@ -52,7 +52,7 @@ class LLMRunner : public llm::IRunner {
       std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
       std::unique_ptr<::executorch::extension::Module> module,
       std::unique_ptr<llm::TextDecoderRunner> text_decoder_runner,
-      std::unique_ptr<example::Prefiller> text_prefiller,
+      std::unique_ptr<llm::TextPrefiller> text_prefiller,
       std::unique_ptr<example::TokenGenerator> text_token_generator,
       std::unique_ptr<llm::Stats> stats,
       std::unique_ptr<llm::IOManager> io_manager,
@@ -161,7 +161,7 @@ class LLMRunner : public llm::IRunner {
       text_decoder_runner_; // Manage text_decoder_runner_'s lifecycle, make
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
-  std::unique_ptr<example::Prefiller> text_prefiller_;
+  std::unique_ptr<llm::TextPrefiller> text_prefiller_;
   std::unique_ptr<example::TokenGenerator> text_token_generator_;
   std::unique_ptr<llm::IOManager> io_manager_;
 
@@ -177,6 +177,7 @@ std::unique_ptr<llm::IRunner> create_llama_runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     std::optional<const std::string> data_path = std::nullopt,
+    bool decode_only = false,
     float temperature = -1.0f);
 
 std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
