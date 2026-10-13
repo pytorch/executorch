@@ -288,23 +288,37 @@ namespace example {
   }
 
   void LlmIOManager::update_attn_mask(size_t pos, size_t seq_len) {
-    std::fill(attn_mask_.begin(), attn_mask_.end(), 0.0f);
-    size_t visible = 0;
-    for (size_t r = 0; r < seq_len && r < config_.attn_mask_rows; r++) {
-      visible = pos + r + 1;
-      if (visible > config_.attn_mask_cols) {
-        visible = config_.attn_mask_cols;
-      }
-      for (size_t c = 0; c < visible; c++) {
-        attn_mask_[r * config_.attn_mask_cols + c] = 1.0f;
-      }
-    }
+    static int num_prompt_token = 0;  // temporary variable to share num_prompt_token info from prefill to decode
+    std::fill(attn_mask_.begin(), attn_mask_.end(), -std::numeric_limits<float>::infinity());
 
-    //Mask padding with the value of last token.
-    for (size_t r = seq_len; r < config_.attn_mask_rows; r++) {
-       for (size_t c = 0; c < visible; c++) {
-        attn_mask_[r * config_.attn_mask_cols + c] = 1.0f;
-       }
+    const size_t start_col = config_.attn_mask_cols - config_.attn_mask_rows;
+    if (seq_len > 1) { // prefill : start from 896 and fill same mask as last_token to all empty rows.
+        size_t last_valid_row = 0;
+        num_prompt_token  = seq_len;
+
+        for (size_t r = 0; r < seq_len && r < config_.attn_mask_rows; r++) {
+            size_t visible_count = pos + r + 1;
+            for (size_t c = 0; c < visible_count; c++) {
+                size_t target_col = start_col + c;
+                if (target_col < config_.attn_mask_cols) {
+                    attn_mask_[r * config_.attn_mask_cols + target_col] = 0.0f;
+                }
+            }
+            last_valid_row = r;
+        }
+        for (size_t r = last_valid_row + 1; r < config_.attn_mask_rows; r++) {
+            float* src = &attn_mask_[last_valid_row * config_.attn_mask_cols];
+            float* dst = &attn_mask_[r * config_.attn_mask_cols];
+            std::memcpy(dst, src, config_.attn_mask_cols * sizeof(float));
+        }
+    }
+    else {
+        int pos_decode = pos - num_prompt_token + 1;
+        for (int r = 0; r < (pos); r++) {
+          attn_mask_[r] = 0.0f;
+        }
+
+        attn_mask_[config_.attn_mask_cols - 1] = 0.0f;
     }
   }
 
