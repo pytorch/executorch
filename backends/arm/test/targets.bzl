@@ -73,6 +73,7 @@ def define_arm_tests():
     test_files += [
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
+        "misc/test_diff_pte.py",
         "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
@@ -176,7 +177,10 @@ def define_arm_tests():
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
-            ] if test_file == "misc/test_version_xfail.py" else []),
+            ] if test_file == "misc/test_version_xfail.py" else []) + ([
+                "//executorch/exir:schema",
+                "//executorch/exir/_serialize:lib",
+            ] if test_file == "misc/test_diff_pte.py" else []),
         )
 
     runtime.cxx_test(
@@ -210,6 +214,21 @@ def define_arm_tests():
         runtime.cxx_test(
             name = "vgf_vulkan_features_test",
             srcs = ["vgf_vulkan_features_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_zero_copy_test",
+            srcs = ["vgf_zero_copy_test.cpp"],
             compiler_flags = [
                 "-DUSE_VULKAN_WRAPPER",
                 "-DUSE_VULKAN_VOLK",
