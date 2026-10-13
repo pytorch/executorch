@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <numeric>
@@ -122,6 +123,7 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<int> clone_calls{0};
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
+  Position retained_tail = std::numeric_limits<Position>::max();
   bool accept_prepared = false;
   bool reject_views = false;
   mutable std::size_t full_accepts = 0;
@@ -163,6 +165,10 @@ class Executor : public batching::testing::FakeExecutor {
       auto it = histories_.find(source);
       if (it == histories_.end() || upto < 0 ||
           static_cast<std::size_t>(upto) > it->second.size() ||
+          upto <
+              std::max(
+                  Position{0},
+                  static_cast<Position>(it->second.size()) - retained_tail) ||
           (reject_after_decode && advanced_[source])) {
         return std::nullopt;
       }
@@ -1045,6 +1051,76 @@ TEST_F(PrefixReuseTest, CancellationDuringReplacementClonePreservesSource) {
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 3u);
   EXPECT_EQ(runtime->info().active_sessions, 1u);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    PeriodicCheckpointRestoresAnIntermediatePromptBoundary) {
+  config.max_sessions = 1;
+  config.prefix_checkpoint_interval = 8;
+  executor.retained_tail = 0;
+  start();
+  std::vector<Token> prompt(56, 7);
+  auto first = output();
+  submit(first, prompt, "s", 3).wait();
+  ASSERT_FALSE(first->terminal->error);
+  const auto captures = executor.clones();
+  ASSERT_FALSE(captures.empty());
+  const auto boundary = captures.front().prefix.size();
+  ASSERT_GE(boundary, config.prefix_checkpoint_interval);
+  ASSERT_LT(boundary, prompt.size());
+  prompt[boundary] = 9;
+  auto replaced = output();
+  submit(replaced, prompt).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, boundary);
+  EXPECT_EQ(
+      replaced->terminal->stats.prefilled_prompt_tokens,
+      prompt.size() - boundary);
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureRefusalDoesNotFailGeneration) {
+  config.max_sessions = 1;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  executor.capacity = 1;
+  start(false);
+  auto first = output();
+  submit(first, std::vector<Token>(40, 7)).wait();
+  ASSERT_FALSE(first->terminal->error);
+  EXPECT_GT(executor.clone_calls.load(), 0);
+  EXPECT_TRUE(executor.clones().empty());
+  auto replaced = output();
+  submit(replaced, {7, 7, 9}).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(PrefixReuseTest, CancellationDuringPeriodicCaptureReleasesCaptureLane) {
+  watch_callbacks();
+  config.prefix_checkpoint_interval = 8;
+  executor.cloning.hold();
+  start();
+  auto cancelled = output();
+  auto handle = submit(cancelled, std::vector<Token>(40, 7));
+  ASSERT_TRUE(executor.cloning.wait());
+  handle.cancel();
+  executor.cloning.release();
+  handle.wait();
+  ASSERT_FALSE(runtime->close_session_async("s").get());
+  const auto before = executor.clone_calls.load();
+  auto next = output();
+  submit(next, std::vector<Token>(40, 8)).wait();
+  ASSERT_FALSE(next->terminal->error);
+  EXPECT_GT(executor.clone_calls.load(), before);
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureRequiresStorage) {
+  config.prefix_cache_capacity = 0;
+  config.prefix_checkpoint_interval = 8;
+  start();
+  EXPECT_FALSE(runtime->info().ready);
 }
 
 TEST_F(PrefixReuseTest, CaptureIsQueuedBeforeSubsequentDecode) {

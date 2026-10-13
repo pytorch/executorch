@@ -59,6 +59,12 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
   // when enabled. Backend numerical parity requires model-specific validation.
   std::size_t prefix_cache_capacity = 0;
+  // Opt-in intermediate prompt checkpoints at forward boundaries, spaced by
+  // roughly this many committed positions. Requires prefix_cache_capacity.
+  // Zero retains initial-prompt capture only. Busy capture lanes skip points;
+  // snapshots share the existing entry budget and preserve an early matching
+  // checkpoint when an intermediate entry can be evicted instead.
+  std::size_t prefix_checkpoint_interval = 0;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its

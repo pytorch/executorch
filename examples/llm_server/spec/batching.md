@@ -34,6 +34,23 @@ speculative drafting/verification remain inside the runner and executor.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
+
+`--prefix-checkpoint-interval N` enables intermediate prompt snapshots in the
+module and Muse-Glimmer batching launchers; it requires `--prefix-cache-entries`
+and defaults to zero. The runtime requests capture at successful prefill-forward
+boundaries after approximately N committed positions, and at the initial prompt
+end. It does not capture subsequent decode steps. Boundaries can overshoot N;
+busy capture lanes skip points without waiting for storage maintenance.
+
+The runner's optional `on_prefill` observer queues a clone between forwards.
+The serving control thread collects the clone and inserts its exact prefix
+identity. Captures and prompt replacement share one transient executor row.
+Snapshots remain bounded by the existing entry budget. When evicting a matching
+history, an intermediate snapshot is preferred over its oldest prefix when
+possible; unrelated histories retain global LRU eviction. One entry cannot
+retain both early and recent state. Refusal, cancellation, and cache misses
+preserve cold replay. Snapshot memory and copy overhead depend on the executor;
+the interval and entry count should be measured with the deployed model.
 - Different sessions can run concurrently. Same-session transcript preparation,
   generation, native wire completion, and transcript commit remain ordered.
   Cancellation targets one request. Native output and completion-preparation

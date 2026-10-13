@@ -307,7 +307,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
-      std::function<void()> on_settled);
+      std::function<void()> on_settled,
+      std::function<void(Position)> on_prefill);
 
   InitializationState initialization_state() const noexcept {
     return initialization_state_.load(std::memory_order_acquire);
@@ -326,6 +327,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::int32_t remaining_tokens = 0;
     std::vector<Token> stop_tokens;
     GenerationCallback on_update;
+    std::function<void(Position)> on_prefill;
+    Position reported_prefill_position = 0;
     // Shared with every handle, so cancelling needs no route back to the
     // runner and works after it is gone.
     std::shared_ptr<GenerationHandleState> state;
@@ -615,15 +618,14 @@ std::future<std::optional<Session>> Session::clone_async(Position upto) const {
   return state_->impl->clone_async(state_->session, upto);
 }
 
-std::function<std::future<std::optional<Session>>()>
-Session::make_clone_request(Position upto) const {
+std::function<std::future<std::optional<Session>>(Position)>
+Session::make_clone_request() const {
   if (!state_) {
     return {};
   }
   return [impl = state_->impl,
           session = state_->session,
-          status = state_->status,
-          upto]() {
+          status = state_->status](Position upto) {
     if (!status->open.load(std::memory_order_acquire)) {
       std::promise<std::optional<Session>> ack;
       auto future = ack.get_future();
@@ -638,7 +640,8 @@ GenerationHandle Session::generate_async(
     GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
-    std::function<void()> on_settled) const {
+    std::function<void()> on_settled,
+    std::function<void(Position)> on_prefill) const {
   if (!state_) {
     auto handle_state = std::make_shared<GenerationHandleState>();
     handle_state->on_settled = std::move(on_settled);
@@ -661,7 +664,8 @@ GenerationHandle Session::generate_async(
       std::move(delta),
       std::move(config),
       std::move(on_update),
-      std::move(on_settled));
+      std::move(on_settled),
+      std::move(on_prefill));
 }
 
 // --- lifecycle -------------------------------------------------------------
@@ -1282,6 +1286,31 @@ bool RunnerImpl::execute_one_batch_() {
       complete_active_generation_(input.sid, TerminalOutcome::cancelled());
       continue;
     }
+    auto& generation = *session->second.active_generation;
+    const auto position = session->second.position();
+    if (generation.on_prefill && !stamped(generation.m.t_first_token) &&
+        position > generation.reported_prefill_position) {
+      generation.reported_prefill_position = position;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        generation.on_prefill(position);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        complete_active_generation_(
+            input.sid, TerminalOutcome::failed("prefill observer threw"));
+        continue;
+      }
+#endif
+    }
+    if (!is_running_()) {
+      break;
+    }
+    if (!session->second.status->open.load(std::memory_order_acquire) ||
+        generation.state->cancelled.load()) {
+      complete_active_generation_(input.sid, TerminalOutcome::cancelled());
+      continue;
+    }
     if (input.produce_output) {
       // Advancing past the output is left to handle_output_: only it knows how
       // much of it the stop tokens and the token budget let through.
@@ -1376,7 +1405,8 @@ GenerationHandle RunnerImpl::generate_async(
     GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
-    std::function<void()> on_settled) {
+    std::function<void()> on_settled,
+    std::function<void(Position)> on_prefill) {
   auto state = std::make_shared<GenerationHandleState>();
   state->on_settled = std::move(on_settled);
   GenerationRequest request;
@@ -1394,6 +1424,7 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.remaining_tokens = config.max_new_tokens;
   request.generation.stop_tokens = std::move(config.stop_tokens);
   request.generation.on_update = std::move(on_update);
+  request.generation.on_prefill = std::move(on_prefill);
   request.generation.state = state;
   // The caller's thread, before the request is queued: the wait a caller sees
   // starts here, not when the engine gets round to it.

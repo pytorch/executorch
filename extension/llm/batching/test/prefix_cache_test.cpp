@@ -307,6 +307,136 @@ class PrefixCacheTest : public ::testing::Test {
   std::unique_ptr<Runner> runner;
 };
 
+TEST_F(PrefixCacheTest, PrefillObserverClonesBeforeLaterWrites) {
+  executor.retained_tail = 0;
+  auto source = open();
+  const Tokens prompt(40, 7);
+  std::vector<Position> positions;
+  std::vector<std::future<std::optional<Session>>> snapshots;
+  GenConfig config;
+  config.max_new_tokens = 4;
+  auto generation =
+      source.generate_async(prompt, config, {}, {}, [&](Position position) {
+        EXPECT_EQ(position, source.position());
+        positions.push_back(position);
+        snapshots.push_back(source.clone_async(position));
+      });
+  generation.wait();
+  ASSERT_EQ(generation.finish_reason(), FinishReason::NewTokenLimit);
+  ASSERT_GT(positions.size(), 1u);
+  EXPECT_LT(positions.front(), prompt.size());
+  EXPECT_EQ(positions.back(), prompt.size());
+  EXPECT_TRUE(std::is_sorted(positions.begin(), positions.end()));
+  EXPECT_EQ(
+      std::adjacent_find(positions.begin(), positions.end()), positions.end());
+  EXPECT_FALSE(source.clone_async(positions.front()).get());
+  PrefixCache cache(1);
+  for (std::size_t i = 0; i < snapshots.size(); ++i) {
+    auto snapshot = snapshots[i].get();
+    ASSERT_TRUE(snapshot);
+    EXPECT_EQ(snapshot->position(), positions[i]);
+    if (i == 0) {
+      ASSERT_TRUE(cache.insert(
+          Tokens(prompt.begin(), prompt.begin() + positions[i]),
+          std::move(*snapshot)));
+    }
+  }
+  Tokens changed(prompt.begin(), prompt.begin() + positions.front());
+  changed.push_back(9);
+  auto match = cache.lookup(changed);
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, positions.front());
+  expect_cold_match(*match, changed);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixCacheTest, PrefillObserverExceptionFailsWithoutDeliveringTokens) {
+  auto source = open();
+  Tokens delivered;
+  auto generation = source.generate_async(
+      Tokens(40, 7),
+      GenConfig{},
+      [&](const GenerationUpdate& update) {
+        delivered.insert(
+            delivered.end(), update.tokens.begin(), update.tokens.end());
+      },
+      {},
+      [](Position) { throw std::runtime_error("observer"); });
+  generation.wait();
+  EXPECT_EQ(generation.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(generation.error_message(), "prefill observer threw");
+  EXPECT_TRUE(delivered.empty());
+}
+#endif
+
+TEST_F(
+    PrefixCacheTest,
+    IntermediateCaptureTruncatesOpaqueIdentityAndCanBeReused) {
+  auto source = open();
+  const auto tokens = std::make_shared<const Tokens>(Tokens(12, 7));
+  const PrefixIdentity identity{
+      {TokenSpan{tokens, 0, 2},
+       OpaqueSpan{ContentKey{7}, 0, 6},
+       TokenSpan{tokens, 8, 4}}};
+  PrefixCache cache(2);
+  auto capture = cache.capture_identity(source, identity);
+  generate(source, Tokens(4, 7), 1);
+  ASSERT_TRUE(capture.capture_at(4));
+  EXPECT_FALSE(capture.capture_at(4));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_FALSE(capture.collect());
+  auto first = cache.lookup_identity(identity);
+  ASSERT_TRUE(first);
+  EXPECT_EQ(first->matched_tokens, 4u);
+  generate(source, Tokens(5, 7), 1);
+  ASSERT_TRUE(capture.capture_at(10));
+  ASSERT_TRUE(capture.collect());
+  auto second = cache.lookup_identity(identity);
+  ASSERT_TRUE(second);
+  EXPECT_EQ(second->matched_tokens, 10u);
+  EXPECT_FALSE(capture.capture_at(13));
+}
+
+TEST_F(PrefixCacheTest, CheckpointEvictionPreservesEarlyAnchorAndRecentState) {
+  executor.retained_tail = 0;
+  PrefixCache cache(2, true);
+  const Tokens prompt(16, 7);
+  for (std::size_t size : {4, 8, 12}) {
+    const Tokens prefix(prompt.begin(), prompt.begin() + size);
+    auto source = open();
+    generate(source, prefix, 1);
+    auto checkpoint = source.clone_async(static_cast<Position>(size)).get();
+    ASSERT_TRUE(checkpoint);
+    ASSERT_TRUE(cache.insert(prefix, std::move(*checkpoint)));
+  }
+  EXPECT_EQ(cache.size(), 2u);
+  for (std::size_t edit : {4, 8, 12}) {
+    Tokens changed(prompt.begin(), prompt.begin() + edit);
+    changed.push_back(9);
+    auto match = cache.lookup(changed);
+    ASSERT_TRUE(match);
+    EXPECT_EQ(match->matched_tokens, edit == 12 ? 12u : 4u);
+    expect_cold_match(*match, changed);
+  }
+}
+
+TEST_F(PrefixCacheTest, OneCheckpointEntryStillEvictsAtCapacity) {
+  executor.retained_tail = 0;
+  PrefixCache cache(1, true);
+  for (std::size_t size : {4, 8}) {
+    auto source = open();
+    generate(source, Tokens(size, 7), 1);
+    auto checkpoint = source.clone_async(static_cast<Position>(size)).get();
+    ASSERT_TRUE(checkpoint);
+    ASSERT_TRUE(cache.insert(Tokens(size, 7), std::move(*checkpoint)));
+  }
+  EXPECT_EQ(cache.size(), 1u);
+  EXPECT_FALSE(cache.lookup(Tokens{7, 7, 7, 7, 9}));
+  auto match = cache.lookup(Tokens{7, 7, 7, 7, 7, 7, 7, 7, 9});
+  ASSERT_TRUE(match);
+  EXPECT_EQ(match->matched_tokens, 8u);
+}
+
 TEST_F(PrefixCacheTest, MixedIdentityComparisonIgnoresSpanPartitioning) {
   const auto tokens = std::make_shared<const Tokens>(Tokens{1, 2, 3});
   const ContentKey image{7};

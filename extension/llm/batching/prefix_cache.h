@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <limits>
 #include <list>
 #include <memory>
@@ -69,7 +70,8 @@ class ET_EXPERIMENTAL PrefixCache {
 #if ET_HAS_EXCEPTIONS
           try {
 #endif
-            state->snapshot = state->request_clone();
+            state->snapshot = state->request_clone(
+                static_cast<Position>(state->tokens.size()));
 #if ET_HAS_EXCEPTIONS
           } catch (const std::bad_alloc&) {
           }
@@ -81,11 +83,22 @@ class ET_EXPERIMENTAL PrefixCache {
       };
     }
 
-    // Caller thread only, after the generation's wait() has returned. May
-    // wait for the queued clone. Returns false if capture/insertion failed
-    // or this handle was already collected. The PrefixCache must still live.
+    // Queue without waiting; may run in a Runner callback. Serialize with
+    // collect(); at most one clone may be pending. Reusable after collect.
+    bool capture_at(Position position) {
+      if (!state_ || state_->snapshot.valid() || position <= 0 ||
+          static_cast<std::size_t>(position) > state_->tokens.size()) {
+        return false;
+      }
+      state_->captured_tokens = static_cast<std::size_t>(position);
+      state_->snapshot = state_->request_clone(position);
+      return true;
+    }
+
+    // Caller thread only, after wrap's generation has settled or capture_at
+    // has returned. May wait for the clone. The PrefixCache must still live.
     bool collect() {
-      auto state = std::move(state_);
+      auto state = state_;
       if (!state || !state->snapshot.valid()) {
         return false;
       }
@@ -93,8 +106,24 @@ class ET_EXPERIMENTAL PrefixCache {
       try {
 #endif
         auto snapshot = state->snapshot.get();
-        return snapshot &&
-            cache_->insert_identity(state->tokens, std::move(*snapshot));
+        if (!snapshot) {
+          return false;
+        }
+        PrefixIdentity prefix;
+        auto remaining = state->captured_tokens;
+        for (auto span : state->tokens.spans) {
+          if (!remaining) {
+            break;
+          }
+          std::visit(
+              [&](auto& s) {
+                s.size = std::min(s.size, remaining);
+                remaining -= s.size;
+              },
+              span);
+          prefix.spans.push_back(std::move(span));
+        }
+        return cache_->insert_identity(prefix, std::move(*snapshot));
 #if ET_HAS_EXCEPTIONS
       } catch (const std::bad_alloc&) {
         return false;
@@ -105,9 +134,11 @@ class ET_EXPERIMENTAL PrefixCache {
    private:
     friend class PrefixCache;
     struct State {
-      std::function<std::future<std::optional<Session>>()> request_clone;
+      std::function<std::future<std::optional<Session>>(Position)>
+          request_clone;
       PrefixIdentity tokens;
       std::future<std::optional<Session>> snapshot;
+      std::size_t captured_tokens;
       bool attempted = false;
     };
 
@@ -115,7 +146,8 @@ class ET_EXPERIMENTAL PrefixCache {
     std::shared_ptr<State> state_;
   };
 
-  explicit PrefixCache(std::size_t max_entries) : max_entries_(max_entries) {}
+  explicit PrefixCache(std::size_t max_entries, bool preserve_earliest = false)
+      : max_entries_(max_entries), preserve_earliest_(preserve_earliest) {}
 
   PrefixCache(const PrefixCache&) = delete;
   PrefixCache& operator=(const PrefixCache&) = delete;
@@ -147,10 +179,7 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
       capture.state_ =
           std::make_shared<PromptCapture::State>(PromptCapture::State{
-              source.make_clone_request(static_cast<Position>(tokens.size())),
-              tokens,
-              {},
-              false});
+              source.make_clone_request(), tokens, {}, tokens.size(), false});
       capture.cache_ = this;
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
@@ -188,7 +217,22 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
       entries_.push_front(Entry{tokens, std::move(snapshot)});
       if (entries_.size() > max_entries_) {
-        entries_.pop_back();
+        auto victim = std::prev(entries_.end());
+        if (preserve_earliest_ && max_entries_ > 1 &&
+            victim->tokens.size() < tokens.size() &&
+            common_prefix(victim->tokens, tokens) == victim->tokens.size()) {
+          // Keep an early anchor by evicting an intermediate checkpoint of
+          // this history. Unrelated histories retain normal global LRU
+          // behavior.
+          for (auto it = std::prev(victim); it != entries_.begin(); --it) {
+            if (it->tokens.size() > victim->tokens.size() &&
+                common_prefix(it->tokens, tokens) == it->tokens.size()) {
+              victim = it;
+              break;
+            }
+          }
+        }
+        entries_.erase(victim);
       }
       return true;
 #if ET_HAS_EXCEPTIONS
@@ -286,6 +330,7 @@ class ET_EXPERIMENTAL PrefixCache {
   };
 
   const std::size_t max_entries_;
+  const bool preserve_earliest_;
   std::list<Entry> entries_; // most recently used first
 };
 

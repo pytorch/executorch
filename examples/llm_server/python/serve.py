@@ -35,6 +35,10 @@ def _validate_limits(parser, args) -> None:
             parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
     if not 0 <= args.prefix_cache_entries <= _MAX_INT32:
         parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
+    if not 0 <= args.prefix_checkpoint_interval <= _MAX_INT32:
+        parser.error(f"--prefix-checkpoint-interval must be between 0 and {_MAX_INT32}")
+    if args.prefix_checkpoint_interval and not args.prefix_cache_entries:
+        parser.error("--prefix-checkpoint-interval requires --prefix-cache-entries > 0")
     physical_sessions = (
         args.max_sessions
         + args.prefix_cache_entries
@@ -77,6 +81,7 @@ def _parse_args(argv=None):
     parser.add_argument("--max-decode-sequences", type=int, default=8)
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
+    parser.add_argument("--prefix-checkpoint-interval", type=int, default=0)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -143,6 +148,11 @@ def main(argv=None) -> None:
                 "--prefix_cache_entries",
                 str(args.prefix_cache_entries),
             ]
+            + (
+                ["--prefix_checkpoint_interval", str(args.prefix_checkpoint_interval)]
+                if args.prefix_checkpoint_interval
+                else []
+            )
         )
         runtime = None
         try:

@@ -241,19 +241,25 @@ class ET_EXPERIMENTAL Session {
   // not block, invoke user output, destroy Runner, or wait for Runner work.
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
+  //
+  // on_prefill observes the absolute committed position once per successful
+  // prefill forward, including intermediate chunks, before token callbacks.
+  // It may enqueue clone_async but must not wait for Runner work. Throws fail
+  // the generation. No observations follow the first generated tokens.
   GenerationHandle generate_async(
       GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
-      std::function<void()> on_settled = {}) const;
+      std::function<void()> on_settled = {},
+      std::function<void(Position)> on_prefill = {}) const;
 
  private:
   friend class RunnerImpl;
   friend class PrefixCache;
   explicit Session(std::unique_ptr<SessionState> state);
 
-  std::function<std::future<std::optional<Session>>()> make_clone_request(
-      Position upto) const;
+  std::function<std::future<std::optional<Session>>(Position)>
+  make_clone_request() const;
 
   std::unique_ptr<SessionState> state_;
 };
