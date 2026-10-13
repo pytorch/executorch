@@ -19,12 +19,11 @@
 #include <pytorch/tokenizers/sentencepiece.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/decoder.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/prefiller.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/runner.h>
-#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
-
 
 namespace example {
 
@@ -37,22 +36,19 @@ namespace llm = ::executorch::extension::llm;
 /**
  * @brief Loads a tokenizer from the specified path
  *
- * This function creates and initializes a tokenizer from a file, with options
- * to customize special tokens and regex patterns.
+ * This function creates and initializes a tokenizer from a file based on the
+ * specified type. Supported types are: "bpe", "tiktoken", "hf", and "sp".
  *
+ * @param type Type of tokenizer to load ("bpe", "tiktoken", "hf", or "sp")
  * @param tokenizer_path Path to the tokenizer file
- * @param special_tokens Optional list of special tokens to add to the tokenizer
- * @param pattern Optional regex pattern for tokenization
- * @param bos_token_index Index of the beginning-of-sequence token
- * @param eos_token_index Index of the end-of-sequence token
- * @return std::unique_ptr<tokenizers::Tokenizer> Initialized tokenizer instance
+ * @param version Version of the tokenizer (used for tiktoken type)
+ * @return std::unique_ptr<tokenizers::Tokenizer> Initialized tokenizer instance,
+ * or nullptr on failure
  */
 ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
+    const std::string& type,
     const std::string& tokenizer_path,
-    std::unique_ptr<std::vector<std::string>> special_tokens = nullptr,
-    std::optional<std::string> pattern = std::nullopt,
-    size_t bos_token_index = 0,
-    size_t eos_token_index = 1);
+    Version version);
 
 /**
  * @brief Creates a LLMRunner instance with the specified model and
@@ -62,56 +58,42 @@ ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
  * necessary components for text generation using the specified model and
  * tokenizer.
  *
- * @param model_path Path to the model file
+ * @param paths RunnerPaths containing model and tokenizer paths
+ * @param config RunnerConfig containing runtime configuration
  * @param tokenizer Initialized tokenizer instance
- * @param data_path Optional path to additional data required by the model
- * @param decode_only Optional flag to run with decode method only
- * @param temperature Optional temperature parameter for controlling randomness
- * (deprecated)
  * @return std::unique_ptr<LLMRunner> Initialized LLMRunner instance
  */
 ET_EXPERIMENTAL std::unique_ptr<LLMRunner> create_llm_runner(
-    const std::string& model_path,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt,
-    bool decode_only = false,
-    float temperature = -1.0f);
-
-std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
-    const std::string& tokenizer_path,
-    Version version) {
-  auto special_tokens = get_special_tokens(version);
-  return load_tokenizer(tokenizer_path, std::move(special_tokens));
-}
+    const RunnerPaths& runner_paths,
+    const RunnerConfig& runner_config,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer);
 
 std::unique_ptr<llm::IRunner> create_llama_runner(
-    const std::string& model_path,
-    const std::string& tokenizer_path,
-    std::optional<const std::string> data_path,
-    bool decode_only,
-    float temperature) {
+    const RunnerPaths& runner_paths,
+    const RunnerConfig& runner_config) {
   ET_LOG(
       Info,
-      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
-      model_path.c_str(),
-      tokenizer_path.c_str());
+      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s, use_gemma=%d",
+      runner_paths.model_path.c_str(),
+      runner_paths.tokenizer_path.c_str(),
+      runner_config.use_gemma);
 
   // Create and load tokenizer
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
-      load_llama_tokenizer(tokenizer_path, Version::Default);
+      load_tokenizer(runner_config.tokenizer_type, runner_paths.tokenizer_path, Version::Default);
   if (tokenizer == nullptr) {
     ET_LOG(
         Info,
         "Failed to load %s as a Tiktoken, Sentencepiece or Llama2.c tokenizer, make sure the artifact is one of these types",
-        tokenizer_path.c_str());
+        runner_paths.tokenizer_path.c_str());
     return nullptr;
   }
   ET_LOG(
       Info,
       "[Create_test_llm_runner] %s %s",
-      model_path.c_str(),
-      data_path->c_str());
-  return create_llm_runner(model_path, std::move(tokenizer), data_path, decode_only);
+      runner_paths.model_path.c_str(),
+      runner_paths.data_path.has_value() ? runner_paths.data_path.value().c_str() : "null");
+  return create_llm_runner(runner_paths, runner_config, std::move(tokenizer));
 }
 
 static const std::unordered_map<std::string, std::string> kMetadataMap{
@@ -123,11 +105,13 @@ static const std::unordered_map<std::string, std::string> kMetadataMap{
     {llm::kVocabSize, "get_vocab_size"},
     {llm::kUseKVCache, "use_kv_cache"},
     {llm::kUseSDPAWithKVCache, "use_sdpa_with_kv_cache"},
+    {llm::kHeadDim, "get_head_dim"},
     {example::kPrefillArLen, "get_prefill_ar_len"},
     {example::kNumOfHiddenDim, "get_hidden_dim"},
     {example::kNumOfHeads, "get_n_heads"},
     {example::kNumOfKVHeads, "get_n_kv_heads"},
-    {example::kNumOfLayers, "get_n_layers"}
+    {example::kNumOfLayers, "get_n_layers"},
+    {"get_sliding_window", "get_sliding_window"}  // TODO: find new way
 };
 
 LLMRunner::LLMRunner(
@@ -171,6 +155,17 @@ Error LLMRunner::load() {
   } else {                                 \
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
+
+void replace_all_newlines(std::string& str) {
+    std::string from = "\\n";
+    std::string to = "\n";
+
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length();
+    }
+}
 
 Error LLMRunner::generate_from_pos(
     const std::string& prompt,
@@ -217,14 +212,25 @@ Error LLMRunner::generate_from_pos(
       Info,
       "################ input prompt  ################\n %s\n",
       prompt.c_str());
+  std::string input_prompt = prompt;
+  if (!io_manager_->use_gemma()) {
+    std::string prefix = "<|start_header_id|>system<|end_header_id|><|start_header_id|>user<|end_header_id|>\n\n";
+    std::string suffix = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+    input_prompt = prefix + prompt + suffix;
+  } else {
+    std::string prefix = "<start_of_turn>user\n";
+    std::string suffix = "<end_of_turn>\n<start_of_turn>model\n";
+    input_prompt = prefix + prompt + suffix;
+    replace_all_newlines(input_prompt);
+  }
 
-  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
-      prompt,
+ ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      input_prompt,
       /*bos=*/config.num_bos,
       /*eos=*/config.num_eos);
 
   ET_CHECK_TK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+      encode_res.error(), "Failed to encode prompt %s", input_prompt.c_str());
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens = encode_res.get();
@@ -268,7 +274,7 @@ Error LLMRunner::generate_from_pos(
 
   // print prompts
   if (config.echo) {
-    wrapped_callback(prompt);
+    wrapped_callback(input_prompt);
   }
   int64_t pos = start_pos;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
@@ -372,47 +378,25 @@ void LLMRunner::stop() {
 }
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
+    const std::string& type,
     const std::string& tokenizer_path,
-    std::unique_ptr<std::vector<std::string>> special_tokens,
-    std::optional<std::string> pattern,
-    size_t bos_token_index,
-    size_t eos_token_index) {
+    Version version) {
   ::executorch::runtime::runtime_init();
- std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
-  if (special_tokens != nullptr && !pattern.has_value()) {
-    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
-        std::move(special_tokens), bos_token_index, eos_token_index);
-  } else if (special_tokens != nullptr && pattern.has_value()) {
-    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
-        pattern.value(),
-        std::move(special_tokens),
-        bos_token_index,
-        eos_token_index);
-  } else {
-    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
+
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer;
+  if (type == "bpe") {
+    tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
+  } else if (type == "tiktoken") {
+    tokenizer = example::get_tiktoken_for_llama(version);
+  } else if (type == "hf") {
+    tokenizer = std::make_unique<::tokenizers::HFTokenizer>();
+  } else if (type == "sp") {
+    tokenizer = std::make_unique<::tokenizers::SPTokenizer>();
   }
 
-  if (tiktoken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded TikToken tokenizer");
-    return tiktoken_tokenizer;
-  }
-
-  auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
-  if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded json tokenizer");
-    return json_tokenizer;
-  }
-
-  auto sp_tokenizer = std::make_unique<::tokenizers::SPTokenizer>();
-  if (sp_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded Sentencepiece tokenizer");
-    return sp_tokenizer;
-  }
-
-  auto bpe_tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
-  if (bpe_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded BPE tokenizer");
-    return bpe_tokenizer;
+  if (tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded %s tokenizer", type.c_str());
+    return tokenizer;
   }
 
   return nullptr;
@@ -420,8 +404,17 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
 
 std::unordered_map<std::string, int64_t> get_llm_metadata(
     tokenizers::Tokenizer* tokenizer,
-    Module* module) {
-  // Initialize metadata with default values
+    Module* module,
+    bool use_gemma) {
+  // Initialize metadata with default values based on model type
+  // Gemma: hidden_dim=1152, n_heads=4, n_kv_heads=1, n_layers=26, head_dim=256
+  // Llama: hidden_dim=2048, n_heads=32, n_kv_heads=8, n_layers=16, head_dim=64
+  size_t default_hidden_dim = use_gemma ? 1152 : 2048;
+  size_t default_n_heads = use_gemma ? 4 : 32;
+  size_t default_n_kv_heads = use_gemma ? 1 : 8;
+  size_t default_n_layers = use_gemma ? 26 : 16;
+  size_t default_head_dim = use_gemma ? 256 : 64;
+
   std::unordered_map<std::string, int64_t> metadata({
       {kMetadataMap.at(llm::kEnableDynamicShape), false},
       {kMetadataMap.at(llm::kMaxSeqLen), 128},
@@ -429,11 +422,11 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
       {kMetadataMap.at(llm::kUseKVCache), true},
       {kMetadataMap.at(llm::kUseSDPAWithKVCache), false},
       {kMetadataMap.at(example::kPrefillArLen), 0},
-      //Params.json for llama3.2-1B
-      {kMetadataMap.at(example::kNumOfHiddenDim), 2048},
-      {kMetadataMap.at(example::kNumOfHeads), 32},
-      {kMetadataMap.at(example::kNumOfKVHeads), 8},
-      {kMetadataMap.at(example::kNumOfLayers), 16},
+      {kMetadataMap.at(example::kNumOfHiddenDim), static_cast<int64_t>(default_hidden_dim)},
+      {kMetadataMap.at(example::kNumOfHeads), static_cast<int64_t>(default_n_heads)},
+      {kMetadataMap.at(example::kNumOfKVHeads), static_cast<int64_t>(default_n_kv_heads)},
+      {kMetadataMap.at(example::kNumOfLayers), static_cast<int64_t>(default_n_layers)},
+      {kMetadataMap.at(llm::kHeadDim), static_cast<int64_t>(default_head_dim)},
   });
 
   // Read metadata from the model
@@ -495,11 +488,9 @@ std::unordered_set<uint64_t> get_eos_ids(
 }
 
 std::unique_ptr<LLMRunner> create_llm_runner(
-    const std::string& model_path,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path,
-    bool decode_only,
-    float temperature) {
+    const RunnerPaths& runner_paths,
+    const RunnerConfig& runner_config,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -508,11 +499,11 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
-  if (data_path.has_value()) {
+  if (runner_paths.data_path.has_value()) {
     module = std::make_unique<Module>(
-        model_path, data_path.value(), Module::LoadMode::File);
+        runner_paths.model_path, runner_paths.data_path.value(), Module::LoadMode::File);
   } else {
-    module = std::make_unique<Module>(model_path, Module::LoadMode::File);
+    module = std::make_unique<Module>(runner_paths.model_path, Module::LoadMode::File);
   }
 
   // Get methods
@@ -524,7 +515,7 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   auto methods = methods_res.get();
   std::vector<std::string> register_methods;
-  if (decode_only) {
+  if (runner_config.decode_only) {
     register_methods.emplace_back(default_method_name_decode);
   } else {
     for (auto method : methods) {
@@ -535,30 +526,49 @@ std::unique_ptr<LLMRunner> create_llm_runner(
       ET_LOG(Info, "Register method \"%s\" to decoder", method.c_str());
       register_methods.emplace_back(method);
     }
- }
+  }
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
-  auto metadata = get_llm_metadata(tokenizer.get(), module.get());
+  auto metadata = get_llm_metadata(tokenizer.get(), module.get(), runner_config.use_gemma);
 
   // Create IO Manager
   example::LlmIOManager::Config conf;
   conf.n_layers = metadata.at(example::kNumOfLayers);
   conf.n_kv_heads = metadata.at(example::kNumOfKVHeads);
   conf.max_seq_len = metadata.at(llm::kMaxSeqLen);
+  conf.decode_seq_len = 1;
   conf.prefill_seq_len = (metadata.at(example::kPrefillArLen) > 1) ?
                             (metadata.at(example::kPrefillArLen)) :
                             (metadata.at(llm::kMaxSeqLen));
+  conf.use_gemma = runner_config.use_gemma;
 
-  if (decode_only) {
+  if (runner_config.decode_only) {
     conf.prefill_seq_len = 1;
   }
 
-  size_t dim = metadata.at(example::kNumOfHiddenDim);
-  size_t n_heads = metadata.at(example::kNumOfHeads);
-  conf.head_dim = dim / n_heads;
+  // Try to get head_dim from metadata, otherwise calculate from dim/n_heads
+  if (metadata.count(llm::kHeadDim)) {
+    conf.head_dim = metadata.at(llm::kHeadDim);
+  } else {
+    size_t dim = metadata.at(example::kNumOfHiddenDim);
+    size_t n_heads = metadata.at(example::kNumOfHeads);
+    if (runner_config.use_gemma) {
+      conf.head_dim = 256;
+    } else {
+      conf.head_dim = dim / n_heads;
+    }
+  }
 
-  auto io_manager = std::make_unique<example::LlmIOManager>(*module.get(), conf);
+  auto io_manager =
+      std::make_unique<example::LlmIOManager>(*module.get(), conf);
+
+  if (runner_paths.pos_embedding_path.has_value()) {
+    if (io_manager->load_rotary_embedding(runner_paths.pos_embedding_path.value()) !=
+            executorch::runtime::Error::Ok) {
+        ET_LOG(Error, "load pos_embedding file failed !");
+    }
+  }
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       get_eos_ids(tokenizer.get(), module.get()));
@@ -575,7 +585,10 @@ std::unique_ptr<LLMRunner> create_llm_runner(
 
   // TODO(sicheon.oh) : Need to find proper flag to distinguish separaged prefill/decode opion.
   bool separated_prefill_decode = (conf.prefill_seq_len > 1);
-  ET_LOG(Info, "separated_prefill_decode(%s)", (separated_prefill_decode)?"True":"False");
+  ET_LOG(
+      Info,
+      "separated_prefill_decode(%s)",
+      (separated_prefill_decode)?"True":"False");
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<example::Prefiller>(
@@ -603,7 +616,7 @@ std::unique_ptr<LLMRunner> create_llm_runner(
       std::move(text_token_generator),
       std::move(stats),
       std::move(io_manager),
-      temperature);
+      runner_config.temperature);
 
   runner->load();
 

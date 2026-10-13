@@ -40,33 +40,18 @@ TextDecoderRunner::TextDecoderRunner(
 ::executorch::runtime::Result<executorch::aten::Tensor> TextDecoderRunner::step(
     TensorPtr& tokens,
     int64_t start_pos) {
-  // ET_LOG(Info, "Input token %" PRIu64, input_token);
-  auto method_meta_result = module_->method_meta(method_name_);
-  if (!method_meta_result.ok()) {
-    return method_meta_result.error();
-  }
-  auto method_meta = std::move(*method_meta_result);
-
+  auto method_meta = ET_UNWRAP(module_->method_meta(method_name_.c_str()));
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 
   std::vector<int64_t> cache_positions;
 
   if (use_kv_cache) {
-    auto start_pos_tensor_result = populate_start_pos_or_cache_position(
-        module_,
-        start_pos,
-        cache_positions,
-        tokens->numel(),
-        method_name_.c_str());
-    if (!start_pos_tensor_result.ok()) {
-      return start_pos_tensor_result.error();
-    }
-    auto start_pos_tensor = std::move(*start_pos_tensor_result);
+    auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
+        module_, start_pos, cache_positions, tokens->numel(), method_name_.c_str()));
 
     std::vector<runtime::EValue> inputs;
-    auto inputs_res =
-        io_manager_->prepare_decode(tokens, start_pos_tensor, method_name_);
+    auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
     ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
     inputs = inputs_res.get();
     if (stats_ != nullptr) {
