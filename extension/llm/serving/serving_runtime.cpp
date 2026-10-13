@@ -742,26 +742,28 @@ struct ServingRuntime::Impl {
            static_cast<std::size_t>(source->position()),
            prompt->size() - 1});
     }
-    if (!upto) {
-      return Selection::Unavailable;
-    }
-    auto selection = select_input(request, upto);
-    if (auto* outcome = std::get_if<Selection>(&selection);
-        !outcome || *outcome != Selection::Selected) {
-      return selection;
-    }
     std::optional<batching::Session> cloned;
+    if (upto) {
+      auto selection = select_input(request, upto);
+      const auto* outcome = std::get_if<Selection>(&selection);
+      if (!outcome || *outcome == Selection::Cancelled) {
+        return selection;
+      }
+      if (*outcome == Selection::Selected) {
 #if ET_HAS_EXCEPTIONS
-    try {
+        try {
 #endif
-      // Only control owns Session objects. Wait outside locks; the engine
-      // executes this between forwards without copying the pending prediction.
-      cloned = source->clone_async(static_cast<batching::Position>(upto)).get();
+          // Only control owns Session objects. Wait outside locks; the engine
+          // clones between forwards without copying the pending prediction.
+          cloned =
+              source->clone_async(static_cast<batching::Position>(upto)).get();
 #if ET_HAS_EXCEPTIONS
-    } catch (...) {
-      // Try a retained snapshot if the live source cannot be cloned.
+        } catch (...) {
+          // Try a retained snapshot if the live source cannot be cloned.
+        }
+#endif
+      }
     }
-#endif
     if (!cloned) {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
@@ -770,7 +772,7 @@ struct ServingRuntime::Impl {
       if (!match) {
         return Selection::Unavailable;
       }
-      selection = select_input(request, match->matched_tokens);
+      auto selection = select_input(request, match->matched_tokens);
       if (auto* outcome = std::get_if<Selection>(&selection);
           !outcome || *outcome != Selection::Selected) {
         return selection;
@@ -916,13 +918,15 @@ struct ServingRuntime::Impl {
         config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
       // Share the snapshot capture's one transient row; never add another
       // row while a capture is still pending collection.
+      auto cold_delta = request->request.delta;
       selection = clone_prefix(request, key);
       if (auto* cloned = std::get_if<Selection>(&selection)) {
         if (*cloned == Selection::Selected) {
           reset = false;
           plan.reason = "prefix_clone";
         } else if (*cloned == Selection::Unavailable) {
-          selection = select_input(request, 0);
+          request->request.delta = std::move(cold_delta);
+          selection = Selection::Selected;
         }
       }
     }
@@ -1126,44 +1130,35 @@ struct ServingRuntime::Impl {
 #endif
           request->text->prefix_capture =
               prefix_cache_.capture_identity(session, *request->text->prompt);
-          const auto interval = config_.prefix_checkpoint_interval;
-          on_prefill = [this,
-                        request,
-                        opening,
-                        interval,
-                        next = (request->text->start_position / interval + 1) *
-                            interval](batching::Position position) mutable {
-            const auto upto = static_cast<std::size_t>(position);
-            if ((upto < next &&
-                 !(opening && upto == request->text->prompt->size())) ||
-                request->cancelled.load() ||
-                capture_lane_busy_.exchange(true)) {
-              return;
-            }
-            bool queued = false;
-#if ET_HAS_EXCEPTIONS
-            try {
-#endif
-              if (request->text->prefix_capture->capture_at(position)) {
-                {
-                  std::lock_guard<std::mutex> lock(mutex_);
-                  pending_checkpoint_ = request;
+          auto& breakpoints = request->request.config.prefill_breakpoints;
+          breakpoints = batching::periodic_prefill_breakpoints(
+              static_cast<batching::Position>(request->text->start_position),
+              static_cast<batching::Position>(request->text->prompt->size()),
+              static_cast<batching::Position>(
+                  config_.prefix_checkpoint_interval),
+              opening);
+          on_prefill = request->text->prefix_capture->observer(
+              [this, request] {
+                return !request->cancelled.load() &&
+                    !capture_lane_busy_.exchange(true);
+              },
+              [this, request](bool queued) {
+                if (queued) {
+                  {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    pending_checkpoint_ = request;
+                  }
+                  cv_.notify_one();
+                } else {
+                  capture_lane_busy_.store(false);
                 }
-                next = upto + interval;
-                queued = true;
-                cv_.notify_one();
-              }
-#if ET_HAS_EXCEPTIONS
-            } catch (...) {
-              // Cache capture is optional and cannot fail a generation.
-            }
-#endif
-            if (!queued) {
-              capture_lane_busy_.store(false);
-            }
-          };
+              });
+          if (!on_prefill) {
+            breakpoints.clear();
+          }
 #if ET_HAS_EXCEPTIONS
         } catch (...) {
+          request->request.config.prefill_breakpoints.clear();
           // Keep generation usable when optional capture setup fails.
         }
 #endif

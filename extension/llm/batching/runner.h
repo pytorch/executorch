@@ -104,6 +104,10 @@ struct ET_EXPERIMENTAL GenConfig {
   // Fixed for the generation and installed before its tasks are submitted.
   // nullopt requests nondeterministic sampling.
   std::optional<std::uint64_t> seed;
+  // Strictly increasing absolute positions inside this generation's prefill,
+  // including any carried pending token. Each ends a forward for this session
+  // before later input is submitted; other sessions remain schedulable.
+  std::vector<Position> prefill_breakpoints;
 };
 
 // Both defined in runner.cpp: callers see neither the lock and flags the first
@@ -242,10 +246,11 @@ class ET_EXPERIMENTAL Session {
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
   //
-  // on_prefill observes the absolute committed position once per successful
-  // prefill forward, including intermediate chunks, before token callbacks.
-  // It may enqueue clone_async but must not wait for Runner work. Throws fail
-  // the generation. No observations follow the first generated tokens.
+  // on_prefill observes each requested breakpoint after its successful forward,
+  // before later prefill for that session is submitted. It may enqueue
+  // clone_async but must not wait for Runner work. Throws fail the generation.
+  // No breakpoints means no observations. At prompt end, speculative executors
+  // may already hold output past the boundary; cloning may still be refused.
   GenerationHandle generate_async(
       GenerationInput delta,
       GenConfig config,

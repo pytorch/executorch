@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <iterator>
@@ -32,6 +33,28 @@ struct ET_EXPERIMENTAL PrefixMatch {
   Session session;
   std::size_t matched_tokens;
 };
+
+// Absolute periodic boundaries, plus an optional final prompt checkpoint.
+inline std::vector<Position> periodic_prefill_breakpoints(
+    Position start,
+    Position end,
+    Position interval,
+    bool include_end = false) {
+  std::vector<Position> positions;
+  if (start < 0 || end <= start || interval <= 0) {
+    return positions;
+  }
+  for (std::int64_t next =
+           (static_cast<std::int64_t>(start) / interval + 1) * interval;
+       next <= end;
+       next += interval) {
+    positions.push_back(static_cast<Position>(next));
+  }
+  if (include_end && (positions.empty() || positions.back() != end)) {
+    positions.push_back(end);
+  }
+  return positions;
+}
 
 // Caller-thread policy over retained, idle snapshot sessions. Scope one cache
 // to one Runner and immutable model/configuration; identities must describe
@@ -86,13 +109,36 @@ class ET_EXPERIMENTAL PrefixCache {
     // Queue without waiting; may run in a Runner callback. Serialize with
     // collect(); at most one clone may be pending. Reusable after collect.
     bool capture_at(Position position) {
-      if (!state_ || state_->snapshot.valid() || position <= 0 ||
-          static_cast<std::size_t>(position) > state_->tokens.size()) {
-        return false;
+      return state_ && queue_capture(*state_, position);
+    }
+
+    // The caller owns admission and collection. Each successful acquisition
+    // receives one notification: queued=true publishes work for collect();
+    // queued=false releases admission after optional capture failed.
+    std::function<void(Position)> observer(
+        std::function<bool()> try_acquire,
+        std::function<void(bool queued)> on_capture) {
+      if (!state_) {
+        return {};
       }
-      state_->captured_tokens = static_cast<std::size_t>(position);
-      state_->snapshot = state_->request_clone(position);
-      return true;
+      return [state = state_,
+              try_acquire = std::move(try_acquire),
+              on_capture = std::move(on_capture)](Position position) {
+        if (!try_acquire()) {
+          return;
+        }
+        bool queued = false;
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          queued = queue_capture(*state, position);
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // Optional capture failure leaves the generation usable.
+        }
+#endif
+        on_capture(queued);
+      };
     }
 
     // Caller thread only, after wrap's generation has settled or capture_at
@@ -141,6 +187,16 @@ class ET_EXPERIMENTAL PrefixCache {
       std::size_t captured_tokens;
       bool attempted = false;
     };
+
+    static bool queue_capture(State& state, Position position) {
+      if (state.snapshot.valid() || position <= 0 ||
+          static_cast<std::size_t>(position) > state.tokens.size()) {
+        return false;
+      }
+      state.captured_tokens = static_cast<std::size_t>(position);
+      state.snapshot = state.request_clone(position);
+      return true;
+    }
 
     PrefixCache* cache_ = nullptr;
     std::shared_ptr<State> state_;
