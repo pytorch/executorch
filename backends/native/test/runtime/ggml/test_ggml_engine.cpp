@@ -660,6 +660,85 @@ TEST(GgmlEngineTest, RejectsMalformedConvolutionAndBatchNorm) {
   expect_compile_error(norm.finish("y"), "one value per channel");
 }
 
+// m = 2 * x is a reusable attention mask; an in-place write to head 1 of m
+// between two attention ops must reach the second one.
+TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
+  TestProgram program;
+  program.input("q", fbs::ScalarType::FLOAT, {1, 2, 3, 8});
+  program.input("k", fbs::ScalarType::FLOAT, {1, 2, 8, 8});
+  program.input("v", fbs::ScalarType::FLOAT, {1, 2, 8, 8});
+  program.input("x", fbs::ScalarType::FLOAT, {1, 2, 3, 8});
+  program.input("row", fbs::ScalarType::FLOAT, {1, 1, 3, 8});
+  program.call(
+      "m",
+      "torch.ops.aten.mul.Tensor",
+      {{"self", std::string("x")}, {"other", 2.0}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 3, 8});
+  const std::vector<std::pair<std::string, TestArg>> attention = {
+      {"query", std::string("q")},
+      {"key", std::string("k")},
+      {"value", std::string("v")},
+      {"attn_mask", std::string("m")}};
+  program.call(
+      "before",
+      "torch.ops.aten.scaled_dot_product_attention.default",
+      attention,
+      fbs::ScalarType::FLOAT,
+      {1, 2, 3, 8});
+  program.call(
+      "written",
+      "torch.ops.llama.update_cache.default",
+      {{"value", std::string("row")},
+       {"cache", std::string("m")},
+       {"start_pos", int64_t{1}}},
+      fbs::ScalarType::FLOAT,
+      {1, 1, 3, 8});
+  program.call(
+      "after",
+      "torch.ops.aten.scaled_dot_product_attention.default",
+      attention,
+      fbs::ScalarType::FLOAT,
+      {1, 2, 3, 8});
+  program.call(
+      "difference",
+      "torch.ops.aten.sub.Tensor",
+      {{"self", std::string("after")}, {"other", std::string("before")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 3, 8});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("difference"));
+  auto executable = context->compile("forward");
+  std::vector<float> q(48), kv(128), x(48, 0.0f);
+  for (size_t i = 0; i < kv.size(); ++i) {
+    kv[i] = static_cast<float>(i % 7) * 0.25f;
+  }
+  std::fill(q.begin(), q.end(), 0.5f);
+  // Key 0 of head 1 becomes masked out for every query after the write.
+  std::vector<float> row(24, 0.0f);
+  for (size_t query = 0; query < 3; ++query) {
+    row[query * 8] = -1e4f;
+  }
+  executable->set_input(0, q.data(), q.size(), ScalarType::Float);
+  executable->set_input(1, kv.data(), kv.size(), ScalarType::Float);
+  executable->set_input(2, kv.data(), kv.size(), ScalarType::Float);
+  executable->set_input(3, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(4, row.data(), row.size(), ScalarType::Float);
+  executable->execute();
+  std::vector<float> difference(48);
+  executable->get_output(
+      0, difference.data(), difference.size(), ScalarType::Float);
+  const auto max_abs = [&](size_t head) {
+    float result = 0.0f;
+    for (size_t i = head * 24; i < (head + 1) * 24; ++i) {
+      result = std::max(result, std::abs(difference[i]));
+    }
+    return result;
+  };
+  EXPECT_EQ(max_abs(0), 0.0f);
+  EXPECT_GT(max_abs(1), 1e-2f);
+}
+
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(

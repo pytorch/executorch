@@ -35,6 +35,9 @@ struct GgmlEngineOptions {
   // lowering and allocation; every entry holds its own scheduler allocation.
   // 0 rebuilds the graph on every call; at most 16.
   size_t max_cached_graphs = 1;
+  // Prints each newly built graph's node count per ggml op to stderr, which
+  // shows whether a lowering rewrite fired.
+  bool print_graph_ops = false;
 };
 
 class GgmlEngineContext;
