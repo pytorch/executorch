@@ -15,6 +15,7 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/io_manager.h>
+#include <executorch/extension/llm/runner/text_decoder_runner.h>
 
 namespace example {
 
