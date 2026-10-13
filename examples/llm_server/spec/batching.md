@@ -14,8 +14,10 @@ speculative drafting/verification remain inside the runner and executor.
 - Exact strict history extensions reuse the existing session. With prefix
   caching enabled, clean equal/shortened/mismatched histories can clone their
   longest common committed prefix and prefill the remaining suffix. Dirty
-  histories and cache misses cold-replay. If the live source cannot clone at
-  the matching boundary, retained prefix snapshots are tried first.
+  histories and cache misses cold-replay. If live-prefix reuse is unavailable,
+  the shared cache is searched against the full replacement prompt, even when
+  it shares no prefix with the live history. A snapshot from any session may
+  supply the matching prefix; its suffix must be accepted before reuse.
   Reset destroys the old session and reopens
   under the same reserved key; failed reopen leaves that key unavailable.
 - Prefix caching is optional and disabled by default. It supports both greedy

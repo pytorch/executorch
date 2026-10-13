@@ -726,26 +726,28 @@ struct ServingRuntime::Impl {
            static_cast<std::size_t>(source->position()),
            prompt->size() - 1});
     }
-    if (!upto) {
-      return Selection::Unavailable;
-    }
-    auto selection = select_input(request, upto);
-    if (auto* outcome = std::get_if<Selection>(&selection);
-        !outcome || *outcome != Selection::Selected) {
-      return selection;
-    }
     std::optional<batching::Session> cloned;
+    if (upto) {
+      auto selection = select_input(request, upto);
+      const auto* outcome = std::get_if<Selection>(&selection);
+      if (!outcome || *outcome == Selection::Cancelled) {
+        return selection;
+      }
+      if (*outcome == Selection::Selected) {
 #if ET_HAS_EXCEPTIONS
-    try {
+        try {
 #endif
-      // Only control owns Session objects. Wait outside locks; the engine
-      // executes this between forwards without copying the pending prediction.
-      cloned = source->clone_async(static_cast<batching::Position>(upto)).get();
+          // Only control owns Session objects. Wait outside locks; the engine
+          // clones between forwards without copying the pending prediction.
+          cloned =
+              source->clone_async(static_cast<batching::Position>(upto)).get();
 #if ET_HAS_EXCEPTIONS
-    } catch (...) {
-      // Try a retained snapshot if the live source cannot be cloned.
+        } catch (...) {
+          // Try a retained snapshot if the live source cannot be cloned.
+        }
+#endif
+      }
     }
-#endif
     if (!cloned) {
       if (request->cancelled.load()) {
         return Selection::Cancelled;
@@ -754,7 +756,7 @@ struct ServingRuntime::Impl {
       if (!match) {
         return Selection::Unavailable;
       }
-      selection = select_input(request, match->matched_tokens);
+      auto selection = select_input(request, match->matched_tokens);
       if (auto* outcome = std::get_if<Selection>(&selection);
           !outcome || *outcome != Selection::Selected) {
         return selection;
@@ -900,13 +902,15 @@ struct ServingRuntime::Impl {
         config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
       // Share the snapshot capture's one transient row; never add another
       // row while a capture is still pending collection.
+      auto cold_delta = request->request.delta;
       selection = clone_prefix(request, key);
       if (auto* cloned = std::get_if<Selection>(&selection)) {
         if (*cloned == Selection::Selected) {
           reset = false;
           plan.reason = "prefix_clone";
         } else if (*cloned == Selection::Unavailable) {
-          selection = select_input(request, 0);
+          request->request.delta = std::move(cold_delta);
+          selection = Selection::Selected;
         }
       }
     }
