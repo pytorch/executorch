@@ -239,9 +239,10 @@ bool is_activation_input(std::string_view key, std::string_view input) {
 }
 
 bool preserves_packed_layout(std::string_view key) {
-  constexpr std::array<std::string_view, 6> kOps{
+  constexpr std::array<std::string_view, 7> kOps{
       "aten._to_copy.default",
       "aten.add.Tensor",
+      "aten.constant_pad_nd.default",
       "aten.mul.Tensor",
       "aten.native_layer_norm.default",
       "aten.sigmoid.default",
@@ -1783,6 +1784,20 @@ class VulkanEngineExecutable final : public EngineExecutable {
             g().value(value_id),
             storage_at(value_id),
             utils::kChannelsPacked);
+      }
+      // ET-VK's pad picks its shader by the output's layout and storage
+      // alone, which later layout steps can leave unlike its input's.
+      if (key == "aten.constant_pad_nd.default" && na.name == "self" &&
+          na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id)) {
+        const ValueId in_id = na.arg.as_tensor().id;
+        ValueId out_id = kInvalid;
+        for_each_output_value(n, [&](ValueId id) { out_id = id; });
+        if (valid(out_id) &&
+            (layout_at(in_id) != layout_at(out_id) ||
+             storage_at(in_id) != storage_at(out_id))) {
+          a = repack(
+              a, g().value(in_id), storage_at(out_id), layout_at(out_id));
+        }
       }
       // ET-VK's view_copy shaders read and write one storage type.
       if (key == "aten.view_copy.default" && na.name == "self" &&

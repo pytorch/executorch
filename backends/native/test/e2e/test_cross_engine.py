@@ -261,6 +261,35 @@ class _ConvBetweenLinears(torch.nn.Module):
         return self.out(y.transpose(1, 2))
 
 
+class _StackFrames(torch.nn.Module):
+    """Pads, then stacks every 8 frames into one before a linear. The linear
+    pulls width-packing back through the reshape onto the pad's output, while
+    the pad reads a graph input in the default layout."""
+
+    def __init__(self):
+        super().__init__()
+        self.proj = torch.nn.Linear(8 * 16, 8)
+
+    def forward(self, x):
+        # One extra frame of zeros along the dynamic dim, as when padding
+        # features up to a whole number of frames.
+        x = torch.nn.functional.pad(x, (0, 0, 0, 8))
+        return self.proj(x.reshape(1, x.shape[1] // 8, 8 * 16))
+
+
+class _PadThenMean(torch.nn.Module):
+    """A pad between a linear, which writes width-packed output, and a mean
+    over the last two dims, which constrains the packed dim it reads."""
+
+    def __init__(self):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 16)
+
+    def forward(self, x):
+        x = torch.nn.functional.pad(self.proj(x), (0, 0, 0, 8))
+        return x.mean((-2, -1), keepdim=True)
+
+
 class CrossEngineTest(unittest.TestCase):
     def _check_dynamic(
         self, model, steps, dynamic_shapes, atol_fraction=1e-4, engines=_ENGINES
@@ -337,6 +366,28 @@ class CrossEngineTest(unittest.TestCase):
             to_native(torch.export.export(model, (x,))).save(str(package))
             with self.assertRaisesRegex(AssertionError, "transposed 1D convolution"):
                 _run("vulkan_ptn_runner", package, [(x,)], outdir)
+
+    def test_padded_frame_stacking_into_linear(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, 8 * s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower aten.constant_pad_nd yet.
+        self._check_dynamic(
+            _StackFrames(), steps, ({1: 8 * seq},), engines=("vulkan_ptn_runner",)
+        )
+
+    def test_pad_between_linear_and_mean(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower aten.constant_pad_nd yet.
+        for dynamic_shapes in (({1: seq},), None):
+            self._check_dynamic(
+                _PadThenMean(),
+                steps if dynamic_shapes else steps[:1],
+                dynamic_shapes,
+                engines=("vulkan_ptn_runner",),
+            )
 
     def test_padding_mask_of_dynamic_positions(self):
         torch.manual_seed(0)
