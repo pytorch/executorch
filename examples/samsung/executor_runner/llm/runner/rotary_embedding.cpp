@@ -167,13 +167,15 @@ runtime::Error RotaryEmbedding::load_by_precompute_rope_tables() {
         reinterpret_cast<uintptr_t>(local_sin_ptr) % alignof(float) == 0 &&
         "local_sin_ is misaligned for float access!");
 
+    // Sliding/local layers use full RoPE; the partial rotary factor applies
+    // only to the global (full-attention) layers.
     compute_rope_table(
         local_cos_ptr,
         local_sin_ptr,
         seq_len_,
         normalized_local_head_dim_,
         base_freq_local_,
-        rope_percentage_);
+        /*rope_pct=*/1.0f);
   }
   loaded_ = true;
   ET_LOG(Info, "Rotary Embedding tables precomputed successfully.");
@@ -226,19 +228,24 @@ runtime::Error RotaryEmbedding::compute_rope_table(
 
   const size_t rotary_half = rotary_dim / 2;
 
+  // Partial RoPE uses the full head_dim as the inv_freq denominator (Gemma
+  // convention), so for full RoPE this reduces to the standard formula.
+  const float freq_denom = static_cast<float>(dim);
+
   for (size_t pos = 0; pos < seq_len; ++pos) {
     float* cos_row = cos_ptr + pos * dim;
     float* sin_row = sin_ptr + pos * dim;
 
+    // Non-rotary dimensions (partial RoPE) pass through unchanged: cos=1,
+    // sin=0.
     for (size_t i = 0; i < dim; ++i) {
-      cos_ptr[i] = 1.0f;
-      sin_ptr[i] = 0.0f;
+      cos_row[i] = 1.0f;
+      sin_row[i] = 0.0f;
     }
 
     for (size_t i = 0; i < rotary_half; ++i) {
-      // inv_freq_i = base^(-2i / rotary_dim)
-      const float exponent =
-          -2.0f * static_cast<float>(i) / static_cast<float>(rotary_dim);
+      // inv_freq_i = base^(-2i / head_dim)
+      const float exponent = -2.0f * static_cast<float>(i) / freq_denom;
       const float inv_freq = std::pow(base, exponent);
       const float angle = static_cast<float>(pos) * inv_freq;
 

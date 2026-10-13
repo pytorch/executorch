@@ -66,11 +66,11 @@ std::string LLMRunner::get_formatted_prompt(
       break;
     case DecoderModelVersion::kGemma4:
       if (!system_prompt.empty()) {
-        formatted_prompt.append("<|turn>system ");
+        formatted_prompt.append("<|turn>system\n");
         formatted_prompt.append(system_prompt);
         formatted_prompt.append("<turn|>\n");
       }
-      formatted_prompt.append("<|turn>user ");
+      formatted_prompt.append("<|turn>user\n");
       formatted_prompt.append(prompt);
       formatted_prompt.append("<turn|>\n");
       formatted_prompt.append("<|turn>model\n");
@@ -228,8 +228,8 @@ runtime::Error LLMRunner::generate_from_pos(
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
-      [token_callback, config](const std::string& piece) {
-        if (!config.warming) {
+      [this, token_callback, config](const std::string& piece) {
+        if (!config.warming && config_.verbose) {
           llm::safe_printf(piece.c_str());
           fflush(stdout);
         }
@@ -263,6 +263,71 @@ runtime::Error LLMRunner::generate_from_pos(
 
   // encode the (string) prompt into tokens sequence
   std::vector<uint64_t> prompt_tokens = encode_res.get();
+
+  // Gemma 4 multimodal: run the vision encoder and inject the image token
+  // block. The user turn becomes:
+  //   <|turn>user\n <before_image> <boi> <img>xN <eoi> <prompt>
+  //   <turn|>\n<turn>model\n
+  // <prompt> holds the text AFTER the image; <before_image>
+  // (config_.prompt_before_image) is the text placed BEFORE the image.
+  if (model_version_ == DecoderModelVersion::kGemma4 &&
+      vision_encoder_ != nullptr && !config_.image_path.empty()) {
+    auto* llm_io = static_cast<example::LlmIOManager*>(io_manager_.get());
+    ET_CHECK_MSG(llm_io != nullptr, "IOManager is null");
+
+    // Vision embeddings are injected only by the multi-token prefill method;
+    // single-token steps go through decode and would silently drop them.
+    ET_CHECK_OR_RETURN_ERROR(
+        !config_.is_decode_only &&
+            config_.model_args->get_prefill_seq_len() > 1,
+        InvalidArgument,
+        "Image input requires a prefill method with seq_len > 1");
+
+    auto encode_err = vision_encoder_->encode(config_.image_path);
+    ET_CHECK_OK_OR_RETURN_ERROR(encode_err);
+    int64_t num_vision_tokens = vision_encoder_->num_valid_tokens();
+    ET_CHECK_OR_RETURN_ERROR(
+        vision_encoder_->hidden_size() ==
+            static_cast<int64_t>(config_.model_args->get_hidden_dim()),
+        InvalidProgram,
+        "Vision hidden size %lld != decoder hidden dim %lld",
+        static_cast<long long>(vision_encoder_->hidden_size()),
+        static_cast<long long>(config_.model_args->get_hidden_dim()));
+
+    auto enc = [this](
+                   const std::string& s, std::vector<uint64_t>& out) -> bool {
+      auto r = tokenizer_->encode(s, /*bos=*/0, /*eos=*/0);
+      if (r.error() != ::tokenizers::Error::Ok) {
+        ET_LOG(Error, "Failed to encode text segment");
+        return false;
+      }
+      auto toks = std::move(r.get());
+      out.insert(out.end(), toks.begin(), toks.end());
+      return true;
+    };
+
+    std::vector<uint64_t> vision_tokens;
+    vision_tokens.push_back(kGemma4BosId);
+    if (!enc("<|turn>user\n", vision_tokens) ||
+        (!config_.prompt_before_image.empty() &&
+         !enc(config_.prompt_before_image, vision_tokens))) {
+      return runtime::Error::InvalidArgument;
+    }
+    vision_tokens.push_back(kGemma4BoiTokenId);
+    for (int64_t i = 0; i < num_vision_tokens; ++i) {
+      vision_tokens.push_back(kGemma4ImageTokenId);
+    }
+    vision_tokens.push_back(kGemma4EoiTokenId);
+    if (!enc(prompt, vision_tokens) ||
+        !enc("<turn|>\n<|turn>model\n", vision_tokens)) {
+      return runtime::Error::InvalidArgument;
+    }
+    prompt_tokens = std::move(vision_tokens);
+
+    llm_io->set_vision_embeddings(
+        vision_encoder_->vision_embeds(), num_vision_tokens);
+  }
+
   int num_prompt_tokens = prompt_tokens.size();
 
   // Reduce max_context_len by start_pos
@@ -310,6 +375,17 @@ runtime::Error LLMRunner::generate_from_pos(
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
+  if (model_version_ == DecoderModelVersion::kGemma4 &&
+      vision_encoder_ != nullptr && !config_.image_path.empty()) {
+    const auto consumed = static_cast<example::LlmIOManager*>(io_manager_.get())
+                              ->num_vision_embeds_consumed();
+    ET_CHECK_OR_RETURN_ERROR(
+        consumed == static_cast<size_t>(vision_encoder_->num_valid_tokens()),
+        InvalidState,
+        "Only %zu of %lld vision embeddings were injected during prefill",
+        consumed,
+        static_cast<long long>(vision_encoder_->num_valid_tokens()));
+  }
   stats_->first_token_ms = llm::time_in_ms();
   stats_->prompt_eval_end_ms = llm::time_in_ms();
 
@@ -327,6 +403,15 @@ runtime::Error LLMRunner::generate_from_pos(
       Info,
       "################ The start of token generation ################\n");
 
+  // Accumulate the full model answer (first token from prefill plus all
+  // decoded tokens) so it can be reprinted cleanly at the very end, free of
+  // interleaved logs. Warmed-up runs are skipped (they only measure speed).
+  std::string full_answer;
+  if (!config.warming) {
+    full_answer +=
+        ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token));
+  }
+
   // print the first token from prefill. No prev_token so use cur_token for it.
   wrapped_callback(
       ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
@@ -335,12 +420,19 @@ runtime::Error LLMRunner::generate_from_pos(
   prompt_tokens.push_back(cur_token);
 
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
+  // Forward every decoded piece both to the stream and to the accumulator so
+  // the complete answer can be reprinted verbatim at the end.
+  std::function<void(const std::string&)> collect_callback =
+      [&full_answer, &wrapped_callback](const std::string& piece) {
+        full_answer += piece;
+        wrapped_callback(piece);
+      };
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       prompt_tokens,
       num_prompt_tokens,
       max_new_tokens - 1,
       temperature_ == -1.0f ? config.temperature : temperature_,
-      wrapped_callback));
+      collect_callback));
 
   // A temporary new line to separate stdout mixed with results.
   wrapped_callback(ET_UNWRAP_TOKENIZER(
@@ -375,6 +467,15 @@ runtime::Error LLMRunner::generate_from_pos(
     stats_callback(*stats_);
   }
 
+  if (!config.warming && config_.verbose) {
+    // Reprint the complete answer on its own lines, after all logs and stats,
+    // so it is easy to identify and never overlaps other output.
+    printf("======== FULL ANSWER ========\n");
+    printf("%s\n", full_answer.c_str());
+    printf("=============================\n");
+    fflush(stdout);
+  }
+
   return runtime::Error::Ok;
 }
 
@@ -407,6 +508,17 @@ void LLMRunner::stop() {
   } else {
     ET_LOG(Error, "Token generator is not loaded, cannot stop");
   }
+}
+
+void LLMRunner::reset() {
+  auto* llm_io = static_cast<example::LlmIOManager*>(io_manager_.get());
+  if (llm_io == nullptr) {
+    return;
+  }
+  auto err = llm_io->reset(
+      example::default_method_name_prefill,
+      example::default_method_name_decode);
+  (void)err;
 }
 
 std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
@@ -632,6 +744,20 @@ std::unique_ptr<llm::IRunner> create_llm_runner(
   runner->set_text_decoder_runner(std::move(text_decoder_runner));
   runner->set_text_prefiller(std::move(text_prefiller));
   runner->set_text_token_generator(std::move(text_token_generator));
+
+  // Optional Gemma 4 vision encoder (separate PTE). If no vision model path is
+  // configured, the runner stays text-only.
+  if (runner_paths.vision_model_path.has_value() &&
+      !runner_paths.vision_model_path.value().empty()) {
+    auto vision_encoder = std::make_unique<example::VisionEncoder>(
+        runner_paths.vision_model_path.value());
+    auto verr = vision_encoder->load();
+    if (verr != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to load vision encoder.");
+      return nullptr;
+    }
+    runner->set_vision_encoder(std::move(vision_encoder));
+  }
 
   runner->load();
 

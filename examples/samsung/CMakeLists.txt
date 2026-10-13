@@ -210,3 +210,38 @@ target_link_libraries(
           enn_logging
           -Wl,--no-whole-archive
 )
+
+# Public shared library exposing the C API in ennllm.h. Bundles all
+# dependencies so only the .so + header need to be shipped to third parties.
+add_library(ennllm SHARED ${CMAKE_CURRENT_LIST_DIR}/executor_runner/ennllm.cpp)
+
+target_compile_definitions(ennllm PRIVATE EXECUTORCH_VERSION=2)
+target_include_directories(
+  ennllm
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/executor_runner
+)
+
+target_link_libraries(
+  ennllm
+  PUBLIC enn_llm_runner
+  PRIVATE log
+          gflags
+          android
+          lib_portable_ops
+          ${enn_executor_llm_runner_deps}
+          ${xnnpack_backend_libs}
+          sentencepiece
+          re2
+          lib_tokenizer
+          -Wl,--whole-archive
+          lib_executorch
+          lib_custom_op
+          lib_enn_backend
+          enn_logging
+          -Wl,--no-whole-archive
+          -Wl,--exclude-libs,ALL
+)
+
+set_target_properties(
+  ennllm PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON
+)

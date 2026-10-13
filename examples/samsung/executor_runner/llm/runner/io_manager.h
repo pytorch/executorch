@@ -109,6 +109,19 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
     return update_decode(model_outputs, example::default_method_name_decode);
   }
 
+  /**
+   * Supply pre-computed vision embeddings for Gemma 4 multimodal inference.
+   *
+   * @param embeds Packed valid vision embeddings (num_vision_tokens * hidden,
+   *               contiguous float). The caller must have dropped padding.
+   * @param num_tokens Number of valid vision tokens (= embeds.size()/hidden).
+   */
+  void set_vision_embeddings(std::vector<float> embeds, int64_t num_tokens);
+
+  size_t num_vision_embeds_consumed() const {
+    return vision_embed_idx_;
+  }
+
   const RunnerConfig& get_config() const {
     return config_;
   }
@@ -191,17 +204,13 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
       size_t new_len,
       char* cache,
       size_t cache_len,
-      size_t pos) {
+      size_t pos,
+      size_t head_dim) {
     for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
-      const T* src_head =
-          src + h * new_len * config_.model_args->get_head_dim();
-      char* dst_head = cache +
-          h * cache_len * config_.model_args->get_head_dim() * sizeof(T) +
-          pos * config_.model_args->get_head_dim() * sizeof(T);
-      std::memcpy(
-          dst_head,
-          src_head,
-          new_len * config_.model_args->get_head_dim() * sizeof(T));
+      const T* src_head = src + h * new_len * head_dim;
+      char* dst_head = cache + h * cache_len * head_dim * sizeof(T) +
+          pos * head_dim * sizeof(T);
+      std::memcpy(dst_head, src_head, new_len * head_dim * sizeof(T));
     }
   }
 
@@ -214,9 +223,10 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
       size_t new_len,
       char* cache,
       size_t cache_len,
-      size_t pos) {
+      size_t pos,
+      size_t head_dim) {
     const float* data = tensor.const_data_ptr<float>();
-    copy_to_cache<float>(data, new_len, cache, cache_len, pos);
+    copy_to_cache<float>(data, new_len, cache, cache_len, pos, head_dim);
   }
 
   /**
@@ -233,7 +243,20 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
       std::vector<executorch::extension::TensorPtr>& v_tensors,
       executorch::aten::ScalarType kv_scalar_type,
       size_t cache_len,
+      std::vector<char>& dummy_buf,
       std::vector<executorch::runtime::EValue>& inputs) const;
+
+  /**
+   * Append the Gemma 4 text-decoder prelude inputs that follow the token ids:
+   * inputs_embeds [1, seq_len, hidden_dim] and mm_mask [1, seq_len].
+   *
+   * For text-only inference both are zero-filled: the decoder embeds the token
+   * ids internally and mm_mask == 0 selects those text embeddings everywhere,
+   * so inputs_embeds (the multimodal injection path) is ignored.
+   */
+  void append_prelude_inputs(
+      size_t seq_len,
+      std::vector<executorch::runtime::EValue>& inputs);
 
   /**
    * Update the attention mask for a causal (lower-triangular) pattern.
@@ -273,6 +296,31 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
   std::vector<int64_t> input_tokens_;
   executorch::extension::TensorPtr input_tokens_tensor_;
   std::vector<int64_t> pos_ids_;
+
+  // Gemma 4 prelude inputs (zero-filled for text-only inference).
+  std::vector<float> inputs_embeds_data_;
+  executorch::extension::TensorPtr inputs_embeds_tensor_;
+  std::vector<float> mm_mask_data_;
+  executorch::extension::TensorPtr mm_mask_tensor_;
+
+  // Gemma 4 vision embeddings injected at image-token positions.
+  // vision_embeds_ holds only the valid (non-padding) embeddings packed
+  // contiguously (num_vision_tokens * hidden). append_prelude_inputs copies
+  // them into inputs_embeds_data_ at the image-token slots and marks those
+  // slots in mm_mask_data_.
+  std::vector<float> vision_embeds_;
+  int64_t num_vision_tokens_ = 0;
+  // Cursor into vision_embeds_ consumed by append_prelude_inputs. Persists
+  // across micro-batch prefill chunks so image tokens split across chunks map
+  // to the correct embeddings. Reset on set_vision_embeddings.
+  size_t vision_embed_idx_ = 0;
+
+  // Zero-filled scratch feeding the KV input slots of KV-shared (cross-decoder)
+  // layers. These slots are declared model inputs but never read by the graph,
+  // so a single shared buffer (sized for the widest head_dim) backs them all.
+  std::vector<char> prefill_dummy_kv_;
+  std::vector<char> decode_dummy_kv_;
+  mutable std::vector<executorch::extension::TensorPtr> dummy_kv_tensors_;
 
   // Per-layer input buffers: [1, n_kv_heads, cache_len, head_dim] flattened
   // Use std::vector<char> to support both float and half (float16) data types

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cstring>
 
 #include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
@@ -141,7 +142,7 @@ ET_NODISCARD runtime::Error LlmIOManager::reset(
   current_pos_ = 0;
   prefill_done_ = false;
 
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+  for (size_t l = 0; l < config_.model_args->get_num_cache_layers(); l++) {
     std::fill(prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
     std::fill(prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
     std::fill(decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
@@ -187,21 +188,14 @@ LlmIOManager::prepare_prefill(
       executorch::aten::ScalarType::Long);
   inputs.emplace_back(input_tokens_tensor_);
 
+  append_prelude_inputs(prefill_seq_len, inputs);
+
   const int64_t* start_position = start_pos->const_data_ptr<int64_t>();
   current_pos_ = *start_position;
   pos_ids_.resize(prefill_seq_len);
   for (size_t i = 0; i < prefill_seq_len; ++i) {
     pos_ids_[i] = current_pos_ + static_cast<int64_t>(i);
   }
-
-  // TODO (brucekk.kim):
-  // 1. Add two missing inputs
-  // inputs[1]: inputs_embeds
-  // inputs[2]: mm_mask
-
-  // TODO (brucekk.kim)
-  // 2. Fix/refactor update_attn_mask so that dim changes from [1,1,128,1024] to
-  // [1,1,128,4096]
 
   // attention tensor
   update_attn_mask(current_pos_, prompt_token_len);
@@ -242,6 +236,7 @@ LlmIOManager::prepare_prefill(
   prefill_v_input_tensors_.clear();
   prefill_k_output_tensors_.clear();
   prefill_v_output_tensors_.clear();
+  dummy_kv_tensors_.clear();
   append_kv_input_tensors(
       prefill_k_input_,
       prefill_v_input_,
@@ -249,6 +244,7 @@ LlmIOManager::prepare_prefill(
       prefill_v_input_tensors_,
       executorch::aten::ScalarType::Float,
       prefill_cache_len_,
+      prefill_dummy_kv_,
       inputs);
   dump_kv_input("prefill");
 
@@ -270,6 +266,8 @@ LlmIOManager::prepare_decode(
   std::vector<executorch::runtime::EValue> inputs;
   inputs.reserve(get_input_reserve_size());
   inputs.emplace_back(input);
+
+  append_prelude_inputs(config_.model_args->get_decode_seq_len(), inputs);
 
   attn_mask_tensor_ = executorch::extension::from_blob(
       attn_mask_.data(),
@@ -306,6 +304,7 @@ LlmIOManager::prepare_decode(
   decode_v_input_tensors_.clear();
   decode_k_output_tensors_.clear();
   decode_v_output_tensors_.clear();
+  dummy_kv_tensors_.clear();
   append_kv_input_tensors(
       decode_k_input_,
       decode_v_input_,
@@ -313,6 +312,7 @@ LlmIOManager::prepare_decode(
       decode_v_input_tensors_,
       executorch::aten::ScalarType::Float,
       decode_cache_len_,
+      decode_dummy_kv_,
       inputs);
   dump_kv_input("decode");
 
@@ -346,20 +346,32 @@ executorch::runtime::Error LlmIOManager::update_decode(
 }
 // TOOD: sizeof(float) dtype hard-codes the buffer dtype to be float.
 void LlmIOManager::allocate_buffers() {
-  size_t prefill_in_size = config_.model_args->get_n_kv_heads() *
-      prefill_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
-  size_t decode_in_size = config_.model_args->get_n_kv_heads() *
-      decode_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
-  prefill_k_input_.resize(config_.model_args->get_n_layers());
-  prefill_v_input_.resize(config_.model_args->get_n_layers());
-  decode_k_input_.resize(config_.model_args->get_n_layers());
-  decode_v_input_.resize(config_.model_args->get_n_layers());
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+  const size_t n_kv_heads = config_.model_args->get_n_kv_heads();
+  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
+  prefill_k_input_.resize(num_cache_layers);
+  prefill_v_input_.resize(num_cache_layers);
+  decode_k_input_.resize(num_cache_layers);
+  decode_v_input_.resize(num_cache_layers);
+  for (size_t l = 0; l < num_cache_layers; l++) {
+    const size_t head_dim = config_.model_args->get_head_dim_for_layer(l);
+    const size_t prefill_in_size =
+        n_kv_heads * prefill_cache_len_ * head_dim * sizeof(float);
+    const size_t decode_in_size =
+        n_kv_heads * decode_cache_len_ * head_dim * sizeof(float);
     prefill_k_input_[l].resize(prefill_in_size, 0);
     prefill_v_input_[l].resize(prefill_in_size, 0);
     decode_k_input_[l].resize(decode_in_size, 0);
     decode_v_input_[l].resize(decode_in_size, 0);
   }
+
+  // Dummy scratch for KV-shared layer slots, sized for the widest head_dim.
+  const size_t max_head_dim = std::max<size_t>(
+      config_.model_args->get_head_dim(),
+      config_.model_args->get_global_head_dim());
+  prefill_dummy_kv_.assign(
+      n_kv_heads * prefill_cache_len_ * max_head_dim * sizeof(float), 0);
+  decode_dummy_kv_.assign(
+      n_kv_heads * decode_cache_len_ * max_head_dim * sizeof(float), 0);
   attn_mask_.resize(
       config_.model_args->get_attn_mask_rows() *
           config_.model_args->get_attn_mask_cols(),
@@ -370,26 +382,21 @@ void LlmIOManager::allocate_buffers() {
       -1.0f);
 }
 void LlmIOManager::copy_prefill_to_decode_input() {
-  size_t copy_size =
-      prefill_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
-    for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
-      const char* src = prefill_k_input_[l].data() +
-          h * prefill_cache_len_ * config_.model_args->get_head_dim() *
-              sizeof(float);
-      char* dst = decode_k_input_[l].data() +
-          h * decode_cache_len_ * config_.model_args->get_head_dim() *
-              sizeof(float);
-      std::memcpy(dst, src, copy_size);
-    }
-    for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
-      const char* src = prefill_v_input_[l].data() +
-          h * prefill_cache_len_ * config_.model_args->get_head_dim() *
-              sizeof(float);
-      char* dst = decode_v_input_[l].data() +
-          h * decode_cache_len_ * config_.model_args->get_head_dim() *
-              sizeof(float);
-      std::memcpy(dst, src, copy_size);
+  const size_t n_kv_heads = config_.model_args->get_n_kv_heads();
+  for (size_t l = 0; l < config_.model_args->get_num_cache_layers(); l++) {
+    const size_t head_dim = config_.model_args->get_head_dim_for_layer(l);
+    const size_t copy_size = prefill_cache_len_ * head_dim * sizeof(float);
+    for (size_t h = 0; h < n_kv_heads; h++) {
+      const char* k_src = prefill_k_input_[l].data() +
+          h * prefill_cache_len_ * head_dim * sizeof(float);
+      char* k_dst = decode_k_input_[l].data() +
+          h * decode_cache_len_ * head_dim * sizeof(float);
+      std::memcpy(k_dst, k_src, copy_size);
+      const char* v_src = prefill_v_input_[l].data() +
+          h * prefill_cache_len_ * head_dim * sizeof(float);
+      char* v_dst = decode_v_input_[l].data() +
+          h * decode_cache_len_ * head_dim * sizeof(float);
+      std::memcpy(v_dst, v_src, copy_size);
     }
   }
 }
@@ -401,31 +408,47 @@ void LlmIOManager::append_kv_input_tensors(
     std::vector<executorch::extension::TensorPtr>& v_tensors,
     executorch::aten::ScalarType kv_scalar_type,
     size_t cache_len,
+    std::vector<char>& dummy_buf,
     std::vector<executorch::runtime::EValue>& inputs) const {
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
-    auto k_in = executorch::extension::from_blob(
-        k_bufs[l].data(),
+  const size_t n_layers = config_.model_args->get_n_layers();
+  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
+  const auto n_kv_heads = static_cast<executorch::aten::SizesType>(
+      config_.model_args->get_n_kv_heads());
+
+  // The model declares a KV input slot for every layer, in K[0..L-1] then
+  // V[0..L-1] order. The leading self-decoder layers carry the real cache;
+  // the trailing KV-shared (cross-decoder) layers are resolved inside the
+  // delegate and their slots are never read, so point them at zeroed scratch.
+  auto make_tensor = [&](std::vector<std::vector<char>>& bufs,
+                         size_t layer) -> executorch::extension::TensorPtr {
+    char* data =
+        (layer < num_cache_layers) ? bufs[layer].data() : dummy_buf.data();
+    return executorch::extension::from_blob(
+        data,
         {1,
-         static_cast<executorch::aten::SizesType>(
-             config_.model_args->get_n_kv_heads()),
+         n_kv_heads,
          static_cast<executorch::aten::SizesType>(cache_len),
          static_cast<executorch::aten::SizesType>(
-             config_.model_args->get_head_dim())},
+             config_.model_args->get_head_dim_for_layer(layer))},
         kv_scalar_type);
-    k_tensors.push_back(k_in);
+  };
+
+  for (size_t l = 0; l < n_layers; l++) {
+    auto k_in = make_tensor(k_bufs, l);
+    if (l < num_cache_layers) {
+      k_tensors.push_back(k_in);
+    } else {
+      dummy_kv_tensors_.push_back(k_in);
+    }
     inputs.emplace_back(k_in);
   }
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
-    auto v_in = executorch::extension::from_blob(
-        v_bufs[l].data(),
-        {1,
-         static_cast<executorch::aten::SizesType>(
-             config_.model_args->get_n_kv_heads()),
-         static_cast<executorch::aten::SizesType>(cache_len),
-         static_cast<executorch::aten::SizesType>(
-             config_.model_args->get_head_dim())},
-        kv_scalar_type);
-    v_tensors.push_back(v_in);
+  for (size_t l = 0; l < n_layers; l++) {
+    auto v_in = make_tensor(v_bufs, l);
+    if (l < num_cache_layers) {
+      v_tensors.push_back(v_in);
+    } else {
+      dummy_kv_tensors_.push_back(v_in);
+    }
     inputs.emplace_back(v_in);
   }
 }
@@ -571,8 +594,8 @@ void LlmIOManager::dump_kv_input(const std::string& phase) {
   const bool is_prefill = (phase == "prefill");
   const auto& k_bufs = is_prefill ? prefill_k_input_ : decode_k_input_;
   const auto& v_bufs = is_prefill ? prefill_v_input_ : decode_v_input_;
-  const size_t n_layers = config_.model_args->get_n_layers();
-  for (size_t l = 0; l < n_layers; l++) {
+  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
+  for (size_t l = 0; l < num_cache_layers; l++) {
     dump_buffer(phase + "_k_input", l, k_bufs[l].data(), k_bufs[l].size());
     dump_buffer(phase + "_v_input", l, v_bufs[l].data(), v_bufs[l].size());
   }
@@ -584,22 +607,26 @@ void LlmIOManager::update_kv_cache(
     size_t cache_len,
     size_t new_len,
     const std::string& phase) {
-  // model_outputs: [logits, k0..k_{L-1}, v0..v_{L-1}]
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+  // model_outputs: [logits, k0..k_{C-1}, v0..v_{C-1}] where C is the number of
+  // cached (self-decoder) layers; KV-shared layers emit no new cache.
+  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
+  for (size_t l = 0; l < num_cache_layers; l++) {
     copy_tensor_to_cache(
         model_outputs[1 + l].toTensor(),
         new_len,
         k_bufs[l].data(),
         cache_len,
-        current_pos_);
+        current_pos_,
+        config_.model_args->get_head_dim_for_layer(l));
   }
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+  for (size_t l = 0; l < num_cache_layers; l++) {
     copy_tensor_to_cache(
-        model_outputs[1 + config_.model_args->get_n_layers() + l].toTensor(),
+        model_outputs[1 + num_cache_layers + l].toTensor(),
         new_len,
         v_bufs[l].data(),
         cache_len,
-        current_pos_);
+        current_pos_,
+        config_.model_args->get_head_dim_for_layer(l));
   }
   dump_kv_output(phase, model_outputs);
   dump_step_++;
@@ -610,10 +637,10 @@ void LlmIOManager::dump_kv_output(
   if (!dump_enabled_) {
     return;
   }
-  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+  const size_t num_cache_layers = config_.model_args->get_num_cache_layers();
+  for (size_t l = 0; l < num_cache_layers; l++) {
     const auto& k_out = model_outputs[1 + l].toTensor();
-    const auto& v_out =
-        model_outputs[1 + config_.model_args->get_n_layers() + l].toTensor();
+    const auto& v_out = model_outputs[1 + num_cache_layers + l].toTensor();
     dump_buffer(
         phase + "_k_output",
         l,
@@ -698,6 +725,76 @@ executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(
   }
 
   return executorch::runtime::Error::Ok;
+}
+
+void LlmIOManager::set_vision_embeddings(
+    std::vector<float> embeds,
+    int64_t num_tokens) {
+  vision_embeds_ = std::move(embeds);
+  num_vision_tokens_ = num_tokens;
+  vision_embed_idx_ = 0;
+  ET_LOG(
+      Info,
+      "Vision embeddings set: %lld tokens, %zu floats",
+      static_cast<long long>(num_vision_tokens_),
+      vision_embeds_.size());
+}
+
+void LlmIOManager::append_prelude_inputs(
+    size_t seq_len,
+    std::vector<executorch::runtime::EValue>& inputs) {
+  if (config_.model_version != DecoderModelVersion::kGemma4) {
+    return;
+  }
+  const int64_t hidden_dim = config_.model_args->get_hidden_dim();
+
+  // inputs_embeds [1, seq_len, hidden_dim]: zeros for text-only inference. The
+  // decoder embeds token ids internally; this slot only matters at multimodal
+  // placeholder positions, which text-only prompts never contain.
+  inputs_embeds_data_.assign(seq_len * hidden_dim, 0.0f);
+
+  // mm_mask [1, seq_len]: zeros select the internal text embeddings everywhere.
+  mm_mask_data_.assign(seq_len, 0.0f);
+
+  // Inject vision embeddings at image-token positions (Gemma 4 multimodal).
+  // Only during prefill (seq_len > 1); decode tokens are never image tokens.
+  // Each position whose token is the image-token id consumes the next packed
+  // vision embedding and flips its mm_mask bit so the decoder picks
+  // inputs_embeds at that position. vision_embed_idx_ persists across
+  // micro-batch prefill chunks.
+  // The token id is also replaced with pad: the exported text decoder looks up
+  // per-layer embeddings (PLE) from input_ids directly, and HF / the export
+  // reference (Gemma4Model_ENN.forward) feed pad ids at multimodal positions.
+  // input_tokens_tensor_ aliases input_tokens_, so the in-place edit is seen
+  // by the model.
+  size_t vision_idx = vision_embed_idx_;
+  if (!vision_embeds_.empty() && seq_len > 1) {
+    for (size_t i = 0; i < seq_len; ++i) {
+      if (static_cast<int64_t>(input_tokens_[i]) == kGemma4ImageTokenId &&
+          vision_idx < static_cast<size_t>(num_vision_tokens_)) {
+        std::copy_n(
+            vision_embeds_.data() + vision_idx * hidden_dim,
+            hidden_dim,
+            inputs_embeds_data_.data() + i * hidden_dim);
+        mm_mask_data_[i] = 1.0f;
+        input_tokens_[i] = kGemma4PadId;
+        ++vision_idx;
+      }
+    }
+  }
+  vision_embed_idx_ = vision_idx;
+
+  inputs_embeds_tensor_ = executorch::extension::from_blob(
+      inputs_embeds_data_.data(),
+      {1,
+       static_cast<executorch::aten::SizesType>(seq_len),
+       static_cast<executorch::aten::SizesType>(hidden_dim)});
+  inputs.emplace_back(inputs_embeds_tensor_);
+
+  mm_mask_tensor_ = executorch::extension::from_blob(
+      mm_mask_data_.data(),
+      {1, static_cast<executorch::aten::SizesType>(seq_len)});
+  inputs.emplace_back(mm_mask_tensor_);
 }
 
 } // namespace example
