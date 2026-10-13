@@ -1119,6 +1119,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
           raw->span().size(),
           rows,
           cols,
+          // cppcheck-suppress invalidPointerCast
           reinterpret_cast<float*>(bytes.data()));
       storage = std::make_shared<OwnedBytes>(
           OwnedBytes::from_vector(std::move(bytes)));
