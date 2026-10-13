@@ -11,6 +11,8 @@
 #include <executorch/backends/samsung/runtime/enn_type.h>
 #include <vector>
 
+#include <executorch/runtime/core/freeable_buffer.h>
+
 namespace torch {
 namespace executor {
 namespace enn {
@@ -48,6 +50,7 @@ class EnnExecutor {
   EnnBufferPtr* alloc_buffer_ = nullptr;
   int32_t num_of_inputs_ = 0;
   int32_t num_of_outputs_ = 0;
+  executorch::runtime::FreeableBuffer* weight_ = nullptr;
 };
 
 } // namespace enn

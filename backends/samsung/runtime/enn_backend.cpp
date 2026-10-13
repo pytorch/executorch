@@ -63,13 +63,19 @@ class EnnBackend final : public PyTorchBackendInterface {
 
     if (it != compile_specs.end()) {
       std::string weight_key = decode_spec_value(*it);
-      ET_LOG(
-          Info, "EnnBackend, Weight Buffer Enabled for %s", weight_key.c_str());
       Result<FreeableBuffer> weight =
           named_data_map->get_data(weight_key.c_str());
       const char* weight_buf_addr =
           reinterpret_cast<const char*>(weight->data());
       size_t weight_size = weight->size();
+
+      ET_LOG(
+          Info, "EnnBackend, [%s] Weight Buffer Enabled for %s size(%ld), addr(%p)",
+                context.get_method_name(),
+                weight_key.c_str(), weight_size, weight_buf_addr);
+
+      FreeableBuffer* wgt = new FreeableBuffer(std::move(weight.get()));
+
       Error err = executor->initialize(
           binary_buf_addr, buf_size, weight_buf_addr, weight_size, true);
       if (err != Error::Ok) {
