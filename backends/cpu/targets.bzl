@@ -33,6 +33,18 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "cpu_et",
+        srcs = ["runtime/providers/executorch/ETProvider.cpp"],
+        exported_headers = ["runtime/providers/executorch/ETProvider.h"],
+        exported_deps = [":cpu_runtime"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/runtime/kernel:operator_registry",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "cpu_xnnpack",
         srcs = ["runtime/providers/xnnpack/XNNPACKProvider.cpp"],
         exported_headers = ["runtime/providers/xnnpack/XNNPACKProvider.h"],
@@ -57,7 +69,9 @@ def define_common_targets():
         name = "cpu_backend",
         providers = [
             cpu_provider(":cpu_xnnpack", "executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h", "create_xnnpack_provider"),
+            cpu_provider(":cpu_et", "executorch/backends/cpu/runtime/providers/executorch/ETProvider.h", "create_et_provider"),
         ],
+        kernel_libraries = ["//executorch/configurations:optimized_native_cpu_ops"],
     )
 
     runtime.cxx_binary(
@@ -68,5 +82,35 @@ def define_common_targets():
             "//executorch/extension/module:module",
             "//executorch/extension/tensor:tensor",
             "//executorch/extension/threadpool:threadpool",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "buffer_test_util",
+        exported_headers = ["runtime/test/BufferTestUtil.h"],
+        exported_deps = [":cpu_runtime"],
+        visibility = [":provider_test"],
+    )
+
+    runtime.cxx_test(
+        name = "plan_test",
+        srcs = ["runtime/test/CPUPlanTest.cpp"],
+        deps = [
+            ":cpu_runtime",
+            ":cpu_et",
+            ":cpu_xnnpack",
+            "//executorch/configurations:optimized_native_cpu_ops",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "provider_test",
+        srcs = ["runtime/test/ProviderTest.cpp"],
+        deps = [
+            ":buffer_test_util",
+            ":cpu_et",
+            ":cpu_xnnpack",
+            "//executorch/configurations:optimized_native_cpu_ops",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
