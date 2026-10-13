@@ -68,6 +68,48 @@ class Gate {
   bool held_ = false;
 };
 
+class PausableScheduler : public batching::Scheduler {
+ public:
+  std::atomic<bool> paused{false};
+  std::unique_ptr<batching::Scheduler> inner =
+      batching::DecodeFirstScheduler::create(32, 4, 8);
+
+  bool submit(std::vector<batching::Task> tasks) override {
+    return inner->submit(std::move(tasks));
+  }
+  bool has_work() const override {
+    return !paused.load() && inner->has_work();
+  }
+  std::vector<batching::Task> get_work() override {
+    return paused.load() ? std::vector<batching::Task>{} : inner->get_work();
+  }
+  std::vector<batching::Task> cancel(SessionId session) override {
+    return inner->cancel(session);
+  }
+  std::vector<batching::Task> clear() override {
+    return inner->clear();
+  }
+  std::size_t max_prefill_chunk_size() const override {
+    return inner->max_prefill_chunk_size();
+  }
+};
+
+class GatedSuffixInput : public TestPreparedInput {
+ public:
+  GatedSuffixInput(std::vector<Token> values, Gate& gate)
+      : TestPreparedInput(std::move(values)), gate_(gate) {
+    identity = std::make_shared<const batching::PrefixIdentity>(
+        batching::token_identity(tokens));
+  }
+  batching::PreparedInputPtr suffix(std::size_t start) const override {
+    gate_.enter();
+    return TestPreparedInput::suffix(start);
+  }
+
+ private:
+  Gate& gate_;
+};
+
 template <class Predicate>
 bool wait_until(Predicate predicate) {
   const auto deadline = std::chrono::steady_clock::now() + 5s;
@@ -331,6 +373,7 @@ class PrefixReuseTest : public ::testing::Test {
   Gate delivery_checkpoint;
   Gate later_delivery_checkpoint;
   Gate cleanup_checkpoint;
+  Gate replacement_preparation;
   std::atomic<bool> captures_cleaned{false};
   std::promise<void> callbacks_finished;
   std::thread callback_watchdog;
@@ -350,7 +393,10 @@ class PrefixReuseTest : public ::testing::Test {
     config.max_context_length = 64;
     config.prefix_cache_capacity = 2;
   }
-  void start(bool provision = true) {
+  void start(
+      bool provision = true,
+      std::unique_ptr<batching::Scheduler> scheduler =
+          batching::DecodeFirstScheduler::create(32, 4, 8)) {
     if (provision) {
       executor.capacity = static_cast<int>(
           config.max_sessions +
@@ -358,16 +404,13 @@ class PrefixReuseTest : public ::testing::Test {
                                         : 0));
     }
     runtime = std::make_unique<ServingRuntime>(
-        executor,
-        batching::DecodeFirstScheduler::create(32, 4, 8),
-        tokenizer,
-        config,
-        model_preparer);
+        executor, std::move(scheduler), tokenizer, config, model_preparer);
   }
   void TearDown() override {
     delivery_checkpoint.release();
     later_delivery_checkpoint.release();
     cleanup_checkpoint.release();
+    replacement_preparation.release();
     executor.executing.release();
     executor.cloning.release();
     executor.decoding.release();
@@ -696,6 +739,60 @@ TEST_P(MixedNamedFallbackTest, ColdReplayDoesNotDuplicatePendingHiddenStop) {
 INSTANTIATE_TEST_SUITE_P(
     NullAndRefused,
     MixedNamedFallbackTest,
+    ::testing::Bool());
+
+class MixedExtensionSnapshotTest : public PrefixReuseTest,
+                                   public ::testing::WithParamInterface<bool> {
+};
+
+TEST_P(MixedExtensionSnapshotTest, RefusedExtensionUsesSnapshotWhenEnabled) {
+  config.prefix_cache_capacity = GetParam() ? 1 : 0;
+  config.default_stop_tokens = {101};
+  executor.reject_after_decode = true;
+  use_mixed_preparer();
+  start();
+  auto first = output();
+  submit(first, {1, 7, 7, 7, 2}, "s", 2).wait();
+  ASSERT_TRUE(first->terminal);
+  ASSERT_FALSE(first->terminal->error);
+  EXPECT_EQ(
+      first->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
+  executor.rejected_view_start = 7;
+  executor.full_accepts = 0;
+  executor.clear_feeds();
+  const auto before = executor.clone_calls.load();
+  auto extension = output();
+  const std::vector<Token> prompt{1, 7, 7, 7, 2, 100, 101, 3};
+  submit(extension, prompt).wait();
+  ASSERT_TRUE(extension->terminal);
+  ASSERT_FALSE(extension->terminal->error);
+  const std::size_t reused = GetParam() ? 5 : 0;
+  EXPECT_EQ(
+      extension->terminal->stats.session_reset_reason,
+      GetParam() ? "prefix_clone" : "suffix_unavailable");
+  EXPECT_EQ(extension->terminal->stats.reused_prompt_tokens, reused);
+  EXPECT_EQ(
+      extension->terminal->stats.prefilled_prompt_tokens,
+      prompt.size() - reused);
+  EXPECT_EQ(executor.full_accepts, GetParam() ? 1u : 2u);
+  EXPECT_EQ(executor.clone_calls.load(), before + (GetParam() ? 2 : 0));
+  const auto feeds = executor.feeds();
+  ASSERT_EQ(feeds.size(), 1u);
+  EXPECT_EQ(feeds.front().position, reused);
+  EXPECT_EQ(
+      feeds.front().tokens,
+      (std::vector<Token>(prompt.begin() + reused, prompt.end())));
+  EXPECT_EQ(runtime->info().active_sessions, 1u);
+  if (GetParam()) {
+    const auto clones = executor.clones();
+    ASSERT_EQ(clones.size(), 2u);
+    EXPECT_EQ(clones.back().source, clones.front().destination);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CacheDisabledAndEnabled,
+    MixedExtensionSnapshotTest,
     ::testing::Bool());
 
 class MixedSnapshotViewTest
@@ -1295,6 +1392,125 @@ TEST_F(PrefixReuseTest, CancellationDuringPeriodicCaptureReleasesCaptureLane) {
   submit(next, std::vector<Token>(40, 8)).wait();
   ASSERT_FALSE(next->terminal->error);
   EXPECT_GT(executor.clone_calls.load(), before);
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureMakesAnotherSessionsReplacementCold) {
+  watch_callbacks();
+  config.max_sessions = 2;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 9}) {
+      replacement_preparation.enter();
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  start();
+  submit(output(), {1, 2, 3}, "b").wait();
+  const auto before = executor.clone_calls.load();
+  executor.executing.hold();
+  executor.cloning.hold();
+  replacement_preparation.hold();
+  auto capture_events = output();
+  auto capture = submit(capture_events, std::vector<Token>(8, 7), "a");
+  ASSERT_TRUE(executor.executing.wait());
+  auto cold = output();
+  auto replacement = submit(cold, {1, 2, 9}, "b");
+  ASSERT_TRUE(replacement_preparation.wait());
+  executor.executing.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  // Control is preparing B, so it cannot collect A or release its lane yet.
+  replacement_preparation.release();
+  executor.cloning.release();
+  capture.wait();
+  replacement.wait();
+  ASSERT_TRUE(capture_events->terminal);
+  ASSERT_FALSE(capture_events->terminal->error);
+  ASSERT_TRUE(cold->terminal);
+  ASSERT_FALSE(cold->terminal->error);
+  EXPECT_EQ(cold->terminal->stats.session_reset_reason, "mismatch");
+  EXPECT_EQ(cold->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(cold->terminal->stats.prefilled_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  const auto snapshot = executor.clones().back();
+  EXPECT_EQ(snapshot.prefix, std::vector<Token>(8, 7));
+  auto warm = output();
+  std::vector<Token> prompt(8, 7);
+  prompt.push_back(9);
+  submit(warm, prompt, "b").wait();
+  ASSERT_TRUE(warm->terminal);
+  ASSERT_FALSE(warm->terminal->error);
+  EXPECT_EQ(warm->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(warm->terminal->stats.reused_prompt_tokens, 8u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 2);
+  EXPECT_EQ(executor.clones().back().source, snapshot.destination);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    ReplacementSkipsAnotherSessionsCheckpointThenReleasesLane) {
+  watch_callbacks();
+  config.max_sessions = 2;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  executor.accept_prepared = true;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 9}) {
+      return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+          std::move(tokens), replacement_preparation)};
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  auto scheduler = std::make_unique<PausableScheduler>();
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  submit(output(), {1, 2, 3}, "b").wait();
+  const auto before = executor.clone_calls.load();
+  paused->paused = true;
+  executor.decoding.hold();
+  replacement_preparation.hold();
+  auto capture_events = output();
+  auto capture = submit(capture_events, std::vector<Token>(8, 7), "a", 2);
+  ASSERT_TRUE(wait_until([&] { return paused->inner->has_work(); }));
+  auto warm = output();
+  auto replacement = submit(warm, {1, 2, 9}, "b");
+  ASSERT_TRUE(replacement_preparation.wait());
+  // Hold after clone_prefix claims the lane but before its engine command:
+  // blocking inside Executor::clone would also block A's prefill observer.
+  paused->paused = false;
+  ASSERT_TRUE(executor.decoding.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before);
+  executor.cloning.hold();
+  replacement_preparation.release();
+  executor.decoding.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  executor.cloning.release();
+  capture.wait();
+  replacement.wait();
+  ASSERT_TRUE(capture_events->terminal);
+  ASSERT_FALSE(capture_events->terminal->error);
+  ASSERT_TRUE(warm->terminal);
+  ASSERT_FALSE(warm->terminal->error);
+  EXPECT_EQ(warm->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(warm->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  auto continued = output();
+  std::vector<Token> prompt(8, 7);
+  prompt.push_back(100);
+  prompt.push_back(101);
+  prompt.resize(16, 8);
+  submit(continued, prompt, "a").wait();
+  ASSERT_TRUE(continued->terminal);
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(executor.clone_calls.load(), before + 2);
+  EXPECT_EQ(executor.clones().back().prefix, prompt);
 }
 
 TEST_F(PrefixReuseTest, PeriodicCaptureRequiresStorage) {

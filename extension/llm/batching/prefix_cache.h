@@ -184,7 +184,7 @@ class ET_EXPERIMENTAL PrefixCache {
           request_clone;
       PrefixIdentity tokens;
       std::future<std::optional<Session>> snapshot;
-      std::size_t captured_tokens;
+      std::size_t captured_tokens = 0;
       bool attempted = false;
     };
 
@@ -246,10 +246,11 @@ class ET_EXPERIMENTAL PrefixCache {
 
   // Takes ownership of a successful clone at exactly tokens.size(). The caller
   // supplies its exact committed tokens and must not have generated on the
-  // clone. Capture it with clone_async(prompt_end) in the first output
-  // callback, before returning to decode; collect the future and insert here
-  // later. Refusal releases the supplied snapshot and leaves existing entries
-  // intact.
+  // clone. Queue clone_async at a supported boundary before later forwards
+  // overwrite it (e.g. from an on_prefill observer), then collect the future
+  // and insert here on the caller thread. PromptCapture handles this queueing
+  // and collection. Refusal releases the supplied snapshot and leaves existing
+  // entries intact.
   bool insert(const std::vector<Token>& tokens, Session snapshot) {
     return insert_identity(copy_tokens(tokens), std::move(snapshot));
   }
