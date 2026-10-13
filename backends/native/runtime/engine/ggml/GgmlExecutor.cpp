@@ -1196,7 +1196,11 @@ class GraphBuilder {
         persistent_(persistent),
         rope_factor_bytes_(rope_factor_bytes),
         graph_size_(graph_size),
-        values_(method.graph.values.size()) {}
+        values_(method.graph.values.size()) {
+    for (const auto& [id, tensor] : persistent) {
+      persistent_storage_.insert(tensor);
+    }
+  }
 
   GraphInstance build() {
     // Metadata room for the tensors lowering creates: a generous allowance per
@@ -1225,9 +1229,11 @@ class GraphBuilder {
     }
 
     seed_values();
+    index_written_values();
     for (const NodeId id : method_.graph.schedule) {
       const Node& node = method_.graph.node(id);
       if (node.is_call()) {
+        copy_required_ = touches_written_value(node);
         lower(node);
       }
     }
@@ -1808,7 +1814,7 @@ class GraphBuilder {
         axes[1],
         axes[2],
         axes[3]);
-    result = ggml_cont(instance_.context.get(), result);
+    result = materialize(result);
     set_single_output(node, TensorRef{result, std::move(sizes)});
   }
 
@@ -1849,7 +1855,7 @@ class GraphBuilder {
           in->nb[3],
           0);
     } else {
-      result = ggml_cont(ctx, in);
+      result = materialize(in);
     }
     set_single_output(node, TensorRef{result, input.sizes});
   }
@@ -1861,8 +1867,10 @@ class GraphBuilder {
       throw std::runtime_error("ggml: cast must produce one output");
     }
     const TensorMeta& meta = method_.graph.value(ids.front()).tensor_meta();
-    ggml_tensor* result =
-        ggml_cast(instance_.context.get(), input.tensor, compute_type(meta));
+    const ggml_type type = compute_type(meta);
+    ggml_tensor* result = input.tensor->type == type
+        ? materialize(input.tensor)
+        : ggml_cast(instance_.context.get(), input.tensor, type);
     set(ids.front(), TensorRef{result, input.sizes});
   }
 
@@ -1920,6 +1928,98 @@ class GraphBuilder {
     return ggml_is_contiguous(tensor)
         ? tensor
         : ggml_cont(instance_.context.get(), tensor);
+  }
+
+  // The values the graph writes in place, and those that share their storage
+  // through view lowerings, so copies that touch them stay real copies.
+  void index_written_values() {
+    static const std::unordered_set<std::string> kViews = {
+        "aten._unsafe_view.default",
+        "aten.alias.default",
+        "aten.permute.default",
+        "aten.permute_copy.default",
+        "aten.reshape.default",
+        "aten.select.int",
+        "aten.slice.Tensor",
+        "aten.squeeze.dims",
+        "aten.squeeze_copy.dims",
+        "aten.transpose_copy.int",
+        "aten.unsqueeze.default",
+        "aten.unsqueeze_copy.default",
+        "aten.view.default",
+        "aten.view_copy.default",
+    };
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      const std::string key = node.is_call() ? op_key(node.target) : "";
+      const NamedArgument* target = key == "aten.index_put_.default"
+          ? find_arg(node, "self", 0)
+          : key == "llama.update_cache.default" ? find_arg(node, "cache", 1)
+                                                : nullptr;
+      if (target != nullptr && target->arg.kind() == ArgKind::Tensor) {
+        written_values_.insert(target->arg.as_tensor().id);
+      }
+    }
+    for (bool grew = !written_values_.empty(); grew;) {
+      grew = false;
+      for (const NodeId id : method_.graph.schedule) {
+        const Node& node = method_.graph.node(id);
+        const NamedArgument* source = find_arg(node, "self", 0);
+        if (!node.is_call() || !kViews.contains(op_key(node.target)) ||
+            source == nullptr || source->arg.kind() != ArgKind::Tensor) {
+          continue;
+        }
+        std::vector<ValueId> shared = output_ids(node);
+        shared.push_back(source->arg.as_tensor().id);
+        if (std::ranges::any_of(shared, [this](ValueId value) {
+              return written_values_.contains(value);
+            })) {
+          for (const ValueId value : shared) {
+            grew |= written_values_.insert(value).second;
+          }
+        }
+      }
+    }
+  }
+
+  bool touches_written_value(const Node& node) const {
+    for (const NamedArgument& input : node.inputs) {
+      if (input.arg.kind() == ArgKind::Tensor &&
+          written_values_.contains(input.arg.as_tensor().id)) {
+        return true;
+      }
+    }
+    return std::ranges::any_of(output_ids(node), [this](ValueId value) {
+      return written_values_.contains(value);
+    });
+  }
+
+  // The result of a copying op. Contiguous storage is shared through a view
+  // instead of copied unless it is persistent, already written, or the node
+  // touches a value the graph writes in place (index_written_values).
+  ggml_tensor* materialize(ggml_tensor* tensor) {
+    const ggml_tensor* root = storage_root(tensor);
+    if (copy_required_ || !ggml_is_contiguous(tensor) ||
+        persistent_storage_.contains(root) || written_storage_.contains(root)) {
+      return ggml_cont(instance_.context.get(), tensor);
+    }
+    aliased_storage_.insert(root);
+    return ggml_reshape_4d(
+        instance_.context.get(),
+        tensor,
+        tensor->ne[0],
+        tensor->ne[1],
+        tensor->ne[2],
+        tensor->ne[3]);
+  }
+
+  void mark_written(const ggml_tensor* target) {
+    const ggml_tensor* root = storage_root(target);
+    if (aliased_storage_.contains(root)) {
+      throw std::runtime_error(
+          "ggml: in-place write to storage shared by a copy's view");
+    }
+    written_storage_.insert(root);
   }
 
   struct BinaryOperands {
@@ -2169,7 +2269,7 @@ class GraphBuilder {
           columns->ne[2],
           columns->ne[3],
           out_channels);
-      result = ggml_cont(ctx, ggml_permute(ctx, result, 0, 1, 3, 2));
+      result = materialize(ggml_permute(ctx, result, 0, 1, 3, 2));
     } else if (
         groups == channels && out_channels == channels &&
         weight.sizes[1] == 1) {
@@ -2360,7 +2460,7 @@ class GraphBuilder {
         sizes,
         static_cast<size_t>(start) * input.tensor->nb[gdim]);
     if (copy) {
-      result = ggml_cont(instance_.context.get(), result);
+      result = materialize(result);
     }
     set_single_output(node, TensorRef{result, std::move(sizes)});
   }
@@ -2383,9 +2483,7 @@ class GraphBuilder {
         input.tensor,
         view_sizes,
         static_cast<size_t>(index) * input.tensor->nb[gdim]);
-    if (copy || !ggml_is_contiguous(result)) {
-      result = ggml_cont(instance_.context.get(), result);
-    }
+    result = copy ? materialize(result) : contiguous(result);
     std::vector<int64_t> sizes = input.sizes;
     sizes.erase(sizes.begin() + dim);
     result = reshape(instance_.context.get(), result, sizes);
@@ -2557,6 +2655,7 @@ class GraphBuilder {
     ggml_tensor* destination =
         view_with_shape(instance_.context.get(), cache.tensor, sizes, offset);
     invalidate_cached_transforms(destination);
+    mark_written(destination);
     ggml_tensor* write =
         ggml_cpy(instance_.context.get(), update.tensor, destination);
     expand_write(write);
@@ -2856,8 +2955,7 @@ class GraphBuilder {
         static_cast<float>(scale),
         /*beta_fast=*/0.0f,
         /*beta_slow=*/0.0f);
-    ggml_tensor* result =
-        ggml_cont(ctx, ggml_permute(ctx, rotated, 0, 2, 1, 3));
+    ggml_tensor* result = materialize(ggml_permute(ctx, rotated, 0, 2, 1, 3));
     set_single_output(node, TensorRef{result, input.sizes});
   }
 
@@ -2895,6 +2993,7 @@ class GraphBuilder {
         ? values.tensor
         : as_f32(values.tensor);
     invalidate_cached_transforms(self.tensor);
+    mark_written(self.tensor);
     ggml_tensor* result = ggml_set_rows(
         instance_.context.get(),
         self.tensor,
@@ -2990,7 +3089,7 @@ class GraphBuilder {
         0.0f);
     ggml_prec_set_acc(result, GGML_PREC_F32);
     // flash_attn_ext returns [Dv, H, T, B]; torch order is [B, H, T, Dv].
-    result = ggml_cont(ctx, ggml_permute(ctx, result, 0, 2, 1, 3));
+    result = materialize(ggml_permute(ctx, result, 0, 2, 1, 3));
     set_single_output(
         node,
         TensorRef{
@@ -3059,6 +3158,12 @@ class GraphBuilder {
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
   std::map<std::pair<ValueId, int64_t>, ggml_tensor*> attention_masks_;
   std::unordered_map<ggml_tensor*, ggml_tensor*> i32_casts_;
+  std::unordered_set<const ggml_tensor*> persistent_storage_;
+  std::unordered_set<const ggml_tensor*> aliased_storage_;
+  std::unordered_set<const ggml_tensor*> written_storage_;
+  std::unordered_set<ValueId> written_values_;
+  // Set while lowering a node that touches a written value.
+  bool copy_required_ = false;
   GraphInstance instance_;
 };
 
