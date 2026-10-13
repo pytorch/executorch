@@ -672,8 +672,12 @@ void quantized_linear_impl(
 
   const ValueRef packed_weight =
       prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
-  const ValueRef packed_weight_scales = prepack_standard(
-      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+  const ValueRef packed_weight_scales = graph.add_tensor(
+      graph.sizes_of(weight_scales_data),
+      graph.dtype_of(fp_input),
+      utils::kBuffer,
+      utils::kWidthPacked);
+  add_prepack_standard_node(graph, weight_scales_data, packed_weight_scales);
   // Weight affine quant not supported at the moment
   const ValueRef packed_weight_zeros = kDummyValueRef;
 
