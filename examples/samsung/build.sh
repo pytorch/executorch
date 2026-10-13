@@ -21,6 +21,17 @@ echo ANDROID_PLATFORM=${ANDROID_PLATFORM}
 
 main() {
       cd "$PROJECT_DIR"
+
+      if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+          echo "Please export ANDROID_NDK_ROOT by setting andrid NDK path"
+          echo "$ export ANDROID_NDK_ROOT = path of android NDK"
+          exit 1
+      fi
+
+      if [[ -z ${ANDROID_NDK} ]]; then
+          ANDROID_NDK=${ANDROID_NDK_ROOT}
+      fi
+
       local build_dir_root="build_samsung_android"
       local example_root="examples/samsung"
       local build_dir_example="$PROJECT_DIR/${build_dir_root}/${example_root}"
@@ -39,7 +50,7 @@ main() {
             -DCMAKE_BUILD_TYPE=Release \
             -B"${build_dir_example}" \
             "$PROJECT_DIR/${example_root}"
-      cmake --build build_samsung_android/examples/samsung/ --config Release
+      cmake --build ${build_dir_example} --config Release
 }
 
 main "$@"
