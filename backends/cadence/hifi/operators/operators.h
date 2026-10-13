@@ -167,6 +167,16 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t dim,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& relu_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& log2_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
 ::executorch::aten::Tensor& permute_copy_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,

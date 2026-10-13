@@ -189,3 +189,122 @@ if(TARGET mlxdelegate)
   executorch_target_copy_mlx_metallib(dflash_runner)
   executorch_target_copy_mlx_metallib(muse_glimmer_worker)
 endif()
+
+option(MUSE_GLIMMER_BUILD_BATCHING "Build MLX solo/image batching runners" OFF)
+option(MUSE_GLIMMER_BUILD_BATCHING_TESTS
+       "Build preparation/materialization tests without the batching executor"
+       OFF
+)
+if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
+  if(NOT EXECUTORCH_BUILD_MLX
+     OR NOT TARGET mlxdelegate
+     OR EXECUTORCH_BUILD_CUDA
+  )
+    message(
+      FATAL_ERROR
+        "Muse Glimmer batching targets require EXECUTORCH_BUILD_MLX=ON and an MLX-enabled ExecuTorch installation (without CUDA)"
+    )
+  endif()
+  foreach(_dependency extension_module extension_tensor tokenizers::tokenizers)
+    if(NOT TARGET ${_dependency})
+      message(
+        FATAL_ERROR
+          "Muse Glimmer batching preparation requires ${_dependency}; use an ExecuTorch installation with module, tensor and tokenizer support"
+      )
+    endif()
+  endforeach()
+  add_library(
+    muse_glimmer_batching_preparation STATIC
+    runtime/prompt_preparation.cpp runtime/embedding_materializer.cpp
+    runtime/engine/muse_glimmer_vision_runtime.cpp
+  )
+  target_include_directories(
+    muse_glimmer_batching_preparation PUBLIC ${_common_include_directories}
+                                             ${_json_include}
+  )
+  target_link_libraries(
+    muse_glimmer_batching_preparation PUBLIC extension_module extension_tensor
+                                             tokenizers::tokenizers
+  )
+
+  if(MUSE_GLIMMER_BUILD_BATCHING)
+    set(_batching_dependencies
+        extension_llm_batching
+        extension_llm_cache
+        extension_llm_sampler
+        extension_module
+        extension_tensor
+        extension_llm_serving
+        mlx
+    )
+    foreach(_dependency IN ITEMS ${_batching_dependencies}
+                                 extension_llm_batching_executor_utils
+    )
+      if(NOT TARGET ${_dependency})
+        message(
+          FATAL_ERROR
+            "Muse Glimmer batching runtime requires ${_dependency}; install ExecuTorch with EXECUTORCH_BUILD_MLX=ON, EXECUTORCH_BUILD_EXTENSION_LLM=ON and EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON"
+        )
+      endif()
+    endforeach()
+    add_library(
+      muse_glimmer_batching_runtime STATIC
+      runtime/backend_factory.cpp runtime/mlx_executor.cpp
+      runtime/runners/batching_bootstrap.cpp
+    )
+    target_link_libraries(
+      muse_glimmer_batching_runtime
+      PUBLIC muse_glimmer_batching_preparation ${_batching_dependencies}
+             ${link_libraries} Threads::Threads
+      PRIVATE extension_llm_batching_executor_utils
+    )
+    if(TARGET multiplexed_worker)
+      set(_batching_transport multiplexed_worker)
+    else()
+      # Compile only the shared transport, without its example/test CMake tree.
+      add_library(
+        muse_glimmer_batching_transport STATIC
+        ${EXECUTORCH_ROOT}/examples/llm_server/cpp/multiplexed_worker.cpp
+      )
+      target_include_directories(
+        muse_glimmer_batching_transport PUBLIC ${EXECUTORCH_ROOT}/..
+                                               ${_json_include}
+      )
+      target_link_libraries(
+        muse_glimmer_batching_transport PUBLIC extension_llm_serving
+                                               Threads::Threads
+      )
+      set(_batching_transport muse_glimmer_batching_transport)
+    endif()
+    add_executable(
+      muse_glimmer_batching_runner
+      runtime/runners/muse_glimmer_batching_runner.cpp
+    )
+    target_link_libraries(
+      muse_glimmer_batching_runner PRIVATE muse_glimmer_batching_runtime
+    )
+    add_executable(
+      muse_glimmer_batching_worker
+      runtime/runners/muse_glimmer_batching_worker.cpp
+    )
+    target_link_libraries(
+      muse_glimmer_batching_worker PRIVATE muse_glimmer_batching_runtime
+                                           ${_batching_transport}
+    )
+    executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
+    executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
+  endif()
+
+  if(MUSE_GLIMMER_BUILD_BATCHING_TESTS)
+    if(NOT TARGET extension_llm_serving)
+      message(FATAL_ERROR "MG batching tests require extension_llm_serving")
+    endif()
+    enable_testing()
+    add_executable(muse_glimmer_batching_test tests/batching_runtime_test.cpp)
+    target_link_libraries(
+      muse_glimmer_batching_test PRIVATE muse_glimmer_batching_preparation
+                                         extension_llm_serving Threads::Threads
+    )
+    add_test(NAME muse_glimmer_batching COMMAND muse_glimmer_batching_test)
+  endif()
+endif()
