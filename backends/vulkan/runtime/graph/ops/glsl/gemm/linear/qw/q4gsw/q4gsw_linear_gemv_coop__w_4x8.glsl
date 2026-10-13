@@ -189,27 +189,41 @@ void main() {
   vec4 acc_a = vec4(0.0);
   vec4 acc_b = vec4(0.0);
 
-  int cur_group = -1;
-  vec2 sc_a_lo = vec2(0.0);
-  vec2 sc_a_hi = vec2(0.0);
-  vec2 sc_b_lo = vec2(0.0);
-  vec2 sc_b_hi = vec2(0.0);
+  $if GROUPED_K:
+    const int K4_eff = group_valid ? K4 : 0;
+    const int quant_groups = (K4_eff + blocks_per_group - 1) / blocks_per_group;
+    for (int group_idx = lid; group_idx < quant_groups; group_idx += WGS) {
+      const vec2 sc_a_lo = load_scale_pair(n2_a_lo, group_idx, N2);
+      const vec2 sc_a_hi = load_scale_pair(n2_a_hi, group_idx, N2);
+      const vec2 sc_b_lo = load_scale_pair(n2_b_lo, group_idx, N2);
+      const vec2 sc_b_hi = load_scale_pair(n2_b_hi, group_idx, N2);
+      const int k4_base = group_idx * blocks_per_group;
+      const int group_blocks = min(blocks_per_group, K4_eff - k4_base);
+      for (int block = 0; block < group_blocks; ++block) {
+        // Keep the load index separate from the induction variable for SPIRV-Cross.
+        const int k4 = k4_base + block;
+  $else:
+    int cur_group = -1;
+    vec2 sc_a_lo = vec2(0.0);
+    vec2 sc_a_hi = vec2(0.0);
+    vec2 sc_b_lo = vec2(0.0);
+    vec2 sc_b_hi = vec2(0.0);
 
-  // Skip the K-loop for OOB groups so they don't fetch invalid weight indices,
-  // but they still hit the shared-mem stores/barriers below with zero acc so
-  // the per-group tree reduction stays well-defined for valid peer groups.
-  const int K4_eff = group_valid ? K4 : 0;
-  for (int k4 = lid; k4 < K4_eff; k4 += WGS) {
-    // A stride spanning a whole quantization group cannot reuse scales;
-    // specialize out the cache check in that case.
-    const int group_idx = k4 / blocks_per_group;
-    if (blocks_per_group <= WGS || group_idx != cur_group) {
-      sc_a_lo = load_scale_pair(n2_a_lo, group_idx, N2);
-      sc_a_hi = load_scale_pair(n2_a_hi, group_idx, N2);
-      sc_b_lo = load_scale_pair(n2_b_lo, group_idx, N2);
-      sc_b_hi = load_scale_pair(n2_b_hi, group_idx, N2);
-      cur_group = group_idx;
-    }
+    // Skip the K-loop for OOB groups so they don't fetch invalid weight indices,
+    // but they still hit the shared-mem stores/barriers below with zero acc so
+    // the per-group tree reduction stays well-defined for valid peer groups.
+    const int K4_eff = group_valid ? K4 : 0;
+    for (int k4 = lid; k4 < K4_eff; k4 += WGS) {
+      // A stride spanning a whole quantization group cannot reuse scales;
+      // specialize out the cache check in that case.
+      const int group_idx = k4 / blocks_per_group;
+      if (blocks_per_group <= WGS || group_idx != cur_group) {
+        sc_a_lo = load_scale_pair(n2_a_lo, group_idx, N2);
+        sc_a_hi = load_scale_pair(n2_a_hi, group_idx, N2);
+        sc_b_lo = load_scale_pair(n2_b_lo, group_idx, N2);
+        sc_b_hi = load_scale_pair(n2_b_hi, group_idx, N2);
+        cur_group = group_idx;
+      }
 
     // Load 1 ivec4 weight = 4 K-vals × 8 N-rows. Same byte-pair payload across
     // all 4 (storage, layout) variants; only the binding type and fetch
@@ -259,6 +273,8 @@ void main() {
       acc_b.y += float(b1) * sc_b_lo.y * a;
       acc_b.z += float(b2) * sc_b_hi.x * a;
       acc_b.w += float(b3) * sc_b_hi.y * a;
+    }
+  $if GROUPED_K:
     }
   }
 
