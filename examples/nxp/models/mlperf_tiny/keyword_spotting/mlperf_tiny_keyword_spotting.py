@@ -8,12 +8,12 @@ import logging
 import torch
 
 from executorch.examples.models.mlperf_tiny import DSCNNKWS
-from executorch.examples.nxp.models.mlperf_tiny.mlperf_tiny_model import MLPerfTinyModel
+from executorch.examples.nxp.models.nxp_test_base_model import NXPTestBaseModel
 
 log = logging.getLogger(__name__)
 
 
-class MLPerfTinyKeywordSpotting(MLPerfTinyModel):
+class MLPerfTinyKeywordSpotting(NXPTestBaseModel):
     """MLPerf Tiny keyword spotting model (DS-CNN)."""
 
     INPUT_SHAPE = (1, 1, 49, 10)

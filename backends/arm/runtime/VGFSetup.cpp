@@ -3883,6 +3883,12 @@ bool VgfRepr::process_vgf(
             metadata.external_tensor_requires_dedicated_allocation));
   }
 
+  zero_copy_import_manager_.reset(
+      vk_physical,
+      vk_device,
+      host_memory_import_capabilities_,
+      zero_copy_io_metadata.size());
+
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_COMMAND_BUFFER");
 
@@ -4273,6 +4279,22 @@ bool VgfRepr::process_vgf(
   return true;
 }
 
+VgfZeroCopyImportResult VgfRepr::try_import_zero_copy_candidate(
+    size_t io_index,
+    void* host_pointer,
+    size_t logical_nbytes) {
+  if (io_index >= zero_copy_io_metadata.size()) {
+    return VgfZeroCopyImportResult{
+        false,
+        false,
+        VgfZeroCopyImportRejectionReason::kInvalidIoIndex,
+        VK_SUCCESS,
+    };
+  }
+  return zero_copy_import_manager_.try_import_candidate(
+      io_index, host_pointer, logical_nbytes, zero_copy_io_metadata[io_index]);
+}
+
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   ET_LOG(Debug, "Executing vgf");
 
@@ -4358,16 +4380,33 @@ VgfRepr::get_neural_statistics_segment_contexts() const {
 }
 
 std::string VgfRepr::collect_neural_statistics_metadata() const {
+  VgfNeuralStatisticsMetadataContext metadata_context;
+  metadata_context.mode_index = neural_statistics_mode_index_;
+
+  if (vk_physical != VK_NULL_HANDLE) {
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(vk_physical, &properties);
+    metadata_context.target_available = true;
+    metadata_context.device_name = properties.deviceName;
+    metadata_context.vendor_id = properties.vendorID;
+    metadata_context.device_id = properties.deviceID;
+    metadata_context.driver_version = properties.driverVersion;
+  }
+
   if (neural_statistics_requested_ && !neural_statistics_device_enabled_) {
     return make_vgf_neural_statistics_unavailable_metadata(
-        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled");
+        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled",
+        metadata_context);
   }
 
   return collect_vgf_neural_statistics_metadata(
-      vk_device, get_neural_statistics_segment_contexts());
+      vk_device, get_neural_statistics_segment_contexts(), metadata_context);
 }
 
 void VgfRepr::free_vgf() {
+  // Imported tensor resources must be destroyed while the Vulkan device
+  // is still alive. The application-owned host allocations are untouched.
+  zero_copy_import_manager_.release_all();
   unmap_persistent_io_memory();
 
   if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
