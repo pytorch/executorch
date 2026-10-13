@@ -11,7 +11,7 @@
 #include <cstring>
 #include <vector>
 
-#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/rotary_embedding.h>
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 
@@ -49,61 +49,71 @@ namespace extension = ::executorch::extension;
  */
 class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
  public:
-  struct Config {
-    size_t max_seq_len;
-    size_t max_context_len;
-    size_t prefill_seq_len;
-    size_t decode_seq_len;
-    size_t n_layers;
-    size_t n_heads;
-    size_t n_kv_heads;
-    size_t head_dim;
-    size_t hidden_dim;
-    size_t vocab_size;
-    size_t attn_mask_rows = 128;
-    size_t attn_mask_cols = 1024;
-    std::optional<size_t> sliding_window;
-    EmbeddingStrategy embedding_strategy = EmbeddingStrategy::kGlobalOnly;
-    MaskingStrategy masking_strategy = MaskingStrategy::kCausal;
-  };
+  LlmIOManager(extension::Module& module, const RunnerConfig& config);
+  ~LlmIOManager() override = default;
+  LlmIOManager(const LlmIOManager& other) = delete;
+  LlmIOManager& operator=(const LlmIOManager& rhs) = delete;
+  LlmIOManager(LlmIOManager&& other) = delete;
+  LlmIOManager& operator=(const LlmIOManager&& rhs) = delete;
 
-  LlmIOManager(extension::Module& module, Config config);
+  ET_NODISCARD runtime::Error load(
+      const std::string& prefill_method,
+      const std::string& decode_method) override;
 
-  const Config& get_config() const {
-    return config_;
-  }
+  ET_NODISCARD runtime::Error reset(
+      const std::string& prefill_method,
+      const std::string& decode_method) override;
 
   ET_NODISCARD virtual runtime::Error load_rotary_embedding(
       std::optional<const std::string> pos_embedding_path);
 
-  size_t get_attention_setup_tensor_count() const {
-    constexpr size_t kGlobalMaskCount = 1;
-    constexpr size_t kGlobalRopeCosCount = 1;
-    constexpr size_t kGlobalRopeSinCount = 1;
-    constexpr size_t kBaselineMetadataCount =
-        kGlobalMaskCount + kGlobalRopeCosCount + kGlobalRopeSinCount;
+  virtual runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos,
+      const std::string& prefill_method) override;
 
-    size_t setup_tensor_count = kBaselineMetadataCount;
-
-    const bool requires_local_mask =
-        (config_.masking_strategy == MaskingStrategy::kCausalLocal ||
-         config_.masking_strategy == MaskingStrategy::kHybridConvAttention);
-    if (requires_local_mask) {
-      constexpr size_t kLocalMaskCount = 1;
-      setup_tensor_count += kLocalMaskCount;
-    }
-
-    const bool requires_local_rope =
-        (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal);
-    if (requires_local_rope) {
-      constexpr size_t kLocalRopeCosCount = 1;
-      constexpr size_t kLocalRopeSinCount = 1;
-      setup_tensor_count += (kLocalRopeCosCount + kLocalRopeSinCount);
-    }
-
-    return setup_tensor_count;
+  runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos) {
+    return prepare_prefill(
+        input, start_pos, example::default_method_name_prefill);
   }
 
+  runtime::Result<std::vector<runtime::EValue>> prepare_decode(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos,
+      const std::string& decode_method) override;
+
+  runtime::Result<std::vector<runtime::EValue>> prepare_decode(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos) {
+    return prepare_decode(
+        input, start_pos, example::default_method_name_decode);
+  }
+
+  ET_NODISCARD runtime::Error update_prefill(
+      const std::vector<runtime::EValue>& model_outputs,
+      const std::string& prefill_method) override;
+
+  ET_NODISCARD runtime::Error update_prefill(
+      const std::vector<runtime::EValue>& model_outputs) {
+    return update_prefill(model_outputs, example::default_method_name_prefill);
+  }
+
+  ET_NODISCARD runtime::Error update_decode(
+      const std::vector<runtime::EValue>& model_outputs,
+      const std::string& decode_method) override;
+
+  ET_NODISCARD runtime::Error update_decode(
+      const std::vector<runtime::EValue>& model_outputs) {
+    return update_decode(model_outputs, example::default_method_name_decode);
+  }
+
+  const RunnerConfig& get_config() const {
+    return config_;
+  }
+
+  size_t get_attention_setup_tensor_count() const;
   /**
    * Calculates the total number of tensor slots required in the model's input
    * buffer.
@@ -115,190 +125,9 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
    * all Layers
    */
   size_t get_input_reserve_size() const {
-    constexpr size_t kTokenInputCount = 1;
-    constexpr size_t kKVSlotsPerLayer = 2;
-
-    return kTokenInputCount + get_attention_setup_tensor_count() +
-        (kKVSlotsPerLayer * config_.n_layers);
-  }
-
-  virtual ~LlmIOManager() = default;
-
-  ET_NODISCARD virtual runtime::Error load(
-      const std::string& prefill_method,
-      const std::string& decode_method) override {
-    (void)prefill_method;
-    (void)decode_method;
-
-    if ((config_.masking_strategy == MaskingStrategy::kCausalLocal ||
-         config_.masking_strategy == MaskingStrategy::kHybridConvAttention) &&
-        !config_.sliding_window.has_value()) {
-      ET_LOG(
-          Error,
-          "Sliding window configuration is required for the selected masking strategy");
-      return runtime::Error::InvalidArgument;
-    }
-
-    ET_LOG(
-        Info,
-        "(%s) Model Config: layers(%zu), kv_heads(%zu), hidden_dim(%zu), head_dim(%zu), \
-          vocab(%zu), max_seq(%zu), max_ctx(%zu), prefill_seq(%zu), decode_seq(%zu), \
-          mask_rows(%zu), mask_cols(%zu), slide_win(%zu), emb_strat(%d), mask_strat(%d)",
-        ET_FUNCTION,
-        config_.n_layers,
-        config_.n_kv_heads,
-        config_.hidden_dim,
-        config_.head_dim,
-        config_.vocab_size,
-        config_.max_seq_len,
-        config_.max_context_len,
-        config_.prefill_seq_len,
-        config_.decode_seq_len,
-        config_.attn_mask_rows,
-        config_.attn_mask_cols,
-        config_.sliding_window.value_or(0),
-        static_cast<int>(config_.embedding_strategy),
-        static_cast<int>(config_.masking_strategy));
-
-    return runtime::Error::Ok;
-  }
-
-  /**
-   * @brief Reset the IO manager state.
-   *
-   * @param prefill_method The prefill method to reset with.
-   * @param decode_method The decode method to reset with.
-   */
-  ET_NODISCARD virtual runtime::Error reset(
-      const std::string& prefill_method,
-      const std::string& decode_method) override {
-    (void)prefill_method;
-    (void)decode_method;
-
-    dump_step_ = 0;
-
-    current_pos_ = 0;
-    prefill_done_ = false;
-
-    for (size_t l = 0; l < config_.n_layers; l++) {
-      std::fill(prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
-      std::fill(prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
-      std::fill(decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
-      std::fill(decode_v_input_[l].begin(), decode_v_input_[l].end(), 0);
-    }
-    std::fill(attn_mask_.begin(), attn_mask_.end(), 0.0f);
-
-    return runtime::Error::Ok;
-  }
-
-  /**
-   * @brief Prepare inputs for the prefill phase of LLM inference.
-   *
-   * @param input The input tensor containing token IDs.
-   * @param start_pos The tensor containing the starting position of the current
-   * input within the context.
-   * @param prefill_method The prefill method to prepare inputs for.
-   * @return std::vector<runtime::EValue> Vector of prepared inputs
-   * for the prefill method.
-   */
-  virtual runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
-      const extension::TensorPtr& input,
-      const extension::TensorPtr& start_pos,
-      const std::string& prefill_method) override;
-
-  /**
-   * @brief Prepare inputs for the prefill phase using the default method name.
-   *
-   * Uses "forward" as the prefill method.
-   *
-   * @param input The input tensor containing token IDs.
-   * @param start_pos The tensor containing the starting position.
-   * @return Vector of prepared inputs for the prefill method.
-   */
-  runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
-      const extension::TensorPtr& input,
-      const extension::TensorPtr& start_pos) {
-    return prepare_prefill(
-        input, start_pos, example::default_method_name_prefill);
-  }
-
-  /**
-   * @brief Prepare inputs for the decode phase of LLM inference.
-   *
-   * @param input The input tensor containing token IDs.
-   * @param start_pos The tensor containing the starting position of the current
-   * input within the context.
-   * @param decode_method The decode method to prepare inputs for.
-   * @return std::vector<runtime::EValue> Vector of prepared inputs
-   * for the decode method.
-   */
-  virtual runtime::Result<std::vector<runtime::EValue>> prepare_decode(
-      const extension::TensorPtr& input,
-      const extension::TensorPtr& start_pos,
-      const std::string& decode_method) override;
-
-  /**
-   * @brief Prepare inputs for the decode phase using the default method name.
-   *
-   * Uses "forward" as the decode method.
-   *
-   * @param input The input tensor containing token IDs.
-   * @param start_pos The tensor containing the starting position.
-   * @return Vector of prepared inputs for the decode method.
-   */
-  runtime::Result<std::vector<runtime::EValue>> prepare_decode(
-      const extension::TensorPtr& input,
-      const extension::TensorPtr& start_pos) {
-    return prepare_decode(
-        input, start_pos, example::default_method_name_decode);
-  }
-
-  /**
-   * @brief Process and update internal state with outputs from the prefill
-   * phase.
-   *
-   * @param prefill_method The prefill method to update with outputs.
-   * @param model_outputs Vector of outputs from the prefill method execution.
-   */
-  ET_NODISCARD virtual runtime::Error update_prefill(
-      const std::vector<runtime::EValue>& model_outputs,
-      const std::string& prefill_method) override;
-
-  /**
-   * @brief Process outputs from the prefill phase using the default method.
-   *
-   * Uses "forward" as the prefill method.
-   *
-   * @param model_outputs Vector of outputs from the prefill execution.
-   * @return Error code.
-   */
-  ET_NODISCARD runtime::Error update_prefill(
-      const std::vector<runtime::EValue>& model_outputs) {
-    return update_prefill(model_outputs, example::default_method_name_prefill);
-  }
-
-  /**
-   * @brief Process and update internal state with outputs from the decode
-   * phase.
-   *
-   * @param decode_method The decode method to update with outputs.
-   * @param model_outputs Vector of outputs from the decode method execution.
-   */
-  ET_NODISCARD virtual runtime::Error update_decode(
-      const std::vector<runtime::EValue>& model_outputs,
-      const std::string& decode_method) override;
-
-  /**
-   * @brief Process outputs from the decode phase using the default method.
-   *
-   * Uses "forward" as the decode method.
-   *
-   * @param model_outputs Vector of outputs from the decode execution.
-   * @return Error code.
-   */
-  ET_NODISCARD runtime::Error update_decode(
-      const std::vector<runtime::EValue>& model_outputs) {
-    return update_decode(model_outputs, example::default_method_name_decode);
+    auto model_config = getModelVersionConfig(config_.model_version);
+    return model_config.v_cache_tensor_index +
+        model_config.kv_cache_tensor_count;
   }
 
   size_t current_pos() const {
@@ -363,11 +192,16 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
       char* cache,
       size_t cache_len,
       size_t pos) {
-    for (size_t h = 0; h < config_.n_kv_heads; h++) {
-      const T* src_head = src + h * new_len * config_.head_dim;
-      char* dst_head = cache + h * cache_len * config_.head_dim * sizeof(T) +
-          pos * config_.head_dim * sizeof(T);
-      std::memcpy(dst_head, src_head, new_len * config_.head_dim * sizeof(T));
+    for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
+      const T* src_head =
+          src + h * new_len * config_.model_args->get_head_dim();
+      char* dst_head = cache +
+          h * cache_len * config_.model_args->get_head_dim() * sizeof(T) +
+          pos * config_.model_args->get_head_dim() * sizeof(T);
+      std::memcpy(
+          dst_head,
+          src_head,
+          new_len * config_.model_args->get_head_dim() * sizeof(T));
     }
   }
 
@@ -429,7 +263,7 @@ class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
    * positions [0, pos + r] (value 1) and masks future positions (value 0).
    */
   void update_local_attn_mask(size_t pos, size_t seq_len);
-  Config config_;
+  const RunnerConfig& config_;
 
   size_t prefill_cache_len_;
   size_t decode_cache_len_;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Samsung Electronics Co. LTD
+ * Copyright (c) 2026 Samsung Electronics Co. LTD
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -8,12 +8,13 @@
 
 #pragma once
 
-#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
-#include <executorch/runtime/core/error.h>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
+#include <executorch/runtime/core/error.h>
 
 namespace example {
 
@@ -21,13 +22,7 @@ namespace runtime = ::executorch::runtime;
 
 class RotaryEmbedding {
  public:
-  struct Config {
-    size_t head_dim;
-    size_t max_seq_len;
-    EmbeddingStrategy strategy = EmbeddingStrategy::kGlobalOnly;
-  };
-
-  RotaryEmbedding(Config config);
+  RotaryEmbedding(const RunnerConfig& config);
   ~RotaryEmbedding() = default;
 
   runtime::Error load(std::optional<const std::string> pos_embedding_path);
@@ -39,8 +34,29 @@ class RotaryEmbedding {
       float* local_sin);
 
  private:
-  Config config_;
-  bool loaded_ = false;
+  runtime::Error load_from_file(const std::string& path);
+  runtime::Error load_by_precompute_rope_tables();
+  void allocate_buffers();
+  runtime::Error compute_rope_table(
+      float* cos_ptr,
+      float* sin_ptr,
+      size_t seq_len,
+      size_t dim,
+      float base,
+      float rope_pct);
+
+  const RunnerConfig& config_;
+  bool loaded_;
+
+  size_t seq_len_;
+  size_t normalized_global_head_dim_;
+  size_t normalized_local_head_dim_;
+  size_t global_bytes_;
+  size_t local_bytes_;
+  float base_freq_global_;
+  float base_freq_local_;
+  float rope_percentage_;
+
   std::unique_ptr<char[]> global_cos_;
   std::unique_ptr<char[]> global_sin_;
   std::unique_ptr<char[]> local_cos_;

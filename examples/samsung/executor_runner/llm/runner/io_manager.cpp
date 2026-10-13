@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-#include <executorch/examples/samsung/executor_runner/llm/runner/constants.h>
+#include <executorch/examples/samsung/executor_runner/llm/runner/config.h>
 #include <executorch/examples/samsung/executor_runner/llm/runner/io_manager.h>
 
 namespace example {
@@ -39,41 +39,122 @@ fill_float_region(float* base, size_t offset, size_t len, float value) {
 
 } // namespace
 
-LlmIOManager::LlmIOManager(extension::Module& module, Config config)
+LlmIOManager::LlmIOManager(
+    extension::Module& module,
+    const RunnerConfig& config)
     : IOManager(module), config_(config) {
-  ET_LOG(
-      Info,
-      "LlmIOManager Constructor: dim(%zu), vocab(%zu), max_seq(%zu)",
-      config_.hidden_dim,
-      config_.vocab_size,
-      config_.max_seq_len);
-
-  rotary_embedding_ = std::make_unique<RotaryEmbedding>(RotaryEmbedding::Config{
-      config_.head_dim, config_.max_seq_len, config_.embedding_strategy});
+  rotary_embedding_ = std::make_unique<RotaryEmbedding>(config);
 
   ET_CHECK_MSG(
-      config_.max_seq_len >= config_.prefill_seq_len,
+      config_.model_args->get_max_seq_len() >=
+          config_.model_args->get_prefill_seq_len(),
       "Inconsistent configuration: max_seq_len (%zu) must be greater than or equal to prefill_seq_len (%zu)",
-      config_.max_seq_len,
-      config_.prefill_seq_len);
+      config_.model_args->get_max_seq_len(),
+      config_.model_args->get_prefill_seq_len());
 
   ET_CHECK_MSG(
-      config_.max_seq_len >= 1,
+      config_.model_args->get_max_seq_len() >= 1,
       "Inconsistent configuration: max_seq_len must be at least 1, but got %zu",
-      config_.max_seq_len);
+      config_.model_args->get_max_seq_len());
 
-  prefill_cache_len_ = config_.max_seq_len - config_.prefill_seq_len;
-  decode_cache_len_ = config_.max_seq_len - 1;
+  prefill_cache_len_ = config_.model_args->get_max_seq_len() -
+      config_.model_args->get_prefill_seq_len();
+  decode_cache_len_ = config_.model_args->get_max_seq_len() - 1;
 
   allocate_buffers();
 }
 
+size_t LlmIOManager::get_attention_setup_tensor_count() const {
+  constexpr size_t kGlobalMaskCount = 1;
+  constexpr size_t kGlobalRopeCosCount = 1;
+  constexpr size_t kGlobalRopeSinCount = 1;
+  constexpr size_t kBaselineMetadataCount =
+      kGlobalMaskCount + kGlobalRopeCosCount + kGlobalRopeSinCount;
+
+  size_t setup_tensor_count = kBaselineMetadataCount;
+
+  const bool requires_local_mask =
+      (config_.masking_strategy == MaskingStrategy::kCausalLocal ||
+       config_.masking_strategy == MaskingStrategy::kHybridConvAttention);
+  if (requires_local_mask) {
+    constexpr size_t kLocalMaskCount = 1;
+    setup_tensor_count += kLocalMaskCount;
+  }
+
+  const bool requires_local_rope =
+      (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal);
+  if (requires_local_rope) {
+    constexpr size_t kLocalRopeCosCount = 1;
+    constexpr size_t kLocalRopeSinCount = 1;
+    setup_tensor_count += (kLocalRopeCosCount + kLocalRopeSinCount);
+  }
+
+  return setup_tensor_count;
+}
+
+ET_NODISCARD runtime::Error LlmIOManager::load(
+    const std::string& prefill_method,
+    const std::string& decode_method) {
+  (void)prefill_method;
+  (void)decode_method;
+
+  if ((config_.masking_strategy == MaskingStrategy::kCausalLocal ||
+       config_.masking_strategy == MaskingStrategy::kHybridConvAttention) &&
+      !config_.model_args->get_sliding_window().has_value()) {
+    ET_LOG(
+        Error,
+        "Sliding window configuration is required for the selected masking strategy");
+    return runtime::Error::InvalidArgument;
+  }
+
+  ET_LOG(
+      Info,
+      "(%s) Model Config: layers(%zu), kv_heads(%zu), hidden_dim(%zu), head_dim(%zu), \
+      vocab(%zu), max_seq(%zu), max_ctx(%zu), prefill_seq(%zu), decode_seq(%zu), \
+      mask_rows(%zu), mask_cols(%zu), slide_win(%zu), emb_strat(%d), mask_strat(%d)",
+      ET_FUNCTION,
+      config_.model_args->get_n_layers(),
+      config_.model_args->get_n_kv_heads(),
+      config_.model_args->get_hidden_dim(),
+      config_.model_args->get_head_dim(),
+      config_.model_args->get_vocab_size(),
+      config_.model_args->get_max_seq_len(),
+      config_.model_args->get_max_context_len(),
+      config_.model_args->get_prefill_seq_len(),
+      config_.model_args->get_decode_seq_len(),
+      config_.model_args->get_attn_mask_rows(),
+      config_.model_args->get_attn_mask_cols(),
+      config_.model_args->get_sliding_window().value_or(0),
+      static_cast<int>(config_.embedding_strategy),
+      static_cast<int>(config_.masking_strategy));
+
+  return runtime::Error::Ok;
+}
+
+ET_NODISCARD runtime::Error LlmIOManager::reset(
+    const std::string& prefill_method,
+    const std::string& decode_method) {
+  (void)prefill_method;
+  (void)decode_method;
+
+  dump_step_ = 0;
+  current_pos_ = 0;
+  prefill_done_ = false;
+
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+    std::fill(prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
+    std::fill(prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
+    std::fill(decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
+    std::fill(decode_v_input_[l].begin(), decode_v_input_[l].end(), 0);
+  }
+  std::fill(attn_mask_.begin(), attn_mask_.end(), 0.0f);
+
+  return runtime::Error::Ok;
+}
+
 executorch::runtime::Error LlmIOManager::load_rotary_embedding(
     std::optional<const std::string> pos_embedding_path) {
-  if (pos_embedding_path.has_value()) {
-    return rotary_embedding_->load(pos_embedding_path.value());
-  }
-  return executorch::runtime::Error::Ok;
+  return rotary_embedding_->load(pos_embedding_path);
 }
 
 executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
@@ -84,28 +165,43 @@ LlmIOManager::prepare_prefill(
   (void)prefill_method;
   std::vector<executorch::runtime::EValue> inputs;
   inputs.reserve(get_input_reserve_size());
+  const size_t prefill_seq_len = config_.model_args->get_prefill_seq_len();
+  const size_t prompt_token_len = input->numel();
 
-  // re-producessing input token tensor
-  const int64_t* prompt_tokens = input->mutable_data_ptr<int64_t>();
-  size_t prompt_token_len = input->numel();
-  input_tokens_.resize(prompt_token_len);
+  ET_CHECK_OR_RETURN_ERROR(
+      prompt_token_len <= prefill_seq_len,
+      InvalidArgument,
+      "Prompt chunk length %zu exceeds prefill sequence length %zu.",
+      prompt_token_len,
+      prefill_seq_len);
+
+  const int64_t* prompt_tokens = input->const_data_ptr<int64_t>();
+  input_tokens_.assign(prefill_seq_len, 0);
+
   std::copy(
       prompt_tokens, prompt_tokens + prompt_token_len, input_tokens_.begin());
-  input_tokens_.resize(config_.prefill_seq_len, 0);
 
   input_tokens_tensor_ = executorch::extension::from_blob(
       input_tokens_.data(),
-      {1, static_cast<int>(config_.prefill_seq_len)},
+      {1, static_cast<int>(prefill_seq_len)},
       executorch::aten::ScalarType::Long);
   inputs.emplace_back(input_tokens_tensor_);
 
-  // re-producessing start_pos tensor
-  const int64_t* start_position = start_pos->mutable_data_ptr<int64_t>();
-  pos_ids_.resize(config_.prefill_seq_len);
+  const int64_t* start_position = start_pos->const_data_ptr<int64_t>();
   current_pos_ = *start_position;
-  for (int64_t i = 0; i < config_.prefill_seq_len; ++i) {
-    pos_ids_[i] = current_pos_ + i;
+  pos_ids_.resize(prefill_seq_len);
+  for (size_t i = 0; i < prefill_seq_len; ++i) {
+    pos_ids_[i] = current_pos_ + static_cast<int64_t>(i);
   }
+
+  // TODO (brucekk.kim):
+  // 1. Add two missing inputs
+  // inputs[1]: inputs_embeds
+  // inputs[2]: mm_mask
+
+  // TODO (brucekk.kim)
+  // 2. Fix/refactor update_attn_mask so that dim changes from [1,1,128,1024] to
+  // [1,1,128,4096]
 
   // attention tensor
   update_attn_mask(current_pos_, prompt_token_len);
@@ -113,29 +209,34 @@ LlmIOManager::prepare_prefill(
       attn_mask_.data(),
       {1,
        1,
-       static_cast<executorch::aten::SizesType>(config_.attn_mask_rows),
-       static_cast<executorch::aten::SizesType>(config_.attn_mask_cols)});
+       static_cast<executorch::aten::SizesType>(
+           config_.model_args->get_attn_mask_rows()),
+       static_cast<executorch::aten::SizesType>(
+           config_.model_args->get_attn_mask_cols())});
 
   inputs.emplace_back(attn_mask_tensor_);
 
-  switch (config_.masking_strategy) {
+  const auto masking_strategy = config_.masking_strategy;
+  switch (masking_strategy) {
     case MaskingStrategy::kCausal:
       break;
     case MaskingStrategy::kCausalLocal:
     case MaskingStrategy::kHybridConvAttention:
       update_local_attn_mask(current_pos_, prompt_token_len);
+      const size_t mask_rows = config_.model_args->get_attn_mask_rows();
+      const size_t mask_cols = config_.model_args->get_attn_mask_cols();
       local_attn_mask_tensor_ = executorch::extension::from_blob(
           local_attn_mask_.data(),
           {1,
            1,
-           static_cast<executorch::aten::SizesType>(config_.attn_mask_rows),
-           static_cast<executorch::aten::SizesType>(config_.attn_mask_cols)});
+           static_cast<executorch::aten::SizesType>(mask_rows),
+           static_cast<executorch::aten::SizesType>(mask_cols)});
       inputs.emplace_back(local_attn_mask_tensor_);
       break;
   }
 
   ET_CHECK_OK_OR_RETURN_ERROR(
-      prepare_rotary_embedding_inputs(config_.prefill_seq_len, inputs));
+      prepare_rotary_embedding_inputs(prefill_seq_len, inputs));
 
   prefill_k_input_tensors_.clear();
   prefill_v_input_tensors_.clear();
@@ -165,7 +266,7 @@ LlmIOManager::prepare_decode(
   }
   const int64_t* start_position = start_pos->mutable_data_ptr<int64_t>();
   current_pos_ = *start_position;
-  update_attn_mask(current_pos_, config_.decode_seq_len);
+  update_attn_mask(current_pos_, config_.model_args->get_decode_seq_len());
   std::vector<executorch::runtime::EValue> inputs;
   inputs.reserve(get_input_reserve_size());
   inputs.emplace_back(input);
@@ -175,7 +276,8 @@ LlmIOManager::prepare_decode(
       {1,
        1,
        1,
-       static_cast<executorch::aten::SizesType>(config_.attn_mask_cols)});
+       static_cast<executorch::aten::SizesType>(
+           config_.model_args->get_attn_mask_cols())});
   inputs.emplace_back(attn_mask_tensor_);
   switch (config_.masking_strategy) {
     case MaskingStrategy::kCausal:
@@ -188,16 +290,17 @@ LlmIOManager::prepare_decode(
           {1,
            1,
            1,
-           static_cast<executorch::aten::SizesType>(config_.attn_mask_cols)});
+           static_cast<executorch::aten::SizesType>(
+               config_.model_args->get_attn_mask_cols())});
       inputs.emplace_back(local_attn_mask_tensor_);
       break;
   }
 
   pos_ids_.clear();
-  pos_ids_.resize(config_.decode_seq_len);
+  pos_ids_.resize(config_.model_args->get_decode_seq_len());
   pos_ids_[0] = current_pos_;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      prepare_rotary_embedding_inputs(config_.decode_seq_len, inputs));
+  ET_CHECK_OK_OR_RETURN_ERROR(prepare_rotary_embedding_inputs(
+      config_.model_args->get_decode_seq_len(), inputs));
 
   decode_k_input_tensors_.clear();
   decode_v_input_tensors_.clear();
@@ -224,7 +327,7 @@ executorch::runtime::Error LlmIOManager::update_prefill(
       prefill_k_input_,
       prefill_v_input_,
       prefill_cache_len_,
-      config_.prefill_seq_len,
+      config_.model_args->get_prefill_seq_len(),
       "prefill");
   return executorch::runtime::Error::Ok;
 }
@@ -243,39 +346,49 @@ executorch::runtime::Error LlmIOManager::update_decode(
 }
 // TOOD: sizeof(float) dtype hard-codes the buffer dtype to be float.
 void LlmIOManager::allocate_buffers() {
-  size_t prefill_in_size = config_.n_kv_heads * prefill_cache_len_ *
-      config_.head_dim * sizeof(float);
-  size_t decode_in_size =
-      config_.n_kv_heads * decode_cache_len_ * config_.head_dim * sizeof(float);
-  prefill_k_input_.resize(config_.n_layers);
-  prefill_v_input_.resize(config_.n_layers);
-  decode_k_input_.resize(config_.n_layers);
-  decode_v_input_.resize(config_.n_layers);
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  size_t prefill_in_size = config_.model_args->get_n_kv_heads() *
+      prefill_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
+  size_t decode_in_size = config_.model_args->get_n_kv_heads() *
+      decode_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
+  prefill_k_input_.resize(config_.model_args->get_n_layers());
+  prefill_v_input_.resize(config_.model_args->get_n_layers());
+  decode_k_input_.resize(config_.model_args->get_n_layers());
+  decode_v_input_.resize(config_.model_args->get_n_layers());
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     prefill_k_input_[l].resize(prefill_in_size, 0);
     prefill_v_input_[l].resize(prefill_in_size, 0);
     decode_k_input_[l].resize(decode_in_size, 0);
     decode_v_input_[l].resize(decode_in_size, 0);
   }
-  attn_mask_.resize(config_.attn_mask_rows * config_.attn_mask_cols, -1.0f);
+  attn_mask_.resize(
+      config_.model_args->get_attn_mask_rows() *
+          config_.model_args->get_attn_mask_cols(),
+      -1.0f);
   local_attn_mask_.resize(
-      config_.attn_mask_rows * config_.attn_mask_cols, -1.0f);
+      config_.model_args->get_attn_mask_rows() *
+          config_.model_args->get_attn_mask_cols(),
+      -1.0f);
 }
 void LlmIOManager::copy_prefill_to_decode_input() {
-  size_t copy_size = prefill_cache_len_ * config_.head_dim * sizeof(float);
-  for (size_t l = 0; l < config_.n_layers; l++) {
-    for (size_t h = 0; h < config_.n_kv_heads; h++) {
+  size_t copy_size =
+      prefill_cache_len_ * config_.model_args->get_head_dim() * sizeof(float);
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
+    for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
       const char* src = prefill_k_input_[l].data() +
-          h * prefill_cache_len_ * config_.head_dim * sizeof(float);
+          h * prefill_cache_len_ * config_.model_args->get_head_dim() *
+              sizeof(float);
       char* dst = decode_k_input_[l].data() +
-          h * decode_cache_len_ * config_.head_dim * sizeof(float);
+          h * decode_cache_len_ * config_.model_args->get_head_dim() *
+              sizeof(float);
       std::memcpy(dst, src, copy_size);
     }
-    for (size_t h = 0; h < config_.n_kv_heads; h++) {
+    for (size_t h = 0; h < config_.model_args->get_n_kv_heads(); h++) {
       const char* src = prefill_v_input_[l].data() +
-          h * prefill_cache_len_ * config_.head_dim * sizeof(float);
+          h * prefill_cache_len_ * config_.model_args->get_head_dim() *
+              sizeof(float);
       char* dst = decode_v_input_[l].data() +
-          h * decode_cache_len_ * config_.head_dim * sizeof(float);
+          h * decode_cache_len_ * config_.model_args->get_head_dim() *
+              sizeof(float);
       std::memcpy(dst, src, copy_size);
     }
   }
@@ -289,24 +402,28 @@ void LlmIOManager::append_kv_input_tensors(
     executorch::aten::ScalarType kv_scalar_type,
     size_t cache_len,
     std::vector<executorch::runtime::EValue>& inputs) const {
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     auto k_in = executorch::extension::from_blob(
         k_bufs[l].data(),
         {1,
-         static_cast<executorch::aten::SizesType>(config_.n_kv_heads),
+         static_cast<executorch::aten::SizesType>(
+             config_.model_args->get_n_kv_heads()),
          static_cast<executorch::aten::SizesType>(cache_len),
-         static_cast<executorch::aten::SizesType>(config_.head_dim)},
+         static_cast<executorch::aten::SizesType>(
+             config_.model_args->get_head_dim())},
         kv_scalar_type);
     k_tensors.push_back(k_in);
     inputs.emplace_back(k_in);
   }
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     auto v_in = executorch::extension::from_blob(
         v_bufs[l].data(),
         {1,
-         static_cast<executorch::aten::SizesType>(config_.n_kv_heads),
+         static_cast<executorch::aten::SizesType>(
+             config_.model_args->get_n_kv_heads()),
          static_cast<executorch::aten::SizesType>(cache_len),
-         static_cast<executorch::aten::SizesType>(config_.head_dim)},
+         static_cast<executorch::aten::SizesType>(
+             config_.model_args->get_head_dim())},
         kv_scalar_type);
     v_tensors.push_back(v_in);
     inputs.emplace_back(v_in);
@@ -317,8 +434,8 @@ void LlmIOManager::update_attn_mask(size_t pos, size_t seq_len) {
   const float maskFalse = -255.0f;
   const float maskTrue = 0.0f;
 
-  const size_t rows = config_.attn_mask_rows;
-  const size_t cols = config_.attn_mask_cols;
+  const size_t rows = config_.model_args->get_attn_mask_rows();
+  const size_t cols = config_.model_args->get_attn_mask_cols();
   const size_t start_col = cols - rows;
   const size_t total_size = rows * cols;
 
@@ -327,9 +444,10 @@ void LlmIOManager::update_attn_mask(size_t pos, size_t seq_len) {
 
   if (seq_len > 1) {
     // Prefill phase
-    const size_t rows = config_.attn_mask_rows;
-    const size_t cols = config_.attn_mask_cols;
-    const size_t start_col = config_.attn_mask_cols - config_.attn_mask_rows;
+    const size_t rows = config_.model_args->get_attn_mask_rows();
+    const size_t cols = config_.model_args->get_attn_mask_cols();
+    const size_t start_col = config_.model_args->get_attn_mask_cols() -
+        config_.model_args->get_attn_mask_rows();
 
     for (int i = 0; i < seq_len; ++i) {
       int start_idx = cols - rows;
@@ -361,9 +479,10 @@ void LlmIOManager::update_local_attn_mask(size_t pos, size_t seq_len) {
   const float maskFalse = -255.0f;
   const float maskTrue = 0.0f;
 
-  const size_t rows = config_.attn_mask_rows;
-  const size_t cols = config_.attn_mask_cols;
-  const size_t sliding_window = config_.sliding_window.value();
+  const size_t rows = config_.model_args->get_attn_mask_rows();
+  const size_t cols = config_.model_args->get_attn_mask_cols();
+  const size_t sliding_window =
+      config_.model_args->get_sliding_window().value();
   const size_t total_size = rows * cols;
 
   // Start with a copy of the full attention mask
@@ -452,7 +571,8 @@ void LlmIOManager::dump_kv_input(const std::string& phase) {
   const bool is_prefill = (phase == "prefill");
   const auto& k_bufs = is_prefill ? prefill_k_input_ : decode_k_input_;
   const auto& v_bufs = is_prefill ? prefill_v_input_ : decode_v_input_;
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  const size_t n_layers = config_.model_args->get_n_layers();
+  for (size_t l = 0; l < n_layers; l++) {
     dump_buffer(phase + "_k_input", l, k_bufs[l].data(), k_bufs[l].size());
     dump_buffer(phase + "_v_input", l, v_bufs[l].data(), v_bufs[l].size());
   }
@@ -465,7 +585,7 @@ void LlmIOManager::update_kv_cache(
     size_t new_len,
     const std::string& phase) {
   // model_outputs: [logits, k0..k_{L-1}, v0..v_{L-1}]
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     copy_tensor_to_cache(
         model_outputs[1 + l].toTensor(),
         new_len,
@@ -473,9 +593,9 @@ void LlmIOManager::update_kv_cache(
         cache_len,
         current_pos_);
   }
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     copy_tensor_to_cache(
-        model_outputs[1 + config_.n_layers + l].toTensor(),
+        model_outputs[1 + config_.model_args->get_n_layers() + l].toTensor(),
         new_len,
         v_bufs[l].data(),
         cache_len,
@@ -490,9 +610,10 @@ void LlmIOManager::dump_kv_output(
   if (!dump_enabled_) {
     return;
   }
-  for (size_t l = 0; l < config_.n_layers; l++) {
+  for (size_t l = 0; l < config_.model_args->get_n_layers(); l++) {
     const auto& k_out = model_outputs[1 + l].toTensor();
-    const auto& v_out = model_outputs[1 + config_.n_layers + l].toTensor();
+    const auto& v_out =
+        model_outputs[1 + config_.model_args->get_n_layers() + l].toTensor();
     dump_buffer(
         phase + "_k_output",
         l,
@@ -509,16 +630,22 @@ void LlmIOManager::dump_kv_output(
 executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(
     size_t seq_len,
     std::vector<executorch::runtime::EValue>& inputs) {
-  const size_t element_size = seq_len * config_.head_dim;
-  global_cos_data_.resize(element_size);
-  global_sin_data_.resize(element_size);
+  const int64_t head_dim = config_.model_args->get_head_dim();
+  const int64_t global_head_dim = config_.model_args->get_global_head_dim();
+
+  const size_t global_element_size = seq_len * global_head_dim;
+  global_cos_data_.resize(global_element_size);
+  global_sin_data_.resize(global_element_size);
+
   switch (config_.embedding_strategy) {
     case EmbeddingStrategy::kGlobalOnly:
       break;
-    case EmbeddingStrategy::kGlobalAndLocal:
-      local_cos_data_.resize(element_size);
-      local_sin_data_.resize(element_size);
+    case EmbeddingStrategy::kGlobalAndLocal: {
+      const size_t local_element_size = seq_len * head_dim;
+      local_cos_data_.resize(local_element_size);
+      local_sin_data_.resize(local_element_size);
       break;
+    }
   }
 
   auto update_err = rotary_embedding_->update(
@@ -536,12 +663,12 @@ executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(
       global_cos_data_.data(),
       {1,
        static_cast<executorch::aten::SizesType>(seq_len),
-       static_cast<executorch::aten::SizesType>(config_.head_dim)});
+       static_cast<executorch::aten::SizesType>(global_head_dim)});
   global_sin_tensor_ = executorch::extension::from_blob(
       global_sin_data_.data(),
       {1,
        static_cast<executorch::aten::SizesType>(seq_len),
-       static_cast<executorch::aten::SizesType>(config_.head_dim)});
+       static_cast<executorch::aten::SizesType>(global_head_dim)});
   switch (config_.embedding_strategy) {
     case EmbeddingStrategy::kGlobalOnly:
       break;
@@ -550,12 +677,12 @@ executorch::runtime::Error LlmIOManager::prepare_rotary_embedding_inputs(
           local_cos_data_.data(),
           {1,
            static_cast<executorch::aten::SizesType>(seq_len),
-           static_cast<executorch::aten::SizesType>(config_.head_dim)});
+           static_cast<executorch::aten::SizesType>(head_dim)});
       local_sin_tensor_ = executorch::extension::from_blob(
           local_sin_data_.data(),
           {1,
            static_cast<executorch::aten::SizesType>(seq_len),
-           static_cast<executorch::aten::SizesType>(config_.head_dim)});
+           static_cast<executorch::aten::SizesType>(head_dim)});
       break;
   }
 
