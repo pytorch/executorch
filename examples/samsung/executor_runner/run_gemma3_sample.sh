@@ -14,16 +14,16 @@ TEMPERATURE=0
 NUM_BOS=1
 INPUT_PROMPT="What is the capital of France?"
 
-chmod +x enn_executor_llama_runner
+chmod +x enn_executor_llm_runner
 
-./enn_executor_llama_runner \
+./enn_executor_llm_runner \
     --model_path=$MODEL_PATH \
     --data_path=$WEIGHT_SHARED_MODEL_PATH \
     --seq_len=$SEQ_LEN \
     --temperature=$TEMPERATURE \
-    --pos_embedding_path=$POS_EMBEDDING_PATH \
     --num_bos=$NUM_BOS \
-    --tokenizer_type="hf" \
+    --pos_embedding_path=$POS_EMBEDDING_PATH \
+    --tokenizer_type="$TOKENIZER_TYPE" \
     --tokenizer_path=$TOKENIZER_PATH \
     --prompt="$INPUT_PROMPT" \
-    --use_gemma
+    --config_path "$CONFIG_PATH"

@@ -8,28 +8,36 @@
 
 #pragma once
 
-#include <vector>
-#include <string>
-#include <memory>
+#include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
 #include <executorch/runtime/core/error.h>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace example {
+
+namespace runtime = ::executorch::runtime;
 
 class RotaryEmbedding {
  public:
   struct Config {
     size_t head_dim;
     size_t max_seq_len;
-    bool use_gemma;
+    EmbeddingStrategy strategy = EmbeddingStrategy::kGlobalOnly;
   };
 
   RotaryEmbedding(Config config);
   ~RotaryEmbedding() = default;
 
-  executorch::runtime::Error load(std::optional<const std::string> pos_embedding_path);
-  executorch::runtime::Error update(const std::vector<int64_t>& pos_ids,
-                                    float* global_cos, float* global_sin,
-                                    float* local_cos, float* local_sin);
+  runtime::Error load(std::optional<const std::string> pos_embedding_path);
+  runtime::Error update(
+      const std::vector<int64_t>& pos_ids,
+      float* global_cos,
+      float* global_sin,
+      float* local_cos,
+      float* local_sin);
+
  private:
   Config config_;
   std::unique_ptr<char[]> global_cos_;

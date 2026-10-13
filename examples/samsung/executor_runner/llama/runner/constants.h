@@ -7,6 +7,8 @@
  */
 
 #pragma once
+#include <cstddef>
+
 // constants for LLM runtime
 namespace example {
 
@@ -20,4 +22,22 @@ inline constexpr auto kNumOfKVHeads = "get_n_kv_heads";
 inline constexpr auto default_method_name = "forward";
 inline constexpr auto default_method_name_prefill = "prefill_forward";
 inline constexpr auto default_method_name_decode = "decode_forward";
+
+enum class DecoderModelVersion {
+  kLlama3,
+  kGemma3,
+  kGeneral,
+};
+
+enum class EmbeddingStrategy {
+  kGlobalOnly,
+  kGlobalAndLocal,
+};
+
+enum class MaskingStrategy {
+  kCausal,
+  kCausalLocal,
+  kHybridConvAttention, // LIV-conv + GQA mask constraint
+};
+
 } // namespace example

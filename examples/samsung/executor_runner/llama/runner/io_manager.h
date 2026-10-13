@@ -11,11 +11,16 @@
 #include <cstring>
 #include <vector>
 
-#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/constants.h>
 #include <executorch/examples/samsung/executor_runner/llama/runner/rotary_embedding.h>
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 
 namespace example {
+
+namespace llm = ::executorch::extension::llm;
+namespace runtime = ::executorch::runtime;
+namespace aten = ::executorch::aten;
+namespace extension = ::executorch::extension;
 
 /**
  * IO manager for models where the runner manages KV-cache externally.
@@ -42,89 +47,120 @@ namespace example {
  *           k_cache[1,H,max-1,D] x L, v_cache[1,H,max-1,D] x L
  *   Output: logits, k_cache[1,H,1,D] x L, v_cache[1,H,1,D] x L
  */
-class ET_EXPERIMENTAL LlmIOManager
-    : public executorch::extension::llm::IOManager {
+class ET_EXPERIMENTAL LlmIOManager : public llm::IOManager {
  public:
   struct Config {
     size_t max_seq_len;
+    size_t max_context_len;
     size_t prefill_seq_len;
     size_t decode_seq_len;
     size_t n_layers;
+    size_t n_heads;
     size_t n_kv_heads;
     size_t head_dim;
+    size_t hidden_dim;
+    size_t vocab_size;
     size_t attn_mask_rows = 128;
     size_t attn_mask_cols = 1024;
-    size_t sliding_window = 512;
-    bool use_gemma = false;
+    std::optional<size_t> sliding_window;
+    EmbeddingStrategy embedding_strategy = EmbeddingStrategy::kGlobalOnly;
+    MaskingStrategy masking_strategy = MaskingStrategy::kCausal;
   };
 
+  LlmIOManager(extension::Module& module, Config config);
+
+  const Config& get_config() const {
+    return config_;
+  }
+
+  ET_NODISCARD virtual runtime::Error load_rotary_embedding(
+      std::optional<const std::string> pos_embedding_path);
+
+  size_t get_attention_setup_tensor_count() const {
+    constexpr size_t kGlobalMaskCount = 1;
+    constexpr size_t kGlobalRopeCosCount = 1;
+    constexpr size_t kGlobalRopeSinCount = 1;
+    constexpr size_t kBaselineMetadataCount =
+        kGlobalMaskCount + kGlobalRopeCosCount + kGlobalRopeSinCount;
+
+    size_t setup_tensor_count = kBaselineMetadataCount;
+
+    const bool requires_local_mask =
+        (config_.masking_strategy == MaskingStrategy::kCausalLocal ||
+         config_.masking_strategy == MaskingStrategy::kHybridConvAttention);
+    if (requires_local_mask) {
+      constexpr size_t kLocalMaskCount = 1;
+      setup_tensor_count += kLocalMaskCount;
+    }
+
+    const bool requires_local_rope =
+        (config_.embedding_strategy == EmbeddingStrategy::kGlobalAndLocal);
+    if (requires_local_rope) {
+      constexpr size_t kLocalRopeCosCount = 1;
+      constexpr size_t kLocalRopeSinCount = 1;
+      setup_tensor_count += (kLocalRopeCosCount + kLocalRopeSinCount);
+    }
+
+    return setup_tensor_count;
+  }
+
   /**
-   * @brief Construct an IOManager bound to a Module.
+   * Calculates the total number of tensor slots required in the model's input
+   * buffer.
    *
-   * @param module The Module used for querying method metadata and execution.
+   * Memory Layout Layout:
+   * [0]                  : Token/Prompt IDs
+   * [1 ... N]            : Attention Setup Overheads (Masks, RoPE Sin/Cos
+   * Tensors) [N+1 ... End]        : Alternating Key and Value Cache Tensors for
+   * all Layers
    */
-  LlmIOManager(executorch::extension::Module& module, Config config)
-      : IOManager(module), module_(module), config_(config) {
-    rotary_embedding_ = std::make_unique<RotaryEmbedding>(RotaryEmbedding::Config{config_.head_dim, config_.max_seq_len, config_.use_gemma});
+  size_t get_input_reserve_size() const {
+    constexpr size_t kTokenInputCount = 1;
+    constexpr size_t kKVSlotsPerLayer = 2;
+
+    return kTokenInputCount + get_attention_setup_tensor_count() +
+        (kKVSlotsPerLayer * config_.n_layers);
+  }
+
+  virtual ~LlmIOManager() = default;
+
+  ET_NODISCARD virtual runtime::Error load(
+      const std::string& prefill_method,
+      const std::string& decode_method) override {
+    (void)prefill_method;
+    (void)decode_method;
+
+    if ((config_.masking_strategy == MaskingStrategy::kCausalLocal ||
+         config_.masking_strategy == MaskingStrategy::kHybridConvAttention) &&
+        !config_.sliding_window.has_value()) {
+      ET_LOG(
+          Error,
+          "Sliding window configuration is required for the selected masking strategy");
+      return runtime::Error::InvalidArgument;
+    }
+
     ET_LOG(
         Info,
-        "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
-        head_dim(%ld) prefill_seq_len(%ld) use_gemma(%d)",
+        "(%s) Model Config: layers(%zu), kv_heads(%zu), hidden_dim(%zu), head_dim(%zu), \
+          vocab(%zu), max_seq(%zu), max_ctx(%zu), prefill_seq(%zu), decode_seq(%zu), \
+          mask_rows(%zu), mask_cols(%zu), slide_win(%zu), emb_strat(%d), mask_strat(%d)",
         ET_FUNCTION,
         config_.n_layers,
         config_.n_kv_heads,
-        config_.max_seq_len,
+        config_.hidden_dim,
         config_.head_dim,
+        config_.vocab_size,
+        config_.max_seq_len,
+        config_.max_context_len,
         config_.prefill_seq_len,
-        config_.use_gemma);
-    (void)module_;
+        config_.decode_seq_len,
+        config_.attn_mask_rows,
+        config_.attn_mask_cols,
+        config_.sliding_window.value_or(0),
+        static_cast<int>(config_.embedding_strategy),
+        static_cast<int>(config_.masking_strategy));
 
-    prefill_cache_len_ = config_.max_seq_len - config_.prefill_seq_len;
-    decode_cache_len_ = config_.max_seq_len - 1;
-
-    allocate_buffers();
-  }
-
-  /**
-   * @brief Load pos_embedding files..
-   * @param pos_embedding_path Pos_embedding file, that include global_cos.bin, global_sin.bin, local_cos.bin, local_sin.bin.
-   */
-  ET_NODISCARD virtual executorch::runtime::Error load_rotary_embedding(std::optional<const std::string> pos_embedding_path);
-
-  /**
-   * @brief Get the use_gemma configuration flag.
-   * @return True if using Gemma model specific processing, false otherwise.
-   */
-  bool use_gemma() const {
-    return config_.use_gemma;
-  }
-
-  /**
-   * @brief Virtual destructor to allow proper cleanup in derived classes.
-   */
-  virtual ~LlmIOManager() = default;
-
-  /**
-   * @brief Load the IO manager with method metadata for prefill and
-   * decode operations.
-   *
-   * @param prefill_method The prefill method to initialize with.
-   * @param decode_method The decode method to initialize with.
-   */
-  ET_NODISCARD virtual executorch::runtime::Error load(
-      const std::string& prefill_method,
-      const std::string& decode_method) override {
-    ET_LOG(Info,
-          "(%s) layers(%ld), kv_heads(%ld) max_sqe_len(%ld) \
-          head_dim(%ld) prefill_seq_len(%ld)",
-          ET_FUNCTION,
-          config_.n_layers,
-          config_.n_kv_heads,
-          config_.max_seq_len,
-          config_.head_dim,
-          config_.prefill_seq_len);
-
-    return executorch::runtime::Error::Ok;
+    return runtime::Error::Ok;
   }
 
   /**
@@ -133,7 +169,7 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param prefill_method The prefill method to reset with.
    * @param decode_method The decode method to reset with.
    */
-  ET_NODISCARD virtual executorch::runtime::Error reset(
+  ET_NODISCARD virtual runtime::Error reset(
       const std::string& prefill_method,
       const std::string& decode_method) override {
     (void)prefill_method;
@@ -145,18 +181,14 @@ class ET_EXPERIMENTAL LlmIOManager
     prefill_done_ = false;
 
     for (size_t l = 0; l < config_.n_layers; l++) {
-      std::fill(
-          prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
-      std::fill(
-          prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
-      std::fill(
-          decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
-      std::fill(
-          decode_v_input_[l].begin(), decode_v_input_[l].end(), 0);
+      std::fill(prefill_k_input_[l].begin(), prefill_k_input_[l].end(), 0);
+      std::fill(prefill_v_input_[l].begin(), prefill_v_input_[l].end(), 0);
+      std::fill(decode_k_input_[l].begin(), decode_k_input_[l].end(), 0);
+      std::fill(decode_v_input_[l].begin(), decode_v_input_[l].end(), 0);
     }
     std::fill(attn_mask_.begin(), attn_mask_.end(), 0.0f);
 
-    return executorch::runtime::Error::Ok;
+    return runtime::Error::Ok;
   }
 
   /**
@@ -166,13 +198,12 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param start_pos The tensor containing the starting position of the current
    * input within the context.
    * @param prefill_method The prefill method to prepare inputs for.
-   * @return std::vector<executorch::runtime::EValue> Vector of prepared inputs
+   * @return std::vector<runtime::EValue> Vector of prepared inputs
    * for the prefill method.
    */
-  virtual executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
-  prepare_prefill(
-      const executorch::extension::TensorPtr& input,
-      const executorch::extension::TensorPtr& start_pos,
+  virtual runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos,
       const std::string& prefill_method) override;
 
   /**
@@ -184,11 +215,11 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param start_pos The tensor containing the starting position.
    * @return Vector of prepared inputs for the prefill method.
    */
-  executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
-  prepare_prefill(
-      const executorch::extension::TensorPtr& input,
-      const executorch::extension::TensorPtr& start_pos) {
-    return prepare_prefill(input, start_pos, example::default_method_name_prefill);
+  runtime::Result<std::vector<runtime::EValue>> prepare_prefill(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos) {
+    return prepare_prefill(
+        input, start_pos, example::default_method_name_prefill);
   }
 
   /**
@@ -198,13 +229,12 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param start_pos The tensor containing the starting position of the current
    * input within the context.
    * @param decode_method The decode method to prepare inputs for.
-   * @return std::vector<executorch::runtime::EValue> Vector of prepared inputs
+   * @return std::vector<runtime::EValue> Vector of prepared inputs
    * for the decode method.
    */
-  virtual executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
-  prepare_decode(
-      const executorch::extension::TensorPtr& input,
-      const executorch::extension::TensorPtr& start_pos,
+  virtual runtime::Result<std::vector<runtime::EValue>> prepare_decode(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos,
       const std::string& decode_method) override;
 
   /**
@@ -216,11 +246,11 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param start_pos The tensor containing the starting position.
    * @return Vector of prepared inputs for the decode method.
    */
-  executorch::runtime::Result<std::vector<executorch::runtime::EValue>>
-  prepare_decode(
-      const executorch::extension::TensorPtr& input,
-      const executorch::extension::TensorPtr& start_pos) {
-    return prepare_decode(input, start_pos, example::default_method_name_decode);
+  runtime::Result<std::vector<runtime::EValue>> prepare_decode(
+      const extension::TensorPtr& input,
+      const extension::TensorPtr& start_pos) {
+    return prepare_decode(
+        input, start_pos, example::default_method_name_decode);
   }
 
   /**
@@ -230,8 +260,8 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param prefill_method The prefill method to update with outputs.
    * @param model_outputs Vector of outputs from the prefill method execution.
    */
-  ET_NODISCARD virtual executorch::runtime::Error update_prefill(
-      const std::vector<executorch::runtime::EValue>& model_outputs,
+  ET_NODISCARD virtual runtime::Error update_prefill(
+      const std::vector<runtime::EValue>& model_outputs,
       const std::string& prefill_method) override;
 
   /**
@@ -242,8 +272,8 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param model_outputs Vector of outputs from the prefill execution.
    * @return Error code.
    */
-  ET_NODISCARD executorch::runtime::Error update_prefill(
-      const std::vector<executorch::runtime::EValue>& model_outputs) {
+  ET_NODISCARD runtime::Error update_prefill(
+      const std::vector<runtime::EValue>& model_outputs) {
     return update_prefill(model_outputs, example::default_method_name_prefill);
   }
 
@@ -254,8 +284,8 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param decode_method The decode method to update with outputs.
    * @param model_outputs Vector of outputs from the decode method execution.
    */
-  ET_NODISCARD virtual executorch::runtime::Error update_decode(
-      const std::vector<executorch::runtime::EValue>& model_outputs,
+  ET_NODISCARD virtual runtime::Error update_decode(
+      const std::vector<runtime::EValue>& model_outputs,
       const std::string& decode_method) override;
 
   /**
@@ -266,8 +296,8 @@ class ET_EXPERIMENTAL LlmIOManager
    * @param model_outputs Vector of outputs from the decode execution.
    * @return Error code.
    */
-  ET_NODISCARD executorch::runtime::Error update_decode(
-      const std::vector<executorch::runtime::EValue>& model_outputs) {
+  ET_NODISCARD runtime::Error update_decode(
+      const std::vector<runtime::EValue>& model_outputs) {
     return update_decode(model_outputs, example::default_method_name_decode);
   }
 
@@ -287,22 +317,6 @@ class ET_EXPERIMENTAL LlmIOManager
       const std::vector<executorch::runtime::EValue>& model_outputs);
 
   void allocate_buffers();
-
-  /**
-   * @brief Calculate the number of inputs to reserve for prefill/decode.
-   *
-   * The total depends on whether the model is Gemma:
-   *   - Gemma: 7 + n_layers * 2
-   *   - Non-Gemma: 4 + n_layers * 2
-   *
-   * @return The reserve size for the inputs vector.
-   */
-  size_t get_input_reserve_size() const {
-    if (config_.use_gemma)
-      return 7 + config_.n_layers * 2;
-    else
-      return 4 + config_.n_layers * 2;
-  }
 
   bool dump_enabled_ = false;
   mutable size_t dump_step_ = 0;
@@ -343,15 +357,17 @@ class ET_EXPERIMENTAL LlmIOManager
    *     = src[h * new_len * D .. + new_len * D]
    */
   template <typename T>
-  void copy_to_cache(const T* src, size_t new_len,
-      char* cache, size_t cache_len, size_t pos) {
+  void copy_to_cache(
+      const T* src,
+      size_t new_len,
+      char* cache,
+      size_t cache_len,
+      size_t pos) {
     for (size_t h = 0; h < config_.n_kv_heads; h++) {
       const T* src_head = src + h * new_len * config_.head_dim;
-      char* dst_head =
-          cache + h * cache_len * config_.head_dim * sizeof(T)
-              + pos * config_.head_dim * sizeof(T);
-      std::memcpy(
-          dst_head, src_head, new_len * config_.head_dim * sizeof(T));
+      char* dst_head = cache + h * cache_len * config_.head_dim * sizeof(T) +
+          pos * config_.head_dim * sizeof(T);
+      std::memcpy(dst_head, src_head, new_len * config_.head_dim * sizeof(T));
     }
   }
 
@@ -413,11 +429,6 @@ class ET_EXPERIMENTAL LlmIOManager
    * positions [0, pos + r] (value 1) and masks future positions (value 0).
    */
   void update_local_attn_mask(size_t pos, size_t seq_len);
-
-  /**
-   * @brief Reference to the Module used for method metadata and execution.
-   */
-  executorch::extension::module::Module& module_;
   Config config_;
 
   size_t prefill_cache_len_;
@@ -426,6 +437,7 @@ class ET_EXPERIMENTAL LlmIOManager
   bool prefill_done_ = false;
 
   std::vector<int64_t> input_tokens_;
+  executorch::extension::TensorPtr input_tokens_tensor_;
   std::vector<int64_t> pos_ids_;
 
   // Per-layer input buffers: [1, n_kv_heads, cache_len, head_dim] flattened
