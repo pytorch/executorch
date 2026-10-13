@@ -76,11 +76,11 @@ constexpr uint32_t kQ4gswCoopmatSharedMemoryBytes =
 constexpr uint32_t dq8ca_q4gsw_coopmat_shared_memory_bytes(uint32_t mma_k) {
   constexpr uint32_t kScalarBytes = 4u;
   const uint32_t num_k_slabs = kDq8caQ4gswCoopmatDims.k / mma_k;
-  // A is byte-packed; B is uint-packed with one skew uint per column.
+  // A is byte-packed; B is uint-packed with a 16-byte skew per column.
   const uint32_t a_double_buffer_bytes =
       2u * kDq8caQ4gswCoopmatDims.m * kDq8caQ4gswCoopmatDims.k;
   const uint32_t b_double_buffer_bytes = 2u * num_k_slabs *
-      kDq8caQ4gswCoopmatDims.n * (mma_k / 4u + 1u) * kScalarBytes;
+      kDq8caQ4gswCoopmatDims.n * (mma_k / 4u + 4u) * kScalarBytes;
   const uint32_t activation_params_bytes =
       kDq8caQ4gswCoopmatDims.m * 2u * kScalarBytes;
   const uint32_t weight_params_bytes =
@@ -95,8 +95,8 @@ constexpr uint32_t kDq8caQ4gswCoopmatSg64SharedMemoryBytes =
     dq8ca_q4gsw_coopmat_shared_memory_bytes(16u);
 
 static_assert(kQ4gswCoopmatSharedMemoryBytes == 29696u);
-static_assert(kDq8caQ4gswCoopmatSg32SharedMemoryBytes == 14848u);
-static_assert(kDq8caQ4gswCoopmatSg64SharedMemoryBytes == 15360u);
+static_assert(kDq8caQ4gswCoopmatSg32SharedMemoryBytes == 16384u);
+static_assert(kDq8caQ4gswCoopmatSg64SharedMemoryBytes == 18432u);
 
 static CoopmatTileDims coopmat_tile_dims(const std::string& kernel_name) {
   // Exact prefix matches (the "linear_dq8ca_*" names must not match the

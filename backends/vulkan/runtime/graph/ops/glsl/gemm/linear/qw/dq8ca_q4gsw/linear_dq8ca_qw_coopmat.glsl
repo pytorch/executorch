@@ -45,9 +45,8 @@
  * LDS layout for the MMA operands: K-slab split + ColumnMajor B + per-col
  * skew padding: the int8 WMMA matB lane layout wants 4 K-contiguous bytes
  * per lane, so a RowMajor B in LDS forces per-byte ds_load + v_perm repack
- * chains. ColumnMajor with a +1-uint skew per column gives one ds_load_b32
- * per lane with a bank-conflict-free col stride. Each uint holds 4 packed
- * int8.
+ * chains. ColumnMajor with a 16-byte skew per column preserves the required
+ * 16-byte stride alignment. Each uint holds 4 packed int8.
  *
  * Tile hierarchy (yaml): WG_TILE 128x64, WG_TILE_K = 32, and 256 threads.
  * Devices with a native subgroup size of 64 use four subgroup-64 16x16x16
@@ -142,7 +141,7 @@ const uint MMAS_PER_SG_N = SG_TILE_N / MMA_N;
 
 const uint A_SLAB_INT8     = WG_TILE_M * MMA_K;
 const uint B_USEFUL_U32    = MMA_K / 4u;
-const uint B_STRIDE_U32    = B_USEFUL_U32 + 1u; // +1 skew
+const uint B_STRIDE_U32    = B_USEFUL_U32 + 4u; // 16-byte skew
 const uint B_SLAB_U32      = WG_TILE_N * B_STRIDE_U32;
 const uint NUM_K_SLABS     = WG_TILE_K / MMA_K;
 
