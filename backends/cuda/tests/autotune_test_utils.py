@@ -68,10 +68,15 @@ class SaturatedCpu:
 
 
 @contextlib.contextmanager
-def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
+def record_autotune_picks(
+    cpu: SaturatedCpu, picks: list, measure: bool = True
+) -> Iterator[None]:
     """For each autotune decision taken inside the context, re-time every
     candidate with the CPU paused (CUDA-graph timing, best of two) and append
-    a ``Pick`` with what the pick costs against the best candidate."""
+    a ``Pick`` with what the pick costs against the best candidate.
+
+    With ``measure=False`` nothing is re-timed: each decision is recorded with
+    its candidate count and a regret of 1.0."""
     orig_kernel = CachingAutotuner.benchmark_all_configs
     orig_choices = AlgorithmSelectorCache.benchmark_choices
 
@@ -87,23 +92,29 @@ def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
 
     def kernel_hook(self, *args, **kwargs):
         timings = orig_kernel(self, *args, **kwargs)
-        with cpu.paused(), cgt.cuda_graph_timing():
-            reference = {
-                launcher: min(self.bench(launcher, *args, **kwargs) for _ in range(2))
-                for launcher in timings
-            }
-        self.reset_to_zero_args(*args, **kwargs)
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    launcher: min(
+                        self.bench(launcher, *args, **kwargs) for _ in range(2)
+                    )
+                    for launcher in timings
+                }
+            self.reset_to_zero_args(*args, **kwargs)
         kind = "custom" if self.custom_kernel else "inductor"
         record(kind, self.inductor_meta.get("kernel_name"), timings, reference)
         return timings
 
     def choices_hook(cls, choices, autotune_args, *args, **kwargs):
         timings = orig_choices.__func__(cls, choices, autotune_args, *args, **kwargs)
-        with cpu.paused(), cgt.cuda_graph_timing():
-            reference = {
-                c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
-                for c in timings
-            }
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
+                    for c in timings
+                }
         record("template", type(next(iter(timings))).__name__, timings, reference)
         return timings
 
