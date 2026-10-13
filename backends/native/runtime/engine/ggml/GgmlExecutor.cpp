@@ -3116,7 +3116,13 @@ class GraphBuilder {
         .rhs = right.tensor,
         .sizes = broadcast_shape(left.sizes, right.sizes),
     };
-    if (force_f32 || out.lhs->type != out.rhs->type) {
+    // ggml has no integer arithmetic kernels; F32 holds the I32 values the
+    // engine carries exactly up to 2^24.
+    const auto is_integer = [](const ggml_tensor* t) {
+      return t->type == GGML_TYPE_I8 || t->type == GGML_TYPE_I16 ||
+          t->type == GGML_TYPE_I32 || t->type == GGML_TYPE_I64;
+    };
+    if (force_f32 || out.lhs->type != out.rhs->type || is_integer(out.lhs)) {
       out.lhs = as_f32(out.lhs);
       out.rhs = as_f32(out.rhs);
     }

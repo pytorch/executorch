@@ -476,6 +476,17 @@ class GgmlOpsTest(unittest.TestCase):
     def test_add_scalar(self):
         self._check(Lambda(lambda x: x + 2.0), (torch.randn(2, 3, 4),))
 
+    def test_int64_arithmetic(self):
+        x = torch.arange(6).reshape(2, 3)
+        for name, fn in {
+            "add scalar": lambda x: x + 1,
+            "mul scalar": lambda x: x * 2,
+            "sub tensor": lambda x: x - x * x,
+            "add then float": lambda x: (x + 1).float(),
+        }.items():
+            with self.subTest(op=name):
+                self._check(Lambda(fn), (x,))
+
     def test_sub_scalar(self):
         self._check(Lambda(lambda x: x - 2.0), (torch.randn(2, 3, 4),))
 
