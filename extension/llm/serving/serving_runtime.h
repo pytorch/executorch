@@ -51,9 +51,11 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new sessions; zero disables caching.
-  // Explicit open, reset, and same-session replay bypass the cache. Snapshots
-  // may outlive their source; misses/refusals fall back to full prefill.
+  // Opt-in prefix reuse for new sessions and clean same-session replacements.
+  // Zero disables both. Explicit open/reset bypass reuse. Replacement clones
+  // the matching committed prefix, trying retained snapshots if the live
+  // source refuses; snapshots may outlive their source.
+  // Misses/refusals fall back to full prefill.
   // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
   // when enabled. Backend numerical parity requires model-specific validation.
   std::size_t prefix_cache_capacity = 0;
@@ -139,8 +141,9 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Same-key execution overlap is Busy. Work admitted after close/reset waits
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
-  // capture cleanup. Exact strict prefixes continue; other histories
-  // cold-replay without caching. Sinks share one delivery thread and must do
+  // capture cleanup. Exact strict prefixes continue; clean replacements may
+  // clone a common committed prefix when prefix caching is enabled. Other
+  // histories cold-replay. Sinks share one delivery thread and must do
   // short, bounded work: no blocking I/O, waits for runtime work, or
   // synchronous shutdown/destruction of the runtime. A text/flush sink throw
   // disables output and selects a failure. A terminal sink throw is logged;

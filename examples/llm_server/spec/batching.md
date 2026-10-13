@@ -11,15 +11,26 @@ speculative drafting/verification remain inside the runner and executor.
 - Prompts are full inputs, made from ordered text and exact token-ID segments.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
-- Exact strict history extensions reuse the existing session. Equal, mismatched,
-  or dirty histories cold-replay. Reset destroys the old session and reopens
+- Exact strict history extensions reuse the existing session. With prefix
+  caching enabled, clean equal/shortened/mismatched histories can clone their
+  longest common committed prefix and prefill the remaining suffix. Dirty
+  histories and cache misses cold-replay. If the live source cannot clone at
+  the matching boundary, retained prefix snapshots are tried first.
+  Reset destroys the old session and reopens
   under the same reserved key; failed reopen leaves that key unavailable.
 - Prefix caching is optional and disabled by default. It supports both greedy
-  and sampled requests, but only for implicit new-session initialization, never
-  ordinary continuation, explicit open, reset, or replay. Snapshot capacity is
+  and sampled requests for implicit new-session initialization and clean prompt
+  replacement. Explicit open/reset bypass reuse. Snapshot capacity is
   additional to logical serving capacity. The worker's `--prefix_cache_entries`
-  option reserves those snapshots plus one transient capture row without reducing
-  logical `--max_sessions`.
+  option reserves those snapshots plus one transient row without reducing
+  logical `--max_sessions`. Replacement cloning uses that row only when no
+  snapshot capture is pending, preserves the public session key, and reports
+  `session_reset_reason=prefix_clone`. It excludes pending predictions and
+  leaves at least one prompt token for a forward with the new sampling policy.
+  Cloning requires complete model state at one boundary: attention KV,
+  convolution, and recurrent/SSM state. Executors without historical rewind
+  may clone an unchanged earlier snapshot at its own boundary and prefill the
+  remaining suffix. Missing state must be refused, never partially reused.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
@@ -124,7 +135,7 @@ records distinct session IDs in each `execute` call.
 These checks prove concurrent admission and a multi-session executor batch,
 including requests through the OpenAI endpoint. They also exercise cancellation,
 slow Python consumer isolation, exact-ID continuation, reset/close, out-of-order reserved
-request IDs, creation-only prefix caching through the Python runtime, and
+request IDs, prefix caching through the Python runtime, and
 unknown-versus-empty replay metadata. They do not prove a combined real-model
 forward.
 
