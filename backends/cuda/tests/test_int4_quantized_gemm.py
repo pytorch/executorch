@@ -199,6 +199,19 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
         self.assertGreater(counts["pooled"], 0)
 
+    def test_a_failing_precompile_does_not_block_the_launch(self) -> None:
+        # A shape no other test tunes, so the launch tries to precompile it.
+        n, k, bucket = 320, 1792, 1
+        weights = _packed(n, k, seed=29)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        autotuner = int4_kernel._BUCKET_KERNELS[bucket]
+        with mock.patch.object(
+            autotuner, "warmup", side_effect=RuntimeError("no precompile")
+        ), self.assertLogs(quantized_gemm_family.logger, "WARNING") as logs:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertIn("no precompile", "\n".join(logs.output))
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
     def test_the_tuning_key_is_the_autotuners_cache_key(self) -> None:
         # _tuning_key mirrors Triton's Autotuner.run; check it against the key
         # Triton stored its pick under.

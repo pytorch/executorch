@@ -140,6 +140,3 @@ class CudaWeightReuseTest(unittest.TestCase):
             flipped[index] ^= 1
             self.assertNotEqual(fingerprint(base), fingerprint(flipped), index)
 
-
-if __name__ == "__main__":
-    unittest.main()
