@@ -1745,7 +1745,13 @@ def get_softmax_inputs():
 
 
 @register_test_suite(
-    ["aten.amax.default", "aten.amin.default", "aten.sum.dim_IntList", "aten.mean.dim"]
+    [
+        "aten.amax.default",
+        "aten.amin.default",
+        "aten.sum.dim_IntList",
+        "aten.mean.dim",
+        "aten.any.dim",
+    ]
 )
 def get_reduce_op_inputs():
     test_suite = VkTestSuite(get_reduce_inputs())
@@ -1841,6 +1847,7 @@ def get_var_inputs():
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
         "aten.log10.default",
+        "aten.log1p.default",
         "aten.round.default",
         "aten.tan.default",
         "aten.relu6.default",
