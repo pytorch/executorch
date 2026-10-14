@@ -1276,7 +1276,9 @@ def _conv2d_suite() -> WebGPUTestSuite:
     # folded by the `transposed` arg). NCHW fp32. Routing coverage (all vs the
     # same fp64 golden): patch_embed/conv3x3_pad1/strided are groups==1 → im2col
     # tiled GEMM; grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise
-    # (groups=8, icpg=1) → direct scalar; transpose2x → conv_transpose2d.
+    # (groups=8, icpg=1) → direct scalar; transpose2x_tiled/transpose3x
+    # (stride == kernel) → conv_transpose2d_gemm; transpose2x (too small for the
+    # GEMM) and transpose_overlap → conv_transpose2d gather.
     # No batched (B>1) case: check_conv_node in backends/vulkan/op_registry.py
     # refuses to delegate a 4-D convolution whose batch is not 1, so the export
     # would fall back to CPU and test nothing. Add one back once it is accepted.
@@ -1336,6 +1338,54 @@ def _conv2d_suite() -> WebGPUTestSuite:
                     "transposed": True,
                 },
                 inputs=(InputSpec(shape=(1, 4, 4, 4), gen=_chw_ramp),),
+            ),
+            Case(
+                name="transpose2x_tiled",
+                construct={
+                    "in_ch": 40,
+                    "out_ch": 12,
+                    "kernel": 2,
+                    "stride": 2,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 40, 63, 67), gen=_chw_ramp),),
+            ),
+            Case(
+                name="transpose3x",
+                construct={
+                    "in_ch": 16,
+                    "out_ch": 5,
+                    "kernel": 3,
+                    "stride": 3,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 16, 61, 71), gen=_chw_ramp),),
+            ),
+            # Large enough for the GEMM, but needs more tiles than one dispatch
+            # dimension allows -> gather.
+            Case(
+                name="transpose2x_grid_limit",
+                construct={
+                    "in_ch": 16,
+                    "out_ch": 2,
+                    "kernel": 2,
+                    "stride": 2,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 16, 2048, 1024), gen=_chw_ramp),),
+                heavy=True,
+            ),
+            Case(
+                name="transpose_overlap",
+                construct={
+                    "in_ch": 4,
+                    "out_ch": 4,
+                    "kernel": 3,
+                    "stride": 2,
+                    "padding": 1,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 4, 5, 5), gen=_chw_ramp),),
             ),
         ],
         atol=1e-4,

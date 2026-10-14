@@ -48,6 +48,7 @@
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_gemm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_av_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
@@ -155,7 +156,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 137> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 138> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -428,6 +429,13 @@ constexpr std::array<WebGPUShaderInfo, 137> kShaderRegistry = {{
         kConvTranspose2dWorkgroupSizeX,
         kConvTranspose2dWorkgroupSizeY,
         kConvTranspose2dWorkgroupSizeZ,
+    },
+    {
+        "conv_transpose2d_gemm",
+        kConvTranspose2dGemmWGSL,
+        kConvTranspose2dGemmWorkgroupSizeX,
+        kConvTranspose2dGemmWorkgroupSizeY,
+        kConvTranspose2dGemmWorkgroupSizeZ,
     },
     {
         "conv_with_clamp",
