@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
 import importlib
 import importlib.util
 import os
 import re
 import sys
 import unittest
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -67,6 +69,49 @@ class PybindingsNoAtenTest(unittest.TestCase):
                     np.array([2.0], dtype=np.float32),
                 )
             )
+
+    def test_executorch_result_array_copy_contract(self) -> None:
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        output = module(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+        )[0]
+        view = np.asarray(output)
+        for copy in (None, False):
+            for dtype in (None, np.dtype("float32")):
+                with self.subTest(copy=copy, dtype=dtype):
+                    array = output.__array__(dtype=dtype, copy=copy)
+                    self.assertTrue(np.shares_memory(array, view))
+        copied = output.__array__(copy=True)
+        self.assertFalse(np.shares_memory(copied, view))
+        copied[0] = 99.0
+        np.testing.assert_array_equal(view, np.array([3.0], dtype=np.float32))
+        for copy in (None, True):
+            converted = output.__array__(dtype=np.float64, copy=copy)
+            self.assertEqual(converted.dtype, np.dtype("float64"))
+            self.assertFalse(np.shares_memory(converted, view))
+        with self.assertRaisesRegex(ValueError, "requires a copy"):
+            output.__array__(dtype=np.float64, copy=False)
+
+    def test_borrowed_result_does_not_create_method_cycle(self) -> None:
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        output = method(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32)),
+            clone_outputs=False,
+        )[0]
+        method.set_inputs((output, output))
+        method_ref = weakref.ref(method)
+        del method
+        gc.collect()
+        self.assertIsNone(method_ref())
+        np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
 
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None, "torch is not installed"

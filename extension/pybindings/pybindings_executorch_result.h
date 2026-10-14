@@ -102,7 +102,8 @@ class PyExecuTorchResult final {
         owner_(std::move(owner)) {
     if (!tensor.device().is_cpu()) {
       throw std::runtime_error(
-          "ExecuTorch results only support CPU outputs until DLPack is enabled");
+          "ExecuTorchResult supports CPU outputs. Set "
+          "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=torch for CUDA outputs.");
     }
     if (clone) {
       storage_.resize(nbytes_);

@@ -6,11 +6,13 @@
 
 # pyre-unsafe
 
+import gc
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import weakref
 from io import StringIO
 
 import numpy as np
@@ -110,6 +112,33 @@ class PybindingsTest(unittest.TestCase):
 
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
         self.assertTrue(torch.equal(method(array)[0], inputs[0] + inputs[0]))
+
+    def test_empty_torch_output_preserves_layout_and_device(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings convert outputs through Python")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        input_tensor = torch.empty(0, 2, 3, 4).to(memory_format=torch.channels_last)
+        program = to_edge(export(Identity(), (input_tensor,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            )
+        )
+        module = self.load_fn(program.buffer)
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        for executor in (module, method):
+            for clone_outputs in (True, False):
+                with self.subTest(executor=type(executor), clone=clone_outputs):
+                    with torch.device("meta"):
+                        output = executor(input_tensor, clone_outputs=clone_outputs)[0]
+                    self.assertEqual(output.device, input_tensor.device)
+                    self.assertEqual(output.stride(), input_tensor.stride())
+                    self.assertEqual(
+                        executor(output)[0].stride(), input_tensor.stride()
+                    )
 
     def test_torch_inputs_are_safe_across_threads(self):
         if self.kernel_mode != "portable":
@@ -697,6 +726,74 @@ print("all calls finished")
         self.assertTrue(torch.equal(outputs[0], inputs[0]))
         self.assertTrue(torch.equal(outputs[1], inputs[0] + inputs[1]))
 
+    def test_borrowed_output_does_not_create_method_cycle(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings retain Python tensor owners")
+        for planned_input in (True, False):
+            for planned_output in (True, False):
+                with self.subTest(input=planned_input, output=planned_output):
+                    program, inputs = create_program(
+                        ModuleAddSingleInput(),
+                        et_config=ExecutorchBackendConfig(
+                            memory_planning_pass=MemoryPlanningPass(
+                                alloc_graph_input=planned_input,
+                                alloc_graph_output=planned_output,
+                            )
+                        ),
+                    )
+                    method = self.load_prog_fn(program.buffer).load_method("forward")
+                    output = method(inputs, clone_outputs=False)[0]
+                    method.set_inputs(output)
+                    expected = inputs[0] * 2
+                    if planned_output:
+                        previous_ref = weakref.ref(output)
+                        next_output = method(output, clone_outputs=False)[0]
+                        method.set_inputs(next_output)
+                        del output
+                        gc.collect()
+                        self.assertIsNone(previous_ref())
+                        output = next_output
+                        expected *= 2
+                    method_ref = weakref.ref(method)
+                    del method
+                    gc.collect()
+                    self.assertIsNone(method_ref())
+                    torch.testing.assert_close(output, expected)
+
+    def test_borrowed_output_preserves_replaced_input_storage(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings retain Python tensor owners")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            )
+        )
+        for buffer_input in (True, False):
+            with self.subTest(buffer_input=buffer_input):
+                value = (
+                    np.full((2, 2), 3.0, dtype=np.float32)
+                    if buffer_input
+                    else torch.full((2, 2), 3.0)
+                )
+                value_ref = weakref.ref(value)
+                method = self.load_prog_fn(program.buffer).load_method("forward")
+                output = method(value, clone_outputs=False)[0]
+                method.set_inputs(np.zeros((2, 2), dtype=np.float32))
+                method_ref = weakref.ref(method)
+                del value, method
+                gc.collect()
+                self.assertIsNone(method_ref())
+                self.assertIsNotNone(value_ref())
+                torch.testing.assert_close(output, torch.full((2, 2), 3.0))
+                del output
+                gc.collect()
+                self.assertIsNone(value_ref())
+
     def test_failed_set_inputs_keeps_buffer_storage_alive(self):
         exported_program, inputs = create_program(
             ModuleAdd(),
@@ -1173,7 +1270,7 @@ print("all calls finished")
         # Asserts the device is named as Python spells it, since an uppercased or
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU tensors", message)
+        self.assertIn("only CPU and CUDA tensors", message)
 
     def test_rejects_noncanonical_empty_strides(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -1225,7 +1322,7 @@ print("all calls finished")
             method.set_inputs([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU tensors", message)
+        self.assertIn("only CPU and CUDA tensors", message)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
@@ -1348,6 +1445,108 @@ print("all calls finished")
             torch.testing.assert_close(
                 method.execute(cuda_inputs)[0].cpu(), torch.full((4, 4), 4.0)
             )
+
+    def test_cuda_torch_tensor_interchange_without_aten(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings use the Python Torch adapter")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        device_indices = sorted({0, torch.cuda.device_count() - 1})
+        for device_index in device_indices:
+            for dtype in (torch.float32, torch.float16, torch.bfloat16):
+                for empty in (True, False):
+                    shape = (0, 2, 3, 4) if empty else (2, 3, 4, 5)
+                    input_tensor = torch.arange(
+                        torch.Size(shape).numel() + 5,
+                        device=f"cuda:{device_index}",
+                        dtype=dtype,
+                    )[5:].reshape(shape)
+                    for memory_format in (torch.contiguous_format, torch.channels_last):
+                        with self.subTest(
+                            device=device_index,
+                            dtype=dtype,
+                            empty=empty,
+                            memory_format=memory_format,
+                        ):
+                            value = (
+                                input_tensor
+                                if memory_format == torch.contiguous_format
+                                else input_tensor.to(memory_format=memory_format)
+                            )
+                            program = to_edge(
+                                export(Identity(), (value.cpu(),))
+                            ).to_executorch(
+                                ExecutorchBackendConfig(
+                                    memory_planning_pass=MemoryPlanningPass(
+                                        alloc_graph_input=False,
+                                        alloc_graph_output=False,
+                                    )
+                                )
+                            )
+                            # This identity has no kernels or device arenas, so
+                            # interchange does not require a linked CUDA backend.
+                            schema = program.executorch_program
+                            for entry in schema.execution_plan[0].values:
+                                if isinstance(entry.val, Tensor):
+                                    entry.val.extra_tensor_info = ExtraTensorInfo(
+                                        device_type=DeviceType.CUDA,
+                                        device_index=device_index,
+                                    )
+                            data = bytes(serialize_pte_binary(PTEFile(schema)))
+                            module = self.load_fn(data)
+                            method = self.load_prog_fn(data).load_method("forward")
+                            for executor in (module, method):
+                                borrowed = executor(value, clone_outputs=False)[0]
+                                self.assertEqual(borrowed.device, value.device)
+                                self.assertEqual(borrowed.dtype, value.dtype)
+                                self.assertEqual(borrowed.stride(), value.stride())
+                                self.assertEqual(borrowed.data_ptr(), value.data_ptr())
+                                cloned = executor(value)[0]
+                                self.assertEqual(cloned.device, value.device)
+                                self.assertEqual(cloned.stride(), value.stride())
+                                torch.testing.assert_close(cloned.cpu(), value.cpu())
+                                if not empty:
+                                    self.assertNotEqual(
+                                        cloned.data_ptr(), value.data_ptr()
+                                    )
+
+    def test_torch_input_device_must_match_method(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings inspect Torch device metadata")
+
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        value = torch.ones(2, 2)
+        program = to_edge(export(Identity(), (value,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            )
+        )
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=3
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+        module = self.load_fn(data)
+        method = self.load_prog_fn(data).load_method("forward")
+        for executor in (module, method):
+            with self.assertRaisesRegex(ValueError, "cpu.*expects cuda:3"):
+                executor(value)
 
     def test_device_planned_method_allocates_on_the_device(self):
         # The other device test covers the refusal. This one covers what the

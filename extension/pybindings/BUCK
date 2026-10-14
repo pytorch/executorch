@@ -17,6 +17,11 @@ fbcode_target(_kind = runtime.export_file,
 )
 
 fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_dlpack.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
+fbcode_target(_kind = runtime.export_file,
     name = "pybindings_executorch_result.h",
     visibility = ["//executorch/extension/pybindings/..."],
 )

@@ -11,9 +11,9 @@ pip install . --no-build-isolation
 ## Portable tensor mode
 
 Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
-arrays or other dense objects implementing Python's buffer protocol. If
-PyTorch is installed, `torch.Tensor` inputs are inspected through their Python
-attributes instead of being cast to `at::Tensor`.
+arrays or other dense objects implementing Python's buffer protocol. CPU and
+CUDA `torch.Tensor` inputs are inspected through their public Python attributes
+instead of being cast to `at::Tensor`; CUDA pointers retain their device index.
 
 Portable Torch inputs must have dense strides compatible with the exported
 method input's dimension order. This includes channels last and channels last
@@ -23,6 +23,10 @@ dimensions are normalized to the exported layout without copying tensor data.
 For compatibility with the existing API, importing `portable_lib` imports
 PyTorch and portable bindings create output tensors through its public Python
 API. The extension itself does not link against ATen or PyTorch.
+CUDA outputs use a private DLPack capsule consumed by `torch.from_dlpack`, and
+`clone_outputs=True` copies them through Torch on their original CUDA device.
+The `executorch` output mode supports CPU buffers; CUDA outputs require the
+default Torch output mode.
 
 To run without PyTorch, select `ExecuTorchResult` outputs before importing the
 bindings. The setting is fixed when the extension loads, so importing PyTorch
