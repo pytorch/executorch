@@ -433,6 +433,49 @@ class GgmlOpsTest(unittest.TestCase):
     def test_silu(self):
         self._check(Lambda(F.silu), (torch.randn(2, 3, 4),))
 
+    def test_swiglu_arithmetic_with_shared_silu(self):
+        def forward(x, up):
+            silu = x * torch.sigmoid(x)
+            return silu, silu * up
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward), (torch.randn(2, 3, 4), torch.randn(2, 3, 4)), graph_ops=ops
+        )
+        # x * sigmoid(x) becomes SILU, and SILU * up becomes SWIGLU.
+        self.assertEqual(ops["SIGMOID"], 0)
+        self.assertGreater(ops["SILU"], 0)
+        self.assertGreater(ops["SWIGLU"], 0)
+
+    def test_swiglu_and_silu_operand_orders(self):
+        cases = {
+            "up * silu(x)": (lambda x, up: up * F.silu(x), "SWIGLU", "SILU"),
+            "sigmoid(x) * x": (
+                lambda x, up: torch.sigmoid(x) * x + up,
+                "SILU",
+                "SIGMOID",
+            ),
+        }
+        for name, (fn, fused, absent) in cases.items():
+            with self.subTest(name):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(fn),
+                    (torch.randn(2, 3, 4), torch.randn(2, 3, 4)),
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops[fused], 0)
+                self.assertEqual(ops[absent], 0)
+
+    def test_swiglu_broadcast_not_rewritten(self):
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x, up: (x * torch.sigmoid(x)) * up),
+            (torch.randn(2, 3, 4), torch.randn(4)),
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["SWIGLU"], 0)
+
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 

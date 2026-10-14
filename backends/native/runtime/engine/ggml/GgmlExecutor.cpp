@@ -1967,7 +1967,35 @@ class GraphBuilder {
       if (key == "aten.add.Tensor") {
         result = ggml_add(ctx, lhs, right);
       } else if (key == "aten.mul.Tensor") {
-        result = ggml_mul(ctx, lhs, right);
+        // Recognize the backend-independent arithmetic spellings of SiLU
+        // and SwiGLU. A single ggml GLU node also lets CUDA use its generic
+        // fused quantized matvec path when the operands qualify.
+        const auto is_unary = [](const ggml_tensor* t, ggml_unary_op op) {
+          return t->op == GGML_OP_UNARY && ggml_get_unary_op(t) == op;
+        };
+        const auto matches_swiglu = [&](ggml_tensor* gate, ggml_tensor* up) {
+          ggml_tensor* x = gate->src[0];
+          return is_unary(gate, GGML_UNARY_OP_SILU) && x != nullptr &&
+              gate->type == GGML_TYPE_F32 && up->type == GGML_TYPE_F32 &&
+              ggml_are_same_shape(gate, up) && ggml_is_contiguous_1(x) &&
+              ggml_is_contiguous_1(up);
+        };
+        const auto matches_silu = [&](ggml_tensor* sigmoid, ggml_tensor* x) {
+          return is_unary(sigmoid, GGML_UNARY_OP_SIGMOID) &&
+              sigmoid->src[0] == x && x->type == GGML_TYPE_F32 &&
+              ggml_are_same_shape(sigmoid, x);
+        };
+        if (matches_swiglu(lhs, right)) {
+          result = ggml_swiglu_split(ctx, lhs->src[0], right);
+        } else if (matches_swiglu(right, lhs)) {
+          result = ggml_swiglu_split(ctx, right->src[0], lhs);
+        } else if (matches_silu(lhs, right)) {
+          result = ggml_silu(ctx, right);
+        } else if (matches_silu(right, lhs)) {
+          result = ggml_silu(ctx, lhs);
+        } else {
+          result = ggml_mul(ctx, lhs, right);
+        }
       } else if (key == "aten.sub.Tensor") {
         result = ggml_sub(ctx, lhs, right);
       } else {
