@@ -20,6 +20,10 @@ reduce_per_row_buffer:
       - VALUE: int32
   shader_variants:
     - NAME: sum_per_row_buffer
+    - NAME: any_per_row_buffer_uint8
+      DTYPE: uint8
+      UPDATE_ACCUM_FN: update_accum_amax
+      MERGE_ACCUM_FN: merge_accum_amax
     - NAME: mean_per_row_buffer
       POSTPROCESS_ACCUM_FN: postprocess_accum_mean
     - NAME: amax_per_row_buffer

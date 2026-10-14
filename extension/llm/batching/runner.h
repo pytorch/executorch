@@ -37,6 +37,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -90,6 +91,9 @@ struct ET_EXPERIMENTAL GenerationUpdate {
 // that generation as Failed.
 using GenerationCallback = std::function<void(const GenerationUpdate&)>;
 
+using GenerationInput ET_EXPERIMENTAL =
+    std::variant<std::vector<Token>, PreparedInputPtr>;
+
 struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
   SamplingParams sampling;
@@ -126,8 +130,9 @@ class ET_EXPERIMENTAL GenerationHandle {
   // and moved-from handles.
   bool valid() const noexcept;
 
-  // Requests cancellation, which lands within one step. A no-op on an invalid
-  // handle.
+  // Requests cancellation, which lands within one execution step. It does not
+  // interrupt an in-progress Executor::execute() call, including any work the
+  // executor performs within that call. A no-op on an invalid handle.
   void cancel() const;
 
   // Becomes true after the terminal callback returns or throws, without
@@ -217,6 +222,10 @@ class ET_EXPERIMENTAL Session {
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
+  // Opaque backing must pass this Runner's Executor::accepts() check and have
+  // a stable logical size and layout. A pending prediction is submitted as
+  // separate raw prefill before the opaque chunks.
+  //
   // The delta must be non-empty and its exclusive end must fit in Position.
   // Invalid input and a second concurrent generation end as Failed. A default
   // or moved-from Session also completes synchronously as Failed; a retained
@@ -231,7 +240,7 @@ class ET_EXPERIMENTAL Session {
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
   GenerationHandle generate_async(
-      std::vector<Token> delta,
+      GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled = {}) const;
@@ -248,6 +257,9 @@ class ET_EXPERIMENTAL Session {
 };
 
 enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
+
+enum class ET_EXPERIMENTAL AcceptanceError { Unavailable, Failed };
+using AcceptanceResult ET_EXPERIMENTAL = std::variant<bool, AcceptanceError>;
 
 class ET_EXPERIMENTAL Runner {
  public:
@@ -274,6 +286,16 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
+
+  // Any thread. Checks metadata compatibility on the initialized engine thread
+  // without opening or changing sessions. Returns true for accepted input and
+  // false for rejected or null input. Stopping or failed initialization returns
+  // AcceptanceError::Unavailable; an exception from accepts() returns
+  // AcceptanceError::Failed.
+  // Acceptance reserves no capacity and does not guarantee execution
+  // success. The command releases its input reference before the future becomes
+  // ready. Never wait for this future in a callback serviced by this runner.
+  std::future<AcceptanceResult> accepts_async(PreparedInputPtr input);
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

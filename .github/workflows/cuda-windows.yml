@@ -17,6 +17,11 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
+      # Read only by unittest-cuda-runtime-windows; the other jobs filter on
+      # their own paths and stay skipped.
+      - .ci/scripts/test_cuda_runtime_windows.ps1
+      - .ci/scripts/install_nvidia_driver_windows.ps1
+      - tools/cmake/Test.cmake
   workflow_dispatch:
 
 concurrency:
@@ -221,6 +226,41 @@ jobs:
           }
 
           .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
+        }"
+
+  # The counterpart of cuda.yml's unittest-cuda-runtime on Windows. The Windows GPU runners
+  # carry data-center GPUs in TCC mode, which have no memory pools, so this also covers the
+  # allocator's synchronous fallback that the Linux job cannot reach.
+  unittest-cuda-runtime-windows:
+    name: unittest-cuda-runtime-windows
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_cuda_runtime_windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/install_nvidia_driver_windows.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/Test.cmake') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      timeout: 120
+      runner: windows.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0'
+          \$env:CUDA_PATH = \$env:CUDA_HOME
+          .ci/scripts/setup-windows.ps1
+          .ci/scripts/test_cuda_runtime_windows.ps1
         }"
 
   delete-model-cuda-windows-artifacts:

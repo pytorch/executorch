@@ -23,7 +23,7 @@ constexpr const char* kVgfNeuralStatisticsDelegateEventName =
     "VGF_NEURAL_STATISTICS";
 constexpr const char* kVgfNeuralStatisticsSchema =
     "executorch.vgf.neural_statistics";
-constexpr int kVgfNeuralStatisticsSchemaVersion = 1;
+constexpr int kVgfNeuralStatisticsSchemaVersion = 2;
 
 constexpr const char* kVgfNeuralStatisticsEnableEnv =
     "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
@@ -41,6 +41,19 @@ struct VgfNeuralStatisticsRuntimeConfig {
 };
 
 VgfNeuralStatisticsRuntimeConfig get_vgf_neural_statistics_runtime_config();
+
+// Self-describing information stored next to the raw statistics payload.
+// This is deliberately separate from statistics_info, whose bytes are
+// implementation-defined from ExecuTorch's point of view.
+struct VgfNeuralStatisticsMetadataContext {
+  int mode_index = 1;
+
+  bool target_available = false;
+  std::string device_name;
+  uint32_t vendor_id = 0;
+  uint32_t device_id = 0;
+  uint32_t driver_version = 0;
+};
 
 // One binary payload from neural statistics API
 struct VgfNeuralStatisticsBlob {
@@ -109,6 +122,8 @@ struct VgfNeuralStatisticsCollection {
   bool data_available = false;
   // Top level explanation to the user if something went wrong
   std::string reason;
+  // Information needed to interpret statistics_memory without guessing.
+  VgfNeuralStatisticsMetadataContext metadata_context;
   // Per segment results
   std::vector<VgfCollectedSegmentNeuralStatistics> segments;
 };
@@ -127,18 +142,21 @@ std::string serialize_vgf_neural_statistics_collection(
 
 // Creates metadata JSON string when collection cannot happen
 std::string make_vgf_neural_statistics_unavailable_metadata(
-    const std::string& reason);
+    const std::string& reason,
+    const VgfNeuralStatisticsMetadataContext& metadata_context);
 
 // High level function used by the backend
 std::string collect_vgf_neural_statistics_metadata(
     VkDevice device,
-    const std::vector<VgfNeuralStatisticsSegmentContext>& segments);
+    const std::vector<VgfNeuralStatisticsSegmentContext>& segments,
+    const VgfNeuralStatisticsMetadataContext& metadata_context);
 
 // Functions for testing:
 // Define mackable function for testing
-using VgfNeuralStatisticsCollectorForTest = std::function<std::string(
-    VkDevice,
-    const std::vector<VgfNeuralStatisticsSegmentContext>&)>;
+using VgfNeuralStatisticsCollectorForTest =
+    std::function<VgfNeuralStatisticsCollection(
+        VkDevice,
+        const std::vector<VgfNeuralStatisticsSegmentContext>&)>;
 
 //  This lets a unit test override the real collector
 void set_vgf_neural_statistics_collector_for_test(

@@ -11,6 +11,7 @@
 #include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/util/size_util.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -20,6 +21,7 @@
 #include <cstdint>
 #include <ctime>
 #include <mutex>
+#include <new>
 #include <vector>
 
 namespace executorch::backends::cuda {
@@ -57,20 +59,37 @@ static std::once_flag g_rng_init_flag;
 
 // Initialize RNG state on the given stream.
 // Must be called during warmup (before graph capture). Subsequent calls
-// from any thread are no-ops thanks to std::call_once.
-void ensure_rng_init(cudaStream_t stream) {
-  std::call_once(g_rng_init_flag, [&]() {
-    cudaMallocAsync(&d_rng, sizeof(RngState), stream);
-    RngState h;
-    h.seed = static_cast<unsigned long long>(time(nullptr));
-    h.counter = 0;
-    h.base_scratch = 0;
-    cudaMemcpyAsync(
-        d_rng, &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
-    // Synchronize to ensure the copy completes before we return
-    // (the host-side RngState `h` is on the stack).
-    cudaStreamSynchronize(stream);
-  });
+// from any thread are no-ops thanks to std::call_once. A failed allocation
+// throws out of the call_once, which leaves it not done, so the next call
+// tries again rather than every later launch using a null state.
+bool ensure_rng_init(cudaStream_t stream) {
+  try {
+    std::call_once(g_rng_init_flag, [&]() {
+      // The current device: the stream callers pass from getCurrentCUDAStream
+      // may have been created on it whatever index they looked up, and the
+      // cudaMalloc fallback on a device without memory pools follows this
+      // index rather than the stream.
+      auto rng =
+          CudaAllocator::allocate_stream_ordered(sizeof(RngState), -1, stream);
+      if (!rng.ok()) {
+        throw std::bad_alloc();
+      }
+      d_rng = static_cast<RngState*>(rng.get());
+      RngState h;
+      h.seed = static_cast<unsigned long long>(time(nullptr));
+      h.counter = 0;
+      h.base_scratch = 0;
+      cudaMemcpyAsync(
+          d_rng, &h, sizeof(RngState), cudaMemcpyHostToDevice, stream);
+      // Synchronize to ensure the copy completes before we return
+      // (the host-side RngState `h` is on the stack).
+      cudaStreamSynchronize(stream);
+    });
+  } catch (const std::bad_alloc&) {
+    ET_LOG(Error, "rand: allocating the RNG state failed");
+    return false;
+  }
+  return true;
 }
 
 // Philox-based randint kernel. Reads its base offset from `rng->base_scratch`
@@ -211,7 +230,10 @@ AOTITorchError aoti_torch_cuda_rand(
       "aoti_torch_cuda_rand: failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
 
-  ensure_rng_init(stream);
+  ET_CHECK_OR_RETURN_ERROR(
+      ensure_rng_init(stream),
+      MemoryAllocationFailed,
+      "aoti_torch_cuda_rand: failed to allocate the RNG state");
 
   constexpr int kThreads = 256;
   int blocks = static_cast<int>((numel + kThreads - 1) / kThreads);
@@ -271,7 +293,10 @@ AOTITorchError aoti_torch_cuda_randint_low_out(
       "aoti_torch_cuda_randint_low_out: failed to get CUDA stream");
   cudaStream_t stream = stream_result.get();
 
-  ensure_rng_init(stream);
+  ET_CHECK_OR_RETURN_ERROR(
+      ensure_rng_init(stream),
+      MemoryAllocationFailed,
+      "aoti_torch_cuda_randint_low_out: failed to allocate the RNG state");
 
   int64_t range = high - low;
   int64_t* out_data = static_cast<int64_t*>(out->data_ptr());

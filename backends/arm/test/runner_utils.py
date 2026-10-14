@@ -114,6 +114,8 @@ INFER_SHAPES_PATH = "infer_shapes"
 VULKAN_VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation"
 VULKAN_VALIDATION_ENV = "EXECUTORCH_VGF_VULKAN_VALIDATION"
 VULKAN_VALIDATION_MESSAGE_FILTER_ENV = "VK_LAYER_MESSAGE_ID_FILTER"
+VULKAN_VALIDATION_OBJECT_LIFETIME_ENV = "VK_LAYER_OBJECT_LIFETIME"
+VULKAN_VALIDATION_CORE_ENV = "VK_LAYER_VALIDATE_CORE"
 
 # Temporary VKML workaround: BF16 shaders execute, but VKML currently
 # does not advertise VK_KHR_shader_bfloat16/shaderBFloat16Type.
@@ -861,6 +863,11 @@ def _enable_vulkan_validation(env: dict[str, str]) -> dict[str, str]:
         "VK_KHRONOS_VALIDATION_LOG_FILENAME",
         "stdout",
     )
+
+    # Keep VGF's lifetime-validation contract explicit rather than relying on
+    # the current Validation Layer defaults.
+    env[VULKAN_VALIDATION_OBJECT_LIFETIME_ENV] = "1"
+    env[VULKAN_VALIDATION_CORE_ENV] = "1"
 
     logger.info(
         "Vulkan validation enabled for VKML runtime: %s",
