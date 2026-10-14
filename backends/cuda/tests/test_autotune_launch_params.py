@@ -171,9 +171,9 @@ class AutotuneLaunchParamTest(unittest.TestCase):
                 events.append("exit")
                 return False
 
-        launch = autotune_launch_param(
-            "split_k", (1, 2, 4), candidate_prepass=_Scope
-        )(_toy_launch.__wrapped__)
+        launch = autotune_launch_param("split_k", (1, 2, 4), candidate_prepass=_Scope)(
+            _toy_launch.__wrapped__
+        )
         with autotune_launch_params() as stats:
             launch(self.x, 4)
         self.assertEqual(stats.picks[0].choice, 4)
