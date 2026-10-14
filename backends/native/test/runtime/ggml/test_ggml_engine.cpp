@@ -1054,5 +1054,11 @@ TEST(GgmlEngineTest, RejectsEmbeddingIndicesNotFromAnInput) {
   }
 }
 
+TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
+  GgmlEngineOptions options;
+  options.device = GgmlDevice::Gpu;
+  EXPECT_THROW(GgmlEngineHost::create(options), std::runtime_error);
+}
+
 } // namespace
 } // namespace ptn
