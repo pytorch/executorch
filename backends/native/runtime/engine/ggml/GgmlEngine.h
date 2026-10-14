@@ -30,6 +30,11 @@ struct GgmlEngineOptions {
   // Node capacity of each ggml graph and of the backend scheduler; ggml
   // aborts on a graph that outgrows it.
   size_t graph_size = 4096;
+  // Graphs each executable keeps, keyed by the shapes of all inputs. A call
+  // with cached shapes replays the graph with fresh input bytes, skipping
+  // lowering and allocation; every entry holds its own scheduler allocation.
+  // 0 rebuilds the graph on every call; at most 16.
+  size_t max_cached_graphs = 1;
 };
 
 class GgmlEngineContext;
