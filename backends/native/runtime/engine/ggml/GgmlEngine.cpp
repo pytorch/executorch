@@ -32,6 +32,10 @@ struct GgmlEngineHost::Impl {
     if (options.graph_size == 0) {
       throw std::invalid_argument("ggml: graph size must be positive");
     }
+    if (options.max_cached_graphs > 16) {
+      throw std::invalid_argument(
+          "ggml: at most 16 cached graphs per method are supported");
+    }
     if (options.device == GgmlDevice::Gpu) {
       ggml_backend_dev_t device = select_ggml_gpu_device(options);
       name = std::string("ggml-") +
