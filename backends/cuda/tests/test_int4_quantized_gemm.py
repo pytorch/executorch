@@ -391,7 +391,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             int4_kernel._launch(1, x, *weights, GROUP_SIZE, split_k=4)
 
     def test_ops_are_registered_per_bucket(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4, 8, 16, 32, 64))
+        self.assertEqual(
+            SUPPORTED_BUCKETS,
+            (*(1, 2, 3, 4, 8, 16, 32, 64), 128, 256, 512, 1024, 2048, 4096),
+        )
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(
                 hasattr(torch.ops.triton, f"int4_quantized_gemm_m{bucket}"), bucket

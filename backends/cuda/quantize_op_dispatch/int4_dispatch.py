@@ -13,19 +13,11 @@ torch.export traces through our Triton ops and dequant logic. Routing is by
 torchao's default (mslk/tinygemm) path. The code here executes during eager
 inference and during AOTI export tracing — it does NOT run at .pte runtime.
 
-At .pte runtime, the captured graph is executed by the AOTI-generated .so:
-  - ``triton::int4_quantized_gemm_m{M}`` is a Triton W4A8 DP4A kernel compiled
-    into it (see triton/kernels/int4_quantized_gemm.py).
-  - The inline dequant + F.linear is compiled by inductor into fused Triton
-    dequant + matmul kernels.
-
-Dispatch (``_gemm_family_dispatch.quantized_linear``): when a Triton kernel can
-run, the smallest bucket of ``INT4_QUANTIZED_GEMM`` that supports the inputs
-(static M <= 4 takes its own bucket; a dynamic M provably within [1, 4], e.g. a
-speculative block length in [2, 4], takes the smallest bucket that holds it).
-Everything else (prefill, an unbounded dynamic M, a group size other than 32,
-K not a multiple of 256, other dtypes, CPU eager) uses inline dequant +
-F.linear, never an error.
+At .pte runtime, AOTInductor executes the captured kernels. Supported BF16
+inputs use W4A8 DP4A for M <= 4, fused W4A16 kernels for M <= 64, and
+Q8-activation tensor-core MMQ for M <= 4096. Weights keep their packed storage.
+Dynamic M uses the smallest bucket whose bounds cover the input. Unsupported
+shapes, group sizes, dtypes and CPU eager use dequant + F.linear.
 
 Importing the parent ``quantize_op_dispatch`` package registers this dispatch
 override (along with the other formats) before using nn.Linear with
@@ -118,4 +110,5 @@ def _(func, types, args, kwargs):
         weight_args,
         bias,
         lambda x_2d: _dequant_matmul(x_2d, *weight_args),
+        max_bucket=4096,
     )

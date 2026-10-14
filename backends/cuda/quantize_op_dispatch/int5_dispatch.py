@@ -34,6 +34,9 @@ Importing the parent ``quantize_op_dispatch`` package registers this dispatch
 override (along with the other formats)::
 
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+Large-row BF16 inputs use MMQ buckets through M=4096 when group_size=32.
+Inputs provably within M<=64 retain the existing small-bucket/fallback policy.
+
 """
 
 import torch
@@ -123,4 +126,5 @@ def _(func, types, args, kwargs):
         weight_args,
         bias,
         lambda x_2d: _dequant_matmul_int5(x_2d, *weight_args),
+        max_bucket=4096,
     )

@@ -455,13 +455,20 @@ class TestDecodeDispatch(unittest.TestCase):
                 next(iter(self._bucket_ops(targets))),
             )
 
-    def test_more_than_64_rows_uses_dequant(self):
+    def test_prefill_uses_mmq_and_oversized_inputs_fall_back(self):
         module, _ = _make_int4_linear(256, 512, group_size=32)
-        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
-        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
-        self.assertFalse(
-            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
-        )
+        for m, bounds, bucket in [
+            (65, None, 128),
+            (65, (1, 65), 128),
+            (129, None, 256),
+        ]:
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            self.assertEqual(
+                self._bucket_ops(self._targets(module, x, dynamic_m=bounds)),
+                {"triton.int4_quantized_gemm_m{}.default".format(bucket)},
+            )
+        x = torch.randn(4097, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x)))
 
     def test_other_group_sizes_use_dequant(self):
         # With group size 32 the packed tensor already requires K % 256 == 0,
@@ -514,10 +521,10 @@ class TestFallbacks(unittest.TestCase):
             module, w_ref, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
         )
 
-    def test_more_than_64_rows(self):
+    def test_more_than_4096_rows(self):
         module, w_ref = _make_int4_linear(256, 512, group_size=32)
         self._check(
-            module, w_ref, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+            module, w_ref, torch.randn(4097, 512, dtype=torch.bfloat16, device="cuda")
         )
 
 

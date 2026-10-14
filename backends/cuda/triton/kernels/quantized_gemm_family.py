@@ -90,6 +90,10 @@ class QuantizedGemmFamily:
         signature = _resolved_signature(prototype)
 
         def impl(*args):
+            # AOT decomposition creates fresh symbols; restate the op contract.
+            if bucket > 64:
+                torch._check(args[0].shape[0] >= 1)
+                torch._check(args[0].shape[0] <= bucket)
             self.validate(bucket, *args)
             return launch(bucket, *args)
 

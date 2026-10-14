@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 # Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
 
-"""INT4 GEMM for M <= 64 on ``CudaCoalescedInt4Tensor`` weights.
+"""INT4 GEMM for M <= 4096 on ``CudaCoalescedInt4Tensor`` weights.
 
 The kernels consume ``CudaCoalescedInt4Tensor`` storage directly:
 
@@ -31,6 +31,8 @@ tiles, including M in the key; stages above the K loop trip count are pruned.
 Split-K is timed per shape during AOTI compile (@autotune_launch_param) for
 every bucket; it writes disjoint FP32 partials and uses the shared fixed-order
 reduction.
+Buckets 128-4096 use tensor-core MMQ with K256 Q8 activations.
+
 """
 
 from typing import Optional
@@ -39,6 +41,7 @@ import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
+from executorch.backends.cuda.triton.kernels.q8_mmq import launch_q8_mmq, MMQ_BUCKETS
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     launch_split_k_gemm,
     QuantizedGemmFamily,
@@ -70,7 +73,7 @@ _TL_SUPER_BLOCK = tl.constexpr(256)
 
 _SMALL_BUCKETS = (1, 2, 3, 4)
 _LARGE_BUCKETS = (8, 16, 32, 64)
-SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *_LARGE_BUCKETS)
+SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *_LARGE_BUCKETS, *MMQ_BUCKETS)
 
 
 @triton.jit
@@ -1906,6 +1909,10 @@ def _launch(
     """Launches the bucket's kernel; ``launch_params`` (e.g. ``split_k``) pass
     through to it, so tests and benchmarks can fix a value the compile would
     otherwise time."""
+    if bucket in MMQ_BUCKETS:
+        return launch_q8_mmq(
+            x, qdata, qdata, scale, scale_step, zero, zero_point_step, bits=4
+        )
     launch = _launch_w4a8 if bucket in _SMALL_BUCKETS else _launch_w4a16
     return launch(
         bucket,

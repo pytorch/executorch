@@ -387,13 +387,20 @@ class TestDecodeDispatch(unittest.TestCase):
                 bounds,
             )
 
-    def test_more_than_64_rows_uses_dequant(self):
+    def test_prefill_uses_mmq_and_oversized_inputs_fall_back(self):
         module, _ = self._module()
-        x65 = torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
-        self.assertFalse(self._bucket_ops(self._targets(module, x65)))
-        self.assertFalse(
-            self._bucket_ops(self._targets(module, x65, dynamic_m=(1, 65)))
-        )
+        for m, bounds, bucket in [
+            (65, None, 128),
+            (65, (1, 65), 128),
+            (129, None, 256),
+        ]:
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            self.assertEqual(
+                self._bucket_ops(self._targets(module, x, dynamic_m=bounds)),
+                {"triton.int6_quantized_gemm_m{}.default".format(bucket)},
+            )
+        x = torch.randn(4097, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(self._targets(module, x)))
 
 
 class TestFallbacks(unittest.TestCase):
@@ -435,10 +442,10 @@ class TestFallbacks(unittest.TestCase):
             t, q, scale, 32, torch.randn(2, 512, dtype=torch.bfloat16, device="cuda")
         )
 
-    def test_more_than_64_rows(self):
+    def test_more_than_4096_rows(self):
         t, q, scale = self._cuda_tensor(64, 512, 16)
         self._check(
-            t, q, scale, 16, torch.randn(65, 512, dtype=torch.bfloat16, device="cuda")
+            t, q, scale, 16, torch.randn(4097, 512, dtype=torch.bfloat16, device="cuda")
         )
 
     def test_raw_uint8_scale_codes_are_signed(self):

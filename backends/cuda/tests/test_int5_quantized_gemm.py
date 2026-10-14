@@ -94,7 +94,7 @@ class Int5QuantizedGemmRulesTest(unittest.TestCase):
             3: (0, 3, 4),
             4: (0, 4),
         }
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in int5_kernel._SMALL_BUCKETS:
             with self.subTest(bucket=bucket):
                 configs = int5_autotune_configs(bucket)
                 seen = {
@@ -125,7 +125,7 @@ class Int5QuantizedGemmRulesTest(unittest.TestCase):
             (8192, 8, 1),
         )
         row_implementations = {1: 3, 2: 3, 3: 3, 4: 2}
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in int5_kernel._SMALL_BUCKETS:
             configs = int5_autotune_configs(bucket)
             for k, split_k, max_stages in cases:
                 with self.subTest(bucket=bucket, k=k, split_k=split_k):
@@ -142,7 +142,9 @@ class Int5QuantizedGemmRulesTest(unittest.TestCase):
                     )
 
     def test_buckets_and_ops_are_registered(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4))
+        self.assertEqual(
+            SUPPORTED_BUCKETS, (*(1, 2, 3, 4), 128, 256, 512, 1024, 2048, 4096)
+        )
         self.assertEqual(INT5_QUANTIZED_GEMM.buckets, SUPPORTED_BUCKETS)
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(
@@ -431,7 +433,7 @@ class Int5QuantizedGemmTest(unittest.TestCase):
         n = 37
         for k in (256, 512, 6656):
             weights = _packed(n, k, seed=n + k)
-            for bucket in SUPPORTED_BUCKETS:
+            for bucket in int5_kernel._SMALL_BUCKETS:
                 x = torch.randn(
                     bucket,
                     k,
@@ -570,7 +572,7 @@ class Int5QuantizedGemmTest(unittest.TestCase):
 
     def test_every_split_matches_reference(self) -> None:
         weights = _packed(37, 2048, seed=101)
-        for bucket in SUPPORTED_BUCKETS:
+        for bucket in int5_kernel._SMALL_BUCKETS:
             x = torch.randn(bucket, 2048, dtype=torch.bfloat16, device="cuda")
             ref = _dequant_matmul_int5(x, *weights, GROUP_SIZE)
             for split in SPLIT_K_CANDIDATES:
@@ -589,8 +591,8 @@ class Int5QuantizedGemmTest(unittest.TestCase):
     def test_n_tail_and_static_extra_row_are_safe(self) -> None:
         n, k = 37, 512
         weights = _packed(n, k, seed=113)
-        for bucket in SUPPORTED_BUCKETS:
-            rows = min(bucket + 1, max(SUPPORTED_BUCKETS))
+        for bucket in int5_kernel._SMALL_BUCKETS:
+            rows = min(bucket + 1, max(int5_kernel._SMALL_BUCKETS))
             config = next(
                 config
                 for config in int5_autotune_configs(bucket)

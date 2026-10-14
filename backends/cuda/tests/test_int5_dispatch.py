@@ -364,6 +364,21 @@ class TestDecodeDispatch(unittest.TestCase):
             rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
             self.assertLess(rel.item(), 0.02, m)
 
+    def test_prefill_uses_mmq_and_oversized_inputs_fall_back(self):
+        module, _ = self._module()
+        for m, bounds, bucket in [
+            (65, None, 128),
+            (65, (1, 65), 128),
+            (129, None, 256),
+        ]:
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            self.assertEqual(
+                self._bucket_ops(module, x, bounds),
+                {"triton.int5_quantized_gemm_m{}.default".format(bucket)},
+            )
+        x = torch.randn(4097, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(module, x))
+
     def test_dynamic_m_bounded_by_a_bucket_uses_that_bucket(self):
         module, _ = self._module()
         x = torch.randn(4, 512, dtype=torch.bfloat16, device="cuda")
