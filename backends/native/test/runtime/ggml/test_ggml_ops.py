@@ -159,6 +159,16 @@ class CacheWrite(torch.nn.Module):
         return self.cache * 1.0
 
 
+class HalfCacheWrite(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(1, 2, 8, 4, dtype=torch.float16))
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions, values.to(torch.float16))
+        return self.cache * 1.0
+
+
 class TinyLlama(torch.nn.Module):
     """The transformers static-cache Llama. Calls the wrapped model directly so
     that it returns only the last position's logits."""
@@ -917,6 +927,65 @@ class GgmlOpsTest(unittest.TestCase):
                     outdir,
                     1,
                 )
+
+    def test_fp16_cache_write_skips_cast_unless_source_may_change(self):
+        class FreshSource(HalfCacheWrite):
+            def forward(self, values, positions):
+                self.cache.index_copy_(2, positions, (values * 2.0).to(torch.float16))
+                return self.cache * 1.0
+
+        class BufferSource(HalfCacheWrite):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.randn(1, 2, 3, 4))
+
+            def forward(self, values, positions):
+                self.cache.index_copy_(2, positions, self.state.to(torch.float16))
+                return self.cache * 1.0, values * 2.0
+
+        class WrittenSource(HalfCacheWrite):
+            def forward(self, values, positions, row):
+                rows = values * 2.0
+                rows.index_copy_(2, row, values[:, :, :1])
+                self.cache.index_copy_(2, positions, rows.to(torch.float16))
+                return self.cache * 1.0
+
+        values, positions = torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])
+        # Per graph build (two MULs each): the cast of the F16 output, plus the
+        # F32 -> F16 cast of the cache rows when it is kept.
+        cases = {
+            "fresh": (FreshSource(), (values, positions), 1),
+            "buffer": (BufferSource(), (values, positions), 2),
+            "written": (WrittenSource(), (values, positions, torch.tensor([0])), 2),
+        }
+        for source, (model, inputs, casts) in cases.items():
+            with self.subTest(source=source):
+                ops = collections.Counter()
+                self._check(model, inputs, graph_ops=ops)
+                self.assertEqual(ops["CPY"], casts * ops["MUL"] // 2)
+
+    def test_reused_graph_fp16_cache_cast_and_write(self):
+        model = HalfCacheWrite()
+        steps = [
+            (torch.full((1, 2, 3, 4), 1.0 / 3), torch.tensor([5, 1, 6])),
+            (torch.full((1, 2, 3, 4), 2.0 / 7), torch.tensor([2, 3, 4])),
+            (torch.full((1, 2, 3, 4), -3.0 / 7), torch.tensor([6, 0, 7])),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, steps[0])).save(str(package))
+            actual = _run_ggml(package, steps, outdir, 1)
+        expected = torch.zeros(1, 2, 8, 4, dtype=torch.float16)
+        for (values, positions), [(raw, shape)] in zip(steps, actual):
+            expected.index_copy_(2, positions, values.to(torch.float16))
+            self.assertEqual(shape, tuple(expected.shape))
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float16).reshape(shape),
+                expected,
+                rtol=0,
+                atol=0,
+            )
 
     def test_index_put_rejects_out_of_range(self):
         inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))
