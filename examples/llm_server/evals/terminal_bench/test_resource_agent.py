@@ -14,9 +14,11 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from harbor.models.agent.context import AgentContext
+from tokenizers import models, pre_tokenizers, Tokenizer
 
 from .delegation import DelegationEstimate
 from .resource_agent import ResourceAgent, SYSTEM
+from .runner import resource_command
 
 SNAPSHOT = {
     "max_inflight_requests": 4,
@@ -25,7 +27,6 @@ SNAPSHOT = {
 }
 ESTIMATE = DelegationEstimate(
     uncached_input_tokens=200,
-    output_tokens=200,
     prefill_tokens_s=100,
     decode_tokens_s=20,
     child_tool_s=0,
@@ -41,6 +42,9 @@ def anyio_backend():
 
 
 def call(name, **arguments):
+    if name == "spawn":
+        arguments.setdefault("parent_output_tokens", 200)
+        arguments.setdefault("inline_output_tokens", 1000)
     return {
         "id": name,
         "type": "function",
@@ -72,7 +76,12 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
         {
             "role": "assistant",
             "tool_calls": [
-                call("spawn", question="inspect a", parent_command="inspect b")
+                call(
+                    "spawn",
+                    question="inspect a",
+                    parent_command="inspect b",
+                    expected_output_tokens=200,
+                )
             ],
         },
     ]
@@ -82,9 +91,10 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
         return SNAPSHOT
 
     obj.report = report
-    obj.estimate_delegation = lambda messages, snapshot: replace(
-        ESTIMATE, output_tokens=obj.child_output_tokens, decode_tokens_s=100
+    obj.estimate_delegation = lambda messages, snapshot, proposal: replace(
+        ESTIMATE, decode_tokens_s=100
     )
+    obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 300
 
     async def completion(role, history, cap):
         assert role == "child" and cap == obj.child_output_tokens
@@ -199,6 +209,8 @@ async def test_run_keeps_telemetry_out_of_prompt_history(tmp_path):
 @pytest.mark.anyio
 async def test_child_total_budget_limits_later_requests(tmp_path):
     obj = agent(tmp_path, enabled=True, child_output_tokens=100)
+    obj.child_expected_output_tokens = 20
+    obj.child_expected_thinking_tokens = 30
     caps = []
 
     async def completion(role, messages, cap):
@@ -216,6 +228,12 @@ async def test_child_total_budget_limits_later_requests(tmp_path):
     result = await obj.investigate(Environment())
     assert caps == [100, 40]
     assert result["status"] == "budget_exhausted"
+    outcome = next(e for e in obj.records if e["type"] == "child_output")
+    assert outcome["expected_output_tokens"] == 20
+    assert outcome["expected_thinking_tokens"] == 30
+    assert outcome["expected_total_tokens"] == 50
+    assert outcome["actual_output_tokens"] == outcome["output_limit"] == 100
+    assert outcome["status"] == "budget_exhausted"
 
 
 @pytest.mark.anyio
@@ -237,6 +255,8 @@ async def test_cancel_waits_for_child_cleanup(tmp_path):
     result = await obj.parent_tool(call("cancel"), [], Environment())
     assert json.loads(result)["status"] == "cancelled"
     assert closed.is_set() and obj.child.done()
+    outcome = next(e for e in obj.records if e["type"] == "child_output")
+    assert outcome["status"] == "cancelled"
 
 
 @pytest.mark.anyio
@@ -244,7 +264,14 @@ async def test_inline_rejects_spawn_and_child_cannot_recurse(tmp_path):
     obj = agent(tmp_path)
     with pytest.raises(ValueError, match="No child budget"):
         await obj.parent_tool(
-            call("spawn", question="a", parent_command="cat b"), [], Environment()
+            call(
+                "spawn",
+                question="a",
+                parent_command="cat b",
+                expected_output_tokens=200,
+            ),
+            [],
+            Environment(),
         )
     assert not obj.child_used
 
@@ -259,7 +286,12 @@ async def test_enabled_agent_rejects_unknown_cost_without_consuming_child(tmp_pa
     obj.report = report
     with pytest.raises(ValueError, match="unknown_cost"):
         await obj.parent_tool(
-            call("spawn", question="inspect a", parent_command="inspect b"),
+            call(
+                "spawn",
+                question="inspect a",
+                parent_command="inspect b",
+                expected_output_tokens=200,
+            ),
             [],
             Environment(),
         )
@@ -282,7 +314,14 @@ async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
         message = (
             {
                 "role": "assistant",
-                "tool_calls": [call("spawn", question="a", parent_command="b")],
+                "tool_calls": [
+                    call(
+                        "spawn",
+                        question="a",
+                        parent_command="b",
+                        expected_output_tokens=200,
+                    )
+                ],
             }
             if len(requests) == 1
             else {"role": "assistant", "content": "finished inline"}
@@ -302,10 +341,16 @@ async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_launch_rechecks_capacity_and_enforces_estimated_output_cap(tmp_path):
+async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_path):
     obj = agent(tmp_path, enabled=True)
-    obj.estimate_delegation = lambda messages, snapshot: ESTIMATE
-    assert obj.admission([], SNAPSHOT, "report")["allowed"]
+    proposals = []
+
+    def estimate(messages, snapshot, proposal):
+        proposals.append(proposal.copy())
+        return ESTIMATE
+
+    obj.estimate_delegation = estimate
+    obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 50
     snapshot = SNAPSHOT | {"submitted_generations": 3}
     caps = []
 
@@ -314,13 +359,26 @@ async def test_launch_rechecks_capacity_and_enforces_estimated_output_cap(tmp_pa
 
     async def completion(role, messages, cap):
         caps.append(cap)
-        return {"message": {"content": "finding"}, "finish_reason": "stop"}
+        obj.output_tokens[role] += 150
+        return {
+            "message": (
+                {"tool_calls": [call("shell", command="cat a")]}
+                if len(caps) == 1
+                else {"content": "finding"}
+            ),
+            "finish_reason": "stop",
+        }
 
     async def close(role):
         pass
 
     obj.report, obj.completion, obj.close_session = report, completion, close
-    spawn = call("spawn", question="inspect a", parent_command="inspect b")
+    spawn = call(
+        "spawn",
+        question="inspect a",
+        parent_command="inspect b",
+        expected_output_tokens=200,
+    )
     messages = [{"role": "assistant", "tool_calls": [spawn]}]
     with pytest.raises(ValueError, match="request_capacity"):
         await obj.parent_tool(spawn, messages, Environment())
@@ -328,8 +386,230 @@ async def test_launch_rechecks_capacity_and_enforces_estimated_output_cap(tmp_pa
     snapshot = SNAPSHOT
     await obj.parent_tool(spawn, messages, Environment())
     await obj.child
-    assert caps == [ESTIMATE.output_tokens]
-    assert obj.child_budget == ESTIMATE.output_tokens
+    assert caps == [obj.child_output_tokens, obj.child_output_tokens - 150]
+    assert obj.child.result()["status"] == "complete"
+    assert proposals[-1] == {
+        "question": "inspect a",
+        "parent_command": "inspect b",
+        "expected_output_tokens": 200,
+        "parent_output_tokens": 200,
+        "inline_output_tokens": 1000,
+    }
+    assert f"{obj.child_output_tokens} tokens" in obj.child_messages[1]["content"]
+    outcomes = [e for e in obj.records if e["type"] == "child_output"]
+    assert len(outcomes) == 1
+    assert outcomes[0]["expected_output_tokens"] == 200
+    assert outcomes[0]["expected_thinking_tokens"] == 50
+    assert outcomes[0]["expected_total_tokens"] == 250
+    assert outcomes[0]["actual_output_tokens"] == 300
+    assert outcomes[0]["output_limit"] == obj.child_output_tokens
+    assert outcomes[0]["status"] == "complete"
+
+
+def test_thinking_is_unknown_without_observations_and_policy_can_be_overridden(
+    tmp_path,
+):
+    obj = agent(tmp_path, enabled=True)
+    obj.estimate_delegation = lambda messages, snapshot, proposal: ESTIMATE
+    proposal = {
+        "question": "inspect a",
+        "parent_command": "inspect b",
+        "expected_output_tokens": 200,
+    }
+    decision = obj.admission([], SNAPSHOT, proposal)
+    assert not decision["allowed"]
+    assert decision["reason"] == "unknown_cost"
+    assert decision["expected_thinking_tokens"] is None
+    assert decision["expected_total_tokens"] is None
+
+    def thinking(messages, snapshot, proposed):
+        assert snapshot is SNAPSHOT and proposed is proposal
+        return 300
+
+    obj.estimate_thinking_tokens = thinking
+    decision = obj.admission([], SNAPSHOT, proposal)
+    assert decision["allowed"]
+    assert decision["expected_output_tokens"] == 200
+    assert decision["expected_thinking_tokens"] == 300
+    assert decision["expected_total_tokens"] == 500
+    assert decision["expected_child_s"] == 27
+
+
+def test_thinking_average_pools_parent_and_child_tokens(tmp_path):
+    obj = agent(tmp_path)
+    proposal = {"expected_output_tokens": 11}
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) is None
+    for role, thinking, total in [("parent", 10, 40), ("child", 40, 50)]:
+        obj.observe_thinking_tokens(
+            {
+                "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+                "usage": {
+                    "completion_tokens": total,
+                    "completion_tokens_details": {"reasoning_tokens": thinking},
+                },
+            },
+            role,
+        )
+    assert obj.observed_thinking_tokens == 50
+    assert obj.observed_non_thinking_tokens == 40
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) == 14
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+        },
+        "parent",
+    )
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) == 11
+
+
+@pytest.mark.parametrize("thinking,expected", [(0, 0), (10, None)])
+def test_thinking_average_handles_zero_counts(tmp_path, thinking, expected):
+    obj = agent(tmp_path)
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": thinking},
+            },
+        },
+        "parent",
+    )
+    assert (
+        obj.estimate_thinking_tokens([], SNAPSHOT, {"expected_output_tokens": 100})
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "thinking,finish",
+    [(None, "stop"), (True, "stop"), (-1, "stop"), (11, "stop"), (8, "length")],
+)
+def test_unknown_invalid_or_capped_thinking_samples_are_ignored(
+    tmp_path, thinking, finish
+):
+    obj = agent(tmp_path)
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": finish, "message": {"content": "partial"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": thinking},
+            },
+        },
+        "parent",
+    )
+    assert obj.observed_thinking_tokens == obj.observed_non_thinking_tokens == 0
+    assert (
+        obj.estimate_thinking_tokens([], SNAPSHOT, {"expected_output_tokens": 100})
+        is None
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("reported_thinking", [None, 1])
+async def test_stream_measures_thinking_with_model_tokenizer_or_usage(
+    tmp_path, reported_thinking
+):
+    tokenizer = Tokenizer(models.WordLevel({"[UNK]": 0, "think": 1}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(tmp_path / "tokenizer.json"))
+    obj = agent(tmp_path, hf_tokenizer=str(tmp_path))
+
+    def respond(request):
+        chunks = [
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "reasoning_content": "think think think",
+                            "content": "finding",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 8,
+                    "completion_tokens_details": {
+                        "reasoning_tokens": reported_thinking
+                    },
+                },
+            },
+        ]
+        return httpx.Response(
+            200,
+            text="".join("data: " + json.dumps(c) + "\n\n" for c in chunks)
+            + "data: [DONE]\n\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.completion("parent", [{"role": "user", "content": "question"}], 10)
+    thinking = 3 if reported_thinking is None else reported_thinking
+    assert obj.observed_thinking_tokens == thinking
+    assert obj.observed_non_thinking_tokens == 8 - thinking
+    assert obj.estimate_thinking_tokens(
+        [], SNAPSHOT, {"expected_output_tokens": 10}
+    ) == (6 if reported_thinking is None else 2)
+    observation = next(e for e in obj.records if e["type"] == "thinking_observation")
+    assert observation["source"] == (
+        "tokenizer" if reported_thinking is None else "usage"
+    )
+
+
+def test_resource_launcher_passes_configured_tokenizer(tmp_path):
+    command = resource_command(
+        {
+            "host": "127.0.0.1",
+            "port": 8000,
+            "model_id": "test",
+            "hf_tokenizer": str(tmp_path),
+        },
+        {
+            "agent": "resource",
+            "concurrency": 1,
+            "attempts": 1,
+            "max_output_tokens": 4096,
+            "temperature": 0.8,
+            "step_limit": 100,
+            "child_output_tokens": 1536,
+        },
+        tmp_path,
+    )
+    assert f"hf_tokenizer={tmp_path}" in command
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("forecast", [None, True, 0, 1537])
+async def test_spawn_rejects_invalid_forecast_without_starting_work(tmp_path, forecast):
+    obj = agent(tmp_path, enabled=True)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    def estimate(*args):
+        pytest.fail("Invalid proposals must not reach the estimator")
+
+    obj.report = report
+    obj.estimate_delegation = estimate
+    obj.estimate_thinking_tokens = estimate
+    proposal = {"question": "inspect a", "parent_command": "inspect b"}
+    if forecast is not None:
+        proposal["expected_output_tokens"] = forecast
+    with pytest.raises(
+        ValueError, match="invalid_output_forecast|forecast_exceeds_budget"
+    ):
+        await obj.parent_tool(call("spawn", **proposal), [], Environment())
+    assert obj.child is None and not obj.child_used
+    assert not any(e["type"] == "tool" for e in obj.records)
 
 
 @pytest.mark.anyio
@@ -343,6 +623,12 @@ async def test_stream_accounting_and_role_tools(tmp_path, role):
         assert names == (
             ["shell"] if role == "child" else ["shell", "spawn", "wait", "cancel"]
         )
+        if role == "parent":
+            parameters = body["tools"][1]["function"]["parameters"]
+            assert "expected_output_tokens" in parameters["required"]
+            assert (
+                parameters["properties"]["expected_output_tokens"]["type"] == "integer"
+            )
         assert body["session_id"].endswith("-" + role)
         chunks = [
             {
@@ -525,3 +811,69 @@ async def test_cleanup_error_preserves_primary_error_and_trace(tmp_path):
         == "error"
     )
     assert any(e["type"] == "cleanup_error" for e in obj.records)
+
+
+@pytest.mark.parametrize(
+    "inline,shared,allowed",
+    [(1000, False, True), (400, False, False), (400, True, True)],
+)
+def test_default_estimator_produces_admission_without_an_override(
+    tmp_path, inline, shared, allowed
+):
+    tokenizer = Tokenizer(models.WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(tmp_path / "tokenizer.json"))
+    obj = agent(tmp_path, enabled=True, hf_tokenizer=str(tmp_path))
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": "tool_calls", "message": {}}],
+            "usage": {
+                "completion_tokens": 200,
+                "completion_tokens_details": {"reasoning_tokens": 100},
+            },
+        },
+        "parent",
+    )
+    obj.decode_rates.observe(
+        {"decode_tokens": 0, "decode_only_ms": 0, "mixed_ms": 0, "mean_decode_width": 0}
+    )
+    obj.decode_rates.observe(
+        {
+            "decode_tokens": 300,
+            "decode_only_ms": 10000,
+            "mixed_ms": 0,
+            "mean_decode_width": 1,
+        }
+    )
+    if shared:
+        obj.decode_rates.observe(
+            {
+                "decode_tokens": 900,
+                "decode_only_ms": 10000 + 600 / 45 * 1000,
+                "mixed_ms": 0,
+                "mean_decode_width": 1.5,
+            }
+        )
+    snapshot = SNAPSHOT | {
+        "recent_generations": [
+            {"cancelled": False, "uncached_tokens": 1000, "prefill_ms": 1000}
+        ]
+    }
+    proposal = {
+        "question": "Inspect a",
+        "parent_command": "cat b",
+        "expected_output_tokens": 200,
+        "parent_output_tokens": 200,
+        "inline_output_tokens": inline,
+    }
+    decision = obj.admission([], snapshot, proposal)
+    assert decision["allowed"] is allowed
+    assert decision["reason"] != "unknown_cost"
+    assert decision["estimate"]["solo_decode_tokens_s"] == 30
+    assert decision["estimate"]["decode_tokens_s"] == pytest.approx(
+        22.5 if shared else 15
+    )
+    assert decision["estimate"]["decode_rate_source"] == (
+        "observed_aggregate" if shared else "no_batching_gain"
+    )
+    assert decision["parent_delay_s"] > 0

@@ -6,12 +6,25 @@ the child investigates one question using only the shell tool. A spawn also runs
 an independent parent shell command and returns its output. The child receives
 a self-contained assignment, has a total output budget, and uses a separate session.
 
-Admission runs in the harness. Unknown costs default to inline, as do estimates
-that show no completion-time benefit. `estimate_delegation(messages, snapshot)`
-is the extension point for calibrated workload estimates; its default returns
-`None`, so both modes currently run inline without a custom estimator. This is
-not yet a delegation A/B experiment. Estimates cover all child requests and
-tool work. The admitted output cap is enforced across the child's responses.
+Admission runs in the harness. The model forecasts non-thinking output for the
+child, independent parent work, and the same remaining work done inline.
+The default estimator prices these forecasts using observed inference rates,
+tool timings and output sizes. Unknown costs or no predicted benefit mean inline.
+Override `estimate_delegation(messages, snapshot, proposal)` to change the policy.
+
+The model supplies `expected_output_tokens` for tool arguments and answer text,
+excluding thinking. The harness estimates thinking as
+`ceil(expected_output_tokens × observed_thinking / observed_non_thinking)`.
+This scales the ratio of averages across completed parent and child responses
+within the trial to the whole child's expected output. Capped or interrupted responses are excluded.
+Counts come from usage metadata, or approximately from returned reasoning text
+using `[server].hf_tokenizer`. Without observations the estimate stays unknown.
+Override `estimate_thinking_tokens` to use another policy.
+
+Admission prices the combined forecast; `child_output_tokens` caps all generation.
+`child_output` events record both forecasts, their total, actual total usage, cap
+and completion status. Interrupted or exhausted children are not complete work
+estimates. Hardware rates and workload costs belong in the estimator.
 
 Use the batching server with prefix caching enabled, capacity for two sessions,
 and at least two decode sequences. In a working model TOML:
@@ -42,8 +55,16 @@ context, and include their age. Unknown rates remain unknown.
 
 The harness checks estimated costs and request capacity at launch; a rejected
 spawn returns its reason as a tool result. Request slots are not decode capacity.
-There is no engine-memory check or parent-delay prediction. Recent server rates
-alone cannot predict child work or time saved. Child shell
+Native decode windows supply solo throughput and observed aggregate throughput
+for overlapping sequences. Until batching gains are observed, two sequences
+share the solo throughput. The estimate includes parent slowdown, charges extra
+prefill as a shared stall, and returns the surviving sequence to solo speed.
+Tools can overlap inference; integration costs an average parent response plus
+reading the child result. Unobserved tool times provide no assumed time savings.
+
+These are approximate workload costs, not a calibrated roofline model. Prompt
+sizes are estimated with the configured tokenizer; task work still depends on
+model forecasts. There is no engine-memory admission check. Child shell
 commands are instructed to be read-only; this is not an OS-enforced filesystem
 boundary.
 

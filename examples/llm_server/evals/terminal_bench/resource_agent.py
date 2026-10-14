@@ -8,14 +8,17 @@
 
 import asyncio
 import json
+import math
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 from harbor.agents.base import BaseAgent
+from tokenizers import Tokenizer
 
-from .delegation import decide_delegation, DelegationEstimate
+from .delegation import decide_delegation, DecodeRates, DelegationEstimate
 from .streaming import ChatCompletionStream
 
 SYSTEM = """Solve the user's task in the container. Inspect before editing, use tools for evidence,
@@ -31,10 +34,17 @@ Prefill taxes shared decode. Prefix caching avoids repeated prefill, not later a
 Shorter context does not necessarily free allocated memory.
 
 The harness can decline a spawn. If declined, continue inline without retrying delegation.
-Do not infer permission from idle hardware or calculate performance estimates yourself.
+Do not infer permission from idle hardware or invent hardware rates or execution times.
 
 Before spawning: choose one necessary independent question and an unfinished parent shell action.
 Pass that action as parent_command; the harness runs it alongside the child and returns its output.
+Provide expected_output_tokens for the child's tool arguments, intermediate responses and final
+findings across all turns, excluding thinking. The harness estimates thinking separately and
+enforces a total output cap covering both.
+Also forecast parent_output_tokens for your independent work and inline_output_tokens for
+doing the same remaining work yourself without a child, including the final answer.
+These are non-thinking token estimates, not seconds. Do not inflate the inline estimate
+to justify spawning.
 Delegate before solving the child's question. If nothing independent remains, work inline.
 Use at most the available child budget.
 Do not duplicate work.
@@ -85,6 +95,21 @@ TOOLS = [
                 "type": "string",
                 "description": "An unfinished, necessary shell action independent of the child's question.",
             },
+            "expected_output_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Expected child tool arguments and answer text across all turns, excluding thinking; not the total output cap.",
+            },
+            "parent_output_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Expected non-thinking output for useful independent parent work while the child runs, excluding integration of child findings.",
+            },
+            "inline_output_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Expected non-thinking output to finish the same remaining work entirely inline, including the final answer.",
+            },
         },
     ),
     function("wait", "Wait for the child's findings if they are now needed.", {}),
@@ -97,6 +122,7 @@ class ResourceAgent(BaseAgent):
         self,
         *args,
         base_url,
+        hf_tokenizer=None,
         enabled=False,
         max_tokens=4096,
         child_output_tokens=1536,
@@ -114,7 +140,8 @@ class ResourceAgent(BaseAgent):
         self.enabled = enabled
         self.max_tokens = max_tokens
         self.child_output_tokens = child_output_tokens
-        self.child_budget = child_output_tokens
+        self.child_expected_output_tokens = None
+        self.child_expected_thinking_tokens = None
         self.step_limit = step_limit
         self.temperature = temperature
         self.child = None
@@ -125,10 +152,23 @@ class ResourceAgent(BaseAgent):
         self.records = []
         self.output_tokens = {"parent": 0, "child": 0}
         self.engine_samples = {}
+        self.decode_rates = DecodeRates()
         self.started = time.monotonic()
         self.prefix = str(uuid.uuid4())
         self.client = None
         self.context = None
+        self.observed_thinking_tokens = 0
+        self.observed_non_thinking_tokens = 0
+        self.tokenizer = None
+        if hf_tokenizer:
+            path = Path(hf_tokenizer).expanduser()
+            if path.is_dir():
+                path /= "tokenizer.json"
+            self.tokenizer = (
+                Tokenizer.from_file(str(path))
+                if path.is_file()
+                else Tokenizer.from_pretrained(hf_tokenizer)
+            )
 
     @staticmethod
     def name():
@@ -150,6 +190,7 @@ class ResourceAgent(BaseAgent):
         response = await self.client.get(self.base_url + "/runtime/stats")
         response.raise_for_status()
         snapshot = response.json()
+        self.decode_rates.observe(snapshot.get("engine"))
         self.record("request_stats", turn=turn, snapshot=snapshot)
         samples = snapshot["recent_generations"]
         for sample in samples:
@@ -160,20 +201,148 @@ class ResourceAgent(BaseAgent):
                 self.engine_samples[sample["id"]] = sample
         return snapshot
 
-    def estimate_delegation(self, messages, snapshot) -> DelegationEstimate | None:
-        """Override with calibrated workload costs; server rates alone are insufficient."""
-        return None
+    def estimate_delegation(
+        self, messages, snapshot, proposal
+    ) -> DelegationEstimate | None:
+        """Price model work forecasts using observed execution and tool costs."""
+        if (
+            self.tokenizer is None
+            or self.decode_rates.solo is None
+            or not self.observed_non_thinking_tokens
+            or snapshot.get("submitted_generations", 0)
+        ):
+            return None
+        parent_output = proposal.get("parent_output_tokens")
+        inline_output = proposal.get("inline_output_tokens")
+        if (
+            type(parent_output) is not int
+            or parent_output < 0
+            or type(inline_output) is not int
+            or inline_output <= 0
+        ):
+            return None
+        samples = [
+            sample
+            for sample in snapshot.get("recent_generations", [])
+            if not sample["cancelled"]
+            and sample["uncached_tokens"] > 0
+            and sample["prefill_ms"] > 0
+        ]
+        if not samples:
+            return None
+        prefill_rate = (
+            sum(s["uncached_tokens"] for s in samples)
+            * 1000
+            / sum(s["prefill_ms"] for s in samples)
+        )
+        observations = sum(e["type"] == "thinking_observation" for e in self.records)
+        if not observations:
+            return None
+        mean_output = self.observed_non_thinking_tokens / observations
+        ratio = 1 + self.observed_thinking_tokens / self.observed_non_thinking_tokens
+        parent_tokens = math.ceil(parent_output * ratio)
+        inline_tokens = math.ceil(inline_output * ratio)
+        tools = [e for e in self.records if e["type"] == "tool"]
+        mean_tool_s = sum(e["seconds"] for e in tools) / len(tools) if tools else 0
+        mean_tool_tokens = (
+            sum(
+                len(self.tokenizer.encode(e["output"], add_special_tokens=False).ids)
+                for e in tools
+            )
+            / len(tools)
+            if tools
+            else 0
+        )
+        child_tools = max(1, proposal["expected_output_tokens"] / mean_output - 1)
+        parent_tools = max(1, parent_output / mean_output)
+        tool_tokens = math.ceil((child_tools + parent_tools) * mean_tool_tokens)
+        child_prompt = self.child_prompt(proposal["question"], self.child_output_tokens)
+        prompt_tokens = len(
+            self.tokenizer.encode(
+                json.dumps({"messages": child_prompt, "tools": TOOLS[:1]}),
+                add_special_tokens=False,
+            ).ids
+        )
+        solo = self.decode_rates.solo
+        return DelegationEstimate(
+            uncached_input_tokens=prompt_tokens + tool_tokens,
+            prefill_tokens_s=prefill_rate,
+            decode_tokens_s=solo * self.decode_rates.shared_fraction,
+            solo_decode_tokens_s=solo,
+            parent_decode_tokens=parent_tokens,
+            parent_work_s=parent_tokens / solo + parent_tools * mean_tool_s,
+            child_tool_s=child_tools * mean_tool_s,
+            inline_s=inline_tokens / solo
+            + tool_tokens / prefill_rate
+            + (parent_tools + child_tools) * mean_tool_s,
+            integration_s=proposal["expected_output_tokens"] / prefill_rate
+            + mean_output * ratio / solo,
+            decode_rate_source=self.decode_rates.source,
+        )
 
-    def admission(self, messages, snapshot, phase):
+    def estimate_thinking_tokens(self, messages, snapshot, proposal) -> int | None:
+        """Scale expected output by the observed ratio of thinking to other tokens."""
+        if not self.observed_non_thinking_tokens:
+            return None
+        return math.ceil(
+            proposal["expected_output_tokens"]
+            * self.observed_thinking_tokens
+            / self.observed_non_thinking_tokens
+        )
+
+    def observe_thinking_tokens(self, response, role):
+        choice = response["choices"][0]
+        if choice["finish_reason"] not in {"stop", "tool_calls"}:
+            return
+        usage = response["usage"]
+        thinking = (usage.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        )
+        source = "usage"
+        if thinking is None and self.tokenizer is not None:
+            thinking = len(
+                self.tokenizer.encode(
+                    choice["message"].get("reasoning_content") or "",
+                    add_special_tokens=False,
+                ).ids
+            )
+            source = "tokenizer"
+        if type(thinking) is not int or not 0 <= thinking <= usage["completion_tokens"]:
+            return
+        other = usage["completion_tokens"] - thinking
+        self.observed_thinking_tokens += thinking
+        self.observed_non_thinking_tokens += other
+        self.record(
+            "thinking_observation",
+            role=role,
+            thinking_tokens=thinking,
+            non_thinking_tokens=other,
+            source=source,
+        )
+
+    def admission(self, messages, snapshot, proposal):
         available = self.enabled and not self.child_used
-        estimate = self.estimate_delegation(messages, snapshot) if available else None
+        forecast = proposal.get("expected_output_tokens")
+        estimate = None
+        thinking_tokens = None
+        if (
+            available
+            and type(forecast) is int
+            and 0 < forecast <= self.child_output_tokens
+        ):
+            estimate = self.estimate_delegation(messages, snapshot, proposal)
+            thinking_tokens = self.estimate_thinking_tokens(
+                messages, snapshot, proposal
+            )
         decision = decide_delegation(
             snapshot,
             estimate,
             child_available=available,
+            expected_output_tokens=forecast,
+            expected_thinking_tokens=thinking_tokens,
             output_limit=self.child_output_tokens,
         )
-        self.record("delegation_decision", phase=phase, decision=decision)
+        self.record("delegation_decision", phase="launch", decision=decision)
         return decision
 
     async def completion(self, role, messages, cap):
@@ -240,6 +409,7 @@ class ResourceAgent(BaseAgent):
             "content"
         ):
             raise RuntimeError("Completion contains no answer or tool call")
+        self.observe_thinking_tokens(data, role)
         messages.append(choice["message"])
         return choice
 
@@ -329,13 +499,18 @@ class ResourceAgent(BaseAgent):
         self.child_messages.append(reply)
 
     async def investigate(self, environment):
+        result = {
+            "status": "budget_exhausted",
+            "findings": "No complete findings; inspect child trace if needed.",
+        }
         try:
             for _ in range(6):
-                remaining = self.child_budget - self.output_tokens["child"]
+                remaining = self.child_output_tokens - self.output_tokens["child"]
                 if remaining <= 0:
                     break
                 if len(json.dumps(self.child_messages).encode()) > 16384:
-                    return {"status": "context_budget_exhausted"}
+                    result = {"status": "context_budget_exhausted"}
+                    break
                 choice = await self.completion(
                     "child", self.child_messages, min(self.max_tokens, remaining)
                 )
@@ -344,23 +519,36 @@ class ResourceAgent(BaseAgent):
                 message = choice["message"]
                 calls = message.get("tool_calls") or []
                 if not calls:
-                    return {
+                    result = {
                         "status": "complete",
                         "findings": message.get("content", ""),
                     }
+                    break
                 for call in calls:
                     await self.child_tool(call, environment)
-            return {
-                "status": "budget_exhausted",
-                "findings": "No complete findings; inspect child trace if needed.",
-            }
         except asyncio.CancelledError:
-            return {"status": "cancelled"}
+            result = {"status": "cancelled"}
         except Exception as error:
             self.record("child_error", error=str(error))
-            return {"status": "error", "error": str(error)}
+            result = {"status": "error", "error": str(error)}
         finally:
+            self.record(
+                "child_output",
+                expected_output_tokens=self.child_expected_output_tokens,
+                expected_thinking_tokens=self.child_expected_thinking_tokens,
+                expected_total_tokens=(
+                    self.child_expected_output_tokens
+                    + self.child_expected_thinking_tokens
+                    if self.child_expected_output_tokens is not None
+                    and self.child_expected_thinking_tokens is not None
+                    else None
+                ),
+                actual_output_tokens=self.output_tokens["child"],
+                output_limit=self.child_output_tokens,
+                status=result["status"],
+            )
             await self.close_session("child")
+        return result
 
     def notify(self, messages):
         if self.child is None or not self.child.done() or self.child_delivered:
@@ -383,23 +571,30 @@ class ResourceAgent(BaseAgent):
         if name == "spawn":
             if not self.enabled or self.child_used:
                 raise ValueError("No child budget available; work inline")
-            if not all(
-                isinstance(arguments[k], str) and arguments[k].strip()
-                for k in ("question", "parent_command")
+            if (
+                not all(
+                    isinstance(arguments.get(k), str) and arguments[k].strip()
+                    for k in ("question", "parent_command")
+                )
+                or type(arguments.get("parent_output_tokens")) is not int
+                or arguments["parent_output_tokens"] < 0
+                or type(arguments.get("inline_output_tokens")) is not int
+                or arguments["inline_output_tokens"] <= 0
             ):
                 raise ValueError(
-                    "Provide the question and an independent parent shell command"
+                    "Provide a question, independent parent command, nonnegative parent_output_tokens and positive inline_output_tokens"
                 )
             snapshot = await self.report("admission")
-            decision = self.admission(messages, snapshot, "launch")
+            decision = self.admission(messages, snapshot, arguments)
             if not decision["allowed"]:
                 raise ValueError(
                     f"Delegation declined: {decision['reason']}; work inline"
                 )
-            self.child_budget = decision["estimate"]["output_tokens"]
             self.child_messages = self.child_prompt(
-                arguments["question"], self.child_budget
+                arguments["question"], self.child_output_tokens
             )
+            self.child_expected_output_tokens = arguments["expected_output_tokens"]
+            self.child_expected_thinking_tokens = decision["expected_thinking_tokens"]
             self.child_used = True
             self.child = asyncio.create_task(self.investigate(environment))
             self.record("spawn", **arguments)
@@ -445,8 +640,7 @@ class ResourceAgent(BaseAgent):
             try:
                 for turn in range(self.step_limit):
                     self.notify(messages)
-                    snapshot = await self.report(turn)
-                    self.admission(messages, snapshot, "report")
+                    await self.report(turn)
                     choice = await self.completion("parent", messages, self.max_tokens)
                     if choice["finish_reason"] == "length":
                         raise RuntimeError("Parent response exhausted output cap")

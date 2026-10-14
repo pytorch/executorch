@@ -130,6 +130,8 @@ def resource_command(server, options, output):
         "step_limit": options["step_limit"],
         "child_output_tokens": options["child_output_tokens"],
     }
+    if server.get("hf_tokenizer"):
+        arguments["hf_tokenizer"] = server["hf_tokenizer"]
     for key, value in arguments.items():
         harbor.extend(
             [
