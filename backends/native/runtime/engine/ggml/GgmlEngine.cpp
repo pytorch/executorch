@@ -6,6 +6,8 @@
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
+#include <algorithm>
+#include <cctype>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -30,10 +32,19 @@ struct GgmlEngineHost::Impl {
     if (options.graph_size == 0) {
       throw std::invalid_argument("ggml: graph size must be positive");
     }
-    name = options.device == GgmlDevice::Cuda ? "ggml-cuda" : "ggml-cpu";
-    device_name = options.device == GgmlDevice::Cuda
-        ? "CUDA device " + std::to_string(options.device_index)
-        : "CPU";
+    if (options.device == GgmlDevice::Gpu) {
+      ggml_backend_dev_t device = select_ggml_gpu_device(options);
+      name = std::string("ggml-") +
+          ggml_backend_reg_name(ggml_backend_dev_backend_reg(device));
+      std::transform(name.begin(), name.end(), name.begin(), [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      });
+      device_name = std::string(ggml_backend_dev_description(device)) + " (" +
+          ggml_backend_dev_name(device) + ")";
+    } else {
+      name = "ggml-cpu";
+      device_name = "CPU";
+    }
   }
 
   GgmlEngineOptions options;
