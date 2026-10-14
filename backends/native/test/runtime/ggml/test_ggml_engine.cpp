@@ -1541,6 +1541,30 @@ TEST(GgmlEngineTest, ViewsQ4_0ScalesOfMappedPackage) {
   }
 }
 
+TEST(GgmlEngineTest, CastsInt64ToHalfAndBFloat16) {
+  for (const fbs::ScalarType dtype :
+       {fbs::ScalarType::HALF, fbs::ScalarType::BFLOAT16}) {
+    SCOPED_TRACE(static_cast<int>(dtype));
+    TestProgram program;
+    program.input("x", fbs::ScalarType::LONG, {2, 3});
+    program.call(
+        "y",
+        "torch.ops.aten._to_copy.default",
+        {{"self", std::string("x")}},
+        dtype,
+        {2, 3});
+    auto host = GgmlEngineHost::create();
+    auto context = make_context(*host, program.finish("y"));
+    auto executable = context->compile("forward");
+    const std::vector<int64_t> x = {0, 1, 2, 3, 4, 5};
+    executable->set_input(0, x.data(), x.size(), ScalarType::Long);
+    executable->execute();
+    std::vector<float> y(6);
+    executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+    EXPECT_EQ(y, (std::vector<float>{0, 1, 2, 3, 4, 5}));
+  }
+}
+
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;

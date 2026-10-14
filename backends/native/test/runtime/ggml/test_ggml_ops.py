@@ -93,6 +93,19 @@ class Rope(torch.nn.Module):
         return q
 
 
+class RopeOfPermute(torch.nn.Module):
+    """Rotates `x` permuted by `dims` to [B, H, T, D], then transposes the
+    result to [B, T, H, D]."""
+
+    def __init__(self, config: LlamaConfig, dims):
+        super().__init__()
+        self.rope = Rope(config)
+        self.dims = dims
+
+    def forward(self, x, position_ids):
+        return self.rope(x.permute(*self.dims), position_ids).transpose(1, 2)
+
+
 class RopeQK(torch.nn.Module):
     """Rotates q and k at positions computed in the graph."""
 
@@ -156,6 +169,18 @@ class CacheWrite(torch.nn.Module):
 
     def forward(self, values, positions):
         self.cache.index_copy_(2, positions, values)
+        return self.cache * 1.0
+
+
+class TransposedCacheWrite(torch.nn.Module):
+    """Writes [B, T, H, D] values into a head-major cache through a transpose."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(1, 2, 8, 4))
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions, values.transpose(1, 2))
         return self.cache * 1.0
 
 
@@ -678,6 +703,25 @@ class GgmlOpsTest(unittest.TestCase):
             **_MATMUL_TOL,
         )
 
+    def test_matmul_reads_a_transposed_rhs_without_copies(self):
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda a, b: a @ b.transpose(-1, -2)),
+            (torch.randn(2, 4, 8), torch.randn(2, 5, 8)),
+            graph_ops=ops,
+            **_MATMUL_TOL,
+        )
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_matmul_outer_product(self):
+        # Transposing the [1, 5] right operand gives a view that passes
+        # ggml_is_contiguous with transposed strides, which ggml_mul_mat rejects.
+        self._check(
+            Lambda(torch.matmul),
+            (torch.randn(2, 4, 1), torch.randn(2, 1, 5)),
+            **_MATMUL_TOL,
+        )
+
     def test_embedding(self):
         self._check(Embedding(), (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
 
@@ -960,6 +1004,47 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def test_attention_reads_head_transposes_without_copies(self):
+        # The [B, T, H, D] -> [B, H, T, D] views of q, k and v, and the output
+        # transposed back, are read through their strides.
+        def forward(q, k, v):
+            def heads(t):
+                return t.view(1, 6, 2, 32).transpose(1, 2)
+
+            out = F.scaled_dot_product_attention(heads(q), heads(k), heads(v))
+            return out.transpose(1, 2).reshape(1, 6, 64)
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            tuple(torch.randn(1, 6, 64) for _ in range(3)),
+            atol=1e-2,
+            rtol=1e-2,
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_cast_within_a_ggml_type_keeps_a_transpose(self):
+        # int64 and int32 are both I32 in ggml, so the cast reads the
+        # transpose as a view and the transpose back undoes it.
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: x.transpose(0, 1).to(torch.int32).transpose(0, 1)),
+            (torch.arange(6).reshape(2, 3),),
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_readers_of_a_transpose_share_one_copy(self):
+        def forward(x):
+            t = x.transpose(1, 2)
+            return t + 1.0, t * 2.0
+
+        ops = collections.Counter()
+        self._check(Lambda(forward), (torch.randn(2, 3, 4),), graph_ops=ops)
+        # Each graph build copies the transpose once for both readers.
+        self.assertEqual(ops["CONT"], ops["ADD"])
+
     def test_sdpa_reuses_computed_bool_mask(self):
         def forward(q, k, v, mask_input):
             mask = mask_input.le(0.7)
@@ -1018,6 +1103,15 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_index_put_cache_write(self):
         self._check(CacheWrite(), (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])))
+
+    def test_index_put_reads_transposed_values_without_copies(self):
+        ops = collections.Counter()
+        self._check(
+            TransposedCacheWrite(),
+            (torch.randn(1, 3, 2, 4), torch.tensor([5, 1, 6])),
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
 
     def test_cached_graphs_refresh_inputs_and_persistent_cache(self):
         t = Dim("t", min=1, max=8)
@@ -1253,6 +1347,27 @@ class GgmlOpsTest(unittest.TestCase):
         # Per graph build (one ARANGE each): a cast of `start` to F32 and one
         # I32 cast of the positions, shared by both ropes.
         self.assertEqual(ops["CPY"], 2 * ops["ARANGE"])
+
+    def test_rope_reads_head_transposes_without_copies(self):
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        ops = collections.Counter()
+        self._check(
+            RopeOfPermute(config, (0, 2, 1, 3)),
+            (torch.randn(1, 5, 4, 64), torch.tensor([[3, 4, 5, 6, 7]])),
+            atol=1e-4,
+            rtol=1e-4,
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_rope_copies_a_permute_that_moves_the_last_dim(self):
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        self._check(
+            RopeOfPermute(config, (0, 1, 3, 2)),
+            (torch.randn(1, 4, 64, 5), torch.tensor([[3, 4, 5, 6, 7]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
 
     def test_rope_llama3(self):
         config = LlamaConfig(
