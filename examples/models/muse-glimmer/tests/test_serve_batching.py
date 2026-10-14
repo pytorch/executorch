@@ -63,7 +63,7 @@ def test_worker_forwards_mg_options(arguments):
 @pytest.mark.parametrize(
     "flag,value",
     [
-        ("--backend", "cuda"),
+        ("--backend", "vulkan"),
         ("--max-vision-patches", "3"),
         ("--max-vision-patches", str(1 << 31)),
     ],
@@ -71,6 +71,38 @@ def test_worker_forwards_mg_options(arguments):
 def test_launcher_rejects_invalid_options(arguments, flag, value):
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(arguments + [flag, value])
+    assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments + ["--backend", "cuda", "--data-path", str(data)]
+    )
+    command = serve_batching._worker_command(args)
+    flags = dict(zip(command[1::2], command[2::2]))
+    assert flags["--backend"] == "cuda"
+    assert flags["--data_path"] == str(data)
+    assert "--pos_embed_path" not in flags
+
+
+@pytest.mark.parametrize("pos_embed", [False, True])
+def test_cuda_launcher_rejects_missing_weights_or_vision(
+    arguments, tmp_path, pos_embed
+):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    table = tmp_path / "pos_embed.bin"
+    data.touch()
+    table.touch()
+    argv = arguments + ["--backend", "cuda"]
+    argv += (
+        ["--data-path", str(data), "--pos-embed-path", str(table)]
+        if pos_embed
+        else []
+    )
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(argv)
     assert error.value.code == 2
 
 
