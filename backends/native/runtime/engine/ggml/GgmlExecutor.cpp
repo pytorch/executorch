@@ -3332,18 +3332,48 @@ class GraphBuilder {
     ggml_tensor* result = nullptr;
     if (groups == 1 && weight.sizes[1] == channels) {
       // ggml_conv_2d rounds the im2col columns of an F32 kernel through F16.
-      ggml_tensor* columns = ggml_im2col(
-          ctx,
-          kernel,
-          in,
-          stride[0],
-          stride[1],
-          padding[0],
-          padding[1],
-          dilation[0],
-          dilation[1],
-          /*is_2D=*/true,
-          GGML_TYPE_F32);
+      ggml_tensor* columns = nullptr;
+      if (kernel->ne[0] == 1 && kernel->ne[1] == 1) {
+        // ggml-metal's im2col runs a threadgroup per output element with a
+        // thread per kernel tap, one thread for a 1x1 kernel. With the
+        // channels as im2col's batch they fill the threadgroups instead, and
+        // a copy transposes them to the front; at stride 1 without padding
+        // the copy alone suffices.
+        const int64_t batch = in->ne[3];
+        ggml_tensor* taps = in;
+        if (stride != std::array<int, 2>{1, 1} ||
+            padding != std::array<int, 2>{0, 0}) {
+          taps = ggml_im2col(
+              ctx,
+              ggml_reshape_4d(ctx, kernel, 1, 1, 1, channels * out_channels),
+              ggml_reshape_4d(
+                  ctx, in, in->ne[0], in->ne[1], 1, channels * batch),
+              stride[0],
+              stride[1],
+              padding[0],
+              padding[1],
+              dilation[0],
+              dilation[1],
+              /*is_2D=*/true,
+              GGML_TYPE_F32);
+          taps = ggml_reshape_4d(
+              ctx, taps, taps->ne[1], taps->ne[2], channels, batch);
+        }
+        columns = ggml_cont(ctx, ggml_permute(ctx, taps, 1, 2, 0, 3));
+      } else {
+        columns = ggml_im2col(
+            ctx,
+            kernel,
+            in,
+            stride[0],
+            stride[1],
+            padding[0],
+            padding[1],
+            dilation[0],
+            dilation[1],
+            /*is_2D=*/true,
+            GGML_TYPE_F32);
+      }
       result = ggml_mul_mat(
           ctx,
           ggml_reshape_2d(
