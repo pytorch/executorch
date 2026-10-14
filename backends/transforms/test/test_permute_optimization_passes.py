@@ -1678,6 +1678,71 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permutation_sink_view_terminal_broadcast_is_optimized",
         )
 
+    def test_numel_one_operand_does_not_block_region(self) -> None:
+        x_data = torch.randn(1, 4, 2, 3)
+        scale_data = torch.tensor(0.5)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        scale = builder.placeholder("scale", scale_data)
+        permute_in = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute_in, scale)
+        )
+        permute_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 3, 1, 2])
+        )
+        builder.output([permute_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, scale_data],
+            "numel_one_operand_does_not_block_region",
+        )
+
+    def test_cat_with_different_concat_sizes_does_not_block_region(self) -> None:
+        x_data = torch.randn(1, 4, 2, 2)
+        y_data = torch.randn(1, 6, 2, 2)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        permute_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        permute_y = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 2, 3, 1])
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([permute_x, permute_y], 3)
+        )
+        permute_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(cat, [0, 3, 1, 2])
+        )
+        builder.output([permute_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "cat_with_different_concat_sizes_does_not_block_region",
+        )
+
     def test_split_sink_view_is_not_remapped_for_broadcast(self) -> None:
         x_data = torch.randn(1, 4, 2)
         sink_data = torch.randn(1, 1, 1, 8)
