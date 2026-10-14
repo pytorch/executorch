@@ -881,10 +881,13 @@ def _index_select_suite() -> WebGPUTestSuite:
 def _conv_with_clamp_suite() -> WebGPUTestSuite:
     # nn.Conv2d + F.relu6 / F.relu -> delegated et_vk.conv_with_clamp (fp32 conv
     # + clamp [0,6] / [0,inf)). Golden = fp32 eager. groups==1 convs large enough
-    # for the conv2d GEMM run on it with the clamp fused: wide_relu_large (no
-    # upper bound, multi-tile OC), pw_relu6_large (1x1, inputs scaled so both
-    # bounds clip). Smaller convs (the rest), grouped (groups=2) and outputs too
-    # large for the GEMM grid stay on the direct conv_with_clamp kernel.
+    # for a tiled kernel run on it with the clamp fused: pw_relu6_large (1x1,
+    # inputs scaled so both bounds clip), huge_dilation/huge_footprint (footprint
+    # too big for shared memory) and wide_grid_limit on the GEMM; wide_relu_large
+    # (no upper bound, multi-tile OC), saturate_large and asym_large on
+    # conv2d_shmem. Smaller convs (the rest, incl. oc3_large), grouped (groups=2)
+    # and outputs too large for the GEMM grid stay on the direct conv_with_clamp
+    # kernel.
     def case(
         name,
         shape,
@@ -972,6 +975,49 @@ def _conv_with_clamp_suite() -> WebGPUTestSuite:
                 0,
                 1,
                 act="relu",
+                heavy=True,
+            ),
+            case(
+                "saturate_large",
+                InputSpec(
+                    shape=(1, 8, 70, 118),
+                    gen=lambda s: 20
+                    * torch.randn(s, generator=torch.Generator().manual_seed(0)),
+                ),
+                8,
+                24,
+                3,
+                1,
+                1,
+                1,
+            ),
+            case("asym_large", (1, 8, 70, 240), 8, 24, (2, 3), (1, 2), (1, 0), (2, 1)),
+            # Footprint too large for shared memory (no 32-bit wrap) -> GEMM.
+            case("huge_dilation", (1, 2, 70, 118), 2, 24, 3, 1, 16379, 16379),
+            # Each footprint side ~2^32 (no 64-bit wrap either) -> GEMM.
+            case(
+                "huge_footprint",
+                (1, 2, 70, 118),
+                2,
+                24,
+                3,
+                1,
+                (2147483646, 2147483640),
+                (2147483646, 2147483640),
+            ),
+            # Large enough for conv2d_shmem, but the small-OC decline runs first
+            # -> direct kernel.
+            case("oc3_large", (1, 8, 258, 260), 8, 3, 3, 1, 1, 1),
+            # Shared-memory grid exceeds one dispatch dimension -> GEMM.
+            case(
+                "wide_grid_limit",
+                (1, 8, 2, 16369),
+                8,
+                2017,
+                (2, 1),
+                1,
+                0,
+                1,
                 heavy=True,
             ),
         ],
@@ -1342,11 +1388,17 @@ from executorch.backends.webgpu.test.ops.test_conv2d import _chw_ramp, make_conv
 def _conv2d_suite() -> WebGPUTestSuite:
     # DaViT patch-embed / downsample convs + conv_transpose2d (same registration,
     # folded by the `transposed` arg). NCHW fp32. Routing coverage (all vs the
-    # same fp64 golden): patch_embed/conv3x3_pad1/strided are groups==1 → im2col
-    # tiled GEMM; grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise
-    # (groups=8, icpg=1) → direct scalar; transpose2x_tiled/transpose3x
-    # (stride == kernel) → conv_transpose2d_gemm; transpose2x (too small for the
-    # GEMM) and transpose_overlap → conv_transpose2d gather.
+    # same fp64 golden): groups==1 multi-tap convs with enough output for the
+    # shared-memory kernel to fill the GPU → conv2d_shmem: conv3x3_ic12 (partial
+    # last input-channel chunk, two output-channel tiles),
+    # conv3x3_oc12/conv3x3_oc6/conv5x5_oc3 (every channel tile height),
+    # conv3x3_s2 (stride); all with ragged tile edges.
+    # Smaller ones (conv3x3_pad1, strided, conv3x3_c128) and patch_embed
+    # (footprint too big for shared memory) and conv1x1 → im2col tiled GEMM;
+    # grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise (groups=8,
+    # icpg=1) → direct scalar; transpose2x_tiled/transpose3x (stride == kernel)
+    # → conv_transpose2d_gemm; transpose2x (too small for the GEMM) and
+    # transpose_overlap → conv_transpose2d gather.
     # No batched (B>1) case: check_conv_node in backends/vulkan/op_registry.py
     # refuses to delegate a 4-D convolution whose batch is not 1, so the export
     # would fall back to CPU and test nothing. Add one back once it is accepted.
@@ -1373,6 +1425,47 @@ def _conv2d_suite() -> WebGPUTestSuite:
                     "padding": 1,
                 },
                 inputs=(InputSpec(shape=(1, 3, 16, 16), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv3x3_ic12",
+                construct={"in_ch": 12, "out_ch": 40, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(1, 12, 66, 118), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv3x3_oc12",
+                construct={"in_ch": 8, "out_ch": 12, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(1, 8, 122, 130), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv3x3_oc6",
+                construct={"in_ch": 4, "out_ch": 6, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(1, 4, 130, 260), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv5x5_oc3",
+                construct={"in_ch": 4, "out_ch": 3, "kernel": 5, "padding": 2},
+                inputs=(InputSpec(shape=(1, 4, 258, 260), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv3x3_s2",
+                construct={
+                    "in_ch": 4,
+                    "out_ch": 24,
+                    "kernel": 3,
+                    "stride": 2,
+                    "padding": 1,
+                },
+                inputs=(InputSpec(shape=(1, 4, 132, 236), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv3x3_c128",
+                construct={"in_ch": 128, "out_ch": 128, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(1, 128, 28, 28), gen=_chw_ramp),),
+            ),
+            Case(
+                name="conv1x1",
+                construct={"in_ch": 16, "out_ch": 8, "kernel": 1},
+                inputs=(InputSpec(shape=(1, 16, 7, 9), gen=_chw_ramp),),
             ),
             Case(
                 name="depthwise",
