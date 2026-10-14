@@ -37,12 +37,15 @@ def test_nsys_test_debug_results__single_input(caplog, request):
 
     graph_verifier = BaseGraphVerifier(1, [])
 
+    # use different reference model dim order so transposed dataset is created
+    ref_input_spec = ModelInputSpec(input_shape, dim_order=torch.channels_last)
     lower_run_compare(
         model,
         input_shape,
         graph_verifier,
         request,
         remove_quant_io_ops=True,
+        reference_input_spec=[ref_input_spec],
     )
 
     test_name = get_test_name(request)
@@ -70,10 +73,16 @@ def test_nsys_test_debug_results__single_input(caplog, request):
 
     # Check text tensor variants
     assert os.path.isfile(
-        os.path.join(OUTPUTS_DIR, test_name, "dataset", "calibration", "0000.txt")
+        os.path.join(OUTPUTS_DIR, test_name, "model_dataset", "calibration", "0000.txt")
     )
     assert os.path.isfile(
-        os.path.join(OUTPUTS_DIR, test_name, "dataset_quant", "0000.txt")
+        os.path.join(OUTPUTS_DIR, test_name, "model_dataset_quant", "0000.txt")
+    )
+    assert os.path.isfile(
+        os.path.join(OUTPUTS_DIR, test_name, "ref_dataset", "calibration", "0000.bin")
+    )
+    assert os.path.isfile(
+        os.path.join(OUTPUTS_DIR, test_name, "ref_dataset_quant", "0000.bin")
     )
     assert os.path.isfile(
         os.path.join(OUTPUTS_DIR, test_name, "results_cpu", "0000.bin", "0000.txt")
@@ -140,7 +149,7 @@ class TestNsysDebugResults:
         # Check text tensor variants
         assert os.path.isfile(
             os.path.join(
-                OUTPUTS_DIR, test_name, "dataset", "calibration", "0000", "00.txt"
+                OUTPUTS_DIR, test_name, "model_dataset", "calibration", "0000", "00.txt"
             )
         )
         assert os.path.isfile(
