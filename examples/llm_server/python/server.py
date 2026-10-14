@@ -191,7 +191,7 @@ def build_app(
 
     @app.get("/v1/runtime/stats")
     async def runtime_stats():
-        return _current_serving(app).resource_snapshot()
+        return await _current_serving(app).resource_snapshot()
 
     @app.get("/v1/models")
     async def list_models() -> ModelList:

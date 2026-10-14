@@ -48,6 +48,33 @@ def _run(scenario):
     asyncio.run(bounded())
 
 
+def test_stats_have_a_bounded_slot_independent_of_generation_capacity():
+    async def scenario():
+        async with _fake_client(
+            max_inflight_requests=1, supports_runtime_stats=True
+        ) as (client, proc):
+            reservation = client.reserve_request()
+            pending = asyncio.create_task(client.runtime_stats())
+            request = await proc.stdin.frames.get()
+            with pytest.raises(WorkerError, match="capacity exhausted"):
+                await client.runtime_stats()
+            proc.send(request["request_id"], stats={"decode_sequences": 2})
+            assert await pending == {"decode_sequences": 2}
+            assert client.release_request(reservation)
+            assert client.healthy
+
+    _run(scenario())
+
+
+def test_older_worker_stats_are_unknown_without_sending_a_request():
+    async def scenario():
+        async with _fake_client() as (client, proc):
+            assert await client.runtime_stats() is None
+            assert not proc.stdin.written
+
+    _run(scenario())
+
+
 class _Writer:
     def __init__(self):
         self.frames = asyncio.Queue()

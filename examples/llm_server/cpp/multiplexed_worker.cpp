@@ -30,6 +30,7 @@
 namespace executorch::examples::llm_server {
 namespace {
 namespace serving = extension::llm::serving;
+namespace batching = extension::llm::batching;
 using Json = nlohmann::json;
 using Clock = std::chrono::steady_clock;
 using Id = std::uint64_t;
@@ -213,8 +214,11 @@ Json terminal_json(const serving::TerminalEvent& event) {
       {"prefill_tok_s",
        s.prefill_ms > 0 ? s.prefilled_prompt_tokens * 1000.0 / s.prefill_ms
                         : 0},
+      // The first output belongs to prefill, outside decode_ms.
       {"decode_tok_s",
-       s.decode_ms > 0 ? s.completion_tokens * 1000.0 / s.decode_ms : 0},
+       s.decode_ms > 0 && s.completion_tokens > 1
+           ? (s.completion_tokens - 1) * 1000.0 / s.decode_ms
+           : 0},
       {"session_reset_reason", s.session_reset_reason}};
   if (s.generated_token_ids)
     out["generated_token_ids"] = *s.generated_token_ids;
@@ -224,6 +228,7 @@ Json terminal_json(const serving::TerminalEvent& event) {
 struct Operation {
   Id id;
   bool control = false;
+  bool stats = false;
   bool terminal = false;
   bool cancelled = false;
   bool overflow = false;
@@ -272,6 +277,7 @@ class Worker {
           {nullptr,
            Json({{"ready", true},
                  {"multiplexed", true},
+                 {"runtime_stats", true},
                  {"max_named_sessions", info.max_sessions},
                  {"max_inflight_requests", config_.max_inflight_requests}})
                    .dump() +
@@ -376,21 +382,29 @@ class Worker {
     } catch (...) {
     }
     op->control = name == "cancel";
+    op->stats = name == "stats";
     {
       std::lock_guard<std::mutex> lock(mutex_);
       // Duplicate identity cannot safely receive a second terminal on this
       // wire.
       if (operations_.count(id))
         throw std::invalid_argument("duplicate in-flight request_id");
-      if (requests_ >= config_.max_inflight_requests && !op->control) {
+      if ((op->stats && stats_pending_) ||
+          (!op->stats && !op->control &&
+           requests_ >= config_.max_inflight_requests)) {
         op->control = true;
+        op->stats = false;
         name = "overloaded";
       }
       if (op->control && controls_ >= config_.max_inflight_requests) {
         throw std::invalid_argument("control response budget exhausted");
       }
       operations_.emplace(id, op);
-      ++(op->control ? controls_ : requests_);
+      if (op->stats) {
+        stats_pending_ = true;
+      } else {
+        ++(op->control ? controls_ : requests_);
+      }
     }
     checkpoint(Checkpoint::Admitted, id);
     try {
@@ -400,6 +414,62 @@ class Worker {
             op,
             failure(
                 "capacity_exhausted", "worker operation capacity exhausted"));
+      } else if (name == "stats") {
+        fields(message, {"op", "request_id"});
+        const auto snapshot = runtime_.snapshot();
+        const auto& engine = snapshot.engine;
+        const auto& m = engine.completed;
+        const auto rate = [](std::uint64_t tokens, double us) -> Json {
+          return us > 0 ? Json(tokens * 1e6 / us) : Json(nullptr);
+        };
+        Json sessions = Json::array();
+        for (const auto& session : snapshot.sessions) {
+          sessions.push_back(
+              {{"session_id", session.id},
+               {"committed_position",
+                session.committed_position ? Json(*session.committed_position)
+                                           : Json(nullptr)}});
+        }
+        Json stats = {
+            {"decode_sequences", engine.decode_sequences},
+            {"prefill_sequences", engine.prefill_sequences},
+            {"context_tokens", engine.context_tokens},
+            {"max_decode_sequences",
+             engine.max_decode_sequences ? Json(*engine.max_decode_sequences)
+                                         : Json(nullptr)},
+            {"kv_allocated_bytes",
+             engine.kv_allocated_bytes ? Json(*engine.kv_allocated_bytes)
+                                       : Json(nullptr)},
+            {"sample_age_ms",
+             batching::stamped(engine.measured_at)
+                 ? Json(
+                       batching::us_between(
+                           engine.measured_at, batching::MetricsClock::now()) /
+                       1000.0)
+                 : Json(nullptr)},
+            {"steps", m.steps},
+            {"failed_steps", m.steps_failed},
+            {"decode_tokens", m.decode_tokens_total},
+            {"prefill_tokens", m.prefill_tokens_total},
+            {"decode_only_ms", m.decode_only_latency_sum_us / 1000.0},
+            {"mixed_ms", m.mixed_latency_sum_us / 1000.0},
+            {"prefill_only_ms", m.prefill_only_latency_sum_us / 1000.0},
+            {"execution_ms", m.step_latency_sum_us / 1000.0},
+            {"wall_ms", m.wall_us() / 1000.0},
+            {"mean_decode_width",
+             m.steps_with_decode ? Json(m.mean_decode_step_sessions())
+                                 : Json(nullptr)},
+            {"aggregate_decode_tokens_per_second",
+             rate(
+                 m.decode_tokens_total,
+                 m.decode_only_latency_sum_us + m.mixed_latency_sum_us)},
+            {"aggregate_prefill_tokens_per_second",
+             rate(
+                 m.prefill_tokens_total,
+                 m.prefill_only_latency_sum_us + m.mixed_latency_sum_us)},
+            {"sessions", std::move(sessions)}};
+        std::lock_guard<std::mutex> lock(mutex_);
+        complete(op, {{"stats", std::move(stats)}});
       } else if (name == "generate") {
         fields(
             message,
@@ -614,7 +684,11 @@ class Worker {
               if (count == 1) {
                 const auto& op = frame.operation;
                 operations_.erase(op->id);
-                --(op->control ? controls_ : requests_);
+                if (op->stats) {
+                  stats_pending_ = false;
+                } else {
+                  --(op->control ? controls_ : requests_);
+                }
               }
             }
           } else {
@@ -646,6 +720,7 @@ class Worker {
   std::unordered_map<Id, std::shared_ptr<Operation>> operations_;
   std::deque<Frame> queue_;
   std::size_t requests_ = 0, controls_ = 0;
+  bool stats_pending_ = false;
   std::atomic<bool> failed_{false};
   bool drained_ = false;
   std::thread writer_;
