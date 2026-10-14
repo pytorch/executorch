@@ -15,6 +15,10 @@
 
 namespace executorch::backends::vgf {
 
+// Sized independently of VGFZeroCopy.h to keep the stats header light.
+// VGFZeroCopy.cpp bounds-checks reason indices before recording them.
+constexpr size_t kVgfImportRejectionReasonSlots = 32;
+
 // One record per VGFBackend::execute(), not per whole-model invocation.
 struct VgfExecutionStats {
   uint64_t in_copy_bytes = 0;
@@ -25,6 +29,8 @@ struct VgfExecutionStats {
   uint64_t execute_ns = 0;
   uint64_t imports = 0;
   uint64_t import_ns = 0;
+  uint64_t import_failures = 0;
+  uint64_t import_rejection_reasons[kVgfImportRejectionReasonSlots] = {};
   uint64_t binding_refresh_ns = 0;
   uint64_t in_zero_copy_bytes = 0;
   uint64_t out_zero_copy_bytes = 0;
@@ -109,6 +115,30 @@ class ScopedVgfExecutionStats final {
   VgfStatsClock::time_point start_;
 };
 
+inline void vgf_stats_record_import_success() noexcept {
+  if (auto* stats = current_vgf_execution_stats()) {
+    ++stats->imports;
+  }
+}
+
+inline void vgf_stats_record_import_rejection(
+    size_t reason_index,
+    bool import_failure) noexcept {
+  auto* stats = current_vgf_execution_stats();
+  if (!stats) {
+    return;
+  }
+  ++stats->fallback_count;
+  if (import_failure) {
+    ++stats->import_failures;
+  } else {
+    ++stats->rejection_count;
+  }
+  if (reason_index < kVgfImportRejectionReasonSlots) {
+    ++stats->import_rejection_reasons[reason_index];
+  }
+}
+
 inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
   auto* stats = current_vgf_execution_stats();
   if (!stats) {
@@ -140,6 +170,14 @@ inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
           ? &::executorch::backends::vgf::current_vgf_execution_stats() \
                  -> field                                               \
           : nullptr)
+#define VGF_STATS_IMPORT_SUCCESS() \
+  ::executorch::backends::vgf::vgf_stats_record_import_success()
+#define VGF_STATS_IMPORT_REJECTION(reason_index)                  \
+  ::executorch::backends::vgf::vgf_stats_record_import_rejection( \
+      (reason_index), false)
+#define VGF_STATS_IMPORT_FAILURE(reason_index)                    \
+  ::executorch::backends::vgf::vgf_stats_record_import_rejection( \
+      (reason_index), true)
 #define VGF_STATS_MEMCPY_IN(dst, src, n) \
   ::executorch::backends::vgf::vgf_stats_memcpy(dst, src, n, true)
 #define VGF_STATS_MEMCPY_OUT(dst, src, n) \
@@ -153,6 +191,15 @@ inline void vgf_stats_memcpy(void* dst, const void* src, size_t n, bool input) {
   } while (false)
 #define VGF_STATS_TIME(field) \
   do {                        \
+  } while (false)
+#define VGF_STATS_IMPORT_SUCCESS() \
+  do {                             \
+  } while (false)
+#define VGF_STATS_IMPORT_REJECTION(reason_index) \
+  do {                                           \
+  } while (false)
+#define VGF_STATS_IMPORT_FAILURE(reason_index) \
+  do {                                         \
   } while (false)
 #define VGF_STATS_MEMCPY_IN(dst, src, n) memcpy(dst, src, n)
 #define VGF_STATS_MEMCPY_OUT(dst, src, n) memcpy(dst, src, n)
