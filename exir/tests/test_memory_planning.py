@@ -825,6 +825,59 @@ class TestMisc(unittest.TestCase):
                 )
                 self.assertTrue(not_overlapping)
 
+    def test_mutable_buffer_write_back_value_memory_is_reused(self) -> None:
+        # The new value of the buffer is final before the rest of the graph
+        # runs, so its write-back copy_ is inserted right after it rather than
+        # at the end of the graph. The value is then dead for the remainder of
+        # the graph and the planner can reuse its memory for later activations.
+        class EarlyStateUpdate(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1024))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.copy_(self.state + x)
+                h = x
+                for _ in range(4):
+                    h = torch.relu(h * 1.5 + 1.0)
+                return h
+
+        model = EarlyStateUpdate()
+        inputs = (torch.ones(1024),)
+        et = to_edge(export(model, inputs, strict=True)).to_executorch(
+            ExecutorchBackendConfig(run_reinplace_pass=False)
+        )
+        nodes = list(et.exported_program().graph_module.graph.nodes)
+
+        copies = [
+            n
+            for n in nodes
+            if n.op == "call_function" and n.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        value_spec = copies[0].args[1].meta["spec"]
+        value_lo = value_spec.mem_offset
+        value_hi = value_lo + value_spec.allocated_memory
+
+        # Some later activation is placed in the value's memory.
+        reused = False
+        for node in nodes[nodes.index(copies[0]) + 1 :]:
+            spec = node.meta.get("spec")
+            if (
+                not isinstance(spec, TensorSpec)
+                or spec.mem_id != value_spec.mem_id
+                or spec.mem_offset is None
+                or spec.lifetime[0] is None
+                or spec.lifetime[0] <= value_spec.lifetime[1]
+            ):
+                continue
+            lo = spec.mem_offset
+            hi = lo + spec.allocated_memory
+            if lo < value_hi and value_lo < hi:
+                reused = True
+                break
+        self.assertTrue(reused)
+
     def test_custom_inplace_op_memory_aliasing(self) -> None:
         """Memory planning correctly handles in-place ops registered via
         the ``ops_to_inplace`` extension API (i.e. outside
