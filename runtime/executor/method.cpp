@@ -756,6 +756,87 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
 
 namespace {
 /**
+ * Validates that t_src's physical layout matches t_dst's, which must already
+ * be resized to t_src's sizes. set_input() copies or shares t_src's buffer
+ * under t_dst's layout, so a mismatched source would be silently
+ * reinterpreted. A source with the default contiguous layout is only warned
+ * about, since callers commonly wrap data that is already in the method's
+ * layout in a default tensor just to pass its shape.
+ */
+ET_NODISCARD Error validate_input_tensor_layout(
+    const executorch::aten::Tensor& t_dst,
+    const executorch::aten::Tensor& t_src,
+    size_t input_idx) {
+  const auto dim = t_src.dim();
+  if (dim == 0 || t_src.numel() == 0) {
+    return Error::Ok;
+  }
+
+  auto src_strides = t_src.strides();
+#ifndef USE_ATEN_LIB
+  std::array<executorch::aten::StridesType, kTensorDimensionLimit>
+      derived_strides{};
+  if (src_strides.empty()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        static_cast<size_t>(dim) <= kTensorDimensionLimit,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has unsupported rank %zd.",
+        input_idx,
+        dim);
+    std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+        default_dim_order{};
+    for (ssize_t i = 0; i < dim; ++i) {
+      default_dim_order[i] = static_cast<executorch::aten::DimOrderType>(i);
+    }
+    const auto src_dim_order = t_src.dim_order();
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        dim_order_to_stride(
+            t_src.sizes().data(),
+            src_dim_order.empty() ? default_dim_order.data()
+                                  : src_dim_order.data(),
+            dim,
+            derived_strides.data()),
+        "Failed to compute strides for input %" ET_PRIsize_t,
+        input_idx);
+    src_strides = {derived_strides.data(), static_cast<size_t>(dim)};
+  }
+#endif
+
+  const auto dst_strides = t_dst.strides();
+  bool matches = true;
+  bool src_is_contiguous = true;
+  int64_t contiguous_stride = 1;
+  for (ssize_t i = dim - 1; i >= 0; --i) {
+    if (t_src.size(i) > 1) {
+      matches = matches && src_strides[i] == dst_strides[i];
+      src_is_contiguous =
+          src_is_contiguous && src_strides[i] == contiguous_stride;
+    }
+    contiguous_stride *= t_src.size(i);
+  }
+
+  if (matches) {
+    return Error::Ok;
+  }
+  if (src_is_contiguous) {
+    ET_LOG(
+        Debug,
+        "Input %" ET_PRIsize_t
+        " has the default contiguous layout but the method expects a "
+        "different dim order; treating its data as already in the expected "
+        "layout. Pass a tensor with the method's dim order to avoid this.",
+        input_idx);
+    return Error::Ok;
+  }
+  ET_LOG(
+      Error,
+      "Input %" ET_PRIsize_t
+      " has strides that do not match the method's expected layout.",
+      input_idx);
+  return Error::InvalidArgument;
+}
+
+/**
  * Private/helper method for populating operator_name from the Operator.
  * operator_name is a char pointer that is already allocated. The size of
  * of this buffer is of size operator_name_size.
@@ -1344,6 +1425,10 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OK_OR_RETURN_ERROR(
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
+        input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        validate_input_tensor_layout(t_dst, t_src, input_idx),
+        "Error validating tensor layout at input %" ET_PRIsize_t,
         input_idx);
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {

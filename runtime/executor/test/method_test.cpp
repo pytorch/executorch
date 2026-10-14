@@ -82,6 +82,7 @@ class MethodTest : public ::testing::Test {
 
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
+    load_program(std::getenv("ET_MODULE_CHANNELS_LAST_PATH"), "channels_last");
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
     load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
@@ -328,7 +329,7 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   // multiplication overflows; on 64-bit the resize bounds check rejects it.
   int32_t sizes[2] = {2000000000, 2000000000};
   uint8_t dim_order[2] = {0, 1};
-  int32_t strides[2] = {1, 1};
+  int32_t strides[2] = {2000000000, 1};
   executorch::aten::TensorImpl impl(
       executorch::aten::ScalarType::Float,
       2,
@@ -340,6 +341,153 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   auto input_err =
       method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   EXPECT_NE(input_err, Error::Ok);
+}
+
+TEST_F(MethodTest, SetInputRejectsMismatchedLayout) {
+  // The "cat" model expects a contiguous (2, 4) input. set_input() must not
+  // reinterpret a differently-laid-out buffer as that input.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float buffer[16] = {};
+  int32_t sizes[2] = {2, 4};
+
+  uint8_t transposed_dim_order[2] = {1, 0};
+  int32_t transposed_strides[2] = {1, 2};
+  executorch::aten::TensorImpl transposed_impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      transposed_dim_order,
+      transposed_strides);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&transposed_impl)), 0),
+      Error::InvalidArgument);
+
+  uint8_t contiguous_dim_order[2] = {0, 1};
+  int32_t padded_strides[2] = {8, 1};
+  executorch::aten::TensorImpl padded_impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      contiguous_dim_order,
+      padded_strides);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&padded_impl)), 0),
+      Error::InvalidArgument);
+
+  // A dim_order without strides still describes the buffer layout.
+  executorch::aten::TensorImpl dim_order_only_impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      transposed_dim_order);
+  EXPECT_EQ(
+      method->set_input(
+          EValue(executorch::aten::Tensor(&dim_order_only_impl)), 0),
+      Error::InvalidArgument);
+
+  // TensorImpls built without dim_order/strides use the default contiguous
+  // layout.
+  executorch::aten::TensorImpl default_layout_impl(
+      executorch::aten::ScalarType::Float, 2, sizes, buffer);
+  EXPECT_EQ(
+      method->set_input(
+          EValue(executorch::aten::Tensor(&default_layout_impl)), 0),
+      Error::Ok);
+}
+
+TEST_F(MethodTest, SetInputAcceptsMatchingChannelsLastLayout) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["channels_last"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float buffer[60];
+  for (size_t i = 0; i < 60; ++i) {
+    buffer[i] = static_cast<float>(i);
+  }
+  int32_t sizes[4] = {1, 3, 4, 5};
+  uint8_t dim_order[4] = {0, 2, 3, 1};
+  int32_t strides[4] = {60, 1, 15, 3};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      4,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+  ASSERT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+
+  const float* out = method->get_output(0).toTensor().const_data_ptr<float>();
+  for (size_t i = 0; i < 60; ++i) {
+    EXPECT_FLOAT_EQ(out[i], 2.f * buffer[i]);
+  }
+}
+
+TEST_F(MethodTest, SetInputRejectsMismatchedChannelsLastLayout) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["channels_last"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float buffer[60] = {};
+  int32_t sizes[4] = {1, 3, 4, 5};
+  uint8_t dim_order[4] = {0, 1, 3, 2};
+  int32_t strides[4] = {60, 20, 1, 4};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      4,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
+      Error::InvalidArgument);
+}
+
+TEST_F(MethodTest, SetInputAcceptsContiguousInputForChannelsLastMethod) {
+  // Callers may wrap data already in the method's layout in a default
+  // contiguous tensor; this stays accepted for backward compatibility.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["channels_last"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float buffer[60] = {};
+  int32_t sizes[4] = {1, 3, 4, 5};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 4, sizes, buffer);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+}
+
+TEST_F(MethodTest, SetInputAllowsSizeOneStrideMismatch) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float buffer[4] = {};
+  int32_t sizes[2] = {1, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {999, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
 }
 
 TEST_F(MethodTest, ConstantSegmentTest) {
