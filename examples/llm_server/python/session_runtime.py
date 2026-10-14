@@ -153,6 +153,8 @@ class _GenerationBridge:
         self._wakeup_pending = False
         self.drop_tokens = threading.Event()
         self.worker_done = threading.Event()
+        self.stats_received = False
+        self.failed = False
 
     def _wake(self) -> None:
         with self._mailbox_lock:
@@ -209,6 +211,7 @@ class _GenerationBridge:
 
     def stats_cb(self, s) -> None:
         _copy_stats(self._stats, s)
+        self.stats_received = True
 
     def run(self) -> None:
         try:
@@ -223,6 +226,7 @@ class _GenerationBridge:
                 **kwargs,
             )
         except BaseException as error:  # noqa: B036 - settle thread failures
+            self.failed = True
             self.finish(
                 error if isinstance(error, Exception) else WorkerError(str(error))
             )
@@ -232,6 +236,7 @@ class _GenerationBridge:
                 try:
                     settle(self._request_id)
                 except BaseException as error:  # noqa: B036 - settle thread failures
+                    self.failed = True
                     self.finish(
                         error
                         if isinstance(error, Exception)
@@ -510,13 +515,20 @@ class SessionRuntime:
             ],
         }
 
-    def _observe_generation(self, future, session_id, stats):
+    async def engine_snapshot(self) -> Optional[dict]:
+        if isinstance(self._worker, MultiplexedWorkerClient):
+            return await self._worker.runtime_stats()
+        return None
+
+    def _observe_generation(self, future, session_id, stats, bridge=None):
         submitted = sum(not f.done() for f in self._generation_futures) + 1
         self._generation_futures.add(future)
 
         def finished(done):
             self._generation_futures.discard(done)
             if done.cancelled() or done.exception() is not None:
+                return
+            if bridge is not None and (bridge.failed or not bridge.stats_received):
                 return
             self._completed_generations += 1
             self._recent_generations.append(
@@ -842,7 +854,7 @@ class SessionRuntime:
                 future = loop.run_in_executor(self._executor, bridge.run)
                 operation.future = future
                 generation._future = future
-                self._observe_generation(future, session_id, out_stats)
+                self._observe_generation(future, session_id, out_stats, bridge)
                 self._bridges.add(bridge)
                 future.add_done_callback(lambda _: self._bridges.discard(bridge))
             except BaseException:

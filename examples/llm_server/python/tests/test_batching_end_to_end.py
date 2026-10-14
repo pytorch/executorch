@@ -624,6 +624,49 @@ async def test_resource_snapshot_tracks_wire_work_and_completed_rates(native_wor
 
 
 @pytest.mark.anyio
+async def test_live_engine_stats_track_overlapping_native_sessions(native_worker):
+    worker, _ = await native_worker(gate=True)
+    runtime = SessionRuntime(worker)
+    requests = [
+        asyncio.create_task(
+            runtime.generate_stream(
+                key, PromptInput(text="hello"), GenerationOptions(64)
+            ).result()
+        )
+        for key in ("a", "b")
+    ]
+    observed = []
+    try:
+
+        async def observe():
+            while not all(request.done() for request in requests):
+                observed.append(await runtime.engine_snapshot())
+                await asyncio.sleep(0.002)
+
+        await asyncio.wait_for(asyncio.gather(*requests, observe()), 15)
+        final = await runtime.engine_snapshot()
+        assert max(s["decode_sequences"] for s in observed) == 2
+        assert final["decode_sequences"] == 0
+        assert final["prefill_sequences"] == 0
+        assert final["decode_tokens"] == 126
+        assert final["prefill_tokens"] == 10
+        assert {s["session_id"] for s in final["sessions"]} == {"a", "b"}
+        assert all(s["committed_position"] == 68 for s in final["sessions"])
+        assert final["kv_allocated_bytes"] is None
+        decode_ms = final["decode_only_ms"] + final["mixed_ms"]
+        assert final["aggregate_decode_tokens_per_second"] == pytest.approx(
+            126000 / decode_ms
+        )
+        await runtime.close("a")
+        assert [
+            s["session_id"] for s in (await runtime.engine_snapshot())["sessions"]
+        ] == ["b"]
+    finally:
+        await runtime.aclose_worker()
+        await asyncio.gather(*requests, return_exceptions=True)
+
+
+@pytest.mark.anyio
 async def test_resource_route_returns_unknown_rates_before_first_generation(
     native_http,
 ):
@@ -632,6 +675,10 @@ async def test_resource_route_returns_unknown_rates_before_first_generation(
     assert response.status_code == 200
     assert response.json()["submitted_generations"] == 0
     assert response.json()["recent_generations"] == []
+    engine = response.json()["engine"]
+    assert engine["aggregate_decode_tokens_per_second"] is None
+    assert engine["decode_sequences"] == 0
+    assert engine["sessions"] == []
 
 
 @pytest.mark.anyio

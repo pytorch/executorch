@@ -1605,6 +1605,25 @@ struct ServingRuntime::Impl {
         sessions_.size()};
   }
 
+  RuntimeSnapshot snapshot() const {
+    RuntimeSnapshot result;
+    if (runner_) {
+      result.engine = runner_->snapshot();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& entry : sessions_) {
+      if (const auto* key = std::get_if<std::string>(&entry.first)) {
+        const auto& slot = entry.second;
+        result.sessions.push_back(
+            {*key,
+             slot.session
+                 ? std::optional<batching::Position>(slot.session->position())
+                 : std::nullopt});
+      }
+    }
+    return result;
+  }
+
   void shutdown() {
     std::vector<Request> cancelled;
     {
@@ -1803,6 +1822,10 @@ std::future<LifecycleResult> ServingRuntime::reset_session_async(
 
 ServingInfo ServingRuntime::info() const {
   return impl_->info();
+}
+
+RuntimeSnapshot ServingRuntime::snapshot() const {
+  return impl_->snapshot();
 }
 
 void ServingRuntime::shutdown() {

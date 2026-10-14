@@ -9,8 +9,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "MLXExecutor.h" // Tensor, StreamOrDevice
@@ -117,6 +120,29 @@ class Pool {
   // max_slots on demand.
   int slots() const {
     return buf_ ? static_cast<int>(buf_->shape(2)) : 0;
+  }
+
+  void collect_allocations(
+      std::unordered_map<const void*, std::size_t>& allocations,
+      std::unordered_set<std::uintptr_t>& seen) const {
+    if (!buf_) {
+      return;
+    }
+    // Lazy clones retain their source buffers until evaluation.
+    std::vector<const Tensor*> pending{&*buf_};
+    while (!pending.empty()) {
+      const auto* tensor = pending.back();
+      pending.pop_back();
+      if (!seen.insert(tensor->id()).second) {
+        continue;
+      }
+      if (const auto& data = tensor->data_shared_ptr()) {
+        allocations.emplace(data.get(), tensor->buffer_size());
+      }
+      for (const auto& input : tensor->inputs()) {
+        pending.push_back(&input);
+      }
+    }
   }
 
   // A pool holding the leading `length` slots, lazily copied.

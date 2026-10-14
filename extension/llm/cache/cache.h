@@ -18,6 +18,7 @@
 // fills in, all usable without picking a layout. Each backend-facing planner
 // face lives with its layout, in sequence_cache.h or cell_cache.h.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -72,6 +73,15 @@ class ET_EXPERIMENTAL Cache {
   // Implemented with expose<...>(this, id). Kept behind as<T>() so callers do
   // not handle erased pointers or face names directly.
   virtual void* face(FaceId id) = 0;
+};
+
+// Optional metadata-only accounting, called between forwards. Count shared
+// backing once, including buffers retained by pending cache operations.
+class ET_EXPERIMENTAL CacheMemory {
+ public:
+  static constexpr const char* kFaceName = "et.cache.CacheMemory";
+  virtual ~CacheMemory() = default;
+  virtual std::optional<std::size_t> allocated_bytes() const = 0;
 };
 
 // Lifecycle, tensor-free.
