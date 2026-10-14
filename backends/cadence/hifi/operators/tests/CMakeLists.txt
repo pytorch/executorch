@@ -52,6 +52,7 @@ add_executable(
   test_op_dequantize_per_tensor_out.cpp
   test_op_div.cpp
   test_op_im2row_out.cpp
+  test_op_log2.cpp
   test_op_permute_copy.cpp
   test_op_quantize_per_tensor.cpp
   test_op_quantized_conv2d_out.cpp
