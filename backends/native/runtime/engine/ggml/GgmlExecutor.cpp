@@ -49,8 +49,10 @@ namespace {
 
 constexpr std::string_view kTorchOpsPrefix = "torch.ops.";
 constexpr std::string_view kQ4KCodec = "gguf:q4_k";
-constexpr int64_t kQ4KBlockElements = 256;
+constexpr std::string_view kQ6KCodec = "gguf:q6_k";
+constexpr int64_t kKQuantBlockElements = 256;
 constexpr size_t kQ4KBlockBytes = 144;
+constexpr size_t kQ6KBlockBytes = 210;
 constexpr size_t kQ40BlockElements = 32;
 
 struct BlockQ40 {
@@ -88,23 +90,34 @@ const PackedQuant* packed_quant(const TensorMeta& meta) {
 
 size_t packed_nbytes(const TensorMeta& meta) {
   const PackedQuant* packed = packed_quant(meta);
-  if (packed == nullptr || packed->codec != kQ4KCodec) {
+  if (packed == nullptr ||
+      (packed->codec != kQ4KCodec && packed->codec != kQ6KCodec)) {
     throw std::runtime_error(
-        "ggml: only PackedQuant codec 'gguf:q4_k' is supported");
+        "ggml: only PackedQuant codecs 'gguf:q4_k' and 'gguf:q6_k' "
+        "are supported");
   }
   if (meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
-      meta.sizes[1] % kQ4KBlockElements != 0) {
+      meta.sizes[1] % kKQuantBlockElements != 0) {
     throw std::runtime_error(
-        "ggml: Q4_K weight must have logical shape [O, I] with I divisible "
+        "ggml: K-quant weight must have logical shape [O, I] with I divisible "
         "by 256");
   }
-  const size_t rows = static_cast<size_t>(meta.sizes[0]);
-  const size_t blocks = static_cast<size_t>(meta.sizes[1] / kQ4KBlockElements);
-  if (blocks > SIZE_MAX / kQ4KBlockBytes ||
-      rows > SIZE_MAX / (blocks * kQ4KBlockBytes)) {
-    throw std::runtime_error("ggml: Q4_K byte size overflows");
+  const ggml_type type =
+      packed->codec == kQ4KCodec ? GGML_TYPE_Q4_K : GGML_TYPE_Q6_K;
+  const size_t block_bytes =
+      packed->codec == kQ4KCodec ? kQ4KBlockBytes : kQ6KBlockBytes;
+  if (ggml_type_size(type) != block_bytes ||
+      ggml_blck_size(type) != kKQuantBlockElements) {
+    throw std::runtime_error("ggml: unexpected GGUF K-quant block layout");
   }
-  return rows * blocks * kQ4KBlockBytes;
+  const size_t rows = static_cast<size_t>(meta.sizes[0]);
+  const size_t blocks =
+      static_cast<size_t>(meta.sizes[1] / kKQuantBlockElements);
+  if (blocks > SIZE_MAX / block_bytes ||
+      rows > SIZE_MAX / (blocks * block_bytes)) {
+    throw std::runtime_error("ggml: K-quant byte size overflows");
+  }
+  return rows * blocks * block_bytes;
 }
 
 const AffineGroupQuant* affine_quant(const TensorMeta& meta) {
@@ -202,6 +215,9 @@ ggml_type to_ggml_type(const TensorMeta& meta) {
     packed_nbytes(meta);
     if (packed_quant(meta)->codec == kQ4KCodec) {
       return GGML_TYPE_Q4_K;
+    }
+    if (packed_quant(meta)->codec == kQ6KCodec) {
+      return GGML_TYPE_Q6_K;
     }
     throw std::runtime_error(
         "ggml: unsupported PackedQuant codec '" + packed_quant(meta)->codec +
