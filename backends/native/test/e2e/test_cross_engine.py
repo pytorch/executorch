@@ -427,11 +427,16 @@ class CrossEngineTest(unittest.TestCase):
                     )
 
     def _check_llama(
-        self, model, kv_cache_dtype, atol_fraction: float, engines=_ENGINES
+        self,
+        model,
+        kv_cache_dtype,
+        atol_fraction: float,
+        engines=_ENGINES,
+        max_seq: int = _MAX_SEQ,
     ):
         prompt = torch.randint(0, model.config.vocab_size, (1, 7))
-        eager = LastTokenLM(copy.deepcopy(model), _MAX_SEQ, kv_cache_dtype).eval()
-        wrapper = LastTokenLM(model, _MAX_SEQ, kv_cache_dtype).eval()
+        eager = LastTokenLM(copy.deepcopy(model), max_seq, kv_cache_dtype).eval()
+        wrapper = LastTokenLM(model, max_seq, kv_cache_dtype).eval()
         steps = [(prompt, torch.arange(7))]
         expected = []
         with torch.no_grad():
@@ -440,7 +445,7 @@ class CrossEngineTest(unittest.TestCase):
                 next_id = expected[-1][0, -1].argmax().reshape(1, 1)
                 steps.append((next_id, torch.tensor([position])))
             steps.pop()
-            seq = Dim("seq", min=1, max=_MAX_SEQ - 1)
+            seq = Dim("seq", min=1, max=max_seq - 1)
             ep = torch.export.export(
                 wrapper,
                 steps[0],
@@ -484,6 +489,19 @@ class CrossEngineTest(unittest.TestCase):
         engines = tuple(e for e in _ENGINES if e not in _FP32_KV_ONLY)
         self._check_llama(
             _tiny_llama(), torch.float16, atol_fraction=2e-2, engines=engines
+        )
+
+    def test_tiny_llama_fp16_kv_long_cache(self):
+        # A cache longer than a ggml attention key-extent bucket (256), so
+        # the engine attends only the prefix the mask leaves open.
+        torch.manual_seed(0)
+        engines = tuple(e for e in _ENGINES if e not in _FP32_KV_ONLY)
+        self._check_llama(
+            _tiny_llama(),
+            torch.float16,
+            atol_fraction=2e-2,
+            engines=engines,
+            max_seq=600,
         )
 
     @unittest.skip(
