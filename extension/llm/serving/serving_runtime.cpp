@@ -257,10 +257,18 @@ struct ServingRuntime::Impl {
             scheduler && config.max_sessions > 0 &&
             config.max_pending_operations > 0 && config.max_requests > 0 &&
             config.max_events_per_request > 0 &&
-            config.max_tokens_per_request > 0),
+            config.max_tokens_per_request > 0 &&
+            config.prefix_checkpoint_interval <=
+                static_cast<std::size_t>(
+                    std::numeric_limits<batching::Position>::max()) &&
+            ((!config.prefix_checkpoint_interval &&
+              !config.prefix_checkpoint_policy) ||
+             config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
         model_preparer_(std::move(model_preparer)),
-        prefix_cache_(config.prefix_cache_capacity) {
+        prefix_cache_(
+            config.prefix_cache_capacity,
+            config.prefix_cache_retention) {
     if (valid_config_) {
       runner_ =
           std::make_unique<batching::Runner>(executor, std::move(scheduler));
@@ -710,6 +718,15 @@ struct ServingRuntime::Impl {
   }
 
   SelectionResult clone_prefix(const Request& request, const SessionKey& key) {
+    if (capture_lane_busy_.exchange(true)) {
+      return Selection::Unavailable;
+    }
+    struct ReleaseLane {
+      std::atomic<bool>& busy;
+      ~ReleaseLane() {
+        busy.store(false);
+      }
+    } release{capture_lane_busy_};
     batching::Session* source;
     std::size_t upto;
     {
@@ -948,14 +965,8 @@ struct ServingRuntime::Impl {
 #endif
   }
 
-  void finish_capture(const Request& request) {
-    if (!request->text || !request->text->capture_lane) {
-      return;
-    }
-    // Generation has already finished on the dispatcher. collect() combines
-    // clone wait and insertion; keep both on control, outside all request and
-    // admission locks. Settle even a cancelled source's queued clone before
-    // releasing the transient snapshot slot.
+  void collect_capture(const Request& request) {
+    // Settle clones on control, outside locks, before releasing the shared row.
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
@@ -967,6 +978,13 @@ struct ServingRuntime::Impl {
       // Optional cache maintenance must not change the generation outcome.
     }
 #endif
+  }
+
+  void finish_capture(const Request& request) {
+    if (!request->text || !request->text->capture_lane) {
+      return;
+    }
+    collect_capture(request);
     request->text->prefix_capture.reset();
     request->text->capture_lane = false;
     capture_lane_busy_ = false;
@@ -1103,7 +1121,71 @@ struct ServingRuntime::Impl {
             request->emit(update);
             schedule(request);
           };
-      if (opening && request->text && request->text->prompt &&
+      std::function<void(batching::Position)> on_prefill;
+      if (request->text && request->text->prompt &&
+          (config_.prefix_checkpoint_interval != 0 ||
+           config_.prefix_checkpoint_policy)) {
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          request->text->prefix_capture =
+              prefix_cache_.capture_identity(session, *request->text->prompt);
+          auto& breakpoints = request->request.config.prefill_breakpoints;
+          const auto start =
+              static_cast<batching::Position>(request->text->start_position);
+          const auto end =
+              static_cast<batching::Position>(request->text->prompt->size());
+          std::vector<batching::PrefixCheckpoint> checkpoints;
+          breakpoints.clear();
+          if (config_.prefix_checkpoint_policy) {
+            checkpoints = config_.prefix_checkpoint_policy(
+                *request->text->prompt, start, opening);
+            auto previous = start;
+            for (const auto& checkpoint : checkpoints) {
+              if (checkpoint.position <= previous ||
+                  checkpoint.position > end) {
+                breakpoints.clear();
+                break;
+              }
+              breakpoints.push_back(checkpoint.position);
+              previous = checkpoint.position;
+            }
+          } else {
+            breakpoints = batching::periodic_prefill_breakpoints(
+                start,
+                end,
+                static_cast<batching::Position>(
+                    config_.prefix_checkpoint_interval),
+                opening);
+          }
+          on_prefill = request->text->prefix_capture->observer(
+              [this, request] {
+                return !request->cancelled.load() &&
+                    !capture_lane_busy_.exchange(true);
+              },
+              [this, request](bool queued) {
+                if (queued) {
+                  {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    pending_checkpoint_ = request;
+                  }
+                  cv_.notify_one();
+                } else {
+                  capture_lane_busy_.store(false);
+                }
+              },
+              std::move(checkpoints));
+          if (!on_prefill) {
+            breakpoints.clear();
+          }
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          request->request.config.prefill_breakpoints.clear();
+          // Keep generation usable when optional capture setup fails.
+        }
+#endif
+      } else if (
+          opening && request->text && request->text->prompt &&
           config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
         // Only a capture needs an extra row beyond the working-session slots.
         capture_lane_busy_ = true;
@@ -1132,7 +1214,8 @@ struct ServingRuntime::Impl {
               }
               schedule(request);
             }
-          });
+          },
+          std::move(on_prefill));
       request->bind(std::move(handle));
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
@@ -1442,14 +1525,18 @@ struct ServingRuntime::Impl {
       Command command;
       std::size_t command_index = 0;
       Request finalizer;
+      Request checkpoint;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] {
-          return !finalizers_.empty() || runnable_command() != inbox_.end() ||
+          return pending_checkpoint_ || !finalizers_.empty() ||
+              runnable_command() != inbox_.end() ||
               (lifecycle_ != Lifecycle::Running && inbox_.empty() &&
                requests_.empty() && !retiring_);
         });
-        if (!finalizers_.empty()) {
+        if (pending_checkpoint_) {
+          checkpoint = std::move(pending_checkpoint_);
+        } else if (!finalizers_.empty()) {
           finalizer = std::move(finalizers_.front());
           finalizers_.pop_front();
         } else if (auto it = runnable_command(); it != inbox_.end()) {
@@ -1459,6 +1546,11 @@ struct ServingRuntime::Impl {
         } else {
           break;
         }
+      }
+      if (checkpoint) {
+        collect_capture(checkpoint);
+        capture_lane_busy_.store(false);
+        continue;
       }
       if (finalizer) {
         finalize(finalizer);
@@ -1557,9 +1649,9 @@ struct ServingRuntime::Impl {
   const ModelPreparer model_preparer_;
   std::unique_ptr<batching::Runner> runner_;
   batching::PrefixCache prefix_cache_;
-  // Control-thread policy; held through capture collection, including clone
-  // refusal and cancellation. At most one transient snapshot can exist.
-  bool capture_lane_busy_ = false;
+  // One transient row shared by capture and replacement, held through
+  // collection.
+  std::atomic<bool> capture_lane_busy_{false};
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::condition_variable stopped_cv_;
@@ -1573,6 +1665,7 @@ struct ServingRuntime::Impl {
   Request retiring_;
   std::deque<Request> dispatch_queue_;
   std::deque<Request> finalizers_;
+  Request pending_checkpoint_;
   std::condition_variable dispatch_cv_;
   bool dispatch_stopping_ = false;
   std::thread dispatcher_;

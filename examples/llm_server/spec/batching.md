@@ -31,6 +31,21 @@ speculative drafting/verification remain inside the runner and executor.
 - Input support depends on the worker and export. The generic module worker
   accepts text; model-specific workers may also support images.
 
+`--prefix-checkpoint-interval N` captures prompt snapshots at absolute multiples
+of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
+Zero (the default) captures only the initial prompt. Capture is best effort.
+Retention uses global LRU; early checkpoints are not protected.
+
+C++ applications can customize two independent policies in
+[`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
+
+- `prefix_checkpoint_policy` chooses capture positions and optional application metadata.
+- `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
+
+The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)
+also work with `PrefixCache` directly. Runner users can request exact boundaries
+through `GenConfig::prefill_breakpoints` and `on_prefill`; see [runner.h](../../../extension/llm/batching/runner.h).
+
 ## Select the Worker Explicitly
 
 Use `await spawn_multiplexed_worker(...)` with a worker advertising multiplexing
