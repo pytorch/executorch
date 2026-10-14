@@ -119,13 +119,19 @@ recently used entry only after successful insertion. Duplicate keys refresh
 recency, replace metadata, and release the redundant snapshot. Closing a source does not
 invalidate its snapshot; eviction does not invalidate a returned clone.
 The optional second constructor argument, `PrefixCache::RetentionPolicy`,
-replaces LRU eviction. Before a distinct insertion into a full cache it receives
+replaces LRU eviction. The policy interface and default
+`lru_prefix_cache_retention` live in [prefix_cache_retention.h](prefix_cache_retention.h),
+independent of cache storage. An empty callback selects that default.
+Before a distinct insertion into a full cache the policy receives
 an incoming `EntryView` and borrowed retained views in MRU order. Each view has
 an `identity` and optional `metadata`.
 Return an existing entry's index to evict, or `std::nullopt` to reject the new
 snapshot. Invalid indices and exceptions reject it without changing the cache.
 The policy runs on the caller thread and must not reenter the cache or retain
 the borrowed references. Capture scheduling and retention are independent.
+
+Custom policies can include `prefix_cache_retention.h` and return a victim
+index or delegate to `lru_prefix_cache_retention(incoming, entries)`.
 
 `CheckpointMetadata` is an application-defined immutable object held as
 `std::shared_ptr<const void>`; applications own its type contract. Pass it to

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <executorch/extension/llm/batching/prefix_cache_retention.h>
 #include <executorch/extension/llm/batching/runner.h>
 
 namespace executorch {
@@ -33,9 +34,6 @@ struct ET_EXPERIMENTAL PrefixMatch {
   Session session;
   std::size_t matched_tokens;
 };
-
-// Application-owned immutable hints; never part of prefix identity or cloning.
-using CheckpointMetadata = std::shared_ptr<const void>;
 
 struct ET_EXPERIMENTAL PrefixCheckpoint {
   Position position;
@@ -77,19 +75,9 @@ inline std::vector<Position> periodic_prefill_breakpoints(
 // parity is not guaranteed.
 class ET_EXPERIMENTAL PrefixCache {
  public:
-  struct EntryView {
-    const PrefixIdentity& identity;
-    const CheckpointMetadata& metadata;
-  };
-  using Entries = std::vector<EntryView>;
-  // Called before a distinct insertion into a full cache. Entries are ordered
-  // most recently used first and borrowed for the call. Return an existing
-  // entry's index to evict, or nullopt to decline the incoming snapshot.
-  // An invalid index or exception also declines it, leaving entries intact.
-  // Must not reenter this cache. Empty policy selects LRU eviction.
-  using RetentionPolicy = std::function<std::optional<std::size_t>(
-      const EntryView& incoming,
-      const Entries& entries)>;
+  using EntryView = PrefixCacheEntryView;
+  using Entries = PrefixCacheEntries;
+  using RetentionPolicy = PrefixCacheRetentionPolicy;
 
   // One generation's best-effort prompt capture. The wrapped callback owns
   // its state, so moving or discarding this handle does not invalidate it.
@@ -251,7 +239,9 @@ class ET_EXPERIMENTAL PrefixCache {
       std::size_t max_entries,
       RetentionPolicy retention_policy = {})
       : max_entries_(max_entries),
-        retention_policy_(std::move(retention_policy)) {}
+        retention_policy_(
+            retention_policy ? std::move(retention_policy)
+                             : RetentionPolicy{lru_prefix_cache_retention}) {}
 
   PrefixCache(const PrefixCache&) = delete;
   PrefixCache& operator=(const PrefixCache&) = delete;
@@ -339,28 +329,25 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
       auto victim = entries_.end();
       if (entries_.size() == max_entries_) {
-        victim = std::prev(entries_.end());
-        if (retention_policy_) {
-          Entries entries;
-          entries.reserve(entries_.size());
-          for (const auto& entry : entries_) {
-            entries.push_back(EntryView{entry.tokens, entry.metadata});
-          }
-          std::optional<std::size_t> index;
-#if ET_HAS_EXCEPTIONS
-          try {
-#endif
-            index = retention_policy_(EntryView{tokens, metadata}, entries);
-#if ET_HAS_EXCEPTIONS
-          } catch (...) {
-            return false;
-          }
-#endif
-          if (!index || *index >= entries_.size()) {
-            return false;
-          }
-          victim = std::next(entries_.begin(), *index);
+        Entries entries;
+        entries.reserve(entries_.size());
+        for (const auto& entry : entries_) {
+          entries.push_back(EntryView{entry.tokens, entry.metadata});
         }
+        std::optional<std::size_t> index;
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          index = retention_policy_(EntryView{tokens, metadata}, entries);
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          return false;
+        }
+#endif
+        if (!index || *index >= entries_.size()) {
+          return false;
+        }
+        victim = std::prev(entries_.end(), entries_.size() - *index);
       }
       entries_.push_front(
           Entry{tokens, std::move(snapshot), std::move(metadata)});
