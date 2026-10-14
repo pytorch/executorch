@@ -1424,7 +1424,8 @@ class GraphBuilder {
     return values_.at(static_cast<size_t>(id));
   }
 
-  TensorRef tensor(ValueId id) const {
+  // The value as lowered, which may be a strided view (see set_view).
+  TensorRef view(ValueId id) const {
     const TensorRef* ref = std::get_if<TensorRef>(&value(id));
     if (ref == nullptr || ref->tensor == nullptr) {
       throw std::runtime_error("ggml: argument does not resolve to a tensor");
@@ -1432,14 +1433,81 @@ class GraphBuilder {
     return *ref;
   }
 
+  // The value with any deferred permutation copied out, once per value.
+  TensorRef tensor(ValueId id) const {
+    TensorRef ref = view(id);
+    if (!deferred_.contains(id)) {
+      return ref;
+    }
+    auto [it, inserted] = deferred_copies_.try_emplace(id, nullptr);
+    if (inserted) {
+      it->second = ggml_cont(instance_.context.get(), ref.tensor);
+    }
+    ref.tensor = it->second;
+    return ref;
+  }
+
   TensorRef
   tensor_arg(const Node& node, std::string_view name, size_t positional) const {
+    return tensor(tensor_arg_id(node, name, positional));
+  }
+
+  // For lowerings whose ggml ops read any strides.
+  TensorRef view_arg(const Node& node, std::string_view name, size_t positional)
+      const {
+    return view(tensor_arg_id(node, name, positional));
+  }
+
+  // For lowerings whose ggml ops read any outer strides but need contiguous
+  // rows: a deferred permutation that moves the last dim is copied.
+  TensorRef rows_arg(const Node& node, std::string_view name, size_t positional)
+      const {
+    const ValueId id = tensor_arg_id(node, name, positional);
+    const TensorRef ref = view(id);
+    return ggml_is_contiguous_rows(ref.tensor) ? ref : tensor(id);
+  }
+
+  static ValueId
+  tensor_arg_id(const Node& node, std::string_view name, size_t positional) {
     const Argument& arg = require_arg(node, name, positional).arg;
     if (arg.kind() != ArgKind::Tensor || !valid(arg.as_tensor().id)) {
       throw std::runtime_error(
           "ggml: argument '" + std::string(name) + "' must be a tensor");
     }
-    return tensor(arg.as_tensor().id);
+    return arg.as_tensor().id;
+  }
+
+  // The result of a permutation. A contiguous result goes through
+  // materialize(). A strided view of storage the graph never writes stays a
+  // view, shared like materialize()'s (so a later in-place write throws):
+  // generic consumers get one copy from tensor(), while view-aware lowerings
+  // (permute, cast, rope, index_put rows, attention, matmul's right operand)
+  // read the strides, so a transpose -> rope -> transpose back chain costs no
+  // copies at any length.
+  void set_view(ValueId id, TensorRef ref) {
+    const ggml_tensor* root = storage_root(ref.tensor);
+    if (ggml_is_contiguous(ref.tensor)) {
+      ref.tensor = materialize(ref.tensor);
+      set(id, std::move(ref));
+    } else if (
+        copy_required_ || persistent_storage_.contains(root) ||
+        written_storage_.contains(root)) {
+      ref.tensor = ggml_cont(instance_.context.get(), ref.tensor);
+      set(id, std::move(ref));
+    } else {
+      aliased_storage_.insert(root);
+      set(id, std::move(ref));
+      deferred_.insert(id);
+    }
+  }
+
+  void set_single_view(const Node& node, TensorRef result) {
+    const std::vector<ValueId> ids = output_ids(node);
+    if (ids.size() != 1) {
+      throw std::runtime_error(
+          "ggml: op '" + node.target + "' must produce one tensor");
+    }
+    set_view(ids.front(), std::move(result));
   }
 
   int64_t int_value(const Argument& arg) const {
@@ -1916,7 +1984,7 @@ class GraphBuilder {
   }
 
   void lower_permute(const Node& node) {
-    const TensorRef input = tensor_arg(node, "self", 0);
+    const TensorRef input = view_arg(node, "self", 0);
     const std::vector<int64_t> dims =
         int_list(require_arg(node, "dims", 1).arg);
     if (dims.size() != input.sizes.size() || dims.size() > 4) {
@@ -1946,8 +2014,7 @@ class GraphBuilder {
         axes[1],
         axes[2],
         axes[3]);
-    result = materialize(result);
-    set_single_output(node, TensorRef{result, std::move(sizes)});
+    set_single_view(node, TensorRef{result, std::move(sizes)});
   }
 
   void lower_transpose(const Node& node) {
@@ -1993,17 +2060,30 @@ class GraphBuilder {
   }
 
   void lower_cast(const Node& node) {
-    const TensorRef input = tensor_arg(node, "self", 0);
+    // ggml_cpy reads any strides, so a deferred permutation is consumed here.
+    const ValueId input_id = tensor_arg_id(node, "self", 0);
+    const TensorRef input = view(input_id);
     const std::vector<ValueId> ids = output_ids(node);
     if (ids.size() != 1) {
       throw std::runtime_error("ggml: cast must produce one output");
     }
     const TensorMeta& meta = method_.graph.value(ids.front()).tensor_meta();
     const ggml_type type = compute_type(meta);
-    ggml_tensor* result = input.tensor->type == type
-        ? materialize(input.tensor)
-        : ggml_cast(instance_.context.get(), input.tensor, type);
-    set(ids.front(), TensorRef{result, input.sizes});
+    if (input.tensor->type == type) {
+      // Already the target type: share it as materialize() would, keeping a
+      // deferred view deferred.
+      set_view(ids.front(), input);
+      return;
+    }
+    // ggml-cpu converts I32 only to and from F32.
+    ggml_tensor* source = input.tensor;
+    if ((source->type == GGML_TYPE_I32) != (type == GGML_TYPE_I32) &&
+        source->type != GGML_TYPE_F32 && type != GGML_TYPE_F32) {
+      source = as_f32(source);
+    }
+    set(ids.front(),
+        TensorRef{
+            ggml_cast(instance_.context.get(), source, type), input.sizes});
   }
 
   ggml_tensor* as_f32(ggml_tensor* tensor) {
@@ -2758,7 +2838,7 @@ class GraphBuilder {
 
   void lower_matmul(const Node& node) {
     const TensorRef left = tensor_arg(node, "self", 0);
-    const TensorRef right = tensor_arg(node, "other", 1);
+    const TensorRef right = view_arg(node, "other", 1);
     if (left.sizes.size() < 2 || right.sizes.size() < 2) {
       throw std::runtime_error("ggml: matmul requires rank >= 2");
     }
@@ -2778,8 +2858,13 @@ class GraphBuilder {
     }
     ggml_context* ctx = instance_.context.get();
     // mul_mat(a, b) contracts ne[0] of both, so [M,K] @ [K,N] is
-    // mul_mat(cont(right^T), left).
-    ggml_tensor* right_t = ggml_cont(ctx, ggml_transpose(ctx, right.tensor));
+    // mul_mat(right^T, left). reshape() copies right^T only when it is strided
+    // and also resets the strides of size-1 dims, which ggml_is_contiguous
+    // ignores but mul_mat's transposed assert reads.
+    std::vector<int64_t> right_t_sizes = right.sizes;
+    std::swap(right_t_sizes.back(), right_t_sizes[right_batch]);
+    ggml_tensor* right_t =
+        reshape(ctx, ggml_transpose(ctx, right.tensor), right_t_sizes);
     ggml_tensor* result = ggml_mul_mat(ctx, right_t, left.tensor);
     std::vector<int64_t> sizes = left.sizes;
     sizes.back() = right.sizes.back();
@@ -3076,7 +3161,9 @@ class GraphBuilder {
   }
 
   void lower_rope(const Node& node) {
-    const TensorRef input = tensor_arg(node, "input", 0);
+    // ggml_rope_ext reads strided rows; rotating the [D, heads, tokens] view
+    // of a transposed projection then needs no copy.
+    const TensorRef input = rows_arg(node, "input", 0);
     const TensorRef positions = tensor_arg(node, "position_ids", 1);
     ggml_tensor* factors =
         rope_factor_tensor(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
@@ -3107,8 +3194,8 @@ class GraphBuilder {
         static_cast<float>(scale),
         /*beta_fast=*/0.0f,
         /*beta_slow=*/0.0f);
-    ggml_tensor* result = materialize(ggml_permute(ctx, rotated, 0, 2, 1, 3));
-    set_single_output(node, TensorRef{result, input.sizes});
+    set_single_view(
+        node, TensorRef{ggml_permute(ctx, rotated, 0, 2, 1, 3), input.sizes});
   }
 
   // set_rows rounds F32 rows into an F16 destination exactly like a cast, so
@@ -3133,7 +3220,9 @@ class GraphBuilder {
   void lower_index_put(const Node& node) {
     const TensorRef self = tensor_arg(node, "self", 0);
     const Argument& indices_arg = require_arg(node, "indices", 1).arg;
-    const TensorRef values = tensor_arg(node, "values", 2);
+    // set_rows reads rows with any outer strides, so the values may be a
+    // deferred permutation.
+    const TensorRef values = rows_arg(node, "values", 2);
     const size_t rank = self.sizes.size();
     const std::vector<ValueId> indices =
         indices_arg.kind() == ArgKind::OptionalTensorList
@@ -3169,10 +3258,7 @@ class GraphBuilder {
     invalidate_cached_transforms(self.tensor);
     mark_written(self.tensor);
     ggml_tensor* result = ggml_set_rows(
-        instance_.context.get(),
-        self.tensor,
-        contiguous(rows),
-        as_i32(index.tensor));
+        instance_.context.get(), self.tensor, rows, as_i32(index.tensor));
     expand_write(result);
     set_single_output(node, TensorRef{result, self.sizes});
   }
@@ -3226,9 +3312,11 @@ class GraphBuilder {
   }
 
   void lower_sdpa(const Node& node) {
-    const TensorRef query = tensor_arg(node, "query", 0);
-    const TensorRef key = tensor_arg(node, "key", 1);
-    const TensorRef val = tensor_arg(node, "value", 2);
+    // flash_attn_ext takes strided q/k/v with contiguous rows, e.g. the
+    // head-transposed projections, without copies.
+    const TensorRef query = rows_arg(node, "query", 0);
+    const TensorRef key = rows_arg(node, "key", 1);
+    const TensorRef val = rows_arg(node, "value", 2);
     const bool is_causal = bool_arg(node, "is_causal", 5, false);
     if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
         val.sizes.size() != 4 ||
@@ -3244,7 +3332,9 @@ class GraphBuilder {
           "ggml: scaled_dot_product_attention q/k/v shapes are incompatible");
     }
     const int64_t tokens = query.sizes[2];
-    const int64_t keys = key.sizes[2];
+    int64_t keys = key.sizes[2];
+    ggml_tensor* k = key.tensor;
+    ggml_tensor* v = val.tensor;
     ggml_tensor* mask = nullptr;
     const NamedArgument* mask_arg = find_arg(node, "attn_mask", 3);
     if (mask_arg != nullptr && mask_arg->arg.kind() == ArgKind::Tensor &&
@@ -3262,22 +3352,16 @@ class GraphBuilder {
         static_cast<float>(float_arg(node, "scale", 6, default_scale, true));
     ggml_context* ctx = instance_.context.get();
     // The CPU kernel reads the query as F32.
-    ggml_tensor* result = ggml_flash_attn_ext(
-        ctx,
-        as_f32(query.tensor),
-        key.tensor,
-        val.tensor,
-        mask,
-        scale,
-        0.0f,
-        0.0f);
+    ggml_tensor* q = query.tensor;
+    ggml_tensor* result =
+        ggml_flash_attn_ext(ctx, as_f32(q), k, v, mask, scale, 0.0f, 0.0f);
     ggml_prec_set_acc(result, GGML_PREC_F32);
     // flash_attn_ext returns [Dv, H, T, B]; torch order is [B, H, T, Dv].
-    result = materialize(ggml_permute(ctx, result, 0, 2, 1, 3));
-    set_single_output(
+    set_single_view(
         node,
         TensorRef{
-            result, {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}});
+            ggml_permute(ctx, result, 0, 2, 1, 3),
+            {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}});
   }
 
   void lower_sym_size(const Node& node) {
@@ -3348,6 +3432,10 @@ class GraphBuilder {
   std::unordered_set<ValueId> written_values_;
   // Set while lowering a node that touches a written value.
   bool copy_required_ = false;
+  // Values lowered as non-contiguous views of shared storage, and their
+  // copies.
+  std::unordered_set<ValueId> deferred_;
+  mutable std::unordered_map<ValueId, ggml_tensor*> deferred_copies_;
   GraphInstance instance_;
 };
 
