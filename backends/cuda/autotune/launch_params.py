@@ -263,15 +263,11 @@ def _time_candidates_within_memory(
     with the offload tensors parked on the CPU. Returns no times when the device
     still runs out of memory."""
     try:
-        return _time_candidates(
-            fn, param, candidates, args, kwargs, candidate_prepass
-        )
+        return _time_candidates(fn, param, candidates, args, kwargs, candidate_prepass)
     except torch.OutOfMemoryError:
         _free_device_memory()
     try:
-        return _time_candidates(
-            fn, param, candidates, args, kwargs, candidate_prepass
-        )
+        return _time_candidates(fn, param, candidates, args, kwargs, candidate_prepass)
     except torch.OutOfMemoryError:
         _free_device_memory()
     if _STATE.offload is not None:
