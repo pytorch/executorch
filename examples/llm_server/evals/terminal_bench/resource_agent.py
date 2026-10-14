@@ -7,7 +7,6 @@
 """Experimental one-child agent; inline mode uses the same tools and loop."""
 
 import asyncio
-import copy
 import json
 import sys
 import time
@@ -31,18 +30,18 @@ Available decode slots do not imply free capacity.
 Prefill taxes shared decode. Prefix caching avoids repeated prefill, not later attention cost.
 Shorter context does not necessarily free allocated memory.
 
-The harness calculates delegation costs and checks request capacity. Its report gives the
-available child budget and admission reason. Work inline when the budget is zero, including when
-costs are unknown. Do not calculate performance estimates or infer permission from idle hardware.
-The harness rechecks admission at launch; if it declines a child, continue inline.
+The harness can decline a spawn. If declined, continue inline without retrying delegation.
+Do not infer permission from idle hardware or calculate performance estimates yourself.
 
-Before spawning: name one necessary independent question, then name the necessary work you will
-do meanwhile. If nothing independent remains, work inline. Use at most the available child budget.
+Before spawning: choose one necessary independent question and an unfinished parent shell action.
+Pass that action as parent_command; the harness runs it alongside the child and returns its output.
+Delegate before solving the child's question. If nothing independent remains, work inline.
+Use at most the available child budget.
 Do not duplicate work.
 Do not spawn children merely to occupy idle hardware.
 Each child assignment must contain:
 - One concrete question or deliverable.
-- Necessary context, preserving a reusable prefix where beneficial.
+- Necessary context and source paths; the child does not inherit your conversation.
 - A bounded output budget and a request for concise, supported findings.
 Children may use shell for read-only inspection and computation. Return findings directly; no extra
 summary call is needed. Child results arrive between turns. Wait only when the result is needed;
@@ -76,12 +75,15 @@ TOOLS = [
     ),
     function(
         "spawn",
-        "Start one bounded background investigation; returns immediately.",
+        "Start a bounded child and run an independent parent shell command; return the command's output.",
         {
-            "question": {"type": "string"},
-            "parent_work": {
+            "question": {
                 "type": "string",
-                "description": "Necessary independent work you will do meanwhile.",
+                "description": "Self-contained question, source paths and necessary evidence; at most 4096 UTF-8 bytes.",
+            },
+            "parent_command": {
+                "type": "string",
+                "description": "An unfinished, necessary shell action independent of the child's question.",
             },
         },
     ),
@@ -122,7 +124,6 @@ class ResourceAgent(BaseAgent):
         self.sessions = set()
         self.records = []
         self.output_tokens = {"parent": 0, "child": 0}
-        self.last_usage = {}
         self.engine_samples = {}
         self.started = time.monotonic()
         self.prefix = str(uuid.uuid4())
@@ -149,7 +150,7 @@ class ResourceAgent(BaseAgent):
         response = await self.client.get(self.base_url + "/runtime/stats")
         response.raise_for_status()
         snapshot = response.json()
-        self.record("resources", turn=turn, snapshot=snapshot)
+        self.record("request_stats", turn=turn, snapshot=snapshot)
         samples = snapshot["recent_generations"]
         for sample in samples:
             if sample["session_id"] in {
@@ -157,35 +158,7 @@ class ResourceAgent(BaseAgent):
                 self.prefix + "-child",
             }:
                 self.engine_samples[sample["id"]] = sample
-        latest = next(
-            (sample for sample in reversed(samples) if not sample["cancelled"]), {}
-        )
-        report = {
-            key: snapshot[key]
-            for key in (
-                "max_context",
-                "max_inflight_requests",
-                "submitted_generations",
-                "waiting_for_runtime_lease",
-            )
-        }
-        report.update(
-            turn=turn,
-            available_children=int(self.enabled and not self.child_used),
-            child_total_output_cap=self.child_output_tokens,
-            last_observation={
-                key: latest.get(key)
-                for key in (
-                    "prefill_tokens_per_second",
-                    "per_sequence_decode_tokens_per_second",
-                    "prompt_tokens",
-                    "submitted_at_start",
-                    "age_ms",
-                )
-            },
-            parent_last_usage=self.last_usage.get("parent"),
-        )
-        return report
+        return snapshot
 
     def estimate_delegation(self, messages, snapshot) -> DelegationEstimate | None:
         """Override with calibrated workload costs; server rates alone are insufficient."""
@@ -209,7 +182,7 @@ class ResourceAgent(BaseAgent):
         body = {
             "model": self.model_name.removeprefix("openai/"),
             "messages": messages,
-            "tools": TOOLS,
+            "tools": TOOLS[:1] if role == "child" else TOOLS,
             "parallel_tool_calls": True,
             "session_id": session_id,
             "temperature": self.temperature,
@@ -223,7 +196,11 @@ class ResourceAgent(BaseAgent):
         ended = False
         try:
             async with self.client.stream(
-                "POST", self.base_url + "/chat/completions", json=body
+                "POST",
+                self.base_url + "/chat/completions",
+                json=body,
+                # Tool responses may be buffered; the caller owns the task deadline.
+                timeout=httpx.Timeout(180, read=None),
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -247,7 +224,6 @@ class ResourceAgent(BaseAgent):
                     "prompt_tokens_details", {}
                 ).get("cached_tokens", 0)
                 self.output_tokens[role] += usage["completion_tokens"]
-                self.last_usage[role] = usage
             self.record(
                 "completion",
                 role=role,
@@ -306,31 +282,51 @@ class ResourceAgent(BaseAgent):
         return output
 
     @staticmethod
-    def branch_messages(messages, question, budget):
-        branch = copy.deepcopy(messages)
-        assistant = next(m for m in reversed(branch) if m["role"] == "assistant")
-        answered = {m.get("tool_call_id") for m in branch if m["role"] == "tool"}
-        for call in assistant.get("tool_calls", []):
-            if call["id"] not in answered:
-                branch.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call["id"],
-                        "content": "This conversation continues as a delegated child.",
-                    }
-                )
-        branch.append(
+    def child_prompt(question, budget):
+        if len(question.encode("utf-8")) > 4096:
+            raise ValueError("Child assignment exceeds 4096 bytes; narrow the question")
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are a child investigator. Answer only the assigned question. "
+                    "Use shell for read-only inspection/computation. Do not edit files, delegate, "
+                    "or inspect benchmark verifier files or /tests. "
+                    "Return concise supported findings and uncertainties directly when ready."
+                ),
+            },
             {
                 "role": "user",
                 "content": (
-                    f"You are the child. Answer only this question: {question}\n"
-                    f"Total output budget across all responses: {budget} tokens; at most six model turns. "
-                    "Use shell only for read-only inspection/computation. Do not edit or delegate. "
-                    "Return concise supported findings and uncertainties directly when ready; no redundant report."
+                    f"{question}\nTotal output budget across all responses: {budget} tokens; "
+                    "at most six model turns."
                 ),
-            }
-        )
-        return branch
+            },
+        ]
+
+    async def child_tool(self, call, environment):
+        try:
+            if call["function"]["name"] != "shell":
+                raise ValueError(
+                    "Children may only use shell for inspection/computation"
+                )
+            output = await self.shell(
+                environment,
+                json.loads(call["function"]["arguments"]),
+                "child",
+            )
+        except (ValueError, KeyError, TypeError) as error:
+            output = f"Tool error: {error}"
+        reply = {
+            "role": "tool",
+            "tool_call_id": call["id"],
+            "content": output,
+        }
+        if len(json.dumps(self.child_messages + [reply]).encode()) > 16384:
+            reply["content"] = (
+                "Output omitted: child context budget exceeded; narrow the command."
+            )
+        self.child_messages.append(reply)
 
     async def investigate(self, environment):
         try:
@@ -338,6 +334,8 @@ class ResourceAgent(BaseAgent):
                 remaining = self.child_budget - self.output_tokens["child"]
                 if remaining <= 0:
                     break
+                if len(json.dumps(self.child_messages).encode()) > 16384:
+                    return {"status": "context_budget_exhausted"}
                 choice = await self.completion(
                     "child", self.child_messages, min(self.max_tokens, remaining)
                 )
@@ -351,21 +349,7 @@ class ResourceAgent(BaseAgent):
                         "findings": message.get("content", ""),
                     }
                 for call in calls:
-                    try:
-                        if call["function"]["name"] != "shell":
-                            raise ValueError(
-                                "Children may only use shell for inspection/computation"
-                            )
-                        output = await self.shell(
-                            environment,
-                            json.loads(call["function"]["arguments"]),
-                            "child",
-                        )
-                    except (ValueError, KeyError, TypeError) as error:
-                        output = f"Tool error: {error}"
-                    self.child_messages.append(
-                        {"role": "tool", "tool_call_id": call["id"], "content": output}
-                    )
+                    await self.child_tool(call, environment)
             return {
                 "status": "budget_exhausted",
                 "findings": "No complete findings; inspect child trace if needed.",
@@ -401,9 +385,11 @@ class ResourceAgent(BaseAgent):
                 raise ValueError("No child budget available; work inline")
             if not all(
                 isinstance(arguments[k], str) and arguments[k].strip()
-                for k in ("question", "parent_work")
+                for k in ("question", "parent_command")
             ):
-                raise ValueError("Name the question and independent parent work")
+                raise ValueError(
+                    "Provide the question and an independent parent shell command"
+                )
             snapshot = await self.report("admission")
             decision = self.admission(messages, snapshot, "launch")
             if not decision["allowed"]:
@@ -411,13 +397,16 @@ class ResourceAgent(BaseAgent):
                     f"Delegation declined: {decision['reason']}; work inline"
                 )
             self.child_budget = decision["estimate"]["output_tokens"]
-            self.child_used = True
-            self.child_messages = self.branch_messages(
-                messages, arguments["question"], self.child_budget
+            self.child_messages = self.child_prompt(
+                arguments["question"], self.child_budget
             )
+            self.child_used = True
             self.child = asyncio.create_task(self.investigate(environment))
             self.record("spawn", **arguments)
-            return "Child started. Continue your named independent work."
+            output = await self.shell(
+                environment, {"command": arguments["parent_command"]}, "parent"
+            )
+            return "Child started. Parent command output:\n" + output
         if name in {"wait", "cancel"}:
             if self.child is None:
                 raise ValueError("No child has been started")
@@ -441,7 +430,14 @@ class ResourceAgent(BaseAgent):
         self.started = time.monotonic()
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         messages = [
-            {"role": "system", "content": SYSTEM},
+            {
+                "role": "system",
+                "content": SYSTEM
+                + (
+                    f"\nDelegation limit: {int(self.enabled)} child, "
+                    f"{self.child_output_tokens} total child output tokens."
+                ),
+            },
             {"role": "user", "content": instruction},
         ]
         status = "error"
@@ -450,22 +446,7 @@ class ResourceAgent(BaseAgent):
                 for turn in range(self.step_limit):
                     self.notify(messages)
                     snapshot = await self.report(turn)
-                    decision = self.admission(messages, snapshot, "report")
-                    report = {
-                        "available_children": int(decision["allowed"]),
-                        "admission_reason": decision["reason"],
-                        "child_total_output_cap": (
-                            decision["estimate"]["output_tokens"]
-                            if decision["allowed"]
-                            else 0
-                        ),
-                    }
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Resource report: " + json.dumps(report),
-                        }
-                    )
+                    self.admission(messages, snapshot, "report")
                     choice = await self.completion("parent", messages, self.max_tokens)
                     if choice["finish_reason"] == "length":
                         raise RuntimeError("Parent response exhausted output cap")

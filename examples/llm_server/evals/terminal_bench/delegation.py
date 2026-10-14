@@ -39,7 +39,7 @@ def decide_delegation(snapshot, estimate, *, child_available, output_limit):
     if any(type(value) is not int or value < 0 for value in counts):
         return {**decision, "reason": "unknown_capacity"}
     capacity, submitted, waiting = counts
-    # Leave room for the parent to continue; this is not a GPU utilization test.
+    # Reserve request slots only, not decode or memory capacity.
     if waiting or capacity - submitted < 2:
         return {**decision, "reason": "request_capacity"}
     if estimate is None:
