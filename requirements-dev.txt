@@ -6,6 +6,8 @@ packaging>=24.2 # Lower bound required by setuptools
 patchelf; sys_platform == 'linux'  # Writes the runtime search paths that let the shipped libraries find each other.
 pip>=23  # For building the pip package.
 pyyaml  # Imported by the kernel codegen tools.
+# SentencePiece builds from source on 3.15 with build isolation disabled.
+pybind11>=3.1.0; python_version >= "3.15"
 setuptools>=77.0.3  # For building the pip package contents.
 wheel  # For building the pip package archive.
 zstd  # Imported by resolve_buck.py.
