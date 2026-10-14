@@ -547,6 +547,29 @@ bool runner_init(RunnerContext& ctx, size_t pte_size) {
       ctx.method_name,
       (unsigned int)method_meta.error());
 
+  for (size_t i = 0; i < method_meta->num_inputs(); ++i) {
+    auto tag = method_meta->input_tag(i);
+    ET_CHECK_OR_RETURN_FALSE(tag.ok(), "Could not read input %zu", i);
+    if (*tag == Tag::Tensor) {
+      auto tensor = method_meta->input_tensor_meta(i);
+      ET_CHECK_OR_RETURN_FALSE(
+          tensor.ok() && tensor->is_memory_planned(),
+          "Input %zu requires memory-planned storage",
+          i);
+    }
+  }
+  for (size_t i = 0; i < method_meta->num_outputs(); ++i) {
+    auto tag = method_meta->output_tag(i);
+    ET_CHECK_OR_RETURN_FALSE(tag.ok(), "Could not read output %zu", i);
+    if (*tag == Tag::Tensor) {
+      auto tensor = method_meta->output_tensor_meta(i);
+      ET_CHECK_OR_RETURN_FALSE(
+          tensor.ok() && tensor->is_memory_planned(),
+          "Output %zu requires memory-planned storage",
+          i);
+    }
+  }
+
   ET_LOG(
       Info,
       "Setup Method allocator pool. Size: %lu bytes.",
