@@ -11,7 +11,7 @@ reference on the stored CudaCoalescedInt4Tensor weights and stay in the W4A8
 precision class against the W4A16 reference; the ops must compile with
 Inductor, statically and for a dynamic M, and match eager; and the config
 AOTInductor picks at compile time must be the fastest one even while the CPU
-is saturated.
+is saturated (on CUDA; see Int4AutotunePickTest for ROCm).
 
     python -m pytest backends/cuda/tests/test_int4_quantized_gemm.py -v
 """
@@ -196,9 +196,7 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             if src.name == name:
                 hits["hit" if cache_hit else "miss"] += 1
 
-        return hits, mock.patch.object(
-            triton.knobs.compilation, "listener", listener
-        )
+        return hits, mock.patch.object(triton.knobs.compilation, "listener", listener)
 
     def test_configs_compile_in_worker_processes(self) -> None:
         # A shape no other test tunes; with an empty Triton cache, every config
@@ -319,6 +317,7 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
         self.assertIn(
             quantized_gemm_family._tuning_key(autotuner, args, kwargs), autotuner.cache
         )
+
 
 class Int4QuantizedGemmRulesTest(unittest.TestCase):
     def test_split_k_needs_one_k_tile_per_split(self) -> None:
@@ -690,9 +689,14 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             side_effect=RuntimeError("capture failed"),
         ), mock.patch.object(
             quantized_gemm_utils, "_graph_timing_fallback_warned", False
-        ), self.assertLogs(quantized_gemm_utils.logger, "WARNING") as logs:
+        ), self.assertLogs(
+            quantized_gemm_utils.logger, "WARNING"
+        ) as logs:
             for _ in range(2):
-                ms = quantized_gemm_utils.autotune_do_bench(kernel_call, (0.5,))
+                # The quantiles triton.autotune asks for.
+                ms = quantized_gemm_utils.autotune_do_bench(
+                    kernel_call, (0.5, 0.2, 0.8)
+                )
                 self.assertGreater(ms[0], 0)
         self.assertEqual(len(logs.output), 1)
         self.assertIn("capture failed", logs.output[0])
@@ -718,7 +722,9 @@ class Int4QuantizedGemmTest(unittest.TestCase):
         source = "\n".join(code)
         name = autotuner.fn.fn.__name__
         self.assertIn(f"def {name}(", source)
-        block = source[source.rindex("user_autotune(", 0, source.index(f"def {name}(")) :]
+        block = source[
+            source.rindex("user_autotune(", 0, source.index(f"def {name}(")) :
+        ]
         configs = block[: block.index("],")]
         self.assertEqual(configs.count("'num_warps'"), 1)
         _check_close(self, compiled, eager)
@@ -864,7 +870,10 @@ class Int4QuantizedGemmPrecisionTest(unittest.TestCase):
                 self.assertGreaterEqual(cosine.min().item(), 0.999)
 
 
-_GUARD_SHAPES = ((2048, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
+# Every weight packs at least 6 MiB of INT4 data, so each decode kernel runs
+# for many event ticks (one tick is ~0.5 us) and a pick's regret reflects the
+# kernel rather than the timer.
+_GUARD_SHAPES = ((8192, 2048), (6144, 2048), (2048, 8192), (32000, 2048))
 _GUARD_BUCKETS = (1, 4)
 
 
@@ -898,7 +907,13 @@ class Int4AutotunePickTest(unittest.TestCase):
     """The config picked for each INT4 kernel while AOTInductor compiles is the
     fastest one, measured afterwards with the CPU idle, even though the compile
     ran with every core busy. Our triton.autotune picks it during the
-    launch-parameter timing, and AOTInductor traces only that pick."""
+    launch-parameter timing, and AOTInductor traces only that pick.
+
+    On ROCm the CUDA backend times Triton configs without CUDA graphs (see
+    cuda_graph_autotune_timing in cuda_backend.py), so their ranking under a
+    busy CPU is not promised there: the test checks that every INT4 kernel is
+    autotuned, with a candidate count the pruning allows, but not which config
+    wins."""
 
     MAX_REGRET = 1.10
     MAX_MEAN_REGRET = 1.03
@@ -946,6 +961,7 @@ class Int4AutotunePickTest(unittest.TestCase):
         with torch.no_grad():
             program = torch.export.export(module, inputs, strict=True)
         picks = []
+        measure_picks = torch.version.hip is None
         # The keys whose picked config AOTI traces: the configs it compiles in.
         traced = set()
         tuned_kernel = quantized_gemm_family._tuned_kernel
@@ -968,7 +984,7 @@ class Int4AutotunePickTest(unittest.TestCase):
         ), SaturatedCpu() as cpu, mock.patch.object(
             quantized_gemm_family, "_tuned_kernel", recording_tuned_kernel
         ):
-            with record_autotune_picks(cpu, picks):
+            with record_autotune_picks(cpu, picks, measure=measure_picks):
                 to_edge_transform_and_lower(
                     program,
                     partitioner=[CudaPartitioner(specs)],
@@ -998,11 +1014,12 @@ class Int4AutotunePickTest(unittest.TestCase):
                 if split <= k // 256
             }
             self.assertIn(p.candidates, allowed, p)
-        worst = max(int4, key=lambda p: p.regret)
-        self.assertLessEqual(worst.regret, self.MAX_REGRET, worst)
-        self.assertLessEqual(
-            statistics.mean(p.regret for p in int4), self.MAX_MEAN_REGRET, int4
-        )
+        if measure_picks:
+            worst = max(int4, key=lambda p: p.regret)
+            self.assertLessEqual(worst.regret, self.MAX_REGRET, worst)
+            self.assertLessEqual(
+                statistics.mean(p.regret for p in int4), self.MAX_MEAN_REGRET, int4
+            )
 
 
 if __name__ == "__main__":

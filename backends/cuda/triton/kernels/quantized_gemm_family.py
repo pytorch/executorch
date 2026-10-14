@@ -43,7 +43,9 @@ from torch.library import triton_op, wrap_triton
 
 try:
     from triton.runtime import _async_compile
-except ImportError:  # A Triton without parallel compile compiles each config on first use.
+except (
+    ImportError
+):  # A Triton without parallel compile compiles each config on first use.
     _async_compile = None
 
 # Concurrent compiles of autotune configs. Each runs in a worker process: in
@@ -354,7 +356,8 @@ def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
     with _COMPILE_THREADS_LOCK:
         if _compile_thread_pool is None:
             _compile_thread_pool = concurrent.futures.ThreadPoolExecutor(
-                _compile_workers(), thread_name_prefix="quantized_gemm_compile"
+                _compile_workers(),
+                thread_name_prefix="quantized_gemm_compile",
             )
         return _compile_thread_pool
 
@@ -525,7 +528,14 @@ def launch_split_k_gemm(
             return (n_tiles, m_tiles)
         return (n_tiles, m_tiles, split_k)
 
-    args = (*inputs, partial, *shape_args, stride_os, partial.stride(-2), partial.stride(-1))
+    args = (
+        *inputs,
+        partial,
+        *shape_args,
+        stride_os,
+        partial.stride(-2),
+        partial.stride(-1),
+    )
     kwargs = {"SPLIT_K": split_k, **constexprs}
     if _QUEUING_ONLY.get():
         if _async_compile is None or _async_compile.active_mode.get() is None:

@@ -22,7 +22,9 @@ from torch.library import wrap_triton
 
 
 @triton.jit
-def _scale_kernel(x_ptr, y_ptr, z_ptr, n, scale, WRITE_Z: tl.constexpr, BLOCK: tl.constexpr):
+def _scale_kernel(
+    x_ptr, y_ptr, z_ptr, n, scale, WRITE_Z: tl.constexpr, BLOCK: tl.constexpr
+):
     offsets = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
     mask = offsets < n
     x = tl.load(x_ptr + offsets, mask=mask)
@@ -79,7 +81,9 @@ class TritonMutationCacheTest(unittest.TestCase):
 
     def test_install_patches_the_function_pytorch_calls(self) -> None:
         self.assertTrue(
-            hasattr(triton_kernel_wrap.identify_accessed_tensors, "__wrapped_uncached__")
+            hasattr(
+                triton_kernel_wrap.identify_accessed_tensors, "__wrapped_uncached__"
+            )
         )
         # Installing again does not wrap the wrapper.
         triton_mutation_cache.install()
@@ -240,4 +244,3 @@ class TritonMutationCacheTest(unittest.TestCase):
         ):
             uncached = exported_code()
         self.assertEqual(cached, uncached)
-
