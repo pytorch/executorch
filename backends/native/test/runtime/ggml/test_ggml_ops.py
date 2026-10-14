@@ -526,6 +526,28 @@ class GgmlOpsTest(unittest.TestCase):
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
+    def test_gelu(self):
+        ops = collections.Counter()
+        self._check(Lambda(F.gelu), (torch.randn(2, 3, 4) * 3.0,), graph_ops=ops)
+        self.assertGreater(ops["GELU_ERF"], 0)
+
+    def test_gelu_tanh(self):
+        # ggml-cpu's tanh GELU looks its result up in an FP16 table, which
+        # hides the difference from the erf form.
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: F.gelu(x, approximate="tanh")),
+            (torch.randn(2, 3, 4) * 3.0,),
+            atol=1e-3,
+            rtol=2e-3,
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["GELU_ERF"], 0)
+        self.assertGreater(ops["GELU"], 0)
+
+    def test_log(self):
+        self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
+
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
@@ -563,6 +585,28 @@ class GgmlOpsTest(unittest.TestCase):
             atol=1e-4,
             rtol=1e-4,
         )
+
+    def test_conv1d(self):
+        self._check(
+            torch.nn.Conv1d(4, 6, 3, stride=2, padding=2, dilation=2),
+            (torch.randn(2, 4, 11),),
+            **_MATMUL_TOL,
+        )
+
+    def test_depthwise_conv1d(self):
+        self._check(
+            torch.nn.Conv1d(4, 4, 3, padding=1, groups=4),
+            (torch.randn(1, 4, 9),),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_conv_transpose1d_is_refused(self):
+        # Running this as a forward conv would give the same output shape.
+        with self.assertRaisesRegex(AssertionError, "non-transposed"):
+            self._check(
+                torch.nn.ConvTranspose1d(16, 16, 3, padding=1), (torch.randn(1, 16, 5),)
+            )
 
     def test_conv2d_pointwise(self):
         self._check(
@@ -647,6 +691,32 @@ class GgmlOpsTest(unittest.TestCase):
     def test_rms_norm(self):
         self._check(RMSNorm(), (torch.randn(2, 3, 16),))
 
+    def test_layer_norm(self):
+        norm = torch.nn.LayerNorm(16)
+        torch.nn.init.uniform_(norm.weight, 0.5, 1.5)
+        torch.nn.init.uniform_(norm.bias, -0.5, 0.5)
+        self._check(norm, (torch.randn(2, 3, 16),))
+
+    def test_layer_norm_without_affine(self):
+        self._check(
+            torch.nn.LayerNorm(16, elementwise_affine=False), (torch.randn(2, 3, 16),)
+        )
+
+    def test_layer_norm_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32 tensors only"):
+            self._check(
+                torch.nn.LayerNorm(16).half(),
+                (torch.randn(2, 3, 16, dtype=torch.float16),),
+            )
+
+    def test_layer_norm_rejects_used_mean(self):
+        def forward(x):
+            out, mean, _ = torch.native_layer_norm(x, [16], None, None, 1e-5)
+            return out + mean
+
+        with self.assertRaisesRegex(AssertionError, "lowers only its first output"):
+            self._check(Lambda(forward), (torch.randn(2, 3, 16),))
+
     def test_reshape(self):
         self._check(Lambda(lambda x: x.reshape(4, 6)), (torch.randn(2, 3, 4),))
 
@@ -713,6 +783,22 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x, y: torch.cat([x, y], dim=-1)),
             (torch.randn(2, 3, 4), torch.randn(2, 3, 2)),
         )
+
+    def test_constant_pad(self):
+        self._check(Lambda(lambda x: F.pad(x, (1, 2, 0, 3))), (torch.randn(2, 3, 4),))
+
+    def test_constant_pad_rejects_nonzero_value(self):
+        with self.assertRaisesRegex(AssertionError, "only pads with zeros"):
+            self._check(
+                Lambda(lambda x: F.pad(x, (1, 1), value=1.0)), (torch.randn(2, 3),)
+            )
+
+    def test_constant_pad_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32 tensors only"):
+            self._check(
+                Lambda(lambda x: F.pad(x, (1, 1))),
+                (torch.randn(2, 3, dtype=torch.float16),),
+            )
 
     def test_clone(self):
         self._check(Lambda(lambda x: x.clone() + 1.0 * x), (torch.randn(2, 3),))
@@ -837,6 +923,38 @@ class GgmlOpsTest(unittest.TestCase):
                 torch.randn(1, 2, 8, 32),
                 torch.arange(8.0).repeat(3, 1),
                 torch.tensor([[2.0], [4.0], [7.0]]),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+    def test_lt_tensor(self):
+        self._check(
+            Lambda(lambda x, y: (x < y).to(x.dtype)),
+            (torch.randn(2, 3, 4), torch.randn(2, 3, 4)),
+        )
+
+    def test_lt_scalar(self):
+        self._check(
+            Lambda(lambda x: (x < 0.25).to(x.dtype)),
+            (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
+        )
+
+    def test_sdpa_mask_broadcasts_over_queries(self):
+        # A [B, 1, 1, S] padding mask: every query reads the same row.
+        keep = torch.rand(1, 1, 1, 8)
+        keep[..., 0] = 0.0
+        self._check(
+            Lambda(
+                lambda q, k, v, m: F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=m.le(0.7)
+                )
+            ),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                keep,
             ),
             atol=1e-2,
             rtol=1e-2,
