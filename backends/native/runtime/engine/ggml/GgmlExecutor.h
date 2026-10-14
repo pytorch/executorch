@@ -11,6 +11,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <ggml-backend.h>
+
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
@@ -18,6 +20,10 @@ namespace ptn {
 
 struct Method;
 class Package;
+
+// Returns the options.device_index-th GPU device in ggml's registry. Throws if
+// the linked ggml variant registers no such device.
+ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options);
 
 // Mutable buffer key -> method whose live executable binds it.
 using GgmlMutableKeyOwners = std::unordered_map<std::string, std::string>;

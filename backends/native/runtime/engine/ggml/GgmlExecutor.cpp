@@ -31,9 +31,6 @@
 #include <ggml-cpp.h>
 #include <ggml-cpu.h>
 #include <ggml.h>
-#ifdef PTN_GGML_USE_CUDA
-#include <ggml-cuda.h>
-#endif
 
 #include <executorch/backends/native/runtime/Method.h>
 #include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
@@ -611,6 +608,12 @@ class GgmlExecutable final : public EngineExecutable {
 
     ggml_backend_sched_reset(scheduler_.get());
     GraphInstance instance = build_graph();
+    // The scheduler otherwise keeps graph inputs on the CPU backend and copies
+    // them into GPU splits once per consuming view.
+    for (const Upload& upload : instance.uploads) {
+      ggml_backend_sched_set_tensor_backend(
+          scheduler_.get(), upload.tensor, primary_backend_);
+    }
     if (!ggml_backend_sched_alloc_graph(scheduler_.get(), instance.graph)) {
       ggml_backend_sched_reset(scheduler_.get());
       throw std::runtime_error("ggml: failed to allocate execution graph");
@@ -714,23 +717,17 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void initialize_backends() {
-#ifdef PTN_GGML_USE_CUDA
-    if (options_.device == GgmlDevice::Cuda) {
-      if (options_.device_index >= ggml_backend_cuda_get_device_count()) {
-        throw std::runtime_error("ggml: requested CUDA device is unavailable");
+    if (options_.device == GgmlDevice::Gpu) {
+      ggml_backend_dev_t device = select_ggml_gpu_device(options_);
+      ggml_backend_ptr gpu(ggml_backend_dev_init(device, nullptr));
+      if (!gpu) {
+        throw std::runtime_error(
+            std::string("ggml: failed to initialize ") +
+            ggml_backend_dev_name(device));
       }
-      ggml_backend_ptr cuda(ggml_backend_cuda_init(options_.device_index));
-      if (!cuda) {
-        throw std::runtime_error("ggml: failed to initialize CUDA backend");
-      }
-      primary_backend_ = cuda.get();
-      backends_.push_back(std::move(cuda));
+      primary_backend_ = gpu.get();
+      backends_.push_back(std::move(gpu));
     }
-#else
-    if (options_.device == GgmlDevice::Cuda) {
-      throw std::runtime_error("ggml: this target was built without CUDA");
-    }
-#endif
     ggml_backend_ptr cpu(ggml_backend_cpu_init());
     if (!cpu) {
       throw std::runtime_error("ggml: failed to initialize CPU backend");
@@ -2508,6 +2505,25 @@ GraphInstance GgmlExecutable::build_graph() {
 }
 
 } // namespace
+
+ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options) {
+  int remaining = options.device_index;
+  for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+    ggml_backend_dev_t device = ggml_backend_dev_get(i);
+    const enum ggml_backend_dev_type type = ggml_backend_dev_type(device);
+    if (type != GGML_BACKEND_DEVICE_TYPE_GPU &&
+        type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+      continue;
+    }
+    if (remaining-- == 0) {
+      return device;
+    }
+  }
+  throw std::runtime_error(
+      "ggml: GPU device " + std::to_string(options.device_index) +
+      " is unavailable (" + std::to_string(options.device_index - remaining) +
+      " GPU devices registered by the linked ggml backends)");
+}
 
 // cppcheck-suppress unusedFunction
 std::unique_ptr<EngineExecutable> make_ggml_executable(

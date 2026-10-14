@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Export single operators and a tiny Llama to .ptn and check the ggml CPU
-engine against eager PyTorch."""
+"""Export single operators and a tiny Llama to .ptn and check the ggml engine
+against eager PyTorch. GGML_PTN_DEVICE selects the runner's device (cpu or
+gpu)."""
 
 import copy
+import os
 import subprocess
 import tempfile
 import unittest
@@ -213,15 +215,25 @@ def _run_ggml(
             )
         )
     command = [
+        f"--device={os.environ.get('GGML_PTN_DEVICE', 'cpu')}",
         f"--package={package}",
         f"--inputs={';'.join(input_steps)}",
         f"--outputs={';'.join(output_steps)}",
     ]
     if resize:
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
+    env = dict(os.environ)
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
+        # Shared libraries the runner needs may ship beside it.
+        env["LD_LIBRARY_PATH"] = (
+            f"{Path(runner).parent}:{env.get('LD_LIBRARY_PATH', '')}"
+        )
         result = subprocess.run(
-            [str(runner), *command], capture_output=True, text=True, timeout=300
+            [str(runner), *command],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
@@ -229,6 +241,14 @@ def _run_ggml(
     paths = [path for step in output_steps for path in step.split(",")]
     outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
     return [outputs[i : i + num_outputs] for i in range(0, len(outputs), num_outputs)]
+
+
+# ggml-cuda runs F32 cuBLAS matmuls in TF32, with a 10-bit mantissa.
+_MATMUL_TOL = (
+    {"atol": 5e-3, "rtol": 1e-2}
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+    else {"atol": 1e-4, "rtol": 1e-5}
+)
 
 
 class GgmlOpsTest(unittest.TestCase):
@@ -340,29 +360,35 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
 
     def test_linear(self):
-        self._check(Linear(bias=False), (torch.randn(4, 32),), atol=1e-4)
+        self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
 
     def test_linear_bias(self):
-        self._check(Linear(bias=True), (torch.randn(2, 4, 32),), atol=1e-4)
+        self._check(Linear(bias=True), (torch.randn(2, 4, 32),), **_MATMUL_TOL)
 
     def test_mm(self):
-        self._check(Lambda(torch.mm), (torch.randn(4, 8), torch.randn(8, 5)), atol=1e-4)
+        self._check(
+            Lambda(torch.mm), (torch.randn(4, 8), torch.randn(8, 5)), **_MATMUL_TOL
+        )
 
     def test_bmm(self):
         self._check(
-            Lambda(torch.bmm), (torch.randn(2, 4, 8), torch.randn(2, 8, 5)), atol=1e-4
+            Lambda(torch.bmm),
+            (torch.randn(2, 4, 8), torch.randn(2, 8, 5)),
+            **_MATMUL_TOL,
         )
 
     def test_matmul(self):
         self._check(
             Lambda(torch.matmul),
             (torch.randn(2, 4, 8), torch.randn(2, 8, 5)),
-            atol=1e-4,
+            **_MATMUL_TOL,
         )
 
     def test_matmul_broadcast_rhs(self):
         self._check(
-            Lambda(torch.matmul), (torch.randn(2, 4, 8), torch.randn(8, 5)), atol=1e-4
+            Lambda(torch.matmul),
+            (torch.randn(2, 4, 8), torch.randn(8, 5)),
+            **_MATMUL_TOL,
         )
 
     def test_embedding(self):
@@ -698,6 +724,10 @@ class GgmlLlamaTest(unittest.TestCase):
             package = outdir / "tiny_llama.ptn"
             to_native(ep).save(str(package))
             outputs = _run_ggml(package, steps, outdir, 1, resize=True)
+        # ggml-cuda applies Q4_0's -8 offset through an fp16 sum of each Q8_1
+        # block, where the CPU subtracts it in integers.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+        tolerance = 15e-2 if gpu else 8e-2
         self.assertEqual(len(outputs), len(steps))
         for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
             ((raw, shape),) = step_outputs
@@ -705,11 +735,18 @@ class GgmlLlamaTest(unittest.TestCase):
                 self.assertEqual(shape, tuple(reference.shape))
                 actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
                 actual = actual.reshape(shape)
-                self.assertEqual(
-                    actual[0, -1].argmax().item(), reference[0, -1].argmax().item()
-                )
-                scale = reference.abs().max().item()
-                torch.testing.assert_close(actual, reference, atol=8e-2 * scale, rtol=0)
+                atol = tolerance * reference.abs().max().item()
+                torch.testing.assert_close(actual, reference, atol=atol, rtol=0)
+                if gpu:
+                    # Near-ties may flip on the GPU, so ggml's pick only has
+                    # to be within tolerance of eager's best logit.
+                    chosen = reference[0, -1, actual[0, -1].argmax()]
+                    self.assertGreaterEqual(chosen, reference[0, -1].max() - atol)
+                else:
+                    self.assertEqual(
+                        actual[0, -1].argmax().item(),
+                        reference[0, -1].argmax().item(),
+                    )
 
 
 if __name__ == "__main__":

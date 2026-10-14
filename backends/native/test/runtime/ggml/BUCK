@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -18,29 +19,70 @@ fbcode_target(
     ],
 )
 
-fbcode_target(
-    _kind = runtime.cxx_binary,
-    name = "ggml_ptn_runner",
-    srcs = ["ggml_ptn_runner.cpp"],
-    deps = [
-        "//executorch/backends/native/runtime:runtime",
-        "//executorch/backends/native/runtime/deserialize:package",
-        "//executorch/backends/native/runtime/engine:engine",
-        "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
-        "//executorch/backends/native/runtime/graph:scalar_type",
-    ],
-    external_deps = ["gflags"],
-)
+# The op suite runs once per ggml backend set; only the engine variant, the
+# runner's --device, link deps and resources, and the test host differ.
+_VARIANTS = [
+    {"suffix": "", "engine": "ggml_engine_cpu", "device": "cpu"},
+    {
+        "suffix": "_cuda",
+        "engine": "ggml_engine_cuda",
+        "device": "gpu",
+        "remote_execution": re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+        # The CUDA backend is a shared library that needs the ggml core shared
+        # beside it, and its VMM pool calls the CUDA driver API.
+        "deps": ["fbsource//third-party/llama.cpp:ggml_base[prefer-shared]"],
+        "external_deps": [("cuda", None, "cuda_driver_api-lazy")],
+        # Buck does not put the CUDA driver stub's library on the runner's
+        # loader path, so it ships beside the runner.
+        "resources": {
+            "//tools/lazify:lazy_stub_binder[shared]": "libtools_lazify_lazy_stub_binder.so",
+        },
+    },
+    {
+        "suffix": "_hip",
+        "engine": "ggml_engine_hip",
+        "device": "gpu",
+        "remote_execution": re_test_utils.remote_execution(
+            platform = "amd-gpu",
+            subplatform = "MI300",
+        ),
+    },
+]
 
-fbcode_target(
-    _kind = runtime.python_test,
-    name = "test_ggml_ops",
-    srcs = ["test_ggml_ops.py"],
-    resources = {":ggml_ptn_runner": "ggml_ptn_runner"},
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir/native:native",
-        "//pytorch/ao:torchao",
-        "fbsource//third-party/pypi/transformers:transformers",
-    ],
-)
+[
+    fbcode_target(
+        _kind = runtime.cxx_binary,
+        name = "ggml_ptn_runner" + v["suffix"],
+        srcs = ["ggml_ptn_runner.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/backends/native/runtime/engine:" + v["engine"],
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ] + v.get("deps", []),
+        external_deps = ["gflags"] + v.get("external_deps", []),
+    )
+    for v in _VARIANTS
+]
+
+[
+    fbcode_target(
+        _kind = runtime.python_test,
+        name = "test_ggml_ops" + v["suffix"],
+        srcs = ["test_ggml_ops.py"],
+        env = {"GGML_PTN_DEVICE": v["device"]},
+        remote_execution = v.get("remote_execution"),
+        resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"} |
+                    v.get("resources", {}),
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/native:native",
+            "//pytorch/ao:torchao",
+            "fbsource//third-party/pypi/transformers:transformers",
+        ],
+    )
+    for v in _VARIANTS
+]
