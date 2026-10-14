@@ -24,8 +24,10 @@ branches uniformly to exactly the runtime row count; static extra rows are
 masked.
 
 Buckets 8, 16, 32, and 64 keep BF16 activations and unpack Q5_K tiles inside
-the GEMM. These buckets require group_size=32 and preserve the BF16 dequant
-rounding before FP32 accumulation, without a full BF16 weight buffer.
+the GEMM. They decode K256 super-blocks in K256 tiles, plus one measured K64
+M64 candidate, and use an exact exponent-pattern INT5-to-BF16 conversion. These
+buckets require group_size=32 and preserve BF16 dequant rounding before FP32
+accumulation, without a full BF16 weight buffer.
 """
 
 from typing import Optional
@@ -62,6 +64,7 @@ _TL_GROUP_SIZE = tl.constexpr(32)
 
 _SMALL_BUCKETS = (1, 2, 3, 4)
 _LARGE_BUCKETS = (8, 16, 32, 64)
+TILE_SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16)
 SUPPORTED_BUCKETS = _SMALL_BUCKETS + _LARGE_BUCKETS
 _TL_SUPER_BLOCK = tl.constexpr(256)
 
@@ -996,7 +999,7 @@ def _main_loop_trips(args) -> int:
 
 
 @triton.jit
-def _decode_w5a16_superblock(
+def _decode_w5a16_tile(
     ql,
     qh,
     scale,
@@ -1005,7 +1008,7 @@ def _decode_w5a16_superblock(
     zero_point_step,
     offs_n,
     n_mask,
-    super_block,
+    k_start,
     stride_qn: tl.constexpr,
     stride_qk: tl.constexpr,
     stride_hn: tl.constexpr,
@@ -1019,20 +1022,21 @@ def _decode_w5a16_superblock(
     stride_zsn: tl.constexpr,
     stride_zsk: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
 ):
-    """Decode one packed K256 tile, expanding each metadata code once."""
-    offs_packed = tl.arange(0, 128)
+    """Decode one aligned BLOCK_K tile, expanding each metadata code once."""
+    offs_packed = tl.arange(0, BLOCK_K // 2)
     packed = tl.load(
         ql
         + offs_n[:, None] * stride_qn
-        + (super_block * 128 + offs_packed[None, :]) * stride_qk,
+        + (k_start // 2 + offs_packed[None, :]) * stride_qk,
         mask=n_mask[:, None],
         other=0,
     ).to(tl.uint32)
     high = tl.load(
         qh
         + offs_n[:, None] * stride_hn
-        + (super_block * 32 + offs_packed[None, :] // 4) * stride_hk,
+        + (k_start // 8 + offs_packed[None, :] // 4) * stride_hk,
         mask=n_mask[:, None],
         other=0,
     ).to(tl.uint32)
@@ -1040,10 +1044,12 @@ def _decode_w5a16_superblock(
     even = (packed & 0xF) | (((high >> shift) & 1) << 4)
     odd = ((packed >> 4) & 0xF) | (((high >> (shift + 4)) & 1) << 4)
     q = tl.interleave(even, odd)
-    q = q.to(tl.float32).to(tl.bfloat16)
+    # BF16 represents every integer in [128, 159] exactly at unit spacing.
+    q = (q.to(tl.uint16) | 0x4300).to(tl.bfloat16, bitcast=True) - 128.0
+    q = q.to(tl.bfloat16)
 
-    offs_group = tl.arange(0, 8)
-    group = super_block * 8 + offs_group
+    offs_group = tl.arange(0, BLOCK_K // 32)
+    group = k_start // 32 + offs_group
     scale_code = (
         tl.load(
             scale + offs_n[:, None] * stride_sn + group[None, :] * stride_sk,
@@ -1062,26 +1068,27 @@ def _decode_w5a16_superblock(
         .to(tl.float32)
         .to(tl.bfloat16)
     )
+    step = k_start // 256
     scale_step_value = tl.load(
-        scale_step + offs_n * stride_ssn + super_block * stride_ssk,
+        scale_step + offs_n * stride_ssn + step * stride_ssk,
         mask=n_mask,
         other=0.0,
     ).to(tl.bfloat16)
     zero_step_value = tl.load(
-        zero_point_step + offs_n * stride_zsn + super_block * stride_zsk,
+        zero_point_step + offs_n * stride_zsn + step * stride_zsk,
         mask=n_mask,
         other=0.0,
     ).to(tl.bfloat16)
     scale_group = (scale_code * scale_step_value[:, None]).to(tl.bfloat16)
     zero_group = (zero_code * zero_step_value[:, None]).to(tl.bfloat16)
     scale_expanded = tl.reshape(
-        tl.broadcast_to(scale_group[:, :, None], (BLOCK_N, 8, 32)),
-        (BLOCK_N, 256),
+        tl.broadcast_to(scale_group[:, :, None], (BLOCK_N, BLOCK_K // 32, 32)),
+        (BLOCK_N, BLOCK_K),
         can_reorder=False,
     )
     zero_expanded = tl.reshape(
-        tl.broadcast_to(zero_group[:, :, None], (BLOCK_N, 8, 32)),
-        (BLOCK_N, 256),
+        tl.broadcast_to(zero_group[:, :, None], (BLOCK_N, BLOCK_K // 32, 32)),
+        (BLOCK_N, BLOCK_K),
         can_reorder=False,
     )
     return ((q - zero_expanded).to(tl.bfloat16) * scale_expanded).to(tl.bfloat16)
@@ -1121,6 +1128,7 @@ def _int5_w5a16_direct_kernel(
     BUCKET: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     SPLIT_K: tl.constexpr,
     PIPELINE_STAGES: tl.constexpr,
 ):
@@ -1136,41 +1144,44 @@ def _int5_w5a16_direct_kernel(
         m_mask = offs_m < STATIC_M
     else:
         m_mask = offs_m < M
-    offs_k = tl.arange(0, 256)
+    offs_k = tl.arange(0, BLOCK_K)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for super_block in tl.range(0, K // _TL_SUPER_BLOCK, num_stages=PIPELINE_STAGES):
-        weight = _decode_w5a16_superblock(
-            ql,
-            qh,
-            scale,
-            scale_step,
-            zero,
-            zero_point_step,
-            offs_n,
-            n_mask,
-            super_block,
-            stride_qn,
-            stride_qk,
-            stride_hn,
-            stride_hk,
-            stride_sn,
-            stride_sk,
-            stride_ssn,
-            stride_ssk,
-            stride_zn,
-            stride_zk,
-            stride_zsn,
-            stride_zsk,
-            BLOCK_N,
-        )
-        activation = tl.load(
-            x
-            + offs_m[:, None] * stride_xm
-            + (super_block * 256 + offs_k[None, :]) * stride_xk,
-            mask=m_mask[:, None],
-            other=0.0,
-        ).to(tl.bfloat16)
-        acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
+        for tile in tl.static_range(0, 256 // BLOCK_K):
+            k_start = super_block * 256 + tile * BLOCK_K
+            weight = _decode_w5a16_tile(
+                ql,
+                qh,
+                scale,
+                scale_step,
+                zero,
+                zero_point_step,
+                offs_n,
+                n_mask,
+                k_start,
+                stride_qn,
+                stride_qk,
+                stride_hn,
+                stride_hk,
+                stride_sn,
+                stride_sk,
+                stride_ssn,
+                stride_ssk,
+                stride_zn,
+                stride_zk,
+                stride_zsn,
+                stride_zsk,
+                BLOCK_N,
+                BLOCK_K,
+            )
+            activation = tl.load(
+                x
+                + offs_m[:, None] * stride_xm
+                + (k_start + offs_k[None, :]) * stride_xk,
+                mask=m_mask[:, None],
+                other=0.0,
+            ).to(tl.bfloat16)
+            acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
     tl.store(
         out + offs_m[:, None] * stride_om + offs_n[None, :] * stride_on,
         acc.to(tl.bfloat16),
@@ -1212,6 +1223,7 @@ def _int5_w5a16_splitk_kernel(
     BUCKET: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
     SPLIT_K: tl.constexpr,
     PIPELINE_STAGES: tl.constexpr,
 ):
@@ -1228,7 +1240,7 @@ def _int5_w5a16_splitk_kernel(
         m_mask = offs_m < STATIC_M
     else:
         m_mask = offs_m < M
-    offs_k = tl.arange(0, 256)
+    offs_k = tl.arange(0, BLOCK_K)
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     num_super_blocks: tl.constexpr = K // _TL_SUPER_BLOCK
@@ -1240,38 +1252,41 @@ def _int5_w5a16_splitk_kernel(
     split_super_blocks = super_blocks_per_split + (split_id < extra_super_blocks)
     last_super = first_super + split_super_blocks
     for super_block in tl.range(first_super, last_super, num_stages=PIPELINE_STAGES):
-        weight = _decode_w5a16_superblock(
-            ql,
-            qh,
-            scale,
-            scale_step,
-            zero,
-            zero_point_step,
-            offs_n,
-            n_mask,
-            super_block,
-            stride_qn,
-            stride_qk,
-            stride_hn,
-            stride_hk,
-            stride_sn,
-            stride_sk,
-            stride_ssn,
-            stride_ssk,
-            stride_zn,
-            stride_zk,
-            stride_zsn,
-            stride_zsk,
-            BLOCK_N,
-        )
-        activation = tl.load(
-            x
-            + offs_m[:, None] * stride_xm
-            + (super_block * 256 + offs_k[None, :]) * stride_xk,
-            mask=m_mask[:, None],
-            other=0.0,
-        ).to(tl.bfloat16)
-        acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
+        for tile in tl.static_range(0, 256 // BLOCK_K):
+            k_start = super_block * 256 + tile * BLOCK_K
+            weight = _decode_w5a16_tile(
+                ql,
+                qh,
+                scale,
+                scale_step,
+                zero,
+                zero_point_step,
+                offs_n,
+                n_mask,
+                k_start,
+                stride_qn,
+                stride_qk,
+                stride_hn,
+                stride_hk,
+                stride_sn,
+                stride_sk,
+                stride_ssn,
+                stride_ssk,
+                stride_zn,
+                stride_zk,
+                stride_zsn,
+                stride_zsk,
+                BLOCK_N,
+                BLOCK_K,
+            )
+            activation = tl.load(
+                x
+                + offs_m[:, None] * stride_xm
+                + (k_start + offs_k[None, :]) * stride_xk,
+                mask=m_mask[:, None],
+                other=0.0,
+            ).to(tl.bfloat16)
+            acc += tl.dot(activation, tl.trans(weight), out_dtype=tl.float32)
 
     tl.store(
         out
@@ -1283,10 +1298,36 @@ def _int5_w5a16_splitk_kernel(
     )
 
 
+def _int5_large_autotune_configs(bucket: int) -> list[triton.Config]:
+    """Default K256 tiles plus the measured bucket-64 K64 specialization."""
+    configs = [
+        triton.Config(
+            {**config.kwargs, "BLOCK_K": _SUPER_BLOCK},
+            num_warps=config.num_warps,
+            num_stages=config.num_stages,
+        )
+        for config in tile_autotune_configs(bucket)
+    ]
+    if bucket == 64:
+        configs.append(
+            triton.Config(
+                {
+                    "BLOCK_M": 64,
+                    "BLOCK_N": 64,
+                    "BLOCK_K": 64,
+                    "PIPELINE_STAGES": 1,
+                },
+                num_warps=4,
+                num_stages=1,
+            )
+        )
+    return configs
+
+
 def int5_autotune_configs(bucket: int) -> list[triton.Config]:
     """DP4A row implementations for small M, BF16 tiles for larger M."""
     if bucket in _LARGE_BUCKETS:
-        return tile_autotune_configs(bucket)
+        return _int5_large_autotune_configs(bucket)
     rows = sorted({bucket, min(bucket + 1, max(_SMALL_BUCKETS))})
     return autotune_configs(
         implementations=[{"ROWS": 0}] + [{"ROWS": row} for row in rows]
@@ -1317,7 +1358,7 @@ def _prune_tiles(configs, named_args, **kwargs):
 
 _W5A16_DIRECT_KERNELS = {
     b: triton.autotune(
-        configs=tile_autotune_configs(b),
+        configs=_int5_large_autotune_configs(b),
         key=["M", "N", "K", "SPLIT_K"],
         prune_configs_by={"early_config_prune": _prune_tiles},
     )(_int5_w5a16_direct_kernel)
@@ -1325,7 +1366,7 @@ _W5A16_DIRECT_KERNELS = {
 }
 _W5A16_SPLIT_KERNELS = {
     b: triton.autotune(
-        configs=tile_autotune_configs(b),
+        configs=_int5_large_autotune_configs(b),
         key=["M", "N", "K", "SPLIT_K"],
         prune_configs_by={"early_config_prune": _prune_tiles},
     )(_int5_w5a16_splitk_kernel)
@@ -1415,7 +1456,7 @@ def _unsupported_reason(
     return None
 
 
-@autotune_launch_param("split_k", (1, 2, 4, 8))
+@autotune_launch_param("split_k", TILE_SPLIT_K_CANDIDATES)
 def _launch_w5a16(
     bucket: int,
     x: torch.Tensor,
@@ -1447,6 +1488,7 @@ def _launch_w5a16(
             "num_warps": config.num_warps,
             "num_stages": config.num_stages,
         }
+        launch_options.setdefault("BLOCK_K", _SUPER_BLOCK)
     launch_options["STATIC_M"] = M if isinstance(M, int) and M < bucket else 0
     return launch_split_k_gemm(
         kernel,
@@ -1616,4 +1658,9 @@ INT5_QUANTIZED_GEMM = QuantizedGemmFamily(
 )
 
 
-__all__ = ["INT5_QUANTIZED_GEMM", "SUPPORTED_BUCKETS", "int5_autotune_configs"]
+__all__ = [
+    "INT5_QUANTIZED_GEMM",
+    "SUPPORTED_BUCKETS",
+    "TILE_SPLIT_K_CANDIDATES",
+    "int5_autotune_configs",
+]
