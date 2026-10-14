@@ -1379,6 +1379,21 @@ class GraphBuilder {
       lower_unary(node, ggml_sigmoid);
     } else if (key == "aten.neg.default") {
       lower_unary(node, ggml_neg);
+    } else if (key == "aten.relu.default" || key == "aten.relu_.default") {
+      lower_unary(node, ggml_relu);
+    } else if (
+        key == "aten.hardtanh.default" || key == "aten.hardtanh_.default") {
+      lower_hardtanh(node);
+    } else if (key == "aten.convolution.default") {
+      lower_convolution(node);
+    } else if (key == "aten._native_batch_norm_legit_no_training.default") {
+      lower_batch_norm(node);
+    } else if (
+        key == "aten.max_pool2d_with_indices.default" ||
+        key == "aten.max_pool2d.default") {
+      lower_max_pool2d(node);
+    } else if (key == "aten.mean.dim") {
+      lower_mean(node);
     } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
       lower_slice(node, key == "aten.slice_copy.Tensor");
     } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
@@ -1437,17 +1452,21 @@ class GraphBuilder {
         input.sizes.back() != weight.sizes[1]) {
       throw std::runtime_error("ggml: invalid linear shapes");
     }
+    // ggml-cpu multiplies quantized or mixed-type weights only by F32
+    // activations. mul_mat returns F32 whatever its operand types.
+    ggml_tensor* activation = input.tensor->type == GGML_TYPE_F32 ||
+            input.tensor->type == weight.tensor->type
+        ? input.tensor
+        : as_f32(input.tensor);
     ggml_tensor* result =
-        ggml_mul_mat(instance_.context.get(), weight.tensor, input.tensor);
-    const NamedArgument* bias = find_arg(node, "bias", 2);
-    if (bias != nullptr && bias->arg.kind() == ArgKind::Tensor &&
-        valid(bias->arg.as_tensor().id)) {
-      const TensorRef bias_value = tensor(bias->arg.as_tensor().id);
-      if (bias_value.sizes != std::vector<int64_t>{weight.sizes[0]}) {
+        ggml_mul_mat(instance_.context.get(), weight.tensor, activation);
+    if (const std::optional<TensorRef> bias =
+            optional_tensor(node, "bias", 2)) {
+      if (bias->sizes != std::vector<int64_t>{weight.sizes[0]}) {
         throw std::runtime_error(
             "ggml: linear bias must hold one value per output feature");
       }
-      result = ggml_add(instance_.context.get(), result, bias_value.tensor);
+      result = ggml_add(instance_.context.get(), result, as_f32(bias->tensor));
     }
     std::vector<int64_t> sizes = input.sizes;
     sizes.back() = weight.sizes[0];
@@ -1537,15 +1556,13 @@ class GraphBuilder {
     }
     const double eps =
         float_arg(node, "eps", 3, std::numeric_limits<float>::epsilon(), true);
+    // ggml's norm kernels only read F32.
     ggml_tensor* result = ggml_rms_norm(
-        instance_.context.get(), input.tensor, static_cast<float>(eps));
-    const NamedArgument* weight = find_arg(node, "weight", 2);
-    if (weight != nullptr && weight->arg.kind() == ArgKind::Tensor &&
-        valid(weight->arg.as_tensor().id)) {
-      result = ggml_mul(
-          instance_.context.get(),
-          result,
-          tensor(weight->arg.as_tensor().id).tensor);
+        instance_.context.get(), as_f32(input.tensor), static_cast<float>(eps));
+    if (const std::optional<TensorRef> weight =
+            optional_tensor(node, "weight", 2)) {
+      result =
+          ggml_mul(instance_.context.get(), result, as_f32(weight->tensor));
     }
     set_single_output(node, TensorRef{result, input.sizes});
   }
@@ -1788,6 +1805,297 @@ class GraphBuilder {
     set_single_output(
         node,
         TensorRef{fn(instance_.context.get(), input.tensor), input.sizes});
+  }
+
+  void lower_hardtanh(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    require_float(node, input.tensor);
+    const float min =
+        static_cast<float>(float_arg(node, "min_val", 1, -1.0, true));
+    const float max =
+        static_cast<float>(float_arg(node, "max_val", 2, 1.0, true));
+    set_single_output(
+        node,
+        TensorRef{
+            ggml_clamp(instance_.context.get(), input.tensor, min, max),
+            input.sizes});
+  }
+
+  std::array<int, 2> pair_arg(
+      const Node& node,
+      std::string_view name,
+      size_t positional,
+      std::array<int, 2> fallback,
+      int64_t min_value) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() == ArgKind::None) {
+      return fallback;
+    }
+    const std::vector<int64_t> values = int_list(found->arg);
+    if (values.empty()) {
+      return fallback;
+    }
+    if (values.size() > 2) {
+      throw std::runtime_error(
+          "ggml: '" + std::string(name) + "' must have one or two entries");
+    }
+    if (std::ranges::any_of(values, [min_value](int64_t entry) {
+          return entry < min_value || entry > std::numeric_limits<int>::max();
+        })) {
+      throw std::runtime_error(
+          "ggml: '" + std::string(name) + "' entry is out of range");
+    }
+    // PyTorch lists are (height, width); ggml takes width first.
+    return {static_cast<int>(values.back()), static_cast<int>(values.front())};
+  }
+
+  std::optional<TensorRef> optional_tensor(
+      const Node& node,
+      std::string_view name,
+      size_t positional) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() != ArgKind::Tensor ||
+        !valid(found->arg.as_tensor().id)) {
+      return std::nullopt;
+    }
+    return tensor(found->arg.as_tensor().id);
+  }
+
+  // These lowerings produce only their first output, so a consumer of any
+  // other output is rejected here instead of failing to resolve later.
+  void require_only_first_output_used(const Node& node) const {
+    const std::vector<ValueId> ids = output_ids(node);
+    for (size_t i = 1; i < ids.size(); ++i) {
+      if (!method_.graph.value(ids[i]).consumer_ids.empty() ||
+          std::ranges::find(method_.graph.output_ids, ids[i]) !=
+              method_.graph.output_ids.end()) {
+        throw std::runtime_error(
+            "ggml: op '" + node.target + "' lowers only its first output");
+      }
+    }
+  }
+
+  static void require_f32(const Node& node, const ggml_tensor* tensor) {
+    if (tensor->type != GGML_TYPE_F32) {
+      throw std::runtime_error(
+          "ggml: op '" + node.target + "' supports F32 tensors only");
+    }
+  }
+
+  void lower_convolution(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const TensorRef weight = tensor_arg(node, "weight", 1);
+    if (bool_arg(node, "transposed", 6, false) || input.sizes.size() != 4 ||
+        weight.sizes.size() != 4) {
+      throw std::runtime_error("ggml: convolution supports 2D non-transposed");
+    }
+    require_f32(node, input.tensor);
+    require_f32(node, weight.tensor);
+    const auto stride = pair_arg(node, "stride", 3, {1, 1}, 1);
+    const auto padding = pair_arg(node, "padding", 4, {0, 0}, 0);
+    const auto dilation = pair_arg(node, "dilation", 5, {1, 1}, 1);
+    const int64_t groups = int_arg(node, "groups", 8, 1, true);
+    const int64_t channels = input.sizes[1];
+    const int64_t out_channels = weight.sizes[0];
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* in = contiguous(input.tensor);
+    ggml_tensor* result = nullptr;
+    if (groups == 1 && weight.sizes[1] == channels) {
+      // ggml_conv_2d rounds the im2col columns of an F32 kernel through F16.
+      ggml_tensor* columns = ggml_im2col(
+          ctx,
+          weight.tensor,
+          in,
+          stride[0],
+          stride[1],
+          padding[0],
+          padding[1],
+          dilation[0],
+          dilation[1],
+          /*is_2D=*/true,
+          GGML_TYPE_F32);
+      result = ggml_mul_mat(
+          ctx,
+          ggml_reshape_2d(
+              ctx,
+              columns,
+              columns->ne[0],
+              columns->ne[1] * columns->ne[2] * columns->ne[3]),
+          ggml_reshape_2d(
+              ctx, contiguous(weight.tensor), columns->ne[0], out_channels));
+      result = ggml_reshape_4d(
+          ctx,
+          result,
+          columns->ne[1],
+          columns->ne[2],
+          columns->ne[3],
+          out_channels);
+      result = ggml_cont(ctx, ggml_permute(ctx, result, 0, 1, 3, 2));
+    } else if (
+        groups == channels && out_channels == channels &&
+        weight.sizes[1] == 1) {
+      result = ggml_conv_2d_dw_direct(
+          ctx,
+          weight.tensor,
+          in,
+          stride[0],
+          stride[1],
+          padding[0],
+          padding[1],
+          dilation[0],
+          dilation[1]);
+    } else {
+      throw std::runtime_error(
+          "ggml: convolution supports groups of 1 or depthwise only");
+    }
+    if (const std::optional<TensorRef> bias =
+            optional_tensor(node, "bias", 2)) {
+      if (bias->sizes != std::vector<int64_t>{out_channels}) {
+        throw std::runtime_error(
+            "ggml: convolution bias must hold one value per output channel");
+      }
+      result = ggml_add(
+          ctx,
+          result,
+          ggml_reshape_4d(ctx, bias->tensor, 1, 1, out_channels, 1));
+    }
+    std::vector<int64_t> sizes{
+        result->ne[3], result->ne[2], result->ne[1], result->ne[0]};
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  // Only the normalized output is lowered; the saved statistics are empty in
+  // inference.
+  void lower_batch_norm(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const std::optional<TensorRef> weight_ref =
+        optional_tensor(node, "weight", 1);
+    const std::optional<TensorRef> bias_ref = optional_tensor(node, "bias", 2);
+    const TensorRef mean = tensor_arg(node, "running_mean", 3);
+    const TensorRef var = tensor_arg(node, "running_var", 4);
+    const double eps = float_arg(node, "eps", 6, 1e-5, true);
+    if (input.sizes.size() < 2) {
+      throw std::runtime_error("ggml: batch norm needs a channel dimension");
+    }
+    const std::vector<int64_t> per_channel{input.sizes[1]};
+    if (mean.sizes != per_channel || var.sizes != per_channel ||
+        (weight_ref && weight_ref->sizes != per_channel) ||
+        (bias_ref && bias_ref->sizes != per_channel)) {
+      throw std::runtime_error(
+          "ggml: batch norm statistics must hold one value per channel");
+    }
+    require_only_first_output_used(node);
+    ggml_tensor* weight = weight_ref ? weight_ref->tensor : nullptr;
+    ggml_tensor* bias = bias_ref ? bias_ref->tensor : nullptr;
+    ggml_context* ctx = instance_.context.get();
+    // y = x * scale + shift with scale = weight / sqrt(var + eps) and
+    // shift = bias - mean * scale.
+    ggml_tensor* stddev = ggml_sqrt(
+        ctx,
+        ggml_scale_bias(
+            ctx, as_f32(var.tensor), 1.0f, static_cast<float>(eps)));
+    ggml_tensor* scale = ggml_div(
+        ctx,
+        weight != nullptr ? as_f32(weight)
+                          : ggml_scale_bias(ctx, stddev, 0.0f, 1.0f),
+        stddev);
+    ggml_tensor* shift = ggml_mul(ctx, as_f32(mean.tensor), scale);
+    shift = bias != nullptr ? ggml_sub(ctx, as_f32(bias), shift)
+                            : ggml_neg(ctx, shift);
+    std::vector<int64_t> channel_sizes(input.sizes.size(), 1);
+    channel_sizes[1] = input.sizes[1];
+    ggml_tensor* result =
+        ggml_mul(ctx, input.tensor, reshape(ctx, scale, channel_sizes));
+    result = ggml_add(ctx, result, reshape(ctx, shift, channel_sizes));
+    set(output_ids(node).at(0), TensorRef{result, input.sizes});
+  }
+
+  // Indices are not produced; the lowering fails if they are consumed.
+  void lower_max_pool2d(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    if (input.sizes.size() != 4) {
+      throw std::runtime_error("ggml: max_pool2d needs an NCHW input");
+    }
+    const auto kernel = pair_arg(node, "kernel_size", 1, {0, 0}, 1);
+    const auto stride = pair_arg(node, "stride", 2, kernel, 1);
+    const auto padding = pair_arg(node, "padding", 3, {0, 0}, 0);
+    const auto dilation = pair_arg(node, "dilation", 4, {1, 1}, 1);
+    require_only_first_output_used(node);
+    if (kernel[0] <= 0 || kernel[1] <= 0 ||
+        dilation != std::array<int, 2>{1, 1} ||
+        bool_arg(node, "ceil_mode", 5, false)) {
+      throw std::runtime_error(
+          "ggml: max_pool2d supports dilation 1 without ceil_mode");
+    }
+    require_f32(node, input.tensor);
+    ggml_tensor* result = ggml_pool_2d(
+        instance_.context.get(),
+        contiguous(input.tensor),
+        GGML_OP_POOL_MAX,
+        kernel[0],
+        kernel[1],
+        stride[0],
+        stride[1],
+        static_cast<float>(padding[0]),
+        static_cast<float>(padding[1]));
+    std::vector<int64_t> sizes{
+        result->ne[3], result->ne[2], result->ne[1], result->ne[0]};
+    set(output_ids(node).at(0), TensorRef{result, std::move(sizes)});
+  }
+
+  // Reduces a run of trailing dimensions, which ggml_mean sees as one row.
+  void lower_mean(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    require_f32(node, input.tensor);
+    const NamedArgument* dtype = find_arg(node, "dtype", 3);
+    if (dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
+      throw std::runtime_error("ggml: mean does not support dtype");
+    }
+    const size_t rank = input.sizes.size();
+    const NamedArgument* dim_arg = find_arg(node, "dim", 1);
+    std::vector<int64_t> dims;
+    if (dim_arg != nullptr && dim_arg->arg.kind() != ArgKind::None) {
+      dims = int_list(dim_arg->arg);
+    }
+    if (dims.empty()) {
+      dims.resize(rank);
+      std::iota(dims.begin(), dims.end(), 0);
+    }
+    std::ranges::transform(dims, dims.begin(), [rank](int64_t dim) {
+      return normalize_dim(dim, rank);
+    });
+    std::ranges::sort(dims);
+    const size_t first = rank - dims.size();
+    for (size_t i = 0; i < dims.size(); ++i) {
+      if (dims[i] != static_cast<int64_t>(first + i)) {
+        throw std::runtime_error(
+            "ggml: mean supports trailing dimensions only");
+      }
+    }
+    const bool keepdim = bool_arg(node, "keepdim", 2, false);
+    int64_t row = 1;
+    std::vector<int64_t> sizes;
+    for (size_t i = 0; i < rank; ++i) {
+      if (i < first) {
+        sizes.push_back(input.sizes[i]);
+      } else {
+        row *= input.sizes[i];
+        if (keepdim) {
+          sizes.push_back(1);
+        }
+      }
+    }
+    if (row == 0) {
+      throw std::runtime_error("ggml: mean over an empty dimension");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* rows = ggml_reshape_2d(
+        ctx,
+        contiguous(input.tensor),
+        row,
+        static_cast<int64_t>(checked_numel(input.sizes)) / row);
+    ggml_tensor* result = reshape(ctx, ggml_mean(ctx, rows), sizes);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
   }
 
   void lower_slice(const Node& node, bool copy) {
