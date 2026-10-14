@@ -17,4 +17,11 @@ size_t materialize_view_copies(
     Graph& graph,
     const std::vector<ValueId>& value_ids);
 
+// ET-VK views keep the sizes they were built with, and only aten.view gets a
+// resize hook, so permute, select, squeeze, unsqueeze and alias of a
+// dynamically shaped source run as their copy kernels instead, with negative
+// dims made non-negative. Views in an alias group that something mutates stay
+// views. Returns the rewritten nodes.
+std::vector<NodeId> materialize_dynamic_view_copies(Graph& graph);
+
 } // namespace ptn::vulkan
