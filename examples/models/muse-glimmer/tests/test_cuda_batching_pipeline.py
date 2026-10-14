@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Tests for the batched CUDA export (export_solo.py --kv-layout cell) on a tiny model.
+"""Tiny-model tests for CUDA batching (--backend cuda --use-offgraph-kv-cache).
 
 The eager checks run the off-graph model against the neutral cache's
 references; the export check lowers the forward methods and inspects the
@@ -262,10 +262,9 @@ class BatchingExportTest(unittest.TestCase):
                 self.assertEqual(manifest["layout"], "cell")
                 self.assertEqual(manifest["max_cells"], self.MAX_CELLS)
                 self.assertEqual(manifest["max_write"], self.MAX_STEP)
-                # The step width must name the delegate input carrying T, which
-                # the backend checks is the cache ops' position. The delegate's
-                # inputs need not follow the method's order: prefill passes
-                # logits_to_keep ahead of input_pos.
+                # The delegate preserves (tokens, input_pos, logits_to_keep).
+                # Its step-width spec names input_pos, which the backend checks
+                # is the cache ops' position and carries the token count T.
                 index, dim = map(
                     int, specs[OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC].decode().split(":")
                 )
