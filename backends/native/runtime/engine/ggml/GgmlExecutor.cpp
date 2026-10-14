@@ -1590,8 +1590,17 @@ class GraphBuilder {
       lower_binary(node, key);
     } else if (key == "aten.silu.default") {
       lower_unary(node, ggml_silu);
-    } else if (key == "aten.sigmoid.default") {
+    } else if (
+        key == "aten.sigmoid.default" || key == "aten.sigmoid_.default") {
       lower_unary(node, ggml_sigmoid);
+    } else if (key == "aten.gelu.default" || key == "aten.gelu_.default") {
+      lower_gelu(node);
+    } else if (key == "aten.native_layer_norm.default") {
+      lower_layer_norm(node);
+    } else if (key == "aten.constant_pad_nd.default") {
+      lower_constant_pad(node);
+    } else if (key == "aten.log.default") {
+      lower_unary(node, ggml_log);
     } else if (key == "aten.neg.default") {
       lower_unary(node, ggml_neg);
     } else if (key == "aten.relu.default" || key == "aten.relu_.default") {
@@ -1633,7 +1642,9 @@ class GraphBuilder {
     } else if (key == "llama.custom_sdpa.default") {
       lower_custom_sdpa(node);
     } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
-      lower_le(node);
+      lower_compare(node, /*strict=*/false);
+    } else if (key == "aten.lt.Tensor" || key == "aten.lt.Scalar") {
+      lower_compare(node, /*strict=*/true);
     } else if (key == "aten.arange.start_step") {
       lower_arange(node);
     } else if (key == "torchao.choose_qparams_affine.default") {
@@ -1782,6 +1793,89 @@ class GraphBuilder {
           ggml_mul(instance_.context.get(), result, as_f32(weight->tensor));
     }
     set_single_output(node, TensorRef{result, input.sizes});
+  }
+
+  void lower_layer_norm(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const std::vector<int64_t> normalized =
+        int_list(require_arg(node, "normalized_shape", 1).arg);
+    if (input.sizes.empty() || normalized.size() != 1 ||
+        normalized[0] != input.sizes.back()) {
+      throw std::runtime_error("ggml: layer_norm only normalizes the last dim");
+    }
+    require_only_first_output_used(node);
+    // ggml's norm kernels only read F32.
+    require_f32(node, input.tensor);
+    const double eps = float_arg(node, "eps", 4, 1e-5, true);
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* result =
+        ggml_norm(ctx, contiguous(input.tensor), static_cast<float>(eps));
+    if (const std::optional<TensorRef> weight =
+            optional_tensor(node, "weight", 2)) {
+      result = ggml_mul(ctx, result, weight->tensor);
+    }
+    if (const std::optional<TensorRef> bias =
+            optional_tensor(node, "bias", 3)) {
+      result = ggml_add(ctx, result, bias->tensor);
+    }
+    set(output_ids(node).at(0), TensorRef{result, input.sizes});
+  }
+
+  void lower_gelu(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    require_float(node, input.tensor);
+    const NamedArgument* approximate = find_arg(node, "approximate", 1);
+    const bool tanh = approximate != nullptr &&
+        approximate->arg.kind() == ArgKind::String &&
+        approximate->arg.as_string().value == "tanh";
+    ggml_context* ctx = instance_.context.get();
+    set_single_output(
+        node,
+        TensorRef{
+            tanh ? ggml_gelu(ctx, input.tensor)
+                 : ggml_gelu_erf(ctx, input.tensor),
+            input.sizes});
+  }
+
+  // pad lists (left, right) pairs from the last dim inward, which is ggml's
+  // ne order.
+  void lower_constant_pad(const Node& node) {
+    const TensorRef input = tensor_arg(node, "self", 0);
+    const std::vector<int64_t> pad = int_list(require_arg(node, "pad", 1).arg);
+    const size_t rank = input.sizes.size();
+    if (pad.size() % 2 != 0 || pad.size() / 2 > rank || rank > 4) {
+      throw std::runtime_error("ggml: invalid constant_pad_nd padding");
+    }
+    std::array<int, 8> amounts{};
+    std::vector<int64_t> sizes = input.sizes;
+    for (size_t i = 0; i < pad.size(); ++i) {
+      if (pad[i] < 0) {
+        throw std::runtime_error("ggml: constant_pad_nd cannot crop");
+      }
+      amounts[i] = static_cast<int>(pad[i]);
+      sizes[rank - 1 - i / 2] += pad[i];
+    }
+    if (std::ranges::all_of(amounts, [](int p) { return p == 0; })) {
+      set_single_output(
+          node, TensorRef{materialize(input.tensor), input.sizes});
+      return;
+    }
+    if (float_arg(node, "value", 2, 0.0, true) != 0.0) {
+      throw std::runtime_error("ggml: constant_pad_nd only pads with zeros");
+    }
+    require_f32(node, input.tensor);
+    ggml_tensor* result = ggml_pad_ext(
+        instance_.context.get(),
+        contiguous(input.tensor),
+        amounts[0],
+        amounts[1],
+        amounts[2],
+        amounts[3],
+        amounts[4],
+        amounts[5],
+        amounts[6],
+        amounts[7]);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
   }
 
   void lower_reshape(const Node& node) {
@@ -2262,26 +2356,39 @@ class GraphBuilder {
   void lower_convolution(const Node& node) {
     const TensorRef input = tensor_arg(node, "input", 0);
     const TensorRef weight = tensor_arg(node, "weight", 1);
-    if (bool_arg(node, "transposed", 6, false) || input.sizes.size() != 4 ||
-        weight.sizes.size() != 4) {
-      throw std::runtime_error("ggml: convolution supports 2D non-transposed");
+    const size_t rank = input.sizes.size();
+    if (bool_arg(node, "transposed", 6, false) || (rank != 3 && rank != 4) ||
+        weight.sizes.size() != rank) {
+      throw std::runtime_error(
+          "ggml: convolution supports 1D and 2D non-transposed");
     }
     require_f32(node, input.tensor);
     require_f32(node, weight.tensor);
-    const auto stride = pair_arg(node, "stride", 3, {1, 1}, 1);
-    const auto padding = pair_arg(node, "padding", 4, {0, 0}, 0);
-    const auto dilation = pair_arg(node, "dilation", 5, {1, 1}, 1);
+    auto stride = pair_arg(node, "stride", 3, {1, 1}, 1);
+    auto padding = pair_arg(node, "padding", 4, {0, 0}, 0);
+    auto dilation = pair_arg(node, "dilation", 5, {1, 1}, 1);
     const int64_t groups = int_arg(node, "groups", 8, 1, true);
     const int64_t channels = input.sizes[1];
     const int64_t out_channels = weight.sizes[0];
     ggml_context* ctx = instance_.context.get();
     ggml_tensor* in = contiguous(input.tensor);
+    ggml_tensor* kernel = contiguous(weight.tensor);
+    if (rank == 3) {
+      // [N, C, L] runs as a height-1 image.
+      in = ggml_reshape_4d(
+          ctx, in, input.sizes[2], 1, input.sizes[1], input.sizes[0]);
+      kernel = ggml_reshape_4d(
+          ctx, kernel, weight.sizes[2], 1, weight.sizes[1], weight.sizes[0]);
+      stride[1] = 1;
+      padding[1] = 0;
+      dilation[1] = 1;
+    }
     ggml_tensor* result = nullptr;
     if (groups == 1 && weight.sizes[1] == channels) {
       // ggml_conv_2d rounds the im2col columns of an F32 kernel through F16.
       ggml_tensor* columns = ggml_im2col(
           ctx,
-          weight.tensor,
+          kernel,
           in,
           stride[0],
           stride[1],
@@ -2298,8 +2405,7 @@ class GraphBuilder {
               columns,
               columns->ne[0],
               columns->ne[1] * columns->ne[2] * columns->ne[3]),
-          ggml_reshape_2d(
-              ctx, contiguous(weight.tensor), columns->ne[0], out_channels));
+          ggml_reshape_2d(ctx, kernel, columns->ne[0], out_channels));
       result = ggml_reshape_4d(
           ctx,
           result,
@@ -2313,7 +2419,7 @@ class GraphBuilder {
         weight.sizes[1] == 1) {
       result = ggml_conv_2d_dw_direct(
           ctx,
-          weight.tensor,
+          kernel,
           in,
           stride[0],
           stride[1],
@@ -2338,6 +2444,10 @@ class GraphBuilder {
     }
     std::vector<int64_t> sizes{
         result->ne[3], result->ne[2], result->ne[1], result->ne[0]};
+    if (rank == 3) {
+      sizes.erase(sizes.begin() + 2);
+      result = ggml_reshape_3d(ctx, result, sizes[2], sizes[1], sizes[0]);
+    }
     set_single_output(node, TensorRef{result, std::move(sizes)});
   }
 
@@ -2810,8 +2920,9 @@ class GraphBuilder {
     set_single_output(node, TensorRef{result, query.sizes});
   }
 
-  // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b).
-  void lower_le(const Node& node) {
+  // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
+  // step(b - a).
+  void lower_compare(const Node& node, bool strict) {
     const TensorRef left = tensor_arg(node, "self", 0);
     const NamedArgument& other = require_arg(node, "other", 1);
     ggml_context* ctx = instance_.context.get();
@@ -2829,8 +2940,9 @@ class GraphBuilder {
           1.0f,
           -static_cast<float>(float_arg(node, "other", 1, 0)));
     }
-    ggml_tensor* result =
-        ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
+    ggml_tensor* result = strict
+        ? ggml_step(ctx, ggml_neg(ctx, difference))
+        : ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
     set_single_output(node, TensorRef{result, std::move(sizes)});
   }
 
@@ -3067,9 +3179,11 @@ class GraphBuilder {
 
   ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys) {
     const TensorRef mask = tensor(id);
-    if (mask.sizes.size() < 2 || mask.sizes[mask.sizes.size() - 2] != tokens ||
+    const size_t rank = mask.sizes.size();
+    if (rank < 2 || rank > 4 ||
+        (mask.sizes[rank - 2] != tokens && mask.sizes[rank - 2] != 1) ||
         mask.sizes.back() != keys) {
-      throw std::runtime_error("ggml: attention mask must end in [T, S]");
+      throw std::runtime_error("ggml: attention mask must end in [T|1, S]");
     }
     // Out-of-place repeat/scale results, and views of them, are stable until
     // an explicit graph write to their storage (which invalidates this cache).
@@ -3092,6 +3206,14 @@ class GraphBuilder {
       constexpr float kMax = std::numeric_limits<float>::max();
       additive =
           ggml_scale_bias(ctx, contiguous(as_f32(mask.tensor)), kMax, -kMax);
+    }
+    // flash_attn_ext broadcasts the mask over heads and batch but reads one
+    // row per query.
+    if (mask.sizes[rank - 2] != tokens) {
+      std::vector<int64_t> rows = mask.sizes;
+      rows[rank - 2] = tokens;
+      additive = ggml_repeat(
+          ctx, as_f32(additive), new_tensor(ctx, GGML_TYPE_F32, rows));
     }
     // flash_attn_ext needs a contiguous F16 mask.
     ggml_tensor* result = additive->type == GGML_TYPE_F16
