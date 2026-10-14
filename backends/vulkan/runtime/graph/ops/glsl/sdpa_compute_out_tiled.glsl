@@ -24,6 +24,7 @@ $if MODE == "llm":
   #define V_LAYOUT DHSB
   #define OUT_LAYOUT DHSB
 $else:
+  #define HAS_GQA
   #define V_LAYOUT DSHB
   #define OUT_LAYOUT DSHB
 

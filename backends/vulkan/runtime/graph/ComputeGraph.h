@@ -673,7 +673,8 @@ class ComputeGraph final {
    * buffer storage, and others with texture storage. Current only texture
    * storage is supported.
    */
-  utils::StorageType suggested_storage_type();
+  utils::StorageType suggested_storage_type(
+      const std::vector<int64_t>& sizes = {});
 
   /*
    * Returns a suggested memory layout (i.e. channels, width, or height packed)

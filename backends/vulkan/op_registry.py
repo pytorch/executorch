@@ -160,6 +160,7 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.neg,
         operator.floordiv,
         operator.mul,
         operator.lt,
@@ -176,6 +177,7 @@ def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
@@ -228,6 +230,7 @@ def register_copy_op():
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.log10.default,
+        exir_ops.edge.aten.log1p.default,
     ]
 )
 def register_unaryop_cpp_ops():
@@ -1172,6 +1175,25 @@ def register_sdpa_cpp_ops():
 
 
 # =============================================================================
+# GatedDeltaRule.cpp
+# =============================================================================
+
+
+@update_features(
+    [
+        "llama::gated_delta_rule",
+        "llama::gated_delta_rule.default",
+    ]
+)
+def register_gated_delta_rule():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_highdim=True,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # SDPA.cpp (fused SDPA entry point)
 # =============================================================================
 
@@ -1400,6 +1422,7 @@ def register_cat():
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 

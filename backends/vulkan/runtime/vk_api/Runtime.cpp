@@ -16,6 +16,10 @@
 #include <mutex>
 #include <sstream>
 
+#if defined(__APPLE__)
+#include <dlfcn.h>
+#endif
+
 namespace vkcompute {
 namespace vkapi {
 
@@ -310,7 +314,33 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
   // Load Vulkan drivers
 #if defined(USE_VULKAN_VOLK)
   if (VK_SUCCESS != volkInitialize()) {
+#if defined(__APPLE__)
+    void* module =
+        dlopen("/opt/homebrew/lib/libvulkan.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (!module) {
+      module =
+          dlopen("/opt/homebrew/lib/libMoltenVK.dylib", RTLD_NOW | RTLD_LOCAL);
+    }
+    if (module) {
+      auto get_proc_addr =
+          (PFN_vkGetInstanceProcAddr)dlsym(module, "vkGetInstanceProcAddr");
+      if (get_proc_addr) {
+        volkInitializeCustom(get_proc_addr);
+      } else {
+        std::cerr
+            << "[Vulkan Runtime Error] Failed to find vkGetInstanceProcAddr in /opt/homebrew/lib"
+            << std::endl;
+        return std::unique_ptr<Runtime>(nullptr);
+      }
+    } else {
+      std::cerr
+          << "[Vulkan Runtime Error] volkInitialize failed and could not dlopen /opt/homebrew/lib/libvulkan.dylib"
+          << std::endl;
+      return std::unique_ptr<Runtime>(nullptr);
+    }
+#else
     return std::unique_ptr<Runtime>(nullptr);
+#endif
   }
 #elif defined(USE_VULKAN_WRAPPER)
   if (!InitVulkan()) {
@@ -337,7 +367,13 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
 
   try {
     return std::make_unique<Runtime>(default_config);
+  } catch (const std::exception& e) {
+    std::cerr << "[Vulkan Runtime Error] Exception during Runtime creation: "
+              << e.what() << std::endl;
   } catch (...) {
+    std::cerr
+        << "[Vulkan Runtime Error] Unknown exception during Runtime creation."
+        << std::endl;
   }
 
   return std::unique_ptr<Runtime>(nullptr);

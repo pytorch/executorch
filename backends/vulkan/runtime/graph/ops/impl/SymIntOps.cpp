@@ -108,6 +108,31 @@ void sym_sub(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       new ExecuteNode(resize_sym_sub_node, args));
 }
 
+void sym_neg_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
+  const ValueRef a = args.at(0);
+  const ValueRef out = args.at(1);
+
+  const int32_t a_val = graph->read_symint(a);
+  const int32_t result = -a_val;
+
+  graph->set_symint(out, result);
+}
+
+void resize_sym_neg_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  sym_neg_impl(graph, resize_args);
+}
+
+void sym_neg(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  sym_neg_impl(&graph, args);
+
+  graph.execute_nodes().emplace_back(
+      new ExecuteNode(resize_sym_neg_node, args));
+}
+
 void sym_floordiv_impl(ComputeGraph* graph, const std::vector<ValueRef>& args) {
   const ValueRef a = args.at(0);
   const ValueRef b = args.at(1);
@@ -217,6 +242,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(sym_size.int, sym_size_int);
   VK_REGISTER_OP(add, sym_add);
   VK_REGISTER_OP(sub, sym_sub);
+  VK_REGISTER_OP(neg, sym_neg);
   VK_REGISTER_OP(floordiv, sym_floordiv);
   VK_REGISTER_OP(mul, sym_mul);
   VK_REGISTER_OP(et_vk.select_as_symint.default, select_as_symint);
