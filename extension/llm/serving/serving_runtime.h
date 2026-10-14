@@ -52,31 +52,23 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new sessions and clean same-session replacements.
-  // Zero disables both. Explicit open/reset bypass reuse. Replacement clones
-  // the matching committed prefix, trying retained snapshots if the live
-  // source refuses; snapshots may outlive their source.
-  // Misses/refusals fall back to full prefill.
-  // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
-  // when enabled. Backend numerical parity requires model-specific validation.
+  // Snapshots for new sessions and clean replacements; zero disables reuse.
+  // Explicit open/reset bypass reuse. When enabled, provision
+  // max_sessions + prefix_cache_capacity + 1 executor rows.
   std::size_t prefix_cache_capacity = 0;
-  // Opt-in checkpoints at absolute multiples of this token interval, plus
-  // the initial prompt end. Busy capture lanes skip points. Requires prefix
-  // cache capacity; zero retains initial-prompt-only capture behavior.
+  // Capture at absolute interval multiples and the initial prompt end.
+  // Requires cache capacity; zero captures only the initial prompt.
   std::size_t prefix_checkpoint_interval = 0;
-  // Optional replacement for the interval policy, invoked on control with the
-  // full prompt identity, committed start position, and whether this is a new
-  // session. Return checkpoints at increasing positions in (start,
-  // prompt.size()] with optional application metadata exposed to the retention
-  // policy. Empty, invalid, or throwing results skip capture for this request.
-  // Requires cache capacity. Must not wait for or reenter this runtime.
+  // Override the interval with increasing checkpoints in (start,
+  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
+  // capacity. Runs on control; must not block or reenter the runtime.
   std::function<std::vector<batching::PrefixCheckpoint>(
       const batching::PrefixIdentity& prompt,
       batching::Position start,
       bool opening)>
       prefix_checkpoint_policy = {};
-  // Independent of capture timing. Empty uses bounded global LRU retention.
-  // Called on control; must not wait for or reenter this runtime.
+  // Empty uses global LRU without protected early checkpoints.
+  // Runs on control; must not block or reenter the runtime.
   batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
 };
 

@@ -532,13 +532,13 @@ TEST_F(PrefixCacheTest, CustomRetentionSelectsVictimFromSnapshotIdentities) {
       2,
       [](const PrefixCache::EntryView& incoming,
          const PrefixCache::Entries& entries) {
-        EXPECT_EQ(incoming.identity.size(), 12u);
+        EXPECT_EQ(incoming.identity.get().size(), 12u);
         EXPECT_EQ(entries.size(), 2u);
         return std::max_element(
                    entries.begin(),
                    entries.end(),
                    [](const auto& a, const auto& b) {
-                     return a.identity.size() < b.identity.size();
+                     return a.identity.get().size() < b.identity.get().size();
                    }) -
             entries.begin();
       });
@@ -577,6 +577,58 @@ TEST_F(PrefixCacheTest, OneCheckpointEntryStillEvictsAtCapacity) {
   auto match = cache.lookup(Tokens{7, 7, 7, 7, 7, 7, 7, 7, 9});
   ASSERT_TRUE(match);
   EXPECT_EQ(match->matched_tokens, 8u);
+}
+
+TEST_F(PrefixCacheTest, RetentionCanAssignSortAndPartitionCopiedViews) {
+  std::size_t calls = 0;
+  PrefixCache cache(
+      3,
+      [&](const auto& incoming,
+          const auto& entries) -> std::optional<std::size_t> {
+        ++calls;
+        PrefixCache::Entries candidates;
+        candidates = entries;
+        auto eligible_end = std::partition(
+            candidates.begin(), candidates.end(), [&](const auto& entry) {
+              return entry.identity.get().size() <
+                  incoming.identity.get().size();
+            });
+        EXPECT_EQ(eligible_end - candidates.begin(), 2);
+        if (eligible_end == candidates.begin()) {
+          return std::nullopt;
+        }
+        std::sort(
+            candidates.begin(), eligible_end, [](const auto& a, const auto& b) {
+              return *std::static_pointer_cast<const int>(a.metadata) <
+                  *std::static_pointer_cast<const int>(b.metadata);
+            });
+        const auto* identity = &candidates.front().identity.get();
+        const auto victim = std::find_if(
+            entries.begin(), entries.end(), [&](const auto& entry) {
+              return &entry.identity.get() == identity;
+            });
+        EXPECT_EQ(victim - entries.begin(), 1);
+        EXPECT_EQ(entries.front().identity.get().size(), 5u);
+        return victim - entries.begin();
+      });
+  const std::vector<Tokens> prompts{{1, 2}, {3, 4, 5}, {6, 7, 8, 9, 10}};
+  const std::vector<int> priorities{30, 10, 20};
+  for (std::size_t i = 0; i < prompts.size(); ++i) {
+    ASSERT_TRUE(cache.insert(
+        prompts[i],
+        snapshot(prompts[i]),
+        std::make_shared<const int>(priorities[i])));
+  }
+  const Tokens incoming{11, 12, 13, 14};
+  ASSERT_TRUE(cache.insert(incoming, snapshot(incoming)));
+  EXPECT_EQ(calls, 1u);
+  EXPECT_FALSE(cache.lookup({3, 4, 5, 99}));
+  for (auto prompt : {prompts.front(), prompts.back(), incoming}) {
+    prompt.push_back(99);
+    auto match = cache.lookup(prompt);
+    ASSERT_TRUE(match);
+    expect_cold_match(*match, prompt);
+  }
 }
 
 TEST_F(PrefixCacheTest, DeclinedOrInvalidRetentionLeavesSnapshotsUsable) {
@@ -619,7 +671,7 @@ TEST_F(PrefixCacheTest, DeclinedOrInvalidRetentionLeavesSnapshotsUsable) {
   }
 }
 
-TEST_F(PrefixCacheTest, MetadataCanProtectAnAnchorWithoutChangingMatching) {
+TEST_F(PrefixCacheTest, CustomMetadataPolicyCanProtectAnAnchor) {
   PrefixCache cache(2, [](const auto& incoming, const auto& entries) {
     EXPECT_EQ(*std::static_pointer_cast<const int>(incoming.metadata), 2);
     return std::min_element(
@@ -677,9 +729,9 @@ TEST_F(PrefixCacheTest, CaptureKeepsMetadataWithItsPendingSnapshot) {
   std::size_t calls = 0;
   PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
     ++calls;
-    EXPECT_EQ(incoming.identity.size(), 8u);
+    EXPECT_EQ(incoming.identity.get().size(), 8u);
     EXPECT_EQ(incoming.metadata, second);
-    EXPECT_EQ(entries.front().identity.size(), 4u);
+    EXPECT_EQ(entries.front().identity.get().size(), 4u);
     EXPECT_EQ(entries.front().metadata, first);
     return 0;
   });
@@ -726,7 +778,7 @@ TEST_F(PrefixCacheTest, ObserverMatchesMetadataAfterSkippingABoundary) {
   std::size_t calls = 0;
   PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
     ++calls;
-    EXPECT_EQ(incoming.identity.size(), 8u);
+    EXPECT_EQ(incoming.identity.get().size(), 8u);
     EXPECT_EQ(incoming.metadata, later);
     EXPECT_FALSE(entries.front().metadata);
     return 0;

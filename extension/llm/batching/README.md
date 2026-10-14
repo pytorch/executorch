@@ -59,99 +59,37 @@ sliding-window state.
 
 ## Prefix policy
 
-Include `extension/llm/batching/prefix_cache.h` and construct
-`PrefixCache(max_entries)` outside the Runner. It owns idle snapshot Sessions
-and a bounded LRU of their exact token histories. Serialize its calls on the
-application thread; `lookup()` and `PromptCapture::collect()` can wait for clone
-completion and cannot run in a Runner callback.
+Create `PrefixCache(max_entries)` outside the Runner to store reusable snapshots.
+`lookup()` returns an independent session and the number of reusable tokens;
+submit the remaining suffix, or start a fresh session on a miss. Keys must
+identify the complete prompt under the same model and execution configuration.
 
-A lookup compares tokens from position zero, orders candidates by longest
-match and then recency, and asks each candidate Session to clone the matched
-prefix. Each snapshot is tried only at its longest matching boundary; a
-retention or resource refusal moves to the next snapshot without retrying
-shorter boundaries within the refused snapshot.
-The result owns a new independently writable Session and a `matched_tokens`
-count. On a miss, open a fresh Session. Submit only the unmatched suffix.
-The final requested token is always left for a forward, including on an exact
-prompt match, to produce fresh logits under the new sampling policy.
-
-**MLX cold/warm numerical parity is not guaranteed.** Reuse changes prefill
-shapes and can change logits, independently of clone-state correctness. Keep
-MLX reuse opt-in and restrict experiments to greedy generation until non-greedy
-sampling is validated. Greedy token parity is not guaranteed either.
-
-Create one prompt capture per generation. Its wrapper requests a clone at the
-complete prompt boundary before forwarding the first nonempty output to the
-user callback. Collect the snapshot on the caller thread after generation:
+Capture the prompt before decode, then collect it after generation:
 
 ```cpp
 auto capture = prefixes.capture_prompt(session, prompt);
 auto generation = session.generate_async(
-    suffix, config, capture.wrap([&](const GenerationUpdate& update) {
-      consume(update); // must not block the engine thread
-    }));
+    suffix, config, capture.wrap(on_update));
 generation.wait();
 capture.collect();
 ```
 
-`capture_prompt()` copies the complete token history, including any reused
-prefix; its length must fit `Position`. The first callback can expose a pending
-prediction or several speculative tokens, so the capture uses this known
-prompt boundary rather than the callback token count. Capture binds to the
-source's session identity, so both the source Session and capture handle can
-move. The helper does not own the source: retain its current owner until
-generation completes; destroying that owner still requests closure and
-cancels generation. The capture handle can be discarded after wrapping because
-the callback shares its state. Keep the PrefixCache alive through `collect()`.
+Serialize cache operations on the caller thread. `lookup()` and `collect()` may
+block and must not run in Runner callbacks. Keep the source session alive until
+generation completes and the cache alive through collection.
 
-Call `wrap()` once for one generation, and call `collect()` only from the caller
-thread after `generation.wait()`. Collection may wait for the queued clone and
-inserts the resulting idle snapshot. It returns false when no snapshot was
-captured, cloning or insertion was refused, or the handle was already collected.
-Disabled caching and capture allocation refusal still forward user callbacks.
-Capture attempts cloning at most once and does not suppress user callback
-exceptions: those retain the Runner's normal generation-failure behavior.
-A failed or cancelled partial prefill produces no snapshot; later cancellation
-or a user callback exception does not invalidate an already captured prompt.
+For intermediate snapshots, use `GenConfig::prefill_breakpoints` and
+`PromptCapture::observer`; see [runner.h](runner.h) and [prefix_cache.h](prefix_cache.h).
+Capture is best effort and requires executor support at the requested boundary.
 
-`insert()` checks the snapshot position, takes ownership, and evicts the least
-recently used entry only after successful insertion. Duplicate keys refresh
-recency, replace metadata, and release the redundant snapshot. Closing a source does not
-invalidate its snapshot; eviction does not invalidate a returned clone.
-The optional second constructor argument, `PrefixCache::RetentionPolicy`,
-replaces LRU eviction. The policy interface and default
-`lru_prefix_cache_retention` live in [prefix_cache_retention.h](prefix_cache_retention.h),
-independent of cache storage. An empty callback selects that default.
-Before a distinct insertion into a full cache the policy receives
-an incoming `EntryView` and borrowed retained views in MRU order. Each view has
-an `identity` and optional `metadata`.
-Return an existing entry's index to evict, or `std::nullopt` to reject the new
-snapshot. Invalid indices and exceptions reject it without changing the cache.
-The policy runs on the caller thread and must not reenter the cache or retain
-the borrowed references. Capture scheduling and retention are independent.
+Default retention is bounded global LRU, including periodic checkpoints; early
+snapshots are not protected. Pass a custom policy to `PrefixCache` to change
+retention. Checkpoints can carry application-defined metadata such as priority
+or boundary class. See [prefix_cache_retention.h](prefix_cache_retention.h) for
+the policy interface and default implementation.
 
-Custom policies can include `prefix_cache_retention.h` and return a victim
-index or delegate to `lru_prefix_cache_retention(incoming, entries)`.
-
-`CheckpointMetadata` is an application-defined immutable object held as
-`std::shared_ptr<const void>`; applications own its type contract. Pass it to
-`insert`/`insert_identity`, `capture_at`, or `capture_prompt`/`capture_identity`
-for wrapped prompt-end capture. An observer accepts a sorted vector of
-`PrefixCheckpoint{position, metadata}` values as its third argument and selects
-metadata by absolute position, including when earlier captures are skipped.
-Captured metadata stays with the pending snapshot through `collect()`.
-The core never interprets it or includes it in prefix identity. Default LRU
-ignores metadata.
-
-Snapshots must remain idle after cloning. The caller is responsible for
-supplying their exact token history under the same immutable model, method,
-KV configuration, and positional semantics. Token-only keys are insufficient
-for changing adapters, external embeddings, or image inputs.
-
-Generation/engine metrics count the submitted suffix and actual model work.
-The application reports the complete prompt length and matched-token count;
-clone lookup latency occurs before `generate_async()` and is outside its
-reported generation latency.
+Reuse can change floating-point results as prefill shapes change. Validate
+numerical behavior for your model and backend.
 
 ## Sliding windows and backends
 
@@ -172,16 +110,8 @@ The backend owns tensor allocation, stream ordering, and write isolation.
 It may copy K/V or share storage, so compute reuse does not imply proportional
 memory savings.
 
-The generic Session and prefix manager are shared by MLX and future CUDA/Vulkan
-executors. A backend using ModuleExecutor supplies a registered cache builder,
-registry binding, `BatchControl`, and attention/storage compatible with its
-clone and rewind contracts. ModuleExecutor currently passes host token and
-position tensors and samples host-visible logits; device boundary copies or
-device sampling require appropriate execution integration.
-
-MLX implements the off-graph cache used here. The existing `examples/llm_server`
-CUDA workers use another session/execution path and do not automatically gain
-this prefix cache. This change does not migrate those workers.
+Backends using `ModuleExecutor` provide a registered cache builder,
+`BatchControl`, and storage compatible with the clone and rewind contracts.
 
 ## Ownership and capacity
 

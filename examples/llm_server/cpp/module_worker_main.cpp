@@ -34,7 +34,7 @@ DEFINE_int32(
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
-    "Intermediate prompt checkpoint interval; zero disables");
+    "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
 DEFINE_int32(max_session_tokens, 2048, "Maximum retained tokens per session");
 DEFINE_int32(max_decode_sequences, 2, "Decode slots in one packed forward");
 DEFINE_int32(

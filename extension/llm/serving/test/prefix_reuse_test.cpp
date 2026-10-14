@@ -1349,9 +1349,9 @@ TEST_F(
   config.prefix_cache_retention = [&](const auto& incoming,
                                       const auto& entries) {
     ++retention_calls;
-    EXPECT_EQ(incoming.identity.size(), 19u);
+    EXPECT_EQ(incoming.identity.get().size(), 19u);
     EXPECT_EQ(incoming.metadata, continuation_metadata);
-    EXPECT_EQ(entries.front().identity.size(), 5u);
+    EXPECT_EQ(entries.front().identity.get().size(), 5u);
     EXPECT_EQ(entries.front().metadata, initial_metadata);
     return 0;
   };
@@ -1397,10 +1397,10 @@ TEST_F(PrefixReuseTest, CustomCheckpointPolicyReceivesOpaqueIdentity) {
     ++retention_calls;
     EXPECT_EQ(incoming.metadata, metadata);
     EXPECT_EQ(entries.front().metadata, metadata);
-    EXPECT_EQ(incoming.identity.size(), 4u);
-    EXPECT_EQ(entries.front().identity.size(), 4u);
+    EXPECT_EQ(incoming.identity.get().size(), 4u);
+    EXPECT_EQ(entries.front().identity.get().size(), 4u);
     EXPECT_TRUE(std::holds_alternative<batching::OpaqueSpan>(
-        incoming.identity.spans[1]));
+        incoming.identity.get().spans[1]));
     return 0;
   };
   start();
@@ -1503,6 +1503,40 @@ TEST_F(PrefixReuseTest, PeriodicContinuationUsesAbsoluteBoundaries) {
   for (std::size_t i = 1; i < clones.size(); ++i) {
     EXPECT_EQ(clones[i].prefix.size() % 8, 0u);
   }
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureDoesNotProtectTheEarlyCheckpoint) {
+  config.prefix_cache_capacity = 2;
+  config.prefix_checkpoint_interval = 4;
+  executor.retained_tail = 0;
+  start();
+  std::vector<Token> prompt;
+  for (std::size_t boundary : {4, 8, 12}) {
+    prompt.resize(boundary, 7);
+    auto event = output();
+    submit(event, prompt).wait();
+    ASSERT_FALSE(event->terminal->error);
+    const auto& stats = event->terminal->stats;
+    if (boundary > 4) {
+      EXPECT_EQ(stats.session_reset_reason, "exact_prefix");
+    }
+    ASSERT_TRUE(stats.generated_token_ids);
+    prompt.insert(
+        prompt.end(),
+        stats.generated_token_ids->begin(),
+        stats.generated_token_ids->end());
+  }
+  const auto captures = executor.clones();
+  ASSERT_EQ(captures.size(), 3u);
+  EXPECT_EQ(captures[0].prefix.size(), 4u);
+  EXPECT_EQ(captures[1].prefix.size(), 8u);
+  EXPECT_EQ(captures[2].prefix.size(), 12u);
+
+  auto replaced = output();
+  submit(replaced, {7, 7, 7, 7, 9}).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(replaced->terminal->stats.prefilled_prompt_tokens, 5u);
 }
 
 TEST_F(PrefixReuseTest, SpeculativePromptEndCheckpointRefusalIsNonfatal) {

@@ -25,21 +25,20 @@ namespace batching {
 using CheckpointMetadata = std::shared_ptr<const void>;
 
 struct ET_EXPERIMENTAL PrefixCacheEntryView {
-  const PrefixIdentity& identity;
-  const CheckpointMetadata& metadata;
+  std::reference_wrapper<const PrefixIdentity> identity;
+  CheckpointMetadata metadata;
 };
 
 using PrefixCacheEntries = std::vector<PrefixCacheEntryView>;
 
-// Called before a distinct insertion into a full cache. Entries are ordered
-// most recently used first and borrowed for the call. Return an existing
-// entry's index to evict, or nullopt to decline the incoming snapshot.
-// An invalid index or exception also declines it, leaving entries intact.
-// Must not reenter the cache or retain the borrowed references.
+// On full-cache insertion, return a victim's original MRU index or nullopt.
+// Invalid indices and exceptions decline insertion. Identities are borrowed
+// for the call; do not retain them or reenter the cache.
 using PrefixCacheRetentionPolicy = std::function<std::optional<std::size_t>(
     const PrefixCacheEntryView& incoming,
     const PrefixCacheEntries& entries)>;
 
+// Global LRU, with no protected early checkpoints.
 inline std::optional<std::size_t> lru_prefix_cache_retention(
     const PrefixCacheEntryView&,
     const PrefixCacheEntries& entries) {
