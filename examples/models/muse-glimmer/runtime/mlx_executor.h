@@ -29,6 +29,7 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
 
   bool initialize() override;
   size_t preferred_batch_tokens() const override;
+  std::optional<std::size_t> kv_allocated_bytes() const override;
   std::optional<batching::SessionId> open_session() override;
   void close_session(batching::SessionId session) override;
   std::optional<batching::SessionId> clone(
@@ -73,6 +74,7 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
   cache::InstallGuard install_guard_;
   std::unique_ptr<Module> module_;
   cache::BatchControl* const ctl_;
+  const cache::CacheMemory* const cache_memory_;
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
   std::unique_ptr<EngineEmbeddings> embeddings_;
   const int max_sessions_;

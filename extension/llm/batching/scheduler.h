@@ -17,6 +17,7 @@
 // bounded work, no I/O, no blocking on caller code.
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include <executorch/extension/llm/batching/types.h>
@@ -65,6 +66,10 @@ class ET_EXPERIMENTAL Scheduler {
   // fit; a wider chunk is rejected, not split. Non-zero, so it is safe to
   // divide by.
   virtual std::size_t max_prefill_chunk_size() const = 0;
+
+  virtual std::optional<std::size_t> decode_capacity() const {
+    return std::nullopt;
+  }
 };
 
 } // namespace batching
