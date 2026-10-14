@@ -14,6 +14,7 @@ import statistics
 import time
 from typing import Iterator, NamedTuple
 
+import torch
 from executorch.backends.cuda.autotune import cuda_graph_timing as cgt
 from torch._inductor.runtime.triton_heuristics import CachingAutotuner
 from torch._inductor.select_algorithm import AlgorithmSelectorCache
@@ -25,7 +26,28 @@ class Pick(NamedTuple):
     )
     name: str
     candidates: int
-    regret: float  # reference time of the pick / reference time of the best candidate
+    regret: float  # _regret() of the pick's and the best's reference times
+    best_us: float  # the best candidate's reference time
+
+
+# Event timing is quantized: cudaEventElapsedTime steps by 0.512 us on the A10G
+# CI GPU (CUDA documents about 0.5 us), hipEventElapsedTime by about 1 us. For
+# a kernel of a few microseconds one step reads as a large ratio (3.072 us vs
+# 2.560 us is 1.2x) although quantization alone can produce it.
+_EVENT_TICK_MS = 1e-3 if torch.version.hip is not None else 0.512e-3
+_FLOAT32_EPS = 2.0**-23
+
+
+def _regret(pick_ms: float, best_ms: float) -> float:
+    """pick / best, scored with one event tick of tolerance.
+
+    A reading is the difference of two quantized timestamps, so it can fall
+    either side of the true time by about a tick. Crediting the best one extra
+    tick keeps a difference the timer cannot resolve from counting as a worse
+    pick; it is a tolerance, not a bound. The margins absorb the float32
+    rounding of the two event times (at most one float32 epsilon each)."""
+    credited = best_ms * (1.0 + 2 * _FLOAT32_EPS) + 1.001 * _EVENT_TICK_MS
+    return max(pick_ms / credited, 1.0)
 
 
 def _spin(stop_at: float) -> None:
@@ -68,10 +90,15 @@ class SaturatedCpu:
 
 
 @contextlib.contextmanager
-def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
+def record_autotune_picks(
+    cpu: SaturatedCpu, picks: list, measure: bool = True
+) -> Iterator[None]:
     """For each autotune decision taken inside the context, re-time every
     candidate with the CPU paused (CUDA-graph timing, best of two) and append
-    a ``Pick`` with what the pick costs against the best candidate."""
+    a ``Pick`` scoring the pick against the best candidate (see _regret).
+
+    With ``measure=False`` nothing is re-timed: each decision is recorded with
+    its candidate count and a regret of 1.0."""
     orig_kernel = CachingAutotuner.benchmark_all_configs
     orig_choices = AlgorithmSelectorCache.benchmark_choices
 
@@ -81,29 +108,35 @@ def record_autotune_picks(cpu: SaturatedCpu, picks: list) -> Iterator[None]:
         if len(valid) < 2 or not used:
             return
         pick = min(used, key=used.get)
-        picks.append(
-            Pick(kind, str(name), len(valid), valid[pick] / min(valid.values()))
-        )
+        best = min(valid.values())
+        regret = _regret(valid[pick], best)
+        picks.append(Pick(kind, str(name), len(valid), regret, best * 1000.0))
 
     def kernel_hook(self, *args, **kwargs):
         timings = orig_kernel(self, *args, **kwargs)
-        with cpu.paused(), cgt.cuda_graph_timing():
-            reference = {
-                launcher: min(self.bench(launcher, *args, **kwargs) for _ in range(2))
-                for launcher in timings
-            }
-        self.reset_to_zero_args(*args, **kwargs)
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    launcher: min(
+                        self.bench(launcher, *args, **kwargs) for _ in range(2)
+                    )
+                    for launcher in timings
+                }
+            self.reset_to_zero_args(*args, **kwargs)
         kind = "custom" if self.custom_kernel else "inductor"
         record(kind, self.inductor_meta.get("kernel_name"), timings, reference)
         return timings
 
     def choices_hook(cls, choices, autotune_args, *args, **kwargs):
         timings = orig_choices.__func__(cls, choices, autotune_args, *args, **kwargs)
-        with cpu.paused(), cgt.cuda_graph_timing():
-            reference = {
-                c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
-                for c in timings
-            }
+        reference = timings
+        if measure:
+            with cpu.paused(), cgt.cuda_graph_timing():
+                reference = {
+                    c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
+                    for c in timings
+                }
         record("template", type(next(iter(timings))).__name__, timings, reference)
         return timings
 
@@ -126,5 +159,6 @@ def summarize(picks: list) -> str:
     }
     return (
         f"{len(picks)} decisions {kinds}: mean regret {statistics.mean(regrets):.3f}x, "
-        f"worst {max(regrets):.3f}x, >1.10x: {sum(r > 1.10 for r in regrets)}"
+        f"worst {max(regrets):.3f}x, >1.10x: {sum(r > 1.10 for r in regrets)}, "
+        f"fastest kernel {min(p.best_us for p in picks):.1f} us"
     )
