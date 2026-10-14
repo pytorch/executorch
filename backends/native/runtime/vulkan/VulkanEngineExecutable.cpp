@@ -1807,6 +1807,34 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
   }
 
+  // A view only forwards its base, so a write through it stays private while
+  // every value up the alias chain has this single reader.
+  bool is_observed(ValueId id) const {
+    const Value& value = g().value(id);
+    if ((value.role != ValueRole::Intermediate &&
+         value.role != ValueRole::UserInput) ||
+        value.consumer_ids.size() != 1 ||
+        std::ranges::find(outputs_, id) != outputs_.end()) {
+      return true;
+    }
+    return valid(value.alias_id) && is_observed(value.alias_id);
+  }
+
+  // Functional in-place ops run out of place (detach_in_place_outputs), so
+  // their input is never written and must not keep a view of it from being
+  // materialized.
+  void unmark_functional_in_place_mutations() {
+    for (const NodeId nid : nodes_) {
+      Node& n = method_.graph.node(nid);
+      if (n.is_call() && is_functional_in_place(n.target) &&
+          !n.inputs.empty() && n.inputs[0].arg.kind() == ArgKind::Tensor &&
+          valid(n.inputs[0].arg.as_tensor().id) &&
+          !is_observed(n.inputs[0].arg.as_tensor().id)) {
+        n.inputs[0].mutated = false;
+      }
+    }
+  }
+
   // A functional kernel whose output views its input binds one storage for
   // both read and write. ET-VK records only the last binding's access, so the
   // write is forgotten and the next reader of the output gets no barrier. Such
@@ -1828,11 +1856,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         continue;
       }
       const Value& self = g().value(self_id);
-      const bool observed = (self.role != ValueRole::Intermediate &&
-                             self.role != ValueRole::UserInput) ||
-          valid(self.alias_id) || self.consumer_ids.size() != 1 ||
-          std::ranges::find(outputs_, self_id) != outputs_.end();
-      if (observed) {
+      if (is_observed(self_id)) {
         throw std::runtime_error(
             "vulkan: node '" + n.name + "' (" + n.target +
             "): in-place update of '" + self.name +
@@ -1989,6 +2013,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void build(const Package& package) {
     check_mutation_outputs();
     assign_layouts();
+    unmark_functional_in_place_mutations();
     materialize_packed_views();
     detach_in_place_outputs();
     index_output_kinds();
