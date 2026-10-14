@@ -39,6 +39,11 @@ struct GraphConfig final {
   // function even if none of the inputs have been updated.
   bool force_resize = false;
 
+  // Used for testing/debugging only. Selects the narrow (2-row) int4 linear
+  // output tile that is otherwise chosen only on Mali, so the variant can be
+  // exercised on any GPU.
+  bool force_narrow_int4_tile = false;
+
   // Execution properties that determine specifics re: how command buffer
   // submission is handled, etc. 0 means this field is not set.
 

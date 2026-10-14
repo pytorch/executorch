@@ -187,9 +187,16 @@ class KernelCall:
 
 
 @dataclass
+class DelegateScratch:
+    allocation: AllocationDetails
+    size: int
+
+
+@dataclass
 class DelegateCall:
     delegate_index: int
     args: List[int]
+    scratch: Optional[List[DelegateScratch]] = None
 
 
 @dataclass
