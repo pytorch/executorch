@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 # Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
 
-"""INT6 GEMM for M <= 64 on planar GGUF Q6_K weights.
+"""INT6 GEMM for M <= 4096 on planar GGUF Q6_K weights.
 
 The kernels consume ``CudaDp4aPlanarInt6Tensor`` storage directly: ``ql`` holds
 nibble-packed low bits, ``qh`` holds the two high bits in K32 even/odd planes,
@@ -21,6 +21,8 @@ generic BLOCK_M/BLOCK_N/warp/stage tiles with M in the key and K-loop-trip
 pruning; split-K is selected outside autotune, writes disjoint FP32 partials,
 and uses the shared deterministic reduction. Phase 1 defaults large buckets to
 split 1.
+Buckets 128-4096 use tensor-core MMQ with K256 Q8 activations.
+
 """
 
 from typing import Optional
@@ -29,6 +31,7 @@ import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
+from executorch.backends.cuda.triton.kernels.q8_mmq import launch_q8_mmq, MMQ_BUCKETS
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     launch_split_k_gemm,
     QuantizedGemmFamily,
@@ -61,7 +64,7 @@ _LARGE_BUCKETS = (8, 16, 32, 64)
 # The tile kernels split K in 256-wide super-blocks and keep gaining from more
 # splits on narrow N (e.g. N = 256), so they try one more power of two.
 TILE_SPLIT_K_CANDIDATES = (*SPLIT_K_CANDIDATES, 32)
-SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *_LARGE_BUCKETS)
+SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *_LARGE_BUCKETS, *MMQ_BUCKETS)
 
 
 @triton.jit
@@ -1449,6 +1452,8 @@ def _launch(
     group_size: int,
     **launch_params,
 ) -> torch.Tensor:
+    if bucket in MMQ_BUCKETS:
+        return launch_q8_mmq(x, ql, qh, scale, steps, scale, steps, bits=6)
     launch = _launch_w6a8 if bucket in _SMALL_BUCKETS else _launch_w6a16
     return launch(bucket, x, ql, qh, scale, steps, group_size, **launch_params)
 

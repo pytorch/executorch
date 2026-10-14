@@ -273,7 +273,10 @@ class Int6QuantizedGemmTest(unittest.TestCase):
             raise unittest.SkipTest("CUDA required")
 
     def test_ops_are_registered_per_bucket(self) -> None:
-        self.assertEqual(SUPPORTED_BUCKETS, (1, 2, 3, 4, 8, 16, 32, 64))
+        self.assertEqual(
+            SUPPORTED_BUCKETS,
+            (*(1, 2, 3, 4, 8, 16, 32, 64), 128, 256, 512, 1024, 2048, 4096),
+        )
         for bucket in SUPPORTED_BUCKETS:
             self.assertTrue(hasattr(torch.ops.triton, f"int6_quantized_gemm_m{bucket}"))
 

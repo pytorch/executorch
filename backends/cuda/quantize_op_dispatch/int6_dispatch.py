@@ -13,17 +13,11 @@ torch.export traces through our Triton ops and dequant logic. Routing is by
 packed-int6 path; genuine INT8 weights stay on the int8 path. The code here runs
 during eager inference and AOTI export tracing — it does NOT run at .pte runtime.
 
-At .pte runtime, the captured graph is executed by the AOTI-generated .so:
-  - ``triton::int6_quantized_gemm_m{M}`` is a Triton W6A8 DP4A or W6A16
-    tensor-core kernel compiled into it (see triton/kernels/int6_quantized_gemm.py).
-  - The inline dequant + F.linear is compiled by inductor into fused Triton
-    dequant + matmul kernels.
-
-Dispatch (``_gemm_family_dispatch.quantized_linear``): when a Triton kernel can
-run, the smallest bucket of ``INT6_QUANTIZED_GEMM`` that supports the inputs
-(static M <= 64 takes the smallest bucket that holds it; a dynamic M provably
-within [1, 64] does the same). Larger M, an unbounded dynamic M, other group
-sizes or dtypes, and CPU eager use inline dequant + F.linear, never an error.
+At .pte runtime, AOTInductor executes the captured kernels. Supported BF16
+inputs use W6A8 DP4A for M <= 4, fused W6A16 kernels for M <= 64, and
+Q8-activation tensor-core MMQ for M <= 4096. Weights keep their packed storage.
+Dynamic M uses the smallest bucket whose bounds cover the input. Unsupported
+shapes, group sizes, dtypes and CPU eager use dequant + F.linear.
 
 The packed-int6 weight is symmetric (no zero point): ``w = q * scale`` with
 ``q`` in ``[-32, 31]`` stored as the ql/qh planes.
@@ -112,4 +106,5 @@ def _(func, types, args, kwargs):
         weight_args,
         bias,
         lambda x_2d: _unit_dq_mm_int6(x_2d, *weight_args),
+        max_bucket=4096,
     )

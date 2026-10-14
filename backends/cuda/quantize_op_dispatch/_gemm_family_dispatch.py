@@ -9,7 +9,7 @@
 Shared by the per-format dispatchers (``int{4,5,6,8}_dispatch.py``):
 
 1. ``can_launch_triton``: is a Triton kernel possible here at all?
-2. ``select_bucket``: the first bucket through M=64, in ascending order, whose
+2. ``select_bucket``: the first bucket through the requested limit, in ascending order, whose
    op supports the arguments (the family decides through ``supports``). Static
    and provably bounded dynamic M therefore take the smallest covering bucket.
 3. Otherwise the format's dequantize + ``F.linear`` fallback, chunked along N
@@ -25,6 +25,8 @@ from typing import Callable, Optional, Sequence
 
 import torch
 from torch._subclasses.fake_tensor import is_fake
+from torch.fx.experimental.symbolic_shapes import statically_known_true
+
 
 # Dequantizing a whole large weight (e.g. a 262144-row lm_head) in one shot
 # materializes several full-size temporaries (~10 GiB). Above this row count the
@@ -49,17 +51,17 @@ def can_launch_triton(x: torch.Tensor) -> bool:
 DEFAULT_MAX_BUCKET = 64
 
 
-def select_bucket(family, *args) -> Optional[int]:
+def select_bucket(family, *args, max_bucket: int = DEFAULT_MAX_BUCKET) -> Optional[int]:
     """The bucket whose op serves ``args``, or None.
 
-    Returns the smallest supported bucket through ``DEFAULT_MAX_BUCKET``.
+    Returns the smallest supported bucket through ``max_bucket``.
     """
+    if max_bucket > DEFAULT_MAX_BUCKET and statically_known_true(
+        args[0].shape[0] <= DEFAULT_MAX_BUCKET
+    ):
+        max_bucket = DEFAULT_MAX_BUCKET
     return next(
-        (
-            b
-            for b in family.buckets
-            if b <= DEFAULT_MAX_BUCKET and family.supports(b, *args)
-        ),
+        (b for b in family.buckets if b <= max_bucket and family.supports(b, *args)),
         None,
     )
 
@@ -89,6 +91,8 @@ def quantized_linear(
     weight_args: Sequence,
     bias: Optional[torch.Tensor],
     dequant_linear: Callable[[torch.Tensor], torch.Tensor],
+    *,
+    max_bucket: int = DEFAULT_MAX_BUCKET,
 ) -> torch.Tensor:
     """``F.linear(input, weight, bias)`` for a quantized weight.
 
@@ -98,7 +102,11 @@ def quantized_linear(
     orig_shape = input.shape
     x_2d = input.reshape(-1, orig_shape[-1])
     args = (x_2d, *weight_args)
-    bucket = select_bucket(family, *args) if can_launch_triton(x_2d) else None
+    bucket = (
+        select_bucket(family, *args, max_bucket=max_bucket)
+        if can_launch_triton(x_2d)
+        else None
+    )
     if bucket is not None:
         out = family.op(bucket)(*args)
     else:

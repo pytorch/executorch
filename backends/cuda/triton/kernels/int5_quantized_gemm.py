@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 # Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
 
-"""Decode-sized (M <= 4) INT5 GEMM on planar Q5_K weights.
+"""INT5 GEMM on planar Q5_K weights for decode and large-row prefill.
 
 ``ql`` stores even/odd low nibbles and ``qh`` stores one high bit per weight:
 each K32 block has four ``qh`` bytes whose low/high nibbles describe the four
@@ -22,6 +22,8 @@ Each M bucket independently autotunes a generic row-blocked implementation and
 explicit-row implementations for the bucket and its next bucket. Dynamic M
 branches uniformly to exactly the runtime row count; static extra rows are
 masked.
+Buckets 128-4096 use tensor-core MMQ with K256 Q8 activations.
+
 """
 
 from typing import Optional
@@ -30,6 +32,7 @@ import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
+from executorch.backends.cuda.triton.kernels.q8_mmq import launch_q8_mmq, MMQ_BUCKETS
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     launch_split_k_gemm,
     QuantizedGemmFamily,
@@ -54,7 +57,8 @@ _GROUP_SIZE = 32
 _SUPER_BLOCK = 256
 _TL_GROUP_SIZE = tl.constexpr(32)
 
-SUPPORTED_BUCKETS = (1, 2, 3, 4)
+_SMALL_BUCKETS = (1, 2, 3, 4)
+SUPPORTED_BUCKETS = (*_SMALL_BUCKETS, *MMQ_BUCKETS)
 
 
 @triton.jit
@@ -988,7 +992,7 @@ def _main_loop_trips(args) -> int:
 
 def int5_autotune_configs(bucket: int) -> list[triton.Config]:
     """Generic, bucket-row, and deduplicated next-bucket implementations."""
-    rows = sorted({bucket, min(bucket + 1, max(SUPPORTED_BUCKETS))})
+    rows = sorted({bucket, min(bucket + 1, max(_SMALL_BUCKETS))})
     return autotune_configs(
         implementations=[{"ROWS": 0}] + [{"ROWS": row} for row in rows]
     )
@@ -1004,7 +1008,7 @@ _BUCKET_KERNELS = {
         key=["N", "K", "SPLIT_K", "DYNAMIC_M"],
         prune_configs_by={"early_config_prune": _prune},
     )(_int5_w5a8_bucket_kernel)
-    for bucket in SUPPORTED_BUCKETS
+    for bucket in _SMALL_BUCKETS
 }
 
 
@@ -1019,6 +1023,8 @@ def _unsupported_reason(
     zero_point_step: torch.Tensor,
     group_size: int,
 ) -> Optional[str]:
+    if bucket in MMQ_BUCKETS and group_size != _GROUP_SIZE:
+        return "MMQ requires group_size=32"
     weights = (ql, qh, scale, scale_step, zero, zero_point_step)
     if any(tensor.dim() != 2 for tensor in (x, *weights)):
         return "expects rank-2 activation and weight tensors"
@@ -1103,6 +1109,10 @@ def _launch(
     """Runs the bucket kernel. Whether M is dynamic is read here, before
     split-K timing replaces ``x`` with a concrete tensor, so a dynamic-M call
     is timed on the dynamic path and cached apart from a static M."""
+    if bucket in MMQ_BUCKETS:
+        return launch_q8_mmq(
+            x, ql, qh, scale, scale_step, zero, zero_point_step, bits=5
+        )
     return _launch_rows(
         bucket,
         x,
@@ -1200,7 +1210,7 @@ def _fake(bucket: int, x: torch.Tensor, ql: torch.Tensor, *args) -> torch.Tensor
 
 INT5_QUANTIZED_GEMM = QuantizedGemmFamily(
     "int5_quantized_gemm",
-    (1, 2, 3, 4),
+    SUPPORTED_BUCKETS,
     _prototype,
     _launch,
     _fake,
