@@ -1598,12 +1598,20 @@ class VulkanEngineExecutable final : public EngineExecutable {
   // Insert a same-shape clone into a fresh width-packed tensor when an
   // activation's current layout or storage cannot satisfy its consumer.
   VkRef repack_to_width(VkRef src, const Value& v, utils::StorageType storage) {
+    return repack(src, v, storage, utils::kWidthPacked);
+  }
+
+  VkRef repack(
+      VkRef src,
+      const Value& v,
+      utils::StorageType storage,
+      utils::GPUMemoryLayout layout) {
     const std::vector<int64_t>& sizes = v.tensor_meta().sizes;
     const VkRef dst = graph_->add_tensor(
         sizes,
         to_vk_dtype(device_dtype(v.tensor_meta().dtype)),
         storage,
-        utils::kWidthPacked);
+        layout);
     std::vector<VkRef> args = {src, none_ref_, dst};
     VK_GET_OP_FN("aten.clone.default")(*graph_, args);
     return dst;
@@ -1716,6 +1724,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
       throw std::runtime_error(
           "vulkan: unsupported op '" + key + "' (target " + n.target + ")");
     }
+    // ET-VK runs every rank-3 convolution as a forward conv1d, ignoring
+    // transposed and output_padding.
+    if (key == "aten.convolution.default" &&
+        constant_bool_input(n, "transposed", false)) {
+      const Argument* input = find_input(n, "input");
+      if (input != nullptr && input->kind() == ArgKind::Tensor &&
+          meta_of(input->as_tensor().id).sizes.size() == 3) {
+        throw std::runtime_error(
+            "vulkan: transposed 1D convolution is not supported");
+      }
+    }
     const bool width = is_width_packed_op(key);
     std::optional<utils::StorageType> activation_storage;
     if (converts_activation_storage(key)) {
@@ -1755,6 +1774,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
           }
         }
       }
+      // ET-VK's convolution reads only channels-packed activations.
+      if (key == "aten.convolution.default" && na.name == "input" &&
+          na.arg.kind() == ArgKind::Tensor && valid(na.arg.as_tensor().id) &&
+          layout_at(na.arg.as_tensor().id) != utils::kChannelsPacked) {
+        const ValueId value_id = na.arg.as_tensor().id;
+        a = repack(
+            a,
+            g().value(value_id),
+            storage_at(value_id),
+            utils::kChannelsPacked);
+      }
       // ET-VK's view_copy shaders read and write one storage type.
       if (key == "aten.view_copy.default" && na.name == "self" &&
           na.arg.kind() == ArgKind::Tensor) {
@@ -1783,8 +1813,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
     std::vector<VkRef> outs;
     for_each_output_value(
         n, [&](ValueId output_id) { outs.push_back(vref_at(output_id)); });
-    // ET-VK's embedding only writes channels-packed outputs.
-    if (key == "aten.embedding.default" && outs.size() == 1 &&
+    // ET-VK's embedding and convolution only write channels-packed outputs.
+    if ((key == "aten.embedding.default" ||
+         key == "aten.convolution.default") &&
+        outs.size() == 1 &&
         graph_->packed_dim_of(outs[0]) != vkcompute::WHCN::kChannelsDim) {
       const VkRef tmp = graph_->add_tensor(
           graph_->sizes_of(outs[0]),
