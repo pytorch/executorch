@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -410,6 +411,31 @@ struct GraphInstance {
   // Input-driven row indices, rechecked on every replay.
   std::vector<RowIndexCheck> row_index_checks;
 };
+
+// Inference batch norm is the per-channel map x * scale + shift of its
+// constants, computed once at load. A convolution read only by the batch norm
+// absorbs it: its weight is scaled at load and its bias replaced, leaving the
+// batch norm a no-op. Keyed by output value.
+struct FoldedBatchNorms {
+  // Batch norm outputs absorbed by their convolution.
+  std::unordered_set<ValueId> absorbed;
+  // The other batch norm outputs: scale and shift.
+  std::unordered_map<ValueId, std::pair<ggml_tensor*, ggml_tensor*>> affine;
+  // Absorbing convolution outputs: the bias replacing the convolution's own.
+  std::unordered_map<ValueId, ggml_tensor*> conv_bias;
+};
+
+// Multiplies each slice of the leading dimension by its scale.
+// data is a byte buffer holding count floats, as ggml tensor data is.
+void scale_slices(void* data, size_t count, const std::vector<float>& scales) {
+  float* values = static_cast<float*>(data);
+  const size_t slice = count / scales.size();
+  for (size_t c = 0; c < scales.size(); ++c) {
+    for (size_t i = 0; i < slice; ++i) {
+      values[c * slice + i] *= scales[c];
+    }
+  }
+}
 
 const ggml_tensor* storage_root(const ggml_tensor* tensor) {
   while (tensor->view_src != nullptr) {
@@ -893,6 +919,7 @@ class GgmlExecutable final : public EngineExecutable {
         options_(options) {
     index_signature();
     initialize_backends();
+    fold_batch_norms();
     initialize_persistent_tensors(materialized_constant_bytes);
     index_rope_frequencies();
     index_mask_extents();
@@ -1318,6 +1345,230 @@ class GgmlExecutable final : public EngineExecutable {
         meta, packed, to_float_vector(scales->span(), quant.scale_dtype));
   }
 
+  // The binding of a constant with data that no op writes.
+  const DataBinding* constant_binding(ValueId id) const {
+    const auto binding = std::ranges::find_if(
+        method_.data_bindings, [id](const DataBinding& candidate) {
+          return candidate.value_id == id && candidate.has_data;
+        });
+    if (binding == method_.data_bindings.end() ||
+        std::ranges::any_of(method_.output_specs, [id](const OutputSpec& spec) {
+          return spec.kind == OutputKind::BufferMutation &&
+              spec.target_id == id;
+        })) {
+      return nullptr;
+    }
+    const auto mutates_id = [id](const NamedArgument& input) {
+      return input.mutated && input.arg.kind() == ArgKind::Tensor &&
+          input.arg.as_tensor().id == id;
+    };
+    if (std::ranges::any_of(
+            method_.graph.value(id).consumer_ids, [&](NodeId consumer) {
+              return std::ranges::any_of(
+                  method_.graph.node(consumer).inputs, mutates_id);
+            })) {
+      return nullptr;
+    }
+    return &*binding;
+  }
+
+  // The values of an unquantized floating-point constant.
+  std::optional<std::vector<float>> constant_floats(ValueId id) const {
+    const DataBinding* binding = constant_binding(id);
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    if (binding == nullptr || packed_quant(meta) != nullptr ||
+        affine_quant(meta) != nullptr ||
+        (meta.dtype != ScalarType::Float && meta.dtype != ScalarType::Half &&
+         meta.dtype != ScalarType::BFloat16)) {
+      return std::nullopt;
+    }
+    const std::optional<OwnedBytes> bytes = read_constant(binding->key);
+    if (!bytes) {
+      return std::nullopt;
+    }
+    return to_float_vector(bytes->span(), meta.dtype);
+  }
+
+  // An optional tensor argument's constant values: nullopt if it is present
+  // but not constant, an empty vector if absent.
+  std::optional<std::vector<float>> optional_constant(
+      const Node& node,
+      std::string_view name,
+      size_t positional) const {
+    const NamedArgument* found = find_arg(node, name, positional);
+    if (found == nullptr || found->arg.kind() == ArgKind::None) {
+      return std::vector<float>{};
+    }
+    if (found->arg.kind() != ArgKind::Tensor ||
+        !valid(found->arg.as_tensor().id)) {
+      return std::nullopt;
+    }
+    return constant_floats(found->arg.as_tensor().id);
+  }
+
+  // The convolution producing `id` if it may absorb a batch norm reading
+  // `id`: nothing else reads its output, and nothing else reads its
+  // unquantized F32 constant weight, whose leading dimension is the output
+  // channels and which the loader scales.
+  const Node* absorbing_convolution(ValueId id) const {
+    const Value& value = method_.graph.value(id);
+    if (value.consumer_ids.size() != 1 || !valid(value.producer_id) ||
+        std::ranges::find(method_.graph.output_ids, id) !=
+            method_.graph.output_ids.end()) {
+      return nullptr;
+    }
+    const Node& conv = method_.graph.node(value.producer_id);
+    if (!conv.is_call() || op_key(conv.target) != "aten.convolution.default" ||
+        output_ids(conv) != std::vector<ValueId>{id}) {
+      return nullptr;
+    }
+    const NamedArgument* transposed = find_arg(conv, "transposed", 6);
+    const NamedArgument* weight = find_arg(conv, "weight", 1);
+    if (transposed == nullptr || transposed->arg.kind() != ArgKind::Bool ||
+        transposed->arg.as_bool().value ||
+        valid(transposed->arg.as_bool().id) || weight == nullptr ||
+        weight->arg.kind() != ArgKind::Tensor) {
+      return nullptr;
+    }
+    const ValueId weight_id = weight->arg.as_tensor().id;
+    if (!valid(weight_id) || constant_binding(weight_id) == nullptr) {
+      return nullptr;
+    }
+    const Value& weight_value = method_.graph.value(weight_id);
+    if (weight_value.consumer_ids.size() != 1 ||
+        weight_value.tensor_meta().dtype != ScalarType::Float ||
+        weight_value.tensor_meta().quant) {
+      return nullptr;
+    }
+    return &conv;
+  }
+
+  void fold_batch_norms() {
+    // y = x * scale + shift with scale = weight / sqrt(var + eps) and
+    // shift = bias - mean * scale.
+    struct Fold {
+      ValueId output = kInvalid;
+      ValueId conv_output = kInvalid;
+      std::vector<float> scale;
+      std::vector<float> shift;
+    };
+    std::vector<Fold> folds;
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (!node.is_call() ||
+          op_key(node.target) !=
+              "aten._native_batch_norm_legit_no_training.default") {
+        continue;
+      }
+      const NamedArgument* input = find_arg(node, "input", 0);
+      const NamedArgument* eps = find_arg(node, "eps", 6);
+      const NamedArgument* mean = find_arg(node, "running_mean", 3);
+      const NamedArgument* var = find_arg(node, "running_var", 4);
+      if (input == nullptr || input->arg.kind() != ArgKind::Tensor ||
+          eps == nullptr || eps->arg.kind() != ArgKind::Float ||
+          valid(eps->arg.as_float().id) || mean == nullptr ||
+          mean->arg.kind() != ArgKind::Tensor || var == nullptr ||
+          var->arg.kind() != ArgKind::Tensor) {
+        continue;
+      }
+      const auto means = constant_floats(mean->arg.as_tensor().id);
+      const auto vars = constant_floats(var->arg.as_tensor().id);
+      const auto weights = optional_constant(node, "weight", 1);
+      const auto biases = optional_constant(node, "bias", 2);
+      const std::vector<ValueId> outputs = output_ids(node);
+      if (!means || !vars || !weights || !biases || outputs.empty() ||
+          vars->size() != means->size() ||
+          (!weights->empty() && weights->size() != means->size()) ||
+          (!biases->empty() && biases->size() != means->size())) {
+        continue;
+      }
+      Fold entry{.output = outputs.front()};
+      const size_t channels = means->size();
+      entry.scale.resize(channels);
+      entry.shift.resize(channels);
+      for (size_t c = 0; c < channels; ++c) {
+        const double scale = (weights->empty() ? 1.0 : (*weights)[c]) /
+            std::sqrt(static_cast<double>((*vars)[c]) +
+                      eps->arg.as_float().value);
+        entry.scale[c] = static_cast<float>(scale);
+        entry.shift[c] = static_cast<float>(
+            (biases->empty() ? 0.0 : (*biases)[c]) - (*means)[c] * scale);
+      }
+      const ValueId input_id = input->arg.as_tensor().id;
+      if (const Node* conv =
+              valid(input_id) ? absorbing_convolution(input_id) : nullptr) {
+        const ValueId weight_id =
+            find_arg(*conv, "weight", 1)->arg.as_tensor().id;
+        const auto conv_biases = optional_constant(*conv, "bias", 2);
+        if (conv_biases &&
+            method_.graph.value(weight_id).tensor_meta().sizes.at(0) ==
+                static_cast<int64_t>(channels) &&
+            (conv_biases->empty() || conv_biases->size() == channels)) {
+          if (!conv_biases->empty()) {
+            for (size_t c = 0; c < channels; ++c) {
+              entry.shift[c] += (*conv_biases)[c] * entry.scale[c];
+            }
+          }
+          weight_scales_.emplace(weight_id, std::move(entry.scale));
+          entry.scale.clear();
+          entry.conv_output = input_id;
+        }
+      }
+      folds.push_back(std::move(entry));
+    }
+    if (folds.empty()) {
+      return;
+    }
+
+    ggml_init_params params{
+        .mem_size = ggml_tensor_overhead() * (2 * folds.size() + 1),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    batch_norm_context_.reset(ggml_init(params));
+    if (!batch_norm_context_) {
+      throw std::runtime_error("ggml: failed to create batch norm context");
+    }
+    const auto new_vector = [this](size_t size) {
+      return ggml_new_tensor_1d(
+          batch_norm_context_.get(), GGML_TYPE_F32, static_cast<int64_t>(size));
+    };
+    for (const Fold& entry : folds) {
+      if (valid(entry.conv_output)) {
+        batch_norms_.absorbed.insert(entry.output);
+        batch_norms_.conv_bias.emplace(
+            entry.conv_output, new_vector(entry.shift.size()));
+      } else {
+        batch_norms_.affine.emplace(
+            entry.output,
+            std::pair{
+                new_vector(entry.scale.size()),
+                new_vector(entry.shift.size())});
+      }
+    }
+    batch_norm_buffer_.reset(ggml_backend_alloc_ctx_tensors(
+        batch_norm_context_.get(), primary_backend_));
+    if (!batch_norm_buffer_) {
+      throw std::runtime_error("ggml: failed to allocate batch norm constants");
+    }
+    const auto upload = [](ggml_tensor* tensor,
+                           const std::vector<float>& data) {
+      ggml_backend_tensor_set(
+          tensor, data.data(), 0, data.size() * sizeof(float));
+    };
+    for (const Fold& entry : folds) {
+      if (valid(entry.conv_output)) {
+        upload(batch_norms_.conv_bias.at(entry.conv_output), entry.shift);
+      } else {
+        const auto [scale, shift] = batch_norms_.affine.at(entry.output);
+        upload(scale, entry.scale);
+        upload(shift, entry.shift);
+      }
+    }
+    ggml_backend_buffer_set_usage(
+        batch_norm_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+  }
+
   void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
     const size_t count = static_cast<size_t>(std::ranges::count_if(
         method_.data_bindings,
@@ -1387,6 +1638,8 @@ class GgmlExecutable final : public EngineExecutable {
       const bool is_q4 = affine_quant(meta) != nullptr;
       const bool narrow =
           tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long;
+      const auto scales = weight_scales_.find(binding.value_id);
+      const bool scaled = scales != weight_scales_.end();
       if (!is_q4 && !narrow && host_buffer) {
         if (ggml_nbytes(tensor) != expected) {
           throw std::runtime_error(
@@ -1396,6 +1649,9 @@ class GgmlExecutable final : public EngineExecutable {
         package_.load_constant_into(
             binding.key,
             MutableByteSpan(static_cast<uint8_t*>(tensor->data), expected));
+        if (scaled) {
+          scale_slices(tensor->data, expected / sizeof(float), scales->second);
+        }
         loaded += expected;
         continue;
       }
@@ -1416,6 +1672,11 @@ class GgmlExecutable final : public EngineExecutable {
         span = converted;
       } else if (narrow) {
         converted = narrow_to_int32(span);
+        span = converted;
+      } else if (scaled) {
+        converted.assign(span.begin(), span.end());
+        scale_slices(
+            converted.data(), converted.size() / sizeof(float), scales->second);
         span = converted;
       }
       if (ggml_nbytes(tensor) != span.size()) {
@@ -1781,6 +2042,11 @@ class GgmlExecutable final : public EngineExecutable {
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
   bool executed_ = false;
   std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
+  // Per-output-channel factors applied to convolution weights at load.
+  std::unordered_map<ValueId, std::vector<float>> weight_scales_;
+  FoldedBatchNorms batch_norms_;
+  ggml_context_ptr batch_norm_context_;
+  ggml_backend_buffer_ptr batch_norm_buffer_;
 };
 
 class GraphBuilder {
@@ -1792,6 +2058,7 @@ class GraphBuilder {
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
       const std::unordered_map<ValueId, std::vector<uint8_t>>&
           rope_factor_bytes,
+      const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size)
       : method_(method),
@@ -1799,6 +2066,7 @@ class GraphBuilder {
         outputs_(outputs),
         persistent_(persistent),
         rope_factor_bytes_(rope_factor_bytes),
+        batch_norms_(batch_norms),
         key_extents_(std::move(key_extents)),
         graph_size_(graph_size),
         values_(method.graph.values.size()) {
@@ -3109,12 +3377,16 @@ class GraphBuilder {
       throw std::runtime_error(
           "ggml: convolution supports groups of 1 or depthwise only");
     }
-    if (const std::optional<TensorRef> bias =
-            optional_tensor(node, "bias", 2)) {
-      if (bias->sizes != std::vector<int64_t>{out_channels}) {
-        throw std::runtime_error(
-            "ggml: convolution bias must hold one value per output channel");
-      }
+    std::optional<TensorRef> bias = optional_tensor(node, "bias", 2);
+    if (bias && bias->sizes != std::vector<int64_t>{out_channels}) {
+      throw std::runtime_error(
+          "ggml: convolution bias must hold one value per output channel");
+    }
+    if (const auto found = batch_norms_.conv_bias.find(output_ids(node).at(0));
+        found != batch_norms_.conv_bias.end()) {
+      bias = TensorRef{found->second, {out_channels}};
+    }
+    if (bias) {
       result = ggml_add(
           ctx,
           result,
@@ -3153,26 +3425,38 @@ class GraphBuilder {
     ggml_tensor* weight = weight_ref ? weight_ref->tensor : nullptr;
     ggml_tensor* bias = bias_ref ? bias_ref->tensor : nullptr;
     ggml_context* ctx = instance_.context.get();
-    // y = x * scale + shift with scale = weight / sqrt(var + eps) and
-    // shift = bias - mean * scale.
-    ggml_tensor* stddev = ggml_sqrt(
-        ctx,
-        ggml_scale_bias(
-            ctx, as_f32(var.tensor), 1.0f, static_cast<float>(eps)));
-    ggml_tensor* scale = ggml_div(
-        ctx,
-        weight != nullptr ? as_f32(weight)
-                          : ggml_scale_bias(ctx, stddev, 0.0f, 1.0f),
-        stddev);
-    ggml_tensor* shift = ggml_mul(ctx, as_f32(mean.tensor), scale);
-    shift = bias != nullptr ? ggml_sub(ctx, as_f32(bias), shift)
-                            : ggml_neg(ctx, shift);
+    const ValueId output = output_ids(node).at(0);
+    if (batch_norms_.absorbed.contains(output)) {
+      set(output, input);
+      return;
+    }
+    ggml_tensor* scale = nullptr;
+    ggml_tensor* shift = nullptr;
+    if (const auto found = batch_norms_.affine.find(output);
+        found != batch_norms_.affine.end()) {
+      std::tie(scale, shift) = found->second;
+    } else {
+      // y = x * scale + shift with scale = weight / sqrt(var + eps) and
+      // shift = bias - mean * scale.
+      ggml_tensor* stddev = ggml_sqrt(
+          ctx,
+          ggml_scale_bias(
+              ctx, as_f32(var.tensor), 1.0f, static_cast<float>(eps)));
+      scale = ggml_div(
+          ctx,
+          weight != nullptr ? as_f32(weight)
+                            : ggml_scale_bias(ctx, stddev, 0.0f, 1.0f),
+          stddev);
+      shift = ggml_mul(ctx, as_f32(mean.tensor), scale);
+      shift = bias != nullptr ? ggml_sub(ctx, as_f32(bias), shift)
+                              : ggml_neg(ctx, shift);
+    }
     std::vector<int64_t> channel_sizes(input.sizes.size(), 1);
     channel_sizes[1] = input.sizes[1];
     ggml_tensor* result =
         ggml_mul(ctx, input.tensor, reshape(ctx, scale, channel_sizes));
     result = ggml_add(ctx, result, reshape(ctx, shift, channel_sizes));
-    set(output_ids(node).at(0), TensorRef{result, input.sizes});
+    set(output, TensorRef{result, input.sizes});
   }
 
   // Indices are not produced; the lowering fails if they are consumed.
@@ -4059,6 +4343,7 @@ class GraphBuilder {
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
   const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
+  const FoldedBatchNorms& batch_norms_;
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
@@ -4095,6 +4380,7 @@ GraphInstance GgmlExecutable::build_graph(
                                outputs_,
                                persistent_,
                                rope_freq_factors_,
+                               batch_norms_,
                                std::move(truncated),
                                options_.graph_size)
                                .build();
