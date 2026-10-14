@@ -24,6 +24,7 @@ drift when a dtype is added.
 """
 
 import importlib.util
+import os
 import re
 import unittest
 from pathlib import Path
@@ -42,7 +43,12 @@ gen_vulkan_spv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen_vulkan_spv)
 
 # The yaml templates whose variants `add_binary_op_node` dispatches into.
-_BINARY_TEMPLATES = ("binary_op_buffer", "binary_op_texture")
+_BINARY_BUFFER_TEMPLATE = os.path.join("binary", "binary_op_buffer")
+_BINARY_TEXTURE_TEMPLATE = os.path.join("binary", "binary_op_texture")
+_BINARY_TEMPLATES = (
+    _BINARY_BUFFER_TEMPLATE,
+    _BINARY_TEXTURE_TEMPLATE,
+)
 
 
 def _function_body(text: str, name: str) -> str:
@@ -113,8 +119,8 @@ class TestShaderNames(unittest.TestCase):
         build. Kokoro's synthesizer aborted on it.
         """
         for template, expected in (
-            ("binary_op_buffer", "binary_eq_buffer_int32"),
-            ("binary_op_texture", "binary_eq_texture3d_int32"),
+            (_BINARY_BUFFER_TEMPLATE, "binary_eq_buffer_int32"),
+            (_BINARY_TEXTURE_TEMPLATE, "binary_eq_texture3d_int32"),
         ):
             with self.subTest(template=template):
                 self.assertIn(expected, self.names[template])
