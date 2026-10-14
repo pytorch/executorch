@@ -34,6 +34,14 @@ struct ET_EXPERIMENTAL PrefixMatch {
   std::size_t matched_tokens;
 };
 
+// Application-owned immutable hints; never part of prefix identity or cloning.
+using CheckpointMetadata = std::shared_ptr<const void>;
+
+struct ET_EXPERIMENTAL PrefixCheckpoint {
+  Position position;
+  CheckpointMetadata metadata = {};
+};
+
 // Absolute periodic boundaries, plus an optional final prompt checkpoint.
 inline std::vector<Position> periodic_prefill_breakpoints(
     Position start,
@@ -69,6 +77,20 @@ inline std::vector<Position> periodic_prefill_breakpoints(
 // parity is not guaranteed.
 class ET_EXPERIMENTAL PrefixCache {
  public:
+  struct EntryView {
+    const PrefixIdentity& identity;
+    const CheckpointMetadata& metadata;
+  };
+  using Entries = std::vector<EntryView>;
+  // Called before a distinct insertion into a full cache. Entries are ordered
+  // most recently used first and borrowed for the call. Return an existing
+  // entry's index to evict, or nullopt to decline the incoming snapshot.
+  // An invalid index or exception also declines it, leaving entries intact.
+  // Must not reenter this cache. Empty policy selects LRU eviction.
+  using RetentionPolicy = std::function<std::optional<std::size_t>(
+      const EntryView& incoming,
+      const Entries& entries)>;
+
   // One generation's best-effort prompt capture. The wrapped callback owns
   // its state, so moving or discarding this handle does not invalidate it.
   class PromptCapture {
@@ -108,22 +130,26 @@ class ET_EXPERIMENTAL PrefixCache {
 
     // Queue without waiting; may run in a Runner callback. Serialize with
     // collect(); at most one clone may be pending. Reusable after collect.
-    bool capture_at(Position position) {
-      return state_ && queue_capture(*state_, position);
+    bool capture_at(Position position, CheckpointMetadata metadata = {}) {
+      return state_ && queue_capture(*state_, position, std::move(metadata));
     }
 
     // The caller owns admission and collection. Each successful acquisition
     // receives one notification: queued=true publishes work for collect();
     // queued=false releases admission after optional capture failed.
+    // Optional checkpoint metadata is matched by position; points must
+    // increase.
     std::function<void(Position)> observer(
         std::function<bool()> try_acquire,
-        std::function<void(bool queued)> on_capture) {
+        std::function<void(bool queued)> on_capture,
+        std::vector<PrefixCheckpoint> checkpoints = {}) {
       if (!state_) {
         return {};
       }
       return [state = state_,
               try_acquire = std::move(try_acquire),
-              on_capture = std::move(on_capture)](Position position) {
+              on_capture = std::move(on_capture),
+              checkpoints = std::move(checkpoints)](Position position) {
         if (!try_acquire()) {
           return;
         }
@@ -131,7 +157,19 @@ class ET_EXPERIMENTAL PrefixCache {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
-          queued = queue_capture(*state, position);
+          const auto point = std::lower_bound(
+              checkpoints.begin(),
+              checkpoints.end(),
+              position,
+              [](const auto& checkpoint, Position value) {
+                return checkpoint.position < value;
+              });
+          queued = queue_capture(
+              *state,
+              position,
+              point != checkpoints.end() && point->position == position
+                  ? point->metadata
+                  : CheckpointMetadata{});
 #if ET_HAS_EXCEPTIONS
         } catch (...) {
           // Optional capture failure leaves the generation usable.
@@ -151,6 +189,7 @@ class ET_EXPERIMENTAL PrefixCache {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
+        auto metadata = std::move(state->metadata);
         auto snapshot = state->snapshot.get();
         if (!snapshot) {
           return false;
@@ -169,7 +208,8 @@ class ET_EXPERIMENTAL PrefixCache {
               span);
           prefix.spans.push_back(std::move(span));
         }
-        return cache_->insert_identity(prefix, std::move(*snapshot));
+        return cache_->insert_identity(
+            prefix, std::move(*snapshot), std::move(metadata));
 #if ET_HAS_EXCEPTIONS
       } catch (const std::bad_alloc&) {
         return false;
@@ -186,15 +226,20 @@ class ET_EXPERIMENTAL PrefixCache {
       std::future<std::optional<Session>> snapshot;
       std::size_t captured_tokens = 0;
       bool attempted = false;
+      CheckpointMetadata metadata;
     };
 
-    static bool queue_capture(State& state, Position position) {
+    static bool queue_capture(
+        State& state,
+        Position position,
+        CheckpointMetadata metadata) {
       if (state.snapshot.valid() || position <= 0 ||
           static_cast<std::size_t>(position) > state.tokens.size()) {
         return false;
       }
       state.captured_tokens = static_cast<std::size_t>(position);
       state.snapshot = state.request_clone(position);
+      state.metadata = std::move(metadata);
       return true;
     }
 
@@ -202,8 +247,11 @@ class ET_EXPERIMENTAL PrefixCache {
     std::shared_ptr<State> state_;
   };
 
-  explicit PrefixCache(std::size_t max_entries, bool preserve_earliest = false)
-      : max_entries_(max_entries), preserve_earliest_(preserve_earliest) {}
+  explicit PrefixCache(
+      std::size_t max_entries,
+      RetentionPolicy retention_policy = {})
+      : max_entries_(max_entries),
+        retention_policy_(std::move(retention_policy)) {}
 
   PrefixCache(const PrefixCache&) = delete;
   PrefixCache& operator=(const PrefixCache&) = delete;
@@ -217,13 +265,15 @@ class ET_EXPERIMENTAL PrefixCache {
   // capture; it still forwards the wrapped callback.
   PromptCapture capture_prompt(
       const Session& source,
-      const std::vector<Token>& tokens) {
-    return capture_identity(source, copy_tokens(tokens));
+      const std::vector<Token>& tokens,
+      CheckpointMetadata metadata = {}) {
+    return capture_identity(source, copy_tokens(tokens), std::move(metadata));
   }
 
   PromptCapture capture_identity(
       const Session& source,
-      const PrefixIdentity& tokens) {
+      const PrefixIdentity& tokens,
+      CheckpointMetadata metadata = {}) {
     PromptCapture capture;
     if (max_entries_ == 0 || !tokens.size() || !source.valid() ||
         tokens.size() >
@@ -235,7 +285,12 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
       capture.state_ =
           std::make_shared<PromptCapture::State>(PromptCapture::State{
-              source.make_clone_request(), tokens, {}, tokens.size(), false});
+              source.make_clone_request(),
+              tokens,
+              {},
+              tokens.size(),
+              false,
+              std::move(metadata)});
       capture.cache_ = this;
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
@@ -251,11 +306,20 @@ class ET_EXPERIMENTAL PrefixCache {
   // and insert here on the caller thread. PromptCapture handles this queueing
   // and collection. Refusal releases the supplied snapshot and leaves existing
   // entries intact.
-  bool insert(const std::vector<Token>& tokens, Session snapshot) {
-    return insert_identity(copy_tokens(tokens), std::move(snapshot));
+  // Duplicate identities refresh recency and replace metadata, keeping the
+  // retained snapshot. Metadata never affects matching or clone safety.
+  bool insert(
+      const std::vector<Token>& tokens,
+      Session snapshot,
+      CheckpointMetadata metadata = {}) {
+    return insert_identity(
+        copy_tokens(tokens), std::move(snapshot), std::move(metadata));
   }
 
-  bool insert_identity(const PrefixIdentity& tokens, Session snapshot) {
+  bool insert_identity(
+      const PrefixIdentity& tokens,
+      Session snapshot,
+      CheckpointMetadata metadata = {}) {
     if (max_entries_ == 0 || !tokens.size() || !snapshot.valid() ||
         tokens.size() >
             static_cast<std::size_t>(std::numeric_limits<Position>::max()) ||
@@ -265,6 +329,7 @@ class ET_EXPERIMENTAL PrefixCache {
     for (auto it = entries_.begin(); it != entries_.end(); ++it) {
       if (it->tokens.size() == tokens.size() &&
           common_prefix(it->tokens, tokens) == tokens.size()) {
+        it->metadata = std::move(metadata);
         entries_.splice(entries_.begin(), entries_, it);
         return true;
       }
@@ -272,23 +337,34 @@ class ET_EXPERIMENTAL PrefixCache {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      entries_.push_front(Entry{tokens, std::move(snapshot)});
-      if (entries_.size() > max_entries_) {
-        auto victim = std::prev(entries_.end());
-        if (preserve_earliest_ && max_entries_ > 1 &&
-            victim->tokens.size() < tokens.size() &&
-            common_prefix(victim->tokens, tokens) == victim->tokens.size()) {
-          // Keep an early anchor by evicting an intermediate checkpoint of
-          // this history. Unrelated histories retain normal global LRU
-          // behavior.
-          for (auto it = std::prev(victim); it != entries_.begin(); --it) {
-            if (it->tokens.size() > victim->tokens.size() &&
-                common_prefix(it->tokens, tokens) == it->tokens.size()) {
-              victim = it;
-              break;
-            }
+      auto victim = entries_.end();
+      if (entries_.size() == max_entries_) {
+        victim = std::prev(entries_.end());
+        if (retention_policy_) {
+          Entries entries;
+          entries.reserve(entries_.size());
+          for (const auto& entry : entries_) {
+            entries.push_back(EntryView{entry.tokens, entry.metadata});
           }
+          std::optional<std::size_t> index;
+#if ET_HAS_EXCEPTIONS
+          try {
+#endif
+            index = retention_policy_(EntryView{tokens, metadata}, entries);
+#if ET_HAS_EXCEPTIONS
+          } catch (...) {
+            return false;
+          }
+#endif
+          if (!index || *index >= entries_.size()) {
+            return false;
+          }
+          victim = std::next(entries_.begin(), *index);
         }
+      }
+      entries_.push_front(
+          Entry{tokens, std::move(snapshot), std::move(metadata)});
+      if (victim != entries_.end()) {
         entries_.erase(victim);
       }
       return true;
@@ -384,10 +460,11 @@ class ET_EXPERIMENTAL PrefixCache {
   struct Entry {
     PrefixIdentity tokens;
     Session snapshot;
+    CheckpointMetadata metadata;
   };
 
   const std::size_t max_entries_;
-  const bool preserve_earliest_;
+  RetentionPolicy retention_policy_;
   std::list<Entry> entries_; // most recently used first
 };
 

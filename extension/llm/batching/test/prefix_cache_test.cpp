@@ -526,9 +526,22 @@ TEST_F(
   EXPECT_FALSE(capture.capture_at(13));
 }
 
-TEST_F(PrefixCacheTest, CheckpointEvictionPreservesEarlyAnchorAndRecentState) {
+TEST_F(PrefixCacheTest, CustomRetentionSelectsVictimFromSnapshotIdentities) {
   executor.retained_tail = 0;
-  PrefixCache cache(2, true);
+  PrefixCache cache(
+      2,
+      [](const PrefixCache::EntryView& incoming,
+         const PrefixCache::Entries& entries) {
+        EXPECT_EQ(incoming.identity.size(), 12u);
+        EXPECT_EQ(entries.size(), 2u);
+        return std::max_element(
+                   entries.begin(),
+                   entries.end(),
+                   [](const auto& a, const auto& b) {
+                     return a.identity.size() < b.identity.size();
+                   }) -
+            entries.begin();
+      });
   const Tokens prompt(16, 7);
   for (std::size_t size : {4, 8, 12}) {
     const Tokens prefix(prompt.begin(), prompt.begin() + size);
@@ -551,7 +564,7 @@ TEST_F(PrefixCacheTest, CheckpointEvictionPreservesEarlyAnchorAndRecentState) {
 
 TEST_F(PrefixCacheTest, OneCheckpointEntryStillEvictsAtCapacity) {
   executor.retained_tail = 0;
-  PrefixCache cache(1, true);
+  PrefixCache cache(1);
   for (std::size_t size : {4, 8}) {
     auto source = open();
     generate(source, Tokens(size, 7), 1);
@@ -564,6 +577,175 @@ TEST_F(PrefixCacheTest, OneCheckpointEntryStillEvictsAtCapacity) {
   auto match = cache.lookup(Tokens{7, 7, 7, 7, 7, 7, 7, 7, 9});
   ASSERT_TRUE(match);
   EXPECT_EQ(match->matched_tokens, 8u);
+}
+
+TEST_F(PrefixCacheTest, DeclinedOrInvalidRetentionLeavesSnapshotsUsable) {
+  std::optional<std::size_t> victim;
+#if ET_HAS_EXCEPTIONS
+  bool throw_policy = false;
+#endif
+  std::size_t calls = 0;
+  PrefixCache cache(2, [&](const auto&, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(entries.size(), 2u);
+#if ET_HAS_EXCEPTIONS
+    if (throw_policy) {
+      throw std::runtime_error("retention failed");
+    }
+#endif
+    return victim;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  EXPECT_EQ(calls, 0u);
+  auto hints = std::make_shared<const int>(42);
+  std::weak_ptr<const int> declined = hints;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6}), std::move(hints)));
+  EXPECT_TRUE(declined.expired());
+  victim = 2;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6})));
+#if ET_HAS_EXCEPTIONS
+  throw_policy = true;
+  EXPECT_FALSE(cache.insert({5, 6}, snapshot({5, 6})));
+#endif
+  EXPECT_EQ(cache.size(), 2u);
+  ASSERT_TRUE(executor.wait_for_live(2));
+  EXPECT_FALSE(cache.lookup({5, 6, 9}));
+  for (const Tokens prompt : {Tokens{1, 2, 9}, Tokens{3, 4, 9}}) {
+    auto match = cache.lookup(prompt);
+    ASSERT_TRUE(match);
+    expect_cold_match(*match, prompt);
+  }
+}
+
+TEST_F(PrefixCacheTest, MetadataCanProtectAnAnchorWithoutChangingMatching) {
+  PrefixCache cache(2, [](const auto& incoming, const auto& entries) {
+    EXPECT_EQ(*std::static_pointer_cast<const int>(incoming.metadata), 2);
+    return std::min_element(
+               entries.begin(),
+               entries.end(),
+               [](const auto& a, const auto& b) {
+                 return *std::static_pointer_cast<const int>(a.metadata) <
+                     *std::static_pointer_cast<const int>(b.metadata);
+               }) -
+        entries.begin();
+  });
+  auto anchor = std::make_shared<const int>(3);
+  auto expendable = std::make_shared<const int>(1);
+  std::weak_ptr<const int> evicted = expendable;
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), anchor));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4}), std::move(expendable)));
+  ASSERT_FALSE(evicted.expired());
+  ASSERT_TRUE(
+      cache.insert({5, 6}, snapshot({5, 6}), std::make_shared<const int>(2)));
+  EXPECT_TRUE(evicted.expired());
+  EXPECT_FALSE(cache.lookup({3, 4, 9}));
+  auto match = cache.lookup({1, 2, 9});
+  ASSERT_TRUE(match);
+  expect_cold_match(*match, {1, 2, 9});
+}
+
+TEST_F(PrefixCacheTest, DuplicateRefreshesMetadataAndReleasesPreviousHints) {
+  auto original = std::make_shared<const int>(1);
+  auto refreshed = std::make_shared<const int>(2);
+  std::weak_ptr<const int> old = original;
+  std::weak_ptr<const int> current = refreshed;
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_FALSE(incoming.metadata);
+    EXPECT_EQ(entries.front().metadata, current.lock());
+    return 0;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), std::move(original)));
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2}), std::move(refreshed)));
+  EXPECT_EQ(calls, 0u);
+  EXPECT_TRUE(old.expired());
+  EXPECT_FALSE(current.expired());
+  ASSERT_TRUE(cache.lookup({1, 2, 9}));
+  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  EXPECT_EQ(calls, 1u);
+  EXPECT_TRUE(current.expired());
+}
+
+TEST_F(PrefixCacheTest, CaptureKeepsMetadataWithItsPendingSnapshot) {
+  auto source = open();
+  generate(source, Tokens(12, 7), 1);
+  auto first = std::make_shared<const int>(4);
+  auto second = std::make_shared<const int>(8);
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(incoming.identity.size(), 8u);
+    EXPECT_EQ(incoming.metadata, second);
+    EXPECT_EQ(entries.front().identity.size(), 4u);
+    EXPECT_EQ(entries.front().metadata, first);
+    return 0;
+  });
+  auto capture = cache.capture_prompt(source, Tokens(12, 7));
+  ASSERT_TRUE(capture.capture_at(4, first));
+  EXPECT_FALSE(capture.capture_at(8, second));
+  ASSERT_TRUE(capture.collect());
+  ASSERT_TRUE(capture.capture_at(8, second));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(calls, 1u);
+  executor.reject_clones = true;
+  auto refused = std::make_shared<const int>(12);
+  std::weak_ptr<const int> discarded = refused;
+  ASSERT_TRUE(capture.capture_at(12, std::move(refused)));
+  EXPECT_FALSE(capture.collect());
+  EXPECT_TRUE(discarded.expired());
+  EXPECT_EQ(calls, 1u);
+}
+
+TEST_F(PrefixCacheTest, WrappedCaptureOwnsMetadataUntilCollection) {
+  auto source = open();
+  auto hints = std::make_shared<const int>(7);
+  std::weak_ptr<const int> saved = hints;
+  PrefixCache cache(1, [&](const auto&, const auto& entries) {
+    EXPECT_EQ(entries.front().metadata, saved.lock());
+    EXPECT_FALSE(saved.expired());
+    return 0;
+  });
+  auto capture = cache.capture_prompt(source, {1, 2, 3}, std::move(hints));
+  auto generation = run_callback(source, {1, 2, 3}, capture.wrap());
+  source = Session{};
+  ASSERT_TRUE(capture.collect());
+  capture = {};
+  EXPECT_FALSE(saved.expired());
+  ASSERT_TRUE(cache.insert({8, 8}, snapshot({8, 8})));
+  EXPECT_TRUE(saved.expired());
+}
+
+TEST_F(PrefixCacheTest, ObserverMatchesMetadataAfterSkippingABoundary) {
+  auto source = open();
+  generate(source, Tokens(8, 7), 1);
+  auto early = std::make_shared<const int>(4);
+  auto later = std::make_shared<const int>(8);
+  std::size_t calls = 0;
+  PrefixCache cache(1, [&](const auto& incoming, const auto& entries) {
+    ++calls;
+    EXPECT_EQ(incoming.identity.size(), 8u);
+    EXPECT_EQ(incoming.metadata, later);
+    EXPECT_FALSE(entries.front().metadata);
+    return 0;
+  });
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  auto capture = cache.capture_prompt(source, Tokens(8, 7));
+  bool available = false;
+  std::vector<bool> queued;
+  auto observer = capture.observer(
+      [&] { return available; },
+      [&](bool value) { queued.push_back(value); },
+      {{4, early}, {8, later}});
+  observer(4);
+  EXPECT_TRUE(queued.empty());
+  available = true;
+  observer(8);
+  ASSERT_EQ(queued, (std::vector<bool>{true}));
+  ASSERT_TRUE(capture.collect());
+  EXPECT_EQ(calls, 1u);
 }
 
 TEST_F(PrefixCacheTest, MixedIdentityComparisonIgnoresSpanPartitioning) {
@@ -685,8 +867,10 @@ TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
 
 TEST_F(PrefixCacheTest, SuccessfulLookupRefreshesLruBeforeEviction) {
   PrefixCache cache(2);
-  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
-  ASSERT_TRUE(cache.insert({3, 4}, snapshot({3, 4})));
+  ASSERT_TRUE(
+      cache.insert({1, 2}, snapshot({1, 2}), std::make_shared<const int>(1)));
+  ASSERT_TRUE(
+      cache.insert({3, 4}, snapshot({3, 4}), std::make_shared<const int>(100)));
   EXPECT_TRUE(cache.lookup({1, 2, 9}));
   ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
   EXPECT_FALSE(cache.lookup({3, 4, 9}));

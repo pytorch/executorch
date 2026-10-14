@@ -116,8 +116,27 @@ or a user callback exception does not invalidate an already captured prompt.
 
 `insert()` checks the snapshot position, takes ownership, and evicts the least
 recently used entry only after successful insertion. Duplicate keys refresh
-recency and release the redundant snapshot. Closing a source does not
+recency, replace metadata, and release the redundant snapshot. Closing a source does not
 invalidate its snapshot; eviction does not invalidate a returned clone.
+The optional second constructor argument, `PrefixCache::RetentionPolicy`,
+replaces LRU eviction. Before a distinct insertion into a full cache it receives
+an incoming `EntryView` and borrowed retained views in MRU order. Each view has
+an `identity` and optional `metadata`.
+Return an existing entry's index to evict, or `std::nullopt` to reject the new
+snapshot. Invalid indices and exceptions reject it without changing the cache.
+The policy runs on the caller thread and must not reenter the cache or retain
+the borrowed references. Capture scheduling and retention are independent.
+
+`CheckpointMetadata` is an application-defined immutable object held as
+`std::shared_ptr<const void>`; applications own its type contract. Pass it to
+`insert`/`insert_identity`, `capture_at`, or `capture_prompt`/`capture_identity`
+for wrapped prompt-end capture. An observer accepts a sorted vector of
+`PrefixCheckpoint{position, metadata}` values as its third argument and selects
+metadata by absolute position, including when earlier captures are skipped.
+Captured metadata stays with the pending snapshot through `collect()`.
+The core never interprets it or includes it in prefix identity. Default LRU
+ignores metadata.
+
 Snapshots must remain idle after cloning. The caller is responsible for
 supplying their exact token history under the same immutable model, method,
 KV configuration, and positional semantics. Token-only keys are insufficient

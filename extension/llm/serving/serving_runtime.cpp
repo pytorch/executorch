@@ -261,13 +261,14 @@ struct ServingRuntime::Impl {
             config.prefix_checkpoint_interval <=
                 static_cast<std::size_t>(
                     std::numeric_limits<batching::Position>::max()) &&
-            (!config.prefix_checkpoint_interval ||
+            ((!config.prefix_checkpoint_interval &&
+              !config.prefix_checkpoint_policy) ||
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
         model_preparer_(std::move(model_preparer)),
         prefix_cache_(
             config.prefix_cache_capacity,
-            config.prefix_checkpoint_interval != 0) {
+            config.prefix_cache_retention) {
     if (valid_config_) {
       runner_ =
           std::make_unique<batching::Runner>(executor, std::move(scheduler));
@@ -1125,19 +1126,41 @@ struct ServingRuntime::Impl {
           };
       std::function<void(batching::Position)> on_prefill;
       if (request->text && request->text->prompt &&
-          config_.prefix_checkpoint_interval != 0) {
+          (config_.prefix_checkpoint_interval != 0 ||
+           config_.prefix_checkpoint_policy)) {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
           request->text->prefix_capture =
               prefix_cache_.capture_identity(session, *request->text->prompt);
           auto& breakpoints = request->request.config.prefill_breakpoints;
-          breakpoints = batching::periodic_prefill_breakpoints(
-              static_cast<batching::Position>(request->text->start_position),
-              static_cast<batching::Position>(request->text->prompt->size()),
-              static_cast<batching::Position>(
-                  config_.prefix_checkpoint_interval),
-              opening);
+          const auto start =
+              static_cast<batching::Position>(request->text->start_position);
+          const auto end =
+              static_cast<batching::Position>(request->text->prompt->size());
+          std::vector<batching::PrefixCheckpoint> checkpoints;
+          breakpoints.clear();
+          if (config_.prefix_checkpoint_policy) {
+            checkpoints = config_.prefix_checkpoint_policy(
+                *request->text->prompt, start, opening);
+            auto previous = start;
+            for (const auto& checkpoint : checkpoints) {
+              if (checkpoint.position <= previous ||
+                  checkpoint.position > end) {
+                breakpoints.clear();
+                break;
+              }
+              breakpoints.push_back(checkpoint.position);
+              previous = checkpoint.position;
+            }
+          } else {
+            breakpoints = batching::periodic_prefill_breakpoints(
+                start,
+                end,
+                static_cast<batching::Position>(
+                    config_.prefix_checkpoint_interval),
+                opening);
+          }
           on_prefill = request->text->prefix_capture->observer(
               [this, request] {
                 return !request->cancelled.load() &&
@@ -1153,7 +1176,8 @@ struct ServingRuntime::Impl {
                 } else {
                   capture_lane_busy_.store(false);
                 }
-              });
+              },
+              std::move(checkpoints));
           if (!on_prefill) {
             breakpoints.clear();
           }
