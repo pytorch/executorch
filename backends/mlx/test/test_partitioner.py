@@ -529,6 +529,51 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
 
+    class SnapshotBeforeMutation(nn.Module):
+        def forward(self, cache, indices, update):
+            before = cache.clone()
+            cache.index_copy_(0, indices, update)
+            return before, cache
+
+    class ViewOfSnapshotBeforeMutation(nn.Module):
+        def forward(self, cache, indices, update):
+            before = cache.clone()
+            cache.index_copy_(0, indices, update)
+            return before.view(2, 2), cache
+
+    def test_snapshot_before_index_copy_with_reinplace(self):
+        # MLX can return the clone as the input's own memory, so it must be
+        # read before the update is written into that memory. The view puts
+        # the snapshot after the update in the delegate's outputs, so the
+        # update is written first.
+        for model in (
+            self.SnapshotBeforeMutation().eval(),
+            self.ViewOfSnapshotBeforeMutation().eval(),
+        ):
+            with self.subTest(model=type(model).__name__):
+                cache = torch.tensor([1.0, 2.0, 3.0, 4.0])
+                indices = torch.tensor([1, 3], dtype=torch.int64)
+                update = torch.tensor([20.0, 40.0])
+                program = to_edge_transform_and_lower(
+                    export(model, (cache.clone(), indices, update), strict=False),
+                    partitioner=[MLXPartitioner()],
+                ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+                plan = program.executorch_program.execution_plan[0]
+                self.assertEqual(plan.outputs[0], plan.inputs[0])
+
+                method = (
+                    Runtime.get().load_program(program.buffer).load_method("forward")
+                )
+                expected = cache.clone()
+                for step in range(3):
+                    update = torch.tensor([20.0, 40.0]) * (step + 1)
+                    expected_before = expected.clone()
+                    expected.index_copy_(0, indices, update)
+                    cache, before, after = method.execute([cache, indices, update])
+                    self.assertTrue(torch.equal(before.flatten(), expected_before))
+                    self.assertTrue(torch.equal(cache, expected))
+                    self.assertTrue(torch.equal(after, expected))
+
     def test_index_copy_accepts_int32_indices(self):
         # Export accepts int32 indices for index_copy, so the delegate must too.
         # Eager ATen does not, so the reference uses int64 indices.
