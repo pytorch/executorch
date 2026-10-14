@@ -139,9 +139,9 @@ ggml_type compute_type(const TensorMeta& meta) {
 
 std::array<int64_t, GGML_MAX_DIMS> reversed_extents(
     const std::vector<int64_t>& sizes) {
-  if (sizes.empty() || sizes.size() > GGML_MAX_DIMS) {
+  if (sizes.size() > GGML_MAX_DIMS) {
     throw std::runtime_error(
-        "ggml: only rank 1 through 4 tensors are supported");
+        "ggml: only rank 0 through 4 tensors are supported");
   }
   std::array<int64_t, GGML_MAX_DIMS> ne{1, 1, 1, 1};
   for (size_t i = 0; i < sizes.size(); ++i) {
@@ -155,7 +155,8 @@ ggml_tensor* new_tensor(
     ggml_type type,
     const std::vector<int64_t>& sizes) {
   const auto ne = reversed_extents(sizes);
-  return ggml_new_tensor(ctx, type, static_cast<int>(sizes.size()), ne.data());
+  return ggml_new_tensor(
+      ctx, type, std::max(1, static_cast<int>(sizes.size())), ne.data());
 }
 
 std::string op_key(std::string_view target) {
@@ -360,6 +361,7 @@ ggml_tensor* reshape(
   }
   const auto ne = reversed_extents(sizes);
   switch (sizes.size()) {
+    case 0:
     case 1:
       return ggml_reshape_1d(ctx, tensor, ne[0]);
     case 2:
@@ -369,7 +371,7 @@ ggml_tensor* reshape(
     case 4:
       return ggml_reshape_4d(ctx, tensor, ne[0], ne[1], ne[2], ne[3]);
     default:
-      throw std::runtime_error("ggml: reshape supports rank 1 through 4");
+      throw std::runtime_error("ggml: reshape supports rank 0 through 4");
   }
 }
 
@@ -380,6 +382,7 @@ ggml_tensor* view_with_shape(
     size_t offset) {
   const auto ne = reversed_extents(sizes);
   switch (sizes.size()) {
+    case 0:
     case 1:
       return ggml_view_1d(ctx, tensor, ne[0], offset);
     case 2:
@@ -407,7 +410,7 @@ ggml_tensor* view_with_shape(
           tensor->nb[3],
           offset);
     default:
-      throw std::runtime_error("ggml: view supports rank 1 through 4");
+      throw std::runtime_error("ggml: view supports rank 0 through 4");
   }
 }
 
@@ -1161,7 +1164,7 @@ class GraphBuilder {
       lower_select(node, key == "aten.select_copy.int");
     } else if (key == "aten.unsqueeze_copy.default") {
       lower_unsqueeze(node);
-    } else if (key == "aten.squeeze_copy.dims") {
+    } else if (key == "aten.squeeze_copy.dims" || key == "aten.squeeze.dims") {
       lower_squeeze(node);
     } else if (key == "aten.expand_copy.default") {
       lower_expand(node);
@@ -1247,6 +1250,7 @@ class GraphBuilder {
         "aten.select_copy.int",
         "aten.slice.Tensor",
         "aten.slice_copy.Tensor",
+        "aten.squeeze.dims",
         "aten.squeeze_copy.dims",
         "aten.transpose_copy.int",
         "aten.unsqueeze_copy.default",
@@ -1578,9 +1582,6 @@ class GraphBuilder {
       if (!remove[i]) {
         sizes.push_back(input.sizes[i]);
       }
-    }
-    if (sizes.empty()) {
-      sizes.push_back(1);
     }
     set_single_output(
         node,

@@ -137,6 +137,24 @@ class GgmlOpsTest(unittest.TestCase):
     def test_add_broadcast(self):
         self._check(Lambda(torch.add), (torch.randn(2, 3, 4), torch.randn(4)))
 
+    def test_add_scalar(self):
+        self._check(Lambda(lambda x: x + 2.0), (torch.randn(2, 3, 4),))
+
+    def test_mul_scalar(self):
+        self._check(Lambda(lambda x: x * 0.5), (torch.randn(2, 3, 4),))
+
+    def test_div_scalar(self):
+        self._check(Lambda(lambda x: x / 4.0), (torch.randn(2, 3, 4),))
+
+    def test_squeeze_to_scalar(self):
+        self._check(Lambda(lambda x: x.squeeze(0) * 2.0), (torch.randn(1),))
+
+    def test_select_to_scalar(self):
+        self._check(Lambda(lambda x: x.select(0, 1) * 2.0), (torch.randn(3),))
+
+    def test_scalar_input(self):
+        self._check(Lambda(torch.mul), (torch.randn(2, 3), torch.randn(())))
+
     def test_silu(self):
         self._check(Lambda(F.silu), (torch.randn(2, 3, 4),))
 
@@ -174,6 +192,13 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_embedding(self):
         self._check(Embedding(), (torch.tensor([[1, 3, 9], [0, 2, 5]]),))
+
+    def test_embedding_squeezed_indices(self):
+        class SqueezedEmbedding(Embedding):
+            def forward(self, indices):
+                return self.embedding(indices.squeeze(0))
+
+        self._check(SqueezedEmbedding(), (torch.tensor([[1, 3, 9]]),))
 
     def test_rms_norm(self):
         self._check(RMSNorm(), (torch.randn(2, 3, 16),))
@@ -244,6 +269,9 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x, y: torch.cat([x, y], dim=-1)),
             (torch.randn(2, 3, 4), torch.randn(2, 3, 2)),
         )
+
+    def test_clone(self):
+        self._check(Lambda(lambda x: x.clone() + 1.0 * x), (torch.randn(2, 3),))
 
     def test_to_half(self):
         self._check(Lambda(lambda x: x.to(torch.float16)), (torch.randn(2, 3),))
