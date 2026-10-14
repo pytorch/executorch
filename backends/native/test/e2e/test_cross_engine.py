@@ -245,6 +245,22 @@ class _GeluSigmoid(torch.nn.Module):
         return torch.sigmoid(self.down(torch.nn.functional.gelu(self.up(x))))
 
 
+class _ConvBetweenLinears(torch.nn.Module):
+    """A conv1d over the sequence between linears, whose neighbours want
+    width-packed activations while ET-VK's convolution reads and writes
+    channels-packed ones."""
+
+    def __init__(self):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 16)
+        self.conv = torch.nn.Conv1d(16, 24, kernel_size=3, padding=1)
+        self.out = torch.nn.Linear(24, 8)
+
+    def forward(self, x):
+        y = self.conv(self.proj(x).transpose(1, 2))
+        return self.out(y.transpose(1, 2))
+
+
 class CrossEngineTest(unittest.TestCase):
     def _check_dynamic(
         self, model, steps, dynamic_shapes, atol_fraction=1e-4, engines=_ENGINES
@@ -299,6 +315,27 @@ class CrossEngineTest(unittest.TestCase):
         self._check_dynamic(
             _GeluSigmoid(), steps, ({1: seq},), engines=("vulkan_ptn_runner",)
         )
+
+    def test_conv1d_between_linears(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (3, 5, 9)]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower 1D convolution yet.
+        self._check_dynamic(
+            _ConvBetweenLinears(), steps, ({1: seq},), engines=("vulkan_ptn_runner",)
+        )
+
+    def test_transposed_conv1d_is_refused(self):
+        # ET-VK runs every rank-3 convolution as a forward conv1d.
+        model = _ConvBetweenLinears().eval().requires_grad_(False)
+        model.conv = torch.nn.ConvTranspose1d(16, 24, kernel_size=3, padding=1)
+        x = torch.randn(1, 5, 16)
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, (x,))).save(str(package))
+            with self.assertRaisesRegex(AssertionError, "transposed 1D convolution"):
+                _run("vulkan_ptn_runner", package, [(x,)], outdir)
 
     def test_padding_mask_of_dynamic_positions(self):
         torch.manual_seed(0)
