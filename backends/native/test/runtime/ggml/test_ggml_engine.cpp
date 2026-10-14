@@ -486,6 +486,58 @@ TEST(GgmlEngineTest, ExecutesPackedQ4KLinear) {
   EXPECT_NEAR(output, 128.0f * 1.0f + 128.0f * 2.0f, 1e-2f);
 }
 
+TEST(GgmlEngineTest, RepeatedExecutionsReadFreshInputs) {
+  for (const size_t max_cached_graphs : {size_t{0}, size_t{1}}) {
+    SCOPED_TRACE(max_cached_graphs);
+    auto host = GgmlEngineHost::create(
+        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto context = make_context(*host, make_linear_program());
+    auto executable = context->compile("forward");
+    for (const float value : {1.0f, 2.0f, -1.0f}) {
+      const std::vector<float> input(256, value);
+      executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+      executable->execute();
+      float output = 0.0f;
+      executable->get_output(0, &output, 1, ScalarType::Float);
+      EXPECT_NEAR(output, 384.0f * value, 1e-2f);
+    }
+  }
+}
+
+TEST(GgmlEngineTest, ReplayRecoversAfterRejectedIndices) {
+  TestProgram program;
+  program.q4_k_weight("weight");
+  program.input("ids", fbs::ScalarType::LONG, {1, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 256});
+  auto host = GgmlEngineHost::create(GgmlEngineOptions{.max_cached_graphs = 1});
+  auto context = make_context(*host, program.finish("rows"));
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> good = {0, 0};
+  const std::vector<int64_t> bad = {0, 1};
+  std::vector<float> rows(512);
+  for (const auto* ids : {&good, &bad, &good}) {
+    executable->set_input(0, ids->data(), 2, ScalarType::Long);
+    if (ids == &bad) {
+      EXPECT_THROW(executable->execute(), std::out_of_range);
+      continue;
+    }
+    executable->execute();
+    executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+    EXPECT_EQ(std::accumulate(rows.begin(), rows.end(), 0.0f), 768.0f);
+  }
+}
+
+TEST(GgmlEngineTest, RejectsMoreThan16CachedGraphs) {
+  GgmlEngineOptions options;
+  options.max_cached_graphs = 17;
+  EXPECT_THROW(GgmlEngineHost::create(options), std::invalid_argument);
+}
+
 TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
   auto host = GgmlEngineHost::create();
   auto context = make_context(

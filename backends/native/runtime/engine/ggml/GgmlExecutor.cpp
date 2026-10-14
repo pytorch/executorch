@@ -371,6 +371,14 @@ struct OutputSlot {
 struct Upload {
   ggml_tensor* tensor = nullptr;
   std::vector<uint8_t> bytes;
+  // Signature position of the graph input these bytes come from; empty for
+  // tensors that lowering fills itself, such as causal masks.
+  std::optional<size_t> input;
+};
+
+struct RowIndexCheck {
+  ValueId input_id = kInvalid;
+  int64_t rows = 0;
 };
 
 struct GraphInstance {
@@ -378,6 +386,8 @@ struct GraphInstance {
   ggml_cgraph* graph = nullptr;
   std::vector<Upload> uploads;
   std::vector<TensorRef> outputs;
+  // Input-driven row indices, rechecked on every replay.
+  std::vector<RowIndexCheck> row_index_checks;
 };
 
 const ggml_tensor* storage_root(const ggml_tensor* tensor) {
@@ -390,7 +400,7 @@ const ggml_tensor* storage_root(const ggml_tensor* tensor) {
 // ggml's row gathers and scatters do not bounds-check: a stray row aborts on
 // the CPU and reads or writes out of bounds on GPUs. Input bytes are empty
 // while compiling.
-void check_row_indices(const InputSlot& input, int64_t rows) {
+void check_index_bytes(const InputSlot& input, int64_t rows) {
   if (input.bytes.empty()) {
     return;
   }
@@ -540,8 +550,12 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   ~GgmlExecutable() override {
+    for (CachedGraph& cached : cached_graphs_) {
+      ggml_backend_sched_synchronize(cached.scheduler.get());
+    }
     if (scheduler_) {
       ggml_backend_sched_synchronize(scheduler_.get());
+      ggml_backend_sched_reset(scheduler_.get());
     }
   }
 
@@ -610,48 +624,28 @@ class GgmlExecutable final : public EngineExecutable {
       throw std::logic_error("ggml: every input must be set before execute");
     }
 
-    ggml_backend_sched_reset(scheduler_.get());
-    GraphInstance instance = build_graph();
-    // The scheduler otherwise keeps graph inputs on the CPU backend and copies
-    // them into GPU splits once per consuming view.
-    for (const Upload& upload : instance.uploads) {
-      ggml_backend_sched_set_tensor_backend(
-          scheduler_.get(), upload.tensor, primary_backend_);
-    }
-    if (!ggml_backend_sched_alloc_graph(scheduler_.get(), instance.graph)) {
+    executed_ = false;
+    if (options_.max_cached_graphs == 0) {
       ggml_backend_sched_reset(scheduler_.get());
-      throw std::runtime_error("ggml: failed to allocate execution graph");
-    }
-    try {
-      for (const Upload& upload : instance.uploads) {
-        if (upload.tensor->buffer == nullptr) {
-          continue;
-        }
-        ggml_backend_tensor_set(
-            upload.tensor, upload.bytes.data(), 0, upload.bytes.size());
+      GraphInstance instance = build_graph();
+      allocate(scheduler_.get(), instance);
+      try {
+        run(scheduler_.get(), instance);
+      } catch (...) {
+        ggml_backend_sched_reset(scheduler_.get());
+        throw;
       }
-      const ggml_status status =
-          ggml_backend_sched_graph_compute(scheduler_.get(), instance.graph);
-      if (status != GGML_STATUS_SUCCESS) {
-        throw std::runtime_error(
-            "ggml: graph execution failed with status " +
-            std::to_string(static_cast<int>(status)));
-      }
-      for (size_t i = 0; i < outputs_.size(); ++i) {
-        OutputSlot& output = outputs_[i];
-        output.sizes = instance.outputs.at(i).sizes;
-        output.bytes.resize(ggml_nbytes(instance.outputs.at(i).tensor));
-        ggml_backend_tensor_get(
-            instance.outputs.at(i).tensor,
-            output.bytes.data(),
-            0,
-            output.bytes.size());
-      }
-    } catch (...) {
       ggml_backend_sched_reset(scheduler_.get());
-      throw;
+    } else {
+      CachedGraph& cached = cached_graph();
+      try {
+        run(cached.scheduler.get(), cached.instance);
+      } catch (...) {
+        ggml_backend_sched_synchronize(cached.scheduler.get());
+        cached_graphs_.pop_back();
+        throw;
+      }
     }
-    ggml_backend_sched_reset(scheduler_.get());
     executed_ = true;
   }
 
@@ -672,6 +666,100 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
  private:
+  struct CachedGraph {
+    std::vector<std::vector<int64_t>> input_sizes;
+    GraphInstance instance;
+    ggml_backend_sched_ptr scheduler;
+  };
+
+  // Lowering depends only on input shapes and constants, so a graph built for
+  // the current shapes replays with fresh input bytes. The most recently used
+  // graph is last.
+  CachedGraph& cached_graph() {
+    const auto same_input_sizes = [this](const CachedGraph& cached) {
+      for (size_t i = 0; i < inputs_.size(); ++i) {
+        if (cached.input_sizes[i] != inputs_[i].sizes) {
+          return false;
+        }
+      }
+      return true;
+    };
+    const auto hit = std::ranges::find_if(cached_graphs_, same_input_sizes);
+    if (hit != cached_graphs_.end()) {
+      std::rotate(hit, hit + 1, cached_graphs_.end());
+      refresh_inputs(cached_graphs_.back().instance);
+      return cached_graphs_.back();
+    }
+    if (cached_graphs_.size() >= options_.max_cached_graphs) {
+      ggml_backend_sched_synchronize(cached_graphs_.front().scheduler.get());
+      cached_graphs_.erase(cached_graphs_.begin());
+    }
+    CachedGraph cached{
+        .instance = build_graph(), .scheduler = make_scheduler()};
+    for (const InputSlot& input : inputs_) {
+      cached.input_sizes.push_back(input.sizes);
+    }
+    allocate(cached.scheduler.get(), cached.instance);
+    cached_graphs_.push_back(std::move(cached));
+    return cached_graphs_.back();
+  }
+
+  void refresh_inputs(GraphInstance& instance) const {
+    for (const RowIndexCheck& check : instance.row_index_checks) {
+      check_index_bytes(
+          *std::ranges::find(inputs_, check.input_id, &InputSlot::id),
+          check.rows);
+    }
+    for (Upload& upload : instance.uploads) {
+      if (upload.input) {
+        const InputSlot& input = inputs_.at(*upload.input);
+        upload.bytes = input.meta.dtype == ScalarType::Long
+            ? narrow_to_int32(input.bytes)
+            : input.bytes;
+      }
+    }
+  }
+
+  void allocate(ggml_backend_sched_t scheduler, const GraphInstance& instance) {
+    // The scheduler otherwise keeps graph inputs on the CPU backend and copies
+    // them into GPU splits once per consuming view.
+    for (const Upload& upload : instance.uploads) {
+      ggml_backend_sched_set_tensor_backend(
+          scheduler, upload.tensor, primary_backend_);
+    }
+    if (!ggml_backend_sched_alloc_graph(scheduler, instance.graph)) {
+      ggml_backend_sched_reset(scheduler);
+      throw std::runtime_error("ggml: failed to allocate execution graph");
+    }
+  }
+
+  void run(ggml_backend_sched_t scheduler, const GraphInstance& instance) {
+    for (const Upload& upload : instance.uploads) {
+      if (upload.tensor->buffer == nullptr) {
+        continue;
+      }
+      ggml_backend_tensor_set(
+          upload.tensor, upload.bytes.data(), 0, upload.bytes.size());
+    }
+    const ggml_status status =
+        ggml_backend_sched_graph_compute(scheduler, instance.graph);
+    if (status != GGML_STATUS_SUCCESS) {
+      throw std::runtime_error(
+          "ggml: graph execution failed with status " +
+          std::to_string(static_cast<int>(status)));
+    }
+    for (size_t i = 0; i < outputs_.size(); ++i) {
+      OutputSlot& output = outputs_[i];
+      output.sizes = instance.outputs.at(i).sizes;
+      output.bytes.resize(ggml_nbytes(instance.outputs.at(i).tensor));
+      ggml_backend_tensor_get(
+          instance.outputs.at(i).tensor,
+          output.bytes.data(),
+          0,
+          output.bytes.size());
+    }
+  }
+
   void index_signature() {
     for (const ValueId id : method_.graph.input_ids) {
       const TensorMeta& meta = contiguous_meta(id);
@@ -744,20 +832,27 @@ class GgmlExecutable final : public EngineExecutable {
     }
     backends_.push_back(std::move(cpu));
 
+    if (options_.max_cached_graphs == 0) {
+      scheduler_ = make_scheduler();
+    }
+  }
+
+  ggml_backend_sched_ptr make_scheduler() const {
     std::vector<ggml_backend_t> raw(backends_.size());
     std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
       return backend.get();
     });
-    scheduler_.reset(ggml_backend_sched_new(
+    ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
         static_cast<int>(raw.size()),
         options_.graph_size,
         /*parallel=*/false,
         /*op_offload=*/true));
-    if (!scheduler_) {
+    if (!scheduler) {
       throw std::runtime_error("ggml: failed to create backend scheduler");
     }
+    return scheduler;
   }
 
   // Quantization parameters are bound but only read through their weight.
@@ -1059,6 +1154,7 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<ggml_backend_ptr> backends_;
   ggml_backend_t primary_backend_ = nullptr;
   ggml_backend_sched_ptr scheduler_;
+  std::vector<CachedGraph> cached_graphs_;
   ggml_context_ptr persistent_context_;
   ggml_backend_buffer_ptr persistent_buffer_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
@@ -1217,8 +1313,10 @@ class GraphBuilder {
       ggml_set_name(tensor, method_.graph.value(input.id).name.c_str());
       ggml_set_input(tensor);
       set(input.id, TensorRef{tensor, input.sizes});
-      instance_.uploads.push_back(
-          Upload{tensor, narrow ? narrow_to_int32(input.bytes) : input.bytes});
+      instance_.uploads.push_back(Upload{
+          .tensor = tensor,
+          .bytes = narrow ? narrow_to_int32(input.bytes) : input.bytes,
+          .input = i});
     }
     for (const auto& [id, tensor] : persistent_) {
       set(id, TensorRef{tensor, method_.graph.value(id).tensor_meta().sizes});
@@ -1549,7 +1647,7 @@ class GraphBuilder {
   // Row indices are checked on the host, which needs them to come from a
   // graph input, possibly through integer casts and views; any other source
   // is rejected.
-  void check_row_indices(ValueId id, int64_t rows) const {
+  void check_row_indices(ValueId id, int64_t rows) {
     static const std::unordered_set<std::string> kSameValues = {
         "aten._to_copy.default",
         "aten.alias.default",
@@ -1580,7 +1678,9 @@ class GraphBuilder {
     while (is_index(id)) {
       const auto input = std::ranges::find(inputs_, id, &InputSlot::id);
       if (input != inputs_.end()) {
-        ::ptn::check_row_indices(*input, rows);
+        check_index_bytes(*input, rows);
+        instance_.row_index_checks.push_back(
+            RowIndexCheck{.input_id = id, .rows = rows});
         return;
       }
       const NodeId producer = method_.graph.value(id).producer_id;
