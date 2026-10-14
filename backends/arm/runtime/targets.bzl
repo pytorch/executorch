@@ -55,6 +55,7 @@ def define_common_targets():
             "VGFExecutionStats.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
+            "VGFShapeUtils.h",
             "VGFVulkanFeatures.h",
             "VGFZeroCopy.h",
         ],

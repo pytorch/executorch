@@ -12,6 +12,7 @@
 
 #include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
+#include <executorch/backends/arm/runtime/VGFShapeUtils.h>
 
 #include <executorch/runtime/platform/log.h>
 
@@ -90,20 +91,6 @@ struct AliasLogicalContract {
   uint32_t image_component_count = 0;
 };
 
-static size_t element_count_from_shape(const vector<int64_t>& shape) {
-  if (shape.empty()) {
-    return 1;
-  }
-  size_t count = 1;
-  for (auto dim : shape) {
-    if (dim <= 0) {
-      return 0;
-    }
-    count *= static_cast<size_t>(dim);
-  }
-  return count;
-}
-
 #ifdef ET_EVENT_TRACER_ENABLED
 class ScopedVgfProfileEvent {
  public:
@@ -137,22 +124,6 @@ class ScopedVgfProfileEvent {
 #else
 #define VGF_PROFILE_SCOPE(event_tracer, name) (void)(event_tracer)
 #endif
-
-static vector<int64_t> normalize_stride(
-    const vector<int64_t>& shape,
-    const vector<int64_t>& stride) {
-  if (!stride.empty()) {
-    return stride;
-  }
-
-  vector<int64_t> contiguous_stride(shape.size(), 1);
-  int64_t running = 1;
-  for (size_t idx = shape.size(); idx > 0; --idx) {
-    contiguous_stride[idx - 1] = running;
-    running *= shape[idx - 1];
-  }
-  return contiguous_stride;
-}
 
 static uint32_t get_format_component_count(VkFormat format) {
   switch (format) {
@@ -327,7 +298,17 @@ static bool validate_image_shape_and_format(
     return false;
   }
 
-  if (static_cast<uint32_t>(channels) != format_component_count) {
+  if (height > std::numeric_limits<uint32_t>::max() ||
+      width > std::numeric_limits<uint32_t>::max()) {
+    ET_LOG(
+        Error,
+        "Image dimensions exceed Vulkan uint32_t limits: [%lld, %lld]",
+        static_cast<long long>(height),
+        static_cast<long long>(width));
+    return false;
+  }
+
+  if (channels != static_cast<int64_t>(format_component_count)) {
     ET_LOG(
         Error,
         "Image channel count %lld does not match VkFormat %u component count %u",
@@ -342,13 +323,22 @@ static bool validate_image_shape_and_format(
   image_extent->depth = 1;
 
   if (staging_size != nullptr) {
-    const size_t pixel_count = static_cast<size_t>(image_extent->width) *
-        static_cast<size_t>(image_extent->height) *
-        static_cast<size_t>(image_extent->depth);
+    size_t pixel_count = static_cast<size_t>(image_extent->width);
+    const size_t image_height = static_cast<size_t>(image_extent->height);
+
+    // Width and height were validated as positive above. Image depth is fixed
+    // to 1, so only the width * height multiplication requires checking.
+    if (pixel_count > std::numeric_limits<size_t>::max() / image_height) {
+      ET_LOG(Error, "Image pixel count overflow");
+      return false;
+    }
+    pixel_count *= image_height;
+
     if (pixel_count > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
       ET_LOG(Error, "Image staging allocation size overflow");
       return false;
     }
+
     *staging_size = pixel_count * bytes_per_pixel;
   }
 
@@ -384,8 +374,17 @@ static bool validate_alias_group_logical_contract(
           resource_index);
       return false;
     }
-    logical_byte_size =
-        element_count_from_shape(shape) * get_format_size(format);
+    const size_t element_size = get_format_size(format);
+    if (!detail::checked_logical_byte_size_from_shape(
+            shape, element_size, &logical_byte_size)) {
+      ET_LOG(
+          Error,
+          "Alias group %u tensor-like resource %u has an invalid or "
+          "overflowing shape",
+          alias_group_id,
+          resource_index);
+      return false;
+    }
   } else {
     ET_LOG(
         Error,
@@ -396,7 +395,16 @@ static bool validate_alias_group_logical_contract(
     return false;
   }
 
-  const vector<int64_t> normalized_stride = normalize_stride(shape, stride);
+  vector<int64_t> normalized_stride;
+  if (!detail::normalize_stride_checked(shape, stride, &normalized_stride)) {
+    ET_LOG(
+        Error,
+        "Alias group %u resource %u has an invalid or overflowing shape "
+        "while normalizing strides",
+        alias_group_id,
+        resource_index);
+    return false;
+  }
   if (!contract->initialized) {
     contract->initialized = true;
     contract->shape = shape;
@@ -447,7 +455,7 @@ static bool validate_alias_group_logical_contract(
   }
 
   if (contract->image_initialized && !shape.empty() &&
-      static_cast<uint32_t>(shape.back()) != contract->image_component_count) {
+      shape.back() != static_cast<int64_t>(contract->image_component_count)) {
     ET_LOG(
         Error,
         "Alias group %u shape channel dimension does not match image packing at resource %u",
@@ -1801,8 +1809,19 @@ bool VgfRepr::process_vgf(
         }
         destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
       } else if (resource_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
-        const VkDeviceSize buffer_size = element_count_from_shape(the_shape) *
-            get_format_size(resource_format);
+        const size_t element_size = get_format_size(resource_format);
+        size_t buffer_size_bytes = 0;
+        if (!detail::checked_logical_byte_size_from_shape(
+                the_shape, element_size, &buffer_size_bytes)) {
+          ET_LOG(
+              Error,
+              "VGF resource %d has an invalid or overflowing buffer shape",
+              i);
+          return false;
+        }
+        const VkDeviceSize buffer_size =
+            static_cast<VkDeviceSize>(buffer_size_bytes);
+
         VkBuffer buffer = VK_NULL_HANDLE;
         result = create_buffer_unbound(
             vk_device,
@@ -1917,6 +1936,29 @@ bool VgfRepr::process_vgf(
       auto stride = resource_decoder->getTensorStride(i);
       const vector<int64_t> the_shape(shape.begin(), shape.end());
       const vector<int64_t> the_stride(stride.begin(), stride.end());
+
+      // Reject malformed tensor-like metadata before Vulkan resource creation.
+      size_t logical_byte_size = 0;
+      if (is_tensor_like_descriptor_type(resource_type)) {
+        const size_t element_size = get_format_size(resource_format);
+        if (!detail::checked_logical_byte_size_from_shape(
+                the_shape, element_size, &logical_byte_size)) {
+          ET_LOG(
+              Error,
+              "VGF resource %d has an invalid or overflowing tensor-like shape",
+              i);
+          return false;
+        }
+
+        vector<int64_t> normalized_stride;
+        if (!detail::normalize_stride_checked(
+                the_shape, the_stride, &normalized_stride)) {
+          ET_LOG(
+              Error, "VGF resource %d has invalid shape or stride metadata", i);
+          return false;
+        }
+      }
+
       const auto shape_size = shape.size();
       const bool uses_alias_group = alias_group.has_value();
       const bool image_aliasing =
@@ -2065,7 +2107,7 @@ bool VgfRepr::process_vgf(
                 IO{the_shape,
                    the_stride,
                    e_size,
-                   element_count_from_shape(the_shape) * e_size,
+                   logical_byte_size,
                    VK_DESCRIPTOR_TYPE_TENSOR_ARM,
                    tensor,
                    tensor_view,
@@ -2111,8 +2153,8 @@ bool VgfRepr::process_vgf(
             descriptors[i] = tensor_description;
             descriptor_valid[i] = true;
           } else if (resource_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
-            VkDeviceSize buffer_size =
-                element_count_from_shape(the_shape) * e_size;
+            const VkDeviceSize buffer_size =
+                static_cast<VkDeviceSize>(logical_byte_size);
 
             VkBuffer buffer = VK_NULL_HANDLE;
             VkMemoryRequirements2 buffer_memory_requirements = {
@@ -2563,8 +2605,8 @@ bool VgfRepr::process_vgf(
             descriptors[i] = tensor_description;
             descriptor_valid[i] = true;
           } else if (resource_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
-            VkDeviceSize buffer_size =
-                element_count_from_shape(the_shape) * e_size;
+            const VkDeviceSize buffer_size =
+                static_cast<VkDeviceSize>(logical_byte_size);
 
             VkBuffer buffer = VK_NULL_HANDLE;
             VkMemoryRequirements2 buffer_memory_requirements = {
