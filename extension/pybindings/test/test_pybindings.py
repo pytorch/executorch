@@ -30,6 +30,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAddWithAttributes,
     ModuleChannelsLast,
     ModuleChannelsLastInDefaultOut,
+    ModuleContiguous,
     ModuleLinear,
     ModuleMulti,
 )
@@ -358,6 +359,28 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
+
+    def test_module_converts_input_layout(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        cases = (
+            (ModuleContiguous(), torch.channels_last),
+            (ModuleChannelsLast(), torch.contiguous_format),
+        )
+        for model, memory_format in cases:
+            with self.subTest(model=type(model).__name__):
+                exported_program, _ = create_program(model)
+                executorch_module = self.load_fn(exported_program.buffer)
+
+                x = (
+                    torch.arange(24, dtype=torch.float32)
+                    .reshape(1, 2, 3, 4)
+                    .to(memory_format=memory_format)
+                )
+                executorch_output = executorch_module(x)[0]
+
+                self.assertTrue(torch.allclose(model(x), executorch_output))
 
     def test_method_meta(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
@@ -702,6 +725,29 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
+
+    def test_method_converts_input_layout(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        cases = (
+            (ModuleContiguous(), torch.channels_last),
+            (ModuleChannelsLast(), torch.contiguous_format),
+        )
+        for model, memory_format in cases:
+            with self.subTest(model=type(model).__name__):
+                exported_program, _ = create_program(model)
+                executorch_program = self.load_prog_fn(exported_program.buffer)
+                executorch_method = executorch_program.load_method("forward")
+
+                x = (
+                    torch.arange(24, dtype=torch.float32)
+                    .reshape(1, 2, 3, 4)
+                    .to(memory_format=memory_format)
+                )
+                executorch_output = executorch_method(x)[0]
+
+                self.assertTrue(torch.allclose(model(x), executorch_output))
 
     def test_method_bad_name(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
