@@ -1,10 +1,11 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-fbcode_target(
-    _kind = runtime.cxx_library,
+# llm_runner_utils and llm_runner are declared for both cells, since the
+# Metal binary below is xplat-only.
+runtime.cxx_library(
     name = "llm_runner_utils",
     srcs = ["LlmRunnerUtils.cpp"],
     exported_headers = ["LlmRunnerUtils.h"],
@@ -19,8 +20,7 @@ fbcode_target(
 )
 
 # Engine-neutral LLM app logic. Each binary below links exactly one engine.
-fbcode_target(
-    _kind = runtime.cxx_library,
+runtime.cxx_library(
     name = "llm_runner",
     srcs = ["LlmRunner.cpp"],
     exported_headers = ["LlmRunner.h"],
@@ -88,6 +88,20 @@ fbcode_target(
     deps = [
         ":llm_runner",
         "//executorch/backends/native/runtime/engine:ggml_engine_hip",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+# Apple Silicon: ggml-metal with an arm64 CPU fallback. Mac builds go through
+# xplat, so this one is declared for the non-fbcode cell.
+non_fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_ggml_metal",
+    srcs = ["run_hf_llm_ggml.cpp"],
+    deps = [
+        ":llm_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_metal",
     ],
     external_deps = ["gflags"],
     visibility = ["PUBLIC"],
