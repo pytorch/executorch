@@ -273,23 +273,35 @@ struct IntOperand {
   bool is_list = false;
 };
 
-// output = target(input, operands...) over a [2, 2] input. A `list_output` is
-// a one-element Tensor[] return; otherwise `output` aliases `input`.
+// output = target(input, operands...) over a [2, 2] input by default. A
+// `list_output` is a one-element Tensor[] return; otherwise `output` aliases
+// `input`.
 std::vector<uint8_t> make_unary_program(
     const char* target,
     const std::vector<int64_t>& output_shape,
     const std::vector<IntOperand>& operands,
-    bool list_output) {
+    bool list_output,
+    const std::vector<int64_t>& input_shape = {2, 2},
+    const std::vector<int64_t>& input_lower_bounds = {},
+    const std::vector<int64_t>& output_lower_bounds = {}) {
   flatbuffers::FlatBufferBuilder builder;
   const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(
           builder,
           "input",
-          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2})),
+          create_tensor_meta(
+              builder,
+              fbs::ScalarType::FLOAT,
+              input_shape,
+              input_lower_bounds)),
       fbs::CreateTensorValueDirect(
           builder,
           "output",
-          create_tensor_meta(builder, fbs::ScalarType::FLOAT, output_shape)),
+          create_tensor_meta(
+              builder,
+              fbs::ScalarType::FLOAT,
+              output_shape,
+              output_lower_bounds)),
   };
   const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
       fbs::CreateOutputDirect(builder, "input")};
@@ -1991,16 +2003,46 @@ TEST(VulkanEngineTest, RejectsAliasWithDifferentDtypeFromSource) {
   }
 }
 
-TEST(VulkanEngineTest, RejectsNonViewAliasOfDynamicSource) {
-  try {
-    compile_program(make_alias_program(fbs::ScalarType::FLOAT, {1}));
-    FAIL() << "expected the dynamic alias to be rejected";
-  } catch (const std::runtime_error& e) {
-    EXPECT_NE(
-        std::string(e.what()).find("only aten.view can alias"),
-        std::string::npos)
-        << e.what();
-  }
+TEST(VulkanEngineTest, ExecutesAliasOfDynamicSourceAsCopy) {
+  CompiledProgram compiled =
+      compile_program(make_alias_program(fbs::ScalarType::FLOAT, {1}));
+  compiled.executable->resize_input(0, {3});
+  const std::vector<float> input = {1.0f, -2.0f, 3.5f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  EXPECT_EQ(compiled.executable->output_sizes(0), (std::vector<int64_t>{3}));
+  std::vector<float> output(3);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, input);
+}
+
+TEST(VulkanEngineTest, ExecutesUnsqueezeOfDynamicSourceToRankFive) {
+  // Rank-5 tensors only fit buffers, and ET-VK's unsqueeze_copy reads and
+  // writes one storage type.
+  CompiledProgram compiled = compile_program(make_unary_program(
+      "torch.ops.aten.unsqueeze.default",
+      {1, 3, 1, 1, 2},
+      {{"dim", {0}}},
+      /*list_output=*/false,
+      /*input_shape=*/{3, 1, 1, 2},
+      /*input_lower_bounds=*/{1, 1, 1, 2},
+      /*output_lower_bounds=*/{1, 1, 1, 1, 2}));
+  compiled.executable->resize_input(0, {2, 1, 1, 2});
+  const std::vector<float> input = {1.0f, -2.0f, 3.5f, 4.0f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  EXPECT_EQ(
+      compiled.executable->output_sizes(0),
+      (std::vector<int64_t>{1, 2, 1, 1, 2}));
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, input);
 }
 
 TEST(VulkanEngineTest, RejectsMutableStateHeldByAnotherLiveExecutable) {
