@@ -1,0 +1,25 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# Each engine runs the same PTN through its runner: ggml on the CPU, and Vulkan
+# on SwiftShader.
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_cross_engine",
+    srcs = ["test_cross_engine.py"],
+    resources = {
+        "//executorch/backends/native/test/runtime/ggml:ggml_ptn_runner": "ggml_ptn_runner",
+        "//executorch/backends/native/test/runtime/vulkan:vulkan_ptn_runner": "vulkan_ptn_runner",
+        "//executorch/backends/native/test/runtime/vulkan:vulkan_test_driver": "vulkan_driver",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
+        "//executorch/exir/native:native",
+        "//executorch/extension/llm/export:gguf",
+        "//pytorch/vision:torchvision",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)

@@ -12,7 +12,7 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,
     OUTPUTS_DIR,
-    ReferenceModel,
+    ReferenceRunner,
 )
 from executorch.backends.nxp.tests.simple_models import AvgPool2dModule, MulTensorModule
 
@@ -34,7 +34,7 @@ def test__single_quantized_inputs(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000.bin").exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -54,12 +54,12 @@ def test__single_quantized_inputs_edge_python_reference(mocker, request):
         [input_spec],
         graph_verifier,
         request,
-        reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
+        reference_runner=ReferenceRunner.QUANTIZED_EDGE_PYTHON,
         remove_quant_io_ops=True,
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000.bin").exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -83,7 +83,9 @@ def test__multiple_quantized_inputs(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000" / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -103,12 +105,14 @@ def test__multiple_quantized_inputs_edge_python_reference(mocker, request):
         [x_input_spec, x_input_spec],
         graph_verifier,
         request,
-        reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
+        reference_runner=ReferenceRunner.QUANTIZED_EDGE_PYTHON,
         remove_quant_io_ops=True,
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000" / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return

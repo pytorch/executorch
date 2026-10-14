@@ -48,13 +48,12 @@ class WhereVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
-        validate_same_dtype(self.target, inputs[1:], ts)
-        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL, self.tosa_spec)
+        validate_same_dtype(self.target, inputs[1:])
+        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL)
         validate_valid_dtype(
             self.target,
             [*inputs[1:], output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

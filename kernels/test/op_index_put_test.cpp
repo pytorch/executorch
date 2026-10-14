@@ -1108,3 +1108,33 @@ TEST_F(OpIndexPutInplaceTest, AllDtypesSupportedForIndicesList) {
   test_dtype<ScalarType::Float, ScalarType::Long>();
   test_dtype<ScalarType::Float, ScalarType::Int>();
 }
+
+TEST_F(OpIndexPutInplaceTest, AccumulateRepeatedIndicesInMiddleDimension) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+
+  Tensor values = tf.make({2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+  Tensor expected = tf.make({2, 3, 2}, {1, 1, 5, 7, 1, 1, 1, 1, 13, 15, 1, 1});
+
+  optional<Tensor> long_indices[] = {std::nullopt, tfl.make({2}, {1, 1})};
+  Tensor x = tf.ones({2, 3, 2});
+  Tensor ret = op_index_put_(x, long_indices, values, /*accumulate=*/true);
+  EXPECT_TENSOR_EQ(ret, x);
+  EXPECT_TENSOR_EQ(x, expected);
+
+  optional<Tensor> int_indices[] = {std::nullopt, tfi.make({2}, {1, 1})};
+  Tensor y = tf.ones({2, 3, 2});
+  op_index_put_(y, int_indices, values, /*accumulate=*/true);
+  EXPECT_TENSOR_EQ(y, expected);
+}
+
+TEST_F(OpIndexPutInplaceTest, AccumulateHalfRepeatedIndices) {
+  TensorFactory<ScalarType::Half> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  optional<Tensor> indices[] = {tfl.make({2}, {1, 1})};
+  Tensor x = tf.ones({3});
+  Tensor values = tf.make({2}, {2, 3});
+  op_index_put_(x, indices, values, /*accumulate=*/true);
+  EXPECT_TENSOR_EQ(x, tf.make({3}, {1, 6, 1}));
+}

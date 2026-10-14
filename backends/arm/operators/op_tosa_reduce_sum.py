@@ -33,12 +33,11 @@ class SumVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
             [ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-            self.tosa_spec,
         )
 
         tensor = inputs[0]
