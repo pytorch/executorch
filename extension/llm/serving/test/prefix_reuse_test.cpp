@@ -21,15 +21,18 @@
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <numeric>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
 using namespace executorch::extension::llm;
 using namespace executorch::extension::llm::serving;
 using batching::Position;
+using batching::PrefixCheckpoint;
 using batching::SessionId;
 using batching::Token;
 using serving::testing::TestPreparedInput;
@@ -65,6 +68,48 @@ class Gate {
   std::condition_variable cv_;
   bool entered_ = false;
   bool held_ = false;
+};
+
+class PausableScheduler : public batching::Scheduler {
+ public:
+  std::atomic<bool> paused{false};
+  std::unique_ptr<batching::Scheduler> inner =
+      batching::DecodeFirstScheduler::create(32, 4, 8);
+
+  bool submit(std::vector<batching::Task> tasks) override {
+    return inner->submit(std::move(tasks));
+  }
+  bool has_work() const override {
+    return !paused.load() && inner->has_work();
+  }
+  std::vector<batching::Task> get_work() override {
+    return paused.load() ? std::vector<batching::Task>{} : inner->get_work();
+  }
+  std::vector<batching::Task> cancel(SessionId session) override {
+    return inner->cancel(session);
+  }
+  std::vector<batching::Task> clear() override {
+    return inner->clear();
+  }
+  std::size_t max_prefill_chunk_size() const override {
+    return inner->max_prefill_chunk_size();
+  }
+};
+
+class GatedSuffixInput : public TestPreparedInput {
+ public:
+  GatedSuffixInput(std::vector<Token> values, Gate& gate)
+      : TestPreparedInput(std::move(values)), gate_(gate) {
+    identity = std::make_shared<const batching::PrefixIdentity>(
+        batching::token_identity(tokens));
+  }
+  batching::PreparedInputPtr suffix(std::size_t start) const override {
+    gate_.enter();
+    return TestPreparedInput::suffix(start);
+  }
+
+ private:
+  Gate& gate_;
 };
 
 template <class Predicate>
@@ -122,6 +167,7 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<int> clone_calls{0};
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
+  Position retained_tail = std::numeric_limits<Position>::max();
   bool accept_prepared = false;
   bool reject_views = false;
   std::optional<std::size_t> rejected_view_start;
@@ -168,6 +214,10 @@ class Executor : public batching::testing::FakeExecutor {
       auto it = histories_.find(source);
       if (it == histories_.end() || upto < 0 ||
           static_cast<std::size_t>(upto) > it->second.size() ||
+          upto <
+              std::max(
+                  Position{0},
+                  static_cast<Position>(it->second.size()) - retained_tail) ||
           (reject_after_decode && advanced_[source])) {
         return std::nullopt;
       }
@@ -325,6 +375,7 @@ class PrefixReuseTest : public ::testing::Test {
   Gate delivery_checkpoint;
   Gate later_delivery_checkpoint;
   Gate cleanup_checkpoint;
+  Gate replacement_preparation;
   std::atomic<bool> captures_cleaned{false};
   std::promise<void> callbacks_finished;
   std::thread callback_watchdog;
@@ -344,7 +395,10 @@ class PrefixReuseTest : public ::testing::Test {
     config.max_context_length = 64;
     config.prefix_cache_capacity = 2;
   }
-  void start(bool provision = true) {
+  void start(
+      bool provision = true,
+      std::unique_ptr<batching::Scheduler> scheduler =
+          batching::DecodeFirstScheduler::create(32, 4, 8)) {
     if (provision) {
       executor.capacity = static_cast<int>(
           config.max_sessions +
@@ -352,16 +406,13 @@ class PrefixReuseTest : public ::testing::Test {
                                         : 0));
     }
     runtime = std::make_unique<ServingRuntime>(
-        executor,
-        batching::DecodeFirstScheduler::create(32, 4, 8),
-        tokenizer,
-        config,
-        model_preparer);
+        executor, std::move(scheduler), tokenizer, config, model_preparer);
   }
   void TearDown() override {
     delivery_checkpoint.release();
     later_delivery_checkpoint.release();
     cleanup_checkpoint.release();
+    replacement_preparation.release();
     executor.executing.release();
     executor.cloning.release();
     executor.decoding.release();
@@ -1247,6 +1298,429 @@ TEST_F(PrefixReuseTest, CancellationDuringReplacementClonePreservesSource) {
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 3u);
   EXPECT_EQ(runtime->info().active_sessions, 1u);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    PeriodicCheckpointRestoresAnIntermediatePromptBoundary) {
+  config.max_sessions = 1;
+  config.prefix_cache_capacity = 8;
+  config.prefix_checkpoint_interval = 8;
+  executor.retained_tail = 0;
+  start();
+  std::vector<Token> prompt(56, 7);
+  auto first = output();
+  submit(first, prompt, "s", 3).wait();
+  ASSERT_FALSE(first->terminal->error);
+  const auto captures = executor.clones();
+  ASSERT_FALSE(captures.empty());
+  const auto boundary = captures.front().prefix.size();
+  ASSERT_EQ(boundary, config.prefix_checkpoint_interval);
+  ASSERT_LT(boundary, prompt.size());
+  prompt[boundary] = 9;
+  auto replaced = output();
+  submit(replaced, prompt).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, boundary);
+  EXPECT_EQ(
+      replaced->terminal->stats.prefilled_prompt_tokens,
+      prompt.size() - boundary);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    CustomCheckpointPolicyOverridesIntervalAndSeesContinuation) {
+  config.prefix_checkpoint_interval = 8;
+  config.prefix_cache_capacity = 1;
+  executor.retained_tail = 0;
+  auto initial_metadata = std::make_shared<const int>(5);
+  auto continuation_metadata = std::make_shared<const int>(19);
+  std::vector<std::pair<Position, bool>> calls;
+  std::size_t retention_calls = 0;
+  config.prefix_checkpoint_policy = [&](const batching::PrefixIdentity& prompt,
+                                        Position start,
+                                        bool opening) {
+    calls.emplace_back(start, opening);
+    EXPECT_EQ(prompt.size(), opening ? 14u : 24u);
+    return std::vector<PrefixCheckpoint>{
+        {opening ? 5 : 19, opening ? initial_metadata : continuation_metadata}};
+  };
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++retention_calls;
+    EXPECT_EQ(incoming.identity.get().size(), 19u);
+    EXPECT_EQ(incoming.metadata, continuation_metadata);
+    EXPECT_EQ(entries.front().identity.get().size(), 5u);
+    EXPECT_EQ(entries.front().metadata, initial_metadata);
+    return 0;
+  };
+  start();
+  std::vector<Token> prompt(14, 7);
+  auto first = output();
+  submit(first, prompt).wait();
+  ASSERT_FALSE(first->terminal->error);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones().front().prefix.size(), 5u);
+  prompt.push_back(100);
+  prompt.resize(24, 7);
+  auto continued = output();
+  submit(continued, prompt).wait();
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  ASSERT_EQ(executor.clones().size(), 2u);
+  EXPECT_EQ(executor.clones().back().prefix.size(), 19u);
+  EXPECT_EQ(retention_calls, 1u);
+  EXPECT_EQ(
+      calls, (std::vector<std::pair<Position, bool>>{{0, true}, {14, false}}));
+}
+
+TEST_F(PrefixReuseTest, CustomCheckpointPolicyReceivesOpaqueIdentity) {
+  use_mixed_preparer();
+  config.prefix_cache_capacity = 1;
+  auto metadata = std::make_shared<const int>(42);
+  std::size_t capture_calls = 0;
+  std::size_t retention_calls = 0;
+  config.prefix_checkpoint_policy = [&](const batching::PrefixIdentity& prompt,
+                                        Position start,
+                                        bool opening) {
+    ++capture_calls;
+    EXPECT_EQ(start, 0);
+    EXPECT_TRUE(opening);
+    EXPECT_EQ(prompt.size(), 6u);
+    EXPECT_EQ(prompt.spans.size(), 3u);
+    EXPECT_TRUE(std::holds_alternative<batching::OpaqueSpan>(prompt.spans[1]));
+    return std::vector<PrefixCheckpoint>{{4, metadata}};
+  };
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++retention_calls;
+    EXPECT_EQ(incoming.metadata, metadata);
+    EXPECT_EQ(entries.front().metadata, metadata);
+    EXPECT_EQ(incoming.identity.get().size(), 4u);
+    EXPECT_EQ(entries.front().identity.get().size(), 4u);
+    EXPECT_TRUE(std::holds_alternative<batching::OpaqueSpan>(
+        incoming.identity.get().spans[1]));
+    return 0;
+  };
+  start();
+  auto event = output();
+  submit(event, {1, 7, 7, 7, 2, 3}).wait();
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(capture_calls, 1u);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones().front().prefix.size(), 4u);
+  ASSERT_FALSE(runtime->close_session_async("s").get());
+  auto other = output();
+  submit(other, {9, 7, 7, 7, 2, 3}).wait();
+  ASSERT_FALSE(other->terminal->error);
+  EXPECT_EQ(capture_calls, 2u);
+  EXPECT_EQ(retention_calls, 1u);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    CustomCheckpointPolicyCanSkipCaptureOrReturnInvalidPoints) {
+  std::vector<PrefixCheckpoint> points;
+  config.prefix_checkpoint_policy = [&](const auto&, Position, bool) {
+    return points;
+  };
+  start();
+  for (const auto& candidate : std::vector<std::vector<PrefixCheckpoint>>{
+           {}, {{-1}}, {{0}}, {{4}, {4}}, {{8}, {4}}, {{4}, {13}}}) {
+    points = candidate;
+    auto event = output();
+    submit(event, std::vector<Token>(12, 7)).wait();
+    ASSERT_FALSE(event->terminal->error);
+    EXPECT_FALSE(runtime->close_session_async("s").get());
+  }
+  points.clear();
+  std::vector<Token> prompt(12, 7);
+  submit(output(), prompt).wait();
+  points = {{4}};
+  prompt.push_back(100);
+  prompt.push_back(8);
+  auto continued = output();
+  submit(continued, prompt).wait();
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixReuseTest, ThrowingCheckpointPolicyDoesNotFailGeneration) {
+  config.prefix_checkpoint_policy =
+      [](const auto&, Position, bool) -> std::vector<PrefixCheckpoint> {
+    throw std::runtime_error("checkpoint policy failed");
+  };
+  start();
+  auto event = output();
+  submit(event, {1, 2, 3}).wait();
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+}
+#endif
+
+TEST_F(PrefixReuseTest, CustomRetentionCanDeclineNewSessionsSnapshot) {
+  config.prefix_cache_capacity = 1;
+  std::atomic<std::size_t> calls{0};
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++calls;
+    EXPECT_FALSE(incoming.metadata);
+    EXPECT_FALSE(entries.front().metadata);
+    return std::nullopt;
+  };
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  EXPECT_FALSE(runtime->close_session_async("s").get());
+  auto other = output();
+  submit(other, {8, 8, 8}).wait();
+  ASSERT_FALSE(other->terminal->error);
+  EXPECT_EQ(calls.load(), 1u);
+  EXPECT_FALSE(runtime->close_session_async("s").get());
+  auto reused = output();
+  submit(reused, {1, 2, 3, 9}).wait();
+  ASSERT_FALSE(reused->terminal->error);
+  EXPECT_EQ(reused->terminal->stats.reused_prompt_tokens, 3u);
+}
+
+TEST_F(PrefixReuseTest, PeriodicContinuationUsesAbsoluteBoundaries) {
+  config.prefix_checkpoint_interval = 8;
+  start();
+  submit(output(), {1, 2, 3, 4, 5}).wait();
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones().front().prefix.size(), 5u);
+  auto continuation = output();
+  std::vector<Token> prompt{1, 2, 3, 4, 5, 100};
+  prompt.resize(26, 7);
+  submit(continuation, prompt).wait();
+  ASSERT_FALSE(continuation->terminal->error);
+  EXPECT_EQ(continuation->terminal->stats.session_reset_reason, "exact_prefix");
+  const auto clones = executor.clones();
+  ASSERT_GT(clones.size(), 1u);
+  EXPECT_EQ(clones[1].prefix.size(), 8u);
+  for (std::size_t i = 1; i < clones.size(); ++i) {
+    EXPECT_EQ(clones[i].prefix.size() % 8, 0u);
+  }
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureDoesNotProtectTheEarlyCheckpoint) {
+  config.prefix_cache_capacity = 2;
+  config.prefix_checkpoint_interval = 4;
+  executor.retained_tail = 0;
+  start();
+  std::vector<Token> prompt;
+  for (std::size_t boundary : {4, 8, 12}) {
+    prompt.resize(boundary, 7);
+    auto event = output();
+    submit(event, prompt).wait();
+    ASSERT_FALSE(event->terminal->error);
+    const auto& stats = event->terminal->stats;
+    if (boundary > 4) {
+      EXPECT_EQ(stats.session_reset_reason, "exact_prefix");
+    }
+    ASSERT_TRUE(stats.generated_token_ids);
+    prompt.insert(
+        prompt.end(),
+        stats.generated_token_ids->begin(),
+        stats.generated_token_ids->end());
+  }
+  const auto captures = executor.clones();
+  ASSERT_EQ(captures.size(), 3u);
+  EXPECT_EQ(captures[0].prefix.size(), 4u);
+  EXPECT_EQ(captures[1].prefix.size(), 8u);
+  EXPECT_EQ(captures[2].prefix.size(), 12u);
+
+  auto replaced = output();
+  submit(replaced, {7, 7, 7, 7, 9}).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(replaced->terminal->stats.prefilled_prompt_tokens, 5u);
+}
+
+TEST_F(PrefixReuseTest, SpeculativePromptEndCheckpointRefusalIsNonfatal) {
+  config.prefix_checkpoint_interval = 64;
+  executor.burst = 3;
+  executor.retained_tail = 0;
+  start();
+  auto event = output();
+  submit(event, {1, 2, 3, 4, 5}, "s", 3).wait();
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(executor.clone_calls.load(), 1);
+  EXPECT_TRUE(executor.clones().empty());
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureRefusalDoesNotFailGeneration) {
+  config.max_sessions = 1;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  executor.capacity = 1;
+  start(false);
+  auto first = output();
+  submit(first, std::vector<Token>(40, 7)).wait();
+  ASSERT_FALSE(first->terminal->error);
+  EXPECT_GT(executor.clone_calls.load(), 0);
+  EXPECT_TRUE(executor.clones().empty());
+  auto replaced = output();
+  submit(replaced, {7, 7, 9}).wait();
+  ASSERT_FALSE(replaced->terminal->error);
+  EXPECT_EQ(replaced->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(PrefixReuseTest, CancellationDuringPeriodicCaptureReleasesCaptureLane) {
+  watch_callbacks();
+  config.prefix_checkpoint_interval = 8;
+  executor.cloning.hold();
+  start();
+  auto cancelled = output();
+  auto handle = submit(cancelled, std::vector<Token>(40, 7));
+  ASSERT_TRUE(executor.cloning.wait());
+  handle.cancel();
+  executor.cloning.release();
+  handle.wait();
+  ASSERT_FALSE(runtime->close_session_async("s").get());
+  const auto before = executor.clone_calls.load();
+  auto next = output();
+  submit(next, std::vector<Token>(40, 8)).wait();
+  ASSERT_FALSE(next->terminal->error);
+  EXPECT_GT(executor.clone_calls.load(), before);
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureMakesAnotherSessionsReplacementCold) {
+  watch_callbacks();
+  config.max_sessions = 2;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 9}) {
+      replacement_preparation.enter();
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  start();
+  submit(output(), {1, 2, 3}, "b").wait();
+  const auto before = executor.clone_calls.load();
+  executor.executing.hold();
+  executor.cloning.hold();
+  replacement_preparation.hold();
+  auto capture_events = output();
+  auto capture = submit(capture_events, std::vector<Token>(8, 7), "a");
+  ASSERT_TRUE(executor.executing.wait());
+  auto cold = output();
+  auto replacement = submit(cold, {1, 2, 9}, "b");
+  ASSERT_TRUE(replacement_preparation.wait());
+  executor.executing.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  // Control is preparing B, so it cannot collect A or release its lane yet.
+  replacement_preparation.release();
+  executor.cloning.release();
+  capture.wait();
+  replacement.wait();
+  ASSERT_TRUE(capture_events->terminal);
+  ASSERT_FALSE(capture_events->terminal->error);
+  ASSERT_TRUE(cold->terminal);
+  ASSERT_FALSE(cold->terminal->error);
+  EXPECT_EQ(cold->terminal->stats.session_reset_reason, "mismatch");
+  EXPECT_EQ(cold->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(cold->terminal->stats.prefilled_prompt_tokens, 3u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  const auto snapshot = executor.clones().back();
+  EXPECT_EQ(snapshot.prefix, std::vector<Token>(8, 7));
+  auto warm = output();
+  std::vector<Token> prompt(8, 7);
+  prompt.push_back(9);
+  submit(warm, prompt, "b").wait();
+  ASSERT_TRUE(warm->terminal);
+  ASSERT_FALSE(warm->terminal->error);
+  EXPECT_EQ(warm->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(warm->terminal->stats.reused_prompt_tokens, 8u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 2);
+  EXPECT_EQ(executor.clones().back().source, snapshot.destination);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    ReplacementSkipsAnotherSessionsCheckpointThenReleasesLane) {
+  watch_callbacks();
+  config.max_sessions = 2;
+  config.prefix_cache_capacity = 1;
+  config.prefix_checkpoint_interval = 8;
+  executor.accept_prepared = true;
+  model_preparer =
+      [this](const auto&, PromptInput input) -> ModelPreparationResult {
+    auto tokens = input.segments[0].get_tokens();
+    if (tokens == std::vector<Token>{1, 2, 9}) {
+      return batching::PreparedInputPtr{std::make_shared<GatedSuffixInput>(
+          std::move(tokens), replacement_preparation)};
+    }
+    return make_token_prepared_input(std::move(tokens));
+  };
+  auto scheduler = std::make_unique<PausableScheduler>();
+  auto* paused = scheduler.get();
+  start(true, std::move(scheduler));
+  submit(output(), {1, 2, 3}, "b").wait();
+  const auto before = executor.clone_calls.load();
+  paused->paused = true;
+  executor.decoding.hold();
+  replacement_preparation.hold();
+  auto capture_events = output();
+  auto capture = submit(capture_events, std::vector<Token>(8, 7), "a", 2);
+  ASSERT_TRUE(wait_until([&] { return paused->inner->has_work(); }));
+  auto warm = output();
+  auto replacement = submit(warm, {1, 2, 9}, "b");
+  ASSERT_TRUE(replacement_preparation.wait());
+  // Hold after clone_prefix claims the lane but before its engine command:
+  // blocking inside Executor::clone would also block A's prefill observer.
+  paused->paused = false;
+  ASSERT_TRUE(executor.decoding.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before);
+  executor.cloning.hold();
+  replacement_preparation.release();
+  executor.decoding.release();
+  ASSERT_TRUE(executor.cloning.wait());
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  executor.cloning.release();
+  capture.wait();
+  replacement.wait();
+  ASSERT_TRUE(capture_events->terminal);
+  ASSERT_FALSE(capture_events->terminal->error);
+  ASSERT_TRUE(warm->terminal);
+  ASSERT_FALSE(warm->terminal->error);
+  EXPECT_EQ(warm->terminal->stats.session_reset_reason, "prefix_clone");
+  EXPECT_EQ(warm->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.clone_calls.load(), before + 1);
+  auto continued = output();
+  std::vector<Token> prompt(8, 7);
+  prompt.push_back(100);
+  prompt.push_back(101);
+  prompt.resize(16, 8);
+  submit(continued, prompt, "a").wait();
+  ASSERT_TRUE(continued->terminal);
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(executor.clone_calls.load(), before + 2);
+  EXPECT_EQ(executor.clones().back().prefix, prompt);
+}
+
+TEST_F(PrefixReuseTest, PeriodicCaptureRequiresStorage) {
+  config.prefix_cache_capacity = 0;
+  config.prefix_checkpoint_interval = 8;
+  start();
+  EXPECT_FALSE(runtime->info().ready);
+}
+
+TEST_F(PrefixReuseTest, CustomCaptureRequiresStorage) {
+  config.prefix_cache_capacity = 0;
+  config.prefix_checkpoint_policy = [](const auto&, Position, bool) {
+    return std::vector<PrefixCheckpoint>{{1}};
+  };
+  start();
+  EXPECT_FALSE(runtime->info().ready);
 }
 
 TEST_F(PrefixReuseTest, CaptureIsQueuedBeforeSubsequentDecode) {

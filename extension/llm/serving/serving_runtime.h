@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
@@ -55,6 +56,20 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Explicit open/reset bypass reuse. When enabled, provision
   // max_sessions + prefix_cache_capacity + 1 executor rows.
   std::size_t prefix_cache_capacity = 0;
+  // Capture at absolute interval multiples and the initial prompt end.
+  // Requires cache capacity; zero captures only the initial prompt.
+  std::size_t prefix_checkpoint_interval = 0;
+  // Override the interval with increasing checkpoints in (start,
+  // prompt.size()]. Invalid or throwing policies skip capture. Requires cache
+  // capacity. Runs on control; must not block or reenter the runtime.
+  std::function<std::vector<batching::PrefixCheckpoint>(
+      const batching::PrefixIdentity& prompt,
+      batching::Position start,
+      bool opening)>
+      prefix_checkpoint_policy = {};
+  // Empty uses global LRU without protected early checkpoints.
+  // Runs on control; must not block or reenter the runtime.
+  batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
