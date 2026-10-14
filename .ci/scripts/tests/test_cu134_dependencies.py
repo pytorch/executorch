@@ -58,9 +58,9 @@ class TestCu134Dependencies(unittest.TestCase):
                 commands = self.install_commands((13, 4), machine)
                 self.assertEqual(len(commands), 4)
                 expected = {
-                    "torch==2.14.0.dev20260810+cu134",
-                    "torchvision==0.29.0.dev20260811+cu134",
-                    "torchaudio==2.11.0.dev20260811+cu134",
+                    "torch==2.15.0.dev20260921+cu134",
+                    "torchvision==0.30.0.dev20260922+cu134",
+                    "torchaudio==2.11.0.dev20260922+cu134",
                     f"torchao=={self.installer.CU134_TORCHAO_NIGHTLY_VERSION}+{ao_variant}",
                 }
                 for index, command in enumerate(commands):
@@ -114,7 +114,7 @@ class TestCu134Dependencies(unittest.TestCase):
             with self.subTest(cuda=cuda):
                 core, _, domains, _ = self.install_commands(cuda, nightly=False)
                 self.assertIn("torch", core)
-                self.assertNotIn("torch==2.14.0.dev20260810+cu134", core)
+                self.assertNotIn("torch==2.15.0.dev20260921+cu134", core)
                 self.assertIn("torchvision", domains)
                 self.assertIn("torchaudio", domains)
 
@@ -240,7 +240,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.assertFalse(
                         any(arg.startswith("torchao==") for arg in command)
                     )
-                self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
+                self.assertIn("torch==2.15.0.dev20260921+cu134", commands[-1])
                 source_version = self.installer.TORCHAO_NIGHTLY_VERSION.partition(
                     ".dev"
                 )[0]
