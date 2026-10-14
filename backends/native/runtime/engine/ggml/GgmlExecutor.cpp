@@ -1443,14 +1443,20 @@ class GraphBuilder {
     if (rhs_arg.arg.kind() == ArgKind::Tensor) {
       const TensorRef right = tensor(rhs_arg.arg.as_tensor().id);
       sizes = broadcast_shape(left.sizes, right.sizes);
+      ggml_context* ctx = instance_.context.get();
+      ggml_tensor* lhs = left.tensor;
+      // ggml only broadcasts the right operand.
+      if (checked_numel(left.sizes) != checked_numel(sizes)) {
+        lhs = ggml_repeat(ctx, lhs, new_tensor(ctx, lhs->type, sizes));
+      }
       if (key == "aten.add.Tensor") {
-        result = ggml_add(instance_.context.get(), left.tensor, right.tensor);
+        result = ggml_add(ctx, lhs, right.tensor);
       } else if (key == "aten.mul.Tensor") {
-        result = ggml_mul(instance_.context.get(), left.tensor, right.tensor);
+        result = ggml_mul(ctx, lhs, right.tensor);
       } else if (key == "aten.sub.Tensor") {
-        result = ggml_sub(instance_.context.get(), left.tensor, right.tensor);
+        result = ggml_sub(ctx, lhs, right.tensor);
       } else {
-        result = ggml_div(instance_.context.get(), left.tensor, right.tensor);
+        result = ggml_div(ctx, lhs, right.tensor);
       }
     } else {
       const float scalar = static_cast<float>(
