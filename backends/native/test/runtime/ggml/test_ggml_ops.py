@@ -1045,6 +1045,52 @@ class GgmlOpsTest(unittest.TestCase):
         # Each graph build copies the transpose once for both readers.
         self.assertEqual(ops["CONT"], ops["ADD"])
 
+    def test_fp16_kv_attention_reads_the_f32_query(self):
+        # Flash attention rounds an F32 query to the F16 keys' precision
+        # itself, so the query's cast to the cache dtype is dropped: only k
+        # and v are cast for each attention.
+        def forward(q, k, v):
+            return F.scaled_dot_product_attention(q.half(), k.half(), v.half()).float()
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CPY"], 2 * ops["FLASH_ATTN_EXT"])
+
+    def test_fp16_kv_attention_keeps_the_cast_of_a_written_query(self):
+        # The query is cast from a buffer that is then written, so attention
+        # must read the cast from before the write, not the buffer.
+        class WrittenQuery(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.randn(1, 2, 3, 32))
+
+            def forward(self, k, v, rows, positions):
+                q = self.state.half()
+                self.state.index_copy_(2, positions, rows)
+                return F.scaled_dot_product_attention(q, k.half(), v.half()).float()
+
+        model = WrittenQuery()
+        inputs = (
+            torch.randn(1, 2, 8, 32),
+            torch.randn(1, 2, 8, 32),
+            torch.randn(1, 2, 1, 32) * 4.0,
+            torch.tensor([1]),
+        )
+        (actual,) = self._run_exported(model, inputs, inputs)
+        with torch.no_grad():
+            expected = model(*inputs)
+        torch.testing.assert_close(actual, expected, atol=1e-2, rtol=1e-2)
+
     def test_sdpa_reuses_computed_bool_mask(self):
         def forward(q, k, v, mask_input):
             mask = mask_input.le(0.7)
