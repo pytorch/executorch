@@ -68,6 +68,10 @@ DEFINE_int32(
     max_cached_graphs,
     1,
     "Graphs kept per executable by input shapes; 0 rebuilds every call.");
+DEFINE_bool(
+    print_graph_ops,
+    false,
+    "Print each built graph's node count per ggml op to stderr.");
 DEFINE_int32(warmup, 0, "Untimed executions before the timed ones.");
 DEFINE_int32(
     iterations,
@@ -212,6 +216,7 @@ void run() {
     throw std::invalid_argument("--max_cached_graphs must be non-negative");
   }
   options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
+  options.print_graph_ops = FLAGS_print_graph_ops;
   const auto host = ptn::GgmlEngineHost::create(options);
   const auto context = host->create_ggml_context(program, package);
   const auto executable = context->compile(FLAGS_method);
