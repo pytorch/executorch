@@ -92,6 +92,9 @@ retention cannot exceed the entry budget or mutate snapshot state. The CLI
 configures the default interval and capacity; custom policies are C++ callables.
 `PrefixCache(max_entries, retention_policy)` exposes the same retention hook to
 applications using the Runner directly.
+The standalone policy interface and default `lru_prefix_cache_retention` are in
+`extension/llm/batching/prefix_cache_retention.h`; custom policies can call the
+default as a fallback.
 
 - Different sessions can run concurrently. Same-session transcript preparation,
   generation, native wire completion, and transcript commit remain ordered.

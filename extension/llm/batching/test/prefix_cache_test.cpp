@@ -866,15 +866,18 @@ TEST_F(PrefixCacheTest, DuplicateInsertRefreshesLruAndReleasesTheNewSnapshot) {
 }
 
 TEST_F(PrefixCacheTest, SuccessfulLookupRefreshesLruBeforeEviction) {
-  PrefixCache cache(2);
-  ASSERT_TRUE(
-      cache.insert({1, 2}, snapshot({1, 2}), std::make_shared<const int>(1)));
-  ASSERT_TRUE(
-      cache.insert({3, 4}, snapshot({3, 4}), std::make_shared<const int>(100)));
-  EXPECT_TRUE(cache.lookup({1, 2, 9}));
-  ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
-  EXPECT_FALSE(cache.lookup({3, 4, 9}));
-  EXPECT_TRUE(cache.lookup({1, 2, 9}));
+  for (const auto& policy : std::vector<PrefixCacheRetentionPolicy>{
+           {}, lru_prefix_cache_retention}) {
+    PrefixCache cache(2, policy);
+    ASSERT_TRUE(
+        cache.insert({1, 2}, snapshot({1, 2}), std::make_shared<const int>(1)));
+    ASSERT_TRUE(cache.insert(
+        {3, 4}, snapshot({3, 4}), std::make_shared<const int>(100)));
+    EXPECT_TRUE(cache.lookup({1, 2, 9}));
+    ASSERT_TRUE(cache.insert({5, 6}, snapshot({5, 6})));
+    EXPECT_FALSE(cache.lookup({3, 4, 9}));
+    EXPECT_TRUE(cache.lookup({1, 2, 9}));
+  }
 }
 
 TEST_F(PrefixCacheTest, TokenKeysPreserveAllSixtyFourBits) {
