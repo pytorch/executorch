@@ -15,6 +15,10 @@
 #include <limits>
 #include <utility>
 
+#if defined(EXECUTORCH_BUILD_MLX)
+#include <CommonCrypto/CommonDigest.h>
+#endif
+
 namespace executorch::extension::llm {
 namespace {
 char prepared_kind;
@@ -45,7 +49,8 @@ bool valid_image(
       bytes == static_cast<size_t>(pixels) * 3;
 }
 
-// FIPS 180-4 SHA-256, so image identity needs no platform crypto library.
+#if defined(EXECUTORCH_BUILD_CUDA)
+// FIPS 180-4 SHA-256 for CUDA builds without a platform crypto library.
 class Sha256 {
  public:
   void update(const void* data, size_t size) {
@@ -144,6 +149,36 @@ class Sha256 {
   size_t buffered_ = 0;
   uint64_t length_ = 0;
 };
+#elif defined(EXECUTORCH_BUILD_MLX)
+class Sha256 {
+ public:
+  Sha256() {
+    CC_SHA256_Init(&context_);
+  }
+
+  void update(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    while (size > 0) {
+      const auto chunk = static_cast<CC_LONG>(std::min(
+          size, static_cast<size_t>(std::numeric_limits<CC_LONG>::max())));
+      CC_SHA256_Update(&context_, bytes, chunk);
+      bytes += chunk;
+      size -= chunk;
+    }
+  }
+
+  batching::ContentKey finish() {
+    batching::ContentKey key;
+    CC_SHA256_Final(key.data(), &context_);
+    return key;
+  }
+
+ private:
+  CC_SHA256_CTX context_;
+};
+#else
+#error "Muse Glimmer preparation requires a CUDA or MLX build"
+#endif
 
 batching::ContentKey image_key(
     const MuseGlimmerRGBImage& image,

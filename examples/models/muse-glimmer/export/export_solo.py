@@ -309,9 +309,8 @@ def sampler_programs(vocab_size: int, max_rows: int = MAX_SAMPLE_ROWS):
 def device_residency(forward_methods, device_sampling: bool):
     """Per-method ``PropagateDeviceConfig`` for ``to_executorch``.
 
-    With device sampling the forwards keep their logits on the device, planned
-    in device memory as export_solo's outputs are, and the samplers take them
-    there without a host round trip.
+    With device sampling the forwards keep their logits in device memory, and
+    the samplers consume them there without a host round trip.
     """
     from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 
