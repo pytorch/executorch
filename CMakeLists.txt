@@ -1506,6 +1506,14 @@ if(EXECUTORCH_BUILD_PYBIND)
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_C
   )
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL
+                                            "GNU"
+  )
+    # Keep inline helpers local so GCC LTO retains definitions needed by
+    # manylinux's libstdc++_nonshared.a instead of resolving them through the
+    # shared runtime.
+    target_compile_options(portable_lib PRIVATE -fvisibility-inlines-hidden)
+  endif()
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
   # These libraries register their operators or their backend from a static
