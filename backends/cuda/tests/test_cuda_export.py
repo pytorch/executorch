@@ -13,10 +13,7 @@ from unittest import mock
 from unittest.mock import patch
 
 import torch
-from executorch.backends.cuda.cuda_backend import (
-    _compile_time_cpu_clones,
-    CudaBackend,
-)
+from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones, CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
@@ -108,7 +105,9 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         self.assertIs(GraphLowering._run_jit_variant_for_autotune, original_run)
         self.assertEqual(result, "jit-result")
         self.assertEqual(storage.nbytes(), 0)
-        self.assertEqual((base.shape, base.stride(), view.storage_offset()), ((4, 4), (4, 1), 1))
+        self.assertEqual(
+            (base.shape, base.stride(), view.storage_offset()), ((4, 4), (4, 1), 1)
+        )
 
     def test_low_memory_jit_failure_releases_backing_and_restores_hook(self):
         tensor = torch.empty(4)
