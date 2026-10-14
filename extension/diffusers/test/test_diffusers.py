@@ -18,7 +18,7 @@ from executorch.export.huggingface.diffusers.config import (
     ExportConfig,
     ModelConfig,
 )
-from executorch.export.huggingface.diffusers.metadata import build_diffusion_metadata
+from executorch.export.huggingface.diffusers.export import build_diffusion_metadata
 from executorch.export.huggingface.diffusers.pipeline_specs import DiffusionModelInfo
 from executorch.extension.diffusers.metadata import DiffusionMetadata, METADATA_METHODS
 from executorch.extension.diffusers.pipeline_behaviors import (
