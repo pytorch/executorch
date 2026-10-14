@@ -34,6 +34,8 @@ on:
       - .ci/scripts/cuda_benchmark.py
       - .ci/scripts/cuda_benchmark_from_e2e.sh
       - .ci/scripts/cuda_perf_prompts/**
+      - .ci/scripts/*muse_glimmer_batching*
+      - .ci/scripts/tests/*muse_glimmer_batching*
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
@@ -554,6 +556,61 @@ jobs:
         pip install gguf
         python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
+  unittest-cuda-muse-glimmer-batching:
+    name: unittest-cuda-muse-glimmer-batching
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_*.py' -v
+
+        # The normal serving binaries and the opt-in CI workload tool share
+        # CudaExecutor; MG preparation tests also run on Linux.
+        make muse-glimmer-batching-cuda
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        bash .ci/scripts/build_muse_glimmer_batching_bench.sh "${BATCHING_BIN_DIR}"
+        cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
+        ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_bench"
+
+        # The batching export on a tiny model, and the CLI's backend dispatch.
+        pip install gguf
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
   unittest-cuda-quantized-gemm:
     name: unittest-cuda-quantized-gemm (${{ matrix.shard }})
     needs: [changed-files, run-decision]
@@ -1042,6 +1099,10 @@ jobs:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
     if: |
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -1061,6 +1122,8 @@ jobs:
         include:
           - variant: kquant-17gb
             mode: solo-text
+          - variant: kquant-17gb
+            mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic
