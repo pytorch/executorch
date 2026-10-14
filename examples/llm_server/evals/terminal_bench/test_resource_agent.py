@@ -4,22 +4,34 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 import asyncio
-
 import copy
-
 import json
-
+from dataclasses import replace
 from types import SimpleNamespace
 
 import httpx
-
 import pytest
-
 from harbor.models.agent.context import AgentContext
 
+from .delegation import DelegationEstimate
 from .resource_agent import ResourceAgent, SYSTEM, TOOLS
+
+SNAPSHOT = {
+    "max_inflight_requests": 4,
+    "submitted_generations": 0,
+    "waiting_for_runtime_lease": 0,
+}
+ESTIMATE = DelegationEstimate(
+    uncached_input_tokens=200,
+    output_tokens=200,
+    prefill_tokens_s=100,
+    decode_tokens_s=20,
+    child_tool_s=0,
+    parent_work_s=30,
+    inline_s=50,
+    integration_s=1,
+)
 
 
 @pytest.fixture
@@ -64,6 +76,14 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
         },
     ]
     original = copy.deepcopy(messages)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    obj.report = report
+    obj.estimate_delegation = lambda messages, snapshot: replace(
+        ESTIMATE, output_tokens=obj.child_output_tokens, decode_tokens_s=100
+    )
 
     async def completion(role, history, cap):
         assert role == "child" and cap == obj.child_output_tokens
@@ -140,6 +160,93 @@ async def test_inline_rejects_spawn_and_child_cannot_recurse(tmp_path):
             call("spawn", question="a", parent_work="b"), [], Environment()
         )
     assert not obj.child_used
+
+
+@pytest.mark.anyio
+async def test_enabled_agent_rejects_unknown_cost_without_consuming_child(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    obj.report = report
+    with pytest.raises(ValueError, match="unknown_cost"):
+        await obj.parent_tool(
+            call("spawn", question="inspect a", parent_work="inspect b"),
+            [],
+            Environment(),
+        )
+    assert obj.child is None and not obj.child_used
+    assert not obj.sessions
+
+
+@pytest.mark.anyio
+async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+    requests = []
+
+    async def report(turn):
+        return SNAPSHOT | {"last_observation": {"prefill_tokens_per_second": 100}}
+
+    async def completion(role, messages, cap):
+        requests.append(role)
+        report = json.loads(messages[-1]["content"].removeprefix("Resource report: "))
+        assert report == {
+            "available_children": 0,
+            "admission_reason": "unknown_cost",
+            "child_total_output_cap": 0,
+        }
+        message = (
+            {
+                "role": "assistant",
+                "tool_calls": [call("spawn", question="a", parent_work="b")],
+            }
+            if len(requests) == 1
+            else {"role": "assistant", "content": "finished inline"}
+        )
+        messages.append(message)
+        return {"message": message, "finish_reason": "stop"}
+
+    obj.report, obj.completion = report, completion
+    await obj.run("task", Environment(), obj.context)
+    assert requests == ["parent", "parent"]
+    assert obj.child is None and not obj.child_used
+    history = json.loads((tmp_path / "parent.json").read_text())
+    assert any(
+        m["role"] == "tool" and "Delegation declined: unknown_cost" in m["content"]
+        for m in history
+    )
+
+
+@pytest.mark.anyio
+async def test_launch_rechecks_capacity_and_enforces_estimated_output_cap(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+    obj.estimate_delegation = lambda messages, snapshot: ESTIMATE
+    assert obj.admission([], SNAPSHOT, "report")["allowed"]
+    snapshot = SNAPSHOT | {"submitted_generations": 3}
+    caps = []
+
+    async def report(turn):
+        return snapshot
+
+    async def completion(role, messages, cap):
+        caps.append(cap)
+        return {"message": {"content": "finding"}, "finish_reason": "stop"}
+
+    async def close(role):
+        pass
+
+    obj.report, obj.completion, obj.close_session = report, completion, close
+    spawn = call("spawn", question="inspect a", parent_work="inspect b")
+    messages = [{"role": "assistant", "tool_calls": [spawn]}]
+    with pytest.raises(ValueError, match="request_capacity"):
+        await obj.parent_tool(spawn, messages, Environment())
+    assert not obj.child_used
+    snapshot = SNAPSHOT
+    await obj.parent_tool(spawn, messages, Environment())
+    await obj.child
+    assert caps == [ESTIMATE.output_tokens]
+    assert obj.child_budget == ESTIMATE.output_tokens
 
 
 @pytest.mark.anyio

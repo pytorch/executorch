@@ -16,6 +16,7 @@ import uuid
 import httpx
 from harbor.agents.base import BaseAgent
 
+from .delegation import decide_delegation, DelegationEstimate
 from .streaming import ChatCompletionStream
 
 SYSTEM = """Solve the user's task in the container. Inspect before editing, use tools for evidence,
@@ -24,6 +25,17 @@ The parent owns edits and final verification. A delegated child investigates onl
 question without modifying files or delegating. Do not edit files a running child is inspecting.
 
 Optimize time to verified correct completion, including all parent and child work.
+Batching can share weight reads, but each sequence adds computation and attention traffic.
+Longer attended context costs more per step; sliding-window attention can cap this cost.
+Available decode slots do not imply free capacity.
+Prefill taxes shared decode. Prefix caching avoids repeated prefill, not later attention cost.
+Shorter context does not necessarily free allocated memory.
+
+The harness calculates delegation costs and checks request capacity. Its report gives the
+available child budget and admission reason. Work inline when the budget is zero, including when
+costs are unknown. Do not calculate performance estimates or infer permission from idle hardware.
+The harness rechecks admission at launch; if it declines a child, continue inline.
+
 Before spawning: name one necessary independent question, then name the necessary work you will
 do meanwhile. If nothing independent remains, work inline. Use at most the available child budget.
 Do not duplicate work.
@@ -36,6 +48,7 @@ Children may use shell for read-only inspection and computation. Return findings
 summary call is needed. Child results arrive between turns. Wait only when the result is needed;
 cancel obsolete work. Incorporate required findings before finishing.
 Faster failure, unnecessary reasoning, and higher token throughput are not improvements.
+Do not narrate performance arithmetic; act on the task.
 """
 
 
@@ -99,6 +112,7 @@ class ResourceAgent(BaseAgent):
         self.enabled = enabled
         self.max_tokens = max_tokens
         self.child_output_tokens = child_output_tokens
+        self.child_budget = child_output_tokens
         self.step_limit = step_limit
         self.temperature = temperature
         self.child = None
@@ -172,6 +186,22 @@ class ResourceAgent(BaseAgent):
             parent_last_usage=self.last_usage.get("parent"),
         )
         return report
+
+    def estimate_delegation(self, messages, snapshot) -> DelegationEstimate | None:
+        """Override with calibrated workload costs; server rates alone are insufficient."""
+        return None
+
+    def admission(self, messages, snapshot, phase):
+        available = self.enabled and not self.child_used
+        estimate = self.estimate_delegation(messages, snapshot) if available else None
+        decision = decide_delegation(
+            snapshot,
+            estimate,
+            child_available=available,
+            output_limit=self.child_output_tokens,
+        )
+        self.record("delegation_decision", phase=phase, decision=decision)
+        return decision
 
     async def completion(self, role, messages, cap):
         session_id = self.prefix + "-" + role
@@ -305,7 +335,7 @@ class ResourceAgent(BaseAgent):
     async def investigate(self, environment):
         try:
             for _ in range(6):
-                remaining = self.child_output_tokens - self.output_tokens["child"]
+                remaining = self.child_budget - self.output_tokens["child"]
                 if remaining <= 0:
                     break
                 choice = await self.completion(
@@ -374,9 +404,16 @@ class ResourceAgent(BaseAgent):
                 for k in ("question", "parent_work")
             ):
                 raise ValueError("Name the question and independent parent work")
+            snapshot = await self.report("admission")
+            decision = self.admission(messages, snapshot, "launch")
+            if not decision["allowed"]:
+                raise ValueError(
+                    f"Delegation declined: {decision['reason']}; work inline"
+                )
+            self.child_budget = decision["estimate"]["output_tokens"]
             self.child_used = True
             self.child_messages = self.branch_messages(
-                messages, arguments["question"], self.child_output_tokens
+                messages, arguments["question"], self.child_budget
             )
             self.child = asyncio.create_task(self.investigate(environment))
             self.record("spawn", **arguments)
@@ -412,10 +449,16 @@ class ResourceAgent(BaseAgent):
             try:
                 for turn in range(self.step_limit):
                     self.notify(messages)
-                    await self.report(turn)
+                    snapshot = await self.report(turn)
+                    decision = self.admission(messages, snapshot, "report")
                     report = {
-                        "available_children": int(self.enabled and not self.child_used),
-                        "child_total_output_cap": self.child_output_tokens,
+                        "available_children": int(decision["allowed"]),
+                        "admission_reason": decision["reason"],
+                        "child_total_output_cap": (
+                            decision["estimate"]["output_tokens"]
+                            if decision["allowed"]
+                            else 0
+                        ),
                     }
                     messages.append(
                         {

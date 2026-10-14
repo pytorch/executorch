@@ -6,6 +6,12 @@ the child investigates one question and returns concise findings. Both use the
 same tools and inherit the same prompt prefix. The child has a total output
 budget, explicit wait/cancel, and a separate serving session.
 
+Admission runs in the harness. Unknown costs default to inline, as do estimates
+that show no completion-time benefit. `estimate_delegation(messages, snapshot)`
+is the extension point for calibrated workload estimates; its default returns
+`None`, so the base agent stays inline. Estimates cover all child requests and
+tool work. The admitted output cap is enforced across the child's responses.
+
 Use the batching server with prefix caching enabled, capacity for two sessions,
 and at least two decode sequences. In a working model TOML:
 
@@ -25,8 +31,11 @@ work includes the engine queue; these counts do not measure GPU utilization or
 decode width. Rates describe individual requests under their observed load and
 context, and include their age. Unknown rates remain unknown.
 
-The model receives the available child budget. Child shell commands are instructed
-to be read-only; this is not an OS-enforced filesystem boundary.
+The model receives only the admitted child budget and reason. The harness
+rechecks costs and request capacity at launch, leaving room for parent work.
+Recent server rates alone cannot predict child work or time saved. Child shell
+commands are instructed to be read-only; this is not an OS-enforced filesystem
+boundary.
 
 Compare verifier results and agent completion time first, then parent waiting,
 all generated tokens and uncached input (`input - cached`). `agent/events.jsonl`
