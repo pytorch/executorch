@@ -319,8 +319,9 @@ Arduino's build system:
 ### Updating the library
 
 ```bash
-./build_arduino_library.sh          # rebuild
-./build_arduino_library.sh --clean  # remove generated output
+./build_arduino_library.sh            # rebuild
+./build_arduino_library.sh --clean    # remove generated output
+./build_arduino_library.sh --version  # version from ExecuTorch's version.txt
 ROOT_OPS="aten::add.out,..." ./build_arduino_library.sh   # pick the op set
 ALL_OPS=1 ./build_arduino_library.sh                      # every portable op
 ```
@@ -344,6 +345,11 @@ python export_model.py --checkpoint examples/KeywordSpotting/model.pth \
 
 ### Releasing
 
+The generator fills `library.properties.in` from the root `version.txt`, so
+Arduino packages default to the version of the ExecuTorch checkout they bundle.
+The publishing workflow accepts a branch, tag or SHA and an optional explicit
+package version. The source commit and runtime version remain in provenance.
+
 [RELEASING.md](RELEASING.md) is the checklist for cutting a version of the
 published library: what to verify, how to publish without leaving stale files
 behind, and what has gone wrong before.
@@ -355,7 +361,7 @@ The published library records the commit it was generated from in
 alongside it — the same one-SHA-per-file convention ExecuTorch uses in
 `.ci/docker/ci_commit_pins/`. To move it forward:
 
-1. Update `executorch_pin.txt` to the new ExecuTorch commit
+1. Select an ExecuTorch branch, tag or commit to package
 2. Regenerate the library from a checkout at that commit
 3. Re-export the example models from the same checkout
 4. Confirm each model's `KernelCall` argument counts match the regenerated

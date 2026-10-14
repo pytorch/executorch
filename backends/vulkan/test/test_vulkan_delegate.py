@@ -8,6 +8,7 @@
 
 import ctypes
 import functools
+import operator
 import unittest
 from typing import Tuple
 
@@ -16,6 +17,10 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+    get_symmetric_quantization_config as get_vulkan_quantization_config,
+    VulkanQuantizer,
+)
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -1275,6 +1280,48 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_grid_sampler_2d(self):
+        class GridSampler2d(torch.nn.Module):
+            def __init__(self, padding_mode, align_corners):
+                super().__init__()
+                self.padding_mode = padding_mode
+                self.align_corners = align_corners
+
+            def forward(self, x, grid):
+                return torch.nn.functional.grid_sample(
+                    x,
+                    grid,
+                    mode="bilinear",
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                )
+
+        # Deliberately push the grid past [-1, 1] on every side so the zeros
+        # and border paths actually diverge; an in-range grid is identical
+        # under both and would pass even with the padding branch broken.
+        grid = torch.stack(
+            torch.meshgrid(
+                torch.linspace(-1.6, 1.6, 7),
+                torch.linspace(-1.6, 1.6, 5),
+                indexing="ij",
+            )[::-1],
+            dim=-1,
+        ).unsqueeze(0)
+        sample_inputs = (
+            torch.rand(size=(1, 4, 6, 8), dtype=torch.float32),
+            grid.contiguous(),
+        )
+
+        for padding_mode in ("zeros", "border"):
+            for align_corners in (True, False):
+                with self.subTest(
+                    padding_mode=padding_mode, align_corners=align_corners
+                ):
+                    self.lower_module_and_test_output(
+                        GridSampler2d(padding_mode, align_corners),
+                        sample_inputs,
+                    )
+
     def test_vulkan_backend_minimum(self):
         class MinimumModule(torch.nn.Module):
             def __init__(self):
@@ -1560,6 +1607,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             TestModule(),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_split_with_sizes_dynamic(self):
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.split(x, (3, 6, 1, 3), dim=-1)
+
+        sample_inputs = (torch.randn(size=(1, 8, 13), dtype=torch.float32),)
+        seq_len = Dim("seq_len", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq_len}},
+            test_inputs=[
+                (torch.randn(size=(1, 3, 13), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 13), dtype=torch.float32),),
+            ],
         )
 
     def test_vulkan_backend_split_tensor(self):
@@ -2082,6 +2146,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[0, 1, 0], [4, 2, 0]]),),
+        )
+
+    def test_vulkan_backend_embedding_large_vocab(self):
+        # Past 16384 entries the output of the embedding is laid out as a height
+        # packed texture, so each texel holds 4 different weight rows instead of
+        # 4 elements of the same row. See #22333.
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(16385, 4)),
+            (torch.tensor([[0, 1, 16384], [7, 16000, 12345]]),),
         )
 
     def test_vulkan_backend_embedding_3d(self):
@@ -2753,6 +2834,43 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
+
+    def test_vulkan_backend_pt2e_quantized_linear_without_downcasting(self):
+        torch.manual_seed(0)
+        sample_inputs = (torch.randn(4, 64),)
+        quantizer = VulkanQuantizer().set_global(get_vulkan_quantization_config())
+        model = prepare_pt2e(
+            export(torch.nn.Linear(64, 32).eval(), sample_inputs, strict=True).module(),
+            quantizer,
+        )
+        model(*sample_inputs)
+        model = convert_pt2e(model)
+        self.assertTrue(any(buffer.dtype == torch.int64 for buffer in model.buffers()))
+
+        for downcast in (False, True):
+            with self.subTest(downcast=downcast):
+                edge = lower_module(
+                    model,
+                    sample_inputs,
+                    compile_options={"downcast_64_bit": downcast},
+                )
+                self.assertEqual(
+                    [
+                        node.target
+                        for node in edge.exported_program().graph.nodes
+                        if node.op == "call_function"
+                        and node.target != operator.getitem
+                    ],
+                    [torch.ops.higher_order.executorch_call_delegate],
+                )
+                program_buffer = edge.to_executorch().buffer
+                module = _load_for_executorch_from_buffer(program_buffer)
+                self.assert_outputs_equal(
+                    module.run_method("forward", sample_inputs),
+                    model(*sample_inputs),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
 
     @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):

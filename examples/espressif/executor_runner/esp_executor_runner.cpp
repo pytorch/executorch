@@ -495,10 +495,10 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
 #if defined(ET_BUNDLE_IO)
   ctx.bundle_io = executorch::bundled_program::is_bundled_program(
-      reinterpret_cast<void*>(model_pte), ctx.pte_size);
+      const_cast<void*>(program_data), ctx.pte_size);
   if (ctx.bundle_io) {
     Error status = executorch::bundled_program::get_program_data(
-        reinterpret_cast<void*>(model_pte),
+        const_cast<void*>(program_data),
         ctx.pte_size,
         &program_data,
         &ctx.program_data_len);
@@ -549,9 +549,6 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
       Info,
       "Setup Method allocator pool. Size: %lu bytes.",
       static_cast<unsigned long>(method_allocation_pool_size));
-
-  ctx.method_allocator.reset(
-      method_allocation_pool_size, method_allocation_pool);
 
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
@@ -670,7 +667,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
     ET_CHECK_MSG(
         status == Error::Ok,
         "load_bundled_input failed with status 0x%" PRIx32,
-        status);
+        static_cast<uint32_t>(status));
   } else
 #endif
   {
@@ -917,7 +914,7 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
           Info,
           "=== Error calculating stats for testset %d ERROR:%d ===",
           testset_idx,
-          stats.status);
+          static_cast<int>(stats.status));
     }
 
     Error status = verify_method_outputs(
@@ -1007,6 +1004,8 @@ static const size_t kMaxInputOutputs = 16;
 bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
+  g_runner_ctx.method_allocator.reset(
+      method_allocation_pool_size, method_allocation_pool);
   size_t pte_size;
 
 #if defined(FILESYSTEM_LOAD)
@@ -1016,10 +1015,8 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  MemoryAllocator file_allocator(
-      method_allocation_pool_size, method_allocation_pool);
-  auto [buffer, buffer_size] =
-      load_file_from_fs("/spiffs/model.pte", file_allocator);
+  auto [buffer, buffer_size] = load_file_from_fs(
+      "/spiffs/model.pte", g_runner_ctx.method_allocator.value());
   if (buffer == nullptr) {
     ET_LOG(Fatal, "Failed to load model from filesystem.");
     return false;

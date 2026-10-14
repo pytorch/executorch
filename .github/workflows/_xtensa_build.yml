@@ -20,25 +20,28 @@ on:
         required: false
         type: string
         default: ""
+      docker-image:
+        description: "Fully qualified CI image (resolved by the caller)"
+        required: true
+        type: string
+      allow-fork-checkout:
+        description: "Check out fork PR code on pull_request_target"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  # The runner pod pulls the container before any step runs, so the image has to
-  # be a fully qualified reference resolved by a job this one depends on.
-  docker-image:
-    name: Resolve CI docker image
-    uses: ./.github/workflows/_docker-image.yml
-
   build:
     name: ${{ inputs.backend }}
-    needs: docker-image
-    # Intel, not the x86iavx512 (r7a/AMD) default: the Cadence licence key that
-    # xt-clang computes for a core differs by CPU vendor, and only the Intel one
-    # (XT_XCC_TIE_ED4D1230) is in the bundled licence. On an AMD runner the
-    # vision core resolves to XT_XCC_TIE_ED4DB539 and the checkout fails with
-    # "No such feature exists". hifi4's older RI-2022.10 toolchain does not care.
+    # Keep this label at 18 characters or fewer. The pod hostname is the label plus
+    # 28 characters, and RJ-2025.5 xt-clang (vision) derives the wrong licence key
+    # once the hostname reaches 47: it asks for XT_XCC_TIE_ED4DB539 instead of the
+    # bundled ED4D1230 and fails with "No such feature exists". The CPU vendor is
+    # not the cause; mt-l-x86iavx512-8-64 (20 characters) fails on its hostname.
+    # hifi4's RI-2022.9 toolchain is unaffected.
     runs-on: mt-l-x86iamx-8-64
     container:
-      image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      image: ${{ inputs.docker-image }}
     environment: cadence
     permissions:
       id-token: write
@@ -63,6 +66,8 @@ jobs:
         with:
           submodules: recursive
           ref: ${{ inputs.ref }}
+          persist-credentials: ${{ !inputs.allow-fork-checkout }}
+          allow-unsafe-pr-checkout: ${{ inputs.allow-fork-checkout }}
 
       - name: Assume Cadence artifacts role
         uses: aws-actions/configure-aws-credentials@v4
@@ -92,6 +97,7 @@ jobs:
           chmod -R a+rX cmake-out
 
       - name: Upload runner
+        if: ${{ !inputs.allow-fork-checkout }}
         uses: actions/upload-artifact@v4
         with:
           name: cadence-xtensa-build-${{ inputs.backend }}

@@ -91,6 +91,9 @@ fbcode_target(
     _kind = cpp_python_extension,
     name = "data_loader",
     srcs = ["pybindings_data_loader.cpp"],
+    headers = [
+        "pybindings_data_loader.h",
+    ],
     base_module = "executorch.extension.pybindings",
     deps = [
         ":data_loader_types",

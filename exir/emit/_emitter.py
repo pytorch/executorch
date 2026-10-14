@@ -59,6 +59,7 @@ from executorch.exir.schema import (
     ContainerMetadata,
     DataLocation,
     DelegateCall,
+    DelegateScratch,
     Double,
     DoubleList,
     EValue,
@@ -638,8 +639,8 @@ class _Emitter(torch.fx.Interpreter):
         """Given the provided spec constructs the corresponding EValue from it and then emits it.
 
         If `spec` was already emitted earlier (e.g., because two FX
-        nodes share the same TensorSpec object — typically because the
-        planner's `_alias_inplace_result_specs` aliased an in-place
+        nodes share the same TensorSpec object — typically because
+        `alias_inplace_result_specs` aliased an in-place
         op's result onto its mutated input), reuse the existing
         value_id. This keeps the invariant "one TensorSpec ↔ one
         Value" so downstream emit doesn't create duplicate Values for
@@ -1481,6 +1482,23 @@ class _Emitter(torch.fx.Interpreter):
                 BackendDelegateInlineData(data=processed_bytes)
             )
 
+        # Checked against the declaration so that an emit path the pass never
+        # ran on, or a spec something else rewrote, fails here rather than
+        # handing the backend a span the blob overruns.
+        scratch_specs = memory.delegate_scratch_specs(self.node)
+        declared = [spec.nbytes for spec in lowered_module.scratch_specs]
+        if [spec.nbytes() for spec in scratch_specs] != declared:
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Backend {lowered_module.backend_id} declared scratch buffers of "
+                    f"{declared} bytes but the graph carries "
+                    f"{[spec.nbytes() for spec in scratch_specs]}. "
+                    "DelegateScratchSpecPass must run before emission for a backend "
+                    "that declares scratch.",
+                )
+            )
+
         backend_delegate = BackendDelegate(
             id=lowered_module.backend_id,
             processed=BackendDelegateDataReference(
@@ -1505,11 +1523,36 @@ class _Emitter(torch.fx.Interpreter):
                 DelegateCall(
                     delegate_index=len(self.emitter_state.delegates) - 1,
                     args=delegate_args,
+                    scratch=self._emit_delegate_scratch(scratch_specs) or None,
                 )
             )
         )
 
         return delegate_ret
+
+    def _emit_delegate_scratch(self, specs: List[TensorSpec]) -> List[DelegateScratch]:
+        """Describes the delegate's scratch allocations for the instruction.
+
+        The buffers are planned like any other intermediate, but the backend
+        receives raw bytes, so they are serialized as locations and sizes
+        instead of as tensor values.
+        """
+        scratch = []
+        for index, spec in enumerate(specs):
+            if spec.mem_id is None or spec.mem_offset is None:
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Delegate scratch buffer {index} was not memory planned.",
+                    )
+                )
+            scratch.append(
+                DelegateScratch(
+                    allocation=make_allocation_info(spec.mem_id, spec.mem_offset),
+                    size=spec.nbytes(),
+                )
+            )
+        return scratch
 
     def _get_operator(self, name: str, overload: str = "") -> Tuple[int, Operator]:
         """Given a fully qualified name, lookups the operator in the ExecuTorch Program, or adds it
@@ -2093,9 +2136,8 @@ class _TopLevelEmitter(_Emitter):
 
         # Populate spec2id_dict so downstream `_emit_spec` calls (e.g.,
         # for in-place op result FX nodes whose spec was aliased onto
-        # this placeholder's spec by the planner's
-        # `_alias_inplace_result_specs`) reuse this placeholder's
-        # value_id rather than creating a new Value.
+        # this placeholder's spec by `alias_inplace_result_specs`) reuse
+        # this placeholder's value_id rather than creating a new Value.
         if isinstance(spec, TensorSpec):
             self.emitter_state.spec2id_dict[spec] = value.id
 
