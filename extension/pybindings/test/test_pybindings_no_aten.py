@@ -8,8 +8,9 @@ import gc
 import importlib
 import importlib.util
 import os
-import re
+import subprocess
 import sys
+import textwrap
 import unittest
 import weakref
 from pathlib import Path
@@ -24,10 +25,51 @@ TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
 
 
 class PybindingsNoAtenTest(unittest.TestCase):
+    def _run_in_fresh_process(self, script: str) -> None:
+        runtime_path = Path(runtime.__file__).resolve()
+        environment = os.environ.copy()
+        environment[TENSOR_OUTPUT_ENV] = "executorch"
+        environment["PYTHONPATH"] = os.pathsep.join(
+            filter(
+                None,
+                (str(runtime_path.parent), environment.get("PYTHONPATH")),
+            )
+        )
+        prelude = """
+import sys
+from pathlib import Path
+
+import _C as runtime
+
+assert Path(runtime.__file__).resolve() == Path(sys.argv[1]).resolve()
+assert not runtime._uses_aten
+assert runtime._tensor_output == "executorch"
+"""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                prelude + textwrap.dedent(script),
+                str(runtime_path),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_import_does_not_load_torch(self) -> None:
-        self.assertFalse(runtime._uses_aten)
-        self.assertNotIn("torch", sys.modules)
-        self.assertNotIn("executorch.exir", sys.modules)
+        self._run_in_fresh_process(
+            """
+            assert "torch" not in sys.modules
+            assert "executorch.exir" not in sys.modules
+            """
+        )
 
     def test_executorch_result_is_not_constructible(self) -> None:
         with self.assertRaises(TypeError):
@@ -36,18 +78,28 @@ class PybindingsNoAtenTest(unittest.TestCase):
     def test_executes_program_without_torch(self) -> None:
         self.assertEqual(os.environ.get(TENSOR_OUTPUT_ENV), "executorch")
         self.assertEqual(runtime._tensor_output, "executorch")
-        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
-            program_data = program_file.read()
-        module = runtime._load_for_executorch_from_buffer(program_data)
+        self._run_in_fresh_process(
+            """
+            import os
 
-        output = module(
-            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
-        )[0]
+            import numpy as np
 
-        self.assertIsInstance(output, runtime.ExecuTorchResult)
-        self.assertEqual(output.shape, (1,))
-        self.assertEqual(output.dtype, np.dtype("float32"))
-        np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+            assert "torch" not in sys.modules
+            with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+                program_data = program_file.read()
+            module = runtime._load_for_executorch_from_buffer(program_data)
+            output = module(
+                (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+            )[0]
+
+            assert isinstance(output, runtime.ExecuTorchResult)
+            assert output.shape == (1,)
+            assert output.dtype == np.dtype("float32")
+            np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+            assert "torch" not in sys.modules
+            assert "executorch.exir" not in sys.modules
+            """
+        )
 
     def test_torch_output_error_mentions_executorch_opt_out(self) -> None:
         if importlib.util.find_spec("torch") is not None:
@@ -144,7 +196,12 @@ class PybindingsNoAtenTest(unittest.TestCase):
 
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
-        self.assertIsInstance(output, torch.Tensor)
+        expected_type = (
+            torch.Tensor
+            if runtime._tensor_output == "torch"
+            else runtime.ExecuTorchResult
+        )
+        self.assertIsInstance(output, expected_type)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
         with self.assertRaisesRegex(ValueError, "must be resolved"):
             module((torch._neg_view(torch.tensor([1.0])), torch.tensor([2.0])))
@@ -154,8 +211,14 @@ class PybindingsNoAtenTest(unittest.TestCase):
         if not process_maps.exists():
             self.skipTest("mapped-library inspection is only available on Linux")
 
-        self.assertIsNone(
-            re.search(r"lib(?:torch|aten|c10)", process_maps.read_text().lower())
+        self._run_in_fresh_process(
+            """
+            import re
+
+            assert re.search(
+                r"lib(?:torch|aten|c10)", Path("/proc/self/maps").read_text().lower()
+            ) is None
+            """
         )
 
 

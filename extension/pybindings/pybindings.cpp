@@ -208,6 +208,14 @@ class BufferTensor final {
     if (info_.readonly && info_.size > 0) {
       owned_data_.resize(info_.size * info_.itemsize);
       std::memcpy(owned_data_.data(), info_.ptr, owned_data_.size());
+      info_ = py::buffer_info(
+          owned_data_.data(),
+          info_.itemsize,
+          info_.format,
+          info_.ndim,
+          info_.shape,
+          info_.strides);
+      buffer_ = py::buffer();
     }
   }
 
@@ -257,6 +265,30 @@ class BufferTensor final {
   size_t nbytes() const {
     return static_cast<size_t>(info_.size) *
         static_cast<size_t>(info_.itemsize);
+  }
+
+  py::object result_backing_owner() const {
+    if (!owned_data_.empty()) {
+      return py::none();
+    }
+    PyObject* numpy = PyDict_GetItemString(PyImport_GetModuleDict(), "numpy");
+    py::object array_type = py::none();
+    if (numpy != nullptr) {
+      array_type = py::reinterpret_borrow<py::object>(numpy).attr("ndarray");
+    }
+    py::object source = buffer_;
+    while (source &&
+           ((!array_type.is_none() && py::isinstance(source, array_type)) ||
+            py::isinstance<py::memoryview>(source))) {
+      source = !array_type.is_none() && py::isinstance(source, array_type)
+          ? py::reinterpret_borrow<py::array>(source).base()
+          : source.attr("obj");
+    }
+    if (source && py::isinstance<PyExecuTorchResult>(source)) {
+      return source.cast<std::shared_ptr<PyExecuTorchResult>>()->backing_owner(
+          source);
+    }
+    return py::none();
   }
 
  private:
@@ -536,6 +568,10 @@ class TorchTensorView final {
 
   executorch::aten::Device device() const {
     return device_;
+  }
+
+  const py::object& owner() const {
+    return owner_;
   }
 
   void use_layout(Span<const uint8_t> dim_order) {
@@ -2278,7 +2314,53 @@ struct PyMethod final {
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
   };
 
+  py::object aliased_torch_output(const executorch::aten::Tensor& tensor) {
+    if (torch_inputs_.empty() ||
+        portable_tensor_output() != PortableTensorOutput::Torch ||
+        tensor.nbytes() == 0) {
+      return py::none();
+    }
+    const auto address = reinterpret_cast<uintptr_t>(tensor.const_data_ptr());
+    const auto tensor_type =
+        py::reinterpret_borrow<py::object>(loaded_torch_module())
+            .attr("Tensor");
+    for (const auto& input : torch_inputs_) {
+      const auto start = reinterpret_cast<uintptr_t>(input->data());
+      if (Py_TYPE(input->owner().ptr()) !=
+              reinterpret_cast<PyTypeObject*>(tensor_type.ptr()) ||
+          tensor.device() != input->device() ||
+          tensor.scalar_type() != input->scalar_type() || address < start ||
+          address - start > input->nbytes() ||
+          tensor.nbytes() > input->nbytes() - (address - start)) {
+        continue;
+      }
+      const auto itemsize = runtime::elementSize(tensor.scalar_type());
+      if ((address - start) % itemsize != 0) {
+        continue;
+      }
+      auto source = input->owner().attr("detach")();
+      if (source.attr("data_ptr")().cast<uintptr_t>() != start ||
+          scalar_type_from_torch_dtype(
+              py::str(source.attr("dtype")).cast<std::string>()) !=
+              tensor.scalar_type()) {
+        throw py::value_error(
+            "Input storage changed before get_outputs(); call set_inputs() again");
+      }
+      const auto offset = source.attr("storage_offset")().cast<int64_t>() +
+          static_cast<int64_t>((address - start) / itemsize);
+      return source.attr("as_strided")(
+          std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
+          std::vector<int64_t>(
+              tensor.strides().begin(), tensor.strides().end()),
+          offset);
+    }
+    return py::none();
+  }
+
   py::object borrowed_output_owner(const executorch::aten::Tensor& tensor) {
+    if (tensor.nbytes() == 0) {
+      return py::none();
+    }
     auto owner = std::make_unique<BorrowedOutputOwner>();
     owner->storage = storage_;
     const auto address = reinterpret_cast<uintptr_t>(tensor.const_data_ptr());
@@ -2296,6 +2378,13 @@ struct PyMethod final {
     if (!owns_data) {
       for (const auto& buffer : buffer_inputs_) {
         if (aliases(buffer->data(), buffer->nbytes())) {
+          const auto start = reinterpret_cast<uintptr_t>(buffer->data());
+          if (tensor.nbytes() <= buffer->nbytes() - (address - start)) {
+            auto backing_owner = buffer->result_backing_owner();
+            if (!backing_owner.is_none()) {
+              return backing_owner;
+            }
+          }
           owner->buffers.push_back(buffer);
         }
       }
@@ -2415,6 +2504,13 @@ struct PyMethod final {
           list[i] = py::cast(v.toTensor());
         }
 #else
+        if (!clone_outputs) {
+          auto alias = aliased_torch_output(v.toTensor());
+          if (!alias.is_none()) {
+            list[i] = std::move(alias);
+            continue;
+          }
+        }
         list[i] = portable_tensor_result(
             v.toTensor(),
             clone_outputs,

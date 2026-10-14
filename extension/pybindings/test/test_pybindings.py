@@ -788,11 +788,156 @@ print("all calls finished")
                 del value, method
                 gc.collect()
                 self.assertIsNone(method_ref())
-                self.assertIsNotNone(value_ref())
+                if buffer_input:
+                    self.assertIsNotNone(value_ref())
                 torch.testing.assert_close(output, torch.full((2, 2), 3.0))
                 del output
                 gc.collect()
                 self.assertIsNone(value_ref())
+
+    def test_borrowed_external_output_does_not_retain_previous_outputs(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings retain Python tensor owners")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        for channels_last in (False, True):
+            with self.subTest(channels_last=channels_last):
+                shape = (2, 3, 4, 5) if channels_last else (2, 2)
+                value = torch.arange(torch.Size(shape).numel() + 4, dtype=torch.float32)
+                value = value[4:].reshape(shape)
+                if channels_last:
+                    value = value.to(memory_format=torch.channels_last)
+                value.requires_grad_()
+                expected = value.detach().clone()
+                program = to_edge(export(Identity(), (value,))).to_executorch(
+                    ExecutorchBackendConfig(
+                        memory_planning_pass=MemoryPlanningPass(
+                            alloc_graph_input=False, alloc_graph_output=False
+                        )
+                    )
+                )
+                method = self.load_prog_fn(program.buffer).load_method("forward")
+                output = method(value, clone_outputs=False)[0]
+                address = value.data_ptr()
+                strides = value.stride()
+                offset = value.storage_offset()
+                for _ in range(32):
+                    previous = weakref.ref(output)
+                    output = method(output, clone_outputs=False)[0]
+                    method.set_inputs(output)
+                    gc.collect()
+                    self.assertIsNone(previous())
+                    self.assertEqual(output.data_ptr(), address)
+                    self.assertEqual(output.stride(), strides)
+                    self.assertEqual(output.storage_offset(), offset)
+                    self.assertFalse(output.requires_grad)
+                del value, method
+                torch.testing.assert_close(output, expected)
+
+    def test_borrowed_result_reuses_backing_owner_through_buffer_views(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings retain Python buffer owners")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        script = """
+import gc
+import importlib.util
+import sys
+import weakref
+import numpy as np
+
+spec = importlib.util.spec_from_file_location("_C", sys.argv[1])
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+with open(sys.argv[2], "rb") as program_file:
+    data = program_file.read()
+def readonly_array(value):
+    array = np.asarray(value)
+    array.setflags(write=False)
+    return array
+for copied_root in (False, True):
+    for wrap in (lambda value: value, np.asarray, memoryview,
+                 readonly_array, lambda value: memoryview(value).toreadonly()):
+        method = runtime._load_program_from_buffer(data).load_method("forward")
+        output = method(np.full((2, 2), 3.0, dtype=np.float32),
+                        clone_outputs=copied_root)[0]
+        output = method(wrap(output), clone_outputs=False)[0]
+        for _ in range(32):
+            previous = weakref.ref(output)
+            output = method(wrap(output), clone_outputs=False)[0]
+            method.set_inputs(wrap(output))
+            gc.collect()
+            assert previous() is None
+        del method
+        gc.collect()
+        np.testing.assert_array_equal(np.asarray(output), np.full((2, 2), 3.0))
+"""
+        generic_buffer_script = """
+import array
+import gc
+import importlib.abc
+import importlib.util
+import sys
+import weakref
+
+class BlockTensorPackages(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname.split(".")[0] in ("numpy", "torch"):
+            raise ModuleNotFoundError(fullname, name=fullname)
+sys.meta_path.insert(0, BlockTensorPackages())
+spec = importlib.util.spec_from_file_location("_C", sys.argv[1])
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+with open(sys.argv[2], "rb") as program_file:
+    data = program_file.read()
+method = runtime._load_program_from_buffer(data).load_method("forward")
+value = memoryview(array.array("f", [3.0] * 4)).cast("B").cast("f", (2, 2))
+output = method(value, clone_outputs=False)[0]
+for _ in range(32):
+    previous = weakref.ref(output)
+    output = method(output, clone_outputs=False)[0]
+    method.set_inputs(output)
+    gc.collect()
+    assert previous() is None
+del method, value
+assert memoryview(output).tolist() == [[3.0, 3.0], [3.0, 3.0]]
+assert "numpy" not in sys.modules and "torch" not in sys.modules
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "identity.pte")
+            with open(path, "wb") as program_file:
+                program_file.write(program.buffer)
+            for code in (script, generic_buffer_script):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        code,
+                        sys.modules[self.runtime.ExecuTorchResult.__module__].__file__,
+                        path,
+                    ],
+                    env={
+                        **os.environ,
+                        "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT": "executorch",
+                    },
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_failed_set_inputs_keeps_buffer_storage_alive(self):
         exported_program, inputs = create_program(

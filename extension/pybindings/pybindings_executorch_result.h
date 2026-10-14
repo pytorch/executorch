@@ -195,6 +195,10 @@ class PyExecuTorchResult final {
     return nbytes_;
   }
 
+  py::object backing_owner(const py::object& self) const {
+    return owner_.is_none() ? self : owner_;
+  }
+
   const char* torch_dtype_name() const {
     return python_dtype(scalar_type_).torch_name;
   }
