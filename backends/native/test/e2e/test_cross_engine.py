@@ -162,8 +162,67 @@ class _ViewRelu(torch.nn.Module):
         return self.down(torch.relu(y.view(1, 4 * x.shape[1], 8)))
 
 
+class _PaddingMask(torch.nn.Module):
+    """Zeroes frames past `lengths`, with a mask built from unsqueezed,
+    dynamically sized positions."""
+
+    def forward(self, x, lengths):
+        positions = torch.arange(x.shape[1])
+        keep = positions[None, :] < lengths[:, None]
+        return x * keep[:, :, None].to(x.dtype)
+
+
+class _HeadMajor(torch.nn.Module):
+    """Splits a dynamically sized sequence into heads and back, so the
+    head-major transposes view a resized source; the in-place relu before the
+    split puts the first transpose in an alias group that relu mutates."""
+
+    def __init__(self):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 16)
+        self.out = torch.nn.Linear(16, 16)
+
+    def forward(self, x):
+        seq = x.shape[1]
+        heads = torch.relu(self.proj(x)).view(1, seq, 4, 4).transpose(1, 2)
+        heads = heads * heads
+        return self.out(heads.transpose(1, 2).reshape(1, seq, 16))
+
+
+class _NegativeDimViews(torch.nn.Module):
+    """permute, squeeze, unsqueeze and select with negative dims over a
+    dynamically sized activation, which run as ET-VK copy kernels."""
+
+    def __init__(self):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 16)
+        self.out = torch.nn.Linear(16, 8)
+
+    def forward(self, x):
+        seq = x.shape[1]
+        y = self.proj(x).view(1, seq, 4, 4).permute(0, 2, 1, -1)
+        y = y.squeeze(-4).unsqueeze(-3).select(-3, 0)
+        return self.out(y.permute(1, 0, -1).reshape(1, seq, 16))
+
+
+class _PoolCloneLinear(torch.nn.Module):
+    """A clone between a max pool, which ET-VK runs on channels-packed
+    textures only, and a linear, which wants width-packed input: the clone
+    converts between the two."""
+
+    def __init__(self):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(2)
+        self.proj = torch.nn.Linear(4, 8)
+
+    def forward(self, x):
+        return self.proj(self.pool(x).clone())
+
+
 class CrossEngineTest(unittest.TestCase):
-    def _check_dynamic(self, model, steps, dynamic_shapes, atol_fraction=1e-4):
+    def _check_dynamic(
+        self, model, steps, dynamic_shapes, atol_fraction=1e-4, engines=_ENGINES
+    ):
         """Exports `model` once with `dynamic_shapes`, then runs every step, each
         at its own sizes, on one executable per engine against eager."""
         model = model.eval().requires_grad_(False)
@@ -176,19 +235,37 @@ class CrossEngineTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "model.ptn"
             to_native(ep).save(str(package))
-            for runner in _ENGINES:
-                with self.subTest(engine=runner):
-                    outputs = _run(runner, package, steps, outdir, resize=True)
-                    self.assertEqual(len(outputs), len(expected))
-                    for step, (actual, reference) in enumerate(zip(outputs, expected)):
-                        self.assertEqual(actual.shape, reference.shape)
-                        torch.testing.assert_close(
-                            actual,
-                            reference,
-                            atol=atol_fraction * reference.abs().max().item(),
-                            rtol=0,
-                            msg=lambda m, step=step: f"step {step}: {m}",
-                        )
+            self._check_engines(
+                package, steps, expected, outdir, atol_fraction, engines
+            )
+
+    def test_head_major_transposes_of_dynamic_sequence(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        self._check_dynamic(_HeadMajor(), steps, ({1: seq},))
+
+    def test_negative_dim_views_of_dynamic_sequence(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        self._check_dynamic(_NegativeDimViews(), steps, ({1: seq},))
+
+    def test_clone_between_pool_and_linear(self):
+        torch.manual_seed(0)
+        self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)
+
+    def test_padding_mask_of_dynamic_positions(self):
+        torch.manual_seed(0)
+        steps = [
+            (torch.randn(1, s, 8), torch.tensor([n]))
+            for s, n in ((6, 4), (3, 3), (9, 2))
+        ]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower aten.lt yet.
+        self._check_dynamic(
+            _PaddingMask(), steps, ({1: seq}, {}), engines=("vulkan_ptn_runner",)
+        )
 
     def test_inplace_relu_of_dynamic_view(self):
         torch.manual_seed(0)
