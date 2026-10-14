@@ -19,6 +19,7 @@ def define_common_targets():
             "executor.h",
             "metrics.h",
             "prefix_cache.h",
+            "prefix_cache_retention.h",
             "runner.h",
             "scheduler.h",
             "types.h",
@@ -27,6 +28,21 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/platform:compiler",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "executor_utils",
+        exported_headers = ["executor_utils.h"],
+        header_namespace = "executorch/extension/llm/batching",
+        exported_deps = [
+            ":batching",
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/extension/llm/sampler:sampler",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/backend:backend_options_map",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -45,9 +61,8 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
         ],
         deps = [
+            ":executor_utils",
             "//executorch/extension/llm/sampler:sampler",
-            "//executorch/extension/tensor:tensor",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/platform:platform",
         ],
     )
@@ -70,6 +85,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
         ],
         deps = [
+            ":executor_utils",
             "//executorch/extension/llm/sampler:sampler",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
