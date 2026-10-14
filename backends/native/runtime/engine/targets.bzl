@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def define_common_targets():
     # The runtime <-> compute-backend boundary: EngineHost owns process-wide
@@ -23,11 +23,16 @@ def define_common_targets():
 
     # The engine source is backend-neutral: it picks devices from ggml's registry,
     # so each variant differs only in which ggml backend set it links.
-    for variant, ggml_dep in [
+    variants = [
         ("cpu", "fbsource//third-party/llama.cpp:ggml_cpu"),
         ("cuda", "fbsource//third-party/llama.cpp:ggml_cuda"),
         ("hip", "fbsource//third-party/llama.cpp:ggml_hip"),
-    ]:
+    ]
+
+    # Mac builds go through xplat.
+    if is_xplat():
+        variants.append(("metal", "fbsource//third-party/llama.cpp:ggml_metal"))
+    for variant, ggml_dep in variants:
         runtime.cxx_library(
             name = "ggml_engine_" + variant,
             srcs = [
