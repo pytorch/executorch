@@ -30,3 +30,15 @@ fbcode_target(
         "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "gguf_hf",
+    srcs = ["gguf_hf.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:gguf",
+        "//executorch/extension/llm/export:quant",
+        "fbsource//third-party/pypi/gguf:gguf",
+    ],
+)
