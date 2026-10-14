@@ -10,7 +10,9 @@
 // under $ET_CUDA_BATCHING_TOY_DIR, and checks every generation against the
 // eager greedy continuation it recorded. Runs once per artifact: forward_{1,2,
 // 4,8} + forward_others, and the sparser forward_{1,4} + forward_others with a
-// five-row selector minimum, where steps pad across a gap.
+// five-row selector minimum, where steps pad across a gap. mg_widths carries
+// Muse Glimmer's forward_{1,...,64} + forward_others and drives steps of every
+// width up to 65.
 
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
@@ -23,8 +25,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -185,7 +190,8 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
     batching::GenerationCallback on_update =
         [&](const batching::GenerationUpdate& update) {
           std::lock_guard<std::mutex> guard(mutex);
-          tokens.insert(tokens.end(), update.tokens.begin(), update.tokens.end());
+          tokens.insert(
+              tokens.end(), update.tokens.begin(), update.tokens.end());
         };
     if (capture != nullptr) {
       on_update = capture->wrap(std::move(on_update));
@@ -230,13 +236,15 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
       for (const auto& [i, count] : step) {
         const size_t take = static_cast<size_t>(count);
         EXPECT_LE(fed[i] + take, history[i].size()) << i;
-        batch.inputs.push_back(batching::Input{
-            sids[i],
-            /*produce_output=*/fed[i] + take == history[i].size(),
-            fed[i],
-            take,
-            std::make_shared<const std::vector<batching::Token>>(history[i]),
-            /*position=*/0});
+        batch.inputs.push_back(
+            batching::Input{
+                sids[i],
+                /*produce_output=*/fed[i] + take == history[i].size(),
+                fed[i],
+                take,
+                std::make_shared<const std::vector<batching::Token>>(
+                    history[i]),
+                /*position=*/0});
       }
       batching::BatchOutput out;
       EXPECT_TRUE(exec.execute(batch, out));
@@ -507,3 +515,188 @@ INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorDeviceSamplingTest,
     ::testing::Values("device_sampling"));
+
+namespace {
+
+// Must match export_toy_decoder.py's mg_widths artifact.
+constexpr int kWidthsMaxStep = 96;
+constexpr int kWidthsMaxCells = 1024;
+
+int next_pow2(int n) {
+  int p = 1;
+  while (p < n) {
+    p *= 2;
+  }
+  return p;
+}
+
+// Muse Glimmer's method set: forward_{1,2,...,64} and forward_others from 64.
+class CudaExecutorWidthsTest : public CudaExecutorTest {};
+
+} // namespace
+
+// Steps of every width 1..65 (and 96, 97), each a random mix of sequences and
+// chunk lengths: a static method's step pads up to the next power of two and
+// drops the padding's rows, 65..96 runs forward_others unpadded, and 97 slices.
+// Every output a step asks for is the eager greedy successor, so padding
+// neither reaches a real row nor disturbs a later step through the cache.
+TEST_P(CudaExecutorWidthsTest, EveryStepWidthUpTo65MatchesEagerGreedy) {
+  const int sessions = static_cast<int>(cases_.size());
+  ASSERT_LT(sessions * kMaxContext, kWidthsMaxCells);
+  for (const bool graphs : {true, false}) {
+    SCOPED_TRACE(graphs ? "cuda graphs" : "eager");
+    cb::CudaExecutorOptions options;
+    options.cuda_graph_for_static_methods = graphs;
+    auto created = cb::CudaExecutor::create(
+        module(),
+        sessions,
+        kMaxContext,
+        kBFloat16,
+        /*initial_capacity=*/16,
+        options);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto& exec = *created.get();
+    ASSERT_TRUE(exec.initialize());
+    ASSERT_EQ(
+        exec.preferred_batch_tokens(), static_cast<size_t>(kWidthsMaxStep));
+
+    // Teacher forcing: each sequence is its prompt and eager continuation, so
+    // a step may end any chunk at a position whose successor is known.
+    std::vector<std::shared_ptr<const std::vector<batching::Token>>> seqs;
+    for (const Case& c : cases_) {
+      auto full = c.prompt;
+      full.insert(full.end(), c.expected.begin(), c.expected.end());
+      ASSERT_LE(full.size(), static_cast<size_t>(kMaxContext));
+      seqs.push_back(
+          std::make_shared<const std::vector<batching::Token>>(
+              std::move(full)));
+    }
+    std::vector<batching::SessionId> sids(sessions, -1);
+    std::vector<size_t> fed(sessions, 0);
+    auto reset = [&] {
+      for (int i = 0; i < sessions; ++i) {
+        if (sids[i] >= 0) {
+          exec.close_session(sids[i]);
+        }
+        auto sid = exec.open_session();
+        ASSERT_TRUE(sid.has_value());
+        sids[i] = *sid;
+        exec.set_sampling(sids[i], {}, 0);
+        fed[i] = 0;
+      }
+    };
+    // Each sequence's last token has no known successor, so it is never fed.
+    auto remaining = [&](int i) { return seqs[i]->size() - 1 - fed[i]; };
+    reset();
+
+    std::vector<int> widths;
+    for (int round = 0; round < 6; ++round) {
+      for (int n = 1; n <= 65; ++n) {
+        widths.push_back(n);
+      }
+      widths.push_back(kWidthsMaxStep);
+      widths.push_back(kWidthsMaxStep + 1);
+    }
+    std::mt19937 rng(1234);
+    std::shuffle(widths.begin(), widths.end(), rng);
+
+    size_t checked = 0;
+    for (const int n : widths) {
+      SCOPED_TRACE("step of " + std::to_string(n));
+      size_t total = 0;
+      for (int i = 0; i < sessions; ++i) {
+        total += remaining(i);
+      }
+      if (total < static_cast<size_t>(n)) {
+        reset();
+      }
+      // A random subset and split of the sequences that sums to n, each
+      // sequence at most once.
+      std::vector<int> order(sessions);
+      std::iota(order.begin(), order.end(), 0);
+      std::shuffle(order.begin(), order.end(), rng);
+      size_t after = 0;
+      for (const int i : order) {
+        after += remaining(i);
+      }
+      batching::BatchInput batch;
+      std::vector<int> owner;
+      size_t left = static_cast<size_t>(n);
+      for (const int i : order) {
+        after -= remaining(i);
+        if (left == 0 || remaining(i) == 0) {
+          continue;
+        }
+        const size_t most = std::min(remaining(i), left);
+        // Enough that the sequences after this one can cover the rest.
+        const size_t least = left > after ? left - after : 0;
+        if (most < least || (least == 0 && rng() % 3 == 0)) {
+          continue;
+        }
+        const size_t take = std::uniform_int_distribution<size_t>(
+            std::max<size_t>(least, 1), most)(rng);
+        const size_t end = fed[i] + take;
+        // Ask for the chunk's last row whenever its successor is known, but
+        // not always, so some steps want none.
+        const bool known = end >= cases_[i].prompt.size();
+        batch.inputs.push_back(
+            batching::Input{
+                sids[i], known && rng() % 4 != 0, fed[i], take, seqs[i], 0});
+        owner.push_back(i);
+        left -= take;
+      }
+      ASSERT_EQ(left, 0u);
+      ASSERT_EQ(batch.size(), static_cast<size_t>(n));
+
+      const auto before = exec.method_calls();
+      batching::BatchOutput out;
+      ASSERT_TRUE(exec.execute(batch, out));
+      const auto calls = exec.method_calls();
+
+      // The method(s) the width runs through.
+      std::map<std::string, std::uint64_t> ran;
+      for (size_t m = 0; m < calls.size(); ++m) {
+        if (calls[m].calls != before[m].calls) {
+          ran[calls[m].name] = calls[m].calls - before[m].calls;
+        }
+      }
+      std::map<std::string, std::uint64_t> want;
+      if (n <= 64) {
+        want["forward_" + std::to_string(next_pow2(n))] = 1;
+      } else if (n <= kWidthsMaxStep) {
+        want["forward_others"] = 1;
+      } else {
+        want["forward_others"] = 1;
+        want["forward_" + std::to_string(next_pow2(n - kWidthsMaxStep))] = 1;
+      }
+      EXPECT_EQ(ran, want);
+
+      ASSERT_EQ(out.outputs.size(), batch.inputs.size());
+      for (size_t j = 0; j < batch.inputs.size(); ++j) {
+        const int i = owner[j];
+        const auto& input = batch.inputs[j];
+        const size_t end = input.offset + input.size;
+        if (input.produce_output) {
+          ASSERT_TRUE(out.outputs[j].has_value()) << "sequence " << i;
+          EXPECT_EQ(out.outputs[j]->sid, sids[i]);
+          ASSERT_EQ(out.outputs[j]->tokens.size(), 1u);
+          EXPECT_EQ(out.outputs[j]->tokens[0], (*seqs[i])[end])
+              << "sequence " << i << " after " << end << " tokens";
+          ++checked;
+        } else {
+          EXPECT_FALSE(out.outputs[j].has_value()) << "sequence " << i;
+        }
+        fed[i] = end;
+      }
+    }
+    EXPECT_GT(checked, widths.size());
+    for (const batching::SessionId sid : sids) {
+      exec.close_session(sid);
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Toy,
+    CudaExecutorWidthsTest,
+    ::testing::Values("mg_widths"));
