@@ -183,6 +183,9 @@ class ServingChat:
             runtime.max_concurrent_requests if self._multiplexed else None
         )
 
+    def resource_snapshot(self) -> dict:
+        return {"max_context": self._max_context, **self._runtime.resource_snapshot()}
+
     @property
     def healthy(self) -> bool:
         """Whether the underlying model worker can accept new requests."""

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from executorch.examples.llm_server.python import multiplexed_worker_client
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -584,3 +583,76 @@ async def test_slow_consumer_does_not_stall_another_request(native_worker):
     text, stats = await collect(generate(client, "still healthy", key="c", count=2))
     assert len(text) == stats.num_generated_tokens == 2
     assert client.healthy
+
+
+@pytest.mark.anyio
+async def test_resource_snapshot_tracks_wire_work_and_completed_rates(native_worker):
+    worker, _ = await native_worker(gate=True)
+    runtime = SessionRuntime(worker)
+    first = runtime.generate_stream(
+        "a", PromptInput(text="first"), GenerationOptions(4)
+    )
+    pending = asyncio.create_task(first.result())
+    try:
+
+        async def submitted():
+            while not runtime.resource_snapshot()["submitted_generations"]:
+                await asyncio.sleep(0.001)
+
+        await asyncio.wait_for(submitted(), 5)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 1
+        assert not snapshot["recent_generations"]
+        second = runtime.generate_stream(
+            "b", PromptInput(text="second"), GenerationOptions(4)
+        )
+        await asyncio.wait_for(asyncio.gather(pending, second.result()), 10)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 0
+        assert snapshot["waiting_for_runtime_lease"] == 0
+        assert {s["session_id"] for s in snapshot["recent_generations"]} == {"a", "b"}
+        for sample in snapshot["recent_generations"]:
+            assert (
+                sample["prompt_tokens"]
+                == sample["uncached_tokens"] + sample["reused_tokens"]
+            )
+            assert sample["age_ms"] >= 0
+            assert sample["output_tokens"] == 4
+    finally:
+        await runtime.aclose_worker()
+        await asyncio.gather(pending, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_resource_route_returns_unknown_rates_before_first_generation(
+    native_http,
+):
+    _, _, _, client = native_http
+    response = await client.get("/v1/runtime/stats")
+    assert response.status_code == 200
+    assert response.json()["submitted_generations"] == 0
+    assert response.json()["recent_generations"] == []
+
+
+@pytest.mark.anyio
+async def test_cancelled_generation_remains_in_resource_accounting(native_worker):
+    worker, _ = await native_worker()
+    runtime = SessionRuntime(worker)
+    generation = runtime.generate_stream(
+        "cancel", PromptInput(text="hello"), GenerationOptions(1024)
+    )
+    try:
+        assert await asyncio.wait_for(anext(generation), 5)
+        generation.cancel()
+        await asyncio.wait_for(generation.aclose(), 10)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 0
+        sample = snapshot["recent_generations"][-1]
+        assert sample["cancelled"]
+        assert sample["output_tokens"] > 0
+        assert (
+            sample["prompt_tokens"]
+            == sample["uncached_tokens"] + sample["reused_tokens"]
+        )
+    finally:
+        await runtime.aclose_worker()

@@ -30,7 +30,6 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-
 from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, Request
@@ -189,6 +188,10 @@ def build_app(
         if not _current_serving(app).healthy:
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
+
+    @app.get("/v1/runtime/stats")
+    async def runtime_stats():
+        return _current_serving(app).resource_snapshot()
 
     @app.get("/v1/models")
     async def list_models() -> ModelList:
