@@ -3974,6 +3974,49 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_int8x4_staging_byte_dtype_round_trip) {
+  const std::vector<utils::GPUMemoryLayout> layouts = {
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4C1W,
+  };
+  const std::vector<std::vector<int64_t>> shapes = {
+      {7}, {7, 11}, {2, 9, 7}, {2, 3, 5, 7}, {1, 4, 8, 8}};
+  for (const auto& sizes : shapes) {
+    for (const auto layout : layouts) {
+      for (const auto dtype : {vkapi::kChar, vkapi::kByte}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "layout " << layout << " dtype " << dtype);
+        GraphConfig config;
+        ComputeGraph graph(config);
+        const ValueRef tensor =
+            graph.add_tensor(sizes, vkapi::kInt8x4, utils::kBuffer, layout);
+        const ValueRef staging_in = graph.set_input_tensor(tensor, dtype);
+        const ValueRef staging_out = graph.set_output_tensor(tensor, dtype);
+        const size_t numel = utils::multiply_integers(sizes);
+
+        EXPECT_GE(graph.get_staging(staging_in)->nbytes(), numel);
+        EXPECT_GE(graph.get_staging(staging_out)->nbytes(), numel);
+        std::vector<uint8_t> data_in(numel);
+        for (size_t i = 0; i < numel; ++i) {
+          data_in[i] = static_cast<uint8_t>(i * 37 + 13);
+        }
+        std::vector<uint8_t> data_out(numel);
+
+        graph.prepare();
+        graph.prepack();
+        graph.maybe_cast_and_copy_into_staging(
+            staging_in, data_in.data(), numel, dtype);
+        graph.execute();
+        graph.maybe_cast_and_copy_from_staging(
+            staging_out, data_out.data(), numel, dtype);
+        EXPECT_EQ(data_out, data_in);
+      }
+    }
+  }
+}
+
 TEST(VulkanWorkGroupSizeTest, lwg) {
   const LocalWorkGroup lwg(64u, 2u, 1u);
 
