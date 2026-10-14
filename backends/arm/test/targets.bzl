@@ -75,6 +75,8 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
         "misc/test_external_vela_blocks.py",
+        "misc/test_vela_persistent_region.py",
+        "misc/test_delegated_state_partitioning.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",
@@ -95,6 +97,7 @@ def define_arm_tests():
         "misc/test_vgf_backend.py",
         "misc/test_vgf_quantization_quality.py",
         "misc/test_vgf_quantization_assessment.py",
+        "misc/test_vgf_quantization_sensitivity.py",
         "misc/test_vgf_quantization_visualization.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
@@ -208,6 +211,15 @@ def define_arm_tests():
                 "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_shape_utils_test",
+            srcs = ["vgf_shape_utils_test.cpp"],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
             ],
         )
 
