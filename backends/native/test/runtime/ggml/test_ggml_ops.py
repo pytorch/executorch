@@ -440,6 +440,43 @@ class GgmlOpsTest(unittest.TestCase):
     def test_scalar_input(self):
         self._check(Lambda(torch.mul), (torch.randn(2, 3), torch.randn(())))
 
+    def test_resize_with_scalar_last_input(self):
+        class Scale(torch.nn.Module):
+            def forward(self, x, scale):
+                return x * scale
+
+        # A rank-0 shape is an empty --input_sizes entry.
+        cases = {
+            "1x5,;1x3,": (
+                Scale(),
+                [(torch.randn(1, n), torch.randn(())) for n in (5, 3)],
+                {"x": {1: Dim("n", min=1, max=8)}, "scale": None},
+            ),
+            ";": (
+                Lambda(lambda x: x * 2.0),
+                [(torch.randn(()),) for _ in range(2)],
+                None,
+            ),
+        }
+        for input_sizes, (model, steps, dynamic_shapes) in cases.items():
+            with self.subTest(input_sizes=input_sizes):
+                ep = torch.export.export(model, steps[0], dynamic_shapes=dynamic_shapes)
+                with tempfile.TemporaryDirectory() as tmp:
+                    outdir = Path(tmp)
+                    package = outdir / "model.ptn"
+                    to_native(ep).save(str(package))
+                    actual = _run_ggml(package, steps, outdir, 1, resize=True)
+                self.assertEqual(len(actual), len(steps))
+                for inputs, [(raw, shape)] in zip(steps, actual):
+                    expected = model(*inputs)
+                    self.assertEqual(shape, tuple(expected.shape))
+                    torch.testing.assert_close(
+                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
+                            shape
+                        ),
+                        expected,
+                    )
+
     def test_silu(self):
         self._check(Lambda(F.silu), (torch.randn(2, 3, 4),))
 
