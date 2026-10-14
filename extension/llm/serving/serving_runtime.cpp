@@ -737,8 +737,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
-          // Only control owns Session objects. Wait outside locks; the engine
-          // clones between forwards without copying the pending prediction.
+          // Only control owns Session objects; clone waits outside locks.
           cloned =
               source->clone_async(static_cast<batching::Position>(upto)).get();
 #if ET_HAS_EXCEPTIONS
@@ -901,8 +900,7 @@ struct ServingRuntime::Impl {
         (plan.reason == "mismatch" || plan.reason == "equal" ||
          plan.reason == "suffix_unavailable") &&
         config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
-      // Share the snapshot capture's one transient row; never add another
-      // row while a capture is still pending collection.
+      // Capture and replacement share one transient row.
       auto cold_delta = std::move(request->request.delta);
       selection = clone_prefix(request, key);
       if (auto* cloned = std::get_if<Selection>(&selection)) {

@@ -51,13 +51,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
-  // Opt-in prefix reuse for new sessions and clean same-session replacements.
-  // Zero disables both. Explicit open/reset bypass reuse. Replacement clones
-  // the matching committed prefix, trying retained snapshots if the live
-  // source refuses; snapshots may outlive their source.
-  // Misses/refusals fall back to full prefill.
-  // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
-  // when enabled. Backend numerical parity requires model-specific validation.
+  // Snapshots for new sessions and clean replacements; zero disables reuse.
+  // Explicit open/reset bypass reuse. When enabled, provision
+  // max_sessions + prefix_cache_capacity + 1 executor rows.
   std::size_t prefix_cache_capacity = 0;
 };
 
