@@ -17,6 +17,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_MIN,
     QCOM_REQUANTIZE,
     QCOM_SCALE,
+    QCOM_SKIP_REQUANT_ANNOTATION,
     QCOM_ZERO_POINT,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -77,6 +78,10 @@ class AnnotateQuantAttrs(ExportPass):
         # Record requant attributes:
         # node1 -> q_ui8 (n) -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
         # We store {node2: quant_attr in dq_int32} in node1.meta
+        # Model integrations set this on weight-quantization nodes whose
+        # requantization is handled by a custom op package.
+        if n.meta.get(QCOM_SKIP_REQUANT_ANNOTATION, False):
+            return
         if n.target in q_ops and n.args[0].target not in dq_ops:
             # for some fixed scale op, there is no need to requantize it
             if n.args[0].target in self.skip_requant_allowlist:

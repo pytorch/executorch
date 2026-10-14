@@ -9,9 +9,15 @@ from typing import cast, Dict, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS,
+    QCOM_DATA,
+    QCOM_FILTER_AXIS_ORDER_HWIO,
+    QCOM_FILTER_AXIS_ORDER_HWOI,
+    QCOM_QUANT_ATTRS,
+)
 
-from .node_visitor import NodeVisitor, PER_CHANNEL_ENCODING
+from .node_visitor import dq_ops, NodeVisitor, PER_CHANNEL_ENCODING
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import (
     OpConv2d,
@@ -21,7 +27,12 @@ from .qnn_constants import (
     OpTransposeConv3d,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
-from .utils import get_parameter
+from .utils import (
+    get_custom_op_output_axis_order,
+    get_custom_op_output_producer,
+    get_parameter,
+    is_parameter,
+)
 
 
 @register_node_visitor
@@ -124,10 +135,46 @@ class Conv2d(NodeVisitor):
             bias_node.meta[QCOM_QUANT_ATTRS]["scales"] = bias_scales
             bias_node.meta[QCOM_QUANT_ATTRS]["zero_points"] = bias_zero_points
 
+    def _get_runtime_filter_tensor(
+        self,
+        filter_node: torch.fx.Node,
+        is_conv2d: bool,
+        is_transpose_conv: bool,
+    ) -> torch.Tensor:
+        if not is_conv2d:
+            raise ValueError("Runtime Conv filters are only supported for Conv2d.")
+        if is_transpose_conv:
+            raise ValueError(
+                "Runtime filters for transposed convolution are not supported."
+            )
+        filter_producer = get_custom_op_output_producer(filter_node)
+        if (
+            filter_node.target in dq_ops
+            or filter_node.meta.get(QCOM_QUANT_ATTRS) is not None
+            or filter_producer.meta.get(QCOM_QUANT_ATTRS) is not None
+        ):
+            raise ValueError("Runtime Conv filters must not be quantized.")
+        filter_tensor = filter_node.meta.get("val")
+        if filter_tensor is None or filter_tensor.dim() != 4:
+            raise ValueError("Runtime Conv filters must be rank 4.")
+        if not filter_tensor.is_floating_point():
+            raise ValueError("Runtime Conv filters must be floating point.")
+        runtime_axis_order = get_custom_op_output_axis_order(filter_node)
+        if runtime_axis_order is None:
+            raise ValueError(
+                "Runtime Conv filters must define custom_op_output_axis_orders."
+            )
+        if runtime_axis_order != QCOM_FILTER_AXIS_ORDER_HWIO:
+            raise ValueError(
+                f"Runtime Conv filters must use {QCOM_FILTER_AXIS_ORDER_HWIO} "
+                "axis order."
+            )
+        return filter_tensor.permute(QCOM_FILTER_AXIS_ORDER_HWIO).contiguous()
+
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
     ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
@@ -149,7 +196,6 @@ class Conv2d(NodeVisitor):
         )
 
         filter_node = self.get_node(node.args[1])
-        filter_tensor = get_parameter(filter_node, self.edge_program)
 
         stride = cast(List[int], node.args[3])
         padding = cast(List[int], node.args[4])
@@ -161,18 +207,46 @@ class Conv2d(NodeVisitor):
         # yet QNN is HWIO or DHWIO for both conv and conv_transpose.
         is_transpose_conv = cast(bool, node.args[6])
         if is_conv2d:
-            filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
+            filter_axis_order = (
+                QCOM_FILTER_AXIS_ORDER_HWOI
+                if is_transpose_conv
+                else QCOM_FILTER_AXIS_ORDER_HWIO
+            )
         else:
             filter_axis_order = (
                 (2, 3, 4, 0, 1) if is_transpose_conv else (2, 3, 4, 1, 0)
             )
-        filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
+        if is_parameter(filter_node, self.edge_program):
+            filter_tensor = get_parameter(filter_node, self.edge_program)
+            filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
+            filter_tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+        else:
+            filter_tensor = self._get_runtime_filter_tensor(
+                filter_node, is_conv2d, is_transpose_conv
+            )
+            filter_tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        filter_quant_axis_order = None
+        if (
+            filter_tensor_type != PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
+            or any(
+                argument is filter_node
+                and index in user.meta.get(QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS, {})
+                for user in filter_node.users
+                for index, argument in enumerate(user.args)
+            )
+        ):
+            filter_quant_axis_order = filter_axis_order
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
             node,
             filter_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+            filter_tensor_type,
             nodes_to_wrappers,
+            axis_order=filter_quant_axis_order,
+        )
+        self._wrapper_axis_orders[(filter_node.name, 0)] = (
+            filter_tensor_wrapper,
+            filter_axis_order,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
         if node.args[2] is not None:

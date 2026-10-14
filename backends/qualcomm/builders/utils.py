@@ -4,9 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from typing import Any, Dict, Optional
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS,
+    QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS,
+    QCOM_FILTER_AXIS_ORDER_HWIO,
+    QCOM_FILTER_AXIS_ORDER_HWOI,
+    QCOM_IS_RUNTIME_INPUT,
+    QCOM_RUNTIME_INPUTS,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -36,6 +46,120 @@ def set_attr_from_target(
     setattr(attr, target_list[-1], replacement)
 
 
+def _argument_contains_node(argument: Any, node: torch.fx.Node) -> bool:
+    if argument is node:
+        return True
+    if isinstance(argument, (list, tuple)):
+        return any(_argument_contains_node(value, node) for value in argument)
+    if isinstance(argument, dict):
+        return any(_argument_contains_node(value, node) for value in argument.values())
+    return False
+
+
+def _runtime_input_indices(graph: torch.fx.Graph) -> dict[torch.fx.Node, set[int]]:
+    indices = {}
+    for node in graph.nodes:
+        indices[node] = set(node.meta.get(QCOM_RUNTIME_INPUTS, ()))
+        if any(index < 0 or index >= len(node.args) for index in indices[node]):
+            raise ValueError(f"Runtime input index for {node.name} is out of range.")
+
+    # A cast does not make an immutable runtime buffer a compile-time constant.
+    cast_targets = {
+        exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    }
+    for node in reversed(list(graph.nodes)):
+        if node.target in cast_targets and any(
+            _argument_contains_node(user.args[index], node)
+            for user in node.users
+            for index in indices[user]
+        ):
+            indices[node].add(0)
+    return indices
+
+
+def mark_runtime_inputs(edge_program: torch.export.ExportedProgram) -> None:
+    """Validate QCOM_RUNTIME_INPUTS and cache runtime-input classification."""
+    graph_signature = edge_program.graph_signature
+    runtime_input_indices = _runtime_input_indices(edge_program.graph)
+    for node in edge_program.graph.nodes:
+        node.meta.pop(QCOM_IS_RUNTIME_INPUT, None)
+        user_indices = {}
+        for user in node.users:
+            runtime_indices = runtime_input_indices[user]
+            indices = {
+                index
+                for index, argument in enumerate(user.args)
+                if _argument_contains_node(argument, node)
+            }
+            if indices:
+                user_indices[user] = (indices, runtime_indices)
+
+        if not any(
+            indices & runtime_indices
+            for indices, runtime_indices in user_indices.values()
+        ):
+            continue
+        buffer_name = graph_signature.inputs_to_buffers.get(node.name)
+        if buffer_name in graph_signature.buffers_to_mutate.values():
+            raise ValueError(f"Runtime input {node.name} must not be a mutable buffer.")
+        if is_parameter(node, edge_program) and any(
+            not indices <= runtime_indices
+            for indices, runtime_indices in user_indices.values()
+        ):
+            raise ValueError(
+                f"Runtime input {node.name} must not have non-runtime users."
+            )
+        node.meta[QCOM_IS_RUNTIME_INPUT] = True
+
+
+def is_runtime_input(node: torch.fx.Node) -> bool:
+    return node.meta.get(QCOM_IS_RUNTIME_INPUT, False)
+
+
+def get_custom_op_output_axis_order(
+    node: torch.fx.Node,
+) -> Optional[tuple[int, ...]]:
+    producer, output_index = get_custom_op_output_source(node)
+    return producer.meta.get(QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS, {}).get(output_index)
+
+
+def get_custom_op_output_producer(node: torch.fx.Node) -> torch.fx.Node:
+    if node.target is operator.getitem and isinstance(node.args[0], torch.fx.Node):
+        return node.args[0]
+    return node
+
+
+def get_custom_op_output_source(node: torch.fx.Node) -> tuple[torch.fx.Node, int]:
+    producer = get_custom_op_output_producer(node)
+    if producer is not node and isinstance(node.args[1], int):
+        return producer, node.args[1]
+    return node, 0
+
+
+def uses_compatible_axis_order(
+    user: torch.fx.Node, input_node: torch.fx.Node, axis_order: tuple[int, ...]
+) -> bool:
+    input_indices = [
+        index for index, argument in enumerate(user.args) if argument is input_node
+    ]
+    if user.target == exir_ops.edge.aten.convolution.default:
+        return (
+            input_indices == [1]
+            and not user.args[6]
+            and axis_order == QCOM_FILTER_AXIS_ORDER_HWIO
+        )
+    if user.target == exir_ops.edge.aten.convolution_backward.default:
+        return input_indices == [2] and axis_order in (
+            QCOM_FILTER_AXIS_ORDER_HWIO,
+            QCOM_FILTER_AXIS_ORDER_HWOI,
+        )
+    input_axis_orders = user.meta.get(QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS, {})
+    return bool(input_indices) and all(
+        input_axis_orders.get(index) == axis_order for index in input_indices
+    )
+
+
 def is_parameter(
     node: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> bool:
@@ -44,7 +168,7 @@ def is_parameter(
         or is_param(edge_program, node)
         or is_buffer(edge_program, node)
         or is_lifted_tensor_constant(edge_program, node)
-    )
+    ) and not is_runtime_input(node)
 
 
 def get_parameter(

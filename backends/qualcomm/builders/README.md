@@ -12,6 +12,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
     - [Check Operator Spec](#check-operator-spec)
     - [Implementation](#implementation)
     - [Quantizer Annotation](#quantizer-annotation)
+  - [Custom-operator metadata](#custom-operator-metadata)
   - [Operator Support Status](#operator-support-status)
   - [Additional PyTorch Operators Supported via Composite QNN Lowering](#additional-pytorch-operators-supported-via-composite-qnn-lowering)
   - [Issues](#issues)
@@ -361,6 +362,32 @@ Now, we can start to fill in function body step by step:
 ### Quantizer Annotation
 The operator now should be functional for Qualcomm backends. For operator to work in fixed-precision, we should also make `QnnQuantizer` to correctly insert observers for recording calibrated encodings. Please read more on the [Quantization Annotation Tutorial](../quantizer//README.md).
 
+## Custom-operator metadata
+
+Import keys from `executorch.backends.qualcomm.utils.constants`. Axis orders are complete permutations from logical PyTorch axes to physical QNN axes; unmarked tensors keep their normal layout.
+
+With `to_edge_transform_and_lower_to_qnn`, annotate FX nodes through a `passes_job` transformation before `LayoutTransform`, after export and decomposition.
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS` | `{arg_index: axis_order}` | Physical input layout; each marked positional argument must originate from a graph input, a parameter, or a custom-op output declaring the same order. Retained dequantize nodes are checked through their input. |
+| `QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS` | `{output_index: axis_order}` | Physical output layout; tensor outputs use index `0`, tuple outputs require `operator.getitem` accessors. |
+| `QCOM_RUNTIME_INPUTS` | Tuple of positional argument indices | Keep inputs runtime, including exported parameters/buffers. Applies to any op and nested list, tuple, or dict arguments. |
+| `QCOM_IS_RUNTIME_INPUT` | Boolean | Backend-computed classification on the tensor-producing node; integrations should set `QCOM_RUNTIME_INPUTS` on consumers instead. |
+| `QCOM_SKIP_REQUANT_ANNOTATION` | Boolean | Set on weight-quantization nodes whose requantization is implemented by the custom op package; suppresses requant metadata, not ordinary quantization annotation. |
+
+Set `QCOM_SKIP_REQUANT_ANNOTATION` before `AnnotateQuantAttrs` runs, while the relevant Q/DQ nodes still exist; the rewrite that removes those nodes must run after annotation. Express this ordering through the `passes_job` dependency table.
+
+Runtime Conv filters must be non-quantized, floating-point rank-4 tensors. Forward Conv requires `QCOM_FILTER_AXIS_ORDER_HWIO` (`(2, 3, 1, 0)`); ConvBackward also accepts `QCOM_FILTER_AXIS_ORDER_HWOI` (`(2, 3, 0, 1)`). Runtime filters for transposed forward Conv are unsupported.
+
+```python
+custom_node.meta[QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS] = {0: QCOM_FILTER_AXIS_ORDER_HWIO}
+custom_node.meta[QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS] = {0: QCOM_FILTER_AXIS_ORDER_HWIO}
+custom_node.meta[QCOM_RUNTIME_INPUTS] = (1,)  # Runtime scale input.
+```
+
+Graph inputs retain their logical layout at the delegate boundary and are transposed inside QNN; static inputs are permuted when serialized. Input transposes preserve per-tensor and per-channel quantization, remapping channel axes; other quantization encodings are rejected. Annotated outputs may feed supported Conv filters or custom ops declaring compatible input layouts, including shared fan-out, but not ordinary consumers or graph outputs. Conflicting tensor reuse is rejected. Layout-dependent components delegate or fall back to CPU together. Runtime-marked parameters/buffers must be immutable and have only runtime-marked uses; classification follows inserted casts and does not force intermediate producers onto CPU.
+
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
@@ -545,11 +572,11 @@ The following PyTorch operators are supported through decomposition or annotatio
 
 The following PyTorch operators are lowered by a node visitor into multiple QNN operations.
 
-ConvBackward uses this path to reuse the forward Conv2d's QNN weight wrapper and derive HWOI at runtime; an ATen decomposition would otherwise require another static weight or changes to the forward Conv2d visitor. It currently supports floating-point inputs and weights only; quantized ConvBackward support is planned for a future change.
+ConvBackward supports floating-point static filters (reusing forward Conv2d's weight wrapper) and runtime HWIO/HWOI filters checked by `ValidateRuntimeConvFilterLayouts`. Runtime filters are cast to `grad_output`'s dtype when needed. Quantized ConvBackward is unsupported.
 
 | PyTorch Op | Builder | QNN Lowering |
 |---|---|---|
-| `aten.convolution_backward.default` | `ConvBackward` | `Transpose` → `TransposeConv2d` |
+| `aten.convolution_backward.default` | `ConvBackward` | optional `Cast` → optional `Transpose` → `TransposeConv2d` |
 | `aten.copy.default` | `Copy` | `Reshape` → `Tile` |
 | `aten.embedding.default` | `Embedding` | `Convert` → `Gather` or `Gather` → `Convert` |
 | `aten.index_put.default` | `IndexPutVisitor` | tensor preparation → `ScatterNd` |
