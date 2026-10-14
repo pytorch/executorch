@@ -56,12 +56,10 @@ _VARIANTS = [
         _kind = runtime.cxx_binary,
         name = "ggml_ptn_runner" + v["suffix"],
         srcs = ["ggml_ptn_runner.cpp"],
+        visibility = ["//executorch/backends/native/test/..."],
         deps = [
-            "//executorch/backends/native/runtime:runtime",
-            "//executorch/backends/native/runtime/deserialize:package",
-            "//executorch/backends/native/runtime/engine:engine",
             "//executorch/backends/native/runtime/engine:" + v["engine"],
-            "//executorch/backends/native/runtime/graph:scalar_type",
+            "//executorch/backends/native/test/runtime:ptn_runner_main",
         ] + v.get("deps", []),
         external_deps = ["gflags"] + v.get("external_deps", []),
     )
