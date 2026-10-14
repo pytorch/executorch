@@ -25,9 +25,11 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
@@ -494,6 +496,44 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         new_input = self._find_input_node(new_graph_module)
 
         self.assertEqual(self._symbolic_input_shape(new_input), original_snapshot)
+
+    def test_export_pass_tracks_replayed_unbacked_symbols(self) -> None:
+        def data_dependent_slice(
+            tensor: torch.Tensor, length: torch.Tensor
+        ) -> torch.Tensor:
+            end = length.item()
+            torch._check(end >= 0)
+            return tensor[:end]
+
+        shape_env = ShapeEnv()
+        fake_mode = FakeTensorMode(shape_env=shape_env)
+        with fake_mode:
+            fake_inputs = (
+                fake_mode.from_tensor(torch.randn(10)),
+                fake_mode.from_tensor(torch.tensor(5)),
+            )
+        graph_module = make_fx(
+            data_dependent_slice,
+            tracing_mode="fake",
+            _allow_non_fake_inputs=True,
+        )(*fake_inputs)
+
+        self.assertFalse(shape_env.pending_fresh_unbacked_symbols)
+        replayed = ExportPass()(graph_module).graph_module
+        self.assertFalse(shape_env.pending_fresh_unbacked_symbols)
+
+        item_node = next(
+            node
+            for node in replayed.graph.nodes
+            if node.target == torch.ops.aten._local_scalar_dense.default
+        )
+        slice_node = next(
+            node
+            for node in replayed.graph.nodes
+            if node.target == torch.ops.aten.slice.Tensor
+        )
+        self.assertTrue(item_node.meta.get("unbacked_bindings"))
+        self.assertTrue(slice_node.meta.get("unbacked_bindings"))
 
     def test_export_pass_matches_symbolic_inputs_by_position(self) -> None:
         class RenamePlaceholderPass(ExportPass):

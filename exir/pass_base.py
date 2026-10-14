@@ -41,6 +41,7 @@ from torch.export import ExportedProgram
 from torch.export.graph_signature import ConstantArgument
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
+from torch.fx.experimental.symbolic_shapes import compute_unbacked_bindings
 from torch.fx.graph import CodeGen
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.shape_prop import _extract_tensor_metadata, TensorMetadata
@@ -686,6 +687,9 @@ class _ExportPassBase(PassBase):
             kind, target, args_proxy, kwargs_proxy, name=name
         )
         res_proxy.node.meta.update(meta.data)
+        if self.fake_tensor_mode and (shape_env := self.fake_tensor_mode.shape_env):
+            if symbol_to_path := compute_unbacked_bindings(shape_env, res_data):
+                res_proxy.node.meta["unbacked_bindings"] = symbol_to_path
         self.tracer.set_metadata(res_proxy.node, res_data)
         return ProxyValue(res_data, res_proxy)
 
