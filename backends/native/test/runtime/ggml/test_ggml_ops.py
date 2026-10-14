@@ -8,6 +8,7 @@
 against eager PyTorch. GGML_PTN_DEVICE selects the runner's device (cpu or
 gpu)."""
 
+import collections
 import copy
 import os
 import subprocess
@@ -90,6 +91,20 @@ class Rope(torch.nn.Module):
         cos, sin = self.rotary(x, position_ids)
         q, _ = apply_rotary_pos_emb(x, x, cos, sin)
         return q
+
+
+class RopeQK(torch.nn.Module):
+    """Rotates q and k at positions computed in the graph."""
+
+    def __init__(self, config: LlamaConfig):
+        super().__init__()
+        self.rotary = LlamaRotaryEmbedding(config)
+
+    def forward(self, q, k, start):
+        position_ids = (torch.arange(q.shape[2]) + start).unsqueeze(0)
+        cos, sin = self.rotary(q, position_ids)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        return q + k
 
 
 class CastIndexCacheWrite(torch.nn.Module):
@@ -222,9 +237,11 @@ def _run_ggml(
     num_outputs: int,
     resize: bool = False,
     max_cached_graphs: int = 1,
+    graph_ops: collections.Counter | None = None,
 ):
     """Runs each step's inputs in order on one executable and returns each
-    step's outputs as (bytes, shape) pairs."""
+    step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
+    the built graphs' node counts per ggml op."""
     input_steps, output_steps = [], []
     for step, inputs in enumerate(steps):
         input_paths = []
@@ -247,6 +264,8 @@ def _run_ggml(
     ]
     if resize:
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
+    if graph_ops is not None:
+        command.append("--print_graph_ops")
     env = dict(os.environ)
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         # Shared libraries the runner needs may ship beside it.
@@ -262,6 +281,11 @@ def _run_ggml(
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
+    for line in result.stderr.splitlines() if graph_ops is not None else []:
+        if line.startswith("ggml graph ops:"):
+            graph_ops.update(
+                {op: int(n) for op, n in (item.split("=") for item in line.split()[3:])}
+            )
     shapes = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
     paths = [path for step in output_steps for path in step.split(",")]
     outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
@@ -309,7 +333,7 @@ class GgmlOpsTest(unittest.TestCase):
         model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
 
-    def _check(self, model, inputs, atol=1e-5, rtol=1e-5):
+    def _check(self, model, inputs, atol=1e-5, rtol=1e-5, graph_ops=None):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
         with torch.no_grad():
@@ -319,7 +343,9 @@ class GgmlOpsTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "model.ptn"
             to_native(torch.export.export(model, inputs)).save(str(package))
-            (outputs,) = _run_ggml(package, [inputs], outdir, len(expected))
+            (outputs,) = _run_ggml(
+                package, [inputs], outdir, len(expected), graph_ops=graph_ops
+            )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
             self.assertEqual(shape, tuple(reference.shape))
@@ -718,6 +744,48 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def test_sdpa_reuses_computed_bool_mask(self):
+        def forward(q, k, v, mask_input):
+            mask = mask_input.le(0.7)
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=mask)
+            return first + second
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.rand(1, 2, 3, 8),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+            graph_ops=ops,
+        )
+        # One F16 conversion of the shared mask serves both attention ops.
+        self.assertEqual(ops["CPY"] * 2, ops["FLASH_ATTN_EXT"])
+
+    def test_sdpa_reuses_bool_mask_through_views(self):
+        def forward(q, k, v, mask_input):
+            mask = mask_input.le(0.7)[..., :8]
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=mask)
+            return first + second
+
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.rand(1, 2, 3, 9),
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
     def test_sdpa_causal_fewer_queries(self):
         self._check(
             Lambda(
@@ -742,7 +810,8 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])),
             dynamic_shapes={"values": {2: t}, "positions": {0: t}},
         )
-        # Alternating shapes exercise replays and evictions.
+        # Alternating shapes evict each other with one cached graph and replay
+        # with two.
         steps = [
             (torch.full((1, 2, 3, 4), 1.0), torch.tensor([5, 1, 6])),
             (torch.full((1, 2, 1, 4), 2.0), torch.tensor([3])),
@@ -754,8 +823,11 @@ class GgmlOpsTest(unittest.TestCase):
         for values, positions in steps:
             cache.index_copy_(2, positions, values)
             expected.append(cache.clone())
-        for max_cached_graphs in (0, 1, 2):
+        # Each graph build, the one at compile included, has one MUL (the
+        # output's `cache * 1.0`).
+        for max_cached_graphs, builds in ((0, 6), (1, 5), (2, 3)):
             with self.subTest(max_cached_graphs=max_cached_graphs):
+                ops = collections.Counter()
                 with tempfile.TemporaryDirectory() as tmp:
                     outdir = Path(tmp)
                     package = outdir / "model.ptn"
@@ -767,7 +839,9 @@ class GgmlOpsTest(unittest.TestCase):
                         1,
                         resize=True,
                         max_cached_graphs=max_cached_graphs,
+                        graph_ops=ops,
                     )
+                self.assertEqual(ops["MUL"], builds)
                 for [(raw, shape)], reference in zip(actual, expected):
                     self.assertEqual(shape, tuple(reference.shape))
                     torch.testing.assert_close(
@@ -857,6 +931,20 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: x + torch.arange(1, 7, 2, dtype=torch.float32)),
             (torch.randn(2, 3),),
         )
+
+    def test_rope_reuses_computed_position_cast(self):
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        ops = collections.Counter()
+        self._check(
+            RopeQK(config),
+            (torch.randn(1, 4, 5, 64), torch.randn(1, 4, 5, 64), torch.tensor([3])),
+            atol=1e-4,
+            rtol=1e-4,
+            graph_ops=ops,
+        )
+        # Per graph build (one ARANGE each): a cast of `start` to F32 and one
+        # I32 cast of the positions, shared by both ropes.
+        self.assertEqual(ops["CPY"], 2 * ops["ARANGE"])
 
     def test_rope_llama3(self):
         config = LlamaConfig(

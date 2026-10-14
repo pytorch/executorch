@@ -11,9 +11,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -1870,9 +1872,47 @@ class GraphBuilder {
   }
 
   ggml_tensor* as_i32(ggml_tensor* tensor) {
-    return tensor->type == GGML_TYPE_I32
-        ? tensor
-        : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_I32);
+    if (tensor->type == GGML_TYPE_I32) {
+      return tensor;
+    }
+    // Reuse conversions of an immutable arithmetic result (or one of its
+    // views), e.g. an index consumed by several independent operations.
+    // Never reuse a conversion of a graph input or a potentially writable
+    // op; explicit in-place writes invalidate conversions of their storage.
+    const ggml_tensor* root = storage_root(tensor);
+    const bool reusable = tensor->type == GGML_TYPE_F32 &&
+        (root->op == GGML_OP_ADD || root->op == GGML_OP_SUB ||
+         root->op == GGML_OP_MUL || root->op == GGML_OP_DIV ||
+         root->op == GGML_OP_ARANGE || root->op == GGML_OP_REPEAT);
+    if (reusable) {
+      if (const auto it = i32_casts_.find(tensor); it != i32_casts_.end()) {
+        return it->second;
+      }
+    }
+    ggml_tensor* result =
+        ggml_cast(instance_.context.get(), tensor, GGML_TYPE_I32);
+    if (reusable) {
+      i32_casts_.emplace(tensor, result);
+    }
+    return result;
+  }
+
+  void invalidate_cached_transforms(const ggml_tensor* target) {
+    const ggml_tensor* root = storage_root(target);
+    for (auto it = i32_casts_.begin(); it != i32_casts_.end();) {
+      if (storage_root(it->first) == root) {
+        it = i32_casts_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    for (auto it = attention_masks_.begin(); it != attention_masks_.end();) {
+      if (storage_root(tensor(it->first.first).tensor) == root) {
+        it = attention_masks_.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
 
   ggml_tensor* contiguous(ggml_tensor* tensor) {
@@ -2487,6 +2527,7 @@ class GraphBuilder {
     const size_t offset = static_cast<size_t>(start) * cache.tensor->nb[2];
     ggml_tensor* destination =
         view_with_shape(instance_.context.get(), cache.tensor, sizes, offset);
+    invalidate_cached_transforms(destination);
     ggml_tensor* write =
         ggml_cpy(instance_.context.get(), update.tensor, destination);
     expand_write(write);
@@ -2824,6 +2865,7 @@ class GraphBuilder {
     ggml_tensor* rows = values.tensor->type == GGML_TYPE_F16
         ? values.tensor
         : as_f32(values.tensor);
+    invalidate_cached_transforms(self.tensor);
     ggml_tensor* result = ggml_set_rows(
         instance_.context.get(),
         self.tensor,
@@ -2839,6 +2881,20 @@ class GraphBuilder {
         mask.sizes.back() != keys) {
       throw std::runtime_error("ggml: attention mask must end in [T, S]");
     }
+    // Out-of-place repeat/scale results, and views of them, are stable until
+    // an explicit graph write to their storage (which invalidates this cache).
+    // Reuse their additive F16 mask across attention ops; never cache
+    // writable inputs.
+    const ggml_tensor* root = storage_root(mask.tensor);
+    const bool reusable =
+        root->op == GGML_OP_REPEAT || root->op == GGML_OP_SCALE;
+    const auto cache_key = std::make_pair(id, tokens);
+    if (reusable) {
+      const auto found = attention_masks_.find(cache_key);
+      if (found != attention_masks_.end()) {
+        return found->second;
+      }
+    }
     ggml_context* ctx = instance_.context.get();
     ggml_tensor* additive = mask.tensor;
     if (method_.graph.value(id).tensor_meta().dtype == ScalarType::Bool) {
@@ -2848,9 +2904,13 @@ class GraphBuilder {
           ggml_scale_bias(ctx, contiguous(as_f32(mask.tensor)), kMax, -kMax);
     }
     // flash_attn_ext needs a contiguous F16 mask.
-    return additive->type == GGML_TYPE_F16
+    ggml_tensor* result = additive->type == GGML_TYPE_F16
         ? contiguous(additive)
         : ggml_cast(ctx, additive, GGML_TYPE_F16);
+    if (reusable) {
+      attention_masks_.emplace(cache_key, result);
+    }
+    return result;
   }
 
   void lower_sdpa(const Node& node) {
@@ -2968,18 +3028,32 @@ class GraphBuilder {
   size_t graph_size_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
+  std::map<std::pair<ValueId, int64_t>, ggml_tensor*> attention_masks_;
+  std::unordered_map<ggml_tensor*, ggml_tensor*> i32_casts_;
   GraphInstance instance_;
 };
 
 GraphInstance GgmlExecutable::build_graph() {
-  return GraphBuilder(
-             method_,
-             inputs_,
-             outputs_,
-             persistent_,
-             rope_freq_factors_,
-             options_.graph_size)
-      .build();
+  GraphInstance instance = GraphBuilder(
+                               method_,
+                               inputs_,
+                               outputs_,
+                               persistent_,
+                               rope_freq_factors_,
+                               options_.graph_size)
+                               .build();
+  if (options_.print_graph_ops) {
+    std::map<std::string, int> counts;
+    for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
+      ++counts[ggml_op_desc(ggml_graph_node(instance.graph, i))];
+    }
+    std::string line = "ggml graph ops:";
+    for (const auto& [op, count] : counts) {
+      line += " " + op + "=" + std::to_string(count);
+    }
+    std::fprintf(stderr, "%s\n", line.c_str());
+  }
+  return instance;
 }
 
 } // namespace
