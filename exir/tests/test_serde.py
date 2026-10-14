@@ -7,6 +7,7 @@
 # pyre-strict
 
 import io
+import os
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -19,12 +20,17 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
 )
 from executorch.exir import to_edge
+from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir.backend.backend_api import CompileSpec, to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.backend_with_named_data_map import (
+    BackendWithNDMPartitioner,
+)
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.program._program import (
     EdgeProgramManager,
     to_edge_transform_and_lower,
@@ -245,6 +251,44 @@ class TestSerde(unittest.TestCase):
         edge = ep.to_backend(AddMulPartitionerDemo())
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
+
+    def test_delegate_with_file_backed_named_data(self) -> None:
+        class Model(nn.Module):
+            def forward(self, x):
+                return (x + x) - x
+
+        edge = to_edge(export(Model(), (torch.randn(1, 2),), strict=True)).to_backend(
+            BackendWithNDMPartitioner()
+        )
+        graph_module = edge.exported_program().graph_module
+        (_, lowered, _) = get_lowered_submodules(graph_module)[0]
+        output = lowered.named_data_store_output
+        assert output is not None
+        payload = bytes(range(256))
+        output.buffers[1] = payload
+        other = output.buffers[0]
+        expected = serialize(edge.exported_program()).exported_program
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "data.bin")
+            with open(path, "wb") as f:
+                f.write(payload)
+            data = FileBackedData.move_from(path)
+            output.buffers[1] = data
+
+            serialized = serialize(edge.exported_program()).exported_program
+            self.assertEqual(serialized, expected)
+            buffer = io.BytesIO()
+            exir.save(edge.exported_program(), buffer)
+            self.assertIs(lowered.named_data_store_output, output)
+            self.assertIs(output.buffers[1], data)
+            self.assertEqual(data.to_bytes(), payload)
+
+        buffer.seek(0)
+        loaded = exir.load(buffer)
+        (_, loaded_lowered, _) = get_lowered_submodules(loaded.graph_module)[0]
+        loaded_output = loaded_lowered.named_data_store_output
+        assert loaded_output is not None
+        self.assertEqual(loaded_output.buffers, [other, payload])
 
     def test_delegate_xnnpack(self) -> None:
         class SimpleConv1DModel(nn.Module):
