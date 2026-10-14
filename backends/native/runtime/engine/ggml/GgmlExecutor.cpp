@@ -533,6 +533,7 @@ class GgmlExecutable final : public EngineExecutable {
     index_signature();
     initialize_backends();
     initialize_persistent_tensors(materialized_constant_bytes);
+    index_rope_frequencies();
     // Rejects unsupported ops and shapes at compile time.
     build_graph();
   }
@@ -914,6 +915,46 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  void index_rope_frequencies() {
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (!node.is_call() || op_key(node.target) != "native.rope.default") {
+        continue;
+      }
+      const Argument& arg = require_arg(node, "inv_freq", 2).arg;
+      if (arg.kind() != ArgKind::Tensor) {
+        throw std::runtime_error("ggml: rope inv_freq must be a tensor");
+      }
+      const ValueId inv_freq = arg.as_tensor().id;
+      if (rope_freq_factors_.contains(inv_freq)) {
+        continue;
+      }
+      const auto binding = std::ranges::find_if(
+          method_.data_bindings, [inv_freq](const DataBinding& candidate) {
+            return candidate.value_id == inv_freq && candidate.has_data;
+          });
+      const std::optional<OwnedBytes> bytes =
+          binding == method_.data_bindings.end()
+          ? std::nullopt
+          : package_.acquire_constant(binding->key);
+      if (!bytes) {
+        throw std::runtime_error("ggml: rope inv_freq must be a constant");
+      }
+      std::vector<float> factors = to_float_vector(
+          bytes->span(), method_.graph.value(inv_freq).tensor_meta().dtype);
+      // ggml_rope_ext with freq_base 1 computes theta = pos / factor.
+      for (float& factor : factors) {
+        if (factor == 0.0f) {
+          throw std::runtime_error("ggml: rope inv_freq has a zero entry");
+        }
+        factor = 1.0f / factor;
+      }
+      std::vector<uint8_t> raw(factors.size() * sizeof(float));
+      std::memcpy(raw.data(), factors.data(), raw.size());
+      rope_freq_factors_.emplace(inv_freq, std::move(raw));
+    }
+  }
+
   static void
   copy_output(const OutputSlot& slot, void* destination, ScalarType dst_dtype) {
     const size_t count = checked_numel(slot.sizes);
@@ -971,6 +1012,7 @@ class GgmlExecutable final : public EngineExecutable {
   ggml_backend_buffer_ptr persistent_buffer_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
   bool executed_ = false;
+  std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
 };
 
 class GraphBuilder {
@@ -980,11 +1022,14 @@ class GraphBuilder {
       const std::vector<InputSlot>& inputs,
       const std::vector<OutputSlot>& outputs,
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
+      const std::unordered_map<ValueId, std::vector<uint8_t>>&
+          rope_factor_bytes,
       size_t graph_size)
       : method_(method),
         inputs_(inputs),
         outputs_(outputs),
         persistent_(persistent),
+        rope_factor_bytes_(rope_factor_bytes),
         graph_size_(graph_size),
         values_(method.graph.values.size()) {}
 
@@ -1314,9 +1359,10 @@ class GraphBuilder {
       lower_rms_norm(node);
     } else if (
         key == "aten.view_copy.default" || key == "aten.reshape.default" ||
-        key == "aten._unsafe_view.default") {
+        key == "aten._unsafe_view.default" || key == "aten.view.default") {
       lower_reshape(node);
-    } else if (key == "aten.permute_copy.default") {
+    } else if (
+        key == "aten.permute_copy.default" || key == "aten.permute.default") {
       lower_permute(node);
     } else if (key == "aten.transpose_copy.int") {
       lower_transpose(node);
@@ -1340,11 +1386,14 @@ class GraphBuilder {
       lower_slice(node, key == "aten.slice_copy.Tensor");
     } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
       lower_select(node, key == "aten.select_copy.int");
-    } else if (key == "aten.unsqueeze_copy.default") {
+    } else if (
+        key == "aten.unsqueeze_copy.default" ||
+        key == "aten.unsqueeze.default") {
       lower_unsqueeze(node);
     } else if (key == "aten.squeeze_copy.dims" || key == "aten.squeeze.dims") {
       lower_squeeze(node);
-    } else if (key == "aten.expand_copy.default") {
+    } else if (
+        key == "aten.expand_copy.default" || key == "aten.expand.default") {
       lower_expand(node);
     } else if (key == "aten.cat.default") {
       lower_cat(node);
@@ -1356,12 +1405,22 @@ class GraphBuilder {
       lower_update_cache(node);
     } else if (key == "llama.custom_sdpa.default") {
       lower_custom_sdpa(node);
+    } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
+      lower_le(node);
+    } else if (key == "aten.arange.start_step") {
+      lower_arange(node);
     } else if (key == "torchao.choose_qparams_affine.default") {
       lower_choose_qparams(node);
     } else if (key == "torchao.quantize_affine.default") {
       lower_quantize_affine(node);
     } else if (key == "torchao.dequantize_affine.default") {
       lower_dequantize_affine(node);
+    } else if (key == "native.rope.default") {
+      lower_rope(node);
+    } else if (key == "aten.index_put_.default") {
+      lower_index_put(node);
+    } else if (key == "aten.scaled_dot_product_attention.default") {
+      lower_sdpa(node);
     } else if (key == "aten.sym_size.int") {
       lower_sym_size(node);
     } else if (
@@ -1426,7 +1485,9 @@ class GraphBuilder {
         "aten.alias.default",
         "aten.clone.default",
         "aten.contiguous.default",
+        "aten.expand.default",
         "aten.expand_copy.default",
+        "aten.permute.default",
         "aten.permute_copy.default",
         "aten.reshape.default",
         "aten._unsafe_view.default",
@@ -1437,7 +1498,9 @@ class GraphBuilder {
         "aten.squeeze.dims",
         "aten.squeeze_copy.dims",
         "aten.transpose_copy.int",
+        "aten.unsqueeze.default",
         "aten.unsqueeze_copy.default",
+        "aten.view.default",
         "aten.view_copy.default",
     };
     const auto is_index = [this](ValueId value) {
@@ -1616,44 +1679,96 @@ class GraphBuilder {
     set(ids.front(), TensorRef{result, input.sizes});
   }
 
+  ggml_tensor* as_f32(ggml_tensor* tensor) {
+    return tensor->type == GGML_TYPE_F32
+        ? tensor
+        : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_F32);
+  }
+
+  ggml_tensor* as_i32(ggml_tensor* tensor) {
+    return tensor->type == GGML_TYPE_I32
+        ? tensor
+        : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_I32);
+  }
+
+  ggml_tensor* contiguous(ggml_tensor* tensor) {
+    return ggml_is_contiguous(tensor)
+        ? tensor
+        : ggml_cont(instance_.context.get(), tensor);
+  }
+
+  struct BinaryOperands {
+    ggml_tensor* lhs = nullptr;
+    ggml_tensor* rhs = nullptr;
+    std::vector<int64_t> sizes;
+  };
+
+  BinaryOperands tensor_operands(
+      const TensorRef& left,
+      const TensorRef& right,
+      bool force_f32) {
+    BinaryOperands out{
+        .lhs = left.tensor,
+        .rhs = right.tensor,
+        .sizes = broadcast_shape(left.sizes, right.sizes),
+    };
+    if (force_f32 || out.lhs->type != out.rhs->type) {
+      out.lhs = as_f32(out.lhs);
+      out.rhs = as_f32(out.rhs);
+    }
+    // ggml only broadcasts the right operand.
+    if (reversed_extents(left.sizes) != reversed_extents(out.sizes)) {
+      ggml_context* ctx = instance_.context.get();
+      out.lhs =
+          ggml_repeat(ctx, out.lhs, new_tensor(ctx, out.lhs->type, out.sizes));
+    }
+    return out;
+  }
+
   void lower_binary(const Node& node, const std::string& key) {
     const TensorRef left = tensor_arg(node, "self", 0);
     const NamedArgument& rhs_arg = require_arg(node, "other", 1);
     if (float_arg(node, "alpha", 2, 1.0, true) != 1.0) {
       throw std::runtime_error("ggml: add/sub alpha must be one");
     }
+    ggml_context* ctx = instance_.context.get();
     ggml_tensor* result = nullptr;
     std::vector<int64_t> sizes = left.sizes;
     if (rhs_arg.arg.kind() == ArgKind::Tensor) {
-      const TensorRef right = tensor(rhs_arg.arg.as_tensor().id);
-      sizes = broadcast_shape(left.sizes, right.sizes);
-      ggml_context* ctx = instance_.context.get();
-      ggml_tensor* lhs = left.tensor;
-      // ggml only broadcasts the right operand.
-      if (checked_numel(left.sizes) != checked_numel(sizes)) {
-        lhs = ggml_repeat(ctx, lhs, new_tensor(ctx, lhs->type, sizes));
-      }
+      BinaryOperands operands = tensor_operands(
+          left, tensor(rhs_arg.arg.as_tensor().id), /*force_f32=*/false);
+      ggml_tensor* lhs = operands.lhs;
+      ggml_tensor* right = operands.rhs;
+      sizes = std::move(operands.sizes);
       if (key == "aten.add.Tensor") {
-        result = ggml_add(ctx, lhs, right.tensor);
+        result = ggml_add(ctx, lhs, right);
       } else if (key == "aten.mul.Tensor") {
-        result = ggml_mul(ctx, lhs, right.tensor);
+        result = ggml_mul(ctx, lhs, right);
       } else if (key == "aten.sub.Tensor") {
-        result = ggml_sub(ctx, lhs, right.tensor);
+        result = ggml_sub(ctx, lhs, right);
       } else {
-        result = ggml_div(ctx, lhs, right.tensor);
+        result = ggml_div(ctx, lhs, right);
       }
     } else {
-      const float scalar = static_cast<float>(
-          rhs_arg.arg.kind() == ArgKind::Float ? float_arg(node, "other", 1, 0)
-                                               : int_value(rhs_arg.arg));
+      const float scalar = static_cast<float>(float_arg(node, "other", 1, 0));
+      // ggml_scale only takes contiguous F32.
+      ggml_tensor* lhs = contiguous(as_f32(left.tensor));
       if (key == "aten.mul.Tensor") {
-        result = ggml_scale(instance_.context.get(), left.tensor, scalar);
+        result = ggml_scale(ctx, lhs, scalar);
       } else if (key == "aten.div.Tensor") {
-        result =
-            ggml_scale(instance_.context.get(), left.tensor, 1.0f / scalar);
+        result = ggml_scale(ctx, lhs, 1.0f / scalar);
+      } else if (key == "aten.add.Tensor") {
+        result = ggml_scale_bias(ctx, lhs, 1.0f, scalar);
       } else {
-        throw std::runtime_error("ggml: scalar add/sub is unsupported");
+        result = ggml_scale_bias(ctx, lhs, 1.0f, -scalar);
       }
+    }
+    // Bools are carried as 0/1 floats, and Bool add is a logical or.
+    const std::vector<ValueId> ids = output_ids(node);
+    if (key == "aten.add.Tensor" && ids.size() == 1 &&
+        method_.graph.value(ids.front()).tensor_meta().dtype ==
+            ScalarType::Bool) {
+      result = ggml_step(ctx, result);
     }
     set_single_output(node, TensorRef{result, std::move(sizes)});
   }
@@ -2011,6 +2126,56 @@ class GraphBuilder {
     set_single_output(node, TensorRef{result, query.sizes});
   }
 
+  // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b).
+  void lower_le(const Node& node) {
+    const TensorRef left = tensor_arg(node, "self", 0);
+    const NamedArgument& other = require_arg(node, "other", 1);
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* difference = nullptr;
+    std::vector<int64_t> sizes = left.sizes;
+    if (other.arg.kind() == ArgKind::Tensor) {
+      BinaryOperands operands = tensor_operands(
+          left, tensor(other.arg.as_tensor().id), /*force_f32=*/true);
+      difference = ggml_sub(ctx, operands.lhs, operands.rhs);
+      sizes = std::move(operands.sizes);
+    } else {
+      difference = ggml_scale_bias(
+          ctx,
+          contiguous(as_f32(left.tensor)),
+          1.0f,
+          -static_cast<float>(float_arg(node, "other", 1, 0)));
+    }
+    ggml_tensor* result =
+        ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
+    set_single_output(node, TensorRef{result, std::move(sizes)});
+  }
+
+  // The result is F32, which holds integers exactly up to 2^24, and ggml
+  // derives the length from the F32 bounds.
+  void lower_arange(const Node& node) {
+    const double start = float_arg(node, "start", 0, 0.0);
+    const double end = float_arg(node, "end", 1, 0.0);
+    const double step = float_arg(node, "step", 2, 1.0, true);
+    if (step <= 0.0 || end <= start) {
+      throw std::runtime_error(
+          "ggml: arange needs a positive step and end above start");
+    }
+    constexpr double kExactF32 = 1 << 24;
+    if (std::abs(start) > kExactF32 || std::abs(end) > kExactF32) {
+      throw std::runtime_error("ggml: arange bounds must be within 2^24");
+    }
+    ggml_tensor* result = ggml_arange(
+        instance_.context.get(),
+        static_cast<float>(start),
+        static_cast<float>(end),
+        static_cast<float>(step));
+    if (result->ne[0] !=
+        static_cast<int64_t>(std::ceil((end - start) / step))) {
+      throw std::runtime_error("ggml: arange length changes in F32");
+    }
+    set_single_output(node, TensorRef{result, {result->ne[0]}});
+  }
+
   DynamicQuant dynamic_quant_arg(
       const Node& node,
       std::string_view name,
@@ -2095,6 +2260,179 @@ class GraphBuilder {
     set(ids.front(), quant.input);
   }
 
+  ggml_tensor* rope_factor_tensor(ValueId inv_freq) {
+    if (const auto cached = rope_factor_tensors_.find(inv_freq);
+        cached != rope_factor_tensors_.end()) {
+      return cached->second;
+    }
+    const auto found = rope_factor_bytes_.find(inv_freq);
+    if (found == rope_factor_bytes_.end()) {
+      throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
+    }
+    ggml_tensor* factors = ggml_new_tensor_1d(
+        instance_.context.get(),
+        GGML_TYPE_F32,
+        static_cast<int64_t>(found->second.size() / sizeof(float)));
+    ggml_set_input(factors);
+    instance_.uploads.push_back(Upload{factors, found->second});
+    rope_factor_tensors_.emplace(inv_freq, factors);
+    return factors;
+  }
+
+  void lower_rope(const Node& node) {
+    const TensorRef input = tensor_arg(node, "input", 0);
+    const TensorRef positions = tensor_arg(node, "position_ids", 1);
+    ggml_tensor* factors =
+        rope_factor_tensor(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+    const bool interleaved = bool_arg(node, "interleaved", 3, false);
+    const double scale = float_arg(node, "attention_scale", 4, 1.0, true);
+    const int n_dims = 2 * static_cast<int>(ggml_nelements(factors));
+    if (input.sizes.size() != 4 || positions.sizes.size() != 2 ||
+        positions.sizes[0] != 1 || positions.sizes[1] != input.sizes[2] ||
+        n_dims > input.sizes[3]) {
+      throw std::runtime_error(
+          "ggml: rope expects input [B,H,T,D] and position_ids [1,T]");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* pos = ggml_reshape_1d(
+        ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+    // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
+    ggml_tensor* rotated = ggml_rope_ext(
+        ctx,
+        ggml_permute(ctx, input.tensor, 0, 2, 1, 3),
+        pos,
+        factors,
+        n_dims,
+        interleaved ? GGML_ROPE_TYPE_NORMAL : GGML_ROPE_TYPE_NEOX,
+        /*n_ctx_orig=*/0,
+        /*freq_base=*/1.0f,
+        /*freq_scale=*/1.0f,
+        /*ext_factor=*/0.0f,
+        static_cast<float>(scale),
+        /*beta_fast=*/0.0f,
+        /*beta_slow=*/0.0f);
+    ggml_tensor* result =
+        ggml_cont(ctx, ggml_permute(ctx, rotated, 0, 2, 1, 3));
+    set_single_output(node, TensorRef{result, input.sizes});
+  }
+
+  void lower_index_put(const Node& node) {
+    const TensorRef self = tensor_arg(node, "self", 0);
+    const Argument& indices_arg = require_arg(node, "indices", 1).arg;
+    const TensorRef values = tensor_arg(node, "values", 2);
+    const size_t rank = self.sizes.size();
+    const std::vector<ValueId> indices =
+        indices_arg.kind() == ArgKind::OptionalTensorList
+        ? indices_arg.as_optional_tensor_list().ids
+        : std::vector<ValueId>{};
+    const auto is_index = [](ValueId id) { return valid(id); };
+    const bool rows_only = rank >= 2 && indices.size() == rank - 1 &&
+        is_index(indices.back()) &&
+        std::none_of(indices.begin(), indices.end() - 1, is_index);
+    const TensorRef index = rows_only ? tensor(indices.back()) : TensorRef{};
+    std::vector<int64_t> row_sizes = self.sizes;
+    if (rows_only && index.sizes.size() == 1) {
+      row_sizes[rank - 2] = index.sizes[0];
+    }
+    if (!rows_only || index.sizes.size() != 1 || values.sizes != row_sizes ||
+        bool_arg(node, "accumulate", 3, false)) {
+      throw std::runtime_error(
+          "ggml: index_put_ only supports writing whole rows along dim -2");
+    }
+    const ScalarType index_dtype =
+        method_.graph.value(indices.back()).tensor_meta().dtype;
+    if (index_dtype != ScalarType::Long && index_dtype != ScalarType::Int) {
+      throw std::runtime_error(
+          "ggml: index_put_ indices must be int64 or int32");
+    }
+    check_row_indices(indices.back(), self.sizes[rank - 2]);
+    ggml_tensor* rows = values.tensor->type == GGML_TYPE_F16
+        ? values.tensor
+        : as_f32(values.tensor);
+    ggml_tensor* result = ggml_set_rows(
+        instance_.context.get(),
+        self.tensor,
+        contiguous(rows),
+        as_i32(index.tensor));
+    expand_write(result);
+    set_single_output(node, TensorRef{result, self.sizes});
+  }
+
+  ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys) {
+    const TensorRef mask = tensor(id);
+    if (mask.sizes.size() < 2 || mask.sizes[mask.sizes.size() - 2] != tokens ||
+        mask.sizes.back() != keys) {
+      throw std::runtime_error("ggml: attention mask must end in [T, S]");
+    }
+    ggml_context* ctx = instance_.context.get();
+    ggml_tensor* additive = mask.tensor;
+    if (method_.graph.value(id).tensor_meta().dtype == ScalarType::Bool) {
+      // max - max is exactly 0; -max saturates to -inf in F16.
+      constexpr float kMax = std::numeric_limits<float>::max();
+      additive =
+          ggml_scale_bias(ctx, contiguous(as_f32(mask.tensor)), kMax, -kMax);
+    }
+    // flash_attn_ext needs a contiguous F16 mask.
+    return additive->type == GGML_TYPE_F16
+        ? contiguous(additive)
+        : ggml_cast(ctx, additive, GGML_TYPE_F16);
+  }
+
+  void lower_sdpa(const Node& node) {
+    const TensorRef query = tensor_arg(node, "query", 0);
+    const TensorRef key = tensor_arg(node, "key", 1);
+    const TensorRef val = tensor_arg(node, "value", 2);
+    const bool is_causal = bool_arg(node, "is_causal", 5, false);
+    if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
+        val.sizes.size() != 4 ||
+        float_arg(node, "dropout_p", 4, 0.0, true) != 0.0) {
+      throw std::runtime_error(
+          "ggml: scaled_dot_product_attention expects [B,H,T,D] without dropout");
+    }
+    if (key.sizes[0] != query.sizes[0] || val.sizes[0] != query.sizes[0] ||
+        key.sizes[1] != val.sizes[1] || key.sizes[1] <= 0 ||
+        query.sizes[1] % key.sizes[1] != 0 || key.sizes[2] != val.sizes[2] ||
+        key.sizes[3] != query.sizes[3]) {
+      throw std::runtime_error(
+          "ggml: scaled_dot_product_attention q/k/v shapes are incompatible");
+    }
+    const int64_t tokens = query.sizes[2];
+    const int64_t keys = key.sizes[2];
+    ggml_tensor* mask = nullptr;
+    const NamedArgument* mask_arg = find_arg(node, "attn_mask", 3);
+    if (mask_arg != nullptr && mask_arg->arg.kind() == ArgKind::Tensor &&
+        valid(mask_arg->arg.as_tensor().id)) {
+      if (is_causal) {
+        throw std::runtime_error("ggml: sdpa cannot take a mask and is_causal");
+      }
+      mask = attention_mask(mask_arg->arg.as_tensor().id, tokens, keys);
+    } else if (is_causal) {
+      mask = causal_mask(tokens, keys, 0).tensor;
+    }
+    const double default_scale =
+        1.0 / std::sqrt(static_cast<double>(query.sizes.back()));
+    const float scale =
+        static_cast<float>(float_arg(node, "scale", 6, default_scale, true));
+    ggml_context* ctx = instance_.context.get();
+    // The CPU kernel reads the query as F32.
+    ggml_tensor* result = ggml_flash_attn_ext(
+        ctx,
+        as_f32(query.tensor),
+        key.tensor,
+        val.tensor,
+        mask,
+        scale,
+        0.0f,
+        0.0f);
+    ggml_prec_set_acc(result, GGML_PREC_F32);
+    // flash_attn_ext returns [Dv, H, T, B]; torch order is [B, H, T, Dv].
+    result = ggml_cont(ctx, ggml_permute(ctx, result, 0, 2, 1, 3));
+    set_single_output(
+        node,
+        TensorRef{
+            result, {query.sizes[0], query.sizes[1], tokens, val.sizes[3]}});
+  }
+
   void lower_sym_size(const Node& node) {
     const TensorRef input = tensor_arg(node, "self", 0);
     const int64_t dim =
@@ -2151,14 +2489,21 @@ class GraphBuilder {
   const std::vector<InputSlot>& inputs_;
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
+  const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
   size_t graph_size_;
   std::vector<RuntimeValue> values_;
+  std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
   GraphInstance instance_;
 };
 
 GraphInstance GgmlExecutable::build_graph() {
   return GraphBuilder(
-             method_, inputs_, outputs_, persistent_, options_.graph_size)
+             method_,
+             inputs_,
+             outputs_,
+             persistent_,
+             rope_freq_factors_,
+             options_.graph_size)
       .build();
 }
 
