@@ -4,18 +4,38 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 fbcode_target(
-    _kind = runtime.python_binary,
-    name = "export_hf_llm",
+    _kind = runtime.python_library,
+    name = "export_hf_llm_lib",
     srcs = ["export_hf_llm.py"],
-    main_function = "executorch.backends.native.examples.hf_llm.export_hf_llm.main",
     deps = [
+        ":gguf_hf",
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
         "//executorch/exir/native:native",
+        "//executorch/extension/llm/export:load",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
         "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "export_hf_llm",
+    main_function = "executorch.backends.native.examples.hf_llm.export_hf_llm.main",
+    deps = [":export_hf_llm_lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_export_hf_llm",
+    srcs = ["test_export_hf_llm.py"],
+    deps = [
+        ":export_hf_llm_lib",
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
 
