@@ -15,7 +15,7 @@ arrays or other dense objects implementing Python's buffer protocol. CPU and
 CUDA `torch.Tensor` inputs are inspected through their public Python attributes
 instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
 provide CPU or CUDA allocations directly; their device indices are preserved.
-A call must use one tensor protocol consistently.
+Tensor protocols can be mixed within the same call.
 
 Tensor inputs must have dense strides compatible with the exported method's
 dimension order. This includes channels last and channels last 3D layouts when
@@ -63,6 +63,16 @@ CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA result
 remain on CUDA and can be passed to another DLPack consumer or back into
 ExecuTorch without moving the data to the CPU.
 
+The Python CUDA execution boundary currently waits for device work through CUDA
+runtime APIs because the device allocator does not expose readiness events.
+Execution is synchronous at this boundary, including producer and consumer
+stream readiness. The synchronization has no C++ ATen dependency.
+
+For bfloat16 inputs, raw byte buffers use the shape declared by the exported
+method. Bfloat16 results expose flat bytes through the buffer protocol because
+NumPy and PEP 3118 do not define that numeric dtype. DLPack consumers receive the
+original bfloat16 dtype and tensor shape.
+
 ```python
 import cupy as cp
 
@@ -70,6 +80,12 @@ cuda_input = cp.ones((1, 3, 224, 224), dtype=cp.float32)
 output = cuda_module.forward([cuda_input], clone_outputs=False)[0]
 cuda_output = cp.from_dlpack(output)
 ```
+
+The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
+modes on a GPU. It checks device allocations, DLPack stream ordering, channels
+last views, cloning, and borrowed output lifetimes using a CUDA delegate.
+Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
+GPU hardware or a missing CUDA backend as a failure.
 
 # Link Backends
 
@@ -92,7 +108,7 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 ### ExecuTorchModule
 - `plan_execute()`: Plan and execute.
 - `run_method()`: Run a method with PyTorch tensors, Python buffer objects such
-  as NumPy arrays, or DLPack producers. A call must use one tensor protocol.
+  as NumPy arrays, or DLPack producers, including mixed tensor protocols.
 - `forward()`: Forward. A single buffer may be passed directly; multiple
   inputs are passed as a flat sequence.
 - `has_etdump()`: Check if etdump is available.

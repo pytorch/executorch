@@ -406,7 +406,9 @@ print("all calls finished")
 
     def test_dlpack_layout_must_match_exported_layout(self):
         if self.kernel_mode != "portable":
-            self.skipTest("only portable bindings validate the exported dimension order")
+            self.skipTest(
+                "only portable bindings validate the exported dimension order"
+            )
         exported_program, inputs = create_program(ModuleAddSingleInput())
         module = self.load_fn(exported_program.buffer)
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
@@ -414,6 +416,156 @@ print("all calls finished")
             with self.subTest(executor=type(executor)):
                 with self.assertRaisesRegex(ValueError, "stride"):
                     executor(DLPackOnly(inputs[0].numpy().T))
+
+    def test_borrowed_result_feedback_has_bounded_ownership(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement ExecuTorchResult outputs")
+
+        class Identity(torch.nn.Module):
+            def forward(self, value):
+                return value
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        script = """
+import gc
+import importlib.util
+import sys
+import weakref
+import numpy as np
+
+spec = importlib.util.spec_from_file_location("_C", sys.argv[2])
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+
+class DLPackOnly:
+    def __init__(self, value):
+        self.value = value
+    def __dlpack__(self, stream=None):
+        return self.value.__dlpack__(stream=stream)
+    def __dlpack_device__(self):
+        return self.value.__dlpack_device__()
+
+assert not runtime._uses_aten
+assert runtime._tensor_output == "executorch"
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+
+def live_lists():
+    gc.collect()
+    return sum(isinstance(value, list) for value in gc.get_objects())
+
+def check_feedback(executor):
+    source = np.arange(4, dtype=np.float32).reshape(2, 2)
+    source_ref = weakref.ref(source)
+    executor_ref = weakref.ref(executor)
+    pointer = source.ctypes.data
+    result = executor(source, clone_outputs=False)[0]
+    def advance(result, count):
+        for index in range(count):
+            producer = result if index % 2 == 0 else DLPackOnly(result)
+            result = executor(producer, clone_outputs=False)[0]
+            del producer
+            view = np.from_dlpack(result)
+            assert view.ctypes.data == pointer
+            np.testing.assert_array_equal(view, source)
+            del view
+        return result
+    result = advance(result, 16)
+    before = live_lists()
+    result = advance(result, 128)
+    after = live_lists()
+    # Repeated feedback must release old ownership containers, even while
+    # the current result still shares the original allocation.
+    assert after < before + 32, (type(executor), before, after)
+    del executor, source
+    gc.collect()
+    np.testing.assert_array_equal(np.from_dlpack(result), np.arange(4).reshape(2, 2))
+    del result, advance
+    gc.collect()
+    assert executor_ref() is None
+    assert source_ref() is None
+
+check_feedback(runtime._load_for_executorch_from_buffer(data))
+check_feedback(runtime._load_program_from_buffer(data).load_method("forward"))
+print("Borrowed result feedback retained bounded ownership")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "identity.pte")
+            with open(path, "wb") as source:
+                source.write(program.buffer)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    path,
+                    sys.modules[self.runtime.ExecuTorchResult.__module__].__file__,
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn(
+            "Borrowed result feedback retained bounded ownership", completed.stdout
+        )
+
+    def test_module_retains_dlpack_inputs_for_reexecution(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement generic DLPack inputs")
+        program, _ = create_program(
+            ModuleAddSingleInput(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        module = self.load_fn(program.buffer)
+        source = np.ones((2, 2), dtype=np.float32)
+        producer = DLPackOnly(source)
+        producer_ref = weakref.ref(producer)
+        source_ref = weakref.ref(source)
+        output = module(producer, clone_outputs=False)[0]
+        del producer, source
+        gc.collect()
+        self.assertIsNotNone(producer_ref())
+        self.assertIsNotNone(source_ref())
+
+        source_ref().fill(3.0)
+        repeated = module()[0]
+        planned = module.plan_execute("forward", clone_outputs=False)[0]
+        torch.testing.assert_close(repeated, torch.full((2, 2), 6.0))
+        torch.testing.assert_close(planned, torch.full((2, 2), 6.0))
+        del output, repeated, planned
+
+        replacement = DLPackOnly(np.full((2, 2), 5.0, dtype=np.float32))
+        replacement_ref = weakref.ref(replacement)
+        module(replacement)
+        del replacement
+        gc.collect()
+        self.assertIsNone(producer_ref())
+        self.assertIsNone(source_ref())
+        self.assertIsNotNone(replacement_ref())
+        output = module.plan_execute("forward", clone_outputs=False)[0]
+        del module
+        gc.collect()
+        self.assertIsNone(replacement_ref())
+        torch.testing.assert_close(output, torch.full((2, 2), 10.0))
+        del output
+        gc.collect()
+        self.assertIsNone(replacement_ref())
 
     def test_cuda_dlpack_producer_and_executorch_result(self):
         if self.kernel_mode != "portable":
@@ -517,7 +669,9 @@ print("CUDA DLPack roundtrip preserved device storage")
             0,
             f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
-        self.assertIn("CUDA DLPack roundtrip preserved device storage", completed.stdout)
+        self.assertIn(
+            "CUDA DLPack roundtrip preserved device storage", completed.stdout
+        )
 
     def test_bfloat16_raw_buffer_inputs(self):
         exported_program, inputs = create_program(ModuleAddBFloat16())
@@ -529,6 +683,12 @@ print("CUDA DLPack roundtrip preserved device storage")
             with self.subTest(executor=type(executor)):
                 output = executor(raw_inputs)[0]
                 self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+                for noncontiguous in (
+                    np.arange(16, dtype=np.uint8)[::2],
+                    np.arange(8, dtype=np.uint8)[::-1],
+                ):
+                    with self.assertRaisesRegex(BufferError, "contiguous byte buffers"):
+                        executor([noncontiguous, raw_inputs[1]])
 
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())

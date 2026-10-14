@@ -17,6 +17,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <executorch/extension/pybindings/pybindings_cuda.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -112,6 +113,9 @@ class PyExecuTorchResult final
     if (nbytes_ != 0 && tensor.const_data_ptr() == nullptr) {
       throw py::value_error("ExecuTorch result data is not allocated");
     }
+    if (!device_.is_cpu() && nbytes_ != 0) {
+      synchronize_cuda_device(device_.index());
+    }
     if (clone && device_.is_cpu()) {
       storage_.resize(nbytes_);
       if (!storage_.empty()) {
@@ -120,9 +124,6 @@ class PyExecuTorchResult final
       data_ = storage_.data();
       owner_ = py::none();
     } else if (clone) {
-      // DeviceAllocator exposes host/device copies without an ATen dependency.
-      // Stage a clone through host memory until it exposes a device/device
-      // copy.
       if (nbytes_ != 0) {
         const auto type = executorch::runtime::etensor::DeviceType::CUDA;
         auto allocation = executorch::runtime::DeviceMemoryBuffer::create(
@@ -132,21 +133,11 @@ class PyExecuTorchResult final
               "Failed to allocate a CUDA ExecuTorchResult clone; a CUDA device allocator must be registered");
         }
         device_storage_ = std::move(allocation.get());
-        auto* allocator = executorch::runtime::get_device_allocator(type);
-        std::vector<uint8_t> staging(nbytes_);
-        if (allocator->copy_device_to_host(
-                staging.data(),
-                tensor.const_data_ptr(),
-                nbytes_,
-                device_.index()) != executorch::runtime::Error::Ok ||
-            allocator->copy_host_to_device(
-                device_storage_.data(),
-                staging.data(),
-                nbytes_,
-                device_.index()) != executorch::runtime::Error::Ok) {
-          throw std::runtime_error(
-              "Failed to copy a CUDA ExecuTorchResult clone");
-        }
+        copy_cuda_storage(
+            device_storage_.data(),
+            tensor.const_data_ptr(),
+            nbytes_,
+            device_.index());
         data_ = device_storage_.data();
       }
       owner_ = py::none();
@@ -244,6 +235,21 @@ class PyExecuTorchResult final
     return owner_.is_none() ? self : owner_;
   }
 
+  static py::object dlpack_backing_owner(dlpack::ManagedTensor* managed) {
+    if (managed == nullptr || managed->deleter != release_dlpack_holder ||
+        managed->manager_ctx == nullptr) {
+      return py::none();
+    }
+    const auto* holder = static_cast<const DLPackHolder*>(managed->manager_ctx);
+    if (&holder->managed != managed ||
+        managed->dl_tensor.data != holder->result->data_ ||
+        managed->dl_tensor.byte_offset != 0) {
+      return py::none();
+    }
+    const auto& result = holder->result;
+    return result->owner_.is_none() ? py::cast(result) : result->owner_;
+  }
+
   py::tuple dlpack_device() const {
     const auto device = dl_device();
     return py::make_tuple(
@@ -251,8 +257,10 @@ class PyExecuTorchResult final
   }
 
   py::capsule to_dlpack(const py::object& stream = py::none()) {
-    // CUDA stream handoff requires a runtime synchronization API. The device
-    // allocator currently exposes copying and allocation only.
+    if (!device_.is_cpu() && nbytes_ != 0) {
+      synchronize_cuda_device(device_.index());
+    }
+    // The producer storage is ready for consumption on any requested stream.
     (void)stream;
     auto holder = std::make_unique<DLPackHolder>(shared_from_this());
     py::capsule capsule(&holder->managed, "dltensor", [](PyObject* capsule) {
@@ -285,12 +293,7 @@ class PyExecuTorchResult final
           strides.data(),
           0};
       managed.manager_ctx = this;
-      managed.deleter = [](dlpack::ManagedTensor* managed) {
-        // A native DLPack consumer can release its tensor on a worker thread.
-        // The retained result may own Python buffer exports and capsules.
-        py::gil_scoped_acquire gil;
-        delete static_cast<DLPackHolder*>(managed->manager_ctx);
-      };
+      managed.deleter = release_dlpack_holder;
     }
 
     std::shared_ptr<PyExecuTorchResult> result;
@@ -298,6 +301,13 @@ class PyExecuTorchResult final
     std::vector<int64_t> strides;
     dlpack::ManagedTensor managed{};
   };
+
+  static void release_dlpack_holder(dlpack::ManagedTensor* managed) {
+    // A native DLPack consumer can release its tensor on a worker thread.
+    // The retained result may own Python buffer exports and capsules.
+    py::gil_scoped_acquire gil;
+    delete static_cast<DLPackHolder*>(managed->manager_ctx);
+  }
 
   dlpack::Device dl_device() const {
     return {

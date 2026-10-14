@@ -18,6 +18,8 @@
 #include <numeric>
 #include <stdexcept>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -32,6 +34,7 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/pybindings/pybindings_cuda.h>
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
 #include <executorch/extension/pybindings/pybindings_dlpack.h>
 #include <executorch/extension/pybindings/pybindings_executorch_result.h>
@@ -565,6 +568,9 @@ class TorchTensorView final {
       throw py::value_error("Torch tensor data is not allocated");
     }
     data_ = reinterpret_cast<void*>(address);
+    if (device_.type() == executorch::aten::DeviceType::CUDA && nbytes_ != 0) {
+      synchronize_cuda_device(device_.index());
+    }
   }
 
   void* data() const {
@@ -726,6 +732,9 @@ class DLPackTensorView final {
       throw py::error_already_set();
     }
     initialize(managed_->dl_tensor);
+    if (advertised_device_.first == dlpack::CUDA && nbytes_ != 0) {
+      synchronize_cuda_device(advertised_device_.second);
+    }
     if (PyCapsule_SetName(capsule_.ptr(), "used_dltensor") != 0) {
       throw py::error_already_set();
     }
@@ -785,6 +794,10 @@ class DLPackTensorView final {
   }
 
   py::object result_backing_owner() const {
+    auto capsule_owner = PyExecuTorchResult::dlpack_backing_owner(managed_);
+    if (!capsule_owner.is_none()) {
+      return capsule_owner;
+    }
     if (py::isinstance<PyExecuTorchResult>(owner_)) {
       return owner_.cast<std::shared_ptr<PyExecuTorchResult>>()->backing_owner(
           owner_);
@@ -979,43 +992,62 @@ class DLPackTensorView final {
 };
 
 py::object dlpack_output_owner(
-    const std::vector<EValue>& outputs,
+    const executorch::aten::Tensor& output,
     const std::vector<std::shared_ptr<DLPackTensorView>>& inputs,
     const std::vector<std::shared_ptr<BufferTensor>>& buffers,
     const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
     const std::vector<std::optional<TensorPtr>>& output_tensors,
     py::object storage_owner) {
   py::list owners;
-  owners.append(std::move(storage_owner));
-  auto* generation = new std::vector<std::optional<TensorPtr>>(output_tensors);
-  owners.append(py::capsule(generation, [](void* pointer) {
-    delete static_cast<std::vector<std::optional<TensorPtr>>*>(pointer);
-  }));
-  const auto aliases_output = [&outputs](const void* data, size_t nbytes) {
-    const auto start = reinterpret_cast<uintptr_t>(data);
-    bool aliases_input = false;
-    for (const auto& output : outputs) {
-      if (!output.isTensor()) {
+  std::unordered_set<PyObject*> seen;
+  const auto append_owner = [&owners, &seen](py::object owner) {
+    // Result feedback should retain allocation roots without nesting the
+    // previous call's owner list or duplicating its records.
+    std::vector<py::object> pending;
+    pending.push_back(std::move(owner));
+    while (!pending.empty()) {
+      auto current = std::move(pending.back());
+      pending.pop_back();
+      if (current.is_none() || !seen.insert(current.ptr()).second) {
         continue;
       }
-      const auto& tensor = output.toTensor();
-      const auto address = reinterpret_cast<uintptr_t>(tensor.const_data_ptr());
-      aliases_input |= address != 0 && address >= start &&
-          address - start <= nbytes &&
-          tensor.nbytes() <= nbytes - (address - start);
+      if (PyList_CheckExact(current.ptr())) {
+        for (const auto item : py::reinterpret_borrow<py::list>(current)) {
+          pending.emplace_back(py::reinterpret_borrow<py::object>(item));
+        }
+      } else {
+        owners.append(std::move(current));
+      }
     }
-    return aliases_input;
   };
+  append_owner(std::move(storage_owner));
+  const auto aliases_output = [&output](const void* data, size_t nbytes) {
+    const auto start = reinterpret_cast<uintptr_t>(data);
+    const auto address = reinterpret_cast<uintptr_t>(output.const_data_ptr());
+    return address != 0 && address >= start && address - start <= nbytes &&
+        output.nbytes() <= nbytes - (address - start);
+  };
+  // Each result pins only its own output allocation. An aliased result must
+  // not accumulate allocations belonging to discarded sibling outputs.
+  for (const auto& tensor : output_tensors) {
+    if (tensor.has_value() &&
+        aliases_output((*tensor)->const_data_ptr(), (*tensor)->nbytes())) {
+      auto* allocation = new TensorPtr(*tensor);
+      append_owner(py::capsule(allocation, [](void* pointer) {
+        delete static_cast<TensorPtr*>(pointer);
+      }));
+    }
+  }
   for (const auto& input : inputs) {
     if (!aliases_output(input->data(), input->nbytes())) {
       continue;
     }
     auto backing_owner = input->result_backing_owner();
     if (!backing_owner.is_none()) {
-      owners.append(std::move(backing_owner));
+      append_owner(std::move(backing_owner));
     } else {
       auto* retained = new std::shared_ptr<DLPackTensorView>(input);
-      owners.append(py::capsule(retained, [](void* pointer) {
+      append_owner(py::capsule(retained, [](void* pointer) {
         delete static_cast<std::shared_ptr<DLPackTensorView>*>(pointer);
       }));
     }
@@ -1026,10 +1058,10 @@ py::object dlpack_output_owner(
     }
     auto backing_owner = buffer->result_backing_owner();
     if (!backing_owner.is_none()) {
-      owners.append(std::move(backing_owner));
+      append_owner(std::move(backing_owner));
     } else {
       auto* retained = new std::shared_ptr<BufferTensor>(buffer);
-      owners.append(py::capsule(retained, [](void* pointer) {
+      append_owner(py::capsule(retained, [](void* pointer) {
         delete static_cast<std::shared_ptr<BufferTensor>*>(pointer);
       }));
     }
@@ -1037,12 +1069,58 @@ py::object dlpack_output_owner(
   for (const auto& input : torch_inputs) {
     if (aliases_output(input->data(), input->nbytes())) {
       auto* retained = new std::shared_ptr<TorchTensorView>(input);
-      owners.append(py::capsule(retained, [](void* pointer) {
+      append_owner(py::capsule(retained, [](void* pointer) {
         delete static_cast<std::shared_ptr<TorchTensorView>*>(pointer);
       }));
     }
   }
   return owners;
+}
+
+py::object module_aliased_torch_output(
+    const executorch::aten::Tensor& tensor,
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs) {
+  if (torch_inputs.empty() ||
+      portable_tensor_output() != PortableTensorOutput::Torch ||
+      tensor.nbytes() == 0) {
+    return py::none();
+  }
+  const auto address = reinterpret_cast<uintptr_t>(tensor.const_data_ptr());
+  const auto tensor_type =
+      py::reinterpret_borrow<py::object>(loaded_torch_module()).attr("Tensor");
+  for (const auto& input : torch_inputs) {
+    const auto start = reinterpret_cast<uintptr_t>(input->data());
+    if (Py_TYPE(input->owner().ptr()) !=
+            reinterpret_cast<PyTypeObject*>(tensor_type.ptr()) ||
+        tensor.device() != input->device() ||
+        tensor.scalar_type() != input->scalar_type() || address < start ||
+        address - start > input->nbytes() ||
+        tensor.nbytes() > input->nbytes() - (address - start)) {
+      continue;
+    }
+    const auto itemsize = runtime::elementSize(tensor.scalar_type());
+    if ((address - start) % itemsize != 0) {
+      continue;
+    }
+    auto source = input->owner().attr("detach")();
+    if (source.attr("data_ptr")().cast<uintptr_t>() != start ||
+        scalar_type_from_torch_dtype(
+            py::str(source.attr("dtype")).cast<std::string>()) !=
+            tensor.scalar_type()) {
+      throw py::value_error(
+          "Input storage changed before get_outputs(); call set_inputs() again");
+    }
+    const auto offset = source.attr("storage_offset")().cast<int64_t>() +
+        static_cast<int64_t>((address - start) / itemsize);
+    if (!tensor.device().is_cpu()) {
+      synchronize_cuda_device(tensor.device().index());
+    }
+    return source.attr("as_strided")(
+        std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
+        std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end()),
+        offset);
+  }
+  return py::none();
 }
 #endif
 
@@ -1114,6 +1192,7 @@ py::object portable_tensor_result(
     if (tensor.const_data_ptr() == nullptr) {
       throw py::value_error("CUDA output tensor data is not allocated");
     }
+    synchronize_cuda_device(tensor.device().index());
     // A byte capsule supports Torch dtypes that older DLPack dtype tables
     // cannot express. Torch reinterprets the same device storage afterward.
     auto output = torch_module
@@ -1121,7 +1200,11 @@ py::object portable_tensor_result(
                           TorchDLPackBuffer::create(tensor, std::move(owner)))
                       .attr("view")(dtype)
                       .attr("as_strided")(shape, strides);
-    return clone ? output.attr("clone")() : output;
+    if (clone) {
+      output = output.attr("clone")();
+      synchronize_cuda_device(tensor.device().index());
+    }
+    return output;
   }
   auto result = std::make_shared<PyExecuTorchResult>(
       tensor, clone, clone ? py::none() : std::move(owner));
@@ -1312,7 +1395,8 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
 inline py::list get_outputs_as_py_list(
     const std::vector<EValue>& outputs,
     bool clone_outputs = true,
-    py::object owner = py::none()) {
+    py::object owner = py::none(),
+    const std::vector<py::object>& output_owners = {}) {
   const auto outputs_size = outputs.size();
   py::list list(outputs_size);
   for (size_t i = 0; i < outputs_size; ++i) {
@@ -1337,7 +1421,10 @@ inline py::list get_outputs_as_py_list(
         list[i] = py::cast(v.toTensor());
       }
 #else
-      list[i] = portable_tensor_result(v.toTensor(), clone_outputs, owner);
+      list[i] = portable_tensor_result(
+          v.toTensor(),
+          clone_outputs,
+          output_owners.empty() ? owner : output_owners[i]);
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -1777,6 +1864,27 @@ struct PyModule final {
         std::move(loader), data_path, enable_etdump, debug_buffer_size);
   }
 
+  struct InputOwner final {
+    std::shared_ptr<BufferTensor> buffer;
+#ifndef USE_ATEN_LIB
+    std::shared_ptr<TorchTensorView> torch;
+    std::shared_ptr<DLPackTensorView> dlpack;
+#else
+    py::object torch;
+#endif
+    std::optional<BorrowedInput> validation;
+  };
+
+  py::object native_output_owner() {
+    if (!native_output_owner_) {
+      auto* module = new std::shared_ptr<Module>(module_);
+      native_output_owner_ = py::capsule(module, [](void* pointer) {
+        delete static_cast<std::shared_ptr<Module>*>(pointer);
+      });
+    }
+    return native_output_owner_;
+  }
+
   py::list run_method(
       const std::string& method_name,
       const py::object& python_inputs,
@@ -1790,6 +1898,7 @@ struct PyModule final {
         "Failed to get metadata for method %s",
         method_name.c_str());
     const auto method_meta = method_meta_result.get();
+    std::vector<InputOwner> new_input_owners(inputs_size);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
@@ -1826,6 +1935,8 @@ struct PyModule final {
       if (is_torch_tensor(python_input)) {
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
+        new_input_owners[i].torch =
+            py::reinterpret_borrow<py::object>(python_input);
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
         validate_tensor_input(
@@ -1835,6 +1946,7 @@ struct PyModule final {
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& tensor = torch_inputs.back();
+        new_input_owners[i].torch = tensor;
         validate_tensor_input(
             method_meta, i, tensor->scalar_type(), tensor->sizes());
         const auto method = module_->method(method_name);
@@ -1863,6 +1975,9 @@ struct PyModule final {
             tensor->device().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
 #endif
+        if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
+          new_input_owners[i].validation.emplace(i, python_input);
+        }
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
       } else if (py::isinstance<py::bool_>(python_input)) {
@@ -1876,6 +1991,7 @@ struct PyModule final {
         auto python_tensor = py::module_::import("torch.utils.dlpack")
                                  .attr("from_dlpack")(python_input);
         auto at_tensor = python_tensor.cast<at::Tensor>();
+        new_input_owners[i].torch = python_tensor;
         validate_tensor_input(
             method_meta,
             i,
@@ -1890,6 +2006,7 @@ struct PyModule final {
         dlpack_inputs.push_back(
             std::make_shared<DLPackTensorView>(python_input));
         const auto& view = dlpack_inputs.back();
+        new_input_owners[i].dlpack = view;
         validate_tensor_input(
             method_meta,
             i,
@@ -1914,7 +2031,12 @@ struct PyModule final {
         buffer_inputs.push_back(
             std::make_shared<BufferTensor>(python_input, method_meta, i));
         const auto& buffer = buffer_inputs.back();
+        new_input_owners[i].buffer = buffer;
         validate_buffer_input(method_meta, i, *buffer);
+        if (!method_meta.input_tensor_meta(i)->is_memory_planned() &&
+            buffer->borrows_data()) {
+          new_input_owners[i].validation.emplace(i, buffer);
+        }
 #ifdef USE_ATEN_LIB
         auto at_tensor = at::from_blob(
             buffer->data(),
@@ -1948,8 +2070,24 @@ struct PyModule final {
       }
     }
 
-    // Set up output storage before execution.
+    // Module keeps installed inputs for calls with an omitted or partial
+    // input list. Keep both generations if installation fails partway.
+    auto& retained = retained_inputs_[method_name];
+    retained.resize(
+        std::max(retained.size(), static_cast<size_t>(inputs_size)));
+    for (size_t i = inputs_size; i < retained.size(); ++i) {
+      for (const auto& owner : retained[i]) {
+        if (owner.validation) {
+          owner.validation->validate();
+        }
+      }
+    }
+    // Set up output storage before execution, then pin prospective inputs
+    // before Module::execute can install a prefix or throw during execution.
     allocate_output_tensors(method_name);
+    for (size_t i = 0; i < inputs_size; ++i) {
+      retained[i].push_back(new_input_owners[i]);
+    }
     auto outputs = module_->execute(method_name, cpp_inputs);
     THROW_IF_ERROR(
         outputs.error(),
@@ -1957,22 +2095,64 @@ struct PyModule final {
         method_name.c_str(),
         static_cast<uint32_t>(outputs.error()));
 
-    // DLPack producers may supply storage returned directly by the graph.
-    // Keep that allocation alive after this call's adapters go out of scope.
-    py::object output_owner =
-        py::cast(this, py::return_value_policy::reference);
+    for (size_t i = 0; i < inputs_size; ++i) {
+      retained[i].clear();
+      retained[i].push_back(std::move(new_input_owners[i]));
+    }
 #ifndef USE_ATEN_LIB
-    output_owner = dlpack_output_owner(
-        outputs.get(),
-        dlpack_inputs,
-        buffer_inputs,
-        torch_inputs,
-        output_tensors_,
-        std::move(output_owner));
+    // Include untouched inputs when execution reuses a previous call's values.
+    buffer_inputs.clear();
+    torch_inputs.clear();
+    dlpack_inputs.clear();
+    for (const auto& generations : retained) {
+      for (const auto& owner : generations) {
+        if (owner.buffer) {
+          buffer_inputs.push_back(owner.buffer);
+        }
+        if (owner.torch) {
+          torch_inputs.push_back(owner.torch);
+        }
+        if (owner.dlpack) {
+          dlpack_inputs.push_back(owner.dlpack);
+        }
+      }
+    }
 #endif
-    // Retrieve outputs
-    return get_outputs_as_py_list(
-        outputs.get(), clone_outputs, std::move(output_owner));
+    // DLPack producers may supply storage returned directly by the graph.
+    // Keep each output's allocation alive after local adapters go out of scope.
+    py::object output_owner = native_output_owner();
+    std::vector<py::object> output_owners;
+#ifndef USE_ATEN_LIB
+    output_owners.reserve(outputs->size());
+    for (const auto& output : outputs.get()) {
+      output_owners.push_back(
+          output.isTensor() ? dlpack_output_owner(
+                                  output.toTensor(),
+                                  dlpack_inputs,
+                                  buffer_inputs,
+                                  torch_inputs,
+                                  output_tensors_,
+                                  output_owner)
+                            : py::none());
+    }
+#endif
+    auto result = get_outputs_as_py_list(
+        outputs.get(), clone_outputs, std::move(output_owner), output_owners);
+#ifndef USE_ATEN_LIB
+    if (!clone_outputs) {
+      for (size_t i = 0; i < outputs->size(); ++i) {
+        const auto& output = (*outputs)[i];
+        if (output.isTensor()) {
+          auto alias =
+              module_aliased_torch_output(output.toTensor(), torch_inputs);
+          if (!alias.is_none()) {
+            result[i] = std::move(alias);
+          }
+        }
+      }
+    }
+#endif
+    return result;
   }
 
   py::list forward(const py::object& inputs, bool clone_outputs = true) {
@@ -2019,21 +2199,7 @@ struct PyModule final {
       const std::string method_name,
       bool clone_outputs = true) {
     ObjectLock lock(mutex_);
-    auto status = module_->load_method(method_name);
-
-    THROW_IF_ERROR(
-        status,
-        "executing execution plan for method 'load' failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-    auto output = module_->execute(method_name.c_str());
-    THROW_IF_ERROR(
-        output.error(),
-        "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(output.error()));
-    return get_outputs_as_py_list(
-        output.get(),
-        clone_outputs,
-        py::cast(this, py::return_value_policy::reference));
+    return run_method(method_name, py::list(), clone_outputs);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
@@ -2065,6 +2231,9 @@ struct PyModule final {
   size_t debug_buffer_size_;
 
   std::shared_ptr<Module> module_;
+  std::unordered_map<std::string, std::vector<std::vector<InputOwner>>>
+      retained_inputs_;
+  py::object native_output_owner_;
   // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
   std::vector<std::optional<TensorPtr>> output_tensors_;
@@ -3036,6 +3205,9 @@ struct PyMethod final {
         if (!clone_outputs) {
           auto alias = aliased_torch_output(v.toTensor());
           if (!alias.is_none()) {
+            if (!v.toTensor().device().is_cpu() && v.toTensor().nbytes() != 0) {
+              synchronize_cuda_device(v.toTensor().device().index());
+            }
             list[i] = std::move(alias);
             continue;
           }

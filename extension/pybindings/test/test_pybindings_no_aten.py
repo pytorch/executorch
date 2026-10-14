@@ -261,6 +261,12 @@ else:
                 self.assertEqual(raw.tobytes(), bytes((0x00, 0x40)) * 4)
                 self.assertEqual(output.shape, (2, 2))
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
+                for noncontiguous in (
+                    np.arange(16, dtype=np.uint8)[::2],
+                    np.arange(8, dtype=np.uint8)[::-1],
+                ):
+                    with self.assertRaisesRegex(BufferError, "contiguous byte buffers"):
+                        executor((noncontiguous, one))
                 if importlib.util.find_spec("torch") is not None:
                     import torch
 
