@@ -88,7 +88,9 @@ def _argument_key(value: Any) -> Any:
     return (type(value).__module__, type(value).__qualname__, value)
 
 
-def _call_key(kernel: Any, kwargs: Dict[str, Any], tma_descriptor_metadata) -> Optional[Tuple]:
+def _call_key(
+    kernel: Any, kwargs: Dict[str, Any], tma_descriptor_metadata
+) -> Optional[Tuple]:
     if tma_descriptor_metadata:
         return None
     arguments = []
