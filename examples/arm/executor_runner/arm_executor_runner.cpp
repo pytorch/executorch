@@ -1449,8 +1449,8 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
+  for (int i = 1; i + 1 < argc; i += 2) {
+    ET_LOG(Info, "   %s %s", argv[i], argv[i + 1]);
   }
 #else
   (void)argc;

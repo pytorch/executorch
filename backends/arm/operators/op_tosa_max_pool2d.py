@@ -35,7 +35,7 @@ class MaxPool2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, [4])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         input_tensor, kernel, stride, pad = inputs
 
@@ -50,7 +50,6 @@ class MaxPool2dVisitor(NodeVisitor):
             self.target,
             [input_tensor, output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         attr = ts.TosaSerializerAttribute()

@@ -25,9 +25,23 @@ struct Payload final : PreparedInput {
   inline static char kKind = 0;
 
   explicit Payload(std::vector<Token> rows = {11, 7, 7, 7, 22})
-      : values(std::move(rows)), count(values.size()) {}
-  std::vector<Token> values;
+      : values(std::make_shared<const std::vector<Token>>(std::move(rows))),
+        count(values->size()) {}
+  TokenInputPtr values;
   std::size_t count;
+  std::size_t offset = 0;
+  std::optional<Token> initial_detokenization_token() const override {
+    return values->back();
+  }
+  PreparedInputPtr suffix(std::size_t start) const override {
+    if (start >= size()) {
+      return nullptr;
+    }
+    auto view = std::make_shared<Payload>(*this);
+    view->offset += start;
+    view->count -= start;
+    return view;
+  }
   const void* kind() const override {
     return &kKind;
   }
@@ -44,6 +58,9 @@ struct WrongPayload final : PreparedInput {
   }
   std::size_t size() const override {
     return 1;
+  }
+  PreparedInputPtr suffix(std::size_t start) const override {
+    return start == 0 ? std::make_shared<WrongPayload>() : nullptr;
   }
 };
 
@@ -69,12 +86,15 @@ struct RecordingExecutor : testing::FakeExecutor {
           ADD_FAILURE() << "unsupported input reached execute";
           return false;
         }
-        const auto& rows = static_cast<const Payload&>(**prepared).values;
+        const auto& view = static_cast<const Payload&>(**prepared);
+        const auto& rows = *view.values;
         if (input.offset > rows.size() ||
             input.size > rows.size() - input.offset) {
           return false;
         }
-        translated.payload = TokenInputPtr(*prepared, &rows);
+        translated.payload = view.values;
+        translated.offset += view.offset;
+        translated.position -= static_cast<Position>(view.offset);
       }
       slices.push_back(input);
       std::visit([](auto& owner) { owner.reset(); }, slices.back().payload);
@@ -83,8 +103,8 @@ struct RecordingExecutor : testing::FakeExecutor {
           input.payload);
       const auto& tokens = *std::get<TokenInputPtr>(translated.payload);
       values.emplace_back(
-          tokens.begin() + input.offset,
-          tokens.begin() + input.offset + input.size);
+          tokens.begin() + translated.offset,
+          tokens.begin() + translated.offset + input.size);
     }
     return FakeExecutor::execute(raw, out);
   }
@@ -113,6 +133,12 @@ GenConfig config(int tokens = 1) {
   GenConfig result;
   result.max_new_tokens = tokens;
   return result;
+}
+
+TEST(OpaqueInputTest, DetokenizationSeedDefaultsToAbsent) {
+  const WrongPayload input;
+  EXPECT_EQ(input.initial_detokenization_token(), std::nullopt);
+  EXPECT_EQ(input.suffix(0)->initial_detokenization_token(), std::nullopt);
 }
 
 TEST(OpaqueInputTest, WarmOpaqueChunksAndOrdinaryRawText) {
@@ -174,6 +200,85 @@ TEST(OpaqueInputTest, WarmOpaqueChunksAndOrdinaryRawText) {
     EXPECT_EQ(generation.metrics().n_prompt_tokens, chunked ? 5 : 2);
     EXPECT_EQ(generation.metrics().n_prefilled_tokens, chunked ? 6 : 3);
   }
+}
+
+TEST(OpaqueInputTest, BreakpointsFencePendingTokenAndOpaqueSuffix) {
+  for (bool cancel : {false, true}) {
+    SCOPED_TRACE(cancel);
+    Harness h;
+    auto session = h.session();
+    std::vector<Token> first_output;
+    session
+        .generate_async(
+            std::vector<Token>{1},
+            config(),
+            [&](const GenerationUpdate& update) {
+              first_output = update.tokens;
+            })
+        .wait();
+    ASSERT_EQ(first_output.size(), 1u);
+    auto full = std::make_shared<Payload>();
+    auto view = full->suffix(1);
+    std::weak_ptr<const PreparedInput> owner = view;
+    full.reset();
+    auto options = config();
+    options.prefill_breakpoints = {2, 3, 6};
+    std::vector<Position> observed;
+    auto handle = session.generate_async(
+        std::move(view), options, {}, {}, [&](Position position) {
+          observed.push_back(position);
+          if (cancel && position == 3) {
+            session = Session{};
+          }
+        });
+    handle.wait();
+    h.runner.shutdown();
+    EXPECT_EQ(
+        handle.finish_reason(),
+        cancel ? FinishReason::Cancelled : FinishReason::NewTokenLimit);
+    EXPECT_EQ(
+        observed,
+        cancel ? (std::vector<Position>{2, 3})
+               : (std::vector<Position>{2, 3, 6}));
+    std::vector<std::vector<Token>> expected{{1}, {first_output[0]}, {7}};
+    if (!cancel) {
+      expected.insert(expected.end(), {{7, 7}, {22}});
+    }
+    EXPECT_EQ(h.executor.values, expected);
+    ASSERT_EQ(h.executor.slices.size(), expected.size());
+    Position next = 0;
+    for (const auto& slice : h.executor.slices) {
+      EXPECT_EQ(slice.position + slice.offset, next);
+      next += slice.size;
+    }
+    EXPECT_EQ(next, cancel ? 3 : 6);
+    EXPECT_TRUE(owner.expired());
+  }
+}
+
+TEST(OpaqueInputTest, SuffixSharesBackingAndUsesViewRelativeOffsets) {
+  Harness h;
+  auto session = h.session();
+  auto full = std::make_shared<Payload>();
+  const auto view = full->suffix(2);
+  ASSERT_TRUE(view);
+  EXPECT_EQ(view->kind(), full->kind());
+  EXPECT_EQ(
+      view->initial_detokenization_token(),
+      full->initial_detokenization_token());
+  EXPECT_EQ(static_cast<const Payload&>(*view).values, full->values);
+  EXPECT_FALSE(full->suffix(full->size()));
+  EXPECT_FALSE(full->suffix(std::numeric_limits<std::size_t>::max()));
+  full.reset();
+  auto handle = session.generate_async(view, config(), {});
+  handle.wait();
+  h.runner.shutdown();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(h.executor.values, (std::vector<std::vector<Token>>{{7, 7}, {22}}));
+  ASSERT_EQ(h.executor.slices.size(), 2u);
+  EXPECT_EQ(h.executor.slices[0].offset, 0u);
+  EXPECT_EQ(h.executor.slices[1].offset, 2u);
+  EXPECT_EQ(session.position(), 3);
 }
 
 TEST(OpaqueInputTest, SharedOpaqueChunksKeepOwnershipAndUseRawFeedback) {
