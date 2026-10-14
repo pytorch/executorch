@@ -57,10 +57,41 @@ requested by the periodic serving policy.
 `PromptCapture` handles capture queueing and failure notification. Serving owns
 transient-row admission and control-thread collection into the prefix cache.
 Captures and prompt replacement share one transient executor row. Snapshots
-remain bounded by the entry budget. When evicting a matching history, an
-intermediate snapshot is preferred over its oldest prefix when possible;
-unrelated histories retain global LRU eviction. One entry cannot retain both
-early and recent state. Memory and copy costs depend on the executor.
+remain bounded by the entry budget, with global LRU eviction by default.
+Capture timing does not change the retention policy. Memory and copy costs
+depend on the executor.
+
+C++ applications can independently replace either policy through
+`ServingRuntimeConfig`:
+
+- `prefix_checkpoint_policy(prompt, start, opening)` overrides the interval
+  policy. It receives the full `PrefixIdentity`, the committed start position,
+  and whether this is a new session. Return `PrefixCheckpoint` values containing
+  an absolute `position` and optional `metadata`. Positions must strictly increase
+  within `(start, prompt.size()]`; include prompt end explicitly if wanted.
+  Empty or invalid results, or exceptions, skip capture for that request.
+- `prefix_cache_retention(incoming, entries)` selects an eviction victim before
+  inserting a distinct snapshot into a full cache. `entries` contains borrowed
+  `EntryView` values with `identity` and `metadata`, ordered most recently used
+  first; `incoming` has the same fields. Return an existing
+  entry's index, or `std::nullopt` to decline the incoming snapshot. An invalid
+  index or exception also declines it without changing retained entries.
+
+`CheckpointMetadata` is `std::shared_ptr<const void>`. Applications supply their
+own immutable type (for example, boundary class or priority) and recover it in
+retention with `std::static_pointer_cast<const MyHints>(entry.metadata)` after
+checking for null. The application owns the type contract. Metadata is shared
+through capture and storage; it never affects prefix matching or clone safety.
+Duplicate identities refresh recency and replace metadata while retaining the
+existing snapshot. Default periodic captures have no metadata; default LRU
+ignores it.
+
+Both callbacks run on the control thread and must not wait for or reenter the
+runtime. Capture still respects the shared lane and executor clone refusals;
+retention cannot exceed the entry budget or mutate snapshot state. The CLI
+configures the default interval and capacity; custom policies are C++ callables.
+`PrefixCache(max_entries, retention_policy)` exposes the same retention hook to
+applications using the Runner directly.
 
 - Different sessions can run concurrently. Same-session transcript preparation,
   generation, native wire completion, and transcript commit remain ordered.

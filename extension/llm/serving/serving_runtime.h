@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
@@ -63,6 +64,20 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // the initial prompt end. Busy capture lanes skip points. Requires prefix
   // cache capacity; zero retains initial-prompt-only capture behavior.
   std::size_t prefix_checkpoint_interval = 0;
+  // Optional replacement for the interval policy, invoked on control with the
+  // full prompt identity, committed start position, and whether this is a new
+  // session. Return checkpoints at increasing positions in (start,
+  // prompt.size()] with optional application metadata exposed to the retention
+  // policy. Empty, invalid, or throwing results skip capture for this request.
+  // Requires cache capacity. Must not wait for or reenter this runtime.
+  std::function<std::vector<batching::PrefixCheckpoint>(
+      const batching::PrefixIdentity& prompt,
+      batching::Position start,
+      bool opening)>
+      prefix_checkpoint_policy = {};
+  // Independent of capture timing. Empty uses bounded global LRU retention.
+  // Called on control; must not wait for or reenter this runtime.
+  batching::PrefixCache::RetentionPolicy prefix_cache_retention = {};
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its

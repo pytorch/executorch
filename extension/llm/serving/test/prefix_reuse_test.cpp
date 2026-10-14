@@ -25,12 +25,14 @@
 #include <map>
 #include <mutex>
 #include <numeric>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
 using namespace executorch::extension::llm;
 using namespace executorch::extension::llm::serving;
 using batching::Position;
+using batching::PrefixCheckpoint;
 using batching::SessionId;
 using batching::Token;
 using serving::testing::TestPreparedInput;
@@ -1302,6 +1304,7 @@ TEST_F(
     PrefixReuseTest,
     PeriodicCheckpointRestoresAnIntermediatePromptBoundary) {
   config.max_sessions = 1;
+  config.prefix_cache_capacity = 8;
   config.prefix_checkpoint_interval = 8;
   executor.retained_tail = 0;
   start();
@@ -1323,6 +1326,163 @@ TEST_F(
   EXPECT_EQ(
       replaced->terminal->stats.prefilled_prompt_tokens,
       prompt.size() - boundary);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    CustomCheckpointPolicyOverridesIntervalAndSeesContinuation) {
+  config.prefix_checkpoint_interval = 8;
+  config.prefix_cache_capacity = 1;
+  executor.retained_tail = 0;
+  auto initial_metadata = std::make_shared<const int>(5);
+  auto continuation_metadata = std::make_shared<const int>(19);
+  std::vector<std::pair<Position, bool>> calls;
+  std::size_t retention_calls = 0;
+  config.prefix_checkpoint_policy = [&](const batching::PrefixIdentity& prompt,
+                                        Position start,
+                                        bool opening) {
+    calls.emplace_back(start, opening);
+    EXPECT_EQ(prompt.size(), opening ? 14u : 24u);
+    return std::vector<PrefixCheckpoint>{
+        {opening ? 5 : 19, opening ? initial_metadata : continuation_metadata}};
+  };
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++retention_calls;
+    EXPECT_EQ(incoming.identity.size(), 19u);
+    EXPECT_EQ(incoming.metadata, continuation_metadata);
+    EXPECT_EQ(entries.front().identity.size(), 5u);
+    EXPECT_EQ(entries.front().metadata, initial_metadata);
+    return 0;
+  };
+  start();
+  std::vector<Token> prompt(14, 7);
+  auto first = output();
+  submit(first, prompt).wait();
+  ASSERT_FALSE(first->terminal->error);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones().front().prefix.size(), 5u);
+  prompt.push_back(100);
+  prompt.resize(24, 7);
+  auto continued = output();
+  submit(continued, prompt).wait();
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  ASSERT_EQ(executor.clones().size(), 2u);
+  EXPECT_EQ(executor.clones().back().prefix.size(), 19u);
+  EXPECT_EQ(retention_calls, 1u);
+  EXPECT_EQ(
+      calls, (std::vector<std::pair<Position, bool>>{{0, true}, {14, false}}));
+}
+
+TEST_F(PrefixReuseTest, CustomCheckpointPolicyReceivesOpaqueIdentity) {
+  use_mixed_preparer();
+  config.prefix_cache_capacity = 1;
+  auto metadata = std::make_shared<const int>(42);
+  std::size_t capture_calls = 0;
+  std::size_t retention_calls = 0;
+  config.prefix_checkpoint_policy = [&](const batching::PrefixIdentity& prompt,
+                                        Position start,
+                                        bool opening) {
+    ++capture_calls;
+    EXPECT_EQ(start, 0);
+    EXPECT_TRUE(opening);
+    EXPECT_EQ(prompt.size(), 6u);
+    EXPECT_EQ(prompt.spans.size(), 3u);
+    EXPECT_TRUE(std::holds_alternative<batching::OpaqueSpan>(prompt.spans[1]));
+    return std::vector<PrefixCheckpoint>{{4, metadata}};
+  };
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++retention_calls;
+    EXPECT_EQ(incoming.metadata, metadata);
+    EXPECT_EQ(entries.front().metadata, metadata);
+    EXPECT_EQ(incoming.identity.size(), 4u);
+    EXPECT_EQ(entries.front().identity.size(), 4u);
+    EXPECT_TRUE(std::holds_alternative<batching::OpaqueSpan>(
+        incoming.identity.spans[1]));
+    return 0;
+  };
+  start();
+  auto event = output();
+  submit(event, {1, 7, 7, 7, 2, 3}).wait();
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(capture_calls, 1u);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  EXPECT_EQ(executor.clones().front().prefix.size(), 4u);
+  ASSERT_FALSE(runtime->close_session_async("s").get());
+  auto other = output();
+  submit(other, {9, 7, 7, 7, 2, 3}).wait();
+  ASSERT_FALSE(other->terminal->error);
+  EXPECT_EQ(capture_calls, 2u);
+  EXPECT_EQ(retention_calls, 1u);
+}
+
+TEST_F(
+    PrefixReuseTest,
+    CustomCheckpointPolicyCanSkipCaptureOrReturnInvalidPoints) {
+  std::vector<PrefixCheckpoint> points;
+  config.prefix_checkpoint_policy = [&](const auto&, Position, bool) {
+    return points;
+  };
+  start();
+  for (const auto& candidate : std::vector<std::vector<PrefixCheckpoint>>{
+           {}, {{-1}}, {{0}}, {{4}, {4}}, {{8}, {4}}, {{4}, {13}}}) {
+    points = candidate;
+    auto event = output();
+    submit(event, std::vector<Token>(12, 7)).wait();
+    ASSERT_FALSE(event->terminal->error);
+    EXPECT_FALSE(runtime->close_session_async("s").get());
+  }
+  points.clear();
+  std::vector<Token> prompt(12, 7);
+  submit(output(), prompt).wait();
+  points = {{4}};
+  prompt.push_back(100);
+  prompt.push_back(8);
+  auto continued = output();
+  submit(continued, prompt).wait();
+  ASSERT_FALSE(continued->terminal->error);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(PrefixReuseTest, ThrowingCheckpointPolicyDoesNotFailGeneration) {
+  config.prefix_checkpoint_policy =
+      [](const auto&, Position, bool) -> std::vector<PrefixCheckpoint> {
+    throw std::runtime_error("checkpoint policy failed");
+  };
+  start();
+  auto event = output();
+  submit(event, {1, 2, 3}).wait();
+  ASSERT_FALSE(event->terminal->error);
+  EXPECT_EQ(executor.clone_calls.load(), 0);
+}
+#endif
+
+TEST_F(PrefixReuseTest, CustomRetentionCanDeclineNewSessionsSnapshot) {
+  config.prefix_cache_capacity = 1;
+  std::atomic<std::size_t> calls{0};
+  config.prefix_cache_retention = [&](const auto& incoming,
+                                      const auto& entries) {
+    ++calls;
+    EXPECT_FALSE(incoming.metadata);
+    EXPECT_FALSE(entries.front().metadata);
+    return std::nullopt;
+  };
+  start();
+  submit(output(), {1, 2, 3}).wait();
+  EXPECT_FALSE(runtime->close_session_async("s").get());
+  auto other = output();
+  submit(other, {8, 8, 8}).wait();
+  ASSERT_FALSE(other->terminal->error);
+  EXPECT_EQ(calls.load(), 1u);
+  EXPECT_FALSE(runtime->close_session_async("s").get());
+  auto reused = output();
+  submit(reused, {1, 2, 3, 9}).wait();
+  ASSERT_FALSE(reused->terminal->error);
+  EXPECT_EQ(reused->terminal->stats.reused_prompt_tokens, 3u);
 }
 
 TEST_F(PrefixReuseTest, PeriodicContinuationUsesAbsoluteBoundaries) {
@@ -1516,6 +1676,15 @@ TEST_F(
 TEST_F(PrefixReuseTest, PeriodicCaptureRequiresStorage) {
   config.prefix_cache_capacity = 0;
   config.prefix_checkpoint_interval = 8;
+  start();
+  EXPECT_FALSE(runtime->info().ready);
+}
+
+TEST_F(PrefixReuseTest, CustomCaptureRequiresStorage) {
+  config.prefix_cache_capacity = 0;
+  config.prefix_checkpoint_policy = [](const auto&, Position, bool) {
+    return std::vector<PrefixCheckpoint>{{1}};
+  };
   start();
   EXPECT_FALSE(runtime->info().ready);
 }
