@@ -233,6 +233,18 @@ class _NormLinear(torch.nn.Module):
         return self.proj(self.norm(x))
 
 
+class _GeluSigmoid(torch.nn.Module):
+    """GELU and sigmoid after linears, which the native passes emit in place."""
+
+    def __init__(self):
+        super().__init__()
+        self.up = torch.nn.Linear(16, 32)
+        self.down = torch.nn.Linear(32, 8)
+
+    def forward(self, x):
+        return torch.sigmoid(self.down(torch.nn.functional.gelu(self.up(x))))
+
+
 class CrossEngineTest(unittest.TestCase):
     def _check_dynamic(
         self, model, steps, dynamic_shapes, atol_fraction=1e-4, engines=_ENGINES
@@ -278,6 +290,15 @@ class CrossEngineTest(unittest.TestCase):
         seq = Dim("seq", min=2, max=12)
         # ggml does not lower aten.native_layer_norm yet.
         self._check_dynamic(model, steps, ({1: seq},), engines=("vulkan_ptn_runner",))
+
+    def test_inplace_gelu_and_sigmoid(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3)]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower aten.gelu yet.
+        self._check_dynamic(
+            _GeluSigmoid(), steps, ({1: seq},), engines=("vulkan_ptn_runner",)
+        )
 
     def test_padding_mask_of_dynamic_positions(self):
         torch.manual_seed(0)

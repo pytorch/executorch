@@ -23,6 +23,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/native/runtime/Method.h>
@@ -144,6 +145,21 @@ size_t logical_nbytes(const TensorMeta& meta) {
   return numel * element_bytes;
 }
 
+// In-place unary ops and the functional ET-VK kernels they run as.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 3>
+    kInPlaceKernels{{
+        {"aten.gelu_.default", "aten.gelu.default"},
+        {"aten.relu_.default", "aten.relu.default"},
+        {"aten.sigmoid_.default", "aten.sigmoid.default"},
+    }};
+
+const std::pair<std::string_view, std::string_view>* in_place_kernel(
+    std::string_view key) {
+  const auto it = std::ranges::find_if(
+      kInPlaceKernels, [&](const auto& entry) { return entry.first == key; });
+  return it == kInPlaceKernels.end() ? nullptr : &*it;
+}
+
 // ET-VK operator-registry key for a native fx target: strips the leading
 // "torch.ops." namespace (torch.ops.aten.add.Tensor -> aten.add.Tensor) and
 // renames targets whose ET-VK kernel is registered under another key.
@@ -151,8 +167,8 @@ std::string registry_key(const std::string& target) {
   constexpr std::string_view kPrefix = "torch.ops.";
   std::string key =
       target.starts_with(kPrefix) ? target.substr(kPrefix.size()) : target;
-  if (key == "aten.relu_.default") {
-    key = "aten.relu.default";
+  if (const auto* in_place = in_place_kernel(key)) {
+    key = std::string(in_place->second);
   } else if (key == "llama.update_cache.default") {
     key = "update_cache.default";
   } else if (key == "aten.sym_size.int") {
@@ -174,8 +190,11 @@ std::string registry_key(const std::string& target) {
 
 // In-place targets that registry_key maps to a functional ET-VK kernel.
 bool is_functional_in_place(const std::string& target) {
-  return target == "torch.ops.aten.relu_.default" ||
-      target == "aten.relu_.default";
+  constexpr std::string_view kPrefix = "torch.ops.";
+  const std::string_view key = target.starts_with(kPrefix)
+      ? std::string_view(target).substr(kPrefix.size())
+      : std::string_view(target);
+  return in_place_kernel(key) != nullptr;
 }
 
 // Ops whose ET-VK implementations require width-packed operands. This list
