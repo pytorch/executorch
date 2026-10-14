@@ -48,9 +48,9 @@ shared ivec4 shared_sums[NUM_GROUPS_PER_WG][NUM_WORKERS_PER_GROUP];
 
 #define TILE_M 4
 
-#include "linear_int8_input_block.glslh"
-#include "linear_int8_input_scales_zps_load.glslh"
-#include "linear_fp_input_tile_load.glslh"
+#include "gemm/tile_utils/linear_int8_input_block.glslh"
+#include "gemm/tile_utils/linear_int8_input_scales_zps_load.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile_load.glslh"
 
 void main() {
   const int group_idx = int(gl_GlobalInvocationID.x);

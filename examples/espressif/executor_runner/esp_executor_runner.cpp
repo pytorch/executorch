@@ -488,21 +488,23 @@ struct RunnerContext {
 #endif
 };
 
-void runner_init(RunnerContext& ctx, size_t pte_size) {
+bool runner_init(RunnerContext& ctx, size_t pte_size) {
+  ET_CHECK_OR_RETURN_FALSE(
+      pte_size >= Program::kMinHeadBytes, "Model data is too small");
   const void* program_data = model_pte;
   ctx.program_data_len = pte_size;
   ctx.pte_size = pte_size;
 
 #if defined(ET_BUNDLE_IO)
   ctx.bundle_io = executorch::bundled_program::is_bundled_program(
-      reinterpret_cast<void*>(model_pte), ctx.pte_size);
+      const_cast<void*>(program_data), ctx.pte_size);
   if (ctx.bundle_io) {
     Error status = executorch::bundled_program::get_program_data(
-        reinterpret_cast<void*>(model_pte),
+        const_cast<void*>(program_data),
         ctx.pte_size,
         &program_data,
         &ctx.program_data_len);
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         status == Error::Ok,
         "get_program_data() from bundle PTE failed: 0x%x",
         (unsigned int)status);
@@ -518,7 +520,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   // Parse the program file
   Result<Program> program_result = Program::load(&loader);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_FALSE(
       program_result.ok(),
       "Program loading failed @ %p: 0x%" PRIx32,
       program_data,
@@ -533,13 +535,13 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   {
     const auto method_name_result = program.get_method_name(0);
-    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
+    ET_CHECK_OR_RETURN_FALSE(method_name_result.ok(), "Program has no methods");
     ctx.method_name = *method_name_result;
   }
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
   Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_FALSE(
       method_meta.ok(),
       "Failed to get method_meta for %s: 0x%x",
       ctx.method_name,
@@ -550,17 +552,16 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
       "Setup Method allocator pool. Size: %lu bytes.",
       static_cast<unsigned long>(method_allocation_pool_size));
 
-  ctx.method_allocator.reset(
-      method_allocation_pool_size, method_allocation_pool);
-
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   ctx.planned_spans.reserve(num_memory_planned_buffers);
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
-    size_t buffer_size =
-        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    auto buffer_size_result = method_meta->memory_planned_buffer_size(id);
+    ET_CHECK_OR_RETURN_FALSE(
+        buffer_size_result.ok(), "Could not read planned buffer %zu", id);
+    size_t buffer_size = static_cast<size_t>(*buffer_size_result);
     ET_LOG(
         Info,
         "Setting up planned buffer %lu, size %lu.",
@@ -569,7 +570,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
     uint8_t* buffer = reinterpret_cast<uint8_t*>(
         ctx.method_allocator->allocate(buffer_size, 16UL));
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %lu",
         static_cast<unsigned long>(buffer_size));
@@ -650,10 +651,11 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   if (!ctx.method->ok()) {
     ET_LOG(
-        Info,
+        Error,
         "Loading of method %s failed with status 0x%" PRIx32,
         ctx.method_name,
-        static_cast<unsigned long>(ctx.method->error()));
+        static_cast<uint32_t>(ctx.method->error()));
+    return false;
   }
   ctx.method_loaded_memsize =
       ctx.method_allocator->used_size() - method_loaded_membase;
@@ -667,16 +669,16 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
     ET_LOG(Info, "Input testset[%d] from bundled bpte", testset_idx);
     Error status = executorch::bundled_program::load_bundled_input(
         *ctx.method.value(), model_pte, testset_idx);
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         status == Error::Ok,
         "load_bundled_input failed with status 0x%" PRIx32,
-        status);
+        static_cast<uint32_t>(status));
   } else
 #endif
   {
     Error status = ::prepare_input_tensors(
         *ctx.method.value(), ctx.method_allocator.value());
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         status == Error::Ok,
         "Failed to prepare inputs 0x%" PRIx32,
         static_cast<uint32_t>(status));
@@ -687,7 +689,8 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
     std::vector<EValue> inputs(ctx.method.value()->inputs_size());
     ET_LOG(Info, "%lu inputs: ", static_cast<unsigned long>(inputs.size()));
     Error status = ctx.method.value()->get_inputs(inputs.data(), inputs.size());
-    ET_CHECK(status == Error::Ok);
+    ET_CHECK_OR_RETURN_FALSE(
+        status == Error::Ok, "Failed to read inputs for logging");
 
     for (int i = 0; i < inputs.size(); ++i) {
       if (inputs[i].isTensor()) {
@@ -731,6 +734,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   ctx.executor_membase = ctx.method_allocator->used_size();
 
   ET_LOG(Info, "Input prepared.");
+  return true;
 }
 
 void log_mem_status(RunnerContext& ctx) {
@@ -917,7 +921,7 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
           Info,
           "=== Error calculating stats for testset %d ERROR:%d ===",
           testset_idx,
-          stats.status);
+          static_cast<int>(stats.status));
     }
 
     Error status = verify_method_outputs(
@@ -1007,6 +1011,8 @@ static const size_t kMaxInputOutputs = 16;
 bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
+  g_runner_ctx.method_allocator.reset(
+      method_allocation_pool_size, method_allocation_pool);
   size_t pte_size;
 
 #if defined(FILESYSTEM_LOAD)
@@ -1016,10 +1022,8 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  MemoryAllocator file_allocator(
-      method_allocation_pool_size, method_allocation_pool);
-  auto [buffer, buffer_size] =
-      load_file_from_fs("/spiffs/model.pte", file_allocator);
+  auto [buffer, buffer_size] = load_file_from_fs(
+      "/spiffs/model.pte", g_runner_ctx.method_allocator.value());
   if (buffer == nullptr) {
     ET_LOG(Fatal, "Failed to load model from filesystem.");
     return false;
@@ -1031,8 +1035,7 @@ bool et_runner_init(void) {
   pte_size = sizeof(model_pte);
 #endif
 
-  runner_init(g_runner_ctx, pte_size);
-  g_runner_initialized = g_runner_ctx.method->ok();
+  g_runner_initialized = runner_init(g_runner_ctx, pte_size);
   return g_runner_initialized;
 }
 

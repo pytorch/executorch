@@ -23,7 +23,7 @@ on:
       python-version:
         required: false
         type: string
-        default: '3.10'
+        default: '3.11'
       linux-timeout:
         required: false
         type: number
