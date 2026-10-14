@@ -59,7 +59,12 @@ def _parse_args(argv=None):
         "requires batching executor cache-clone support.",
     )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
-    parser.add_argument("--prefix-checkpoint-interval", type=int, default=0)
+    parser.add_argument(
+        "--prefix-checkpoint-interval",
+        type=int,
+        default=0,
+        help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+    )
     parser.add_argument("--max-image-bytes", type=int, default=_MAX_IMAGE_BYTES)
     parser.add_argument(
         "--max-request-bytes",

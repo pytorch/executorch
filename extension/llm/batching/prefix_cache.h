@@ -40,7 +40,7 @@ struct ET_EXPERIMENTAL PrefixCheckpoint {
   CheckpointMetadata metadata = {};
 };
 
-// Absolute periodic boundaries, plus an optional final prompt checkpoint.
+// Absolute periodic capture boundaries; retention is configured independently.
 inline std::vector<Position> periodic_prefill_breakpoints(
     Position start,
     Position end,
@@ -62,25 +62,16 @@ inline std::vector<Position> periodic_prefill_breakpoints(
   return positions;
 }
 
-// Caller-thread policy over retained, idle snapshot sessions. Scope one cache
-// to one Runner and immutable model/configuration; identities must describe
-// all token and opaque content under those fixed execution semantics.
-// Serialize cache calls externally. lookup() and PromptCapture::collect() may
-// wait for cloning and must never run in a Runner callback. Keep this object
-// outside the Runner: its Sessions keep the runner's internals alive.
-//
-// Backend numerical parity is separate from snapshot correctness. On MLX,
-// cold/warm logits may differ as prefill shapes change. Keep MLX reuse opt-in
-// and greedy-only until non-greedy sampling is validated; even greedy token
-// parity is not guaranteed.
+// Caller-owned snapshots for one Runner and immutable model configuration.
+// Serialize calls; lookup/collect may block and cannot run in Runner callbacks.
+// Reuse may change numerical results as prefill shapes change.
 class ET_EXPERIMENTAL PrefixCache {
  public:
   using EntryView = PrefixCacheEntryView;
   using Entries = PrefixCacheEntries;
   using RetentionPolicy = PrefixCacheRetentionPolicy;
 
-  // One generation's best-effort prompt capture. The wrapped callback owns
-  // its state, so moving or discarding this handle does not invalidate it.
+  // Best-effort capture; callbacks retain state independently of this handle.
   class PromptCapture {
    public:
     PromptCapture() = default;
@@ -89,9 +80,8 @@ class ET_EXPERIMENTAL PrefixCache {
     PromptCapture(const PromptCapture&) = delete;
     PromptCapture& operator=(const PromptCapture&) = delete;
 
-    // Wrap once for one generation. Enqueue the clone before delivering the
-    // first tokens, without waiting on the engine thread. User callback
-    // exceptions retain the normal generation-failure behavior.
+    // Wrap once per generation; queue a clone before the first output.
+    // User callback exceptions fail generation.
     GenerationCallback wrap(GenerationCallback on_update = {}) {
       if (!state_) {
         return on_update;
@@ -122,11 +112,9 @@ class ET_EXPERIMENTAL PrefixCache {
       return state_ && queue_capture(*state_, position, std::move(metadata));
     }
 
-    // The caller owns admission and collection. Each successful acquisition
-    // receives one notification: queued=true publishes work for collect();
-    // queued=false releases admission after optional capture failed.
-    // Optional checkpoint metadata is matched by position; points must
-    // increase.
+    // Metadata points must increase. After successful try_acquire, on_capture
+    // reports whether the caller should collect (true) or release admission
+    // (false). All callbacks must be nonblocking.
     std::function<void(Position)> observer(
         std::function<bool()> try_acquire,
         std::function<void(bool queued)> on_capture,
@@ -167,8 +155,8 @@ class ET_EXPERIMENTAL PrefixCache {
       };
     }
 
-    // Caller thread only, after wrap's generation has settled or capture_at
-    // has returned. May wait for the clone. The PrefixCache must still live.
+    // May block; serialize with capture_at or wait for wrap's generation.
+    // The PrefixCache must outlive collection.
     bool collect() {
       auto state = state_;
       if (!state || !state->snapshot.valid()) {
@@ -248,11 +236,8 @@ class ET_EXPERIMENTAL PrefixCache {
   PrefixCache(PrefixCache&&) = delete;
   PrefixCache& operator=(PrefixCache&&) = delete;
 
-  // tokens is the complete prompt history, including any reused prefix.
-  // Capture binds to the session identity, so the source Session may move.
-  // It does not own the source: destroying its owner still requests closure.
-  // Disabled caching, invalid input, or allocation refusal gives a no-op
-  // capture; it still forwards the wrapped callback.
+  // Supply the complete prompt. Keep the source owned until generation ends.
+  // Invalid or disabled capture still forwards the wrapped callback.
   PromptCapture capture_prompt(
       const Session& source,
       const std::vector<Token>& tokens,
@@ -289,15 +274,8 @@ class ET_EXPERIMENTAL PrefixCache {
     return capture;
   }
 
-  // Takes ownership of a successful clone at exactly tokens.size(). The caller
-  // supplies its exact committed tokens and must not have generated on the
-  // clone. Queue clone_async at a supported boundary before later forwards
-  // overwrite it (e.g. from an on_prefill observer), then collect the future
-  // and insert here on the caller thread. PromptCapture handles this queueing
-  // and collection. Refusal releases the supplied snapshot and leaves existing
-  // entries intact.
-  // Duplicate identities refresh recency and replace metadata, keeping the
-  // retained snapshot. Metadata never affects matching or clone safety.
+  // Takes an idle clone at exactly tokens.size(); refusal releases it.
+  // Duplicate keys refresh recency and metadata, keeping the existing snapshot.
   bool insert(
       const std::vector<Token>& tokens,
       Session snapshot,
@@ -362,11 +340,8 @@ class ET_EXPERIMENTAL PrefixCache {
 #endif
   }
 
-  // Longest token match whose boundary clones, breaking ties by recency.
-  // Each snapshot is tried once at its longest match; refusal skips it
-  // without retrying shorter boundaries. Leave the final requested token for
-  // a forward under the new generation's sampling policy.
-  // The returned session is independently writable and survives eviction.
+  // Clone the longest reusable prefix, breaking ties by recency. Leave the
+  // final token for a forward. The returned session survives cache eviction.
   std::optional<PrefixMatch> lookup(const std::vector<Token>& request) {
     return lookup_identity(copy_tokens(request));
   }

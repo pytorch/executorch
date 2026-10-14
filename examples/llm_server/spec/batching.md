@@ -11,123 +11,48 @@ speculative drafting/verification remain inside the runner and executor.
 - Prompts are full inputs, made from ordered text and exact token-ID segments.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
-- Exact strict history extensions reuse the existing session when their
-  prepared suffix is available. With prefix caching enabled, clean
-  equal/shortened/mismatched histories and extensions with unavailable suffixes
-  can clone their longest common committed prefix and prefill the rest. Dirty
-  histories and cache misses cold-replay. If live-prefix reuse is unavailable,
-  the shared cache is searched against the full replacement prompt, even when
-  it shares no prefix with the live history. A snapshot from any session may
-  supply the matching prefix; its suffix must be accepted before reuse.
-  Reset destroys the old session and reopens
-  under the same reserved key; failed reopen leaves that key unavailable.
+- Exact history extensions continue the existing session. With prefix caching
+  enabled, clean prompt replacements can reuse live state or shared snapshots.
+  Unavailable or dirty state falls back to full prefill without changing the
+  session key. Explicit reset discards state; failed reopen leaves the key
+  unavailable.
 - Prefix caching is optional and disabled by default. It supports both greedy
   and sampled requests for implicit new-session initialization and clean prompt
-  replacement. Explicit open/reset bypass reuse. Snapshot capacity is
-  additional to logical serving capacity. The worker's `--prefix_cache_entries`
-  option reserves those snapshots plus one transient row without reducing
-  logical `--max_sessions`. Replacement cloning uses that row only when no
-  snapshot capture is pending, preserves the public session key, and reports
-  `session_reset_reason=prefix_clone`. It excludes pending predictions and
-  leaves at least one prompt token for a forward with the new sampling policy.
-  Cloning requires complete model state at one boundary: attention KV,
-  convolution, and recurrent/SSM state. Executors without historical rewind
-  may clone an unchanged earlier snapshot at its own boundary and prefill the
-  remaining suffix. Missing state must be refused, never partially reused.
+  replacement. Explicit open/reset bypass reuse. `--prefix_cache_entries`
+  reserves snapshot capacity in addition to logical `--max_sessions`.
+  Reuse requires a clone-capable executor and complete model state at the
+  requested boundary; missing state falls back to prefill.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
 
-`--prefix-checkpoint-interval N` requests prompt snapshots at absolute multiples
-of N and at the initial prompt end. It requires `--prefix-cache-entries` and
-defaults to zero. Continuations use the same absolute grid. Busy capture lanes
-skip points, and clone refusal preserves generation; requested positions are
-exact, but retaining every checkpoint is not guaranteed.
+- Different sessions run concurrently; requests within a session remain ordered.
+  Callbacks must be nonblocking, and cancellation targets one request.
+- Input support depends on the worker and export. The generic module worker
+  accepts text; model-specific workers may also support images.
 
-Callers can supply sorted absolute `GenConfig::prefill_breakpoints` within the
-newly processed input, including any carried pending token. The Runner splits
-prefill there and withholds later work for that session until `on_prefill` runs.
-Other sessions remain schedulable. The observer can enqueue a clone before the
-next forward; it must not wait for Runner work. With no breakpoints, existing
-prefill packing is unchanged. Extra boundaries can create smaller forwards.
-At prompt end a speculative executor may already have advanced beyond the
-requested state, so that clone can still be refused. No decode checkpoints are
-requested by the periodic serving policy.
+`--prefix-checkpoint-interval N` captures prompt snapshots at absolute multiples
+of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
+Zero (the default) captures only the initial prompt. Capture is best effort.
+Retention uses global LRU; early checkpoints are not protected.
 
-`PromptCapture` handles capture queueing and failure notification. Serving owns
-transient-row admission and control-thread collection into the prefix cache.
-Captures and prompt replacement share one transient executor row. Snapshots
-remain bounded by the entry budget, with global LRU eviction by default.
-Capture timing does not change the retention policy. Memory and copy costs
-depend on the executor.
+C++ applications can customize two independent policies in
+[`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
 
-C++ applications can independently replace either policy through
-`ServingRuntimeConfig`:
+- `prefix_checkpoint_policy` chooses capture positions and optional application metadata.
+- `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
 
-- `prefix_checkpoint_policy(prompt, start, opening)` overrides the interval
-  policy. It receives the full `PrefixIdentity`, the committed start position,
-  and whether this is a new session. Return `PrefixCheckpoint` values containing
-  an absolute `position` and optional `metadata`. Positions must strictly increase
-  within `(start, prompt.size()]`; include prompt end explicitly if wanted.
-  Empty or invalid results, or exceptions, skip capture for that request.
-- `prefix_cache_retention(incoming, entries)` selects an eviction victim before
-  inserting a distinct snapshot into a full cache. `entries` contains borrowed
-  `EntryView` values with `identity` and `metadata`, ordered most recently used
-  first; `incoming` has the same fields. Return an existing
-  entry's index, or `std::nullopt` to decline the incoming snapshot. An invalid
-  index or exception also declines it without changing retained entries.
-
-`CheckpointMetadata` is `std::shared_ptr<const void>`. Applications supply their
-own immutable type (for example, boundary class or priority) and recover it in
-retention with `std::static_pointer_cast<const MyHints>(entry.metadata)` after
-checking for null. The application owns the type contract. Metadata is shared
-through capture and storage; it never affects prefix matching or clone safety.
-Duplicate identities refresh recency and replace metadata while retaining the
-existing snapshot. Default periodic captures have no metadata; default LRU
-ignores it.
-
-Both callbacks run on the control thread and must not wait for or reenter the
-runtime. Capture still respects the shared lane and executor clone refusals;
-retention cannot exceed the entry budget or mutate snapshot state. The CLI
-configures the default interval and capacity; custom policies are C++ callables.
-`PrefixCache(max_entries, retention_policy)` exposes the same retention hook to
-applications using the Runner directly.
-The standalone policy interface and default `lru_prefix_cache_retention` are in
-`extension/llm/batching/prefix_cache_retention.h`; custom policies can call the
-default as a fallback.
-
-- Different sessions can run concurrently. Same-session transcript preparation,
-  generation, native wire completion, and transcript commit remain ordered.
-  Cancellation targets one request. Native output and completion-preparation
-  callbacks run in request order on one shared delivery thread, never the engine
-  or control thread. They must do short, bounded, nonblocking work: no blocking
-  I/O, synchronous runtime shutdown/destruction, or waits for runtime work.
-  A blocked native callback delays other native delivery. The native transport
-  enqueues bounded output and writes pipes separately. Python uses one async
-  stdout reader and bounded per-request mailboxes. Native HTTP consumers read
-  those streams directly, without an executor or a second token queue. A paused
-  consumer does not stall peers, but consumers must not block the event loop.
-- Image/audio preparation is not implemented by this worker. The existing
-  muse-glimmer image-serving path remains on its legacy worker. This change does
-  not make existing glimmer embedding-forward exports compatible with the packed
-  `ModuleExecutor` or implement solo/DFlash executors for MLX or CUDA.
+The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)
+also work with `PrefixCache` directly. Runner users can request exact boundaries
+through `GenConfig::prefill_breakpoints` and `on_prefill`; see [runner.h](../../../extension/llm/batching/runner.h).
 
 ## Select the Worker Explicitly
 
-Use `await spawn_multiplexed_worker(...)` for native batching. It requires a
-positive `multiplexed: true` readiness capability and rejects and reaps older
-workers rather than silently serializing. The synchronous `spawn_worker` factory
-is legacy-only and rejects multiplexed workers.
+Use `await spawn_multiplexed_worker(...)` with a worker advertising multiplexing
+support. Create, use, and close the client on the same event loop.
 
-Create, use, and close the native client on the same event loop. For HTTP serving,
-the async-context-manager factory passed to `build_app` owns startup and awaited
-shutdown inside the ASGI lifespan. `SessionRuntime` retains admission and session
-ordering through actual wire completion, not merely a cancel acknowledgement.
-
-The dedicated CLI always requires multiplexing and closes the worker on shutdown
-or post-spawn startup failure. It does not change the legacy generic or Muse
-launchers. Replace all `/path/to` paths with matching local artifacts; this
-example uses Llama 3 chat formatting:
+For HTTP serving, use the dedicated launcher with compatible local artifacts.
+This example uses Llama 3 chat formatting:
 
 ```bash
 python -m executorch.examples.llm_server.python.serve \
@@ -187,19 +112,9 @@ EXECUTORCH_BATCHING_TEST_WORKER=/tmp/et-serving-worker-tests/test_batching_worke
   /path/to/executorch/examples/llm_server/python/tests/test_batching_end_to_end.py -q
 ```
 
-The Python environment needs the example server's HTTP/test dependencies and an
-importable checkout. The async tests use AnyIO's asyncio backend. No model weights
-or GPU are needed. The test worker uses the real transport, serving runtime, and
-runner with a fake executor and byte tokenizer. Its test-only scheduler gate
-waits for two queued session IDs without blocking the engine, and its trace
-records distinct session IDs in each `execute` call.
-
-These checks prove concurrent admission and a multi-session executor batch,
-including requests through the OpenAI endpoint. They also exercise cancellation,
-slow Python consumer isolation, exact-ID continuation, reset/close, out-of-order reserved
-request IDs, prefix caching through the Python runtime, and
-unknown-versus-empty replay metadata. They do not prove a combined real-model
-forward.
+The tests need the server's HTTP/test dependencies and an importable checkout,
+but no model weights or GPU. They cover serving, batching, cancellation, and
+prefix reuse with a fake executor.
 
 ## Real-Model Checks
 

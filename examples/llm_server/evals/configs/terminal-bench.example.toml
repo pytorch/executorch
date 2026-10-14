@@ -11,7 +11,7 @@ model_id = "muse-glimmer-30b"
 max_context = 131072
 tool_parser = "atem"
 # prefix_cache_entries = 4 # Additional snapshot rows for prefix reuse.
-# prefix_checkpoint_interval = 2048 # Optional intermediate prompt snapshots.
+# prefix_checkpoint_interval = 2048 # Periodic snapshots; global LRU.
 # host = "0.0.0.0" # Exposes the server on all network interfaces.
 # port = 8000
 

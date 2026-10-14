@@ -81,7 +81,12 @@ def _parse_args(argv=None):
     parser.add_argument("--max-decode-sequences", type=int, default=8)
     parser.add_argument("--max-inflight-requests", type=int, default=64)
     parser.add_argument("--prefix-cache-entries", type=int, default=0)
-    parser.add_argument("--prefix-checkpoint-interval", type=int, default=0)
+    parser.add_argument(
+        "--prefix-checkpoint-interval",
+        type=int,
+        default=0,
+        help="Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)

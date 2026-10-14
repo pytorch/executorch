@@ -30,7 +30,7 @@ DEFINE_int32(
 DEFINE_int32(
     prefix_checkpoint_interval,
     0,
-    "Intermediate prompt checkpoint interval; zero disables");
+    "Checkpoint interval in tokens; 0: initial prompt only. Uses global LRU.");
 DEFINE_uint64(max_image_bytes, 20 * 1024 * 1024, "Maximum encoded image bytes");
 DEFINE_uint64(
     max_input_frame_bytes,
