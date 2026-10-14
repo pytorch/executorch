@@ -64,6 +64,9 @@ class GgmlEngineContext final : public EngineContext {
   ~GgmlEngineContext() override;
 
   size_t materialized_constant_bytes() const;
+  // Constant bytes copied onto the heap on their way into ggml buffers, rather
+  // than read in place from the package.
+  size_t heap_copied_constant_bytes() const;
 
  private:
   friend class GgmlEngineHost;
