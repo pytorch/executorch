@@ -3198,11 +3198,12 @@ class GraphBuilder {
         node, TensorRef{ggml_permute(ctx, rotated, 0, 2, 1, 3), input.sizes});
   }
 
-  // set_rows rounds F32 rows into an F16 destination exactly like a cast, so
-  // it can read a fresh F32 -> F16 cast's source directly. ggml_cast is a CPY
-  // whose destination is its own result. Skipping the cast moves the read of
-  // its source to the set_rows, so a source in a persistent buffer or in
-  // storage the graph writes in place keeps its cast.
+  // set_rows into an F16 destination and attention over F16 keys round F32
+  // values exactly like a cast, so they can read a fresh F32 -> F16 cast's
+  // source directly. ggml_cast is a CPY whose destination is its own result.
+  // Skipping the cast moves the read of its source to the consumer, so a
+  // source in a persistent buffer or in storage the graph writes in place
+  // keeps its cast.
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const {
     ggml_tensor* source = rows->src[0];
     if (rows->type != GGML_TYPE_F16 || rows->op != GGML_OP_CPY ||
@@ -3351,8 +3352,15 @@ class GraphBuilder {
     const float scale =
         static_cast<float>(float_arg(node, "scale", 6, default_scale, true));
     ggml_context* ctx = instance_.context.get();
-    // The CPU kernel reads the query as F32.
+    // The kernels read the query as F32 and round it to the F16 key's dot
+    // product type themselves (CPU vec_dot, Metal and CUDA shared memory), so
+    // an F32 -> F16 cast that only makes the query match an F16 cache for
+    // torch's SDPA is the identity on the result. Use its F32 source, where
+    // skip_f16_cast allows, rather than round trip through F16.
     ggml_tensor* q = query.tensor;
+    if (key.tensor->type == GGML_TYPE_F16) {
+      q = skip_f16_cast(q);
+    }
     ggml_tensor* result =
         ggml_flash_attn_ext(ctx, as_f32(q), k, v, mask, scale, 0.0f, 0.0f);
     ggml_prec_set_acc(result, GGML_PREC_F32);
