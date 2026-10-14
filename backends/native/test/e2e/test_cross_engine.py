@@ -29,6 +29,7 @@ from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
 from transformers import LlamaConfig, LlamaForCausalLM
 
+
 _ENGINES = ("ggml_ptn_runner", "vulkan_ptn_runner")
 _FP32_KV_ONLY = ("vulkan_ptn_runner",)
 _MAX_SEQ = 16
@@ -219,6 +220,19 @@ class _PoolCloneLinear(torch.nn.Module):
         return self.proj(self.pool(x).clone())
 
 
+class _NormLinear(torch.nn.Module):
+    """layer_norm of a graph input feeding a linear, which wants its input
+    width-packed while the graph input arrives in the default layout."""
+
+    def __init__(self):
+        super().__init__()
+        self.norm = torch.nn.LayerNorm(16)
+        self.proj = torch.nn.Linear(16, 8)
+
+    def forward(self, x):
+        return self.proj(self.norm(x))
+
+
 class CrossEngineTest(unittest.TestCase):
     def _check_dynamic(
         self, model, steps, dynamic_shapes, atol_fraction=1e-4, engines=_ENGINES
@@ -254,6 +268,16 @@ class CrossEngineTest(unittest.TestCase):
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
         self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)
+
+    def test_layer_norm_of_graph_input_into_linear(self):
+        torch.manual_seed(0)
+        model = _NormLinear()
+        torch.nn.init.uniform_(model.norm.weight, 0.5, 1.5)
+        torch.nn.init.uniform_(model.norm.bias, -0.5, 0.5)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        # ggml does not lower aten.native_layer_norm yet.
+        self._check_dynamic(model, steps, ({1: seq},), engines=("vulkan_ptn_runner",))
 
     def test_padding_mask_of_dynamic_positions(self):
         torch.manual_seed(0)
