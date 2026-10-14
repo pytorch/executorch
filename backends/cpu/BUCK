@@ -1,0 +1,46 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = define_common_targets)
+fbcode_target(_kind = define_common_targets)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "lib",
+    srcs = [
+        "__init__.py",
+        "partitioner.py",
+        "preprocess.py",
+        "recipes/__init__.py",
+        "recipes/cpu_recipe_provider.py",
+        "recipes/cpu_recipe_types.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/export:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_aot",
+    srcs = ["test/test_aot.py"],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+        "//executorch/export:lib",
+    ],
+)
