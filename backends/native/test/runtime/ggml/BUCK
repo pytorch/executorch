@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "ggml_engine_test",
+    srcs = ["test_ggml_engine.cpp"],
+    deps = [
+        "//executorch/backends/native/runtime:native_graph_schema",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:owned_bytes",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/deserialize:package_test_data",
+        "//executorch/backends/native/runtime/engine:engine",
+        "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
+    ],
+)
