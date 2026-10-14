@@ -82,9 +82,6 @@ void arange_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   WGPUDevice device = graph.device();
   const auto& out_tensor = graph.get_tensor(out_id);
-  if (out_tensor.buffer == nullptr) {
-    throw std::runtime_error("arange: null output buffer");
-  }
   // Two 4-byte variants: fp32 and i32. A bool output is 1-byte packed and has
   // no meaningful arange, so reject it rather than mis-stride the buffer.
   if (out_tensor.is_bool || out_tensor.elem_size != 4u) {
@@ -105,9 +102,16 @@ void arange_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("arange: step must be non-zero");
   }
 
+  // An empty range (e.g. arange(0, 0)) is valid and has nothing to write.
   const uint64_t numel = out_tensor.nbytes / 4u;
-  if (numel == 0 || numel > UINT32_MAX) {
-    throw std::runtime_error("arange: output numel is zero or exceeds u32");
+  if (numel == 0) {
+    return;
+  }
+  if (numel > UINT32_MAX) {
+    throw std::runtime_error("arange: output numel exceeds u32");
+  }
+  if (out_tensor.buffer == nullptr) {
+    throw std::runtime_error("arange: null output buffer");
   }
   const uint32_t num_elements = static_cast<uint32_t>(numel);
 

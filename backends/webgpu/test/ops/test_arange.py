@@ -87,6 +87,15 @@ class TestArange(unittest.TestCase):
     def test_arange_step(self) -> None:
         self._check(ArangeModule(3.0, 35.0, 2.0), (torch.randn(16),))
 
+    def test_arange_fractional_int(self) -> None:
+        # torch casts start/step to the integer dtype before iterating, giving
+        # [0..6] here; computing in float and casting at store would give
+        # [0, 2, 3, 5, 6, 8, 9]. The runtime follows torch.
+        self._check(ArangeModule(0.5, 10.0, 1.5, torch.int32), (torch.randn(7),))
+
+    def test_arange_empty(self) -> None:
+        self._check(ArangeModule(0.0, 0.0, 1.0), (torch.randn(0),))
+
 
 if __name__ == "__main__":
     unittest.main()

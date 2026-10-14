@@ -2228,5 +2228,17 @@ def _arange_suite() -> WebGPUTestSuite:
                 construct={"start": 0, "end": 16, "step": 1},
                 inputs=((16,),),
             ),
+            # Fractional scalars with an integer dtype follow torch, which casts
+            # start/step before iterating rather than casting each value.
+            Case(
+                name="int_fractional",
+                construct={
+                    "start": 0.5,
+                    "end": 10.0,
+                    "step": 1.5,
+                    "dtype": torch.int32,
+                },
+                inputs=((7,),),
+            ),
         ],
     )
