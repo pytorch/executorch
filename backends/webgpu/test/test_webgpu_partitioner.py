@@ -28,6 +28,11 @@ class AddModule(torch.nn.Module):
         return a + b
 
 
+class HardsigmoidModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.hardsigmoid(x)
+
+
 class TestWebGPUPartitioner(unittest.TestCase):
     def _export_add(self) -> ExportedProgram:
         return torch.export.export(
@@ -156,6 +161,35 @@ class TestWebGPUPartitioner(unittest.TestCase):
             if node.op == "call_function"
         )
         self.assertEqual(webgpu_filter(node), vulkan_filter(node))
+
+    def test_hardsigmoid_stays_one_op_through_lowering(self) -> None:
+        # ops_to_not_decompose keeps hardsigmoid whole; decomposed, it becomes
+        # add/clamp/div and the backend's own kernel is never used.
+        exported_program = torch.export.export(
+            HardsigmoidModule(), (torch.linspace(-6.0, 6.0, 32).reshape(4, 8),)
+        )
+        partitioners: List[Partitioner] = [VulkanPartitioner(), WebGPUPartitioner()]
+        for partitioner in partitioners:
+            with self.subTest(partitioner=type(partitioner).__name__):
+                graph_module = (
+                    to_edge_transform_and_lower(
+                        exported_program, partitioner=[partitioner]
+                    )
+                    .exported_program()
+                    .graph_module
+                )
+                lowered = [
+                    module
+                    for _, module in graph_module.named_children()
+                    if hasattr(module, "original_module")
+                ]
+                self.assertEqual(len(lowered), 1)
+                delegated_ops = [
+                    node.target.__name__
+                    for node in lowered[0].original_module.graph.nodes
+                    if node.op == "call_function"
+                ]
+                self.assertEqual(delegated_ops, ["aten.hardsigmoid.default"])
 
     def test_webgpu_tester_defaults_to_webgpu_partitioner(self) -> None:
         self.assertIsInstance(Partition().partitioner, WebGPUPartitioner)

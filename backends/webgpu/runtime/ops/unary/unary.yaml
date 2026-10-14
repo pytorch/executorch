@@ -13,6 +13,8 @@ unary:
       OPERATOR: "cos(x)"
     - NAME: exp
       OPERATOR: "exp(x)"
+    - NAME: hardsigmoid
+      OPERATOR: "min(max(x + 3.0, 0.0), 6.0) / 6.0"
     - NAME: hardswish
       OPERATOR: "select(select(x * (x + 3.0) / 6.0, x, x >= 3.0), 0.0, x <= -3.0)"
     - NAME: neg

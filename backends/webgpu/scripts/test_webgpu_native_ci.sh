@@ -67,6 +67,7 @@ INDEX_DIR="/tmp/index"
 DYNAMIC_SHAPE_DIR="/tmp/dynamic_shape"
 ROPE_HF_DIR="/tmp/webgpu_rope_hf"
 SYMINT_BLOB="/tmp/sdpa_dyn_small.pte"
+UNARY_FP16_DIR="/tmp/unary_fp16"
 OUTPUT_SUPPRESSION_DIR="/tmp/output_suppression"
 EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
 EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
@@ -112,6 +113,11 @@ from executorch.backends.webgpu.test.ops.test_rope_hf import (
 )
 export_rope_hf_dynamic('${ROPE_HF_DIR}')
 export_rope_hf_dynamic_sequence('${ROPE_HF_DIR}')
+"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.test_unary_activations import export_unary_fp16_negative
+export_unary_fp16_negative('${UNARY_FP16_DIR}')
 "
 
 $PYTHON_EXECUTABLE -c "
@@ -163,6 +169,9 @@ export_incache_decode('/tmp')
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic_sequence.pte"
 require_file "${SYMINT_BLOB}"
+for op in hardsigmoid hardswish abs; do
+  require_file "${UNARY_FP16_DIR}/unary_fp16_${op}.pte"
+done
 require_file "${OUTPUT_SUPPRESSION_DIR}/input.bin"
 
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
@@ -215,6 +224,7 @@ run_with_required_device env WEBGPU_TEST_SDPA_DIR=/tmp/ \
     WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN="${ROPE_DECODE_XK_GOLDEN}" \
     WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}" \
     WEBGPU_TEST_SYMINT_BLOB="${SYMINT_BLOB}" \
+    WEBGPU_TEST_UNARY_FP16_DIR="${UNARY_FP16_DIR}" \
     WEBGPU_TEST_PREPACK_MODEL="${PREPACK_MODEL}" \
     WEBGPU_TEST_PREPACK_GOLDEN="${PREPACK_GOLDEN}" \
     WEBGPU_TEST_PREPACK2_MODEL="${PREPACK2_MODEL}" \

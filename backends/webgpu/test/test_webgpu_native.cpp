@@ -50,6 +50,7 @@ std::string g_prepack2_model_path, g_prepack2_golden_path;
 std::string g_prepack_tied_model_path, g_prepack_tied_golden_path;
 std::string g_sdpa_dir;
 std::string g_symint_blob;
+std::string g_unary_fp16_dir;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -3138,6 +3139,19 @@ TEST(WebGPUNative, SelectDoubleScalars) {
       << "select Double-scalar compatibility checks failed";
 }
 
+// fp16 unary programs are refused at load: the unary shaders read array<f32>,
+// so an fp16 operand would be misread rather than computed.
+TEST(WebGPUNative, UnaryOpsRefuseFp16) {
+  if (g_unary_fp16_dir.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_UNARY_FP16_DIR not set";
+  }
+  for (const char* op : {"hardsigmoid", "hardswish", "abs"}) {
+    Module module(g_unary_fp16_dir + "unary_fp16_" + op + ".pte");
+    EXPECT_EQ(module.load_forward(), Error::DelegateInvalidCompatibility)
+        << op << ": an fp16 program must be refused at load";
+  }
+}
+
 TEST(WebGPUNative, Prepack2) {
   if (g_prepack2_model_path.empty() || g_prepack2_golden_path.empty()) {
     GTEST_SKIP() << "WEBGPU_TEST_PREPACK2_MODEL/GOLDEN not set";
@@ -3435,6 +3449,13 @@ int main(int argc, char** argv) {
 
   if (const char* env = std::getenv("WEBGPU_TEST_SYMINT_BLOB")) {
     g_symint_blob = env;
+  }
+
+  if (const char* env = std::getenv("WEBGPU_TEST_UNARY_FP16_DIR")) {
+    g_unary_fp16_dir = env;
+    if (!g_unary_fp16_dir.empty() && g_unary_fp16_dir.back() != '/') {
+      g_unary_fp16_dir += '/';
+    }
   }
 
   WebGPUContext ctx;

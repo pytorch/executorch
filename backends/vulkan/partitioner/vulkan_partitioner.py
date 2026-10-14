@@ -48,6 +48,11 @@ from torch.utils._pytree import tree_leaves
 
 # pyre-ignore
 ops_not_to_decompose = [
+    # Activation ops with native Vulkan shaders that PyTorch's default
+    # decomposition table would otherwise decompose into primitive ops.
+    # The decomposed paths produce NaN/Inf on some GPUs (e.g. PowerVR)
+    # due to constant tensor loading issues in the decomposed graph.
+    torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pixel_shuffle.default,
