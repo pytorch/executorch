@@ -20,6 +20,7 @@
 
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/batching/prefix_cache.h>
+#include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
@@ -78,6 +79,15 @@ using LifecycleResult ET_EXPERIMENTAL = std::optional<ServingError>;
 using LifecycleCallback ET_EXPERIMENTAL = std::function<void(LifecycleResult)>;
 using GenerateResult ET_EXPERIMENTAL =
     std::variant<RequestHandle, ServingError>;
+
+struct ET_EXPERIMENTAL RuntimeSnapshot {
+  batching::EngineSnapshot engine;
+  struct Session {
+    std::string id;
+    std::optional<batching::Position> committed_position;
+  };
+  std::vector<Session> sessions;
+};
 
 class ET_EXPERIMENTAL ServingRuntime {
  public:
@@ -196,6 +206,10 @@ class ET_EXPERIMENTAL ServingRuntime {
   // opening, reopening, and unavailable keys, but not commands still waiting
   // to reserve a slot.
   ServingInfo info() const;
+
+  // Live, synchronized observations; session positions may advance separately
+  // from the engine's last completed-step sample.
+  RuntimeSnapshot snapshot() const;
 
   // Idempotent, including concurrent callers. Stops admission, completes all
   // accepted operations/requests, and joins control, Runner, and delivery

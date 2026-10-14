@@ -132,9 +132,18 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 ```
 
 `GET /v1/runtime/stats` reports request capacity, submitted generations, session-lease
-waiters, and the last 16 completed generation measurements with their age. Submitted
-work includes queued engine requests; it does not measure GPU utilization. Rates
-remain unknown until measured, and cancelled generations remain in the accounting.
+waiters, and the last 16 successful or cancelled generation measurements with their
+age. Failed requests are excluded. A one-token completion has no decode-rate sample.
+
+For batching workers, `engine` adds live decode/prefill width, committed session
+positions, KV allocation, and cumulative step counters and aggregate rates. Decode
+throughput counts processed decode tokens over decode-only plus mixed-step time;
+prefill uses prefill-only plus mixed-step time. Neither rate includes tool waits.
+Counters and KV allocation are sampled between steps (`sample_age_ms`). KV bytes
+count buffers retained by cache arrays and pending copy dependencies, with shared
+allocations counted once. Process memory and allocator free lists are separate.
+Unsupported measurements are `null`; older workers return `engine: null`. Request
+counts are not engine batch width or GPU utilization.
 
 ## Sessions
 

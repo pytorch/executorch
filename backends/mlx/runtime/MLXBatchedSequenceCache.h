@@ -31,6 +31,7 @@ namespace cache = ::executorch::extension::llm::cache;
 // over its sequence's history before the results are joined in token order.
 class MLXBatchedSequenceCache : public cache::Cache,
                                 public cache::BatchControl,
+                                public cache::CacheMemory,
                                 public MLXCache {
  public:
   MLXBatchedSequenceCache(
@@ -40,6 +41,19 @@ class MLXBatchedSequenceCache : public cache::Cache,
 
   int capacity() const override {
     return cfg_.capacity;
+  }
+
+  std::optional<std::size_t> allocated_bytes() const override {
+    std::unordered_map<const void*, std::size_t> allocations;
+    std::unordered_set<std::uintptr_t> seen;
+    for (const auto& row : rows_) {
+      row.second.collect_allocations(allocations, seen);
+    }
+    std::size_t bytes = 0;
+    for (const auto& allocation : allocations) {
+      bytes += allocation.second;
+    }
+    return bytes;
   }
 
   void clear() override {
@@ -169,7 +183,8 @@ class MLXBatchedSequenceCache : public cache::Cache,
 
  protected:
   void* face(cache::FaceId id) override {
-    return cache::expose<cache::BatchControl, MLXCache>(this, id);
+    return cache::expose<cache::BatchControl, cache::CacheMemory, MLXCache>(
+        this, id);
   }
 
  private:
