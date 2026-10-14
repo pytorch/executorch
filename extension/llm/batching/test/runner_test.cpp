@@ -2762,6 +2762,11 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   session = Session{};
   fixture.runner.shutdown();
   const EngineMetrics m = fixture.runner.metrics();
+  const auto live = fixture.runner.snapshot();
+  EXPECT_EQ(live.decode_sequences, 0u);
+  EXPECT_EQ(live.prefill_sequences, 0u);
+  EXPECT_EQ(live.completed.steps, m.steps);
+  EXPECT_EQ(live.completed.decode_tokens_total, m.decode_tokens_total);
 
   // One prefill step carrying both chunks, then one decode step per token
   // after the first, which the prefill produced.
@@ -2788,6 +2793,27 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   expect_balanced(m, 1);
   EXPECT_EQ(m.finished_token_limit, 1u);
 }
+
+#if ET_HAS_EXCEPTIONS
+TEST(EngineMetricsTest, FailedAllocationMeasurementDoesNotFailGeneration) {
+  class UnmeasurableExecutor : public FakeExecutor {
+   public:
+    std::optional<std::size_t> kv_allocated_bytes() const override {
+      throw std::runtime_error("allocation measurement unavailable");
+    }
+  } executor;
+  Fixture fixture(executor, 4, 8);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(10), config(3), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(updates->finish(), FinishReason::NewTokenLimit);
+  fixture.runner.shutdown();
+  EXPECT_FALSE(fixture.runner.snapshot().kv_allocated_bytes);
+  EXPECT_EQ(fixture.runner.snapshot().completed.steps, 3u);
+}
+#endif
 
 TEST(EngineMetricsTest, StartsAndCompletionsBalanceAcrossMixedOutcomes) {
   FakeExecutor executor;

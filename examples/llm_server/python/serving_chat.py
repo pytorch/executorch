@@ -183,8 +183,16 @@ class ServingChat:
             runtime.max_concurrent_requests if self._multiplexed else None
         )
 
-    def resource_snapshot(self) -> dict:
-        return {"max_context": self._max_context, **self._runtime.resource_snapshot()}
+    async def resource_snapshot(self) -> dict:
+        try:
+            engine = await self._runtime.engine_snapshot()
+        except WorkerError as error:
+            raise self._generation_error(error) from error
+        return {
+            "max_context": self._max_context,
+            **self._runtime.resource_snapshot(),
+            "engine": engine,
+        }
 
     @property
     def healthy(self) -> bool:
