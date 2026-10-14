@@ -22,6 +22,7 @@ Named-session operations remain ordered. Multi-worker scheduling is out of scope
 import asyncio
 import logging
 import threading
+import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -483,12 +484,76 @@ class SessionRuntime:
         self._settlements = set()
         self._bridges = set()
         self._generations = set()
+        self._generation_futures = set()
+        self._waiting_generations = 0
+        self._recent_generations = deque(maxlen=16)
+        self._completed_generations = 0
         self._native_tasks = set()
         self._operations = set()
         self._shutdown_task = None
         self._cancel_grace_seconds = cancel_grace_seconds
         self._abort_timeout_seconds = abort_timeout_seconds
         self._failure: Optional[WorkerError] = None
+
+    def resource_snapshot(self) -> dict:
+        """Loop-owned request telemetry; submitted work includes the engine queue."""
+        now = time.monotonic()
+        return {
+            "max_inflight_requests": self.max_concurrent_requests,
+            "submitted_generations": sum(
+                not f.done() for f in self._generation_futures
+            ),
+            "waiting_for_runtime_lease": self._waiting_generations,
+            "recent_generations": [
+                {**sample, "age_ms": (now - measured) * 1000}
+                for measured, sample in self._recent_generations
+            ],
+        }
+
+    def _observe_generation(self, future, session_id, stats):
+        submitted = sum(not f.done() for f in self._generation_futures) + 1
+        self._generation_futures.add(future)
+
+        def finished(done):
+            self._generation_futures.discard(done)
+            if done.cancelled() or done.exception() is not None:
+                return
+            self._completed_generations += 1
+            self._recent_generations.append(
+                (
+                    time.monotonic(),
+                    {
+                        "id": self._completed_generations,
+                        "session_id": session_id,
+                        "prompt_tokens": stats.prompt_tokens,
+                        "output_tokens": stats.completion_tokens,
+                        "reused_tokens": stats.reused_prompt_tokens,
+                        "uncached_tokens": stats.prefilled_prompt_tokens,
+                        "prefill_ms": stats.prefill_ms,
+                        "decode_ms": stats.decode_ms,
+                        "prefill_tokens_per_second": stats.prefill_tok_s or None,
+                        "per_sequence_decode_tokens_per_second": stats.decode_tok_s
+                        or None,
+                        "submitted_at_start": submitted,
+                        "cancelled": stats.cancelled,
+                    },
+                )
+            )
+
+        future.add_done_callback(finished)
+
+    @asynccontextmanager
+    async def _generation_operation(self, session_id):
+        self._waiting_generations += 1
+        waiting = True
+        try:
+            async with self._operation(session_id) as operation:
+                self._waiting_generations -= 1
+                waiting = False
+                yield operation
+        finally:
+            if waiting:
+                self._waiting_generations -= 1
 
     @property
     def healthy(self) -> bool:
@@ -709,6 +774,7 @@ class SessionRuntime:
             asyncio.create_task(self._native_terminal(stream, generation.stats))
         )
         operation.future = generation._future = future
+        self._observe_generation(future, request.session_id, generation.stats)
         try:
             yield stream
             await asyncio.shield(future)
@@ -746,7 +812,7 @@ class SessionRuntime:
         )
 
         self._ensure_healthy()
-        async with self._operation(session_id) as operation:
+        async with self._generation_operation(session_id) as operation:
             reserve = getattr(self._worker, "reserve_request", None)
             release = getattr(self._worker, "release_request", None)
             uses_reservation = callable(reserve)
@@ -776,6 +842,7 @@ class SessionRuntime:
                 future = loop.run_in_executor(self._executor, bridge.run)
                 operation.future = future
                 generation._future = future
+                self._observe_generation(future, session_id, out_stats)
                 self._bridges.add(bridge)
                 future.add_done_callback(lambda _: self._bridges.discard(bridge))
             except BaseException:

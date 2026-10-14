@@ -131,6 +131,11 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
 ```
 
+`GET /v1/runtime/stats` reports request capacity, submitted generations, session-lease
+waiters, and the last 16 completed generation measurements with their age. Submitted
+work includes queued engine requests; it does not measure GPU utilization. Rates
+remain unknown until measured, and cancelled generations remain in the accounting.
+
 ## Sessions
 
 When the worker reports named-session capacity (a worker whose engine supports
