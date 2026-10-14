@@ -362,6 +362,20 @@ if(EXECUTORCH_BUILD_VGF)
     add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
 
     add_executable(
+      vgf_shape_utils_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_shape_utils_test.cpp
+    )
+    target_include_directories(
+      vgf_shape_utils_test PRIVATE ${_common_include_directories}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_shape_utils_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_shape_utils_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_shape_utils_test COMMAND vgf_shape_utils_test)
+
+    add_executable(
       vgf_vulkan_features_test
       ${EXECUTORCH_ROOT}/backends/arm/test/vgf_vulkan_features_test.cpp
     )

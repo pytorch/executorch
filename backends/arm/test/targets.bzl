@@ -95,6 +95,7 @@ def define_arm_tests():
         "misc/test_vgf_backend.py",
         "misc/test_vgf_quantization_quality.py",
         "misc/test_vgf_quantization_assessment.py",
+        "misc/test_vgf_quantization_sensitivity.py",
         "misc/test_vgf_quantization_visualization.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
@@ -122,7 +123,6 @@ def define_arm_tests():
         }
         if not runtime.is_oss and _ENABLE_VGF:
             test_env.update({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.11.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
@@ -146,7 +146,9 @@ def define_arm_tests():
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
             ]),
-            deps = [
+            deps = ([] if runtime.is_oss or not _ENABLE_VGF else [
+                "//executorch/backends/arm/test:model_converter_resource",
+            ]) + [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test:mxfp_test_common",
@@ -207,6 +209,15 @@ def define_arm_tests():
                 "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_shape_utils_test",
+            srcs = ["vgf_shape_utils_test.cpp"],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
             ],
         )
 
