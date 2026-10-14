@@ -879,9 +879,26 @@ def _index_select_suite() -> WebGPUTestSuite:
 
 @register_op_test("conv_with_clamp")
 def _conv_with_clamp_suite() -> WebGPUTestSuite:
-    # nn.Conv2d + F.relu6 -> delegated et_vk.conv_with_clamp (fp32 conv + clamp
-    # [0,6]). Golden = fp32 eager. Covers k3/stride/dilation/no_bias (groups==1).
-    def case(name, shape, ic, oc, k, stride, padding, dilation, bias=True):
+    # nn.Conv2d + F.relu6 / F.relu -> delegated et_vk.conv_with_clamp (fp32 conv
+    # + clamp [0,6] / [0,inf)). Golden = fp32 eager. groups==1 convs large enough
+    # for the conv2d GEMM run on it with the clamp fused: wide_relu_large (no
+    # upper bound, multi-tile OC), pw_relu6_large (1x1, inputs scaled so both
+    # bounds clip). Smaller convs (the rest), grouped (groups=2) and outputs too
+    # large for the GEMM grid stay on the direct conv_with_clamp kernel.
+    def case(
+        name,
+        shape,
+        ic,
+        oc,
+        k,
+        stride,
+        padding,
+        dilation,
+        bias=True,
+        groups=1,
+        act="relu6",
+        heavy=False,
+    ):
         return Case(
             name=name,
             construct={
@@ -892,8 +909,11 @@ def _conv_with_clamp_suite() -> WebGPUTestSuite:
                 "padding": padding,
                 "dilation": dilation,
                 "bias": bias,
+                "groups": groups,
+                "act": act,
             },
             inputs=(shape,),
+            heavy=heavy,
         )
 
     return WebGPUTestSuite(
@@ -906,6 +926,54 @@ def _conv_with_clamp_suite() -> WebGPUTestSuite:
             # Fully axis-asymmetric (Kh!=Kw, H!=W, sh!=sw, ph!=pw, dh!=dw) so an
             # H<->W index swap would diverge from the golden.
             case("asym", (1, 3, 7, 9), 3, 5, (2, 3), (1, 2), (1, 0), (2, 1)),
+            case("wide_relu", (1, 16, 12, 12), 16, 40, 3, 1, 1, 1, act="relu"),
+            case(
+                "saturate",
+                InputSpec(
+                    shape=(1, 8, 10, 10),
+                    gen=lambda s: 20
+                    * torch.randn(s, generator=torch.Generator().manual_seed(0)),
+                ),
+                8,
+                8,
+                3,
+                1,
+                1,
+                1,
+            ),
+            case("pw_relu6", (1, 16, 9, 7), 16, 24, 1, 1, 0, 1),
+            case("grouped", (1, 8, 8, 8), 8, 8, 3, 1, 1, 1, groups=2),
+            # GEMM tiles would be mostly padding (OC and reduction tiny) -> direct.
+            case("tiny_relu", (1, 1, 32, 32), 1, 1, 1, 1, 0, 1, act="relu"),
+            case("wide_relu_large", (1, 16, 66, 130), 16, 40, 3, 1, 1, 1, act="relu"),
+            case(
+                "pw_relu6_large",
+                InputSpec(
+                    shape=(1, 16, 65, 127),
+                    gen=lambda s: 20
+                    * torch.randn(s, generator=torch.Generator().manual_seed(0)),
+                ),
+                16,
+                24,
+                1,
+                1,
+                0,
+                1,
+            ),
+            # Passes the GEMM fill gate but needs more tiles than one dispatch
+            # dimension allows -> direct kernel.
+            case(
+                "pw_relu_grid_limit",
+                (1, 16, 2048, 1024),
+                16,
+                8,
+                1,
+                1,
+                0,
+                1,
+                act="relu",
+                heavy=True,
+            ),
         ],
         golden_dtype="float32",
         atol=1e-3,

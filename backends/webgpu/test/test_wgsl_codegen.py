@@ -223,7 +223,7 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 139)
         self.assertEqual(
             digest.hexdigest(),
-            "dda77a0316185795984e26f87ff384468aeb5e6abb134c2c66fc9e5293ad296a",
+            "be38ce49e3c4d5b01c6d5e122058cb8fe658b655ec1a245231bb27410c6f4eb3",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
