@@ -55,7 +55,8 @@ def _parse_args(argv=None):
         "--prefix-cache-entries",
         type=int,
         default=0,
-        help="Opt-in text snapshots; requires batching executor cache-clone support.",
+        help="Opt-in prefix reuse for new sessions and prompt replacements; "
+        "requires batching executor cache-clone support.",
     )
     parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument("--max-image-bytes", type=int, default=_MAX_IMAGE_BYTES)

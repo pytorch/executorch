@@ -709,6 +709,77 @@ struct ServingRuntime::Impl {
     return Selection::Selected;
   }
 
+  SelectionResult clone_prefix(const Request& request, const SessionKey& key) {
+    batching::Session* source;
+    std::size_t upto;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto& slot = sessions_.at(key);
+      const auto& prompt = request->text->prompt;
+      if (slot.dirty || !slot.logical_history || !prompt ||
+          prompt->size() < 2) {
+        return Selection::Unavailable;
+      }
+      source = &*slot.session;
+      upto = std::min(
+          {batching::common_prefix(*slot.logical_history, *prompt),
+           static_cast<std::size_t>(source->position()),
+           prompt->size() - 1});
+    }
+    std::optional<batching::Session> cloned;
+    if (upto) {
+      auto selection = select_input(request, upto);
+      const auto* outcome = std::get_if<Selection>(&selection);
+      if (!outcome || *outcome == Selection::Cancelled) {
+        return selection;
+      }
+      if (*outcome == Selection::Selected) {
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          // Only control owns Session objects; clone waits outside locks.
+          cloned =
+              source->clone_async(static_cast<batching::Position>(upto)).get();
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // Try a retained snapshot if the live source cannot be cloned.
+        }
+#endif
+      }
+    }
+    if (!cloned) {
+      if (request->cancelled.load()) {
+        return Selection::Cancelled;
+      }
+      auto match = lookup_prefix(request);
+      if (!match) {
+        return Selection::Unavailable;
+      }
+      auto selection = select_input(request, match->matched_tokens);
+      if (auto* outcome = std::get_if<Selection>(&selection);
+          !outcome || *outcome != Selection::Selected) {
+        return selection;
+      }
+      cloned = std::move(match->session);
+    }
+    std::optional<batching::Session> retired;
+    batching::PrefixIdentityPtr retired_history;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+        return Selection::Cancelled;
+      }
+      auto& slot = sessions_.at(key);
+      retired = std::move(slot.session);
+      retired_history = std::move(slot.logical_history);
+      slot.session = std::move(cloned);
+      slot.incarnation = next_incarnation_++;
+      // Completion installs the replacement prompt's history.
+      slot.dirty = true;
+    }
+    return Selection::Selected;
+  }
+
   LifecycleResult prepare_text(const Request& request) {
     auto& text = *request->text;
     const SessionKey key = request->request.key
@@ -823,6 +894,24 @@ struct ServingRuntime::Impl {
       selection = select_input(request, 0);
       plan = {PrefillPlan::kFull, 0, "suffix_unavailable"};
       reset = true;
+    }
+    if (auto* outcome = std::get_if<Selection>(&selection); outcome &&
+        *outcome == Selection::Selected && reset &&
+        (plan.reason == "mismatch" || plan.reason == "equal" ||
+         plan.reason == "suffix_unavailable") &&
+        config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
+      // Capture and replacement share one transient row.
+      auto cold_delta = std::move(request->request.delta);
+      selection = clone_prefix(request, key);
+      if (auto* cloned = std::get_if<Selection>(&selection)) {
+        if (*cloned == Selection::Selected) {
+          reset = false;
+          plan.reason = "prefix_clone";
+        } else if (*cloned == Selection::Unavailable) {
+          request->request.delta = std::move(cold_delta);
+          selection = Selection::Selected;
+        }
+      }
     }
     if (auto* error = std::get_if<ServingError>(&selection)) {
       return std::move(*error);

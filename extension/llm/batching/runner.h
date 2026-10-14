@@ -206,6 +206,8 @@ class ET_EXPERIMENTAL Session {
   // prediction, generation, or sampling policy. The source may be generating;
   // upto is checked against its accepted committed position on the engine
   // thread. Speculative or pending tokens beyond that position are excluded.
+  // The Executor must restore all model state at upto, including recurrent
+  // and convolution state; some executors can clone only at saved boundaries.
   //
   // nullopt = invalid/poisoned source or boundary, unavailable retained state,
   // unsupported cloning, capacity pressure, or shutdown. An empty prefix may
