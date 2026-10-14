@@ -745,6 +745,118 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
 
 namespace {
 /**
+ * Validates that t_src's physical layout matches the layout expected by
+ * t_dst. set_input() either copies or shares the source buffer while
+ * retaining t_dst's dim_order, so a mismatched source layout would otherwise
+ * be silently reinterpreted.
+ */
+ET_NODISCARD Error validate_input_tensor_layout(
+    const executorch::aten::Tensor& t_dst,
+    const executorch::aten::Tensor& t_src,
+    size_t input_idx,
+    ssize_t numel) {
+  ET_CHECK_OR_RETURN_ERROR(
+      t_src.dim() == t_dst.dim(),
+      InvalidArgument,
+      "Input %" ET_PRIsize_t
+      " has unexpected rank: expected %" ET_PRI_TENSOR_DIM
+      " but was %" ET_PRI_TENSOR_DIM ".",
+      input_idx,
+      t_dst.dim(),
+      t_src.dim());
+
+  if (numel == 0 || t_src.dim() == 0) {
+    return Error::Ok;
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(t_src.dim()) <= kTensorDimensionLimit,
+      InvalidArgument,
+      "Input %" ET_PRIsize_t " has unsupported rank %" ET_PRI_TENSOR_DIM ".",
+      input_idx,
+      t_src.dim());
+  const size_t dim = static_cast<size_t>(t_src.dim());
+
+  for (size_t i = 0; i < dim; ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        t_src.size(i) >= 0,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has negative size %" ET_PRI_TENSOR_SIZE
+        " at dimension %zu.",
+        input_idx,
+        t_src.size(i),
+        i);
+  }
+
+  std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+      expected_dim_order{};
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      get_dim_order(t_dst, expected_dim_order.data(), dim),
+      "Failed to get dim order for input %" ET_PRIsize_t,
+      input_idx);
+
+  std::array<int64_t, kTensorDimensionLimit> expected_strides{};
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      executorch::runtime::dim_order_to_stride(
+          t_src.sizes().data(),
+          expected_dim_order.data(),
+          dim,
+          expected_strides.data()),
+      "Failed to compute expected strides for input %" ET_PRIsize_t,
+      input_idx);
+
+  std::array<int64_t, kTensorDimensionLimit> src_strides{};
+  const auto src_strides_ref = t_src.strides();
+  if (!src_strides_ref.empty()) {
+    for (size_t i = 0; i < dim; ++i) {
+      src_strides[i] = static_cast<int64_t>(src_strides_ref[i]);
+    }
+  } else {
+    // No strides: derive them from dim_order if present, otherwise use the
+    // default contiguous layout.
+    std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+        src_dim_order{};
+    for (size_t i = 0; i < dim; ++i) {
+      src_dim_order[i] = static_cast<executorch::aten::DimOrderType>(i);
+    }
+#ifndef USE_ATEN_LIB
+    const auto src_dim_order_ref = t_src.dim_order();
+    if (!src_dim_order_ref.empty()) {
+      for (size_t i = 0; i < dim; ++i) {
+        src_dim_order[i] = src_dim_order_ref[i];
+      }
+    }
+#endif
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        executorch::runtime::dim_order_to_stride(
+            t_src.sizes().data(),
+            src_dim_order.data(),
+            dim,
+            src_strides.data()),
+        "Failed to compute strides for input %" ET_PRIsize_t,
+        input_idx);
+  }
+
+  for (size_t i = 0; i < dim; ++i) {
+    if (t_src.size(i) <= 1) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        src_strides[i] == expected_strides[i],
+        InvalidArgument,
+        "Input %" ET_PRIsize_t
+        " has unexpected layout at dimension %zu: expected stride %" PRId64
+        " but was %" PRId64 ".",
+        input_idx,
+        i,
+        expected_strides[i],
+        src_strides[i]);
+  }
+
+  return Error::Ok;
+}
+
+/**
  * Private/helper method for populating operator_name from the Operator.
  * operator_name is a char pointer that is already allocated. The size of
  * of this buffer is of size operator_name_size.
@@ -1320,6 +1432,10 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        validate_input_tensor_layout(t_dst, t_src, input_idx, numel),
+        "Error validating tensor layout at input %" ET_PRIsize_t,
+        input_idx);
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
