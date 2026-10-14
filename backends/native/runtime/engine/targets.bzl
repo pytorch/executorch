@@ -38,8 +38,21 @@ def define_common_targets():
             srcs = [
                 "ggml/GgmlEngine.cpp",
                 "ggml/GgmlExecutor.cpp",
+                "ggml/GgmlGraphBuilder.cpp",
+                "ggml/GgmlHostInts.cpp",
+                "ggml/GgmlLowerAttention.cpp",
+                "ggml/GgmlLowerConv.cpp",
+                "ggml/GgmlLowerElementwise.cpp",
+                "ggml/GgmlLowerLinear.cpp",
+                "ggml/GgmlLowerShape.cpp",
+                "ggml/GgmlTypes.cpp",
             ],
-            headers = ["ggml/GgmlExecutor.h"],
+            headers = [
+                "ggml/GgmlExecutor.h",
+                "ggml/GgmlGraphBuilder.h",
+                "ggml/GgmlHostInts.h",
+                "ggml/GgmlTypes.h",
+            ],
             exported_headers = ["ggml/GgmlEngine.h"],
             exported_deps = [":engine"],
             deps = [
