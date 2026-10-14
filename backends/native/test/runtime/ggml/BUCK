@@ -80,6 +80,7 @@ _VARIANTS = [
         deps = [
             "//caffe2:torch",
             "//executorch/exir/native:native",
+            "//executorch/extension/llm/export:gguf",
             "//pytorch/ao:torchao",
             "fbsource//third-party/pypi/transformers:transformers",
         ],

@@ -19,6 +19,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from executorch.exir.native import to_native
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -278,6 +279,35 @@ _MATMUL_TOL = (
 class GgmlOpsTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(0)
+
+    @staticmethod
+    def _q6_k_weights(rows):
+        # Valid Q6_K blocks: 128 low-bit, 64 high-bit, 16 signed-scale
+        # bytes, then an FP16 super-block scale of 1.0 (0x3c00).
+        raw = torch.zeros(rows, 210, dtype=torch.uint8)
+        raw[:, :128] = torch.arange(128, dtype=torch.uint8)
+        raw[:, 128:192] = torch.arange(64, dtype=torch.uint8)
+        raw[:, 192:208] = 1
+        raw[:, 209] = 0x3C
+        return ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+
+    def test_gguf_q6_k_linear(self):
+        model = torch.nn.Linear(256, 8, bias=False)
+        model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
+        representable = torch.full((2, 256), 0.125)
+        representable[1, ::2] = -0.125
+        # GGML requantizes F32 activations before the dot product: to Q8_K on
+        # CPU, which these values survive exactly, and to Q8_1 with an FP16
+        # block scale on GPUs. Test the weight layout tightly with exact
+        # activations, then separately bound the randomized requantization loss.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+        self._check(model, (representable,), atol=5e-4, rtol=2e-4 if gpu else 1e-5)
+        self._check(model, (torch.randn(2, 256) / 8,), atol=0.35, rtol=0.02)
+
+    def test_gguf_q6_k_embedding(self):
+        model = torch.nn.Embedding(8, 256)
+        model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
+        self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
 
     def _check(self, model, inputs, atol=1e-5, rtol=1e-5):
         model = model.eval()
