@@ -2,9 +2,9 @@
 
 This compares the same agent with delegation disabled (`agent = "inline"`) or
 one optional background child (`agent = "resource"`). The parent owns edits;
-the child investigates one question and returns concise findings. Both use the
-same tools and inherit the same prompt prefix. The child has a total output
-budget, explicit wait/cancel, and a separate serving session.
+the child investigates one question using only the shell tool. A spawn also runs
+an independent parent shell command and returns its output. The child receives
+a self-contained assignment, has a total output budget, and uses a separate session.
 
 Use the batching server with prefix caching enabled, capacity for two sessions,
 and at least two decode sequences. In a working model TOML:
@@ -18,6 +18,14 @@ concurrency = 1
 
 Keep the model, server limits, tasks, sampling and output limits identical across
 modes. Run through `bash run.sh --config /path/to/model.toml`.
+
+Assignments are limited to 4 KiB; child message history is capped at 16 KiB before
+requests. Oversized tool output is omitted so the child can narrow its command.
+Request telemetry stays in the logs, without adding per-turn prompt messages.
+These bounds do not enforce GPU memory limits or filesystem isolation.
+
+Harbor owns the task deadline. Generation reads allow buffered tool responses;
+connection, metadata, and cleanup requests retain bounded HTTP timeouts.
 
 `GET /v1/runtime/stats` reports submitted generations, requests waiting for a
 runtime session lease, and the last 16 completed worker measurements. Submitted
