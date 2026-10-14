@@ -106,6 +106,15 @@ class RopeOfPermute(torch.nn.Module):
         return self.rope(x.permute(*self.dims), position_ids).transpose(1, 2)
 
 
+def batch_norm(channels: int) -> torch.nn.BatchNorm2d:
+    norm = torch.nn.BatchNorm2d(channels)
+    norm.running_mean.uniform_(-1.0, 1.0)
+    norm.running_var.uniform_(0.5, 2.0)
+    norm.weight.data.uniform_(0.5, 1.5)
+    norm.bias.data.uniform_(-0.5, 0.5)
+    return norm
+
+
 class RopeQK(torch.nn.Module):
     """Rotates q and k at positions computed in the graph."""
 
@@ -145,21 +154,44 @@ class SnapshotThenWrite(torch.nn.Module):
 
 
 class ConvBN(torch.nn.Module):
-    def __init__(self, groups: int, bias: bool):
+    def __init__(self, groups: int, bias: bool, kernel_size: int = 3):
         super().__init__()
         self.conv = torch.nn.Conv2d(
-            8, 8, 3, stride=2, padding=1, groups=groups, bias=bias
+            8,
+            8,
+            kernel_size,
+            stride=2,
+            padding=kernel_size // 2,
+            groups=groups,
+            bias=bias,
         )
-        self.bn = torch.nn.BatchNorm2d(8)
-        self.bn.running_mean.uniform_(-1.0, 1.0)
-        self.bn.running_var.uniform_(0.5, 2.0)
-        self.bn.weight.data.uniform_(0.5, 1.5)
-        self.bn.bias.data.uniform_(-0.5, 0.5)
+        self.bn = batch_norm(8)
         # Exports as hardtanh_, as in torchvision's MobileNetV2.
         self.relu6 = torch.nn.ReLU6(inplace=True)
 
     def forward(self, x):
         return self.relu6(self.bn(self.conv(x)))
+
+
+class UnfoldableBN(torch.nn.Module):
+    """Batch norms no convolution can absorb: one reads a convolution output
+    that is also read elsewhere, one the sole reader of a convolution whose
+    weight is shared, one a ReLU."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 4, 1)
+        self.bn_shared_output = batch_norm(4)
+        self.bn_shared_weight = batch_norm(4)
+        self.bn_relu = batch_norm(4)
+
+    def forward(self, x):
+        y = self.conv(x)
+        z = self.conv(torch.relu(x))
+        return (
+            self.bn_shared_output(y) + y,
+            self.bn_shared_weight(z) + self.bn_relu(torch.relu(x)),
+        )
 
 
 class CacheWrite(torch.nn.Module):
@@ -641,10 +673,57 @@ class GgmlOpsTest(unittest.TestCase):
         )
 
     def test_conv_bn_relu6(self):
-        self._check(ConvBN(groups=1, bias=False), (torch.randn(1, 8, 9, 9),), atol=1e-4)
+        ops = collections.Counter()
+        self._check(
+            ConvBN(groups=1, bias=False),
+            (torch.randn(1, 8, 9, 9),),
+            graph_ops=ops,
+            **_MATMUL_TOL,
+        )
+        # Absorbed into the convolution at load: no statistics math or scaling.
+        self.assertEqual(ops["SQRT"] + ops["MUL"], 0)
 
     def test_depthwise_conv_bn_relu6(self):
         self._check(ConvBN(groups=8, bias=True), (torch.randn(1, 8, 9, 9),), atol=1e-4)
+
+    def test_pointwise_conv_bn_relu6(self):
+        ops = collections.Counter()
+        self._check(
+            ConvBN(groups=1, bias=True, kernel_size=1),
+            (torch.randn(1, 8, 9, 9),),
+            graph_ops=ops,
+            **_MATMUL_TOL,
+        )
+        self.assertEqual(ops["SQRT"] + ops["MUL"], 0)
+
+    def test_unfoldable_batch_norms(self):
+        ops = collections.Counter()
+        self._check(
+            UnfoldableBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
+        )
+        # Scale and shift come from load; each graph has three batch norms
+        # (one scale multiply each) and two convolutions.
+        self.assertEqual(ops["SQRT"], 0)
+        self.assertEqual(2 * ops["MUL"], 3 * ops["MUL_MAT"])
+
+    def test_batch_norm_of_computed_statistics(self):
+        # Statistics computed in the graph cannot fold at load.
+        def forward(x, mean, var, weight, bias):
+            return F.batch_norm(x, mean * 1.0, var * 1.0, weight, bias, training=False)
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 4, 5, 6),
+                torch.randn(4),
+                torch.rand(4) + 0.5,
+                torch.rand(4) + 0.5,
+                torch.randn(4),
+            ),
+            graph_ops=ops,
+        )
+        self.assertGreater(ops["SQRT"], 0)
 
     def test_batch_norm_no_affine(self):
         norm = torch.nn.BatchNorm2d(4, affine=False)
