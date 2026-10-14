@@ -24,7 +24,6 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.recipes.nxp_recipe_provider import (
-    _histogram_observer_fix_pass,
     NEUTRON_RECIPE_CONFIG_KEY,
     NeutronRecipeConfig,
     NXPRecipeProvider,
@@ -97,7 +96,6 @@ def test_ptq_neutron_basic():
 
 
 class TestInt8PTQNoDelegate:
-
     def test__basic(self):
         """INT8_PTQ_NO_DELEGATE: model is quantized but no delegate call is present in the graph."""
         model = SimpleCNN()
@@ -373,7 +371,6 @@ class TestErrorHandling:
 
 
 class TestRecipeStructureValidation:
-
     def test_ptq_neutron_recipe_structure(self):
         """INT8_PTQ_NEUTRON recipe: correct quantizer and partitioner are set."""
         rc = NeutronRecipeConfig(INPUT_SHAPE)
@@ -509,7 +506,6 @@ def test__no_delegate_recipe_has_empty_partitioners(recipe_type):
 
 
 class TestInt8QATNeutron:
-
     def test__basic(self):
         """INT8_QAT_NEUTRON: full export succeeds and the graph contains a delegate call."""
         model = SimpleCNN()
@@ -571,7 +567,6 @@ class TestInt8QATNeutron:
 
 
 class TestInt8QATNoDelegate:
-
     def test__basic(self):
         """INT8_QAT_NO_DELEGATE: export succeeds without any delegate call."""
         model = SimpleCNN()
@@ -592,7 +587,6 @@ _QAT_RECIPE_TYPES = [NXPRecipeType.INT8_QAT_NEUTRON, NXPRecipeType.INT8_QAT_NO_D
 
 @pytest.mark.parametrize("recipe_type", _QAT_RECIPE_TYPES, ids=lambda r: r.value)
 class TestQATNXPPasses:
-
     def _get_qat_recipe(self, recipe_type: NXPRecipeType) -> "ExportRecipe":
         rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=_noop_train_fn)
         return NXPRecipeProvider().create_recipe(recipe_type, neutron_recipe_config=rc)
@@ -608,14 +602,6 @@ class TestQATNXPPasses:
         assert (
             AddSimulatedLinearBatchNormFusionQATPass.__name__ in first_pass.__qualname__
         )
-
-    def test__post_prepare_passes_end_with_histogram_observer_fix(self, recipe_type):
-        """QAT post_prepare_passes: last pass is _histogram_observer_fix_pass."""
-        recipe = self._get_qat_recipe(recipe_type)
-        qr = recipe.quantization_recipe
-        assert qr.post_prepare_passes is not None
-        last_pass = qr.post_prepare_passes[-1]
-        assert last_pass is _histogram_observer_fix_pass
 
     def test__pre_convert_passes_include_remove_bn_fusion_and_fold(self, recipe_type):
         """QAT pre_convert_passes: contains RemoveSimulatedLinearBatchNormFusionQATPass
@@ -671,12 +657,6 @@ class TestPTQNXPPasses:
         assert qr.pre_convert_passes is None
         assert qr.post_convert_passes is None
 
-    def test__post_prepare_passes_include_histogram_observer_fix(self):
-        """PTQ recipe post_prepare_passes contains _histogram_observer_fix_pass."""
-        qr = self._get_ptq_recipe().quantization_recipe
-        assert qr.post_prepare_passes is not None
-        assert _histogram_observer_fix_pass in qr.post_prepare_passes
-
     def test__post_prepare_passes_do_not_include_add_bn_fusion(self):
         """PTQ recipe post_prepare_passes must NOT contain AddSimulatedLinearBatchNormFusionQATPass."""
         qr = self._get_ptq_recipe().quantization_recipe
@@ -684,6 +664,13 @@ class TestPTQNXPPasses:
             assert AddSimulatedLinearBatchNormFusionQATPass.__name__ not in getattr(
                 p, "__qualname__", ""
             )
+
+    def test__post_prepare_passes_is_empty(self):
+        """PTQ recipe post_prepare_passes is empty: NeutronQuantizer itself suppresses
+        quantization annotation for non-float nodes, so no post-prepare fixup pass is
+        needed (previously _histogram_observer_fix_pass was appended here)."""
+        qr = self._get_ptq_recipe().quantization_recipe
+        assert qr.post_prepare_passes == []
 
 
 # ---------------------------------------------------------------------------

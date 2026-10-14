@@ -10,6 +10,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
     ActivationsConcatClusterPattern,
@@ -100,6 +101,35 @@ from torchao.quantization.pt2e.quantizer import (
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
+#: Dtypes accepted by `quantized_decomposed.quantize_per_tensor` (inserted by `convert_pt2e`)
+_QUANTIZABLE_FLOAT_DTYPES = (torch.float32, torch.float16, torch.bfloat16)
+
+
+def _is_floating_point_node(node: fx.Node) -> bool:
+    """Return whether `node`'s runtime value is a dtype quantize_per_tensor or Observers
+     accepts
+
+    `HistogramObserver` calls `torch.histc`/`torch.linspace` internally, which do not
+    support integer or bool dtypes, and the eventual `quantize_per_tensor` call itself
+    hard-asserts its input is `float32`/`float16`/`bfloat16` (NOT `float64`). Nodes without
+    a `"val"` meta entry (e.g. literals) are treated as quantizable, preserving the previous
+    behavior for them.
+    """
+    val = node.meta.get("val", None)
+    if val is None or not hasattr(val, "dtype"):
+        return True
+    return val.dtype in _QUANTIZABLE_FLOAT_DTYPES
+
+
+def _dtype_safe_qspec(
+    spec: QuantizationSpec | None, node: fx.Node
+) -> QuantizationSpec | None:
+    """Suppress quantization annotation for a non-floating-point node inputs."""
+    if _is_floating_point_node(node):
+        return spec
+    return None
+
+
 class NeutronAtenQuantizer(Quantizer):
     def __init__(
         self, pattern: QuantizationPattern, quantization_config: QuantizationConfig
@@ -109,6 +139,7 @@ class NeutronAtenQuantizer(Quantizer):
         self.quantization_config = quantization_config
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+
         fused_partitions = find_sequential_partitions_aten(
             model,
             self.pattern.partition_types(),
@@ -138,12 +169,15 @@ class NeutronAtenQuantizer(Quantizer):
                 continue
 
             for output, *custom_spec in anchors.output:
+                spec = custom_spec[0] if custom_spec else output_act_qspec
+                spec = _dtype_safe_qspec(spec, output)
                 # pyre-ignore[16]: no attribute
-                output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                    # pyre-ignore[6]: incompatible parameter type
-                    output_qspec=(custom_spec[0] if custom_spec else output_act_qspec),
-                    _annotated=True,
-                )
+                if spec is not None:
+                    output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                        # pyre-ignore[6]: incompatible parameter type
+                        output_qspec=spec,
+                        _annotated=True,
+                    )
 
             def annotate_inputs(
                 inputs: (
@@ -165,9 +199,11 @@ class NeutronAtenQuantizer(Quantizer):
                         # pyre-ignore[16]: no attribute
                         else node.args[args_idx.idx][args_idx.inner_idx]
                     )
-                    annotation.input_qspec_map[arg] = (
-                        custom_spec[0] if custom_spec else spec
+                    arg_spec = custom_spec[0] if custom_spec else spec
+                    arg_spec = _dtype_safe_qspec(
+                        arg_spec, arg if isinstance(arg, fx.Node) else node
                     )
+                    annotation.input_qspec_map[arg] = arg_spec
                     # pyre-ignore[16]: no attribute
                     node.meta[Q_ANNOTATION_KEY] = annotation
 
@@ -399,8 +435,10 @@ class NeutronQuantizer(ComposableQuantizer):
                 continue
 
             if node.op == "placeholder" and len(node.users) > 0:
-                annotate_output_qspec(node, act_qspec(self.is_qat))
-                self._mark_input_node_as_annotated(node)
+                spec = _dtype_safe_qspec(act_qspec(self.is_qat), node)
+                if spec is not None:
+                    annotate_output_qspec(node, spec)
+                    self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         return super().validate(model)

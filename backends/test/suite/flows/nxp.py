@@ -34,6 +34,16 @@ _NEUTRON_XFAILS = [
     "test_lstm_return_hidden_states",  # Accuracy error.
     "test_lstm_seq_lengths",  # Timeout.
     "test_lstm_num_layers",  # Timeout.
+    "test_lstm_dtype",  # Timeout
+    "test_lstm_no_bias_dtype",  # Timeout
+    "test_lstm_bidirectional",  # Timeout
+    "test_lstm_feature_sizes",  # Timeout
+    "test_lstm_batch_sizes",  # Timeout
+    "test_lstm*",  # Timeout
+]
+
+_NEUTRON_SKIPS = [
+    "test_lstm",  # Regularly timeouts on simulator depending on the load.
 ]
 
 
@@ -66,6 +76,7 @@ def _create_neutron_int8_ptq_flow(target: str = "imxrt700") -> TestFlow:
         # simulator tools are missing, the suite marks the test as
         # PTE_RUN_FAIL (which is expected and informative in that environment).
         supports_serialize=True,
+        skip_patterns=_NEUTRON_SKIPS,
         xfail_patterns=_NEUTRON_XFAILS,
     )
 

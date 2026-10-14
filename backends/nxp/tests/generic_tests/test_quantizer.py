@@ -729,3 +729,30 @@ def test_torchao_native_conv_bn_qat_fusing(
         assert len(graph_nodes) == 21
     else:
         assert len(graph_nodes) == 15
+
+
+def test_quantizer__non_float_input_does_not_crash_prepare_or_convert():
+    """A non-floating-point input (e.g. int64) must not crash the
+    prepare_pt2e/convert_pt2e.
+
+    Uses prepare_pt2e/convert_pt2e directly (not calibrate_and_quantize test
+    wrapper), matching how any external PT2E caller might use NeutronQuantizer.
+    """
+
+    class PowModule(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.pow.Tensor_Tensor(x, y)
+
+    x = torch.randint(-4, 5, (2,), dtype=torch.int64)
+    y = torch.randn((2,), dtype=torch.float32)
+
+    exported_model = export(PowModule(), (x, y), strict=True)
+    quantizer = NeutronQuantizer(neutron_target_spec)
+
+    prepared_model = prepare_pt2e(exported_model.module(), quantizer)
+    prepared_model(x, y)  # calibration must not raise (torch.histc on int64)
+
+    quantized_model = convert_pt2e(
+        prepared_model
+    )  # must not raise (quantize_per_tensor dtype check)
+    quantized_model(x, y)  # sanity: the converted graph still runs

@@ -38,10 +38,8 @@ from executorch.backends.nxp.nxp_backend import (
     default_preserve_ops,
     generate_neutron_compile_spec,
 )
-from executorch.backends.nxp.quantizer.utils import (
-    _replace_histogram_observers_for_integer_inputs,
-)
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
+
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_default_quantizer,
     handle_kernel_selection,
@@ -132,7 +130,6 @@ class NeutronRecipeConfig:
 
 
 class NXPRecipeProvider(BackendRecipeProvider):
-
     @property
     def backend_name(self) -> str:
         return NXP_BACKEND
@@ -245,14 +242,9 @@ def _wrap_exir_pass(pass_cls, *args, **kwargs):
     return _wrapped
 
 
-def _histogram_observer_fix_pass(m):
-    """Callable(GraphModule) -> GraphModule that replaces HistogramObserver for integer inputs."""
-    _replace_histogram_observers_for_integer_inputs(m)
-    return m
-
-
 # ---------------------------------------------------------------------------
 # Module-level builder helpers
+
 # ---------------------------------------------------------------------------
 
 
@@ -269,13 +261,11 @@ def _build_quantization_recipe(
     """
     _quantizer = rc.get_quantizer_fn()
 
-    # post_prepare_passes: always fix HistogramObserver for non-float inputs.
-    # For QAT, also insert the simulated linear-BN fusion before training so
-    # fake-quantize nodes see fused weights during the training loop.
+    # post_prepare_passes: for QAT, insert the simulated linear-BN fusion before
+    # training so fake-quantize nodes see fused weights during the training loop.
     post_prepare: list[Callable] = []
     if is_qat:
         post_prepare.append(_wrap_exir_pass(AddSimulatedLinearBatchNormFusionQATPass))
-    post_prepare.append(_histogram_observer_fix_pass)
 
     if is_qat:
         # pre_convert_passes: tear down the simulated fusion and fold BN into
