@@ -4,8 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Export single-operator modules to .ptn and check the ggml CPU engine
-against eager PyTorch."""
+"""Export single operators and a tiny Llama to .ptn and check the ggml CPU
+engine against eager PyTorch."""
 
 import copy
 import subprocess
@@ -17,6 +17,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from executorch.exir.native import to_native
+from torch.export import Dim
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
     IntxWeightOnlyConfig,
@@ -24,7 +25,8 @@ from torchao.quantization import (
     quantize_,
 )
 from torchao.quantization.granularity import PerGroup
-from transformers import LlamaConfig
+from transformers import LlamaConfig, LlamaForCausalLM
+from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     LlamaRotaryEmbedding,
@@ -121,6 +123,50 @@ class CacheWrite(torch.nn.Module):
         return self.cache * 1.0
 
 
+class TinyLlama(torch.nn.Module):
+    """The transformers static-cache Llama. Calls the wrapped model directly so
+    that it returns only the last position's logits."""
+
+    def __init__(self, max_cache_len: int):
+        super().__init__()
+        config = LlamaConfig(
+            hidden_size=256,
+            intermediate_size=512,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=64,
+            vocab_size=512,
+            rope_theta=500000.0,
+            rope_scaling={
+                "rope_type": "llama3",
+                "factor": 32.0,
+                "high_freq_factor": 4.0,
+                "low_freq_factor": 1.0,
+                "original_max_position_embeddings": 8192,
+            },
+            initializer_range=0.1,
+            tie_word_embeddings=True,
+        )
+        model = LlamaForCausalLM(config).eval()
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        _quantize_8da4w(model, group_size=64)
+        self.cached = TorchExportableModuleForDecoderOnlyLM(
+            model, batch_size=1, max_cache_len=max_cache_len
+        ).model
+
+    def forward(self, input_ids, cache_position):
+        return self.cached.model(
+            input_ids=input_ids,
+            cache_position=cache_position,
+            attention_mask=None,
+            past_key_values=self.cached.static_cache,
+            use_cache=True,
+            logits_to_keep=1,
+        ).logits
+
+
 def _quantize_8da4w(
     model: torch.nn.Module,
     group_size: int,
@@ -144,31 +190,45 @@ def _quantize_8da4w(
     )
 
 
-def _run_ggml(package: Path, inputs, outdir: Path, num_outputs: int):
-    input_paths = []
-    for i, tensor in enumerate(inputs):
-        path = outdir / f"input{i}.bin"
-        path.write_bytes(tensor.contiguous().flatten().view(torch.uint8).numpy())
-        input_paths.append(str(path))
-    output_paths = [str(outdir / f"output{i}.bin") for i in range(num_outputs)]
+def _shape_text(inputs) -> str:
+    return ",".join("x".join(str(d) for d in t.shape) for t in inputs)
+
+
+def _run_ggml(
+    package: Path, steps, outdir: Path, num_outputs: int, resize: bool = False
+):
+    """Runs each step's inputs in order on one executable and returns each
+    step's outputs as (bytes, shape) pairs."""
+    input_steps, output_steps = [], []
+    for step, inputs in enumerate(steps):
+        input_paths = []
+        for i, tensor in enumerate(inputs):
+            path = outdir / f"step{step}_input{i}.bin"
+            path.write_bytes(tensor.contiguous().flatten().view(torch.uint8).numpy())
+            input_paths.append(str(path))
+        input_steps.append(",".join(input_paths))
+        output_steps.append(
+            ",".join(
+                str(outdir / f"step{step}_output{i}.bin") for i in range(num_outputs)
+            )
+        )
+    command = [
+        f"--package={package}",
+        f"--inputs={';'.join(input_steps)}",
+        f"--outputs={';'.join(output_steps)}",
+    ]
+    if resize:
+        command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
-            [
-                str(runner),
-                f"--package={package}",
-                f"--inputs={','.join(input_paths)}",
-                f"--outputs={','.join(output_paths)}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
+            [str(runner), *command], capture_output=True, text=True, timeout=300
         )
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
     shapes = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
-    return [
-        (Path(path).read_bytes(), shape) for path, shape in zip(output_paths, shapes)
-    ]
+    paths = [path for step in output_steps for path in step.split(",")]
+    outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
+    return [outputs[i : i + num_outputs] for i in range(0, len(outputs), num_outputs)]
 
 
 class GgmlOpsTest(unittest.TestCase):
@@ -185,7 +245,7 @@ class GgmlOpsTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "model.ptn"
             to_native(torch.export.export(model, inputs)).save(str(package))
-            outputs = _run_ggml(package, inputs, outdir, len(expected))
+            (outputs,) = _run_ggml(package, [inputs], outdir, len(expected))
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
             self.assertEqual(shape, tuple(reference.shape))
@@ -201,7 +261,7 @@ class GgmlOpsTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "model.ptn"
             to_native(torch.export.export(model, example)).save(str(package))
-            outputs = _run_ggml(package, inputs, outdir, 1)
+            (outputs,) = _run_ggml(package, [inputs], outdir, 1)
         return [
             torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape)
             for raw, shape in outputs
@@ -529,7 +589,7 @@ class GgmlOpsTest(unittest.TestCase):
             package = outdir / "model.ptn"
             to_native(torch.export.export(CacheWrite(), inputs)).save(str(package))
             with self.assertRaisesRegex(AssertionError, "outside"):
-                _run_ggml(package, (inputs[0], torch.tensor([5, 1, 8])), outdir, 1)
+                _run_ggml(package, [(inputs[0], torch.tensor([5, 1, 8]))], outdir, 1)
 
     def test_read_before_index_put_sees_old_rows(self):
         inputs = (torch.ones(1, 2, 1, 2), torch.tensor([1]))
@@ -607,6 +667,49 @@ class GgmlOpsTest(unittest.TestCase):
             atol=1e-4,
             rtol=1e-4,
         )
+
+
+class GgmlLlamaTest(unittest.TestCase):
+    MAX_SEQ = 16
+
+    def test_tiny_llama_8da4w(self):
+        torch.manual_seed(0)
+        model = TinyLlama(self.MAX_SEQ).eval()
+        example = (torch.zeros(1, 6, dtype=torch.long), torch.arange(6))
+        seq = Dim("seq", min=1, max=self.MAX_SEQ - 1)
+        with torch.no_grad():
+            ep = torch.export.export(
+                model,
+                example,
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=True,
+            )
+        prompt = torch.randint(0, 512, (1, 9))
+        steps = [
+            (prompt[:, :7], torch.arange(7)),
+            (prompt[:, 7:8], torch.tensor([7])),
+            (prompt[:, 8:9], torch.tensor([8])),
+        ]
+        eager = copy.deepcopy(model)
+        with torch.no_grad():
+            expected = [eager(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_llama.ptn"
+            to_native(ep).save(str(package))
+            outputs = _run_ggml(package, steps, outdir, 1, resize=True)
+        self.assertEqual(len(outputs), len(steps))
+        for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
+            ((raw, shape),) = step_outputs
+            with self.subTest(step=step):
+                self.assertEqual(shape, tuple(reference.shape))
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                actual = actual.reshape(shape)
+                self.assertEqual(
+                    actual[0, -1].argmax().item(), reference[0, -1].argmax().item()
+                )
+                scale = reference.abs().max().item()
+                torch.testing.assert_close(actual, reference, atol=8e-2 * scale, rtol=0)
 
 
 if __name__ == "__main__":
