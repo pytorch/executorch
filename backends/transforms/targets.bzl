@@ -182,10 +182,22 @@ def define_common_targets():
         srcs = ["fuse_view_copy.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_view_copy",
+        srcs = ["test/test_fuse_view_copy.py"],
+        deps = [
+            ":fuse_view_copy",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
         ],
     )
