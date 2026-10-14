@@ -13,75 +13,22 @@ from unittest import mock
 
 import torch
 
-from executorch.extension.diffusers.config import (
+from executorch.export.huggingface.diffusers.config import (
     DiffusionConfig,
     ExportConfig,
     ModelConfig,
 )
-from executorch.extension.diffusers.metadata import (
-    build_diffusion_metadata,
-    DiffusionMetadata,
-    METADATA_METHODS,
-)
-from executorch.extension.diffusers.pipeline_specs import (
-    DiffusionComponents,
-    DiffusionModelInfo,
-    ResolvedDiffusionPipeline,
-    SD15PipelineSpec,
-    SDXLPipelineSpec,
+from executorch.export.huggingface.diffusers.metadata import build_diffusion_metadata
+from executorch.export.huggingface.diffusers.pipeline_specs import DiffusionModelInfo
+from executorch.extension.diffusers.metadata import DiffusionMetadata, METADATA_METHODS
+from executorch.extension.diffusers.pipeline_behaviors import (
+    SD15PipelineBehavior,
+    SDXLPipelineBehavior,
 )
 from executorch.extension.diffusers.runner import (
     _cast_floating_tensors,
     DiffusionRunner,
 )
-from executorch.extension.diffusers.wrappers import _guidance_scale_embedding
-
-
-class _TextEncoder(torch.nn.Module):
-    def __init__(self, width: int, pooled_width: int = 0) -> None:
-        super().__init__()
-        self.width = width
-        self.pooled_width = pooled_width
-
-    def forward(self, input_ids, output_hidden_states=False):
-        shape = (*input_ids.shape, self.width)
-        hidden = torch.ones(shape)
-        output = SimpleNamespace(hidden_states=(torch.zeros(shape), hidden))
-        output.last_hidden_state = hidden
-        output.pooler_output = torch.ones(
-            input_ids.shape[0], self.pooled_width or self.width
-        )
-        if self.pooled_width:
-            output.text_embeds = torch.ones(input_ids.shape[0], self.pooled_width)
-        return output
-
-
-class _UNet(torch.nn.Module):
-    config = SimpleNamespace(
-        in_channels=4,
-        down_block_types=("DownBlock", "DownBlock", "DownBlock"),
-    )
-
-    def forward(self, latents, timestep, **kwargs):
-        return SimpleNamespace(sample=latents)
-
-
-class _VAE(torch.nn.Module):
-    config = SimpleNamespace(
-        block_out_channels=(1, 1, 1, 1), scaling_factor=0.5, shift_factor=None
-    )
-
-    def encode(self, image):
-        distribution = SimpleNamespace(
-            mean=image[:, :1].repeat(1, 4, 1, 1),
-            std=torch.ones(
-                image.shape[0], 4, image.shape[2], image.shape[3], dtype=image.dtype
-            ),
-        )
-        return SimpleNamespace(latent_dist=distribution)
-
-    def decode(self, latents):
-        return SimpleNamespace(sample=latents[:, :3])
 
 
 def _config(
@@ -113,20 +60,16 @@ def _config(
     )
 
 
-def _resolved_pipeline(
-    spec=None,
+def _model_info(
     *,
     scheduler_name: str = "FakeScheduler",
     max_sequence_lengths: tuple[int, ...] = (77, 77),
     zero_negative_prompt: bool = True,
-) -> ResolvedDiffusionPipeline:
-    return ResolvedDiffusionPipeline(
-        spec=spec or SDXLPipelineSpec(),
-        model_info=DiffusionModelInfo(
-            scheduler_name=scheduler_name,
-            max_sequence_lengths=max_sequence_lengths,
-            zero_negative_prompt=zero_negative_prompt,
-        ),
+) -> DiffusionModelInfo:
+    return DiffusionModelInfo(
+        scheduler_name=scheduler_name,
+        max_sequence_lengths=max_sequence_lengths,
+        zero_negative_prompt=zero_negative_prompt,
     )
 
 
@@ -188,15 +131,8 @@ class ConfigValidationTest(unittest.TestCase):
 
 
 class GuidanceTest(unittest.TestCase):
-    def test_guidance_embedding_computes_in_float32(self):
-        embedding = _guidance_scale_embedding(
-            torch.tensor([70.0], dtype=torch.float16), 256
-        )
-        self.assertEqual(embedding.dtype, torch.float32)
-        self.assertTrue(bool(torch.isfinite(embedding).all()))
-
     def test_classifier_free_guidance_combines_two_predictions(self):
-        prediction = SD15PipelineSpec().combine_predictions(
+        prediction = SD15PipelineBehavior().combine_predictions(
             (torch.tensor([2.0]), torch.tensor([5.0])),
             cfg_scale=3.0,
         )
@@ -204,7 +140,7 @@ class GuidanceTest(unittest.TestCase):
         torch.testing.assert_close(prediction, torch.tensor([11.0]))
 
     def test_model_guidance_scale_is_a_denoiser_input(self):
-        inputs = SD15PipelineSpec().prepare_denoiser_inputs(
+        inputs = SD15PipelineBehavior().prepare_denoiser_inputs(
             torch.zeros(1, 4, 8, 8),
             torch.zeros(1),
             (torch.zeros(1, 77, 3),),
@@ -219,7 +155,7 @@ class GuidanceTest(unittest.TestCase):
         )
 
     def test_model_guidance_scale_preserves_float32_precision(self):
-        inputs = SDXLPipelineSpec().prepare_denoiser_inputs(
+        inputs = SDXLPipelineBehavior().prepare_denoiser_inputs(
             torch.zeros(1, 4, 8, 8, dtype=torch.float16),
             torch.zeros(1),
             (torch.zeros(1, 77, 3), torch.zeros(1, 3)),
@@ -233,39 +169,15 @@ class GuidanceTest(unittest.TestCase):
 
 class PipelineSpecTest(unittest.TestCase):
     def setUp(self):
-        self.components = DiffusionComponents(
-            {
-                "text_encoder": _TextEncoder(3),
-                "text_encoder_2": _TextEncoder(5, 7),
-                "denoiser": _UNet(),
-                "vae": _VAE(),
-            }
-        )
         self.config = _config(
             height=64,
             width=80,
             max_sequence_lengths=(77, 77),
         )
 
-    def test_conditioning_and_examples(self):
-        pipeline_spec = SDXLPipelineSpec()
-        inputs = pipeline_spec.example_inputs(self.components, self.config)
-        # The VAE downsamples 64x80 by 8, and the fake UNet has 4 input channels.
-        self.assertEqual(inputs["denoise"][0].shape, (1, 4, 8, 10))
-        # The fake encoders have widths 3 and 5; encoder 2 pools to width 7.
-        self.assertEqual(inputs["denoise"][2].shape, (1, 77, 8))
-        self.assertEqual(inputs["denoise"][3].shape, (1, 7))
-        # SDXL time IDs contain original size, crop coordinates, and target size.
-        torch.testing.assert_close(
-            inputs["denoise"][4],
-            torch.tensor([[64, 80, 0, 0, 64, 80]], dtype=torch.float32),
-        )
-
     def test_metadata_describes_pipeline_contract(self):
-        pipeline = _resolved_pipeline()
-        metadata = build_diffusion_metadata(
-            pipeline.spec, pipeline.model_info, self.config
-        )
+        behavior = SDXLPipelineBehavior()
+        metadata = build_diffusion_metadata(behavior, _model_info(), self.config)
         methods = metadata.to_constant_methods()
         self.assertTrue(
             {
@@ -286,9 +198,8 @@ class PipelineSpecTest(unittest.TestCase):
         )
 
     def test_metadata_supports_arbitrary_encoder_count(self):
-        pipeline = _resolved_pipeline()
         metadata = build_diffusion_metadata(
-            pipeline.spec, pipeline.model_info, self.config
+            SDXLPipelineBehavior(), _model_info(), self.config
         )
         metadata = replace(metadata, max_sequence_lengths=(77, 77, 256))
         methods = metadata.to_constant_methods()
@@ -301,14 +212,15 @@ class PipelineSpecTest(unittest.TestCase):
         )
 
     def test_metadata_separates_cfg_and_model_guidance(self):
-        pipeline = _resolved_pipeline()
         model_info = replace(
-            pipeline.model_info,
+            _model_info(),
             supports_cfg=False,
             accepts_guidance_input=True,
             guidance_input_dim=256,
         )
-        metadata = build_diffusion_metadata(pipeline.spec, model_info, self.config)
+        metadata = build_diffusion_metadata(
+            SDXLPipelineBehavior(), model_info, self.config
+        )
         self.assertEqual(
             (
                 metadata.default_cfg_scale,
@@ -318,121 +230,26 @@ class PipelineSpecTest(unittest.TestCase):
             (1.0, 5.0, 256),
         )
 
-    def test_vae_runs_in_float32_at_fp16_boundaries(self):
-        config = _config(
-            64,
-            80,
-            (77, 77),
-            text_encoder_dtype=torch.float16,
-            denoiser_dtype=torch.float16,
-            vae_dtype=torch.float32,
-        )
-        modules = SDXLPipelineSpec().wrap_components(self.components, config)
-        mean, std = modules["encode"](torch.zeros(1, 3, 8, 8, dtype=torch.float16))
-        self.assertEqual(mean.dtype, torch.float16)
-        self.assertEqual(std.dtype, torch.float16)
-        image = modules["decode"](torch.zeros(1, 4, 8, 8, dtype=torch.float16))
-        self.assertEqual(image.dtype, torch.float32)
-
-    def test_warns_when_fp16_export_requires_vae_upcast(self):
-        vae = self.components.require("vae")
-        vae.config = SimpleNamespace(**vars(vae.config), force_upcast=True)
-        config = _config(
-            64,
-            80,
-            (77, 77),
-            vae_dtype=torch.float16,
-        )
-        with self.assertWarnsRegex(UserWarning, "force_upcast=True"):
-            SDXLPipelineSpec().wrap_components(self.components, config)
-
-    def test_sdxl_passes_guidance_embedding_to_unet(self):
-        class GuidedUNet(_UNet):
-            def forward(self, latents, timestep, **kwargs):
-                self.timestep_cond = kwargs["timestep_cond"]
-                return SimpleNamespace(sample=latents)
-
-        denoiser = GuidedUNet()
-        denoiser.config = SimpleNamespace(
-            in_channels=4,
-            time_cond_proj_dim=256,
-            down_block_types=("DownBlock", "DownBlock", "DownBlock"),
-        )
-        components = DiffusionComponents(
-            {**self.components.models, "denoiser": denoiser}
-        )
-        inputs = SDXLPipelineSpec().example_inputs(components, self.config)
-        self.assertEqual(len(inputs["denoise"]), 6)
-        torch.testing.assert_close(inputs["denoise"][-1], torch.tensor([5.0]))
-        SDXLPipelineSpec().wrap_components(components, self.config)["denoise"](
-            *inputs["denoise"]
-        )
-        torch.testing.assert_close(
-            denoiser.timestep_cond,
-            _guidance_scale_embedding(torch.tensor([5.0]), 256),
-        )
-
-    def test_sdxl_resolves_unet_guidance_capabilities(self):
-        denoiser = _UNet()
-        denoiser.config = SimpleNamespace(
-            in_channels=4,
-            time_cond_proj_dim=256,
-            down_block_types=("DownBlock", "DownBlock", "DownBlock"),
-        )
-        components = DiffusionComponents(
-            {**self.components.models, "denoiser": denoiser}
-        )
-        model_info = SDXLPipelineSpec().resolve_model_info(
-            components, _resolved_pipeline().model_info
-        )
-        self.assertEqual(
-            (
-                model_info.supports_cfg,
-                model_info.accepts_guidance_input,
-                model_info.guidance_input_dim,
-                model_info.dynamic_spatial_multiple,
-            ),
-            (False, True, 256, 32),
-        )
-
     def test_model_input_scaling_is_optional(self):
         latents = torch.ones(1, 4, 8, 8)
         scheduler = SimpleNamespace()
         self.assertIs(
-            SD15PipelineSpec().prepare_model_input(
+            SD15PipelineBehavior().prepare_model_input(
                 scheduler, latents, torch.tensor(1.0)
             ),
             latents,
         )
 
     def test_sd15_has_one_encoder_and_no_pooled_conditioning(self):
-        components = DiffusionComponents(
-            {
-                "text_encoder": _TextEncoder(3),
-                "denoiser": _UNet(),
-                "vae": _VAE(),
-            }
+        behavior = SD15PipelineBehavior()
+        hidden = torch.zeros(1, 77, 3)
+        self.assertEqual(behavior.assemble_conditioning(((hidden,),)), (hidden,))
+        metadata = build_diffusion_metadata(
+            behavior,
+            _model_info(max_sequence_lengths=(77,)),
+            _config(64, 64, (77,)),
         )
-        config = _config(
-            64,
-            64,
-            (77,),
-            denoiser_dtype=torch.float16,
-        )
-        pipeline_spec = SD15PipelineSpec()
-        modules = pipeline_spec.wrap_components(components, config)
-        inputs = pipeline_spec.example_inputs(components, config)
-        self.assertNotIn("text_encoder_1", modules)
-        self.assertEqual(len(inputs["denoise"]), 3)
-        model_info = _resolved_pipeline(
-            pipeline_spec, max_sequence_lengths=(77,)
-        ).model_info
-        self.assertEqual(
-            build_diffusion_metadata(
-                pipeline_spec, model_info, config
-            ).max_sequence_lengths,
-            (77,),
-        )
+        self.assertEqual(metadata.max_sequence_lengths, (77,))
 
 
 class _Method:
@@ -577,7 +394,7 @@ class RunnerTest(unittest.TestCase):
         runner = DiffusionRunner(
             _Program("sd15"), [_TokenizerWithMask()], FakeScheduler()
         )
-        runner.pipeline_spec = SimpleNamespace(
+        runner.pipeline_behavior = SimpleNamespace(
             text_encoder_input_names=(("input_ids", "attention_mask"),)
         )
         inputs = runner._tokenize("cat")[0]
@@ -650,7 +467,7 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(noise.shape, image_latents.shape)
 
     def test_pipeline_decides_if_missing_negative_prompt_enables_cfg(self):
-        class ExplicitNegativeSDXL(SDXLPipelineSpec):
+        class ExplicitNegativeSDXL(SDXLPipelineBehavior):
             def should_use_cfg(self, cfg_scale, negative_prompt):
                 return cfg_scale > 1 and negative_prompt is not None
 
@@ -660,7 +477,7 @@ class RunnerTest(unittest.TestCase):
         )
         program.methods["denoise"] = _Method(denoise)
         runner = DiffusionRunner(program, [_Tokenizer(), _Tokenizer()], FakeScheduler())
-        runner.pipeline_spec = ExplicitNegativeSDXL()
+        runner.pipeline_behavior = ExplicitNegativeSDXL()
         runner.generate("cat", steps=1, cfg_scale=7.5)
         self.assertEqual(denoise.call_count, 1)
 

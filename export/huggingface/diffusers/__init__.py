@@ -5,3 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """Export Hugging Face Diffusers pipelines to ExecuTorch."""
+
+from .config import DiffusionConfig, ExportConfig, ModelConfig
+
+__all__ = ["DiffusionConfig", "ExportConfig", "ModelConfig"]

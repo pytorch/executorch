@@ -11,10 +11,10 @@ from typing import Any
 
 from executorch.exir._warnings import experimental
 
-from executorch.extension.diffusers.pipeline_specs import (
+from .pipeline_specs import (
     DiffusionModelInfo,
-    DiffusionPipelineSpec,
-    HF_PIPELINE_SPECS,
+    DiffusionPipelineExportSpec,
+    HF_PIPELINE_EXPORT_SPECS,
     ResolvedDiffusionPipeline,
 )
 
@@ -36,19 +36,20 @@ def _component_slots(index: Mapping[str, Any], prefix: str) -> tuple[str, ...]:
 @experimental("This API is experimental and may change without notice.")
 def pipeline_spec_from_model_index(
     index: Mapping[str, Any],
-) -> DiffusionPipelineSpec:
+) -> DiffusionPipelineExportSpec:
     """Resolve a pipeline specification from a Diffusers model index."""
     pipeline_name = index.get("_class_name")
     try:
-        pipeline_spec_class = HF_PIPELINE_SPECS[str(pipeline_name)]
+        export_spec_class = HF_PIPELINE_EXPORT_SPECS[str(pipeline_name)]
     except KeyError as error:
         raise ValueError(
             f"unsupported diffusion pipeline {pipeline_name!r}; supported: "
-            f"{sorted(HF_PIPELINE_SPECS)}"
+            f"{sorted(HF_PIPELINE_EXPORT_SPECS)}"
         ) from error
     tokenizer_slots = _component_slots(index, "tokenizer")
     text_encoder_slots = _component_slots(index, "text_encoder")
-    defaults = pipeline_spec_class()
+    export_spec = export_spec_class()
+    defaults = export_spec.pipeline_behavior
     if tokenizer_slots != defaults.tokenizer_slots:
         raise ValueError(
             f"{pipeline_name} requires tokenizer components "
@@ -59,14 +60,14 @@ def pipeline_spec_from_model_index(
             f"{pipeline_name} requires text encoder components "
             f"{defaults.text_encoder_slots}, found {text_encoder_slots}"
         )
-    if len(defaults.default_max_sequence_lengths) != len(text_encoder_slots):
+    if len(export_spec.default_max_sequence_lengths) != len(text_encoder_slots):
         raise ValueError(
             f"{pipeline_name} must define one maximum sequence length per "
             "text encoder"
         )
     if len(defaults.text_encoder_input_names) != len(text_encoder_slots):
         raise ValueError(f"{pipeline_name} must define inputs for every text encoder")
-    return defaults
+    return export_spec
 
 
 @experimental("This API is experimental and may change without notice.")
@@ -79,7 +80,8 @@ def resolve_huggingface_pipeline(
     except ImportError as error:
         raise ImportError("Hugging Face export requires diffusers") from error
     index = diffusers.DiffusionPipeline.load_config(model_id, revision=revision)
-    pipeline_spec = pipeline_spec_from_model_index(index)
+    export_spec = pipeline_spec_from_model_index(index)
+    pipeline_behavior = export_spec.pipeline_behavior
     scheduler_entry = index.get("scheduler")
     if not isinstance(scheduler_entry, (list, tuple)) or len(scheduler_entry) < 2:
         raise ValueError("model index has no valid scheduler component")
@@ -95,13 +97,13 @@ def resolve_huggingface_pipeline(
         prediction_type = None
     zero_negative_prompt = index.get("force_zeros_for_empty_prompt")
     if not isinstance(zero_negative_prompt, bool):
-        zero_negative_prompt = pipeline_spec.default_zero_negative_prompt
+        zero_negative_prompt = pipeline_behavior.default_zero_negative_prompt
     return ResolvedDiffusionPipeline(
-        spec=pipeline_spec,
+        export_spec=export_spec,
         model_info=DiffusionModelInfo(
             scheduler_name=scheduler_name,
             scheduler_prediction_type=prediction_type,
-            max_sequence_lengths=pipeline_spec.default_max_sequence_lengths,
+            max_sequence_lengths=export_spec.default_max_sequence_lengths,
             zero_negative_prompt=zero_negative_prompt,
         ),
     )

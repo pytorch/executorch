@@ -4,14 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Stable Diffusion XL pipeline specification."""
+"""Hugging Face export specification for Stable Diffusion XL."""
 
 from typing import Any
 
 import torch
-from executorch.exir._warnings import experimental
+
+from executorch.extension.diffusers.pipeline_behaviors import SDXLPipelineBehavior
 
 from ..config import DiffusionConfig
+
 from ..wrappers import (
     CLIPPenultimateTextEncoder,
     SDXLDenoiser,
@@ -19,25 +21,14 @@ from ..wrappers import (
     VAEDecoder,
     VAEEncoder,
 )
-from ._stable_diffusion import StableDiffusionPipelineSpec
+from ._stable_diffusion import StableDiffusionPipelineExportSpec
 from .base import DiffusionComponents
 
 
-@experimental("This API is experimental and may change without notice.")
-class SDXLPipelineSpec(StableDiffusionPipelineSpec):
-    """Export and runtime behavior for Stable Diffusion XL."""
+class SDXLPipelineExportSpec(StableDiffusionPipelineExportSpec):
+    """Compose SDXL components into exported PTE methods."""
 
-    name = "sdxl"
-    supports_cfg = True
-    accepts_guidance_input = False
-    supports_negative_prompt = True
-    default_cfg_scale = 5.0
-    default_guidance_scale = 5.0
-    default_inference_steps = 50
-    default_zero_negative_prompt = True
-    tokenizer_slots = ("tokenizer", "tokenizer_2")
-    text_encoder_slots = ("text_encoder", "text_encoder_2")
-    text_encoder_input_names = (("input_ids",), ("input_ids",))
+    pipeline_behavior = SDXLPipelineBehavior()
     default_max_sequence_lengths = (77, 77)
     max_sequence_length_override_index = None
     default_size = (1024, 1024)
@@ -46,8 +37,6 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
         self, components: DiffusionComponents, config: DiffusionConfig
     ) -> int:
         scale = vae_scale_factor(components.require("vae"))
-        if config.model.height <= 0 or config.model.width <= 0:
-            raise ValueError("height and width must be positive")
         if config.model.height % scale or config.model.width % scale:
             raise ValueError(f"height and width must be multiples of {scale}")
         if config.model.max_sequence_lengths != self.default_max_sequence_lengths:
@@ -58,18 +47,15 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
         self, components: DiffusionComponents, config: DiffusionConfig
     ) -> dict[str, torch.nn.Module]:
         self._validate(components, config)
-        text_encoder_0 = components.require(self.text_encoder_slots[0])
-        text_encoder_1 = components.require(self.text_encoder_slots[1])
-        denoiser = components.require("denoiser")
         vae = components.require("vae")
         return {
             "text_encoder_0": CLIPPenultimateTextEncoder(
-                text_encoder_0, return_pooled=False
+                components.require("text_encoder"), return_pooled=False
             ),
             "text_encoder_1": CLIPPenultimateTextEncoder(
-                text_encoder_1, return_pooled=True
+                components.require("text_encoder_2"), return_pooled=True
             ),
-            "denoise": SDXLDenoiser(denoiser),
+            "denoise": SDXLDenoiser(components.require("denoiser")),
             "decode": VAEDecoder(vae, config.model.vae_dtype),
             "encode": VAEEncoder(
                 vae, config.model.vae_dtype, config.model.denoiser_dtype
@@ -82,18 +68,16 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
         scale = self._validate(components, config)
         ids_0 = torch.zeros(1, config.model.max_sequence_lengths[0], dtype=torch.long)
         ids_1 = torch.zeros(1, config.model.max_sequence_lengths[1], dtype=torch.long)
-        text_encoder_0 = components.require(self.text_encoder_slots[0])
-        text_encoder_1 = components.require(self.text_encoder_slots[1])
-        denoiser = components.require("denoiser")
         with torch.no_grad():
-            hidden_0 = CLIPPenultimateTextEncoder(text_encoder_0, return_pooled=False)(
-                ids_0
-            )
+            hidden_0 = CLIPPenultimateTextEncoder(
+                components.require("text_encoder"), return_pooled=False
+            )(ids_0)
             hidden_1, pooled = CLIPPenultimateTextEncoder(
-                text_encoder_1, return_pooled=True
+                components.require("text_encoder_2"), return_pooled=True
             )(ids_1)
         prompt = torch.cat((hidden_0, hidden_1), dim=-1).to(config.model.denoiser_dtype)
         pooled = pooled.to(config.model.denoiser_dtype)
+        denoiser = components.require("denoiser")
         latents = torch.zeros(
             1,
             int(denoiser.config.in_channels),
@@ -104,7 +88,7 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
         return {
             "text_encoder_0": (ids_0,),
             "text_encoder_1": (ids_1,),
-            "denoise": self.prepare_denoiser_inputs(
+            "denoise": self.pipeline_behavior.prepare_denoiser_inputs(
                 latents,
                 torch.zeros(1, dtype=torch.float32),
                 (prompt, pooled),
@@ -112,7 +96,7 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
                 width=config.model.width,
                 dtype=config.model.denoiser_dtype,
                 guidance_scale=(
-                    self.default_guidance_scale
+                    self.pipeline_behavior.default_guidance_scale
                     if getattr(denoiser.config, "time_cond_proj_dim", None) is not None
                     else None
                 ),
@@ -128,34 +112,6 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
                 ),
             ),
         }
-
-    def assemble_conditioning(
-        self, encoder_outputs: tuple[tuple[torch.Tensor, ...], ...]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        (hidden_0,), (hidden_1, pooled) = encoder_outputs
-        return torch.cat((hidden_0, hidden_1), dim=-1), pooled
-
-    def prepare_denoiser_inputs(
-        self,
-        latents: torch.Tensor,
-        timestep: torch.Tensor,
-        conditioning: tuple[torch.Tensor, ...],
-        *,
-        height: int,
-        width: int,
-        dtype: torch.dtype,
-        guidance_scale: float | None,
-    ) -> tuple[torch.Tensor, ...]:
-        # SDXL time_ids: original size, crop coordinates, and target size.
-        inputs = (
-            latents,
-            timestep,
-            *conditioning,
-            torch.tensor([[height, width, 0, 0, height, width]], dtype=dtype),
-        )
-        if guidance_scale is None:
-            return inputs
-        return (*inputs, torch.tensor([guidance_scale], dtype=torch.float32))
 
     def dynamic_shapes(
         self, components: DiffusionComponents, config: DiffusionConfig
@@ -190,11 +146,11 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
             "encode": ({2: scale * latent_height, 3: scale * latent_width},),
         }
 
-    @staticmethod
     def load_components(
+        self,
         model_id: str,
-        revision: str | None = None,
-        config: DiffusionConfig | None = None,
+        revision: str | None,
+        config: DiffusionConfig,
     ) -> DiffusionComponents:
         try:
             from diffusers import AutoencoderKL, UNet2DConditionModel
@@ -203,8 +159,6 @@ class SDXLPipelineSpec(StableDiffusionPipelineSpec):
             raise ImportError(
                 "Loading SDXL requires diffusers and transformers"
             ) from error
-        if config is None:
-            raise ValueError("export config is required to load SDXL components")
         common: dict[str, Any] = {"revision": revision}
         return DiffusionComponents(
             {

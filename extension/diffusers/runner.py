@@ -9,6 +9,7 @@
 import argparse
 import inspect
 import math
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ import torch
 from executorch.exir._warnings import experimental
 
 from .metadata import DiffusionMetadata, METADATA_METHODS
-from .pipeline_specs import DiffusionPipelineSpec, PIPELINE_SPECS
+from .pipeline_behaviors import DiffusionPipelineBehavior, PIPELINE_BEHAVIORS
 
 ConditioningTensors = tuple[torch.Tensor, ...]
 PromptConditioning = tuple[ConditioningTensors, ConditioningTensors | None]
@@ -71,7 +72,7 @@ class DiffusionRunner:
         self.scheduler = scheduler
         self.metadata = self._read_metadata()
         try:
-            self.pipeline_spec: DiffusionPipelineSpec = PIPELINE_SPECS[
+            self.pipeline_behavior: DiffusionPipelineBehavior = PIPELINE_BEHAVIORS[
                 self.metadata.pipeline
             ]
         except KeyError as error:
@@ -97,14 +98,14 @@ class DiffusionRunner:
             ) from error
         metadata = cls._read_program_metadata(program)
         try:
-            pipeline_spec = PIPELINE_SPECS[metadata.pipeline]
+            pipeline_behavior = PIPELINE_BEHAVIORS[metadata.pipeline]
         except KeyError as error:
             raise ValueError(
                 f"unsupported diffusion pipeline {metadata.pipeline!r}"
             ) from error
         tokenizers = [
             AutoTokenizer.from_pretrained(model_id, subfolder=slot, revision=revision)
-            for slot in pipeline_spec.tokenizer_slots
+            for slot in pipeline_behavior.tokenizer_slots
         ]
         scheduler_class = getattr(diffusers, scheduler_name or metadata.scheduler)
         scheduler = scheduler_class.from_pretrained(
@@ -149,7 +150,7 @@ class DiffusionRunner:
                 f"{self.metadata.pipeline} requires "
                 f"{len(self.metadata.max_sequence_lengths)} tokenizer(s)"
             )
-        if len(self.tokenizers) != len(self.pipeline_spec.text_encoder_input_names):
+        if len(self.tokenizers) != len(self.pipeline_behavior.text_encoder_input_names):
             raise ValueError(
                 f"{self.metadata.pipeline} requires text encoder input "
                 f"declarations for {len(self.tokenizers)} tokenizer(s)"
@@ -179,7 +180,7 @@ class DiffusionRunner:
         for tokenizer, length, input_names in zip(
             self.tokenizers,
             self.metadata.max_sequence_lengths,
-            self.pipeline_spec.text_encoder_input_names,
+            self.pipeline_behavior.text_encoder_input_names,
         ):
             encoding = tokenizer(
                 prompt,
@@ -214,7 +215,7 @@ class DiffusionRunner:
             _execute(self._method(f"text_encoder_{index}"), inputs)
             for index, inputs in enumerate(self._tokenize(prompt))
         )
-        return self.pipeline_spec.assemble_conditioning(encoder_outputs)
+        return self.pipeline_behavior.assemble_conditioning(encoder_outputs)
 
     def prepare_conditioning(
         self,
@@ -317,7 +318,7 @@ class DiffusionRunner:
         if negative_prompt is not None and not self.metadata.supports_negative_prompt:
             raise ValueError("this program does not support negative prompts")
         output_height, output_width = self._resolve_dimensions(height, width)
-        use_cfg = self.metadata.supports_cfg and self.pipeline_spec.should_use_cfg(
+        use_cfg = self.metadata.supports_cfg and self.pipeline_behavior.should_use_cfg(
             cfg_scale, negative_prompt
         )
         positive, negative = self.prepare_conditioning(prompt, negative_prompt, use_cfg)
@@ -326,7 +327,7 @@ class DiffusionRunner:
         denoise_metadata = self.program.metadata("denoise")
         latent_meta = denoise_metadata.input_tensor_meta(0)
         exported_latent_shape = tuple(latent_meta.sizes())
-        timesteps = self.pipeline_spec.prepare_schedule(
+        timesteps = self.pipeline_behavior.prepare_schedule(
             self.scheduler,
             steps,
             height=output_height,
@@ -335,7 +336,7 @@ class DiffusionRunner:
         dtype = getattr(torch, self.metadata.denoiser_dtype)
         vae_dtype = getattr(torch, self.metadata.vae_dtype)
         if image is None:
-            latents = self.pipeline_spec.create_latents(
+            latents = self.pipeline_behavior.create_latents(
                 exported_latent_shape,
                 height=output_height,
                 width=output_width,
@@ -347,14 +348,14 @@ class DiffusionRunner:
         else:
             image = _preprocess_image(image, output_height, output_width, vae_dtype)
             mean, std = _execute(self._method("encode"), (image,))
-            image_latents = self.pipeline_spec.prepare_encoded_latents(
+            image_latents = self.pipeline_behavior.prepare_encoded_latents(
                 mean,
                 std,
                 height=output_height,
                 width=output_width,
                 generator=generator,
             )
-            latents, timesteps = self.pipeline_spec.prepare_img2img_latents(
+            latents, timesteps = self.pipeline_behavior.prepare_img2img_latents(
                 self.scheduler,
                 image_latents,
                 timesteps,
@@ -380,14 +381,14 @@ class DiffusionRunner:
         )
         for step_index, timestep in enumerate(timesteps, start=1):
             print(f"Step {step_index}/{len(timesteps)}")
-            model_input = self.pipeline_spec.prepare_model_input(
+            model_input = self.pipeline_behavior.prepare_model_input(
                 self.scheduler, latents, timestep
             )
             timestep_input = timestep.reshape(1).to(torch.float32)
             predictions = tuple(
                 _execute(
                     denoise,
-                    self.pipeline_spec.prepare_denoiser_inputs(
+                    self.pipeline_behavior.prepare_denoiser_inputs(
                         model_input,
                         timestep_input,
                         conditioning,
@@ -399,7 +400,7 @@ class DiffusionRunner:
                 )[0]
                 for conditioning in conditionings
             )
-            prediction = self.pipeline_spec.combine_predictions(
+            prediction = self.pipeline_behavior.combine_predictions(
                 predictions, cfg_scale=cfg_scale
             )
             latents = self.scheduler.step(
@@ -409,7 +410,7 @@ class DiffusionRunner:
                 return_dict=False,
                 **step_kwargs,
             )[0]
-        decode_latents = self.pipeline_spec.prepare_decode_latents(
+        decode_latents = self.pipeline_behavior.prepare_decode_latents(
             latents,
             height=output_height,
             width=output_width,
@@ -421,6 +422,7 @@ class DiffusionRunner:
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run a diffusion PTE")
     parser.add_argument("program", type=Path)
+    parser.add_argument("--data-path", type=Path)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--negative-prompt")
@@ -439,7 +441,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     from PIL import Image
 
     program = Runtime.get().load_program(
-        str(args.program), verification=Verification.Minimal
+        str(args.program),
+        verification=Verification.Minimal,
+        data_path=args.data_path,
     )
     runner = DiffusionRunner.from_huggingface(
         program,
@@ -447,6 +451,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         revision=args.revision,
         scheduler_name=args.scheduler,
     )
+    start_time = time.perf_counter()
     image = runner.generate(
         args.prompt,
         negative_prompt=args.negative_prompt,
@@ -457,6 +462,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         height=args.height,
         width=args.width,
     )
+    print(f"Generated image in {time.perf_counter() - start_time:.2f} seconds")
     pixels = image[0].permute(1, 2, 0).float().clamp(0, 1).mul(255).byte().cpu().numpy()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(pixels).save(args.output)

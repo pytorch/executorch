@@ -14,37 +14,35 @@ from typing import Any
 
 import torch
 from executorch.exir._warnings import experimental
+from executorch.extension.diffusers.pipeline_behaviors import DiffusionPipelineBehavior
 
-from executorch.extension.diffusers.config import (
-    DiffusionConfig,
-    ExportConfig,
-    ModelConfig,
-)
-from executorch.extension.diffusers.metadata import build_diffusion_metadata
-from executorch.extension.diffusers.pipeline_specs import (
+from .config import DiffusionConfig, ExportConfig, ModelConfig
+
+from .metadata import build_diffusion_metadata
+from .pipeline_discovery import resolve_huggingface_pipeline
+from .pipeline_specs import (
     DiffusionComponents,
-    DiffusionPipelineSpec,
+    DiffusionPipelineExportSpec,
     ResolvedDiffusionPipeline,
 )
-
-from .pipeline_discovery import resolve_huggingface_pipeline
 
 ExportedPrograms = dict[str, torch.export.ExportedProgram]
 
 
 def _resolve_max_sequence_lengths(
-    pipeline_spec: DiffusionPipelineSpec,
+    export_spec: DiffusionPipelineExportSpec,
     override: int | None,
 ) -> tuple[int, ...]:
-    lengths = list(pipeline_spec.default_max_sequence_lengths)
+    lengths = list(export_spec.default_max_sequence_lengths)
     if override is None:
         return tuple(lengths)
     if override <= 0:
         raise ValueError("max_sequence_length must be positive")
-    index = pipeline_spec.max_sequence_length_override_index
+    index = export_spec.max_sequence_length_override_index
     if index is None:
         raise ValueError(
-            f"{pipeline_spec.name} does not support overriding sequence length"
+            f"{export_spec.pipeline_behavior.name} does not support overriding "
+            "sequence length"
         )
     lengths[index] = override
     return tuple(lengths)
@@ -52,15 +50,16 @@ def _resolve_max_sequence_lengths(
 
 def _validate_text_encoder_lengths(
     components: DiffusionComponents,
-    pipeline_spec: DiffusionPipelineSpec,
+    pipeline_behavior: DiffusionPipelineBehavior,
     lengths: tuple[int, ...],
 ) -> None:
-    if len(lengths) != len(pipeline_spec.text_encoder_slots):
+    if len(lengths) != len(pipeline_behavior.text_encoder_slots):
         raise ValueError(
-            f"{pipeline_spec.name} requires {len(pipeline_spec.text_encoder_slots)} "
+            f"{pipeline_behavior.name} requires "
+            f"{len(pipeline_behavior.text_encoder_slots)} "
             f"text encoder sequence lengths, found {len(lengths)}"
         )
-    for slot, length in zip(pipeline_spec.text_encoder_slots, lengths):
+    for slot, length in zip(pipeline_behavior.text_encoder_slots, lengths):
         config = components.require(slot).config
         positional_limit = getattr(config, "max_position_embeddings", None)
         if isinstance(positional_limit, int) and length > positional_limit:
@@ -73,13 +72,13 @@ def _validate_text_encoder_lengths(
 @experimental("This API is experimental and may change without notice.")
 def export_programs(
     components: DiffusionComponents,
-    pipeline_spec: DiffusionPipelineSpec,
+    export_spec: DiffusionPipelineExportSpec,
     config: DiffusionConfig,
 ) -> ExportedPrograms:
     """Export component methods without choosing a backend."""
-    modules = pipeline_spec.wrap_components(components, config)
-    inputs = pipeline_spec.example_inputs(components, config)
-    dynamic_shapes = pipeline_spec.dynamic_shapes(components, config)
+    modules = export_spec.wrap_components(components, config)
+    inputs = export_spec.example_inputs(components, config)
+    dynamic_shapes = export_spec.dynamic_shapes(components, config)
     with torch.no_grad():
         return {
             name: torch.export.export(
@@ -110,7 +109,7 @@ def lower_programs(
         partitioner=partitioners,
         compile_config=edge_compile_config or EdgeCompileConfig(),
         constant_methods=build_diffusion_metadata(
-            pipeline.spec, pipeline.model_info, config
+            pipeline.behavior, pipeline.model_info, config
         ).to_constant_methods(),
     )
 
@@ -167,17 +166,19 @@ def export_huggingface(
 ) -> tuple[ExportedPrograms, ResolvedDiffusionPipeline]:
     """Discover and export a supported Hugging Face diffusion pipeline."""
     pipeline = pipeline or resolve_huggingface_pipeline(model_id, revision)
-    components = pipeline.spec.load_components(model_id, revision, config)
+    components = pipeline.export_spec.load_components(model_id, revision, config)
     _validate_text_encoder_lengths(
-        components, pipeline.spec, config.model.max_sequence_lengths
+        components, pipeline.behavior, config.model.max_sequence_lengths
     )
     if component_transform is not None:
         components = component_transform(components, pipeline)
     pipeline = replace(
         pipeline,
-        model_info=pipeline.spec.resolve_model_info(components, pipeline.model_info),
+        model_info=pipeline.export_spec.resolve_model_info(
+            components, pipeline.model_info
+        ),
     )
-    return export_programs(components, pipeline.spec, config), pipeline
+    return export_programs(components, pipeline.export_spec, config), pipeline
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -212,10 +213,30 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     pipeline = resolve_huggingface_pipeline(args.model_id, args.revision)
-    height = args.height if args.height is not None else pipeline.spec.default_size[0]
-    width = args.width if args.width is not None else pipeline.spec.default_size[1]
+    height = (
+        args.height if args.height is not None else pipeline.export_spec.default_size[0]
+    )
+    width = (
+        args.width if args.width is not None else pipeline.export_spec.default_size[1]
+    )
     max_sequence_lengths = _resolve_max_sequence_lengths(
-        pipeline.spec, args.max_sequence_length
+        pipeline.export_spec, args.max_sequence_length
+    )
+
+    config = DiffusionConfig(
+        model=ModelConfig(
+            height=height,
+            width=width,
+            max_sequence_lengths=max_sequence_lengths,
+            text_encoder_dtype=getattr(torch, args.text_encoder_dtype),
+            denoiser_dtype=getattr(torch, args.denoiser_dtype),
+            vae_dtype=getattr(torch, args.vae_dtype),
+        ),
+        export=ExportConfig(
+            dynamic_shapes=args.dynamic_shapes,
+            min_size=args.min_size,
+            max_size=args.max_size,
+        ),
     )
 
     if args.backend == "mlx":
@@ -226,21 +247,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             args.output_path,
             revision=args.revision,
             pipeline=pipeline,
-            config=DiffusionConfig(
-                model=ModelConfig(
-                    height=height,
-                    width=width,
-                    max_sequence_lengths=max_sequence_lengths,
-                    text_encoder_dtype=getattr(torch, args.text_encoder_dtype),
-                    denoiser_dtype=getattr(torch, args.denoiser_dtype),
-                    vae_dtype=getattr(torch, args.vae_dtype),
-                ),
-                export=ExportConfig(
-                    dynamic_shapes=args.dynamic_shapes,
-                    min_size=args.min_size,
-                    max_size=args.max_size,
-                ),
-            ),
+            config=config,
             qlinear=args.qlinear,
             qlinear_group_size=args.qlinear_group_size,
         )

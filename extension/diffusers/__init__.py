@@ -6,22 +6,14 @@
 
 """Experimental Python APIs for running Hugging Face Diffusers models."""
 
-from .config import DiffusionConfig, ExportConfig, ModelConfig
-from .pipeline_specs import (
-    DiffusionModelInfo,
-    DiffusionPipelineSpec,
-    ResolvedDiffusionPipeline,
-    SD15PipelineSpec,
-    SDXLPipelineSpec,
+from .pipeline_behaviors import (
+    DiffusionPipelineBehavior,
+    SD15PipelineBehavior,
+    SDXLPipelineBehavior,
 )
 
 __all__ = [
-    "DiffusionConfig",
-    "DiffusionModelInfo",
-    "DiffusionPipelineSpec",
-    "ExportConfig",
-    "ModelConfig",
-    "ResolvedDiffusionPipeline",
-    "SD15PipelineSpec",
-    "SDXLPipelineSpec",
+    "DiffusionPipelineBehavior",
+    "SD15PipelineBehavior",
+    "SDXLPipelineBehavior",
 ]

@@ -134,6 +134,26 @@ class VAEDecoder(torch.nn.Module):
         self.compute_dtype = compute_dtype
         self.scaling_factor = model.config.scaling_factor
         self.shift_factor = getattr(model.config, "shift_factor", None) or 0.0
+        latents_mean = getattr(model.config, "latents_mean", None)
+        latents_std = getattr(model.config, "latents_std", None)
+        self.register_buffer(
+            "latents_mean",
+            (
+                torch.tensor(latents_mean, dtype=compute_dtype).view(1, -1, 1, 1)
+                if latents_mean is not None and latents_std is not None
+                else None
+            ),
+            persistent=False,
+        )
+        self.register_buffer(
+            "latents_std",
+            (
+                torch.tensor(latents_std, dtype=compute_dtype).view(1, -1, 1, 1)
+                if latents_mean is not None and latents_std is not None
+                else None
+            ),
+            persistent=False,
+        )
         if compute_dtype == torch.float16 and getattr(
             model.config, "force_upcast", False
         ):
@@ -145,9 +165,13 @@ class VAEDecoder(torch.nn.Module):
             )
 
     def forward(self, latents: torch.Tensor) -> torch.Tensor:
-        latents = (
-            latents.to(self.compute_dtype) / self.scaling_factor + self.shift_factor
-        )
+        latents = latents.to(self.compute_dtype)
+        if self.latents_mean is not None and self.latents_std is not None:
+            latents = (
+                latents * self.latents_std / self.scaling_factor + self.latents_mean
+            )
+        else:
+            latents = latents / self.scaling_factor + self.shift_factor
         return (self.model.decode(latents).sample / 2 + 0.5).clamp(0, 1)
 
 
@@ -164,11 +188,39 @@ class VAEEncoder(torch.nn.Module):
         self.output_dtype = output_dtype
         self.scaling_factor = model.config.scaling_factor
         self.shift_factor = getattr(model.config, "shift_factor", None) or 0.0
+        latents_mean = getattr(model.config, "latents_mean", None)
+        latents_std = getattr(model.config, "latents_std", None)
+        self.register_buffer(
+            "latents_mean",
+            (
+                torch.tensor(latents_mean, dtype=compute_dtype).view(1, -1, 1, 1)
+                if latents_mean is not None and latents_std is not None
+                else None
+            ),
+            persistent=False,
+        )
+        self.register_buffer(
+            "latents_std",
+            (
+                torch.tensor(latents_std, dtype=compute_dtype).view(1, -1, 1, 1)
+                if latents_mean is not None and latents_std is not None
+                else None
+            ),
+            persistent=False,
+        )
 
     def forward(self, image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         distribution = self.model.encode(
             image.to(self.compute_dtype) * 2 - 1
         ).latent_dist
-        mean = (distribution.mean - self.shift_factor) * self.scaling_factor
-        std = distribution.std * self.scaling_factor
+        if self.latents_mean is not None and self.latents_std is not None:
+            mean = (
+                (distribution.mean - self.latents_mean)
+                * self.scaling_factor
+                / self.latents_std
+            )
+            std = distribution.std * self.scaling_factor / self.latents_std
+        else:
+            mean = (distribution.mean - self.shift_factor) * self.scaling_factor
+            std = distribution.std * self.scaling_factor
         return mean.to(self.output_dtype), std.to(self.output_dtype)

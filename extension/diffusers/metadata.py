@@ -8,14 +8,9 @@
 
 import math
 from dataclasses import dataclass
-from typing import Mapping, TYPE_CHECKING
+from typing import Mapping
 
 import torch
-
-from .config import DiffusionConfig
-
-if TYPE_CHECKING:
-    from .pipeline_specs import DiffusionModelInfo, DiffusionPipelineSpec
 
 METADATA_METHODS = {
     "pipeline": "get_diffusion_pipeline",
@@ -150,37 +145,3 @@ class DiffusionMetadata:
             vae_scale_factor=int(values["vae_scale_factor"]),
             max_sequence_lengths=lengths,
         )
-
-
-def build_diffusion_metadata(
-    spec: "DiffusionPipelineSpec",
-    model_info: "DiffusionModelInfo",
-    config: DiffusionConfig,
-) -> DiffusionMetadata:
-    """Build the runtime contract from pipeline, model, and export data."""
-    return DiffusionMetadata(
-        pipeline=spec.name,
-        scheduler=model_info.scheduler_name,
-        scheduler_prediction_type=model_info.scheduler_prediction_type,
-        supports_cfg=model_info.supports_cfg,
-        accepts_guidance_input=model_info.accepts_guidance_input,
-        supports_negative_prompt=spec.supports_negative_prompt,
-        default_cfg_scale=(spec.default_cfg_scale if model_info.supports_cfg else 1.0),
-        default_guidance_scale=(
-            spec.default_guidance_scale if model_info.accepts_guidance_input else None
-        ),
-        guidance_input_dim=model_info.guidance_input_dim,
-        default_inference_steps=spec.default_inference_steps,
-        text_encoder_dtype=str(config.model.text_encoder_dtype).removeprefix("torch."),
-        denoiser_dtype=str(config.model.denoiser_dtype).removeprefix("torch."),
-        vae_dtype=str(config.model.vae_dtype).removeprefix("torch."),
-        zero_negative_prompt=model_info.zero_negative_prompt,
-        height=config.model.height,
-        width=config.model.width,
-        max_sequence_lengths=config.model.max_sequence_lengths,
-        dynamic_shapes=config.export.dynamic_shapes,
-        min_size=config.export.min_size,
-        max_size=config.export.max_size,
-        dynamic_spatial_multiple=model_info.dynamic_spatial_multiple,
-        vae_scale_factor=model_info.vae_scale_factor,
-    )
