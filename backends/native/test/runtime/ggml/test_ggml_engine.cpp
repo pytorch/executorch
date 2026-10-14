@@ -534,6 +534,38 @@ TEST(GgmlEngineTest, ReplayRecoversAfterRejectedIndices) {
   }
 }
 
+TEST(GgmlEngineTest, RejectsOutputReadsAfterInputChangesOrFailedExecute) {
+  TestProgram program;
+  program.q4_k_weight("weight");
+  program.input("ids", fbs::ScalarType::LONG, {1, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("ids")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 256});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("rows"));
+  auto executable = context->compile("forward");
+  const std::vector<int64_t> good = {0, 0};
+  const std::vector<int64_t> bad = {0, 1};
+  std::vector<float> rows(512);
+  const auto read = [&] {
+    executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  };
+  executable->set_input(0, good.data(), 2, ScalarType::Long);
+  executable->execute();
+  EXPECT_NO_THROW(read());
+  executable->set_input(0, good.data(), 2, ScalarType::Long);
+  EXPECT_THROW(read(), std::logic_error);
+  executable->execute();
+  executable->resize_input(0, {1, 2});
+  EXPECT_THROW(read(), std::logic_error);
+  executable->set_input(0, bad.data(), 2, ScalarType::Long);
+  EXPECT_THROW(executable->execute(), std::out_of_range);
+  EXPECT_THROW(read(), std::logic_error);
+}
+
 TEST(GgmlEngineTest, RejectsMoreThan16CachedGraphs) {
   GgmlEngineOptions options;
   options.max_cached_graphs = 17;
