@@ -220,10 +220,11 @@ bool is_activation_input(std::string_view key, std::string_view input) {
 }
 
 bool preserves_packed_layout(std::string_view key) {
-  constexpr std::array<std::string_view, 5> kOps{
+  constexpr std::array<std::string_view, 6> kOps{
       "aten._to_copy.default",
       "aten.add.Tensor",
       "aten.mul.Tensor",
+      "aten.native_layer_norm.default",
       "aten.sigmoid.default",
       "aten.sub.Tensor"};
   return std::ranges::find(kOps, key) != kOps.end();
