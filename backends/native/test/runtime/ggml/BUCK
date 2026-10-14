@@ -40,5 +40,6 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/exir/native:native",
+        "//pytorch/ao:torchao",
     ],
 )
