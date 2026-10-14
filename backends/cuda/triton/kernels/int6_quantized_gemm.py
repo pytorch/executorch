@@ -35,10 +35,10 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     QuantizedGemmFamily,
 )
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
-    autotune_do_bench,
     _dp4a_u8_s8,
     _warp_sum_f32,
     autotune_configs,
+    autotune_do_bench,
     check_contiguous,
     check_device,
     check_dtypes,
