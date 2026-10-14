@@ -672,6 +672,31 @@ class GgmlOpsTest(unittest.TestCase):
             **_MATMUL_TOL,
         )
 
+    def test_conv2d_pointwise_batched(self):
+        ops = collections.Counter()
+        self._check(
+            torch.nn.Conv2d(16, 8, 1),
+            (torch.randn(2, 16, 5, 6),),
+            graph_ops=ops,
+            **_MATMUL_TOL,
+        )
+        # At stride 1 without padding the columns are a transpose copy.
+        self.assertEqual(ops["IM2COL"], 0)
+
+    def test_conv2d_pointwise_strided_padded(self):
+        self._check(
+            torch.nn.Conv2d(16, 8, 1, stride=(2, 3), padding=(1, 2)),
+            (torch.randn(2, 16, 7, 8),),
+            **_MATMUL_TOL,
+        )
+
+    def test_conv1d_pointwise_strided(self):
+        self._check(
+            torch.nn.Conv1d(6, 4, 1, stride=2),
+            (torch.randn(2, 6, 9),),
+            **_MATMUL_TOL,
+        )
+
     def test_conv_bn_relu6(self):
         ops = collections.Counter()
         self._check(
