@@ -318,7 +318,8 @@ class CrossEngineTest(unittest.TestCase):
 
     def test_conv1d_between_linears(self):
         torch.manual_seed(0)
-        steps = [(torch.randn(1, s, 16),) for s in (3, 5, 9)]
+        # Shrinking from 5 to 3 leaves the input texture longer than the input.
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
         # ggml does not lower 1D convolution yet.
         self._check_dynamic(
