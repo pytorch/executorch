@@ -262,6 +262,42 @@ TEST_F(CoreMLBackendOptionsTest, SetUseNewCacheChaining) {
     EXPECT_EQ(&result, &builder);
 }
 
+// Test setPrewarmModel with true and false
+TEST_F(CoreMLBackendOptionsTest, SetPrewarmModel) {
+    for (bool enabled : {true, false}) {
+        LoadOptionsBuilder builder;
+        builder.setPrewarmModel(enabled);
+
+        auto options = builder.view();
+        EXPECT_EQ(options.size(), 1);
+        EXPECT_STREQ(options[0].key, "prewarm_model");
+
+        if (auto* val = std::get_if<bool>(&options[0].value)) {
+            EXPECT_EQ(*val, enabled);
+        } else {
+            FAIL() << "Expected bool value for prewarm_model";
+        }
+    }
+}
+
+// Test setPrewarmModel reaches the CoreML entry of a LoadBackendOptionsMap
+TEST_F(CoreMLBackendOptionsTest, SetPrewarmModelInOptionsMap) {
+    LoadOptionsBuilder builder;
+    builder.setPrewarmModel(false);
+
+    LoadBackendOptionsMap map;
+    EXPECT_EQ(map.set_options(builder), Error::Ok);
+
+    auto options = map.get_options("CoreMLBackend");
+    EXPECT_EQ(options.size(), 1);
+    EXPECT_STREQ(options[0].key, "prewarm_model");
+    if (auto* val = std::get_if<bool>(&options[0].value)) {
+        EXPECT_FALSE(*val);
+    } else {
+        FAIL() << "Expected bool value for prewarm_model";
+    }
+}
+
 // Test combining setComputeUnit, setCacheDirectory, and setUseNewCache
 TEST_F(CoreMLBackendOptionsTest, AllOptionsCombined) {
     LoadOptionsBuilder builder;

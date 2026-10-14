@@ -111,6 +111,21 @@ public:
     }
 
     /**
+     * Controls whether the backend runs one warm-up prediction after loading
+     * the model.
+     *
+     * When not set, the backend uses `shouldPrewarmModel` from its config
+     * plist, which defaults to true.
+     *
+     * @param enabled If true, runs the warm-up prediction after the load.
+     * @return Reference to this builder for chaining.
+     */
+    LoadOptionsBuilder& setPrewarmModel(bool enabled) {
+        options_.set_option("prewarm_model", enabled);
+        return *this;
+    }
+
+    /**
      * Returns the backend identifier for this options builder.
      */
     static constexpr const char* backend_id() { return "CoreMLBackend"; }
