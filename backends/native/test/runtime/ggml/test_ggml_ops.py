@@ -115,6 +115,24 @@ class SnapshotThenWrite(torch.nn.Module):
         return old
 
 
+class ConvBN(torch.nn.Module):
+    def __init__(self, groups: int, bias: bool):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            8, 8, 3, stride=2, padding=1, groups=groups, bias=bias
+        )
+        self.bn = torch.nn.BatchNorm2d(8)
+        self.bn.running_mean.uniform_(-1.0, 1.0)
+        self.bn.running_var.uniform_(0.5, 2.0)
+        self.bn.weight.data.uniform_(0.5, 1.5)
+        self.bn.bias.data.uniform_(-0.5, 0.5)
+        # Exports as hardtanh_, as in torchvision's MobileNetV2.
+        self.relu6 = torch.nn.ReLU6(inplace=True)
+
+    def forward(self, x):
+        return self.relu6(self.bn(self.conv(x)))
+
+
 class CacheWrite(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -358,6 +376,79 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_neg(self):
         self._check(Lambda(torch.neg), (torch.randn(2, 3, 4),))
+
+    def test_relu(self):
+        self._check(Lambda(F.relu), (torch.randn(2, 3, 4),))
+
+    def test_hardtanh(self):
+        # relu6 exports as hardtanh(0, 6).
+        self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
+        with self.assertRaisesRegex(AssertionError, "floating-point"):
+            self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_conv2d(self):
+        self._check(
+            torch.nn.Conv2d(3, 16, 3, stride=2, padding=1),
+            (torch.randn(2, 3, 17, 15),),
+            **_MATMUL_TOL,
+        )
+
+    def test_conv2d_asymmetric(self):
+        self._check(
+            torch.nn.Conv2d(
+                3, 8, (3, 5), stride=(2, 1), padding=(1, 2), dilation=(1, 2)
+            ),
+            (torch.randn(1, 3, 11, 13),),
+            **_MATMUL_TOL,
+        )
+
+    def test_depthwise_conv2d_asymmetric(self):
+        self._check(
+            torch.nn.Conv2d(
+                4, 4, (3, 5), stride=(1, 2), padding=(1, 2), dilation=(2, 1), groups=4
+            ),
+            (torch.randn(1, 4, 10, 12),),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_conv2d_pointwise(self):
+        self._check(
+            torch.nn.Conv2d(16, 8, 1, bias=False),
+            (torch.randn(1, 16, 7, 7),),
+            **_MATMUL_TOL,
+        )
+
+    def test_conv_bn_relu6(self):
+        self._check(ConvBN(groups=1, bias=False), (torch.randn(1, 8, 9, 9),), atol=1e-4)
+
+    def test_depthwise_conv_bn_relu6(self):
+        self._check(ConvBN(groups=8, bias=True), (torch.randn(1, 8, 9, 9),), atol=1e-4)
+
+    def test_batch_norm_no_affine(self):
+        norm = torch.nn.BatchNorm2d(4, affine=False)
+        norm.running_mean.uniform_(-1.0, 1.0)
+        norm.running_var.uniform_(0.5, 2.0)
+        self._check(norm, (torch.randn(1, 4, 5, 6),), atol=1e-5)
+
+    def test_max_pool2d(self):
+        self._check(
+            torch.nn.MaxPool2d(3, stride=2, padding=1), (torch.randn(1, 4, 11, 9),)
+        )
+
+    def test_max_pool2d_asymmetric(self):
+        self._check(
+            torch.nn.MaxPool2d((2, 3), stride=(2, 1), padding=(1, 1)),
+            (torch.randn(1, 4, 9, 11),),
+        )
+
+    def test_adaptive_avg_pool2d(self):
+        self._check(
+            torch.nn.AdaptiveAvgPool2d(1), (torch.randn(2, 4, 7, 5),), atol=1e-5
+        )
+
+    def test_mean_trailing_dims(self):
+        self._check(Lambda(lambda x: x.mean(dim=(-1, -2))), (torch.randn(2, 3, 4, 5),))
 
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
