@@ -139,4 +139,3 @@ class CudaWeightReuseTest(unittest.TestCase):
             flipped = base.clone()
             flipped[index] ^= 1
             self.assertNotEqual(fingerprint(base), fingerprint(flipped), index)
-
