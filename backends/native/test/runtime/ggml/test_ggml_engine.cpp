@@ -997,6 +997,36 @@ TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
   expect_compile_error(program.finish("y"), "unsupported PTG op");
 }
 
+TEST(GgmlEngineTest, ChecksEmbeddingIndicesThroughAliasingViews) {
+  TestProgram program;
+  program.q4_k_weight("weight");
+  program.input("ids", fbs::ScalarType::LONG, {2});
+  program.call(
+      "batched",
+      "torch.ops.aten.unsqueeze.default",
+      {{"self", std::string("ids")}, {"dim", int64_t{0}}},
+      fbs::ScalarType::LONG,
+      {1, 2});
+  program.call(
+      "rows",
+      "torch.ops.aten.embedding.default",
+      {{"weight", std::string("weight")}, {"indices", std::string("batched")}},
+      fbs::ScalarType::FLOAT,
+      {1, 2, 256});
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, program.finish("rows"));
+  auto executable = context->compile("forward");
+  std::vector<float> rows(512);
+  const std::vector<int64_t> in_range = {0, 0};
+  executable->set_input(0, in_range.data(), 2, ScalarType::Long);
+  executable->execute();
+  executable->get_output(0, rows.data(), rows.size(), ScalarType::Float);
+  EXPECT_EQ(std::accumulate(rows.begin(), rows.end(), 0.0f), 768.0f);
+  const std::vector<int64_t> out_of_range = {0, 1};
+  executable->set_input(0, out_of_range.data(), 2, ScalarType::Long);
+  EXPECT_THROW(executable->execute(), std::out_of_range);
+}
+
 TEST(GgmlEngineTest, RejectsEmbeddingIndicesNotFromAnInput) {
   TestProgram program;
   program.q4_k_weight("weight");
