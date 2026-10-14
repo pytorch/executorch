@@ -64,7 +64,13 @@ Error resolve_external_block(
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 bool vela_bin_validate(const char* data, int size) {
+  if (data == nullptr || size < static_cast<int>(2 * sizeof(VelaBinBlock))) {
+    ET_LOG(Error, "Vela binary is missing header or footer blocks");
+    return false;
+  }
+
   const char* foot = data + size - sizeof(VelaBinBlock);
 
   // Check 16 byte alignment
