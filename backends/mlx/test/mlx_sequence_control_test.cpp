@@ -336,8 +336,8 @@ TEST(MLXSequenceControlFactoryTest, RejectsUnequalPersistentGrowth) {
     MLXSequenceCacheV2 c(
         args.geometry,
         args.config,
-        {std::make_shared<sequence_v2::Full>(),
-         std::make_shared<sequence_v2::DFlash>(draft_geometry)});
+        {std::make_shared<sequence_v2::detail::Full>(),
+         std::make_shared<sequence_v2::detail::DFlash>(draft_geometry)});
     // Both factories individually admit three K/V tokens, but Full persists
     // three and DFlash persists one. Preflight must reject their disagreement.
     EXPECT_FALSE(c.admission_growth(3));
@@ -382,6 +382,229 @@ TEST(MLXSequenceControlFactoryTest, RejectsUnequalPersistentGrowth) {
     EXPECT_EQ(c.length(), 0);
     EXPECT_EQ(c.reserved_length(), 0);
   }
+}
+
+class MLXSequenceStorageCloneTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Cached Metal buffers can be larger than requested. Disable reuse so
+    // buffer_size assertions measure this clone's actual allocation request.
+    cache_limit_ = ::mlx::core::set_cache_limit(0);
+    ::mlx::core::clear_cache();
+  }
+  void TearDown() override {
+    ::mlx::core::set_cache_limit(cache_limit_);
+  }
+
+ private:
+  size_t cache_limit_ = 0;
+};
+
+TEST_F(
+    MLXSequenceStorageCloneTest,
+    FlatViewsPreserveSlackUnlessGrowthIsSmaller) {
+  using namespace ::mlx::core;
+  const struct {
+    int keep, view_slots, grown_slots;
+  } cases[] = {{1, 4, 4}, {4, 4, 8}, {7, 7, 14}, {8, 16, 16}, {11, 16, 16}};
+  for (auto dtype :
+       {ScalarType::Float, ScalarType::Half, ScalarType::BFloat16}) {
+    for (int heads : {1, 2}) {
+      SCOPED_TRACE(heads);
+      for (const auto& test : cases) {
+        const int keep = test.keep;
+        SCOPED_TRACE(static_cast<int>(dtype));
+        SCOPED_TRACE(keep);
+        auto args = flat_config(32, 1, heads, 8, static_cast<int>(dtype), 4);
+        args.config.max_write = 16;
+        sequence_v2::detail::Storage source(
+            args.geometry.layers[0], args.config);
+        const auto storage_dtype = resolve_dtype(static_cast<int8_t>(dtype));
+        const auto keys = astype(
+            reshape(arange(heads * 11 * 8, float32), {1, heads, 11, 8}),
+            storage_dtype);
+        const sequence_v2::KV original{keys, negative(keys)};
+        source.update(0, original, {});
+        ASSERT_EQ(source.buffer_slots(), 16);
+        const auto source_snapshot = source.read(0, 11, {});
+        ASSERT_TRUE(source_snapshot);
+
+        auto clone = source.clone(keep, 0);
+        EXPECT_EQ(clone.length(), keep);
+        EXPECT_EQ(clone.capacity(), 32);
+        EXPECT_EQ(clone.max_write(), 16);
+        EXPECT_EQ(clone.buffer_slots(), test.view_slots);
+        EXPECT_THROW(source.clone(-1, 0), std::invalid_argument);
+        EXPECT_THROW(source.clone(12, 0), std::invalid_argument);
+        EXPECT_EQ(source.length(), 11);
+        auto sibling = clone.clone(keep, 0);
+
+        // The source graph and prefix views are still lazy. Mutate both owners
+        // before evaluation, keeping the original allocation alive throughout.
+        const auto replacement = full({1, heads, 1, 8}, 300, storage_dtype);
+        source.update(
+            0, sequence_v2::KV{replacement, negative(replacement)}, {});
+        const auto parent = source.read(0, 1, {});
+        const auto appended = full({1, heads, 2, 8}, 400, storage_dtype);
+        clone.update(keep, sequence_v2::KV{appended, negative(appended)}, {});
+        const int child_slots = test.grown_slots;
+        EXPECT_EQ(clone.buffer_slots(), child_slots);
+
+        const auto prefix = sequence_v2::detail::tokens(keys, 0, keep, {});
+        const auto snapshot = sibling.read(0, keep, {});
+        ASSERT_TRUE(snapshot);
+        EXPECT_TRUE(allclose(snapshot->k, prefix, 1e-5f));
+        EXPECT_TRUE(allclose(snapshot->v, negative(prefix), 1e-5f));
+        // A read-only child still shares the parent's original allocation.
+        eval(source_snapshot->k, source_snapshot->v);
+        EXPECT_EQ(
+            snapshot->k.buffer().ptr(), source_snapshot->k.buffer().ptr());
+        EXPECT_EQ(
+            snapshot->v.buffer().ptr(), source_snapshot->v.buffer().ptr());
+        const auto continued = clone.read(0, keep + 2, {});
+        ASSERT_TRUE(continued);
+        const auto expected = concatenate({prefix, appended}, 2);
+        EXPECT_TRUE(allclose(continued->k, expected, 1e-5f));
+        EXPECT_TRUE(allclose(continued->v, negative(expected), 1e-5f));
+        // Check physical allocation after writing both sliced views and
+        // unchanged views that preserve the parent's spare slots.
+        const auto bytes = keys.nbytes() / 11 * child_slots;
+        EXPECT_EQ(continued->k.buffer_size(), bytes);
+        EXPECT_EQ(continued->v.buffer_size(), bytes);
+        EXPECT_NE(continued->k.buffer().ptr(), snapshot->k.buffer().ptr());
+        EXPECT_NE(continued->v.buffer().ptr(), snapshot->v.buffer().ptr());
+        ASSERT_TRUE(parent);
+        EXPECT_TRUE(allclose(parent->k, replacement, 1e-5f));
+        EXPECT_TRUE(allclose(parent->v, negative(replacement), 1e-5f));
+      }
+    }
+  }
+}
+
+TEST_F(MLXSequenceStorageCloneTest, GrowthComparisonRespectsCapacityLimit) {
+  using namespace ::mlx::core;
+  auto args = flat_config(13, 1, 1, 1, static_cast<int>(ScalarType::Float), 4);
+  args.config.max_write = 13;
+  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
+  const auto values = reshape(arange(11, float32), {1, 1, 11, 1});
+  source.update(0, sequence_v2::KV{values, values}, {});
+  ASSERT_EQ(source.buffer_slots(), 13);
+  for (int keep : {6, 7, 11}) {
+    SCOPED_TRACE(keep);
+    auto clone = source.clone(keep, 0);
+    EXPECT_EQ(clone.buffer_slots(), keep == 6 ? 6 : 13);
+    const auto appended = full({1, 1, 2, 1}, 100, float32);
+    clone.update(keep, sequence_v2::KV{appended, appended}, {});
+    EXPECT_EQ(clone.buffer_slots(), keep == 6 ? 12 : 13);
+    const auto actual = clone.read(0, keep + 2, {});
+    ASSERT_TRUE(actual);
+    const auto expected = concatenate(
+        {sequence_v2::detail::tokens(values, 0, keep, {}), appended}, 2);
+    EXPECT_TRUE(allclose(actual->k, expected, 1e-5f));
+    EXPECT_TRUE(allclose(actual->v, expected, 1e-5f));
+    const auto bytes = values.itemsize() * (keep == 6 ? 12 : 13);
+    EXPECT_EQ(actual->k.buffer_size(), bytes);
+    EXPECT_EQ(actual->v.buffer_size(), bytes);
+  }
+  const auto unchanged = source.read(0, 11, {});
+  ASSERT_TRUE(unchanged);
+  EXPECT_TRUE(allclose(unchanged->k, values, 1e-5f));
+  EXPECT_TRUE(allclose(unchanged->v, values, 1e-5f));
+
+  const auto tail = full({1, 1, 2, 1}, 100, float32);
+  source.update(11, sequence_v2::KV{tail, tail}, {});
+  auto full_clone = source.clone(13, 0);
+  EXPECT_EQ(full_clone.length(), 13);
+  EXPECT_EQ(full_clone.buffer_slots(), 13);
+  const auto full_snapshot = full_clone.read(0, 13, {});
+  ASSERT_TRUE(full_snapshot);
+  const auto full_expected = concatenate({values, tail}, 2);
+  EXPECT_TRUE(allclose(full_snapshot->k, full_expected, 1e-5f));
+  EXPECT_TRUE(allclose(full_snapshot->v, full_expected, 1e-5f));
+}
+
+TEST_F(
+    MLXSequenceStorageCloneTest,
+    KeepsAllocationFloorAndDropsEmptyCloneBuffers) {
+  using namespace ::mlx::core;
+  auto args = flat_config(16, 1, 1, 1, static_cast<int>(ScalarType::Float), 8);
+  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
+  const auto values = reshape(arange(4, float32), {1, 1, 4, 1});
+  source.update(0, sequence_v2::KV{values, values}, {});
+  auto clone = source.clone(4, 0);
+  EXPECT_EQ(clone.buffer_slots(), source.buffer_slots());
+  auto empty = source.clone(0, 0);
+  EXPECT_EQ(empty.length(), 0);
+  EXPECT_EQ(empty.highwater(), 0);
+  EXPECT_EQ(empty.buffer_slots(), 0);
+  EXPECT_EQ(source.length(), 4);
+  EXPECT_EQ(source.buffer_slots(), 8);
+  empty.update(0, sequence_v2::KV{values, values}, {});
+  const auto actual = empty.read(0, 4, {});
+  ASSERT_TRUE(actual);
+  EXPECT_TRUE(allclose(actual->k, values, 1e-5f));
+  EXPECT_TRUE(allclose(actual->v, values, 1e-5f));
+
+  source.update(4, sequence_v2::KV{values, values}, {});
+  source.update(8, sequence_v2::KV{values, values}, {});
+  ASSERT_EQ(source.buffer_slots(), 16);
+  // The next append fits within the floor, even though growth beyond that
+  // floor would reach the parent's buffer size.
+  auto below_floor = source.clone(4, 0);
+  EXPECT_EQ(below_floor.buffer_slots(), 8);
+  below_floor.update(4, sequence_v2::KV{values, values}, {});
+  EXPECT_EQ(below_floor.buffer_slots(), 8);
+  const auto continued = below_floor.read(0, 8, {});
+  ASSERT_TRUE(continued);
+  const auto expected = concatenate({values, values}, 2);
+  EXPECT_TRUE(allclose(continued->k, expected, 1e-5f));
+  EXPECT_TRUE(allclose(continued->v, expected, 1e-5f));
+  EXPECT_EQ(continued->k.buffer_size(), 2 * values.nbytes());
+  EXPECT_EQ(continued->v.buffer_size(), 2 * values.nbytes());
+}
+
+TEST_F(
+    MLXSequenceStorageCloneTest,
+    PreservesWrappedMappingAndEvictionBoundary) {
+  using namespace ::mlx::core;
+  auto args = ring_config(32, 4, 1, 1, 1, static_cast<int>(ScalarType::Float));
+  args.config.max_write = 3;
+  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
+  const auto write = [](sequence_v2::detail::Storage& storage, int position) {
+    const auto values =
+        reshape(arange(position, position + 3, float32), {1, 1, 3, 1});
+    storage.update(position, sequence_v2::KV{values, negative(values)}, {});
+  };
+  for (int position = 0; position < 21; position += 3) {
+    write(source, position);
+  }
+  ASSERT_EQ(source.slots(), 6);
+  auto clone = source.clone(18, 15);
+  EXPECT_EQ(clone.length(), 18);
+  EXPECT_EQ(clone.highwater(), 21);
+  EXPECT_EQ(clone.buffer_slots(), 6);
+  EXPECT_FALSE(clone.retains(14, 18));
+  EXPECT_THROW(source.clone(17, 14), std::invalid_argument);
+  auto current = source.clone(21, 18);
+  for (int position = 21; position < 30; position += 3) {
+    write(source, position);
+  }
+  source.clear();
+  const auto retained = clone.read(15, 18, {});
+  ASSERT_TRUE(retained);
+  const auto expected = reshape(arange(15, 18, float32), {1, 1, 3, 1});
+  EXPECT_TRUE(allclose(retained->k, expected, 1e-5f));
+  EXPECT_TRUE(allclose(retained->v, negative(expected), 1e-5f));
+  write(clone, 18);
+  const auto wrapped = clone.read(15, 21, {});
+  ASSERT_TRUE(wrapped);
+  const auto all = reshape(arange(15, 21, float32), {1, 1, 6, 1});
+  EXPECT_TRUE(allclose(wrapped->k, all, 1e-5f));
+  EXPECT_TRUE(allclose(wrapped->v, negative(all), 1e-5f));
+  const auto untouched = current.read(15, 21, {});
+  ASSERT_TRUE(untouched);
+  EXPECT_TRUE(allclose(untouched->k, all, 1e-5f));
+  EXPECT_TRUE(allclose(untouched->v, negative(all), 1e-5f));
 }
 
 INSTANTIATE_TEST_SUITE_P(

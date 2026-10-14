@@ -101,7 +101,7 @@ class AttentionLayer {
   // Zero must reset even unfinished state; other targets are preflighted.
   virtual void rewind(int position) = 0;
   virtual void clear() = 0;
-  virtual std::unique_ptr<AttentionLayer> clone_current() const = 0;
+  virtual std::unique_ptr<AttentionLayer> clone(int keep) const = 0;
   virtual UpdateInfo validate(
       int position,
       int complete_prefix,
@@ -146,6 +146,8 @@ class AttentionLayerFactory {
       const cache::LayerGeometry& geometry,
       const cache::CacheConfig& cfg) const = 0;
 };
+
+namespace detail {
 
 // Integer layout and storage only: attention intervals and masks belong to
 // policies. Copies share functional arrays during graph construction. Publish
@@ -199,6 +201,10 @@ class Storage {
   int slots() const {
     return slots_;
   }
+  // Addressable slots in the current view, not the backing allocation size.
+  int buffer_slots() const {
+    return buffers_ ? buffers_->k.shape(2) : 0;
+  }
   int heads() const {
     return heads_;
   }
@@ -230,6 +236,36 @@ class Storage {
   void clear() {
     buffers_.reset();
     length_ = highwater_ = 0;
+  }
+
+  Storage clone(int keep, int required_begin, StreamOrDevice s = {}) const {
+    detail::require(
+        keep == length_ || can_rewind(keep, required_begin),
+        "storage: unavailable clone");
+    Storage result = *this;
+    if (keep == 0) {
+      result.clear();
+      return result;
+    }
+    result.length_ = keep;
+    // Rings are already bounded. Keep their mapping and eviction boundary;
+    // functional updates preserve the shared snapshot when either owner writes.
+    if (ring_) {
+      return result;
+    }
+    // Keep existing slack unless the next append needs a smaller buffer.
+    // The first check also bounds keep + 1 by slots_.
+    if (keep >= buffer_slots() ||
+        growth_target(keep, keep + 1) >= buffer_slots()) {
+      return result;
+    }
+    const int target = growth_target(keep, keep);
+    // Share the source allocation. The smaller view bounds future copies
+    // without materializing an intermediate compact buffer.
+    result.buffers_ =
+        KV{detail::tokens(buffers_->k, 0, target, s),
+           detail::tokens(buffers_->v, 0, target, s)};
+    return result;
   }
 
   // Cache has already validated tensor ranks, geometry, dtypes and paired
@@ -291,17 +327,22 @@ class Storage {
   }
 
  private:
-  void grow(int needed, StreamOrDevice s) {
+  int growth_target(int current, int needed) const {
     detail::require(
         needed >= 0 && needed <= slots_, "storage: allocation exceeds storage");
-    const int current = buffers_ ? buffers_->k.shape(2) : 0;
-    if (needed <= current) {
-      return;
-    }
     int target = std::max(current, std::max(initial_slots_, 1));
     while (target < needed) {
       // Saturate before adding so doubling cannot overflow.
       target += std::min(target, slots_ - target);
+    }
+    return target;
+  }
+
+  void grow(int needed, StreamOrDevice s) {
+    const int current = buffer_slots();
+    const int target = growth_target(current, needed);
+    if (needed <= current) {
+      return;
     }
     const ::mlx::core::Shape shape{1, heads_, target - current, head_dim_};
     if (!buffers_) {
@@ -650,8 +691,6 @@ class DFlash final : public KVAttentionPolicy {
   const std::optional<int> window_;
 };
 
-namespace detail {
-
 class KVAttentionLayer final : public AttentionLayer {
  public:
   KVAttentionLayer(
@@ -699,8 +738,11 @@ class KVAttentionLayer final : public AttentionLayer {
   void clear() override {
     storage_.clear();
   }
-  std::unique_ptr<AttentionLayer> clone_current() const override {
-    return std::make_unique<KVAttentionLayer>(*this);
+  std::unique_ptr<AttentionLayer> clone(int keep) const override {
+    auto result = std::make_unique<KVAttentionLayer>(*this);
+    result->storage_ = storage_.clone(
+        keep, keep == 0 ? 0 : policy_->required_history_begin(keep));
+    return result;
   }
   UpdateInfo validate(
       int position,
@@ -745,8 +787,6 @@ struct LayerEntry {
   bool visited = false;
 };
 
-} // namespace detail
-
 inline std::unique_ptr<AttentionLayer> KVAttentionPolicy::create_layer(
     const std::shared_ptr<const AttentionLayerFactory>& owner,
     const cache::LayerGeometry& geometry,
@@ -755,6 +795,7 @@ inline std::unique_ptr<AttentionLayer> KVAttentionPolicy::create_layer(
       std::shared_ptr<const KVAttentionPolicy>(owner, this), geometry, cfg);
 }
 
+} // namespace detail
 } // namespace sequence_v2
 
 // Single-sequence implementation used by MLXBatchedCache.
@@ -810,7 +851,7 @@ class MLXSequenceCacheV2 final : public MLXCache,
     }
   }
 
-  // Lazy, independently writable fork; a current snapshot needs no rewind.
+  // Lazy, independently writable fork with prefix-aware per-layer storage.
   MLXSequenceCacheV2(const MLXSequenceCacheV2& source, int keep)
       : capacity_(source.capacity_) {
     using sequence_v2::detail::require;
@@ -818,17 +859,10 @@ class MLXSequenceCacheV2 final : public MLXCache,
     cached_mask_ = source.cached_mask_;
     layers_.reserve(source.layers_.size());
     for (const auto& layer : source.layers_) {
-      auto attention = layer.attention->clone_current();
+      auto attention = layer.attention->clone(keep);
       require(
-          attention != nullptr && attention->length() == source.length_,
+          attention != nullptr && attention->length() == keep,
           "sequence v2: invalid cloned layer");
-      if (keep != source.length_) {
-        require(
-            attention->can_rewind(keep), "sequence v2: clone cannot rewind");
-        attention->rewind(keep);
-        require(
-            attention->length() == keep, "sequence v2: invalid clone rewind");
-      }
       layers_.push_back({std::move(attention)});
     }
     reset_forward(keep);
@@ -976,14 +1010,14 @@ class MLXSequenceCacheV2 final : public MLXCache,
     for (const auto& layer : geometry.layers) {
       const bool windowed = layer.policy.kind == cache::LayerPolicy::Kind::Ring;
       if (geometry.dflash_block_size.has_value()) {
-        factories.push_back(std::make_shared<sequence_v2::DFlash>(
+        factories.push_back(std::make_shared<sequence_v2::detail::DFlash>(
             geometry,
             windowed ? std::optional<int>(layer.policy.window) : std::nullopt));
       } else if (windowed) {
         factories.push_back(
-            std::make_shared<sequence_v2::SWA>(layer.policy.window));
+            std::make_shared<sequence_v2::detail::SWA>(layer.policy.window));
       } else {
-        factories.push_back(std::make_shared<sequence_v2::Full>());
+        factories.push_back(std::make_shared<sequence_v2::detail::Full>());
       }
     }
     return factories;

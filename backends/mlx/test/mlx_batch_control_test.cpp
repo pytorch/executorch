@@ -714,7 +714,7 @@ class MLXDFlashBatchedCacheTest
   }
 
   bool create_cache() {
-    auto args = flat_config(64, 1, 1, 4, static_cast<int>(ScalarType::Half));
+    auto args = flat_config(64, 1, 1, 4, static_cast<int>(ScalarType::Half), 2);
     args.geometry.dflash_block_size = block();
     args.config.max_write = 2;
     if (window()) {
@@ -873,6 +873,29 @@ TEST_P(MLXDFlashBatchedCacheTest, CloneAndRewindContinueRetainedHistory) {
   ASSERT_NO_FATAL_FAILURE(forward({&source}, 1));
   ASSERT_TRUE(batch_->seq_rm(source.id));
   ASSERT_NO_FATAL_FAILURE(forward({&full, &partial}, 1));
+}
+
+TEST_P(MLXDFlashBatchedCacheTest, PrefixSnapshotSurvivesSourceWrapAndRemoval) {
+  if (!create_cache()) {
+    return;
+  }
+  auto source = new_row();
+  for (int step = 0; step < 4; ++step) {
+    ASSERT_NO_FATAL_FAILURE(forward({&source}));
+  }
+  const int keep = window() ? 7 : 3;
+  const auto snapshot_id = batch_->seq_clone(source.id, keep);
+  ASSERT_TRUE(snapshot_id);
+  Row snapshot{
+      *snapshot_id, {source.history.begin(), source.history.begin() + keep}};
+  // Advance beyond every physical ring slot before the snapshot runs again.
+  for (int step = 0; step < 3; ++step) {
+    ASSERT_NO_FATAL_FAILURE(forward({&source}));
+  }
+  ASSERT_TRUE(batch_->seq_rm(source.id));
+  for (int step = 0; step < 2; ++step) {
+    ASSERT_NO_FATAL_FAILURE(forward({&snapshot}));
+  }
 }
 
 TEST_P(MLXDFlashBatchedCacheTest, InterleavedQueriesKeepTheirOwnWeights) {
