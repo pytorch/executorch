@@ -53,12 +53,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   # is resolved from it rather than from the whole-archive-forcing static
   # `executorch` target, so this module shares the one backend registry.
   if(EXECUTORCH_BUILD_SHARED)
-    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump util torch
-                                  extension_training
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump aten_bridge
+                                  torch extension_training
     )
   else()
     set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch
-                                  util torch extension_training
+                                  aten_bridge torch extension_training
     )
   endif()
 

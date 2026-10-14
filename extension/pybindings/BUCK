@@ -16,6 +16,11 @@ fbcode_target(_kind = runtime.export_file,
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
+fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_executorch_result.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
 # cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
 # file to match the lib anyway, so we just expose the file like this and then have genrules consume and
 # rename it before passing it to executorch pybindings.
@@ -59,6 +64,7 @@ fbcode_target(_kind = executorch_pybindings,
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],
+    use_aten = True,
     visibility = ["PUBLIC"],
 )
 

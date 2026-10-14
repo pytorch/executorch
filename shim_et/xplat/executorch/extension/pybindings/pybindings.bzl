@@ -12,7 +12,6 @@ PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/executor:program",
     "//executorch/runtime/core:device_memory_buffer",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
-    "//executorch/extension/aten_util:aten_bridge",
     "//executorch/devtools/bundled_program:runtime",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
@@ -49,19 +48,29 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/aten:generated_lib",
 ]
 
-def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
+def executorch_pybindings(
+        python_module_name,
+        srcs = [],
+        cppdeps = [],
+        visibility = ["//executorch/..."],
+        types = [],
+        compiler_flags = [],
+        use_aten = False):
     runtime.cxx_python_extension(
         # @autodeps-skip
         name = python_module_name,
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
+        headers = [
+            "//executorch/extension/pybindings:pybindings_executorch_result.h",
+        ],
         types = types,
         base_module = "executorch.extension.pybindings",
         compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
-        ],
+        ] + (["-DUSE_ATEN_LIB"] if use_aten else []),
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/extension/threadpool:threadpool",
@@ -70,8 +79,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ] + cppdeps,
         external_deps = [
             "pybind11",
-            "libtorch_python",
-        ],
+        ] + (["libtorch_python"] if use_aten else []),
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),
         visibility = visibility,

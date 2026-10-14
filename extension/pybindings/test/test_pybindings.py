@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -110,6 +111,74 @@ class PybindingsTest(unittest.TestCase):
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
         self.assertTrue(torch.equal(method(array)[0], inputs[0] + inputs[0]))
 
+    def test_torch_inputs_are_safe_across_threads(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings use the Python torch adapter")
+
+        script = """
+import threading
+
+import torch
+from executorch.exir import to_edge
+from executorch.extension.pybindings import portable_lib
+
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+
+inputs = (torch.ones(2, 2), torch.ones(2, 2))
+program = to_edge(torch.export.export(Add(), inputs)).to_executorch()
+data = program.buffer
+loaded = portable_lib._load_program_from_buffer(data)
+
+
+def run(method):
+    for _ in range(300):
+        method.set_inputs([torch.ones(2, 2), torch.ones(2, 2)])
+        method.execute()
+        method.get_outputs()
+
+
+threads = [
+    threading.Thread(target=run, args=(loaded.load_method("forward"),))
+    for _ in range(4)
+]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join()
+print("all calls finished")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("all calls finished", completed.stdout)
+
+    def test_bfloat16_output_preserves_dtype(self):
+        class ModuleAddBFloat16(ModuleAdd):
+            def get_inputs(self):
+                return (
+                    torch.ones(2, dtype=torch.bfloat16),
+                    torch.ones(2, dtype=torch.bfloat16),
+                )
+
+        exported_program, inputs = create_program(ModuleAddBFloat16())
+        output = self.load_fn(exported_program.buffer)(inputs)[0]
+
+        self.assertEqual(output.dtype, torch.bfloat16)
+        torch.testing.assert_close(output, inputs[0] + inputs[1])
+
     def test_default_numpy_integer_dtype_error_is_descriptive(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -164,6 +233,25 @@ class PybindingsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
+
+    def test_aten_accepts_nonstandard_torch_strides(self):
+        if self.kernel_mode != "aten":
+            self.skipTest("ATen-only input behavior")
+        exported_program, inputs = create_program(
+            ModuleAddSingleInput(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        input_tensor = torch.arange(8, dtype=inputs[0].dtype).reshape(2, 4)[:, ::2]
+
+        module = self.load_fn(exported_program.buffer)
+        self.assertTrue(torch.equal(module(input_tensor)[0], input_tensor * 2))
+
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        method.set_inputs(input_tensor)
+        method.execute()
+        self.assertTrue(torch.equal(method.get_outputs()[0], input_tensor * 2))
 
     def test_complex_numpy_input_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -242,6 +330,21 @@ class PybindingsTest(unittest.TestCase):
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
 
+    def test_clone_outputs_false_returns_a_view(self):
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)
+        )
+        executorch_module = self.load_fn(exec_prog.buffer)
+
+        output = executorch_module(inputs, clone_outputs=False)[0]
+        snapshot = output.clone()
+        executorch_module(inputs)
+
+        self.assertFalse(torch.equal(output, snapshot))
+
     def test_module_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -274,7 +377,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_module(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertTrue(str(out).find("The length of given input array"))
+                self.assertIn("must be less than the number of inputs", str(out))
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -341,13 +444,80 @@ class PybindingsTest(unittest.TestCase):
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
 
+    def test_torch_input_layout_matches_exported_dim_order(self):
+        class AddInput(ModuleAddSingleInput):
+            def __init__(self, input_tensor):
+                super().__init__()
+                self.input_tensor = input_tensor
+
+            def get_inputs(self):
+                return (self.input_tensor,)
+
+        cases = (
+            ((2, 3, 4, 5), torch.channels_last),
+            ((2, 1, 3, 4), torch.channels_last),
+            ((2, 3, 1, 1), torch.channels_last),
+            ((2, 3, 4, 5, 6), torch.channels_last_3d),
+        )
+        for shape, memory_format in cases:
+            input_tensor = torch.arange(torch.Size(shape).numel(), dtype=torch.float32)
+            input_tensor = input_tensor.reshape(shape).to(memory_format=memory_format)
+            # Singleton dimensions can make channels last storage compatible
+            # with a model exported using the default dimension order.
+            export_input = (
+                input_tensor.clone(memory_format=torch.contiguous_format)
+                if input_tensor.is_contiguous()
+                else input_tensor
+            )
+            for planned in (True, False):
+                with self.subTest(shape=shape, planned=planned):
+                    program, _ = create_program(
+                        AddInput(export_input),
+                        et_config=ExecutorchBackendConfig(
+                            memory_planning_pass=MemoryPlanningPass(
+                                alloc_graph_input=planned
+                            )
+                        ),
+                    )
+                    expected = input_tensor * 2
+                    module = self.load_fn(program.buffer)
+                    torch.testing.assert_close(module(input_tensor)[0], expected)
+
+                    method = self.load_prog_fn(program.buffer).load_method("forward")
+                    method.set_inputs(input_tensor)
+                    method.execute()
+                    torch.testing.assert_close(method.get_outputs()[0], expected)
+
+                    if shape == (2, 1, 3, 4):
+                        strides = list(input_tensor.stride())
+                        strides[1] = 77
+                        equivalent = input_tensor.as_strided(shape, strides)
+                        torch.testing.assert_close(module(equivalent)[0], expected)
+                        method.set_inputs(equivalent)
+                        method.execute()
+                        torch.testing.assert_close(method.get_outputs()[0], expected)
+
+    def test_torch_input_layout_mismatch_is_rejected(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("portable bindings validate strides against exported layout")
+        program, inputs = create_program(ModuleChannelsLast())
+        input_tensor = inputs[0].contiguous()
+        module = self.load_fn(program.buffer)
+        with self.assertRaisesRegex(ValueError, "method expects stride"):
+            module(input_tensor)
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        with self.assertRaisesRegex(ValueError, "method expects stride"):
+            method.set_inputs(input_tensor)
+
     def test_unsupported_dim_order(self) -> None:
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
         inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
 
         executorch_module = self.load_fn(exported_program.buffer)
-        self.assertRaises(RuntimeError, executorch_module, inputs[0])
+        self.assertRaisesRegex(
+            ValueError, "rank 5.*expects rank 4", executorch_module, inputs[0]
+        )
 
     def test_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -615,7 +785,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_method(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertTrue(str(out).find("The length of given input array"))
+                self.assertIn("Invalid number of inputs provided", str(out))
 
     def test_method_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -690,7 +860,9 @@ class PybindingsTest(unittest.TestCase):
 
         executorch_program = self.load_prog_fn(exported_program.buffer)
         executorch_method = executorch_program.load_method("forward")
-        self.assertRaises(RuntimeError, executorch_method, inputs[0])
+        self.assertRaisesRegex(
+            ValueError, "rank 5.*expects rank 4", executorch_method, inputs[0]
+        )
 
     def test_method_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -754,6 +926,20 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(
             str(executorch_method.get_attribute("state")), str(torch.ones(2, 2))
         )
+
+    def test_method_attribute_is_a_view(self):
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)
+        )
+        executorch_method = self.load_prog_fn(exec_prog.buffer).load_method("forward")
+
+        state = executorch_method.get_attribute("state")
+        executorch_method(inputs)
+
+        self.assertTrue(torch.equal(state, torch.ones(2, 2)))
 
     def test_program_method_meta(self) -> None:
         eager_module = ModuleAddWithAttributes()
@@ -987,7 +1173,27 @@ class PybindingsTest(unittest.TestCase):
         # Asserts the device is named as Python spells it, since an uppercased or
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU and CUDA tensors", message)
+        self.assertIn("only CPU tensors", message)
+
+    def test_rejects_noncanonical_empty_strides(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+        empty_view = torch.empty(5, 7)[0:0, 0:2]
+
+        with self.assertRaisesRegex(ValueError, "stride"):
+            executorch_module.forward([empty_view, inputs[1]])
+
+    def test_empty_input_does_not_require_device_memory(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaises(RuntimeError) as caught:
+            executorch_module.forward([torch.empty(0, 2, device="meta"), inputs[1]])
+
+        self.assertNotIn("is on device meta", str(caught.exception))
 
     def test_method_accepts_a_cpu_input_after_the_device_check(self):
         # The rejection tests above pass for a change that throws on every input, so this
@@ -1019,7 +1225,7 @@ class PybindingsTest(unittest.TestCase):
             method.set_inputs([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU and CUDA tensors", message)
+        self.assertIn("only CPU tensors", message)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
