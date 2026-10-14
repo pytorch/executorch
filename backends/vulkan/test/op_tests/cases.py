@@ -733,6 +733,44 @@ def get_conv_inputs():
             output_padding=[0, 0],
             groups=4,
         ),
+        # Kernels other than 3x3 / 5x5 have no tiled shader and run on the
+        # generic conv2d_dw shader, which has no stride != dilation variant
+        # and must handle padded windows along the right / bottom edge itself.
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 4, 4),
+            bias=None,
+            stride=[2, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        # stride == dilation on the generic shader, with padding: the output
+        # windows along the right / bottom edge extend past the input.
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[3, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[2, 2],
+            padding=[3, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
     ]
 
     test_suite = VkTestSuite(test_cases)

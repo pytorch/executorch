@@ -990,6 +990,36 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_conv2d_dw_generic_shader_strided(self):
+        # A depthwise kernel that is neither 3x3 nor 5x5 runs on the generic
+        # conv2d_dw shader, which handles any stride / dilation combination
+        # itself (there is no conv2d_dw_sned variant). Before the shader
+        # picker was fixed this failed at load with "Could not find
+        # ShaderInfo with name conv2d_dw_sned_float".
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=8,
+                    out_channels=8,
+                    kernel_size=4,
+                    stride=2,
+                    padding=1,
+                    groups=8,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv2d_module = Conv2dModule()
+        sample_inputs = (torch.randn(size=(1, 8, 64, 64), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv2d_module,
+            sample_inputs,
+        )
+
     def test_vulkan_backend_conv2d_pw(self):
         class Conv2dModule(torch.nn.Module):
             def __init__(self):

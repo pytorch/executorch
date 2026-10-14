@@ -269,6 +269,14 @@ static std::vector<TestCase> generate_conv2d_dw_test_cases() {
        Padding(1, 1),
        Dilation(1, 1),
        false},
+      // Neither 3x3 nor 5x5 with stride != dilation: the generic conv2d_dw
+      // shader, which has no _sned variant
+      {InputDims(1, 8, 16, 16),
+       KernelSize(4, 4),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       false},
       // Non-multiple-of-4 channels
       {InputDims(1, 11, 16, 16),
        KernelSize(3, 3),
