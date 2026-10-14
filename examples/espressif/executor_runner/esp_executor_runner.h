@@ -45,7 +45,7 @@ bool et_runner_init(void);
  *
  * @param input_idx  Zero-based index of the input tensor to set.
  * @param data       Pointer to the source data in host memory.
- * @param num_bytes  Number of bytes to copy. Must not exceed the tensor's
+ * @param num_bytes  Number of bytes to copy. Must equal the tensor's
  *                   total byte size (element_size * num_elements).
  * @returns true on success, false on failure.
  */
@@ -54,9 +54,10 @@ bool et_runner_set_input(size_t input_idx, const void* data, size_t num_bytes);
 /**
  * Execute one forward pass of the model.
  *
- * Must be called after et_runner_init(). Call et_runner_set_input() before
- * this if you want to provide custom input data. Results are available via
- * et_runner_get_output() after this call returns successfully.
+ * Must be called after et_runner_init(). Set all inputs with
+ * et_runner_set_input() before each call: execution may reuse their storage for
+ * intermediate tensors. Results are available via et_runner_get_output() after
+ * this call returns successfully.
  *
  * @returns true on success, false on failure.
  */
