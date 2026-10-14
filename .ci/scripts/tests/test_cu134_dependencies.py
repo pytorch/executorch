@@ -40,10 +40,11 @@ class TestCu134Dependencies(unittest.TestCase):
         nightly=True,
         system="Linux",
         python_version=(3, 14),
+        env=None,
     ):
         self.utils.determine_torch_url.cache_clear()
         with (
-            patch.dict(os.environ, {}, clear=True),
+            patch.dict(os.environ, env or {}, clear=True),
             patch.object(
                 self.utils,
                 "_get_cuda_version",
@@ -126,18 +127,40 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn("torchvision", domains)
                 self.assertIn("torchaudio", domains)
 
-    def test_no_cuda_keeps_default_pins(self):
-        core, _, domains, _ = self.install_commands(None)
-        self.assertIn("torch==2.14.0", core)
-        self.assertIn(f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core)
-        self.assertIn("torchvision==0.29.0", domains)
-        self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
+    def test_cpu_uses_release_packages_and_indexes(self):
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine):
+                core, _, domains, examples = self.install_commands(None, machine)
+                self.assertIn("torch==2.14.0", core)
+                self.assertIn(f"torchao=={self.installer.TORCHAO_STABLE_VERSION}", core)
+                self.assertIn("torchvision==0.29.0", domains)
+                self.assertIn("torchaudio==2.11.0", domains)
+                for command in (core, domains, examples):
+                    self.assertIn("https://download.pytorch.org/whl/cpu", command)
+                    self.assertFalse(
+                        any("/nightly" in arg or "/test/" in arg for arg in command)
+                    )
+
+    def test_cpu_source_build_keeps_nightly_torchao(self):
+        for flag in (
+            "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+            "TORCHAO_BUILD_EXPERIMENTAL_MPS",
+        ):
+            with self.subTest(flag=flag):
+                core, local, domains, _ = self.install_commands(None, env={flag: "1"})
+                self.assertIn(
+                    f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                )
+                self.assertIn("https://download.pytorch.org/whl/nightly/cpu", core)
+                for command in (core, domains):
+                    self.assertIn("https://download.pytorch.org/whl/test/cpu", command)
+                self.assertIn("third-party/ao", local)
 
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")
         self.assertIn("torch==2.14.0", core)
         self.assertIn("torchvision==0.29.0", domains)
-        self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
+        self.assertIn("https://download.pytorch.org/whl/cpu", core)
 
     def test_python315_cpu_domains_use_available_torchaudio(self):
         for system in ("Linux", "Darwin", "Windows"):
@@ -149,6 +172,10 @@ class TestCu134Dependencies(unittest.TestCase):
                     audio = "2.11.1" if version >= (3, 15) else "2.11.0"
                     self.assertIn(f"torchaudio=={audio}", domains)
                     self.assertIn("torchvision==0.29.0", domains)
+                    channel = "test/cpu" if version >= (3, 15) else "cpu"
+                    self.assertIn(
+                        f"https://download.pytorch.org/whl/{channel}", domains
+                    )
 
     def test_python315_cuda_domains_use_available_torchaudio(self):
         for machine in ("x86_64", "aarch64"):
@@ -325,7 +352,11 @@ class TestCu134Dependencies(unittest.TestCase):
             version = (
                 self.installer.CU134_TORCHAO_NIGHTLY_VERSION
                 if cuda == (13, 4)
-                else self.installer.TORCHAO_NIGHTLY_VERSION
+                else (
+                    self.installer.TORCHAO_STABLE_VERSION
+                    if cuda is None
+                    else self.installer.TORCHAO_NIGHTLY_VERSION
+                )
             )
             major, minor = (int(part) for part in version.split(".")[:2])
             expected = f"torchao>={version},<{major}.{minor + 1}"
