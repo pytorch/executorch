@@ -14,7 +14,7 @@ import json
 import logging
 import math
 from contextlib import aclosing
-from typing import AsyncIterator, Callable, Optional
+from typing import AsyncIterator, Callable, Iterable, Optional, Protocol
 
 from .chat_template import ChatTemplate
 from .errors import (
@@ -116,6 +116,20 @@ class _ChatStream:
         await SessionRuntime._finish_cleanup(self._close_task)
 
 
+class StreamingResponseParser(Protocol):
+    """Request-local, append-only content/reasoning parser; no SSE or tool state.
+
+    For parsed streams, replaces buffered reasoning extraction and content cleanup
+    (content_filter and _strip_specials). Raw stop-string handling still runs
+    before feed(). finish() runs only at successful logical EOF, including length
+    exhaustion and a drained stop, not on error, cancellation, or early close.
+    """
+
+    def feed(self, text: str) -> Iterable[DeltaMessage]: ...
+
+    def finish(self) -> Iterable[DeltaMessage]: ...
+
+
 class ServingChat:
     def __init__(
         self,
@@ -130,6 +144,9 @@ class ServingChat:
         reasoning_extractor: Optional[
             Callable[[str], tuple[Optional[str], str]]
         ] = None,
+        streaming_parser_factory: Optional[
+            Callable[[], StreamingResponseParser]
+        ] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -138,6 +155,7 @@ class ServingChat:
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
         self._reasoning_extractor = reasoning_extractor
+        self._streaming_parser_factory = streaming_parser_factory
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -761,6 +779,40 @@ class ServingChat:
         ):
             yield token
 
+    async def _stream_content_deltas(
+        self,
+        req: ChatCompletionRequest,
+        generation: AsyncIterator[str],
+        stops: list[str],
+        stop_hit: list[bool],
+    ) -> AsyncIterator[DeltaMessage]:
+        if self._streaming_parser_factory is None:
+            async for text in self._stream_plain_content(generation, stops, stop_hit):
+                yield DeltaMessage(content=text)
+            return
+        parser = self._streaming_parser_factory()
+        return_reasoning = self._return_reasoning(req)
+
+        def on_stop():
+            stop_hit[0] = True
+            self._cancel_generation(generation)
+
+        async def parsed():
+            async for text in self._clean(generation, stops, on_stop=on_stop):
+                for delta in parser.feed(text):
+                    yield delta
+            # Finalize only a successful logical EOF, including a drained stop.
+            for delta in parser.finish():
+                yield delta
+
+        async for delta in parsed():
+            visible = DeltaMessage(
+                content=delta.content,
+                reasoning_content=delta.reasoning_content if return_reasoning else None,
+            )
+            if visible.content or visible.reasoning_content:
+                yield visible
+
     async def _stream_final_chunks(
         self,
         req: ChatCompletionRequest,
@@ -838,7 +890,10 @@ class ServingChat:
                 tool_calls, reasoning, content = self._extract_response(
                     req, self._truncate_raw(raw, req)
                 )
-            elif self._reasoning_extractor is not None:
+            elif (
+                self._reasoning_extractor is not None
+                and self._streaming_parser_factory is None
+            ):
                 raw, stop_hit[0] = await self._collect_until_stop(
                     generation,
                     stops,
@@ -851,13 +906,15 @@ class ServingChat:
                 if content:
                     yield chunk(DeltaMessage(content=content))
             else:
-                streamed: list[str] = []
-                async for token in self._stream_plain_content(
-                    generation, stops, stop_hit
+                content_parts, reasoning_parts = [], []
+                async for delta in self._stream_content_deltas(
+                    req, generation, stops, stop_hit
                 ):
-                    streamed.append(token)
-                    yield chunk(DeltaMessage(content=token))
-                content = "".join(streamed)  # for the session fingerprint
+                    content_parts.append(delta.content or "")
+                    reasoning_parts.append(delta.reasoning_content or "")
+                    yield chunk(delta)
+                content = "".join(content_parts)  # for the session fingerprint
+                reasoning = "".join(reasoning_parts) or None
         except (
             Exception
         ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket

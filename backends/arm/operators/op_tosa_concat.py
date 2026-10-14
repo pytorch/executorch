@@ -38,12 +38,11 @@ class CatVisitor(NodeVisitor):
         )
         validate_num_inputs(self.target, inputs, [1, 2])
         input_tosa_args = [TosaArg(arg, self.tosa_spec) for arg in inputs[0].special]
-        validate_same_dtype(self.target, [*input_tosa_args, output], ts)
+        validate_same_dtype(self.target, [*input_tosa_args, output])
         validate_valid_dtype(
             self.target,
             [*input_tosa_args, output],
             supported_dtypes,
-            self.tosa_spec,
         )
 
         dim = node.kwargs["axis"]
