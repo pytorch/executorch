@@ -5,16 +5,18 @@
 
 """Pre-train the µYOLO backbone for classification on Caltech-256."""
 
+import argparse
 import sys
 from pathlib import Path
 
 import torch
+from PIL import Image
 
 EXAMPLE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(EXAMPLE_DIR))
 from model import MicroYolo  # type: ignore[import-not-found]
 from torch import nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import (  # type: ignore[import-not-found, import-untyped]
     datasets,
     transforms,
@@ -65,13 +67,16 @@ def evaluate(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--smoke-test", action="store_true")
+    args = parser.parse_args()
     # Set constants
     data_root = DATASETS_DIR / "caltech256"
     last_checkpoint = PRETRAIN_RESUME_PATH
     best_checkpoint = PRETRAINED_PATH
-    epochs = 400
-    batch_size = 64
-    workers = 4
+    epochs = 1 if args.smoke_test else 400
+    batch_size = 1 if args.smoke_test else 64
+    workers = 0 if args.smoke_test else 4
     learning_rate = 0.001
     momentum = 0.9
     weight_decay = 0.005
@@ -97,23 +102,34 @@ def main() -> None:
             normalize,
         ]
     )
-    base_dataset = datasets.Caltech256(data_root, download=True)
-    generator = torch.Generator().manual_seed(0)
-    indices = [index for index, target in enumerate(base_dataset.y) if target < 256]
-    indices = torch.tensor(indices)[
-        torch.randperm(len(indices), generator=generator)
-    ].tolist()
-    split = int(0.8 * len(indices))
-
-    # Setup datasets
-    train_dataset = Subset(
-        datasets.Caltech256(data_root, transform=train_transform, download=True),
-        indices[:split],
-    )
-    validation_dataset = Subset(
-        datasets.Caltech256(data_root, transform=validation_transform, download=True),
-        indices[split:],
-    )
+    train_dataset: TensorDataset | Subset
+    validation_dataset: TensorDataset | Subset
+    if args.smoke_test:
+        with Image.open(EXAMPLE_DIR / "example.jpg") as image:
+            train_dataset = TensorDataset(
+                train_transform(image).unsqueeze(0), torch.tensor([0])
+            )
+            validation_dataset = TensorDataset(
+                validation_transform(image).unsqueeze(0), torch.tensor([0])
+            )
+    else:
+        base_dataset = datasets.Caltech256(data_root, download=True)
+        generator = torch.Generator().manual_seed(0)
+        indices = [index for index, target in enumerate(base_dataset.y) if target < 256]
+        indices = torch.tensor(indices)[
+            torch.randperm(len(indices), generator=generator)
+        ].tolist()
+        split = int(0.8 * len(indices))
+        train_dataset = Subset(
+            datasets.Caltech256(data_root, transform=train_transform, download=True),
+            indices[:split],
+        )
+        validation_dataset = Subset(
+            datasets.Caltech256(
+                data_root, transform=validation_transform, download=True
+            ),
+            indices[split:],
+        )
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
