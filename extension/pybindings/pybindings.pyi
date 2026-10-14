@@ -94,15 +94,17 @@ class ExecuTorchProgram:
 class ExecuTorchMethod:
     """ExecuTorchMethod is a Python wrapper around a loaded C++ method.
 
-    Outputs are cloned when ``clone_outputs`` is True, except for outputs that
-    already live in a caller's tensor, which are returned as that tensor:
+    Outputs are cloned when ``clone_outputs`` is True, except for an output
+    bound with ``set_output``, which is returned as the bound tensor and
+    overwritten by later calls.
 
-    - an output bound with ``set_output``, which later calls overwrite;
-    - an output that is an input not memory planned (e.g. exported with
-      ``alloc_graph_input=False``), such as the write-back of a mutated input.
-      It is the tensor passed in for that input, mutation included. A memory
-      planned input is copied into the method, so the caller's tensor is not
-      updated.
+    An input that is not memory planned (e.g. exported with
+    ``alloc_graph_input=False``) is used in place, so a mutation of it is
+    written into the tensor passed in for it. When such an input is also an
+    output (e.g. the write-back of a mutated input, or an input returned
+    unchanged), that output is a clone like any other by default, and is the
+    tensor passed in only with ``clone_outputs=False``. A memory planned input
+    is copied into the method, so the tensor passed in for it is not updated.
 
     .. warning::
 

@@ -2033,15 +2033,18 @@ struct PyMethod final {
         method_->method_meta().name(),
         static_cast<uint32_t>(get_outputs_status));
 
-    // An output bound with set_output(), or an output that is an input,
-    // already lives in the caller's tensor, so it is returned as that tensor
-    // and taken out of `result` before it could be cloned. A dynamic bound
-    // output may have been resized smaller than its (contiguous) tensor, so
-    // view it at its written size. An input keeps the sizes it was fed with,
-    // and may be channels-last.
+    // An output bound with set_output() already lives in the caller's tensor,
+    // so it is returned as that tensor and taken out of `result` before it
+    // could be cloned. An output that is an input lives in the tensor passed
+    // in for it, which is returned only with clone_outputs=False: by default
+    // it is cloned like any other output. A dynamic bound output may have
+    // been resized smaller than its (contiguous) tensor, so view it at its
+    // written size. An input keeps the sizes it was fed with, and may be
+    // channels-last.
     std::vector<py::object> caller_backed(result.size());
     for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
-      if (!caller_outputs_[i].has_value() || !result[i].isTensor()) {
+      if (!caller_outputs_[i].has_value() || !result[i].isTensor() ||
+          (clone_outputs && !is_bound_output(i))) {
         continue;
       }
       const auto& caller = caller_outputs_[i].value();

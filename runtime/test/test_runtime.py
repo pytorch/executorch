@@ -36,6 +36,11 @@ class ModuleRecurrent(torch.nn.Module):
         return state + x
 
 
+class ModuleInputAndIncrement(torch.nn.Module):
+    def forward(self, x):
+        return x, x + 1
+
+
 class ModuleDouble(torch.nn.Module):
     def forward(self, x):
         return x * 2
@@ -101,17 +106,40 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(torch.allclose(outputs[0], inputs[0] + inputs[1]))
 
     def test_mutated_input_is_updated_in_place(self):
-        # An unplanned input the method mutates is written where it lives, and
-        # its write-back output is that very tensor rather than a copy.
+        # An unplanned input the method mutates is written where it lives. Its
+        # write-back output is a copy by default, and that very tensor only
+        # with clone_outputs=False.
         x, cache, _ = _cache_inputs()
         method, _buffer = _load_cache_update_method()
-        for step, row in enumerate((1, 2)):
-            outputs = method.execute((x * (step + 1), cache, torch.tensor([row])))
-            self.assertIs(outputs[0], cache)
         expected = torch.zeros(3, 4)
-        expected[1], expected[2] = 1.0, 2.0
+        expected[1] = 1.0
+        outputs = method.execute((x, cache, torch.tensor([1])))
+        self.assertIsNot(outputs[0], cache)
+        self.assertNotEqual(outputs[0].data_ptr(), cache.data_ptr())
+        self.assertTrue(torch.equal(outputs[0], expected))
+        self.assertTrue(torch.equal(cache, expected))
+        outputs = method._method((x * 2, cache, torch.tensor([2])), clone_outputs=False)
+        self.assertIs(outputs[0], cache)
+        expected[2] = 2.0
         self.assertTrue(torch.equal(cache, expected))
         self.assertTrue(torch.equal(outputs[1], expected.sum(0, keepdim=True)))
+
+    def test_returned_input_is_cloned_by_default(self):
+        # An unplanned input returned as an output is an independent copy with
+        # the default clone_outputs=True, as before set_output existed.
+        method, _buffer = _load_unplanned_io_method(
+            ModuleInputAndIncrement(), (torch.tensor([1.0]),)
+        )
+        x = torch.tensor([1.0])
+        y, z = method.execute((x,))
+        self.assertIsNot(y, x)
+        self.assertNotEqual(y.data_ptr(), x.data_ptr())
+        x.fill_(5.0)
+        self.assertTrue(torch.equal(y, torch.tensor([1.0])))
+        self.assertTrue(torch.equal(z, torch.tensor([2.0])))
+        y, z = method._method((x,), clone_outputs=False)
+        self.assertIs(y, x)
+        self.assertTrue(torch.equal(z, torch.tensor([6.0])))
 
     def test_mutated_planned_input_is_not_updated(self):
         x, cache, pos = _cache_inputs()
@@ -179,12 +207,12 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(torch.equal(outputs[0], new_cache))
         self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
 
-    def test_caller_backed_outputs_are_not_cloned(self):
-        x, cache, pos = _cache_inputs()
-        method, _buffer = _load_cache_update_method()
-        method.set_output(torch.empty(1, 4), 1)
+    def test_bound_output_is_not_cloned(self):
+        x = torch.ones(2)
+        method, _buffer = _load_unplanned_io_method(ModuleDouble(), (x,))
+        method.set_output(torch.empty(2), 0)
         with torch.profiler.profile() as profile:
-            method.execute((x, cache, pos))
+            method.execute((x,))
         clones = [e for e in profile.events() if e.name == "aten::clone"]
         self.assertEqual(clones, [])
 
@@ -252,7 +280,7 @@ class RuntimeTest(unittest.TestCase):
         method.set_output(torch.zeros(3, 4), 0)
         with self.assertRaises(RuntimeError):
             method.execute((x, cache, pos))
-        outputs = method.execute((x, cache, pos))
+        outputs = method._method((x, cache, pos), clone_outputs=False)
         self.assertIs(outputs[0], cache)
         self.assertTrue(torch.equal(cache[1], torch.ones(4)))
 

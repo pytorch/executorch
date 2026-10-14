@@ -151,13 +151,14 @@ class Method:
     def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
         """Executes the method with the given inputs.
 
-        Outputs are copies, except for outputs that live in a caller's tensor:
-        an output bound with :meth:`set_output` (overwritten by later calls),
-        and an output that is an input not memory planned (e.g. exported with
-        ``alloc_graph_input=False``), such as the write-back of a mutated input,
-        which is returned as the tensor passed in for it, mutation included. A
-        memory planned input is copied into the method, so the tensor passed in
-        for it is not updated.
+        Outputs are copies, except for an output bound with
+        :meth:`set_output`, which is returned as the bound tensor and
+        overwritten by later calls. An input that is not memory planned (e.g.
+        exported with ``alloc_graph_input=False``) is used in place, so a
+        mutation of it is written into the tensor passed in for it, while an
+        output that is that input is still returned as a copy. A memory planned
+        input is copied into the method, so the tensor passed in for it is not
+        updated.
 
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
@@ -177,9 +178,9 @@ class Method:
 
         The output must not be memory planned (export with
         ``alloc_graph_output=False``), must not be returned at another output
-        index too, and must not be an input, which is already returned as the
-        tensor passed in for it. That last case is only known once inputs have
-        been set: a binding made before the first call is removed by that call,
+        index too, and must not be an input, which already lives in the tensor
+        passed in for it. That last case is only known once inputs have been
+        set: a binding made before the first call is removed by that call,
         which raises. ``tensor`` must have the output's dtype and device, be
         contiguous, and hold at least as many bytes as the output's largest
         shape. The output itself must be contiguous, not e.g. channels-last.
