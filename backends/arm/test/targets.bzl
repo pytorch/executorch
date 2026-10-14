@@ -75,6 +75,8 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
         "misc/test_external_vela_blocks.py",
+        "misc/test_vela_persistent_region.py",
+        "misc/test_delegated_state_partitioning.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",
