@@ -17,6 +17,13 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from executorch.exir.native import to_native
+from torchao.quantization import (
+    Int8DynamicActivationIntxWeightConfig,
+    IntxWeightOnlyConfig,
+    MappingType,
+    quantize_,
+)
+from torchao.quantization.granularity import PerGroup
 
 
 class Lambda(torch.nn.Module):
@@ -62,6 +69,29 @@ class RMSNorm(torch.nn.Module):
 
     def forward(self, x):
         return F.rms_norm(x, (16,), self.weight, eps=1e-6)
+
+
+def _quantize_8da4w(
+    model: torch.nn.Module,
+    group_size: int,
+    embedding_mapping: MappingType = MappingType.SYMMETRIC,
+) -> None:
+    quantize_(
+        model,
+        IntxWeightOnlyConfig(
+            weight_dtype=torch.int4,
+            granularity=PerGroup(group_size),
+            mapping_type=embedding_mapping,
+        ),
+        filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
+    )
+    quantize_(
+        model,
+        Int8DynamicActivationIntxWeightConfig(
+            weight_dtype=torch.int4, weight_granularity=PerGroup(group_size)
+        ),
+        filter_fn=lambda m, _: isinstance(m, torch.nn.Linear),
+    )
 
 
 def _run_ggml(package: Path, inputs, outdir: Path, num_outputs: int):
@@ -292,6 +322,37 @@ class GgmlOpsTest(unittest.TestCase):
     def test_rejects_add_alpha(self):
         with self.assertRaisesRegex(AssertionError, "alpha"):
             self._binary(lambda x, y: torch.add(x, y, alpha=2.0))
+
+    def test_linear_8da4w(self):
+        model = torch.nn.Linear(128, 16)
+        _quantize_8da4w(model, group_size=64)
+        # ggml quantizes activations in its own blocks, torchao per token.
+        self._check(model, (torch.randn(3, 128),), atol=5e-2, rtol=5e-2)
+
+    def test_linear_8da4w_3d_input(self):
+        model = torch.nn.Linear(64, 16)
+        _quantize_8da4w(model, group_size=32)
+        self._check(model, (torch.randn(2, 3, 64),), atol=5e-2, rtol=5e-2)
+
+    def test_linear_8da4w_rejects_group_16(self):
+        model = torch.nn.Linear(64, 16)
+        _quantize_8da4w(model, group_size=16)
+        with self.assertRaisesRegex(AssertionError, "groups divisible by 32"):
+            self._check(model, (torch.randn(3, 64),))
+
+    def test_embedding_4bit(self):
+        model = torch.nn.Embedding(10, 64)
+        _quantize_8da4w(model, group_size=64)
+        # Only the Q4_0 fp16 scales round, so this fails on a nibble swap.
+        self._check(
+            model, (torch.tensor([[1, 3, 9], [0, 2, 5]]),), atol=2e-3, rtol=1e-3
+        )
+
+    def test_embedding_4bit_rejects_asymmetric(self):
+        model = torch.nn.Embedding(10, 64)
+        _quantize_8da4w(model, group_size=64, embedding_mapping=MappingType.ASYMMETRIC)
+        with self.assertRaisesRegex(AssertionError, "zero points of zero"):
+            self._check(model, (torch.tensor([[1, 3, 9]]),))
 
 
 if __name__ == "__main__":
