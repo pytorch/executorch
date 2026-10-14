@@ -690,6 +690,14 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.randn(2, 3), torch.randn(2, 3)),
         )
 
+    def test_permute_of_size_one_dims(self):
+        self._check(
+            Lambda(
+                lambda x: (x * 2.0).permute(1, 0, 2).contiguous() + x.transpose(0, 1)
+            ),
+            (torch.randn(4, 1, 3),),
+        )
+
     def test_linear_8da4w(self):
         model = torch.nn.Linear(128, 16)
         _quantize_8da4w(model, group_size=64)
@@ -918,6 +926,39 @@ class GgmlOpsTest(unittest.TestCase):
             to_native(torch.export.export(CacheWrite(), inputs)).save(str(package))
             with self.assertRaisesRegex(AssertionError, "outside"):
                 _run_ggml(package, [(inputs[0], torch.tensor([5, 1, 8]))], outdir, 1)
+
+    def test_clone_of_intermediate_then_index_put(self):
+        def forward(x, values, index):
+            out = (x * 2.0).clone()
+            out.index_copy_(2, index, values)
+            return out
+
+        self._check(
+            Lambda(forward),
+            (torch.randn(1, 2, 4, 2), torch.randn(1, 2, 1, 2), torch.tensor([1])),
+        )
+
+    def test_clone_shares_unwritten_storage(self):
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: (x * 2.0).clone() + x), (torch.randn(2, 3),), graph_ops=ops
+        )
+        self.assertEqual(ops["CONT"] + ops["CPY"], 0)
+
+    def test_clone_of_buffer_keeps_value_from_before_write_back(self):
+        class SnapshotThenCopy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 3))
+
+            def forward(self, x):
+                old = self.state.clone()
+                self.state.copy_(x + 1.0)
+                return old
+
+        inputs = (torch.ones(2, 3),)
+        (old,) = self._run_exported(SnapshotThenCopy(), inputs, inputs)
+        torch.testing.assert_close(old, torch.zeros(2, 3))
 
     def test_read_before_index_put_sees_old_rows(self):
         inputs = (torch.ones(1, 2, 1, 2), torch.tensor([1]))
