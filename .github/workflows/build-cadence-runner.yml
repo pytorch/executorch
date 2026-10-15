@@ -168,8 +168,6 @@ jobs:
       docker-image: ${{ needs.docker-image.outputs.image }}
       allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
 
-  # HiFi 1s / HiFi 5s cores from the RJ-2026.6 SDKs, built with the generic
-  # Cadence kernels (see setup-xtensa-tools.sh).
   hifi1s-build:
     needs: docker-image
     if: >-
@@ -187,6 +185,23 @@ jobs:
       docker-image: ${{ needs.docker-image.outputs.image }}
       allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
 
+  hifi1s-op-test:
+    needs: [docker-image, hifi1s-build]
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_test.yml
+    with:
+      backend: hifi1s
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      docker-image: ${{ needs.docker-image.outputs.image }}
+      allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
+
   hifi5s-build:
     needs: docker-image
     if: >-
@@ -198,6 +213,23 @@ jobs:
       id-token: write
       contents: read
     uses: ./.github/workflows/_xtensa_build.yml
+    with:
+      backend: hifi5s
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      docker-image: ${{ needs.docker-image.outputs.image }}
+      allow-fork-checkout: ${{ github.event_name == 'pull_request_target' }}
+
+  hifi5s-op-test:
+    needs: [docker-image, hifi5s-build]
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_test.yml
     with:
       backend: hifi5s
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}

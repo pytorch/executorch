@@ -46,8 +46,6 @@ S3_CORE_PREFIX="${XTENSA_S3_CORE_PREFIX:-}"
 #   hifi4 / fusion_g3 cores (RI-2022.10, clang 10) -> RI-2022.9 host tools
 #   vision core           (RJ-2025.5,  clang 15)   -> RJ-2025.5 host tools
 #   hifi1s / hifi5s SDKs  (RJ-2026.6,  LLVM 19)    -> RJ-2026.6 host tools
-# An empty OPT flag builds the generic Cadence kernels. hifi1s and hifi5s have no
-# HiFi 4 ISA (XCHAL_HAVE_HIFI4=0), so the hifi4 nnlib kernels do not apply.
 case "${BACKEND}" in
   hifi4)
     CORE_NAME="hifi4_ss_spfpu_7_et_ci2"
@@ -75,14 +73,14 @@ case "${BACKEND}" in
     CORE_TARBALL="hifi1s_ao_7.tgz"
     TOOLCHAIN_TARBALL="XtensaTools_RJ_2026_6_linux.tgz"
     TOOLCHAIN_VER="RJ-2026.6-linux"
-    OPT_FLAG=""
+    OPT_FLAG="EXECUTORCH_NNLIB_OPT"
     ;;
   hifi5s)
     CORE_NAME="hifi5s_ao_7"
     CORE_TARBALL="hifi5s_ao_7.tgz"
     TOOLCHAIN_TARBALL="XtensaTools_RJ_2026_6_linux.tgz"
     TOOLCHAIN_VER="RJ-2026.6-linux"
-    OPT_FLAG=""
+    OPT_FLAG="EXECUTORCH_NNLIB_OPT"
     ;;
   *)
     echo "ERROR: unknown backend '${BACKEND}' (expected hifi4|vision|fusion_g3|hifi1s|hifi5s)" >&2

@@ -11,7 +11,7 @@
 # Requires the Xtensa toolchain env to already be set (run
 # .ci/scripts/setup-xtensa-tools.sh <backend> first): XTENSA_TOOLCHAIN,
 # TOOLCHAIN_VER, XTENSA_SYSTEM, XTENSA_CORE, XTENSAD_LICENSE_FILE,
-# CADENCE_OPT_FLAG (empty for the generic kernels), and xt-clang on PATH.
+# CADENCE_OPT_FLAG, and xt-clang on PATH.
 #
 # Usage:
 #   .ci/scripts/build-cadence-xtensa.sh [--no-run]
@@ -25,10 +25,10 @@ RUN_SMOKE=1
 : "${XTENSA_TOOLCHAIN:?run setup-xtensa-tools.sh first}"
 : "${TOOLCHAIN_VER:?run setup-xtensa-tools.sh first}"
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
-: "${CADENCE_OPT_FLAG?run setup-xtensa-tools.sh first}"
+: "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
 NPROC=$(nproc)
-echo "=== building cadence_executor_runner for ${XTENSA_CORE} (${CADENCE_OPT_FLAG:-generic kernels}) ==="
+echo "=== building cadence_executor_runner for ${XTENSA_CORE} (${CADENCE_OPT_FLAG}) ==="
 xt-clang --version | head -1
 
 rm -rf cmake-out
@@ -37,7 +37,7 @@ CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
   -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DCMAKE_BUILD_TYPE=Release \
   -DEXECUTORCH_BUILD_CADENCE=ON \
-  ${CADENCE_OPT_FLAG:+"-D${CADENCE_OPT_FLAG}=ON"} \
+  "-D${CADENCE_OPT_FLAG}=ON" \
   -DEXECUTORCH_BUILD_PORTABLE_OPS=ON \
   -DEXECUTORCH_BUILD_CADENCE_RUNNER=ON \
   -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
