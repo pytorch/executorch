@@ -4,10 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Serve Muse Glimmer solo text/images with the batching multiplexed worker.
+"""Serve Muse Glimmer text/images with the batching multiplexed worker.
 
-Requires an off-graph solo export. The legacy launcher and runners remain
-separate; this entry point does not select or fall back to DFlash.
+Requires an off-graph export. DFlash is opt-in and requires a matching export;
+the legacy launcher and runners remain separate.
 """
 
 import argparse
@@ -46,6 +46,13 @@ def _parse_args(argv=None):
     parser.add_argument("--hf-tokenizer", required=True)
     parser.add_argument("--pos-embed-path")
     parser.add_argument("--backend", choices=("mlx",), default="mlx")
+    parser.add_argument("--dflash", action="store_true")
+    parser.add_argument(
+        "--dflash-n-draft",
+        type=int,
+        default=0,
+        help="Draft proposals per round; 0 uses the exported maximum minus one.",
+    )
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-sessions", type=int, default=4)
@@ -79,6 +86,10 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
     _validate_limits(parser, args)
+    if not 0 <= args.dflash_n_draft < _INT32_MAX:
+        parser.error("--dflash-n-draft must be nonnegative and below INT32_MAX")
+    if args.dflash_n_draft and not args.dflash:
+        parser.error("--dflash-n-draft requires --dflash")
     if not 4 <= args.max_vision_patches <= _INT32_MAX:
         parser.error(f"--max-vision-patches must be between 4 and {_INT32_MAX}")
     if args.max_context <= 1:
@@ -128,6 +139,8 @@ def _worker_command(args):
         ("pte", args.model_path),
         ("tokenizer", args.tokenizer_path),
         ("backend", args.backend),
+        ("dflash", str(args.dflash).lower()),
+        ("dflash_n_draft", args.dflash_n_draft),
         ("max_sessions", args.max_sessions),
         ("max_session_tokens", args.max_context),
         ("max_decode_sequences", args.max_decode_sequences),
@@ -143,7 +156,8 @@ def _worker_command(args):
         ("pos_embed_path", args.pos_embed_path),
     ):
         if value is not None:
-            command.extend((f"--{flag}", str(value)))
+            # gflags requires '=' to pass false for boolean flags.
+            command.append(f"--{flag}={value}")
     return command
 
 
