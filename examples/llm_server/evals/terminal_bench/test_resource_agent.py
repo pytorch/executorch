@@ -399,6 +399,34 @@ async def test_cancel_before_child_starts_is_not_a_trial_failure(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_reasoning_cap_error_keeps_consumed_token_accounting(tmp_path):
+    obj = agent(tmp_path)
+    chunk = {
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"reasoning_content": "still thinking"},
+                "finish_reason": "length",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 64, "total_tokens": 74},
+    }
+
+    async def respond(request):
+        return httpx.Response(
+            200, text="data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n"
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        with pytest.raises(
+            RuntimeError, match="Reasoning exhausted the 64-token response cap"
+        ):
+            await obj.completion("parent", [], 64)
+    assert obj.context.n_output_tokens == 64
+    assert obj.output_tokens["parent"] == 64
+
+
+@pytest.mark.anyio
 async def test_cleanup_error_preserves_primary_error_and_trace(tmp_path):
     obj = agent(tmp_path)
 

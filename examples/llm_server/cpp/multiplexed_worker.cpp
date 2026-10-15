@@ -8,6 +8,7 @@
 
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker_test.h>
+#include <iterator>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -430,7 +431,27 @@ class Worker {
                 session.committed_position ? Json(*session.committed_position)
                                            : Json(nullptr)}});
         }
+        Json steps = Json::array();
+        for (const auto& step : engine.recent_steps) {
+          Json inputs = Json::array();
+          std::transform(
+              step.inputs.begin(),
+              step.inputs.end(),
+              std::back_inserter(inputs),
+              [](const auto& input) {
+                return Json{
+                    {"position", input.position},
+                    {"tokens", input.tokens},
+                    {"decode", input.decode}};
+              });
+          steps.push_back(
+              {{"id", step.id},
+               {"elapsed_ms", step.elapsed_us / 1000.0},
+               {"succeeded", step.succeeded},
+               {"inputs", std::move(inputs)}});
+        }
         Json stats = {
+            {"recent_steps", std::move(steps)},
             {"decode_sequences", engine.decode_sequences},
             {"prefill_sequences", engine.prefill_sequences},
             {"context_tokens", engine.context_tokens},
