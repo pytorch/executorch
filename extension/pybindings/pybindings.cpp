@@ -14,6 +14,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <stdexcept>
 #include <tuple>
@@ -135,19 +136,40 @@ PortableTensorOutput& portable_tensor_output() {
 
 void configure_portable_tensor_output() {
   const char* value = std::getenv(kTensorOutputEnvironmentVariable);
-  if (value == nullptr || std::strcmp(value, "torch") == 0) {
-    portable_tensor_output() = PortableTensorOutput::Torch;
-    return;
-  }
-  if (std::strcmp(value, "executorch") == 0) {
+  if (value != nullptr && std::strcmp(value, "executorch") == 0) {
     portable_tensor_output() = PortableTensorOutput::ExecuTorch;
     return;
   }
-  throw py::value_error(
-      std::string(kTensorOutputEnvironmentVariable) +
-      " must be either 'torch' or 'executorch', but was '" + value + "'");
+  if (value != nullptr && std::strcmp(value, "torch") != 0) {
+    throw py::value_error(
+        std::string(kTensorOutputEnvironmentVariable) +
+        " must be either 'torch' or 'executorch', but was '" + value + "'");
+  }
+  try {
+    py::module_::import("torch");
+    portable_tensor_output() = PortableTensorOutput::Torch;
+  } catch (py::error_already_set& error) {
+    if (value != nullptr || !error.matches(PyExc_ImportError)) {
+      throw;
+    }
+    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+  }
 }
 #endif
+
+// Python tensor adapters can release the GIL while holding native state.
+// Recursive locking also covers compound calls that invoke other methods.
+class ObjectLock final {
+ public:
+  explicit ObjectLock(std::recursive_mutex& mutex)
+      : lock_(mutex, std::defer_lock) {
+    py::gil_scoped_release release;
+    lock_.lock();
+  }
+
+ private:
+  std::unique_lock<std::recursive_mutex> lock_;
+};
 
 #ifdef USE_ATEN_LIB
 void* mutable_tensor_data_ptr_no_cow(const at::Tensor& tensor) {
@@ -1310,8 +1332,8 @@ struct PyModule final {
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
-  PyModule(PyModule&&) = default;
-  PyModule& operator=(PyModule&&) = default;
+  PyModule(PyModule&&) = delete;
+  PyModule& operator=(PyModule&&) = delete;
 
   // Module is only valid as long as the python buffer is alive.
   static std::unique_ptr<PyModule> load_from_buffer(
@@ -1398,6 +1420,7 @@ struct PyModule final {
       const std::string& method_name,
       const py::object& python_inputs,
       bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
     const auto method_meta_result = module_->method_meta(method_name);
@@ -1564,6 +1587,7 @@ struct PyModule final {
   }
 
   bool has_etdump() {
+    ObjectLock lock(mutex_);
     ETDumpGen* etdump = dynamic_cast<ETDumpGen*>(module_->event_tracer());
     return etdump != nullptr;
   }
@@ -1571,6 +1595,7 @@ struct PyModule final {
   void write_etdump_result_to_file(
       const std::string& path,
       const py::object& debug_buffer_path) {
+    ObjectLock lock(mutex_);
     if (!has_etdump()) {
       throw std::runtime_error("No etdump found");
     }
@@ -1600,6 +1625,7 @@ struct PyModule final {
   py::list plan_execute(
       const std::string method_name,
       bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
     auto status = module_->load_method(method_name);
 
     THROW_IF_ERROR(
@@ -1618,6 +1644,7 @@ struct PyModule final {
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
+    ObjectLock lock(mutex_);
     auto method_data = module_->method_meta(method_name);
     THROW_IF_ERROR(
         method_data.error(),
@@ -1628,6 +1655,7 @@ struct PyModule final {
   }
 
   std::vector<std::string> method_names() {
+    ObjectLock lock(mutex_);
     auto result = module_->method_names();
     THROW_IF_ERROR(
         result.error(),
@@ -1638,6 +1666,7 @@ struct PyModule final {
   }
 
  private:
+  std::recursive_mutex mutex_;
   // Hold onto the debug_buffer_ for the event_tracer.
   std::unique_ptr<uint8_t[]> debug_buffer_;
   size_t debug_buffer_size_;
@@ -2020,6 +2049,7 @@ struct PyMethod final {
             std::move(method))) {}
 
   void set_inputs(const py::object& python_inputs) {
+    ObjectLock lock(mutex_);
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
@@ -2203,6 +2233,7 @@ struct PyMethod final {
   }
 
   void execute() {
+    ObjectLock lock(mutex_);
     for (const auto& input : borrowed_inputs_) {
       input.validate();
     }
@@ -2239,6 +2270,7 @@ struct PyMethod final {
   }
 
   py::list get_outputs(bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
     std::vector<EValue> result(storage_->method->outputs_size());
 
     Error get_outputs_status = storage_->method->get_outputs(
@@ -2254,12 +2286,14 @@ struct PyMethod final {
   }
 
   py::list call(const py::object& inputs, bool clone_outputs = true) {
+    ObjectLock lock(mutex_);
     set_inputs(inputs);
     execute();
     return get_outputs(clone_outputs);
   }
 
   py::object get_attribute(const std::string& name) {
+    ObjectLock lock(mutex_);
     Result<executorch::aten::Tensor> attr =
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
@@ -2279,10 +2313,12 @@ struct PyMethod final {
   }
 
   PyMethodMeta method_meta() {
+    ObjectLock lock(mutex_);
     return PyMethodMeta(storage_->state, storage_->method->method_meta());
   }
 
  private:
+  std::recursive_mutex mutex_;
   // Borrowed results retain native storage without retaining this wrapper's
   // Python input owners, which could point back to those same results.
   struct Storage final {

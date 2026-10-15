@@ -27,19 +27,21 @@ class _LightweightExperimentalWarning(DeprecationWarning):
 
 
 _TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
-_tensor_output = os.environ.get(_TENSOR_OUTPUT_ENV, "torch")
-if _tensor_output == "torch":
+_tensor_output = os.environ.get(_TENSOR_OUTPUT_ENV)
+if _tensor_output in (None, "torch"):
     try:
         # Preserve the existing API: importing portable_lib also imports Torch,
         # and tensor outputs are torch.Tensor objects.
         import torch as _torch
     except ImportError as error:
-        raise ImportError(
-            "ExecuTorch portable pybindings return torch.Tensor outputs by "
-            "default, but PyTorch could not be imported. Install PyTorch or "
-            f"set {_TENSOR_OUTPUT_ENV}=executorch before importing "
-            "portable_lib to receive ExecuTorchResult outputs."
-        ) from error
+        if _tensor_output == "torch":
+            raise ImportError(
+                "ExecuTorch portable pybindings were configured to return "
+                "torch.Tensor outputs, but PyTorch could not be imported. "
+                f"Install PyTorch or set {_TENSOR_OUTPUT_ENV}=executorch "
+                "before importing portable_lib."
+            ) from error
+        _torch = None
 elif _tensor_output == "executorch":
     _torch = None
 else:

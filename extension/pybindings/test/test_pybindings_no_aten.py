@@ -101,27 +101,6 @@ assert runtime._tensor_output == "executorch"
             """
         )
 
-    def test_torch_output_error_mentions_executorch_opt_out(self) -> None:
-        if importlib.util.find_spec("torch") is not None:
-            self.skipTest("torch is installed")
-        if runtime._tensor_output != "torch":
-            self.skipTest("ExecuTorchResult output was explicitly selected")
-
-        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
-            program_data = program_file.read()
-        module = runtime._load_for_executorch_from_buffer(program_data)
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            rf"{TENSOR_OUTPUT_ENV}=executorch",
-        ):
-            module(
-                (
-                    np.array([1.0], dtype=np.float32),
-                    np.array([2.0], dtype=np.float32),
-                )
-            )
-
     def test_executorch_result_array_copy_contract(self) -> None:
         if runtime._tensor_output != "executorch":
             self.skipTest("ExecuTorchResult output was not selected")

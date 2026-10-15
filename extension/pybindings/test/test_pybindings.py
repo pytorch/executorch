@@ -135,6 +135,100 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
 
+    def test_tensor_output_import_policy(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings configure Python tensor outputs")
+        program, _ = create_program(ModuleAddSingleInput())
+        script = """
+import importlib
+import importlib.abc
+import os
+import sys
+from pathlib import Path
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise ImportError("torch is unavailable")
+
+entrypoint, policy, available, program_path, native_path = sys.argv[1:]
+if sys.platform == "win32":
+    native_directory = Path(native_path).parent
+    os.add_dll_directory(str(native_directory))
+    library_directory = native_directory.parent.parent / "lib"
+    if library_directory.is_dir():
+        os.add_dll_directory(str(library_directory))
+blocker = BlockTorch()
+if available == "no":
+    sys.meta_path.insert(0, blocker)
+try:
+    bindings = importlib.import_module(entrypoint)
+except ImportError:
+    assert policy == "torch" and available == "no"
+else:
+    assert policy != "torch" or available == "yes"
+    native = sys.modules["executorch.extension.pybindings._C"]
+    expected = "torch" if policy != "executorch" and available == "yes" else "executorch"
+    assert native._tensor_output == expected
+    assert ("torch" in sys.modules) == (expected == "torch")
+    import numpy as np
+    program_data = Path(program_path).read_bytes()
+    module = bindings._load_for_executorch_from_buffer(program_data)
+    output = module(np.ones((2, 2), dtype=np.float32))[0]
+    if expected == "executorch":
+        assert isinstance(output, bindings.ExecuTorchResult)
+        np.testing.assert_array_equal(np.asarray(output), np.full((2, 2), 2.0))
+        if available == "no":
+            sys.meta_path.remove(blocker)
+            import torch
+            assert isinstance(module(torch.ones(2, 2))[0], bindings.ExecuTorchResult)
+    else:
+        import torch
+        assert isinstance(output, torch.Tensor)
+        torch.testing.assert_close(output, torch.full((2, 2), 2.0))
+"""
+        native_path = sys.modules["executorch.extension.pybindings._C"].__file__
+        with tempfile.TemporaryDirectory() as directory:
+            program_path = os.path.join(directory, "add.pte")
+            with open(program_path, "wb") as handle:
+                handle.write(program.buffer)
+            for entrypoint in (
+                "executorch.extension.pybindings.portable_lib",
+                "executorch.extension.pybindings._C",
+            ):
+                for policy in (None, "torch", "executorch"):
+                    for available in ("yes", "no"):
+                        with self.subTest(
+                            entrypoint=entrypoint, policy=policy, available=available
+                        ):
+                            environment = os.environ.copy()
+                            environment.pop("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT", None)
+                            if policy is not None:
+                                environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = (
+                                    policy
+                                )
+                            completed = subprocess.run(
+                                [
+                                    sys.executable,
+                                    "-c",
+                                    script,
+                                    entrypoint,
+                                    str(policy),
+                                    available,
+                                    program_path,
+                                    native_path,
+                                ],
+                                env=environment,
+                                capture_output=True,
+                                text=True,
+                                timeout=60,
+                            )
+                            self.assertEqual(
+                                completed.returncode,
+                                0,
+                                completed.stdout + completed.stderr,
+                            )
+
     def test_empty_numpy_buffer_input(self):
         exported_program, inputs = create_program(ModuleAddEmpty())
         array = np.zeros((3, 0), dtype=np.float32)
@@ -177,7 +271,7 @@ class PybindingsTest(unittest.TestCase):
             self.skipTest("only portable bindings use the Python torch adapter")
 
         script = """
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
 from executorch.exir import to_edge
@@ -195,21 +289,33 @@ data = program.buffer
 loaded = portable_lib._load_program_from_buffer(data)
 
 
-def run(method):
+def run(executor, separate_calls):
     for _ in range(300):
-        method.set_inputs([torch.ones(2, 2), torch.ones(2, 2)])
-        method.execute()
-        method.get_outputs()
+        inputs = [torch.ones(2, 2), torch.ones(2, 2)]
+        if separate_calls:
+            executor.set_inputs(inputs)
+            executor.execute()
+            outputs = executor.get_outputs()
+        else:
+            outputs = executor(inputs)
+        output = outputs[0]
+        if not isinstance(output, torch.Tensor):
+            output = torch.from_numpy(output.__array__())
+        torch.testing.assert_close(output, inputs[0] + inputs[1])
 
 
-threads = [
-    threading.Thread(target=run, args=(loaded.load_method("forward"),))
-    for _ in range(4)
-]
-for thread in threads:
-    thread.start()
-for thread in threads:
-    thread.join()
+shared_method = loaded.load_method("forward")
+shared_module = portable_lib._load_for_executorch_from_buffer(data)
+for executors, separate_calls in (
+    ([loaded.load_method("forward") for _ in range(8)], True),
+    ([shared_method] * 8, True),
+    ([shared_method] * 8, False),
+    ([shared_module] * 8, False),
+):
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(run, executor, separate_calls) for executor in executors]
+        for future in futures:
+            future.result()
 print("all calls finished")
 """
         completed = subprocess.run(
