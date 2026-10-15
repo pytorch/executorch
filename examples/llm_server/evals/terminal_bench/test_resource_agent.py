@@ -372,7 +372,7 @@ async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_pa
         expected_output_tokens=200,
     )
     messages = [{"role": "assistant", "tool_calls": [spawn]}]
-    with pytest.raises(ValueError, match="request_capacity"):
+    with pytest.raises(ValueError, match="inflight_request_limit"):
         await obj.parent_tool(spawn, messages, Environment())
     assert not obj.child_used
     snapshot = SNAPSHOT
@@ -930,3 +930,10 @@ def test_default_estimator_produces_admission_without_an_override(
     assert decision["reason"] != "unknown_cost"
     assert decision["estimate"]["prefill_s"] > 0
     assert decision["parent_delay_s"] > 0
+    for request_limit in (8, 64):
+        assert (
+            obj.admission(
+                [], snapshot | {"max_inflight_requests": request_limit}, proposal
+            )
+            == decision
+        )

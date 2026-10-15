@@ -8,8 +8,8 @@ shell command. Children cannot delegate.
 
 ## Configuration
 
-Use a batching server with prefix caching, capacity for two sessions and at least
-two decode sequences. Add to a working model TOML:
+Use a batching server with prefix caching, at least two sessions, and
+`max_decode_sequences >= 2` (maximum generation batch size). Add to a working model TOML:
 
 ```toml
 [terminal_bench]
@@ -29,7 +29,7 @@ The model-cost JSON describes the actual export, not its advertised model size:
 | `attention` | List of groups with `layers`, `query_heads`, `kv_heads`, `head_dim`, `kv_bytes` and `window` (0 for global attention) |
 
 Run `bash run.sh --config /path/to/model.toml`. Before Harbor starts, the launcher
-warms the model and measures solo, paired and mixed prefill/decode execution.
+warms the model and measures prefill, generation at batch sizes 1 and 2, and mixed steps.
 It validates predictions at different prompt lengths; calibration must meet a
 30% p90 relative-error limit in each execution category. `calibration.json` is
 shared by all trials in the run. Calibration is outside agent time and excluded
@@ -43,13 +43,30 @@ and the same remaining work done inline. Thinking is estimated as
 completed parent and child responses. Capped or interrupted responses do not
 count as completed work. The output cap covers thinking and visible output.
 
-The harness prices these forecasts using a calibrated
-[roofline model](https://jax-ml.github.io/scaling-book/inference/): prefill depends
-on uncached tokens and retained context; decoding depends on weight sharing,
-compute and each active context. It accounts for mixed steps, paired decoding,
-the solo tail, tools and integration. Parent and child contexts remain separate.
-Prompt counts come from the server's renderer. Unknown costs or savings smaller
-than the calibration error mean inline. The model does not choose hardware rates.
+The harness uses the [Scaling Book's generation cost model](https://jax-ml.github.io/scaling-book/inference/)
+as its baseline when attention is memory-bandwidth-bound:
+
+$$
+T_{\mathrm{step}} \approx \frac{\sum_i KV_i}{BW}
++ \max\left(\frac{2BN}{C},\frac{W}{BW}\right)
+$$
+
+Here, $B$ is the actual generation batch size, $N$ the active parameter count,
+$W$ the parameter bytes, and $KV_i$ the attended KV-cache bytes for sequence $i$.
+$BW$ and $C$ are calibrated as `effective_bandwidth_bytes_s` and
+`effective_compute_flops_s`. The in-flight request limit does not enter this equation.
+For generation-only steps, per-token latency is approximately $T_{\mathrm{step}}$
+and aggregate throughput is $B/T_{\mathrm{step}}$.
+
+Prefill uses uncached token counts and context lengths, retaining both compute and
+memory terms for attention. Calibration adds empirical timing corrections for
+generation at batch size 2, mixed steps and fixed prefill overhead. These corrections
+do not measure physical byte traffic or peak hardware rates.
+
+Parent and child contexts are priced together during overlap; a remaining sequence
+returns to batch size 1. Tools and integration are included. Prompt counts come from
+the server's renderer. Unknown costs or savings smaller than the calibration error
+mean inline. The model forecasts work, not hardware rates.
 
 Future tool work and output remain estimates. Tool durations and sizes use
 observed averages; the two-request approximation places each side's forecast

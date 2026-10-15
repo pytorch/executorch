@@ -82,10 +82,10 @@ def test_forecasts_and_total_budget(kwargs, reason):
 @pytest.mark.parametrize(
     "changes,reason",
     [
-        ({"submitted_generations": 3}, "request_capacity"),
-        ({"waiting_for_runtime_lease": 1}, "request_capacity"),
-        ({"submitted_generations": None}, "unknown_capacity"),
+        ({"submitted_generations": 3}, "inflight_request_limit"),
+        ({"waiting_for_runtime_lease": 1}, "inflight_request_limit"),
+        ({"submitted_generations": None}, "unknown_request_limit"),
     ],
 )
-def test_request_capacity(changes, reason):
+def test_inflight_request_limit(changes, reason):
     assert decide(snapshot=SNAPSHOT | changes)["reason"] == reason

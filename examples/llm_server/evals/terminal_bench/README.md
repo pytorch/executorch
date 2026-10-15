@@ -47,7 +47,7 @@ Configuration details:
 For concurrent tasks, set `[terminal_bench].concurrency` (default `1`), remove
 `session_affinity`, and select a batching server and compatible export. Server
 limits use the launcher's defaults. Keep task concurrency within the server's
-session and request capacity; configure `[server]` options as needed.
+session and in-flight request limits; configure `[server]` options as needed.
 Each trial/attempt uses Harbor's trial UUID as its KV-session ID. Cleanup runs in
 Harbor's END hook before the trial slot is released, retrying transient failures
 for up to two minutes. Persistent cleanup errors stop the run to avoid reusing

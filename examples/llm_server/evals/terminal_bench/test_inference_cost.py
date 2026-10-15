@@ -29,6 +29,21 @@ def input_at(position, tokens=1, decode=True):
     return {"position": position, "tokens": tokens, "decode": decode}
 
 
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("flops_s", [1.5e11, 1e13])
+def test_generation_matches_scaling_book_roofline(batch_size, flops_s):
+    model = ModelCost(
+        2_000_000_000, 900_000_000, 100_000_000, (AttentionGroup(4, 4, 4, 64, 2),)
+    )
+    cost = InferenceCost(model, 1e11, flops_s, 1.0, 1.0, 256, 0.0)
+    positions = [1023, 8191][:batch_size]
+    kv_bytes = 2 * 4 * 4 * 64 * 2 * sum(p + 1 for p in positions)
+    # Attention is bandwidth-bound here; linear operations cross the roofline
+    # at batch size 1.5 when FLOPs/s is 1.5e11.
+    expected_s = kv_bytes / 1e11 + max(2 * batch_size * 1e9 / flops_s, 2e9 / 1e11)
+    assert cost.step([input_at(p) for p in positions]) == pytest.approx(expected_s)
+
+
 def test_weight_sharing_increases_aggregate_but_slows_each_sequence():
     solo = COST.step([input_at(8192)])
     pair = COST.step([input_at(8192), input_at(8192)])
@@ -40,7 +55,7 @@ def test_weight_sharing_increases_aggregate_but_slows_each_sequence():
 
 
 def test_compute_saturation_limits_batching_gain():
-    cost = replace(COST, compute=1e12)
+    cost = replace(COST, effective_compute_flops_s=1e12)
     solo = cost.step([input_at(8192)])
     paired = cost.step([input_at(8192), input_at(8192)])
     assert paired == pytest.approx(2 * solo)
@@ -123,7 +138,9 @@ def test_tiny_prefills_expose_fixed_cost_instead_of_distorting_compute():
         )
     fitted = fit_cost(MODEL, samples)
     assert fitted.prefill_overhead_s == pytest.approx(0.17, abs=0.002)
-    assert fitted.compute == pytest.approx(COST.compute, rel=0.02)
+    assert fitted.effective_compute_flops_s == pytest.approx(
+        COST.effective_compute_flops_s, rel=0.02
+    )
     for size in (1, 16, 64, 192):
         shape = [input_at(8192, size, False)]
         assert fitted.step(shape) == pytest.approx(observed.step(shape), rel=0.02)

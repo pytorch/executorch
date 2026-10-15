@@ -61,10 +61,10 @@ def decide_delegation(
         )
     ]
     if any(type(v) is not int or v < 0 for v in counts):
-        return decision | {"reason": "unknown_capacity"}
-    capacity, submitted, waiting = counts
-    if waiting or capacity - submitted < 2:
-        return decision | {"reason": "request_capacity"}
+        return decision | {"reason": "unknown_request_limit"}
+    request_limit, submitted, waiting = counts
+    if waiting or request_limit - submitted < 2:
+        return decision | {"reason": "inflight_request_limit"}
     if estimate is None:
         return decision | {"reason": "unknown_cost"}
     values = asdict(estimate)

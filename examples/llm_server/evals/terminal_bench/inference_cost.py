@@ -84,8 +84,9 @@ class ModelCost:
 @dataclass(frozen=True)
 class InferenceCost:
     model: ModelCost
-    bandwidth: float
-    compute: float
+    effective_bandwidth_bytes_s: float
+    effective_compute_flops_s: float
+    # Empirical timing corrections, not physical byte counts.
     pair_weight_factor: float
     mixed_factor: float
     chunk_size: int
@@ -96,8 +97,8 @@ class InferenceCost:
     def from_dict(cls, data):
         model = cls(**(data | {"model": ModelCost.from_dict(data["model"])}))
         values = (
-            model.bandwidth,
-            model.compute,
+            model.effective_bandwidth_bytes_s,
+            model.effective_compute_flops_s,
             model.pair_weight_factor,
             model.mixed_factor,
         )
@@ -112,30 +113,35 @@ class InferenceCost:
         return model
 
     def step(self, inputs):
-        tokens = sum(i["tokens"] for i in inputs)
-        width = sum(i["decode"] for i in inputs)
+        token_batch_size = sum(i["tokens"] for i in inputs)
+        generation_batch_size = sum(i["decode"] for i in inputs)
         prefill = any(not i["decode"] for i in inputs)
-        if width > 2:
-            raise ValueError("Calibration supports at most two decoding sequences")
+        if generation_batch_size > 2:
+            raise ValueError("Calibration supports generation batch sizes up to two")
         attention = [
             self.model.attention_cost(i["position"], i["tokens"]) for i in inputs
         ]
-        flops = 2 * (
-            self.model.linear_parameters * tokens
+        linear_flops = 2 * (
+            self.model.linear_parameters * token_batch_size
             + self.model.output_parameters * len(inputs)
         )
-        weight_factor = self.pair_weight_factor if width == 2 and not prefill else 1
-        linear = max(
-            weight_factor * self.model.weight_bytes / self.bandwidth,
-            flops / self.compute,
+        weight_time_factor = (
+            self.pair_weight_factor if generation_batch_size == 2 and not prefill else 1
         )
-        attention_time = max(
-            sum(f for f, _ in attention) / self.compute,
-            sum(b for _, b in attention) / self.bandwidth,
+        parameter_load_s = (
+            weight_time_factor
+            * self.model.weight_bytes
+            / self.effective_bandwidth_bytes_s
+        )
+        linear_compute_s = linear_flops / self.effective_compute_flops_s
+        linear_s = max(parameter_load_s, linear_compute_s)
+        attention_s = max(
+            sum(f for f, _ in attention) / self.effective_compute_flops_s,
+            sum(b for _, b in attention) / self.effective_bandwidth_bytes_s,
         )
         return (
-            linear + attention_time + (self.prefill_overhead_s if prefill else 0)
-        ) * (self.mixed_factor if width and prefill else 1)
+            linear_s + attention_s + (self.prefill_overhead_s if prefill else 0)
+        ) * (self.mixed_factor if generation_batch_size and prefill else 1)
 
     def prefill(self, position, tokens):
         seconds = 0.0
@@ -273,7 +279,7 @@ def fit_cost(model, samples):
         raise ValueError(
             "Calibration needs solo, overlapping decode, prefill and mixed steps"
         )
-    bandwidth = statistics.median(
+    effective_bandwidth_bytes_s = statistics.median(
         (model.weight_bytes + model.attention_cost(s["inputs"][0]["position"], 1)[1])
         / (s["elapsed_ms"] / 1000)
         for s in solo
@@ -301,15 +307,17 @@ def fit_cost(model, samples):
         for work, seconds in points
         if work >= max(work for work, _ in points) / 2
     ]
-    compute = statistics.median(work * 1e12 / seconds for work, seconds in large)
-    weight_seconds = model.weight_bytes / bandwidth
+    effective_compute_flops_s = statistics.median(
+        work * 1e12 / seconds for work, seconds in large
+    )
+    weight_seconds = model.weight_bytes / effective_bandwidth_bytes_s
     small = [
         seconds - weight_seconds
         for work, seconds in points
-        if work * 1e12 / compute <= weight_seconds
+        if work * 1e12 / effective_compute_flops_s <= weight_seconds
     ]
     overhead = max(0.0, statistics.median(small)) if small else 0.0
-    compute = statistics.median(
+    effective_compute_flops_s = statistics.median(
         work * 1e12 / (seconds - overhead)
         for work, seconds in large
         if seconds > overhead
@@ -318,21 +326,21 @@ def fit_cost(model, samples):
     for sample in pairs:
         attention = [model.attention_cost(i["position"], 1) for i in sample["inputs"]]
         attention_s = max(
-            sum(f for f, _ in attention) / compute,
-            sum(b for _, b in attention) / bandwidth,
+            sum(f for f, _ in attention) / effective_compute_flops_s,
+            sum(b for _, b in attention) / effective_bandwidth_bytes_s,
         )
         factors.append(
             max(
                 0.01,
                 (sample["elapsed_ms"] / 1000 - attention_s)
-                * bandwidth
+                * effective_bandwidth_bytes_s
                 / model.weight_bytes,
             )
         )
     model_cost = InferenceCost(
         model,
-        bandwidth,
-        compute,
+        effective_bandwidth_bytes_s,
+        effective_compute_flops_s,
         statistics.median(factors),
         1.0,
         max(i["tokens"] for s in samples for i in s["inputs"] if not i["decode"]),
@@ -344,8 +352,8 @@ def fit_cost(model, samples):
     )
     return InferenceCost(
         model,
-        bandwidth,
-        compute,
+        effective_bandwidth_bytes_s,
+        effective_compute_flops_s,
         model_cost.pair_weight_factor,
         mixed_factor,
         model_cost.chunk_size,

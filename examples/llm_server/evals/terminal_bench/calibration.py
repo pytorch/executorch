@@ -26,7 +26,7 @@ def calibration_engine(initial):
         or (engine.get("max_decode_sequences") or 0) < 2
     ):
         raise ValueError(
-            "Calibration requires an idle server with at least two decode slots"
+            "Calibration requires an idle server with max_decode_sequences >= 2"
         )
     if "recent_steps" not in engine:
         raise ValueError("Rebuild the worker with completed-step telemetry")
@@ -98,12 +98,12 @@ async def calibrate(base_url, model_id, model_cost, output, max_context=32768):
         sampler = asyncio.create_task(collect())
         try:
             longest = min(8192, max_context // 2)
-            print("Calibration: warming solo and paired execution.", flush=True)
+            print("Calibration: warming generation batch sizes 1 and 2.", flush=True)
             await pair(min(256, longest // 4), 16)
             await collect_once()
             phase = "fit"
             print(
-                "Calibration: measuring prefill, solo decode and paired decode.",
+                "Calibration: measuring prefill, generation batch sizes 1 and 2, and mixed steps.",
                 flush=True,
             )
             await generate(min(1024, longest // 4), 64)

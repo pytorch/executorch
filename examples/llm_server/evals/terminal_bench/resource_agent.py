@@ -28,10 +28,11 @@ The parent owns edits and final verification. A delegated child investigates onl
 question without modifying files or delegating. Do not edit files a running child is inspecting.
 
 Optimize time to verified correct completion, including all parent and child work.
-Batching can share weight reads, but each sequence adds computation and attention traffic.
-Longer attended context costs more per step; sliding-window attention can cap this cost.
-Available decode slots do not imply free capacity.
-Prefill taxes shared decode. Prefix caching avoids repeated prefill, not later attention cost.
+Generation batching shares parameter reads; each sequence adds computation and KV-cache reads.
+A larger generation batch can improve aggregate throughput while increasing per-token latency.
+The in-flight request limit is not the generation batch size.
+Longer context increases KV-cache reads; sliding-window attention can cap this cost.
+Prefill can delay ongoing generation. Prefix caching avoids repeated prefill, not later attention cost.
 Shorter context does not necessarily free allocated memory.
 
 The harness can decline a spawn. If declined, continue inline without retrying delegation.
