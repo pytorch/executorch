@@ -14,15 +14,15 @@ the packed-int5 path. The code here runs during eager inference and AOTI export
 tracing — it does NOT run at .pte runtime.
 
 At .pte runtime, the captured graph is executed by the AOTI-generated .so:
-  - ``triton::int5_quantized_gemm_m{M}`` is a Triton W5A8 DP4A kernel compiled
-    into it (see triton/kernels/int5_quantized_gemm.py).
+  - ``triton::int5_quantized_gemm_m{M}`` is a Triton W5A8 DP4A kernel for
+    M <= 4 or a fused W5A16 BF16 tile kernel for buckets 8 through 64.
   - The inline dequant + F.linear is compiled by inductor into fused Triton
     dequant + matmul kernels.
 
 Dispatch (``_gemm_family_dispatch.quantized_linear``): when a Triton kernel can
 run, the smallest bucket of ``INT5_QUANTIZED_GEMM`` that supports the inputs
-(static M <= 4 takes its own bucket; a dynamic M provably within [1, 4] takes
-the smallest bucket that holds it). Everything else (prefill, an unbounded
+(static or bounded dynamic M <= 64 takes the smallest covering bucket; large
+buckets require group_size=32). Everything else (prefill, an unbounded
 dynamic M, other group sizes or dtypes, CPU eager) uses inline dequant +
 F.linear, never an error.
 
