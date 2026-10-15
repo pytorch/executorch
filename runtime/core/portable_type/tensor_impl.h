@@ -175,11 +175,17 @@ class TensorImpl {
 
   /// Returns the order the dimensions are laid out in memory.
   const ArrayRef<DimOrderType> dim_order() const {
+    if (dim_order_ == nullptr) {
+      return {};
+    }
     return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
   }
 
   /// Returns the strides of the tensor at each dimension.
   const ArrayRef<StridesType> strides() const {
+    if (strides_ == nullptr) {
+      return {};
+    }
     return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
   }
 

@@ -10,8 +10,10 @@
 #include <executorch/extension/runner_util/inputs.h>
 
 #include <algorithm>
+#include <array>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/method_meta.h>
@@ -59,6 +61,15 @@ Error fill_and_set_input(
     size_t input_index,
     void* data_ptr,
     bool fill_tensor) {
+  std::
+      array<TensorImpl::StridesType, executorch::runtime::kTensorDimensionLimit>
+          strides{};
+  ET_CHECK_OK_OR_RETURN_ERROR(executorch::runtime::dim_order_to_stride(
+      tensor_meta.sizes().data(),
+      tensor_meta.dim_order().data(),
+      tensor_meta.sizes().size(),
+      strides.data()));
+
   TensorImpl impl = TensorImpl(
       tensor_meta.scalar_type(),
       /*dim=*/tensor_meta.sizes().size(),
@@ -68,7 +79,8 @@ Error fill_and_set_input(
       // dim_order arrays for the input.
       const_cast<TensorImpl::SizesType*>(tensor_meta.sizes().data()),
       data_ptr,
-      const_cast<TensorImpl::DimOrderType*>(tensor_meta.dim_order().data()));
+      const_cast<TensorImpl::DimOrderType*>(tensor_meta.dim_order().data()),
+      strides.data());
   Tensor t(&impl);
 
   if (fill_tensor) {

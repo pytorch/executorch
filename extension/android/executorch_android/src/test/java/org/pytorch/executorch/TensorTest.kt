@@ -640,6 +640,25 @@ class TensorTest {
   }
 
   @Test
+  fun testDimOrder() {
+    val shape = longArrayOf(1, 3, 2, 2)
+    val dimOrder = intArrayOf(0, 2, 3, 1)
+    val data = FloatArray(12) { it.toFloat() }
+
+    assertArrayEquals(dimOrder, Tensor.fromBlob(data, shape, dimOrder).dimOrder())
+
+    val buffer = Tensor.allocateFloatBuffer(data.size)
+    buffer.put(data)
+    assertArrayEquals(dimOrder, Tensor.fromBlob(buffer, shape, dimOrder).dimOrder())
+    assertArrayEquals(intArrayOf(0, 1, 2, 3), Tensor.fromBlob(data, shape).dimOrder())
+
+    assertThatThrownBy { Tensor.fromBlob(data, shape, intArrayOf(0, 1, 2)) }
+        .isInstanceOf(IllegalArgumentException::class.java)
+    assertThatThrownBy { Tensor.fromBlob(data, shape, intArrayOf(0, 1, 2, 2)) }
+        .isInstanceOf(IllegalArgumentException::class.java)
+  }
+
+  @Test
   fun testLongTensorSerde() {
     val data = longArrayOf(1, 2, 3, 4)
     val shape = longArrayOf(2, 2)

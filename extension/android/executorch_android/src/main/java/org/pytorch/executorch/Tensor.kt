@@ -41,15 +41,29 @@ import org.pytorch.executorch.annotations.Experimental
  * Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-abstract class Tensor internal constructor(shape: LongArray) {
+abstract class Tensor internal constructor(shape: LongArray, dimOrder: IntArray? = null) {
 
   init {
     for (s in shape) {
       require(s >= 0) { "Shape elements must be non negative" }
     }
+    if (dimOrder != null) {
+      require(dimOrder.size == shape.size) { "Dim order size must match shape size" }
+      val seen = BooleanArray(shape.size)
+      for (d in dimOrder) {
+        require(d in seen.indices && !seen[d]) {
+          "Dim order must be a permutation of shape dimensions"
+        }
+        seen[d] = true
+      }
+    }
   }
 
   @DoNotStrip @JvmField protected val shape: LongArray = shape.copyOf()
+
+  @DoNotStrip
+  @JvmField
+  protected val dimOrder: IntArray = dimOrder?.copyOf() ?: IntArray(shape.size) { it }
 
   @DoNotStrip private var mHybridData: HybridData? = null
 
@@ -58,6 +72,9 @@ abstract class Tensor internal constructor(shape: LongArray) {
 
   /** Returns the shape of this tensor. (The array is a fresh copy.) */
   fun shape(): LongArray = shape.copyOf()
+
+  /** Returns the dimension order of this tensor. (The array is a fresh copy.) */
+  fun dimOrder(): IntArray = dimOrder.copyOf()
 
   abstract fun dtype(): DType
 
@@ -227,8 +244,9 @@ abstract class Tensor internal constructor(shape: LongArray) {
 
   // region nested tensor types
 
-  internal class Tensor_uint8 internal constructor(private val data: ByteBuffer, shape: LongArray) :
-      Tensor(shape) {
+  internal class Tensor_uint8
+  internal constructor(private val data: ByteBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.UINT8
 
     override fun getRawDataBuffer(): Buffer = data
@@ -249,8 +267,9 @@ abstract class Tensor internal constructor(shape: LongArray) {
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.uint8)"
   }
 
-  internal class Tensor_int8 internal constructor(private val data: ByteBuffer, shape: LongArray) :
-      Tensor(shape) {
+  internal class Tensor_int8
+  internal constructor(private val data: ByteBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.INT8
 
     override fun getRawDataBuffer(): Buffer = data
@@ -271,8 +290,9 @@ abstract class Tensor internal constructor(shape: LongArray) {
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.int8)"
   }
 
-  internal class Tensor_int32 internal constructor(private val data: IntBuffer, shape: LongArray) :
-      Tensor(shape) {
+  internal class Tensor_int32
+  internal constructor(private val data: IntBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.INT32
 
     override fun getRawDataBuffer(): Buffer = data
@@ -294,7 +314,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   internal class Tensor_float32
-  internal constructor(private val data: FloatBuffer, shape: LongArray) : Tensor(shape) {
+  internal constructor(private val data: FloatBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.FLOAT
 
     override fun getRawDataBuffer(): Buffer = data
@@ -316,7 +337,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   internal class Tensor_float16
-  internal constructor(private val data: ShortBuffer, shape: LongArray) : Tensor(shape) {
+  internal constructor(private val data: ShortBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.HALF
 
     override fun getRawDataBuffer(): Buffer = data
@@ -386,8 +408,9 @@ abstract class Tensor internal constructor(shape: LongArray) {
     }
   }
 
-  internal class Tensor_int64 internal constructor(private val data: LongBuffer, shape: LongArray) :
-      Tensor(shape) {
+  internal class Tensor_int64
+  internal constructor(private val data: LongBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.INT64
 
     override fun getRawDataBuffer(): Buffer = data
@@ -409,7 +432,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   internal class Tensor_float64
-  internal constructor(private val data: DoubleBuffer, shape: LongArray) : Tensor(shape) {
+  internal constructor(private val data: DoubleBuffer, shape: LongArray, dimOrder: IntArray? = null) :
+      Tensor(shape, dimOrder) {
     override fun dtype(): DType = DType.DOUBLE
 
     override fun getRawDataBuffer(): Buffer = data
@@ -435,7 +459,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
       private val data: ByteBuffer,
       shape: LongArray,
       private val mDtype: DType,
-  ) : Tensor(shape) {
+      dimOrder: IntArray? = null,
+  ) : Tensor(shape, dimOrder) {
     init {
       Log.e("ExecuTorch", "$this. Please consider re-exporting the model with a proper return type")
     }
@@ -498,66 +523,73 @@ abstract class Tensor internal constructor(shape: LongArray) {
     // region fromBlob (array)
 
     @JvmStatic
-    fun fromBlobUnsigned(data: ByteArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlobUnsigned(data: ByteArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val byteBuffer = allocateByteBuffer(numel(shape).toInt())
       byteBuffer.put(data)
-      return Tensor_uint8(byteBuffer, shape)
+      return Tensor_uint8(byteBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: ByteArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: ByteArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val byteBuffer = allocateByteBuffer(numel(shape).toInt())
       byteBuffer.put(data)
-      return Tensor_int8(byteBuffer, shape)
+      return Tensor_int8(byteBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: IntArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: IntArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val intBuffer = allocateIntBuffer(numel(shape).toInt())
       intBuffer.put(data)
-      return Tensor_int32(intBuffer, shape)
+      return Tensor_int32(intBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: FloatArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: FloatArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val floatBuffer = allocateFloatBuffer(numel(shape).toInt())
       floatBuffer.put(data)
-      return Tensor_float32(floatBuffer, shape)
+      return Tensor_float32(floatBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: ShortArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: ShortArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val shortBuffer = allocateHalfBuffer(numel(shape).toInt())
       shortBuffer.put(data)
-      return Tensor_float16(shortBuffer, shape)
+      return Tensor_float16(shortBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: LongArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: LongArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val longBuffer = allocateLongBuffer(numel(shape).toInt())
       longBuffer.put(data)
-      return Tensor_int64(longBuffer, shape)
+      return Tensor_int64(longBuffer, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: DoubleArray, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: DoubleArray, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.size, shape)
       val doubleBuffer = allocateDoubleBuffer(numel(shape).toInt())
       doubleBuffer.put(data)
-      return Tensor_float64(doubleBuffer, shape)
+      return Tensor_float64(doubleBuffer, shape, dimOrder)
     }
 
     // endregion fromBlob (array)
@@ -565,7 +597,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
     // region fromBlob (buffer)
 
     @JvmStatic
-    fun fromBlobUnsigned(data: ByteBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlobUnsigned(data: ByteBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -573,11 +606,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_uint8(data, shape)
+      return Tensor_uint8(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: ByteBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: ByteBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -585,11 +619,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_int8(data, shape)
+      return Tensor_int8(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: IntBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: IntBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -597,11 +632,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_int32(data, shape)
+      return Tensor_int32(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: FloatBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: FloatBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -609,11 +645,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_float32(data, shape)
+      return Tensor_float32(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: ShortBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: ShortBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -621,11 +658,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_float16(data, shape)
+      return Tensor_float16(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: LongBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: LongBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -633,11 +671,12 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_int64(data, shape)
+      return Tensor_int64(data, shape, dimOrder)
     }
 
     @JvmStatic
-    fun fromBlob(data: DoubleBuffer, shape: LongArray): Tensor {
+    @JvmOverloads
+    fun fromBlob(data: DoubleBuffer, shape: LongArray, dimOrder: IntArray? = null): Tensor {
       checkShape(shape)
       checkShapeAndDataCapacityConsistency(data.capacity(), shape)
       checkArgument(data.isDirect, ERROR_MSG_DATA_BUFFER_MUST_BE_DIRECT)
@@ -645,7 +684,7 @@ abstract class Tensor internal constructor(shape: LongArray) {
           data.order() == ByteOrder.nativeOrder(),
           ERROR_MSG_DATA_BUFFER_MUST_HAVE_NATIVE_BYTE_ORDER,
       )
-      return Tensor_float64(data, shape)
+      return Tensor_float64(data, shape, dimOrder)
     }
 
     // endregion fromBlob (buffer)
@@ -697,19 +736,20 @@ abstract class Tensor internal constructor(shape: LongArray) {
     private fun nativeNewTensor(
         data: ByteBuffer,
         shape: LongArray,
+        dimOrder: IntArray,
         dtype: Int,
         hybridData: HybridData,
     ): Tensor {
       val tensor =
           when {
-            DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape)
-            DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape)
-            DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape)
-            DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape)
-            DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape)
-            DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape)
-            DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
-            else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
+            DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape, dimOrder)
+            DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape, dimOrder)
+            DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape, dimOrder)
+            DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape, dimOrder)
+            DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape, dimOrder)
+            DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape, dimOrder)
+            DType.INT8.jniCode == dtype -> Tensor_int8(data, shape, dimOrder)
+            else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype), dimOrder)
           }
       tensor.mHybridData = hybridData
       return tensor

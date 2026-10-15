@@ -47,6 +47,23 @@ class ModuleChannelsLast(torch.nn.Module):
         return (torch.ones(1, 2, 3, 4).to(memory_format=torch.channels_last),)
 
 
+class ModuleContiguous(torch.nn.Module):
+    """The module to serialize and execute."""
+
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x,
+            scale_factor=2,
+            mode="nearest",
+        )
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(1, 2, 3, 4),)
+
+
 class ModuleChannelsLastInDefaultOut(torch.nn.Module):
     """The module to serialize and execute."""
 

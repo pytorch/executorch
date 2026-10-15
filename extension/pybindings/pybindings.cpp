@@ -14,8 +14,10 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
+#include <vector>
 
 #include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
@@ -456,6 +458,57 @@ py::sequence normalize_inputs(const py::object& inputs) {
     throw py::type_error("Inputs must be a tensor buffer or a flat sequence");
   }
   return py::reinterpret_borrow<py::sequence>(inputs);
+}
+
+std::optional<at::MemoryFormat> expected_memory_format_for_input(
+    const MethodMeta& method_meta,
+    size_t input_index) {
+  if (input_index >= method_meta.num_inputs()) {
+    return std::nullopt;
+  }
+  auto input_tag = method_meta.input_tag(input_index);
+  if (!input_tag.ok() || input_tag.get() != Tag::Tensor) {
+    return std::nullopt;
+  }
+  auto tensor_meta = method_meta.input_tensor_meta(input_index);
+  if (!tensor_meta.ok()) {
+    return std::nullopt;
+  }
+
+  const auto dim_order = tensor_meta.get().dim_order();
+  if (executorch::runtime::is_contiguous_dim_order(
+          dim_order.data(), dim_order.size())) {
+    return at::MemoryFormat::Contiguous;
+  }
+  if (dim_order.size() == 4 &&
+      executorch::runtime::is_channels_last_dim_order(
+          dim_order.data(), dim_order.size())) {
+    return at::MemoryFormat::ChannelsLast;
+  }
+  return std::nullopt;
+}
+
+// Conversion copies the input; in-place updates to an unplanned input will
+// not be visible through the caller's tensor.
+at::Tensor convert_tensor_to_expected_memory_format(
+    const at::Tensor& tensor,
+    const MethodMeta& method_meta,
+    size_t input_index,
+    std::vector<at::Tensor>& owned_tensors) {
+  const auto expected_memory_format =
+      expected_memory_format_for_input(method_meta, input_index);
+  if (!expected_memory_format.has_value() || tensor.numel() == 0 ||
+      tensor.is_contiguous(expected_memory_format.value())) {
+    return tensor;
+  }
+
+  at::Tensor converted;
+  {
+    const at::NoGradGuard no_grad;
+    converted = tensor.contiguous(expected_memory_format.value());
+  }
+  owned_tensors.push_back(converted);
+  return converted;
 }
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
@@ -1117,6 +1170,8 @@ struct PyModule final {
     bool saw_torch = false;
 
 #ifndef USE_ATEN_LIB // Portable mode
+    std::vector<at::Tensor> converted_input_tensors;
+    converted_input_tensors.reserve(inputs_size);
     // So the ETensors and their metadata stay in scope for
     // Module->run_method.
     std::vector<torch::executor::TensorImpl> input_tensors;
@@ -1147,6 +1202,8 @@ struct PyModule final {
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         EValue evalue(at_tensor);
 #else
+        at_tensor = convert_tensor_to_expected_memory_format(
+            at_tensor, method_meta, i, converted_input_tensors);
         // convert at::Tensor to torch::executor::Tensor
         auto type =
             torch_to_executorch_scalar_type(at_tensor.options().dtype());
@@ -1261,6 +1318,9 @@ struct PyModule final {
     // Set up output storage before execution.
     allocate_output_tensors(method_name);
     auto outputs = module_->execute(method_name, cpp_inputs);
+#ifndef USE_ATEN_LIB
+    converted_input_tensors_ = std::move(converted_input_tensors);
+#endif
     THROW_IF_ERROR(
         outputs.error(),
         "Failed to execute method %s, error: 0x%" PRIx32,
@@ -1363,6 +1423,10 @@ struct PyModule final {
   // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
   std::vector<std::optional<TensorPtr>> output_tensors_;
+#ifndef USE_ATEN_LIB
+  // Converted inputs may be shared with Method until the next call.
+  std::vector<at::Tensor> converted_input_tensors_;
+#endif
 
   // Set debug buffer for potential event tracer.
   std::unique_ptr<torch::executor::ETDumpGen> setup_event_tracer(
@@ -1737,8 +1801,11 @@ struct PyMethod final {
     borrowed_inputs.reserve(inputs_size);
     bool saw_buffer = false;
     bool saw_torch = false;
+    const auto method_meta = method_->method_meta();
 
 #ifndef USE_ATEN_LIB // Portable mode
+    std::vector<at::Tensor> converted_input_tensors;
+    converted_input_tensors.reserve(inputs_size);
     // So the ETensors and their metadata stay in scope for
     // Module->set_inputs.
     std::vector<TensorPtr> input_tensors;
@@ -1758,8 +1825,16 @@ struct PyMethod final {
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
-        const auto input_meta = method_->method_meta().input_tensor_meta(i);
-        if (input_meta.ok() && !input_meta->is_memory_planned()) {
+        bool borrowed_input = true;
+#ifndef USE_ATEN_LIB
+        const size_t converted_count = converted_input_tensors.size();
+        at_tensor = convert_tensor_to_expected_memory_format(
+            at_tensor, method_meta, i, converted_input_tensors);
+        borrowed_input = converted_input_tensors.size() == converted_count;
+#endif
+        const auto input_meta = method_meta.input_tensor_meta(i);
+        if (borrowed_input && input_meta.ok() &&
+            !input_meta->is_memory_planned()) {
           borrowed_inputs.emplace_back(i, at_tensor);
         }
 #ifdef USE_ATEN_LIB
@@ -1840,8 +1915,8 @@ struct PyMethod final {
         saw_buffer = true;
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
-        validate_buffer_input(method_->method_meta(), i, *buffer);
-        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        validate_buffer_input(method_meta, i, *buffer);
+        const auto input_meta = method_meta.input_tensor_meta(i);
         if (input_meta.ok() && !input_meta->is_memory_planned() &&
             buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
@@ -1901,6 +1976,12 @@ struct PyMethod final {
           borrowed_inputs_.end(),
           borrowed_inputs.begin(),
           borrowed_inputs.end());
+#ifndef USE_ATEN_LIB
+      converted_input_tensors_.insert(
+          converted_input_tensors_.end(),
+          converted_input_tensors.begin(),
+          converted_input_tensors.end());
+#endif
       THROW_IF_ERROR(
           set_inputs_status,
           "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -1911,6 +1992,9 @@ struct PyMethod final {
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
     input_data_ptrs_ = std::move(input_data_ptrs);
     borrowed_inputs_ = std::move(borrowed_inputs);
+#ifndef USE_ATEN_LIB
+    converted_input_tensors_ = std::move(converted_input_tensors);
+#endif
   }
 
   void execute() {
@@ -2008,6 +2092,10 @@ struct PyMethod final {
   std::vector<TensorPtr> buffer_tensor_ptrs_;
   std::vector<const void*> input_data_ptrs_;
   std::vector<BorrowedInput> borrowed_inputs_;
+#ifndef USE_ATEN_LIB
+  // Converted inputs may be shared with Method until execute() runs.
+  std::vector<at::Tensor> converted_input_tensors_;
+#endif
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
