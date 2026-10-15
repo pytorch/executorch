@@ -101,6 +101,59 @@ assert runtime._tensor_output == "executorch"
             """
         )
 
+    @unittest.skipIf(
+        importlib.util.find_spec("torch") is not None, "torch is installed"
+    )
+    def test_output_policy_without_torch(self) -> None:
+        runtime_path = Path(runtime.__file__).resolve()
+        script = """
+import sys
+from pathlib import Path
+
+if sys.argv[2] == "torch":
+    try:
+        import _C
+    except ImportError:
+        pass
+    else:
+        raise AssertionError("An explicit Torch output request must fail without Torch")
+else:
+    import _C as runtime
+    import numpy as np
+    import os
+
+    assert Path(runtime.__file__).resolve() == Path(sys.argv[1]).resolve()
+    assert runtime._tensor_output == "executorch"
+    with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as source:
+        data = source.read()
+    module = runtime._load_for_executorch_from_buffer(data)
+    output = module((np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32)))[0]
+    assert isinstance(output, runtime.ExecuTorchResult)
+    np.testing.assert_array_equal(np.asarray(output), [3.0])
+    assert "torch" not in sys.modules
+"""
+        for policy in (None, "torch"):
+            with self.subTest(policy=policy):
+                environment = os.environ.copy()
+                environment.pop(TENSOR_OUTPUT_ENV, None)
+                if policy is not None:
+                    environment[TENSOR_OUTPUT_ENV] = policy
+                environment["PYTHONPATH"] = os.pathsep.join(
+                    filter(
+                        None, (str(runtime_path.parent), environment.get("PYTHONPATH"))
+                    )
+                )
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, str(runtime_path), str(policy)],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                self.assertEqual(
+                    completed.returncode, 0, completed.stdout + completed.stderr
+                )
+
     def test_executorch_result_array_copy_contract(self) -> None:
         if runtime._tensor_output != "executorch":
             self.skipTest("ExecuTorchResult output was not selected")

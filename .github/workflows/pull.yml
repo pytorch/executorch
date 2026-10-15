@@ -189,7 +189,7 @@ jobs:
         EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py \
-            PybindingsNoAtenTest.test_torch_output_error_mentions_executorch_opt_out
+            PybindingsNoAtenTest.test_output_policy_without_torch
         EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
           EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
