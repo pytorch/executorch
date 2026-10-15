@@ -9,6 +9,8 @@
 
 #include "arm_perf_monitor.h"
 
+using printf_size_t = unsigned long;
+
 #ifdef ETHOSU
 #include <ethosu_driver.h>
 #include <executorch/runtime/platform/log.h>
@@ -250,16 +252,21 @@ void StartMeasurements() {
   ethosu_ArmCycleCountStart = arm_pmu_cycles();
 }
 
-void StopMeasurements(int num_inferences) {
+void StopMeasurements(size_t num_inferences) {
 #if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
 #endif
+  if (num_inferences == 0) {
+    ET_LOG(Error, "Cannot report measurements without completed inferences");
+    return;
+  }
   uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
-  ET_LOG(Info, "NPU Inferences : %d", num_inferences);
+  ET_LOG(
+      Info, "NPU Inferences : %lu", static_cast<printf_size_t>(num_inferences));
   ET_LOG(
       Info,
       "NPU delegations: %" PRIu32 " (%.2f per inference)",
@@ -347,15 +354,15 @@ void StopMeasurements(int num_inferences) {
   ET_LOG(Info, "Ethos-U PMU report:");
   ET_LOG(
       Info,
-      "ethosu_pmu_cycle_cntr : % " PRIu64 " (%.2f per inference)",
+      "ethosu_pmu_cycle_cntr : %" PRIu64 " (%.2f per inference)",
       ethosu_pmuCycleCount,
       (double)ethosu_pmuCycleCount / num_inferences);
 
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ET_LOG(
         Info,
-        "ethosu_pmu_cntr%zd : %" PRIu64 " (%.2f per inference)",
-        i,
+        "ethosu_pmu_cntr%lu : %" PRIu64 " (%.2f per inference)",
+        static_cast<printf_size_t>(i),
         ethosu_pmuEventCounts[i],
         (double)ethosu_pmuEventCounts[i] / num_inferences);
   }
@@ -366,36 +373,36 @@ void StopMeasurements(int num_inferences) {
     const DelegateStats& stats = ethosu_delegateStats[delegate_id];
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu: %" PRIu64 " backend invocations, %" PRIu64
+        "Ethos-U delegate %lu: %" PRIu64 " backend invocations, %" PRIu64
         " NPU invocations",
-        delegate_id,
+        static_cast<printf_size_t>(delegate_id),
         stats.backend_invocations,
         stats.npu_invocations);
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu PMU cycles: %" PRIu64,
-        delegate_id,
+        "Ethos-U delegate %lu PMU cycles: %" PRIu64,
+        static_cast<printf_size_t>(delegate_id),
         stats.pmu_cycles);
     for (size_t event = 0; event < ethosu_pmuCountersUsed; ++event) {
       ET_LOG(
           Info,
-          "Ethos-U delegate %zu PMU counter %zu: %" PRIu64,
-          delegate_id,
-          event,
+          "Ethos-U delegate %lu PMU counter %lu: %" PRIu64,
+          static_cast<printf_size_t>(delegate_id),
+          static_cast<printf_size_t>(event),
           stats.pmu_events[event]);
     }
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
-        delegate_id,
+        "Ethos-U delegate %lu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+        static_cast<printf_size_t>(delegate_id),
         stats.input_copies.calls,
         stats.input_copies.bytes);
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu output copy: %" PRIu64 " calls, %" PRIu64
+        "Ethos-U delegate %lu output copy: %" PRIu64 " calls, %" PRIu64
         " bytes",
-        delegate_id,
+        static_cast<printf_size_t>(delegate_id),
         stats.output_copies.calls,
         stats.output_copies.bytes);
 #endif
@@ -403,8 +410,8 @@ void StopMeasurements(int num_inferences) {
   if (ethosu_delegateCapacityExceeded) {
     ET_LOG(
         Error,
-        "Ethos-U per-delegate profiling exceeded its capacity of %zu delegates",
-        ethosu_delegateStats.size());
+        "Ethos-U per-delegate profiling exceeded its capacity of %lu delegates",
+        static_cast<printf_size_t>(ethosu_delegateStats.size()));
   }
 #endif
 #if defined(ETHOSU55) || defined(ETHOSU65)
@@ -425,7 +432,7 @@ void StopMeasurements(int num_inferences) {
 void StartMeasurements() {}
 
 // cppcheck-suppress unusedFunction
-void StopMeasurements(int num_inferences) {
+void StopMeasurements(size_t num_inferences) {
   (void)num_inferences;
 }
 

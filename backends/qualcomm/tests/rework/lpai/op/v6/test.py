@@ -573,6 +573,30 @@ def test_embedding(request, kwargs):
     Embedding.test(request, kwargs)  # noqa: F405
 
 
+# DecomposeEmpty rewrites empty into full, which translates to a static tensor
+# in QNN; the int32 subtest additionally exercises a dtype cast, also supported
+# (see test_cast)
+@enumerate_activation_dtype([Tolerance()])
+@with_lpai_context
+def test_empty(request, kwargs):
+    Empty.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance()])
+@with_lpai_context
+def test_empty_strided(request, kwargs):
+    EmptyStrided.test(request, kwargs)  # noqa: F405
+
+
+# empty_strided() returns uninitialized memory, so the requested stride is
+# unobservable and DecomposeEmpty rewrites even a non-contiguous one into
+# full.default, keeping the graph fully delegated.
+@enumerate_activation_dtype([Tolerance()])
+@with_lpai_context
+def test_empty_strided_non_contiguous(request, kwargs):
+    EmptyStrided.test_non_contiguous(request, kwargs)  # noqa: F405
+
+
 # equal not in lpai_rules
 @enumerate_activation_dtype(
     [

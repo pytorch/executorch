@@ -431,7 +431,7 @@ arm_ensure_ethos_u_content("${{sdk}}" unused OFF SYSTEM_CONFIG {system_config})
         result = self.configure(
             'arm_ensure_ethos_u_content("${sdk}" unused ON)',
             "import sys\n"
-            'assert sys.argv[1:] == ["-c", "26.05.json", "fetch"]\n'
+            'assert sys.argv[1:] == ["-c", "26.08.json", "fetch"]\n'
             f"Path({json.dumps(SDK_FILES[-1])}).touch()\n",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -591,9 +591,9 @@ class TestEthosUSetupPatches(unittest.TestCase):
     def test_release_patch_stacks(self):
         source_sdk = ARM_ROOT.parents[1] / "examples/arm/arm-scratch/ethos-u"
         releases = (
-            ("", "878cc6ddfc57bf0b1ea30ee02e8b3e5d5bedd867"),
-            ("core_software", "e8411ce990d6b17efbb216a2cfddc15ab588e501"),
-            ("core_platform", "02d02901842fb26c077adc1061c2650d89f9f0e5"),
+            ("", "5ae010a083c6fa9f3a4d1d71b90db5742c87cc08"),
+            ("core_software", "b5ffdb34fd5ad8004231eeed647fbafe58760683"),
+            ("core_platform", "cec1a0ae3f05b2cf9a1518c7087cda96aed322a0"),
         )
         for name, revision in releases:
             source = source_sdk / name
@@ -678,7 +678,7 @@ fetch_ethos_u_content("{sdk}" "{ARM_ROOT.parents[1]}")
                     self.assertEqual(
                         int(count.stdout), len(list(patch_dir.glob("*.patch")))
                     )
-                manifest = json.loads((sdk / "26.05.json").read_text())
+                manifest = json.loads((sdk / "26.08.json").read_text())
                 self.assertEqual(
                     {entry["path"] for entry in manifest["externals"]},
                     {

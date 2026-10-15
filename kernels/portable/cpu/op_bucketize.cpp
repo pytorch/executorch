@@ -8,8 +8,6 @@
 
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
@@ -20,8 +18,6 @@ namespace {
 
 using executorch::runtime::isRealHBF16Type;
 using torch::executor::native::utils::SupportedTensorDtypes;
-using torch::executor::native::utils::internal::get_load_to_compute_fn;
-using torch::executor::native::utils::internal::load_to_compute_fn;
 
 constexpr int64_t BUCKETIZE_GRAIN_SIZE = 200;
 
@@ -30,7 +26,7 @@ int64_t cus_lower_bound(
     int64_t end,
     const CTYPE val,
     const char* bd,
-    load_to_compute_fn<CTYPE> bd_load_fn,
+    utils::internal::load_to_compute_fn<CTYPE> bd_load_fn,
     ssize_t bd_elem_size) {
   int64_t start = 0;
 
@@ -52,7 +48,7 @@ int64_t cus_upper_bound(
     int64_t end,
     const CTYPE val,
     const char* bd,
-    load_to_compute_fn<CTYPE> bd_load_fn,
+    utils::internal::load_to_compute_fn<CTYPE> bd_load_fn,
     ssize_t bd_elem_size) {
   int64_t start = 0;
 
@@ -79,13 +75,15 @@ void bucketize_tensor_impl(
     const Tensor& boundaries,
     bool right,
     Tensor& out) {
-  auto in_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-      context, self, SupportedTensorDtypes::REALHBF16);
+  auto in_load_fn =
+      utils::internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+          context, self, SupportedTensorDtypes::REALHBF16);
   const ssize_t in_size = self.element_size();
   auto in_data = reinterpret_cast<const char*>(self.const_data_ptr());
 
-  auto bd_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-      context, boundaries, SupportedTensorDtypes::REALHBF16);
+  auto bd_load_fn =
+      utils::internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+          context, boundaries, SupportedTensorDtypes::REALHBF16);
   const ssize_t bd_elem_size = boundaries.element_size();
   auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
   int64_t bd_end = boundaries.numel();
@@ -104,7 +102,7 @@ void bucketize_tensor_impl(
                     bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size)
               : cus_lower_bound(
                     bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size);
-          out_data[i] = pos;
+          out_data[i] = static_cast<CTYPE_OUT>(pos);
         }
       });
 
@@ -123,8 +121,9 @@ void bucketize_scalar_impl(
     Tensor& out) {
   CTYPE_COMPUTE compute_val = utils::scalar_to<CTYPE_COMPUTE>(self);
 
-  auto bd_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-      context, boundaries, SupportedTensorDtypes::REALHBF16);
+  auto bd_load_fn =
+      utils::internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+          context, boundaries, SupportedTensorDtypes::REALHBF16);
   const ssize_t bd_elem_size = boundaries.element_size();
   auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
   int64_t bd_end = boundaries.numel();
@@ -134,7 +133,7 @@ void bucketize_scalar_impl(
   int64_t pos = right
       ? cus_upper_bound(bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size)
       : cus_lower_bound(bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size);
-  out_data[0] = pos;
+  out_data[0] = static_cast<CTYPE_OUT>(pos);
 }
 
 // Performs check which are common to both tensor and scalar implementations:

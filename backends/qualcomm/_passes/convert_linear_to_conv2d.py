@@ -4,11 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import torch
 
 from executorch.backends.qualcomm._passes.utils import copy_meta
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
-from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    get_attr_from_target,
+    get_parameter,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -25,12 +30,47 @@ def _pad_list_to_4(lst):
 
 class ConvertLinearToConv2d(ExportPass):
     """
-    Replace aten.linear.default with equivalent 1x1 conv2d using call_function nodes.
+    Replace linear with an equivalent 1x1 convolution using call_function nodes.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    def __init__(
+        self, edge_program: Optional[torch.export.ExportedProgram] = None
+    ) -> None:
         super().__init__()
         self.edge_program = edge_program
+        self.aten_linear_target = torch.ops.aten.linear.default
+        self.edge_linear_target = exir_ops.edge.aten.linear.default
+        self._op_table = {
+            # (is_edge) -> {role: target}
+            True: {
+                "view": exir_ops.edge.aten.view_copy.default,
+                "permute": exir_ops.edge.aten.permute_copy.default,
+                "conv": exir_ops.edge.aten.convolution.default,
+                "linear": exir_ops.edge.aten.linear.default,
+            },
+            False: {
+                "view": torch.ops.aten.reshape.default,
+                "permute": torch.ops.aten.permute.default,
+                "conv": torch.ops.aten.conv2d.default,
+                "linear": torch.ops.aten.linear.default,
+            },
+        }
+
+    def _rewrite_module_stack(self, node, suffix: str):
+        """
+        Append a suffix to nn_module_stack so the quant recipe can differentiate
+        the converted node. Without this, the conv inherits the linear's
+        nn_module_stack verbatim, which makes regex targeting in the recipe
+        ambiguous (e.g. ``model.lm_head`` vs ``model.lm_head.conv``).
+        """
+        stack = node.meta.get("nn_module_stack")
+        if not stack:
+            return
+        stack = dict(stack)
+        last_key = next(reversed(stack))
+        path, qualname = stack[last_key]
+        stack[last_key] = (path + suffix, qualname)
+        node.meta["nn_module_stack"] = stack
 
     def _register_tensor(
         self,
@@ -79,47 +119,26 @@ class ConvertLinearToConv2d(ExportPass):
         self,
         graph_module: torch.fx.GraphModule,
         weight_placeholder_node: torch.fx.Node,
+        ops: dict,
     ) -> torch.fx.Node:
-        weight_val = get_parameter(weight_placeholder_node, self.edge_program)
+        weight_val = (
+            get_attr_from_target(graph_module, weight_placeholder_node.target)
+            if weight_placeholder_node.op == "get_attr"
+            else get_parameter(weight_placeholder_node, self.edge_program)
+        )
         assert weight_val is not None, "Cannot get the weight in linear node."
 
         weight_val = weight_val.reshape(*weight_val.shape, 1, 1).contiguous().detach()
         get_attr_node = self._register_tensor(
             graph_module, weight_placeholder_node, weight_val
         )
-        if list(weight_placeholder_node.users)[0].target in dq_ops:
-            # Scenarios where multiple linear nodes share the same weights, such as the embedding and lm_head in LLM.
-            for dq_node in list(weight_placeholder_node.users):
-                if (
-                    list(dq_node.users)[0].target
-                    is not exir_ops.edge.aten.linear.default
-                ):
-                    # Add a safety check to prevent replacing weights of non-linear nodes with updated weights.
-                    continue
-                # For shared weights, a dequantize node is inserted per user after quantization.
-                # Reuse the dequantize node after weight updates by replacing its input with the corresponding `get_attr` node.
-                dq_node.replace_input_with(weight_placeholder_node, get_attr_node)
+        for user in list(weight_placeholder_node.users):
+            if user.target is not ops["linear"]:
+                # Add a safety check to prevent replacing weights of non-linear nodes with updated weights.
+                continue
+            user.replace_input_with(weight_placeholder_node, get_attr_node)
 
-                fake_mode = detect_fake_mode(get_attr_node.meta["val"])
-                converter = fake_mode.fake_tensor_converter
-                dq_node.meta["val"] = converter.from_real_tensor(fake_mode, weight_val)
-
-                # Update block size for per-block quant
-                if dq_node.target is exir_ops.edge.torchao.dequantize_affine.default:
-                    new_args = list(dq_node.args)
-                    # pad block size
-                    new_args[1] = _pad_list_to_4(list(new_args[1]))
-                    dq_node.args = tuple(new_args)
-
-            return dq_node
-        else:
-            for user in list(weight_placeholder_node.users):
-                if user.target is not exir_ops.edge.aten.linear.default:
-                    # Add a safety check to prevent replacing weights of non-linear nodes with updated weights.
-                    continue
-                user.replace_input_with(weight_placeholder_node, get_attr_node)
-
-            return get_attr_node
+        return get_attr_node
 
     def call(self, graph_module: GraphModule):
         graph = graph_module.graph
@@ -128,14 +147,16 @@ class ConvertLinearToConv2d(ExportPass):
         preprocessed_linear_weights_set = set()
 
         for node in graph.nodes:
-            if node.target is exir_ops.edge.aten.linear.default:
+            if node.target in {self.aten_linear_target, self.edge_linear_target}:
+                is_edge = node.target == self.edge_linear_target
+                ops = self._op_table[is_edge]
                 input_node = node.args[0]
-                weight_placeholder_node = (
-                    # QDQ graph
-                    node.args[1].args[0]
-                    if node.args[1].target in dq_ops
-                    # FP graph
-                    else node.args[1]
+                weight_placeholder_node = node.args[1]
+                assert weight_placeholder_node.target not in dq_ops, (
+                    "ConvertLinearToConv2d does not handle quantized weights. "
+                    "A quantized flow must convert during the annotation "
+                    "pipeline, before q/dq nodes exist. Please set "
+                    "quantizer.set_convert_linear_to_conv2d(True)."
                 )
                 bias_arg = node.args[2] if len(node.args) > 2 else None
 
@@ -158,18 +179,16 @@ class ConvertLinearToConv2d(ExportPass):
                     cur_meta_val = cur_meta_val.reshape(shape)
                     reshape_node = self._create_node(
                         graph_module,
-                        exir_ops.edge.aten.view_copy.default,
+                        ops["view"],
                         (input_node, shape),
                         cur_meta_val,
                     )
 
-                # This pass is scheduled after the `FoldQDQ` pass. After copying the metadata,
-                # the quantization attributes are also propagated to the target node.
                 order = (0, 3, 1, 2) if rank == 4 else (0, 2, 3, 1)
                 cur_meta_val = cur_meta_val.permute(order)
                 permute_node = self._create_node(
                     graph_module,
-                    exir_ops.edge.aten.permute_copy.default,
+                    ops["permute"],
                     (reshape_node, order) if rank <= 3 else (input_node, order),
                     cur_meta_val,
                 )
@@ -177,14 +196,10 @@ class ConvertLinearToConv2d(ExportPass):
                 # Step 2: reshape weight
                 if weight_placeholder_node.name not in preprocessed_linear_weights_set:
                     weight_arg = self._reshape_weight_for_all_users(
-                        graph_module, weight_placeholder_node
+                        graph_module, weight_placeholder_node, ops
                     )
                     # Add the name of the preprocessed weights to the list.
-                    preprocessed_linear_weights_set.add(
-                        weight_arg.args[0].name
-                        if weight_arg.target in dq_ops
-                        else weight_arg.name
-                    )
+                    preprocessed_linear_weights_set.add(weight_arg.name)
                 else:
                     # Skip preprocessing as the weights have already been processed due to shared weights.
                     weight_arg = node.args[1]
@@ -198,14 +213,47 @@ class ConvertLinearToConv2d(ExportPass):
                 output_padding = [0, 0]
                 groups = 1
                 """
+                The two dialects take different argument lists:
+
                 Spec for `aten.convolution` (https://docs.pytorch.org/docs/stable/torch.compiler_ir.html)
                 convolution(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding,
                             SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups) -> Tensor
+
+                aten::conv2d(Tensor input, Tensor weight, Tensor? bias=None, SymInt[2] stride=[1, 1],
+                             SymInt[2] padding=[0, 0], SymInt[2] dilation=[1, 1], SymInt groups=1) -> Tensor
+
+                conv2d has no transposed / output_padding, so passing the 9-arg
+                convolution list to it raises "expected at most 7 argument(s)".
                 """
                 conv_args = (
-                    permute_node,
-                    weight_arg,
-                    bias_arg,
+                    (
+                        permute_node,
+                        weight_arg,
+                        bias_arg,
+                        stride,
+                        padding,
+                        dilation,
+                        transposed,
+                        output_padding,
+                        groups,
+                    )
+                    if is_edge
+                    else (
+                        permute_node,
+                        weight_arg,
+                        bias_arg,
+                        stride,
+                        padding,
+                        dilation,
+                        groups,
+                    )
+                )
+                # Shape inference always goes through the 9-arg convolution;
+                # conv2d is just the narrower spelling of the same op.
+                cur_meta_val = exir_ops.edge.aten.convolution.default(
+                    cur_meta_val,
+                    weight_meta_val,
+                    bias_meta_val,
                     stride,
                     padding,
                     dilation,
@@ -213,15 +261,9 @@ class ConvertLinearToConv2d(ExportPass):
                     output_padding,
                     groups,
                 )
-                cur_meta_val = exir_ops.edge.aten.convolution.default(
-                    cur_meta_val,
-                    weight_meta_val,
-                    bias_meta_val,
-                    *conv_args[3:],
-                )
                 conv_node = self._create_node(
                     graph_module,
-                    exir_ops.edge.aten.convolution.default,
+                    ops["conv"],
                     conv_args,
                     cur_meta_val,
                     meta_source_node=node,
@@ -235,7 +277,7 @@ class ConvertLinearToConv2d(ExportPass):
                 cur_meta_val = cur_meta_val.permute(order)
                 permute_node = self._create_node(
                     graph_module,
-                    exir_ops.edge.aten.permute_copy.default,
+                    ops["permute"],
                     (conv_node, order),
                     cur_meta_val,
                 )
@@ -244,7 +286,7 @@ class ConvertLinearToConv2d(ExportPass):
                     cur_meta_val = cur_meta_val.reshape(target_shape)
                     reshape_node = self._create_node(
                         graph_module,
-                        exir_ops.edge.aten.view_copy.default,
+                        ops["view"],
                         (permute_node, target_shape),
                         cur_meta_val,
                     )
@@ -253,6 +295,7 @@ class ConvertLinearToConv2d(ExportPass):
                     node.replace_all_uses_with(permute_node)
 
                 graph.erase_node(node)
+                self._rewrite_module_stack(conv_node, ".conv")
 
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

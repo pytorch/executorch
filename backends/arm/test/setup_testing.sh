@@ -71,6 +71,8 @@ ops_list_u55=(
     aten::arange.start_out
     aten::eq.Tensor_out
     aten::logical_not.out
+    aten::split_with_sizes_copy.out
+    aten::bmm.out
     dim_order_ops::_clone_dim_order.out
     dim_order_ops::_to_dim_order_copy.out
     "${ops_list_quantized_decomposed[@]}"

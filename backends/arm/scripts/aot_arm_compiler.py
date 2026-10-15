@@ -983,14 +983,11 @@ def _to_edge_cortex_m(
     edge = to_edge_transform_and_lower(
         exported_program,
         compile_config=cortex_m_edge_compile_config(),
+        transform_passes=CortexMPassManager(
+            target_config=target_config,
+            use_explicit_layout=args.cortex_m_explicit_layout,
+        ),
     )
-
-    pass_manager = CortexMPassManager(
-        edge.exported_program(),
-        target_config=target_config,
-        use_explicit_layout=args.cortex_m_explicit_layout,
-    )
-    edge._edge_programs["forward"] = pass_manager.transform()
 
     return model_quant, edge, example_inputs
 

@@ -127,6 +127,8 @@ def _assert_profiling(
 def test_aot_example__mobilenet_v2():
     """Test that mobilenet can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
 
+    num_random_samples = 1
+
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
         sys.executable,
@@ -139,6 +141,8 @@ def test_aot_example__mobilenet_v2():
         "--target",
         "imxrt700",
         "--use_random_dataset",  # Avoid downloading the dataset.
+        "--num_random_samples",
+        str(num_random_samples),
     ]
 
     # Output file will be created in executorch_root
@@ -152,6 +156,8 @@ def test_aot_example__mobilenet_v2():
 def test_aot_example__mobilenet_v2__profiling():
     """Test that mobilenet_v2 can be lowered to Neutron backend via `aot_neutron_compile.py`, all ops are delegated,
     the output model is profilable and ETRecord is generated properly."""
+
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -168,6 +174,8 @@ def test_aot_example__mobilenet_v2__profiling():
         "--use_channels_last_dim_order",
         "--use_profiling",  # Generate profilable model and create ETRecord
         "--use_random_dataset",  # Avoid downloading the dataset.
+        "--num_random_samples",
+        str(num_random_samples),
     ]
 
     # Output files will be created in executorch_root.
@@ -187,8 +195,7 @@ def test_aot_example__mlperf_tiny_ic():
     """Test that the MLPerf Tiny image classification model (ResNet-8) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     # The calibration data of this model is generated randomly, so no dataset download is needed.
@@ -223,8 +230,7 @@ def test_aot_example__mlperf_tiny_ic__profiling():
     """Test that the MLPerf Tiny image classification model (ResNet-8) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     # Channels-last is buggy, so channels-first is used instead
@@ -266,8 +272,7 @@ def test_aot_example__mlperf_tiny_kws():
     """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     cmd = [
@@ -299,8 +304,7 @@ def test_aot_example__mlperf_tiny_kws__profiling():
     """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -328,6 +332,150 @@ def test_aot_example__mlperf_tiny_kws__profiling():
     etrecord_file = Path(
         os.path.join(
             EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_keyword_spotting_etrecord.bin"
+        )
+    )
+
+    with _cleanup_generated_files(pte_file, etrecord_file):
+        result = _run_compile(cmd)
+        _assert_profiling(result, pte_file, etrecord_file)
+
+
+def test_aot_example__mlperf_tiny_ad():
+    """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    num_random_samples = 1
+
+    # Run the compilation script as a module (like run_aot_example.sh does).
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_anomaly_detection",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    # Output file will be created in executorch_root
+    pte_file = Path(
+        os.path.join(EXECUTORCH_ROOT, "mlperf_tiny_anomaly_detection_nxp_delegate.pte")
+    )
+
+    with _cleanup_generated_files(pte_file):
+        result = _run_compile(cmd)
+        _assert_delegation(result, pte_file)
+
+
+def test_aot_example__mlperf_tiny_ad__profiling():
+    """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and profiling works as intended."""
+
+    num_random_samples = 1
+
+    # Run the compilation script as a module (like run_aot_example.sh does)
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_anomaly_detection",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--remove-quant-io-ops",
+        "--use_profiling",  # Generate profilable model and create ETRecord
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    pte_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "mlperf_tiny_anomaly_detection_nxp_delegate_profile.pte"
+        )
+    )
+    etrecord_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_anomaly_detection_etrecord.bin"
+        )
+    )
+
+    with _cleanup_generated_files(pte_file, etrecord_file):
+        result = _run_compile(cmd)
+        _assert_profiling(result, pte_file, etrecord_file)
+
+
+def test_aot_example__mlperf_tiny_vww():
+    """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    num_random_samples = 1
+
+    # Run the compilation script as a module (like run_aot_example.sh does).
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_visual_wake_words",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    # Output file will be created in executorch_root
+    pte_file = Path(
+        os.path.join(EXECUTORCH_ROOT, "mlperf_tiny_visual_wake_words_nxp_delegate.pte")
+    )
+
+    with _cleanup_generated_files(pte_file):
+        result = _run_compile(cmd)
+        _assert_delegation(result, pte_file)
+
+
+def test_aot_example__mlperf_tiny_vww__profiling():
+    """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and profiling works as intended."""
+
+    num_random_samples = 1
+
+    # Run the compilation script as a module (like run_aot_example.sh does)
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_visual_wake_words",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--remove-quant-io-ops",
+        "--use_profiling",  # Generate profilable model and create ETRecord
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    pte_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "mlperf_tiny_visual_wake_words_nxp_delegate_profile.pte"
+        )
+    )
+    etrecord_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_visual_wake_words_etrecord.bin"
         )
     )
 

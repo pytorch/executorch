@@ -184,6 +184,11 @@ class LiftConstantScalarOperands(ExportPass):
             if (
                 n.op != "call_function"
                 or isinstance(n.target, (BuiltinMethodType, BuiltinFunctionType))
+                # Higher-order ops (e.g. wrap_with_set_grad_enabled, emitted for a
+                # torch.no_grad block) carry no schema, and lifting reads
+                # node.target._schema. Test for the schema rather than the
+                # OpOverload type so EdgeOpOverload targets keep lifting.
+                or not hasattr(n.target, "_schema")
                 or n.target in SKIP_LIFT_OPS
             ):
                 continue

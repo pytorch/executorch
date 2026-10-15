@@ -78,7 +78,8 @@ enum InputKind : byte {
 // Classifies a graph output. USER_OUTPUT is a real result; the mutation kinds
 // mark an output value that writes back into a persistent buffer or a user input
 // (its OutputSpec.target names the mutated buffer fqn / user-input name). A
-// runtime returns USER_OUTPUTs and applies the mutations as state updates.
+// runtime returns USER_OUTPUTs and applies every mutation as a state update, or
+// rejects the program; it never drops one.
 enum OutputKind : byte {
     USER_OUTPUT = 0,
     BUFFER_MUTATION = 1,
@@ -115,10 +116,17 @@ enum OutputValueKind : byte {
 // axis). Scales (and, if asymmetric, zero-points) are shipped out-of-line via the
 // external constant file, keyed by data_key (empty zero_point_data_key means symmetric).
 // Their shapes derive from the weight shape and group_size, but their dtypes do not,
-// so they are recorded here. The dequant result dtype is the op output value's
-// TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
-// TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
-// the logical shape and bitwidth, not prod(sizes).
+// so they are recorded here. The qdata itself (the enclosing TensorMeta) uses
+// dtype=BYTE with logical sizes. Sub-byte packing is flat over the elements in
+// memory order with no per-row padding, so the packed byte length is
+// ceil(numel * bitwidth / 8), not prod(sizes). The scale and zero-point keys must
+// be read-only stored constants of every method that uses the quantized tensor,
+// whether that tensor is itself a constant or a graph value such as a user input.
+//
+// A quantized tensor may feed an explicit dequant op, whose output TensorMeta.dtype
+// gives the result dtype, or it may be a direct op operand. A direct operand denotes
+// its decoded value with dtype scale_dtype; an engine must lower the consuming op,
+// materialize the decode, or reject the program.
 table AffineGroup {
     scale_data_key: string (required);
     scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
@@ -154,9 +162,10 @@ table QuantSpec {
 // Tensor metadata
 // =============================================================================
 
-// A tensor dimension as a range. Static: min == max. Dynamic: min < max, or max < 0
-// for unbounded. No symbols; the runtime uses concrete shapes at invocation and
-// plans memory from max.
+// A tensor dimension as a range. Static: min == max. Dynamic: min < max;
+// max < 0 denotes an unbounded upper limit. The runtime uses concrete shapes
+// at invocation, plans bounded tensors from max, and rejects unbounded ranges.
+// A bounded input size is valid iff min <= size <= max.
 table Dim {
     min: long;
     max: long = -1;
@@ -169,7 +178,10 @@ table TensorMeta {
     dtype: ScalarType;
     sizes: [Dim];
     // Memory layout as a permutation of dim indices, outermost first (contiguous is
-    // [0, 1, ..., n-1]). Independent of the sizes. Empty means contiguous.
+    // [0, 1, ..., n-1]). Independent of the sizes. Empty means contiguous. For
+    // serialized constants, graph inputs, and user outputs it is the layout of the
+    // stored or exchanged bytes; an engine honors it or rejects the program. For
+    // any other value it is a hint the engine may ignore.
     dim_order: [int];
     // Absent means the tensor is not quantized.
     quant: QuantSpec;
@@ -318,6 +330,12 @@ table Output {
     names: [string];
 }
 
+// A CALL_FUNCTION node has the semantics of its ATen (or custom) op. Assert ops
+// left in the graph are part of those semantics: an engine evaluates them or
+// rejects the program. An index outside the range accepted by the op may raise
+// an execution error and otherwise has unspecified results, but must never
+// access memory outside a tensor's storage. Negative-index handling follows the
+// referenced ATen operator.
 table Node {
     // fx node name (SSA name of this node's output).
     name: string (required);

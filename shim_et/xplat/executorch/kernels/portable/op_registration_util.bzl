@@ -417,9 +417,7 @@ ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            ":scalar_utils"
+            ":scalar_utils",
         ],
     ),
     op_target(

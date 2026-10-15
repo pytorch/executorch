@@ -15,8 +15,13 @@ import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.library import cmsis_nn
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.utils import (
     build_activation_lut,
     is_foldable_alpha,
     quantize_multiplier_aot,
@@ -24,11 +29,6 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     SHIFT_INT8,
     to_physical_order,
 )
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
-)
-from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,

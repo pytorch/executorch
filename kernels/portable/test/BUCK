@@ -18,6 +18,7 @@ fbcode_target(
     visibility = ["PUBLIC"],
     deps = [
         "//executorch/extension/aten_util:aten_bridge",
+        "//executorch/kernels/portable/cpu:op_bucketize",
         "//executorch/kernels/portable/cpu:op_grid_sampler_2d",
         "//executorch/kernels/portable/cpu:op_upsample_bilinear2d",
         "//executorch/kernels/portable/cpu:op_upsample_bilinear2d_aa",

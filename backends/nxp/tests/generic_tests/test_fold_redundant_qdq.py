@@ -7,9 +7,6 @@
 import torch
 
 from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
-from executorch.backends.nxp.edge_passes.fold_redundant_qdq_pass import (
-    FoldRedundantDequantizeQuantizePass,
-)
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 
 
@@ -53,33 +50,10 @@ INPUT_SHAPE = (1, 4, 8, 8)
 
 
 def test_fold_pass_present_merges_into_single_delegate():
-    # The fold pass is part of the default NeutronEdgePassManager.
+    # The fold pass runs during to_edge, before Neutron partitioning.
     edge_program = to_quantized_edge_program(ConvDropoutConvModule(), INPUT_SHAPE)
 
     num_delegates = _count_delegates(edge_program)
     assert (
         num_delegates == 1
     ), f"expected a single delegate with the fold pass, got {num_delegates}"
-
-
-def test_fold_pass_removes_redundant_qdq():
-    graph = torch.fx.Graph()
-    quantized_input = graph.placeholder("quantized_input")
-    qparams = (0.25, 3, -128, 127, torch.int8)
-    dequantize = graph.call_function(
-        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
-        args=(quantized_input, *qparams),
-    )
-    quantize = graph.call_function(
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        args=(dequantize, *qparams),
-    )
-    graph.output(quantize)
-    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
-
-    result = FoldRedundantDequantizeQuantizePass().run(graph_module)
-
-    assert result.modified
-    remaining_nodes = list(result.graph_module.graph.nodes)
-    assert [node.op for node in remaining_nodes] == ["placeholder", "output"]
-    assert remaining_nodes[-1].args == (quantized_input,)

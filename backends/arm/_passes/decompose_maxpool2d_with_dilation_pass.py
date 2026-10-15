@@ -69,7 +69,7 @@ class DecomposeMaxPool2dPass(ArmOpTargetedPass):
         # Normalize missing trailing args to their defaults
         x = args[0]
         kernel_size = args[1]
-        stride = args[2]
+        stride = args[2] if len(args) >= 3 and args[2] else kernel_size
         padding = args[3] if len(args) >= 4 else 0
         dilation = args[4] if len(args) >= 5 else 1
         ceil_mode = args[5] if len(args) == 6 else False

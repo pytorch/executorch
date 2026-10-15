@@ -16,6 +16,10 @@
 
 #include <gtest/gtest.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <executorch/extension/threadpool/threadpool_guard.h>
+#endif
+
 using namespace ::testing;
 using executorch::runtime::testing::TensorFactory;
 
@@ -362,6 +366,56 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
   executorch::aten::Tensor ret = op_scaled_dot_product_attention(
       query, key, value, attn_mask, dropout_p, is_causal, scale, out);
   EXPECT_TENSOR_CLOSE(ret, ret_expected);
+}
+
+TEST(OpScaledDotProductAttentionTest, CausalMatchesExplicitMask) {
+#ifdef ET_USE_THREADPOOL
+  executorch::extension::threadpool::NoThreadPoolGuard guard;
+#endif
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  constexpr int32_t head_dim = 4;
+  for (const int32_t sequence_length : {32, 529}) {
+    SCOPED_TRACE(sequence_length);
+    const std::vector<int32_t> shape = {1, 1, sequence_length, head_dim};
+    std::vector<float> query_data(sequence_length * head_dim);
+    std::vector<float> key_data(query_data.size());
+    std::vector<float> value_data(query_data.size());
+    for (size_t i = 0; i < query_data.size(); ++i) {
+      query_data[i] = (static_cast<int>(i % 13) - 6) * 0.13f;
+      key_data[i] = (static_cast<int>(i % 17) - 8) * 0.07f;
+      value_data[i] = (static_cast<int>(i % 19) - 9) * 0.11f;
+    }
+    auto query = tfFloat.make(shape, query_data);
+    auto key = tfFloat.make(shape, key_data);
+    auto value = tfFloat.make(shape, value_data);
+    std::vector<float> mask_data(sequence_length * sequence_length);
+    for (int32_t row = 0; row < sequence_length; ++row) {
+      for (int32_t col = row + 1; col < sequence_length; ++col) {
+        mask_data[row * sequence_length + col] =
+            -std::numeric_limits<float>::infinity();
+      }
+    }
+    auto mask = tfFloat.make({sequence_length, sequence_length}, mask_data);
+    auto expected = tfFloat.zeros(shape);
+    op_scaled_dot_product_attention(
+        query, key, value, mask, 0.0, false, 1.0, expected);
+
+    auto zero_mask = tfFloat.zeros({sequence_length, sequence_length});
+    for (const bool use_attn_mask : {false, true}) {
+      SCOPED_TRACE(use_attn_mask);
+      auto actual = tfFloat.zeros(shape);
+      op_scaled_dot_product_attention(
+          query,
+          key,
+          value,
+          use_attn_mask ? std::make_optional(zero_mask) : std::nullopt,
+          0.0,
+          true,
+          1.0,
+          actual);
+      EXPECT_TENSOR_CLOSE(actual, expected);
+    }
+  }
 }
 
 TEST(OpScaledDotProductAttentionTest, CorrectnessTest_13) {
@@ -783,6 +837,60 @@ void test_reduced_precision_matches_float(double rtol, double atol) {
 TEST(OpScaledDotProductAttentionTest, BFloat16MatchesFloat) {
   test_reduced_precision_matches_float<executorch::aten::ScalarType::BFloat16>(
       2e-2, 2e-2);
+}
+
+TEST(OpScaledDotProductAttentionTest, BFloat16PrefillTrailingQueryBlocks) {
+  using executorch::aten::BFloat16;
+  TensorFactory<executorch::aten::ScalarType::BFloat16> tf_bfloat16;
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  constexpr int32_t kHeadSize = 8;
+  constexpr int32_t kKeys = 513;
+
+  // These sequences use 64-query blocks and leave 1-4 queries in the tail.
+  // A second KV block also exercises accumulation into the first block's
+  // result.
+  for (const int32_t queries : {193, 194, 195, 196}) {
+    SCOPED_TRACE(::testing::Message() << "queries=" << queries);
+    auto query = tf_bfloat16.zeros({1, 1, queries, kHeadSize});
+    auto key = tf_bfloat16.zeros({1, 1, kKeys, kHeadSize});
+    auto value = tf_bfloat16.zeros({1, 1, kKeys, kHeadSize});
+    auto out = tf_bfloat16.zeros({1, 1, queries, kHeadSize});
+    auto query_float = tf_float.zeros({1, 1, queries, kHeadSize});
+    auto key_float = tf_float.zeros({1, 1, kKeys, kHeadSize});
+    auto value_float = tf_float.zeros({1, 1, kKeys, kHeadSize});
+    auto expected = tf_float.zeros({1, 1, queries, kHeadSize});
+    for (int32_t i = 0; i < queries * kHeadSize; ++i) {
+      const float v = static_cast<float>((i * 7) % 31 - 15) / 16.0f;
+      query.mutable_data_ptr<BFloat16>()[i] = BFloat16(v);
+      query_float.mutable_data_ptr<float>()[i] = v;
+    }
+    for (int32_t i = 0; i < kKeys * kHeadSize; ++i) {
+      const float k = static_cast<float>((i * 11) % 29 - 14) / 16.0f;
+      const float v = static_cast<float>((i * 13) % 37 - 18) / 16.0f;
+      key.mutable_data_ptr<BFloat16>()[i] = BFloat16(k);
+      key_float.mutable_data_ptr<float>()[i] = k;
+      value.mutable_data_ptr<BFloat16>()[i] = BFloat16(v);
+      value_float.mutable_data_ptr<float>()[i] = v;
+    }
+    op_scaled_dot_product_attention(
+        query, key, value, std::nullopt, 0.0, false, std::nullopt, out);
+    op_scaled_dot_product_attention(
+        query_float,
+        key_float,
+        value_float,
+        std::nullopt,
+        0.0,
+        false,
+        std::nullopt,
+        expected);
+    for (int32_t i = 0; i < queries * kHeadSize; ++i) {
+      EXPECT_NEAR(
+          static_cast<float>(out.const_data_ptr<BFloat16>()[i]),
+          expected.const_data_ptr<float>()[i],
+          2e-3f)
+          << "index=" << i;
+    }
+  }
 }
 
 TEST(OpScaledDotProductAttentionTest, HalfMatchesFloat) {

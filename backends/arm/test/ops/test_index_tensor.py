@@ -11,6 +11,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -950,3 +951,19 @@ def test_index_tensor_u55_INT_constant_symbolic_dim_not_delegated():
     }
     assert exir_ops.edge.aten.index.Tensor in targets
     assert torch.ops.higher_order.executorch_call_delegate not in targets
+
+
+@common.XfailIfNoCorstone320
+def test_index_tensor_u85_INT():
+    test_input = (
+        torch.rand(5, 2),
+        (torch.arange(5, dtype=torch.int32),),
+    )
+
+    with torch.no_grad():
+        pipeline = EthosU85PipelineINT[input_params](
+            IndexTensor(),
+            test_input,
+            IndexTensorTestCommon.aten_op,
+        )
+        pipeline.run()

@@ -35,13 +35,19 @@ from executorch.backends.cadence.aot.utils import (
 )
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.backends.test.program_builder import ProgramBuilder
-from executorch.exir import EdgeProgramManager, ExportedProgram
+from executorch.exir import (
+    EdgeProgramManager,
+    ExecutorchBackendConfig,
+    ExportedProgram,
+    to_edge,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     collect_specs_from_nodes,
     update_all_tensors_lifetime,
 )
 from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
 from parameterized import parameterized
@@ -124,6 +130,41 @@ class TestMemPlanningPasses(unittest.TestCase):
         )  # Align data on a 16 byte boundary
         self.assertEqual(peak_usage, expected_peak_usage)
 
+    @parameterized.expand([(0,), (1,)])
+    def test_mutable_buffer_with_unallocated_io(self, mem_algo: int) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache", torch.ones(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache.add_(x)
+                return self.cache + 1
+
+        program = to_edge(
+            torch.export.export(Model(), (torch.ones(4),), strict=True)
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=CadenceMemoryPlanning(
+                    MemoryConfig([0, 0, 0, 1024]),
+                    CompileMode.MINIMAL,
+                    mem_algo=mem_algo,
+                    alloc_graph_input=False,
+                    alloc_graph_output=False,
+                )
+            )
+        )
+        cache = next(
+            node
+            for node in program.exported_program().graph.nodes
+            if node.target == "b_cache"
+        )
+        self.assertEqual(cache.meta["spec"].mem_id, 4)
+        self.assertIsNotNone(cache.meta["spec"].mem_offset)
+        plan = program.executorch_program.execution_plan[0]
+        for value_id in (*plan.inputs, *plan.outputs):
+            self.assertIsNone(plan.values[value_id].val.allocation_info)
+
     def test_zero_memory_when_graph_io_is_not_allocated(self) -> None:
         class ZeroMem(torch.nn.Module):
             def forward(self, x):
@@ -152,6 +193,14 @@ class TestMemPlanningPasses(unittest.TestCase):
             mem_constraints=None,
         )
         self.assertEqual(peak_usage, 0)
+
+
+def specs_of(node: torch.fx.Node) -> list[object]:
+    """A node's spec meta is a single TensorSpec, or a list for multi-output ops."""
+    spec = node.meta.get("spec")
+    if spec is None:
+        return []
+    return list(spec) if isinstance(spec, (list, tuple)) else [spec]
 
 
 class TestMemTransform(unittest.TestCase):
@@ -272,6 +321,44 @@ class TestMemTransform(unittest.TestCase):
             additional_constraint_gen_passes=additional_constraint_gen_passes,
         )(graph_module).graph_module
 
+    # Runs planning but stops short of the cleanup passes that CadenceMemoryPlanning
+    # runs afterwards, so the nop nodes are still in the graph.
+    #
+    # The nop ops are the only record of which tensors were concatenated or
+    # sliced into which, so they are what the placement assertions below read
+    # the offsets from. RemoveNopOpsPass erases them, and once erased there is
+    # nothing left to walk - verify_nop_memory_alloc would iterate over an
+    # empty set and pass vacuously. Placement is verified here; that the nops
+    # are subsequently erased is verified separately.
+    def run_memory_planning_only(
+        self,
+        original: GraphModule,
+        mode: CompileMode = CompileMode.DEFAULT,
+        mem_algo: int = 1,  # greedy_by_size_for_offset_calculation_with_hierarchy
+        alloc_graph_input: bool = True,
+        alloc_graph_output: bool = True,
+        memory_config: Optional[MemoryConfig] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
+    ) -> GraphModule:
+        if memory_config is None:
+            memory_config = get_default_memory_config()
+        graph_module = SpecPropPass().call(original).graph_module
+        planner = CadenceMemoryPlanning(
+            memory_config,
+            mode=mode,
+            mem_algo=mem_algo,
+            alloc_graph_input=alloc_graph_input,
+            alloc_graph_output=alloc_graph_output,
+            additional_constraint_gen_passes=additional_constraint_gen_passes,
+        )
+        MemoryPlanningPass(
+            planner.algo,
+            allow_lifetime_and_storage_overlap=True,
+            alloc_graph_input=alloc_graph_input,
+            alloc_graph_output=alloc_graph_output,
+        ).run(graph_module, None)
+        return graph_module
+
     @expand(
         [
             [
@@ -312,7 +399,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([graph_output])
         original = builder.get_graph_module()
 
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, alloc_graph_input=alloc_graph_input
         )
         graph_module.graph.eliminate_dead_code()
@@ -323,6 +410,119 @@ class TestMemTransform(unittest.TestCase):
             self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
             self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 0)
         self.verify_nop_memory_alloc(graph_module)
+
+    def test_cat_nop_is_erased_after_memory_planning(self) -> None:
+        """The nop op must not survive into the emitted program.
+
+        Placement is asserted elsewhere against the pre-removal graph; this
+        covers the other half, that RemoveNopOpsPass then takes the
+        instruction out entirely rather than leaving a call that does nothing.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.ones(3, 6))
+        y = builder.placeholder("y", torch.ones(2, 6))
+        pre_created_output = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([5, 6], 0.0),
+            kwargs={"dtype": torch.float32},
+        )
+        graph_output = builder.call_operator(
+            op=torch.ops.aten.cat.out,
+            args=([x, y],),
+            kwargs={"dim": 0, "out": pre_created_output},
+        )
+        builder.output([graph_output])
+        original = builder.get_graph_module()
+
+        # Planning alone converts the cat to its nop form and leaves it there.
+        planned = self.run_memory_planning_only(original, alloc_graph_input=True)
+        planned.graph.eliminate_dead_code()
+        self.assertEqual(count_node(planned, torch.ops.aten._cat_nop.out), 1)
+
+        # The full pipeline erases it, and does not fall back to a real cat.
+        graph_module = self.run_memory_planning(original, alloc_graph_input=True)
+        graph_module.graph.eliminate_dead_code()
+        self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 0)
+        self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
+
+    def test_erasing_nops_preserves_placement(self) -> None:
+        """Erasing the nodes must not disturb the offsets planning assigned."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.ones(3, 6))
+        y = builder.placeholder("y", torch.ones(2, 6))
+        pre_created_output = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([5, 6], 0.0),
+            kwargs={"dtype": torch.float32},
+        )
+        graph_output = builder.call_operator(
+            op=torch.ops.aten.cat.out,
+            args=([x, y],),
+            kwargs={"dim": 0, "out": pre_created_output},
+        )
+        builder.output([graph_output])
+        original = builder.get_graph_module()
+
+        def offsets(gm: GraphModule) -> dict[str, tuple[int, int]]:
+            out = {}
+            for node in gm.graph.nodes:
+                for i, spec in enumerate(specs_of(node)):
+                    if getattr(spec, "mem_offset", None) is not None:
+                        out[f"{node.name}[{i}]"] = (spec.mem_id, spec.mem_offset)
+            return out
+
+        before = offsets(
+            self.run_memory_planning_only(original, alloc_graph_input=True)
+        )
+        after = offsets(self.run_memory_planning(original, alloc_graph_input=True))
+
+        # The erased node itself is gone; everything still present must be
+        # placed exactly where planning put it.
+        self.assertGreater(len(after), 0, "no spec carried a placement to check")
+        for name, placement in after.items():
+            self.assertIn(name, before)
+            self.assertEqual(placement, before[name], f"{name} moved")
+
+    def test_lifetimes_are_valid_after_erasing_nops(self) -> None:
+        """Lifetimes are node indices, so erasing nodes can leave them dangling.
+
+        The peak-memory reporter and the activation profiler both index a list
+        by lifetime end, and raised IndexError before RemoveNopOpsPass
+        refreshed them.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.ones(3, 6))
+        y = builder.placeholder("y", torch.ones(2, 6))
+        pre_created_output = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([5, 6], 0.0),
+            kwargs={"dtype": torch.float32},
+        )
+        graph_output = builder.call_operator(
+            op=torch.ops.aten.cat.out,
+            args=([x, y],),
+            kwargs={"dim": 0, "out": pre_created_output},
+        )
+        builder.output([graph_output])
+        original = builder.get_graph_module()
+
+        graph_module = self.run_memory_planning(original, alloc_graph_input=True)
+        num_nodes = len(graph_module.graph.nodes)
+        checked = 0
+        for node in graph_module.graph.nodes:
+            for spec in specs_of(node):
+                if getattr(spec, "lifetime", None) is None or spec.lifetime[0] is None:
+                    continue
+                start, end = spec.lifetime
+                self.assertLess(
+                    end,
+                    num_nodes,
+                    f"{node.name} lifetime {spec.lifetime} runs past the "
+                    f"{num_nodes}-node graph",
+                )
+                self.assertLessEqual(start, end)
+                checked += 1
+        self.assertGreater(checked, 0, "no spec carried a lifetime to check")
 
     # Returns a GraphModule with the following structure:
     # "add_add_cat_model" : cat(x + 123, y + 456)
@@ -414,7 +614,7 @@ class TestMemTransform(unittest.TestCase):
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
         )
-        graph_module = self.run_memory_planning(original)
+        graph_module = self.run_memory_planning_only(original)
         graph_module.graph.eliminate_dead_code()
         # Assert that cat op is optimized away
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
@@ -444,7 +644,7 @@ class TestMemTransform(unittest.TestCase):
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
         )
-        graph_module = self.run_memory_planning(original)
+        graph_module = self.run_memory_planning_only(original)
         graph_module.graph.eliminate_dead_code()
         # Assert that cat op is not optimized away, since the concat is not along the outermost dim.
         # The first dimension is 2, but all dims before cat_dim should be == 1.
@@ -483,7 +683,7 @@ class TestMemTransform(unittest.TestCase):
         original = self.get_graph_module(
             "add_add_cat_add_model", x_shape, y_shape, concated_shape, concat_dim
         )
-        graph_module = self.run_memory_planning(original)
+        graph_module = self.run_memory_planning_only(original)
         graph_module.graph.eliminate_dead_code()
 
         # Assert that cat op is optimized away only if its arguments offsets are multiple of 8 bytes.
@@ -534,7 +734,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([graph_output])
         original = builder.get_graph_module()
 
-        graph_module = self.run_memory_planning(original, alloc_graph_input=False)
+        graph_module = self.run_memory_planning_only(original, alloc_graph_input=False)
         graph_module.graph.eliminate_dead_code()
 
         # Assert that cat op is optimized away.
@@ -605,7 +805,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([cat])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=alloc_graph_input
         )
         graph_module.graph.eliminate_dead_code()
@@ -653,7 +853,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, alloc_graph_input=False)
+        graph_module = self.run_memory_planning_only(original, alloc_graph_input=False)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
             count_node(graph_module, torch.ops.aten._slice_copy_nop.Tensor_out), 1
@@ -692,7 +892,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, alloc_graph_input=False)
+        graph_module = self.run_memory_planning_only(original, alloc_graph_input=False)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
             count_node(graph_module, torch.ops.aten._slice_copy_nop.Tensor_out), 1
@@ -722,7 +922,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
@@ -733,7 +933,7 @@ class TestMemTransform(unittest.TestCase):
 
         # When we compile with alloc_graph_input=True, all the slice ops must
         # be optimized, which is available only outside minimal mode.
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=True
         )
         graph_module.graph.eliminate_dead_code()
@@ -772,7 +972,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, alloc_graph_input=False)
+        graph_module = self.run_memory_planning_only(original, alloc_graph_input=False)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
             count_node(graph_module, torch.ops.aten._select_copy_nop.int_out), 1
@@ -809,7 +1009,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, alloc_graph_input=False)
+        graph_module = self.run_memory_planning_only(original, alloc_graph_input=False)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
             count_node(graph_module, torch.ops.aten._select_copy_nop.int_out), 1
@@ -837,7 +1037,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
@@ -848,7 +1048,7 @@ class TestMemTransform(unittest.TestCase):
 
         # When we compile with alloc_graph_input=True, all the slice ops must
         # be optimized, which is available only outside minimal mode.
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=True
         )
         graph_module.graph.eliminate_dead_code()
@@ -889,7 +1089,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, mode=CompileMode.DEFAULT)
+        graph_module = self.run_memory_planning_only(original, mode=CompileMode.DEFAULT)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
@@ -937,7 +1137,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([cat2])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
 
@@ -975,7 +1175,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([cat])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original)
+        graph_module = self.run_memory_planning_only(original)
         graph_module.graph.eliminate_dead_code()
 
         # Assert that cat op is NOT optimized away since the same tensor
@@ -1038,7 +1238,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([graph_output])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
@@ -1072,7 +1272,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([add_x, add_x_y])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(
+        graph_module = self.run_memory_planning_only(
             original, mode=CompileMode.DEFAULT, alloc_graph_output=False
         )
         self.assertEqual(

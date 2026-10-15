@@ -117,6 +117,60 @@ def get_preprocessor_flags():
         preprocessor_flags = preprocessor_flags + additional_preprocessor_flags
     return preprocessor_flags
 
+def get_kleidiai_preprocessor_flags():
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        "ovr_config//runtime/constraints:platform010-aarch64": [
+            "-DET_BUILD_WITH_KLEIDIAI",
+        ],
+        "ovr_config//runtime/constraints:platform010-aarch64-compat": [
+            "-DET_BUILD_WITH_KLEIDIAI",
+        ],
+    }) + select({
+        "DEFAULT": [],
+        "ovr_config//os:android": select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": ["-DET_BUILD_WITH_KLEIDIAI"],
+        }),
+        "ovr_config//os:iphoneos-arm64": ["-DET_BUILD_WITH_KLEIDIAI"],
+        "ovr_config//os:macos-arm64": [
+            "-DET_BUILD_WITH_KLEIDIAI",
+            "-DET_KLEIDIAI_DISABLE_NEON_BF16",
+        ],
+    })
+
+def get_kleidiai_deps():
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        "ovr_config//runtime/constraints:platform010-aarch64": [
+            "fbcode//third-party-buck/projects/KleidiAI:kleidiai",
+        ],
+        "ovr_config//runtime/constraints:platform010-aarch64-compat": [
+            "fbcode//third-party-buck/projects/KleidiAI:kleidiai",
+        ],
+    }) + select({
+        "DEFAULT": [],
+        "ovr_config//os:android": select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": [
+                "fbsource//third-party/kleidiai:bf16_neon",
+                "fbsource//third-party/kleidiai:bf16_sme2",
+            ],
+        }),
+        "ovr_config//os:iphoneos-arm64": [
+            "fbsource//third-party/kleidiai:bf16_neon",
+            "fbsource//third-party/kleidiai:bf16_sme2",
+        ],
+        "ovr_config//os:macos-arm64": [
+            "fbsource//third-party/kleidiai:bf16_neon",
+            "fbsource//third-party/kleidiai:bf16_sme2",
+        ],
+    })
+
 
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
 def define_libs(is_fbcode=False):
@@ -226,7 +280,7 @@ def define_libs(is_fbcode=False):
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],
-            preprocessor_flags = get_preprocessor_flags(),
+            preprocessor_flags = get_preprocessor_flags() + get_kleidiai_preprocessor_flags(),
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
@@ -234,7 +288,7 @@ def define_libs(is_fbcode=False):
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
                 "DEFAULT": [],
-            }) + LIBBLAS_DEPS,
+            }) + LIBBLAS_DEPS + get_kleidiai_deps(),
             exported_deps = [
                 "//executorch/extension/threadpool:threadpool",
                 "//executorch/kernels/optimized:libutils",

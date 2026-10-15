@@ -8,6 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+    ARTIFACT_TOK_EMBEDDING,
+)
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
 )
@@ -46,7 +50,7 @@ def _make_valid_input_config(**overrides):
     """Create a valid InferenceInputConfig with defaults."""
     defaults = {
         "soc_model": MagicMock(name="SM8750"),
-        "artifact_paths": [Path("/tmp/test.pte")],
+        "artifact_paths": {ARTIFACT_TEXT_DECODER: Path("/tmp/test.pte")},
     }
     defaults.update(overrides)
     return InferenceInputConfig(**defaults)
@@ -99,7 +103,10 @@ class TestExecuTorchInferenceStrategy(unittest.TestCase):
         """push_artifacts receives the artifact paths from input config."""
         adapter = _make_mock_adapter()
         strategy = ExecuTorchInferenceStrategy(device_runner_adapter=adapter)
-        artifact_paths = [Path("/tmp/a.pte"), Path("/tmp/b.pte")]
+        artifact_paths = {
+            ARTIFACT_TEXT_DECODER: Path("/tmp/decode.pte"),
+            ARTIFACT_TOK_EMBEDDING: Path("/tmp/tok_embedding.pte"),
+        }
         input_config = _make_valid_input_config(artifact_paths=artifact_paths)
 
         strategy.invoke(make_test_context(), input_config)
@@ -171,10 +178,10 @@ class TestExecuTorchInferenceStrategy(unittest.TestCase):
         self.assertEqual(cm.exception.stage_name, "inference")
 
     def test_invoke_missing_artifacts_raises_stage_error(self):
-        """StageError raised when artifact_paths is empty."""
+        """StageError raised when artifact_paths holds no artifacts."""
         adapter = _make_mock_adapter()
         strategy = ExecuTorchInferenceStrategy(device_runner_adapter=adapter)
-        input_config = _make_valid_input_config(artifact_paths=[])
+        input_config = _make_valid_input_config(artifact_paths={})
 
         with self.assertRaises(StageError) as cm:
             strategy.invoke(make_test_context(), input_config)

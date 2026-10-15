@@ -16,6 +16,9 @@ from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPo
 from executorch.backends.arm._passes.symbolic_value_range import (
     evaluate_symbolic_expr_values,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
+)
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -40,6 +43,49 @@ def conv_remainder(
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
 
 
+def has_dynamic_conv_padding(conv_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a convolution requires symbolic padding.
+
+    Args:
+        conv_node (torch.fx.Node): Convolution node to inspect.
+
+    Returns:
+        bool: Whether the convolution needs runtime padding.
+
+    """
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return True
+
+    input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
+    weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
+    spatial_rank = len(input_shape) - 2
+    strides = expand_around_channel(cast(Sequence[int] | int, stride_hw), spatial_rank)
+    pads = expand_around_channel(cast(Sequence[int] | int, pad_hw), spatial_rank)
+    dilations = expand_around_channel(
+        cast(Sequence[int] | int, dilation_hw), spatial_rank
+    )
+    shape_env = get_context_shape_env()
+
+    for axis_index, (stride, pad, dilation) in enumerate(zip(strides, pads, dilations)):
+        remainder = conv_remainder(
+            input_shape[axis_index + 2],
+            pad,
+            dilation,
+            weight_shape[axis_index + 2],
+            stride,
+        )
+        if not isinstance(remainder, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+        if exact_values is None or (len(exact_values) != 1 and max(exact_values) != 0):
+            return True
+
+    return False
+
+
 def pooling_remainder(
     input_size: SymIntLike, pad: int, kernel_size: int, stride: int
 ) -> SymIntLike:
@@ -47,6 +93,59 @@ def pooling_remainder(
     kernel size.
     """
     return (input_size + 2 * pad - kernel_size) % stride
+
+
+def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a pool requires symbolic padding.
+
+    Args:
+        pooling_node (torch.fx.Node): Pooling node to inspect.
+
+    Returns:
+        bool: Whether the pooling operation needs runtime padding.
+
+    """
+    input_node = cast(torch.fx.Node, pooling_node.args[0])
+    kernel_size = pooling_node.args[1]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
+    padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
+    ceil_mode_index = (
+        5
+        if pooling_node.target
+        in (
+            max_pooling_op,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        )
+        else 4
+    )
+    ceil_mode = (
+        pooling_node.args[ceil_mode_index]
+        if len(pooling_node.args) > ceil_mode_index
+        else False
+    )
+    input_shape = input_node.meta["val"].shape
+    kernel_sizes = expand_around_channel(cast(Sequence[int] | int, kernel_size), 2)
+    strides = expand_around_channel(cast(Sequence[int] | int, stride), 2)
+    pads = expand_around_channel(cast(Sequence[int] | int, padding), 2)
+    shape_env = get_context_shape_env()
+
+    for dim, (kernel, stride, pad) in enumerate(
+        zip(kernel_sizes, strides, pads), start=2
+    ):
+        adjusted_pad = adjust_pooling_pad_if_needed(
+            input_shape[dim], kernel, stride, pad, bool(ceil_mode)
+        )
+        if not isinstance(adjusted_pad, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(adjusted_pad.node.expr, shape_env)
+        if exact_values is None or len(exact_values) != 1:
+            return True
+
+    return False
 
 
 def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
@@ -137,7 +236,11 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
 
     input_node = pooling_node.args[0]
     kernel_size = pooling_node.args[1]
-    stride = pooling_node.args[2]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
     padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
 
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape

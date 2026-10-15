@@ -31,6 +31,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/arm/quantizer:quantization_annotator",
             "//executorch/backends/arm/quantizer:quantization_config",
             "//executorch/backends/cortex_m:quantizer_reporter",
+            "//executorch/backends/cortex_m:utils",
             "//executorch/backends/cortex_m/passes:cortex_passes",
             "//pytorch/ao:torchao",
             "fbsource//third-party/pypi/tabulate:tabulate",

@@ -58,10 +58,10 @@ class TestCu134Dependencies(unittest.TestCase):
                 commands = self.install_commands((13, 4), machine)
                 self.assertEqual(len(commands), 4)
                 expected = {
-                    "torch==2.14.0.dev20260810+cu134",
-                    "torchvision==0.29.0.dev20260811+cu134",
-                    "torchaudio==2.11.0.dev20260811+cu134",
-                    f"torchao==0.19.0.dev20260811+{ao_variant}",
+                    "torch==2.15.0.dev20260921+cu134",
+                    "torchvision==0.30.0.dev20260922+cu134",
+                    "torchaudio==2.11.0.dev20260922+cu134",
+                    f"torchao=={self.installer.CU134_TORCHAO_NIGHTLY_VERSION}+{ao_variant}",
                 }
                 for index, command in enumerate(commands):
                     required = (
@@ -101,7 +101,9 @@ class TestCu134Dependencies(unittest.TestCase):
                         cuda, machine
                     )
                     self.assertIn("torch==2.14.0", core)
-                    self.assertIn("torchao==0.18.0.dev20260729", core)
+                    self.assertIn(
+                        f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                    )
                     self.assertIn("torchvision==0.29.0", domains)
                     self.assertIn("torchaudio==2.11.0", domains)
                     self.assertFalse(any("==" in arg for arg in local))
@@ -112,14 +114,14 @@ class TestCu134Dependencies(unittest.TestCase):
             with self.subTest(cuda=cuda):
                 core, _, domains, _ = self.install_commands(cuda, nightly=False)
                 self.assertIn("torch", core)
-                self.assertNotIn("torch==2.14.0.dev20260810+cu134", core)
+                self.assertNotIn("torch==2.15.0.dev20260921+cu134", core)
                 self.assertIn("torchvision", domains)
                 self.assertIn("torchaudio", domains)
 
     def test_no_cuda_keeps_default_pins(self):
         core, _, domains, _ = self.install_commands(None)
         self.assertIn("torch==2.14.0", core)
-        self.assertIn("torchao==0.18.0.dev20260729", core)
+        self.assertIn(f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core)
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
@@ -238,15 +240,30 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.assertFalse(
                         any(arg.startswith("torchao==") for arg in command)
                     )
-                self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
-                self.assertIn("0.18.0+git03ca489", metadata.specifier)
+                self.assertIn("torch==2.15.0.dev20260921+cu134", commands[-1])
+                source_version = self.installer.TORCHAO_NIGHTLY_VERSION.partition(
+                    ".dev"
+                )[0]
+                source_commit = subprocess.run(
+                    ["git", "rev-parse", "HEAD:third-party/ao"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                self.assertIn(
+                    f"{source_version}+git{source_commit[:7]}", metadata.specifier
+                )
 
     def test_wheel_torchao_bound_matches_selected_train(self):
-        for cuda, expected in (
-            ((13, 4), "torchao>=0.19.0.dev20260811,<0.20"),
-            ((13, 2), "torchao>=0.18.0.dev20260729,<0.19"),
-            (None, "torchao>=0.18.0.dev20260729,<0.19"),
-        ):
+        for cuda in ((13, 4), (13, 2), None):
+            version = (
+                self.installer.CU134_TORCHAO_NIGHTLY_VERSION
+                if cuda == (13, 4)
+                else self.installer.TORCHAO_NIGHTLY_VERSION
+            )
+            major, minor = (int(part) for part in version.split(".")[:2])
+            expected = f"torchao>={version},<{major}.{minor + 1}"
             self.utils.determine_torch_url.cache_clear()
             with (
                 patch.object(

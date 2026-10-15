@@ -130,7 +130,7 @@ class QuantizerReport:
         for node in pattern:
             if Q_ANNOTATION_KEY not in node.meta:
                 raise ValueError(
-                    "Node {node.name} reported as annotated but has no quantization annotation."
+                    f"Node {node.name} reported as annotated but has no quantization annotation."
                 )
             annotation = cast(
                 QuantizationAnnotation | None, node.meta.get(Q_ANNOTATION_KEY)

@@ -88,5 +88,11 @@ bool parallel_for(
   return true;
 }
 
+int64_t get_thread_count() {
+  return static_cast<int64_t>(
+      ::executorch::extension::threadpool::get_threadpool()
+          ->get_thread_count());
+}
+
 } // namespace extension
 } // namespace executorch

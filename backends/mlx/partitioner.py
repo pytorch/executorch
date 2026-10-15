@@ -117,7 +117,28 @@ class MLXPartitioner(Partitioner):
     def transform_for_pre_decomposition(
         self, exported_program: ExportedProgram
     ) -> ExportedProgram:
-        """Normalize SDPA ranks before deciding which ops to preserve."""
+        """Normalize symbolic ops and SDPA ranks before deciding which ops to preserve."""
+        from executorch.exir.dialects.edge._ops import EdgeOpOverload
+        from executorch.exir.passes.executorch_prim_ops_registry import (
+            _EXECUTORCH_SYM_OPS,
+        )
+
+        # Exporters may wrap symbolic primitives before this ATen-stage validation.
+        for module in exported_program.graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+            modified = False
+            for node in module.graph.nodes:
+                if (
+                    node.op == "call_function"
+                    and isinstance(node.target, EdgeOpOverload)
+                    and node.target in _EXECUTORCH_SYM_OPS
+                ):
+                    node.target = node.target._op
+                    modified = True
+            if modified:
+                module.recompile()
+
         return ExportedProgramPassManager([NormalizeSDPAInputRankPass()])(
             exported_program
         ).exported_program
