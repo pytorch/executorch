@@ -193,6 +193,10 @@ define_overridable_option(
   "Build the native vision classification runner (run_classification)" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER
+  "Build the native Whisper speech recognition runners" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" BOOL OFF
 )
 define_overridable_option(
@@ -531,12 +535,12 @@ check_required_options_on(
   EXECUTORCH_BUILD_NATIVE_VULKAN
 )
 
-if(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+if((EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
    AND NOT (EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML)
 )
   message(
     FATAL_ERROR
-      "Native LLM runners require EXECUTORCH_BUILD_NATIVE_VULKAN=ON or EXECUTORCH_BUILD_NATIVE_GGML=ON"
+      "Native audio/LLM runners require EXECUTORCH_BUILD_NATIVE_VULKAN=ON or EXECUTORCH_BUILD_NATIVE_GGML=ON"
   )
 endif()
 

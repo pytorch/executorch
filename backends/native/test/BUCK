@@ -81,6 +81,9 @@ fbcode_target(
     _kind = runtime.python_test,
     name = "test_hf_whisper",
     srcs = ["test_hf_whisper.py"],
+    resources = {
+        "//executorch/backends/native/examples/audio:run_whisper_ggml_cpu": "run_whisper_ggml_cpu",
+    },
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",

@@ -50,7 +50,7 @@ target_link_libraries(my_app PRIVATE native_api native_vulkan_engine)
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_runtime_test` covers the shared runtime
 and API. `native_vulkan_passes_test` covers the Vulkan graph rewrites without
-requiring a GPU. When either runner below is enabled,
+requiring a GPU. When any runner below is enabled,
 `native_runner_utils_test` covers their shared runner utilities. Run these with
 `ctest --test-dir cmake-out -R native_`.
 
@@ -111,6 +111,33 @@ Export the `.ptn`, input, reference logits, and labels with
 top-5 logits and, when `--expected` is given, exits nonzero if the logits
 differ from the reference beyond `--rtol`/`--atol` (both default to `1e-3`).
 
+## Whisper speech recognition runner
+
+Enable `EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON` to build Whisper runners from
+`examples/audio`. `EXECUTORCH_BUILD_NATIVE_VULKAN=ON` adds `run_whisper`;
+`EXECUTORCH_BUILD_NATIVE_GGML=ON` adds `run_whisper_ggml`. Both require gflags.
+The shared runner uses the engine interface for all three methods.
+
+```sh
+cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE_VULKAN=ON \
+  -DEXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON
+cmake --build cmake-out --target run_whisper
+cmake --install cmake-out --prefix install
+install/bin/run_whisper \
+  --package whisper_tiny.ptn --input input_features.bin \
+  --prompt prompt_ids.txt --expected expected_ids.txt --eos_ids 50257
+```
+
+Export the `.ptn` with
+[`export_hf_whisper.py`](examples/hf/export_hf_whisper.py); `--dump_dir` also
+writes the log-mel input, forced prompt, and eager greedy ids, and the exporter
+prints the model's EOS ids. The runner greedily decodes until EOS or
+`--max_new_tokens` (default 32, matching the exporter), capped by the remaining
+decoder context. When `--expected` is given, it exits nonzero if the generated
+ids differ from the reference. Use the same `--max_new_tokens` value when
+exporting reference vectors and running the comparison.
+
 ## Native LLM runner
 
 `EXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON` builds `run_hf_llm_vulkan` with Native
@@ -119,24 +146,31 @@ Vulkan and `run_hf_llm_ggml` with Native GGML. It requires gflags and
 OSS checkout; otherwise provide an installed tokenizers package with regex
 lookahead support). It accepts Llama 3 TikToken tokenizer files.
 
-To build the text runner for GGML CPU, first install GGML as above:
+To build both speech and text runners for GGML CPU, first install GGML as above:
 
 ```sh
 cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
   -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER=ON \
   -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON \
   -DCMAKE_PREFIX_PATH="$PWD/ggml-install"
-cmake --build cmake-out --target run_hf_llm_ggml
+cmake --build cmake-out --target run_whisper_ggml run_hf_llm_ggml
 cmake --install cmake-out --prefix install
+install/bin/run_whisper_ggml --device cpu --cpu_threads 4 \
+  --package whisper_tiny.ptn --input input_features.bin \
+  --prompt prompt_ids.txt --expected expected_ids.txt --eos_ids 50257
 install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
   --package llama.ptn --tokenizer tokenizer.model \
   --prompt "The capital of France is" --max_new_tokens 32
 ```
 
-The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
+Both GGML runners accept `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). GPU execution uses
 the backend linked into the installed GGML package. Buck provides separate
-`run_hf_llm_ggml_{cpu,cuda,hip,metal}` targets; the Metal target uses xplat.
+`run_whisper_ggml_{cpu,cuda,hip,metal}` and
+`run_hf_llm_ggml_{cpu,cuda,hip,metal}` targets; the Metal targets use xplat.
 
+Whisper projects cross-attention K/V once, then preserves those inputs and its
+self-attention cache across prefill and decode, including GGML graph rebuilds.
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
