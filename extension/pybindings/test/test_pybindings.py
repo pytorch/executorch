@@ -120,6 +120,11 @@ class PybindingsTest(unittest.TestCase):
                     RuntimeError, "Failed to execute method forward, error: 0x20"
                 ):
                     module.run_method("forward", values)
+        module = self.load_fn(data)
+        with self.assertRaisesRegex(
+            RuntimeError, "Failed to execute method forward, error: 0x20"
+        ):
+            module.run_method("forward")
 
     def test_numpy_buffer_inputs(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -434,14 +439,15 @@ print("all calls finished")
         )
         script = """
 import gc
-import importlib.util
 import sys
 import weakref
+from pathlib import Path
 import numpy as np
 
-spec = importlib.util.spec_from_file_location("_C", sys.argv[2])
-runtime = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(runtime)
+from executorch.extension.pybindings import portable_lib as runtime
+
+native = sys.modules["executorch.extension.pybindings._C"]
+assert Path(native.__file__).resolve() == Path(sys.argv[2]).resolve()
 
 class DLPackOnly:
     def __init__(self, value):
@@ -452,7 +458,7 @@ class DLPackOnly:
         return self.value.__dlpack_device__()
 
 assert not runtime._uses_aten
-assert runtime._tensor_output == "executorch"
+assert native._tensor_output == "executorch"
 with open(sys.argv[1], "rb") as source:
     data = source.read()
 

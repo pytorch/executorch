@@ -2276,12 +2276,6 @@ struct PyModule final {
 
     auto method_meta = method_meta_result.get();
     const auto num_outputs = method_meta.num_outputs();
-    const auto method = module_->method(method_name);
-    THROW_IF_ERROR(
-        method.error(),
-        "Failed to load method %s, error: 0x%" PRIx32,
-        method_name.c_str(),
-        static_cast<uint32_t>(method.error()));
 
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
@@ -2306,6 +2300,12 @@ struct PyModule final {
         output_tensors_.emplace_back(std::nullopt);
         continue;
       }
+      const auto method = module_->method(method_name);
+      THROW_IF_ERROR(
+          method.error(),
+          "Failed to load method %s, error: 0x%" PRIx32,
+          method_name.c_str(),
+          static_cast<uint32_t>(method.error()));
       const auto& output = method.get()->get_output(i);
       bool is_input = false;
       for (size_t input = 0; input < method.get()->inputs_size(); ++input) {
