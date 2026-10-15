@@ -649,8 +649,8 @@ void GraphBuilder::lower(const Node& node) {
   const std::string key = op_key(node.target);
   if (key == "aten.linear.default") {
     lower_linear(node);
-  } else if (key == "aten.embedding.default") {
-    lower_embedding(node);
+  } else if (key == "aten.embedding.default" || key == "aten.index.Tensor") {
+    lower_row_gather(node);
   } else if (key == "aten.rms_norm.default") {
     lower_rms_norm(node);
   } else if (
@@ -713,6 +713,8 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.expand_copy.default" || key == "aten.expand.default") {
     lower_expand(node);
+  } else if (key == "aten.repeat.default") {
+    lower_repeat(node);
   } else if (key == "aten.cat.default") {
     lower_cat(node);
   } else if (
@@ -753,8 +755,8 @@ void GraphBuilder::lower(const Node& node) {
 }
 
 // Row indices are checked on the host, which needs them to come from a
-// graph input, possibly through integer casts and views; any other source
-// is rejected.
+// graph input through integer casts, views or repeats, or an integer arange
+// whose bounds are resolved when building the graph.
 void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   static const std::unordered_set<std::string> kSameValues = {
       "aten._to_copy.default",
@@ -765,6 +767,7 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
       "aten.expand_copy.default",
       "aten.permute.default",
       "aten.permute_copy.default",
+      "aten.repeat.default",
       "aten.reshape.default",
       "aten._unsafe_view.default",
       "aten.select.int",
@@ -796,6 +799,16 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
       break;
     }
     const Node& node = method_.graph.node(producer);
+    if (node.is_call() && op_key(node.target) == "aten.arange.start_step") {
+      const int64_t start = int_arg(node, "start", 0, 0);
+      const int64_t step = int_arg(node, "step", 2, 1, true);
+      const int64_t count = ggml_nelements(tensor(id).tensor);
+      const int64_t last = start + (count - 1) * step;
+      if (start < 0 || last >= rows) {
+        throw std::out_of_range("ggml: arange row index is outside the table");
+      }
+      return;
+    }
     const NamedArgument* source = find_arg(node, "self", 0);
     if (!node.is_call() || !kSameValues.contains(op_key(node.target)) ||
         source == nullptr || source->arg.kind() != ArgKind::Tensor) {
@@ -805,7 +818,7 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   }
   throw std::runtime_error(
       "ggml: row indices must come from a graph input, through integer "
-      "casts and views only");
+      "casts, views or repeats, or an integer arange");
 }
 
 ggml_tensor* GraphBuilder::as_f32(ggml_tensor* tensor) {
