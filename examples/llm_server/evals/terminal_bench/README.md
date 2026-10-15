@@ -55,6 +55,9 @@ unreleased capacity. Harbor retains the same mini-SWE-agent loop and per-trial
 verification.
 The run also checks that evaluation session IDs match the Harbor trial UUIDs.
 
+For delegation within one task, see the experimental
+[background agent](README.resource-poc.md).
+
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns
 its server process.

@@ -68,6 +68,8 @@ def load_config(path):
         "temperature": 0.0,
         "agent_host": None,
         "session_affinity": None,
+        "agent": "mini-swe-agent",
+        "child_output_tokens": 1536,
     }
     options = config.get("terminal_bench", {})
     if unknown := options.keys() - defaults.keys():
@@ -92,6 +94,50 @@ def load_config(path):
             "Remove [terminal_bench].session_affinity for concurrent trials"
         )
     return config
+
+
+def resource_command(server, options, output):
+    if options["agent"] not in {"inline", "resource"}:
+        raise ValueError("agent must be mini-swe-agent, inline, or resource")
+    if options["concurrency"] != 1:
+        raise ValueError("Resource agent uses one trial at a time")
+    host = "127.0.0.1" if server["host"] == "0.0.0.0" else server["host"]
+    harbor = [
+        str(CACHE / "terminal-bench/venv/bin/harbor"),
+        "run",
+        "--dataset",
+        "terminal-bench@2.0",
+        "--agent",
+        "executorch.examples.llm_server.evals.terminal_bench.resource_agent:ResourceAgent",
+        "--model",
+        f"openai/{server['model_id']}",
+        "--n-concurrent",
+        "1",
+        "--n-attempts",
+        str(options["attempts"]),
+        "--max-retries",
+        "0",
+        "--jobs-dir",
+        str(output),
+        "--job-name",
+        "harbor",
+    ]
+    arguments = {
+        "base_url": f"http://{host}:{server['port']}/v1",
+        "enabled": options["agent"] == "resource",
+        "max_tokens": options["max_output_tokens"],
+        "temperature": options["temperature"],
+        "step_limit": options["step_limit"],
+        "child_output_tokens": options["child_output_tokens"],
+    }
+    for key, value in arguments.items():
+        harbor.extend(
+            [
+                "--ak",
+                f"{key}={json.dumps(value) if isinstance(value, bool) else value}",
+            ]
+        )
+    return harbor
 
 
 def commands(config, output):
@@ -170,6 +216,8 @@ def commands(config, output):
                 f"base_url=http://{host}:{server['port']}/v1",
             ]
         )
+    if options["agent"] != "mini-swe-agent":
+        harbor = resource_command(server, options, output)
     for task in options["tasks"]:
         harbor.extend(["--include-task-name", task])
     probe = [
@@ -293,6 +341,15 @@ def summarize(harbor_dir):
                 len(message.get("tool_calls") or [])
                 for message in data.get("messages", [])
                 if message.get("role") == "assistant"
+            )
+        summary = path.parent / "agent/summary.json"
+        if summary.exists():
+            agent_exit = json.loads(summary.read_text())["metadata"]["status"]
+            events = path.parent / "agent/events.jsonl"
+            tool_calls = sum(
+                len(event["response"]["choices"][0]["message"].get("tool_calls") or [])
+                for line in events.read_text().splitlines()
+                if (event := json.loads(line))["type"] == "completion"
             )
         print(
             f"{trial['trial_name']}: {outcome}, "
