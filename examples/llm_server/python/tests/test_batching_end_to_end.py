@@ -653,6 +653,14 @@ async def test_live_engine_stats_track_overlapping_native_sessions(native_worker
         assert {s["session_id"] for s in final["sessions"]} == {"a", "b"}
         assert all(s["committed_position"] == 68 for s in final["sessions"])
         assert final["kv_allocated_bytes"] is None
+        steps = final["recent_steps"]
+        assert len(steps) <= 128
+        assert len({step["id"] for step in steps}) == len(steps)
+        paired = [
+            step for step in steps if sum(i["decode"] for i in step["inputs"]) == 2
+        ]
+        assert paired
+        assert all(step["succeeded"] and step["elapsed_ms"] >= 0 for step in paired)
         decode_ms = final["decode_only_ms"] + final["mixed_ms"]
         assert final["aggregate_decode_tokens_per_second"] == pytest.approx(
             126000 / decode_ms
