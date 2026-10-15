@@ -177,6 +177,13 @@ async def tokenize_chat(req: ChatCompletionRequest, request: Request):
         return JSONResponse(error.body(), status_code=error.status)
 
 
+async def runtime_stats(request: Request):
+    try:
+        return await _current_serving(request.app).resource_snapshot()
+    except APIError as error:
+        return JSONResponse(error.body(), status_code=error.status)
+
+
 def build_app(
     serving: Optional[ServingChat],
     model_id: str,
@@ -196,9 +203,7 @@ def build_app(
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
-    @app.get("/v1/runtime/stats")
-    async def runtime_stats():
-        return await _current_serving(app).resource_snapshot()
+    app.get("/v1/runtime/stats")(runtime_stats)
 
     @app.get("/v1/models")
     async def list_models() -> ModelList:

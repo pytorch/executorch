@@ -255,6 +255,7 @@ class MultiplexedWorkerClient:
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
         self.supports_runtime_stats = supports_runtime_stats
+        self._stats_lock = asyncio.Lock()
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
         self._max_message_bytes = max_message_bytes
@@ -747,18 +748,20 @@ class MultiplexedWorkerClient:
     async def runtime_stats(self) -> Optional[dict]:
         if not self.supports_runtime_stats:
             return None
-        state = self._submit({"op": "stats"}, op="stats", ack="stats")
-        try:
-            result = await asyncio.wait_for(asyncio.shield(state.completion), 2.0)
-            if isinstance(result, WorkerError):
-                raise result
-            return result
-        except asyncio.TimeoutError as error:
-            raise WorkerError(
-                "worker runtime stats timed out", code="timeout"
-            ) from error
-        finally:
-            self._abandon(state)
+        self._check_loop()
+        async with self._stats_lock:
+            state = self._submit({"op": "stats"}, op="stats", ack="stats")
+            try:
+                result = await asyncio.wait_for(asyncio.shield(state.completion), 2.0)
+                if isinstance(result, WorkerError):
+                    raise result
+                return result
+            except asyncio.TimeoutError as error:
+                raise WorkerError(
+                    "worker runtime stats timed out", code="timeout"
+                ) from error
+            finally:
+                self._abandon(state)
 
     async def _op(self, op, session_id, ack):
         state = self._submit({"op": op, "session_id": session_id}, op=op, ack=ack)
