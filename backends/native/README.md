@@ -50,8 +50,8 @@ target_link_libraries(my_app PRIVATE native_api native_vulkan_engine)
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_runtime_test` covers the shared runtime
 and API. `native_vulkan_passes_test` covers the Vulkan graph rewrites without
-requiring a GPU. When the vision runner below is enabled,
-`native_runner_utils_test` covers its shared runner utilities. Run these with
+requiring a GPU. When either runner below is enabled,
+`native_runner_utils_test` covers their shared runner utilities. Run these with
 `ctest --test-dir cmake-out -R native_`.
 
 ## GGML engine
@@ -110,3 +110,33 @@ Export the `.ptn`, input, reference logits, and labels with
 [`export.py`](../../examples/native/vision/export.py). The runner prints the
 top-5 logits and, when `--expected` is given, exits nonzero if the logits
 differ from the reference beyond `--rtol`/`--atol` (both default to `1e-3`).
+
+## Native LLM runner
+
+`EXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON` builds `run_hf_llm_vulkan` with Native
+Vulkan and `run_hf_llm_ggml` with Native GGML. It requires gflags and
+`tokenizers::tokenizers` (the vendored tokenizer is built automatically in an
+OSS checkout; otherwise provide an installed tokenizers package with regex
+lookahead support). It accepts Llama 3 TikToken tokenizer files.
+
+To build the text runner for GGML CPU, first install GGML as above:
+
+```sh
+cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
+  -DEXECUTORCH_BUILD_NATIVE_GGML=ON \
+  -DEXECUTORCH_BUILD_NATIVE_LLM_RUNNER=ON \
+  -DCMAKE_PREFIX_PATH="$PWD/ggml-install"
+cmake --build cmake-out --target run_hf_llm_ggml
+cmake --install cmake-out --prefix install
+install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
+  --package llama.ptn --tokenizer tokenizer.model \
+  --prompt "The capital of France is" --max_new_tokens 32
+```
+
+The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
+and `--max_cached_graphs` (default 1, 0 rebuilds each call). GPU execution uses
+the backend linked into the installed GGML package. Buck provides separate
+`run_hf_llm_ggml_{cpu,cuda,hip,metal}` targets; the Metal target uses xplat.
+
+With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
+LLM generation utilities.
