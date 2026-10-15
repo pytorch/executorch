@@ -535,17 +535,20 @@ class TestTritonSdpa(unittest.TestCase):
     def test_kv_tail_not_tile_multiple(self):
         """L_kv not a multiple of BLOCK_N, with and without a mask."""
         B = 1
-        for D, (H_q, H_kv), (Lq, Lk), use_mask in itertools.product(
+        for dtype, D, (H_q, H_kv), (Lq, Lk), use_mask in itertools.product(
+            [torch.bfloat16, torch.float16],
             [64, 80],
             [(4, 4), (8, 2)],
             [(1, 177), (64, 227), (602, 602), (16, 20)],
             [False, True],
         ):
-            with self.subTest(D=D, H_q=H_q, H_kv=H_kv, Lq=Lq, Lk=Lk, mask=use_mask):
+            with self.subTest(
+                dtype=dtype, D=D, H_q=H_q, H_kv=H_kv, Lq=Lq, Lk=Lk, mask=use_mask
+            ):
                 torch.manual_seed(42)
-                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
-                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                q = torch.randn(B, H_q, Lq, D, dtype=dtype, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=dtype, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=dtype, device="cuda")
                 mask = None
                 if use_mask:
                     mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
@@ -555,6 +558,7 @@ class TestTritonSdpa(unittest.TestCase):
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
                 torch_out = _reference_sdpa(q, k, v, attn_mask=mask, dtype=q.dtype)
 
+                self.assertEqual(out.dtype, dtype)
                 self.assertLess(
                     _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
                 )
@@ -580,6 +584,44 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertLess(
                     _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
                 )
+
+    # ------------------------------------------------------------------
+    # float16
+    # ------------------------------------------------------------------
+
+    def test_fp16_causal(self):
+        """float16 causal attention for MHA and GQA, pow2 and non-pow2 head dims."""
+        B, L = 2, 227
+        for D, (H_q, H_kv) in itertools.product([64, 80], [(4, 4), (8, 2)]):
+            with self.subTest(D=D, H_q=H_q, H_kv=H_kv):
+                torch.manual_seed(42)
+                q = torch.randn(B, H_q, L, D, dtype=torch.float16, device="cuda")
+                k = torch.randn(B, H_kv, L, D, dtype=torch.float16, device="cuda")
+                v = torch.randn(B, H_kv, L, D, dtype=torch.float16, device="cuda")
+
+                out = self.sdpa(q, k, v, is_causal=True, enable_gqa=H_q != H_kv)
+                ref = _reference_sdpa(q, k, v, is_causal=True)
+                torch_out = _reference_sdpa(q, k, v, is_causal=True, dtype=q.dtype)
+
+                self.assertEqual(out.dtype, torch.float16)
+                self.assertLess(
+                    _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
+                )
+
+    def test_fp16_with_kv_len_rejected(self):
+        """kv_len can select the split-K and TMA kernels, which are bf16-only."""
+        q = torch.randn(1, 4, 1, 64, dtype=torch.float16, device="cuda")
+        k = torch.randn(1, 4, 512, 64, dtype=torch.float16, device="cuda")
+        kv_len = torch.tensor([100], dtype=torch.int32, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, k, k, kv_len=kv_len)
+
+    def test_mixed_dtypes_rejected(self):
+        """Q, K and V must share one dtype."""
+        q = torch.randn(1, 4, 8, 64, dtype=torch.float16, device="cuda")
+        k = torch.randn(1, 4, 8, 64, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, k, k)
 
     # ------------------------------------------------------------------
     # is_causal + kv_len: in-kernel bottom-right causal reconstruction
