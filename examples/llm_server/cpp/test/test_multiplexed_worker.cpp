@@ -241,6 +241,41 @@ class ProtocolTest : public ::testing::Test {
   int input_[2]{-1, -1}, output_[2]{-1, -1};
 };
 
+TEST_F(ProtocolTest, LiveStatsRemainAvailableAtRequestCapacity) {
+  MultiplexedWorkerConfig config;
+  config.max_inflight_requests = 1;
+  executor_.hold();
+  start(config);
+  auto request = generate(1, 1);
+  request["session_id"] = "one";
+  send(request);
+  ASSERT_TRUE(wait_execute());
+  send({{"op", "stats"}, {"request_id", 2}});
+  const auto live = receive().at("stats");
+  EXPECT_EQ(live.at("prefill_sequences"), 1);
+  EXPECT_EQ(live.at("decode_sequences"), 0);
+  EXPECT_EQ(live.at("steps"), 0);
+  EXPECT_EQ(live.at("max_decode_sequences"), 8);
+  EXPECT_TRUE(live.at("kv_allocated_bytes").is_null());
+  EXPECT_EQ(live.at("sessions").at(0).at("committed_position"), 0);
+  executor_.release();
+  EXPECT_TRUE(receive().contains("token"));
+  const auto done = receive();
+  EXPECT_EQ(done.at("completion_tokens"), 1);
+  EXPECT_EQ(done.at("decode_tok_s"), 0);
+
+  send({{"op", "stats"}, {"request_id", 3}});
+  const auto idle = receive().at("stats");
+  EXPECT_EQ(idle.at("decode_sequences"), 0);
+  EXPECT_EQ(idle.at("prefill_sequences"), 0);
+  EXPECT_EQ(idle.at("sessions").at(0).at("committed_position"), 2);
+  send({{"op", "close"}, {"request_id", 4}, {"session_id", "one"}});
+  EXPECT_TRUE(receive().at("closed"));
+  send({{"op", "stats"}, {"request_id", 5}});
+  EXPECT_TRUE(receive().at("stats").at("sessions").empty());
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
   auto preparing = gate();
   auto calls = std::make_shared<std::atomic<int>>(0);

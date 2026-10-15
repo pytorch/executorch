@@ -269,6 +269,31 @@ enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
 enum class ET_EXPERIMENTAL AcceptanceError { Unavailable, Failed };
 using AcceptanceResult ET_EXPERIMENTAL = std::variant<bool, AcceptanceError>;
 
+struct ET_EXPERIMENTAL StepInputMeasurement {
+  std::int64_t position = 0;
+  std::size_t tokens = 0;
+  bool decode = false;
+};
+
+struct ET_EXPERIMENTAL StepMeasurement {
+  std::uint64_t id = 0;
+  std::int64_t elapsed_us = 0;
+  bool succeeded = false;
+  std::vector<StepInputMeasurement> inputs;
+};
+
+struct ET_EXPERIMENTAL EngineSnapshot {
+  EngineMetrics completed;
+  MetricsTime measured_at{};
+  // Width of the current Executor::execute call, zero between calls.
+  std::size_t decode_sequences = 0;
+  std::size_t prefill_sequences = 0;
+  std::int64_t context_tokens = 0;
+  std::optional<std::size_t> max_decode_sequences;
+  std::optional<std::size_t> kv_allocated_bytes;
+  std::vector<StepMeasurement> recent_steps;
+};
+
 class ET_EXPERIMENTAL Runner {
  public:
   // Takes the scheduler, one per runner, which also supplies the prefill chunk
@@ -321,6 +346,9 @@ class ET_EXPERIMENTAL Runner {
   // engine thread's, so joining it is what makes them stable and visible. A
   // call before then returns a torn snapshot.
   EngineMetrics metrics() const;
+
+  // Any thread. Counters and allocation are sampled between engine steps.
+  EngineSnapshot snapshot() const;
 
  private:
   std::shared_ptr<RunnerImpl> impl_;

@@ -100,6 +100,15 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     }
   }
 
+  void collect_allocations(
+      std::unordered_map<const void*, std::size_t>& allocations,
+      std::unordered_set<std::uintptr_t>& seen) const {
+    for (std::size_t i = 0; i < kpool_.size(); ++i) {
+      kpool_[i].collect_allocations(allocations, seen);
+      vpool_[i].collect_allocations(allocations, seen);
+    }
+  }
+
   AttendSpec update_and_fetch(
       int layer,
       const std::vector<int32_t>& positions,

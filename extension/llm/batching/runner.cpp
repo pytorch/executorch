@@ -319,7 +319,30 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     return metrics_;
   }
 
+  EngineSnapshot snapshot() const {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    return snapshot_;
+  }
+
  private:
+  void publish_snapshot_() {
+    std::optional<std::size_t> bytes;
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      bytes = executor_.kv_allocated_bytes();
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Optional telemetry must not fail a generation.
+    }
+#endif
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    snapshot_.completed = metrics_;
+    snapshot_.measured_at = MetricsClock::now();
+    snapshot_.max_decode_sequences = scheduler_->decode_capacity();
+    snapshot_.kv_allocated_bytes = bytes;
+  }
+
   enum class Lifecycle { Running, Stopping, Stopped };
 
   // Runtime state for the one generation currently active on a session.
@@ -566,6 +589,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::unordered_set<SessionId> issued_session_ids_;
   TaskId next_tid_ = 1;
   EngineMetrics metrics_;
+  mutable std::mutex snapshot_mutex_;
+  EngineSnapshot snapshot_;
 
   std::thread engine_;
 };
@@ -695,6 +720,10 @@ EngineMetrics Runner::metrics() const {
   return impl_->metrics();
 }
 
+EngineSnapshot Runner::snapshot() const {
+  return impl_->snapshot();
+}
+
 std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
 }
@@ -795,6 +824,7 @@ void RunnerImpl::run_() {
   while (is_running_()) {
     process_pending_commands_();
     reap_cancelled_();
+    publish_snapshot_();
     if (execute_one_batch_()) {
       continue; // more work may be ready
     }
@@ -836,6 +866,9 @@ void RunnerImpl::run_() {
           /*on_engine_thread=*/true);
     }
     executor_.close_session(entry.first);
+  }
+  if (ready) {
+    publish_snapshot_();
   }
 }
 
@@ -1055,8 +1088,16 @@ bool RunnerImpl::execute_one_batch_() {
   std::uint64_t decode_tokens = 0;
   std::uint64_t prefill_tokens = 0;
   std::vector<SessionId> prefilling; // small: bounded by the batch width
+  StepMeasurement measurement;
+  measurement.id = metrics_.steps + 1;
+  measurement.inputs.reserve(tasks.size());
   const MetricsTime step_start = MetricsClock::now();
   for (const Task& task : tasks) {
+    measurement.inputs.push_back(
+        {static_cast<std::int64_t>(task.input.position) +
+             static_cast<std::int64_t>(task.input.offset),
+         task.input.size,
+         task.is_decode});
     bool first_chunk = false;
     if (task.is_decode) {
       ++decode_sessions;
@@ -1142,11 +1183,31 @@ bool RunnerImpl::execute_one_batch_() {
   // exactly the numbers metrics.h offers for comparison against other engines;
   // they are also the parts that grow with concurrency, so the bias would not
   // be constant. step_start still marks the step for the generation timeline.
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    snapshot_.decode_sequences = decode_sessions;
+    snapshot_.prefill_sequences = prefill_sessions;
+    for (const auto& entry : context_ends) {
+      snapshot_.context_tokens += entry.second;
+    }
+  }
   const MetricsTime exec_start = MetricsClock::now();
   BatchInput batch = to_batch_input(tasks);
   BatchOutput out;
   const bool ok = executor_.execute(batch, out);
   const MetricsTime step_end = MetricsClock::now();
+  measurement.elapsed_us = us_between(exec_start, step_end);
+  measurement.succeeded = ok;
+  {
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    snapshot_.decode_sequences = 0;
+    snapshot_.prefill_sequences = 0;
+    snapshot_.context_tokens = 0;
+    if (snapshot_.recent_steps.size() == 128) {
+      snapshot_.recent_steps.erase(snapshot_.recent_steps.begin());
+    }
+    snapshot_.recent_steps.push_back(std::move(measurement));
+  }
 
   const std::int64_t latency = us_between(exec_start, step_end);
   ++metrics_.steps;

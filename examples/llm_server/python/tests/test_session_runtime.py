@@ -13,6 +13,7 @@ asyncio.run keeps the test bodies sync.
 import asyncio
 import logging
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -67,6 +68,31 @@ class _Worker:
 
     def generate(self, prompt, config, token_callback=None, stats_callback=None):
         pass
+
+
+@pytest.mark.parametrize("report_stats", [False, True])
+def test_failed_legacy_generation_does_not_publish_success_sample(report_stats):
+    class FailedWorker(_Worker):
+        def generate(self, prompt, config, token_callback=None, stats_callback=None):
+            if report_stats:
+                stats_callback(
+                    SimpleNamespace(num_prompt_tokens=3, num_generated_tokens=0)
+                )
+            raise WorkerError("context length exceeded", code="invalid_argument")
+
+    async def scenario():
+        runtime = SessionRuntime(FailedWorker())
+        try:
+            with pytest.raises(WorkerError, match="context length exceeded"):
+                await runtime.generate_stream("failed", _text(), _OPTS).result()
+            await asyncio.sleep(0)
+            assert runtime.resource_snapshot()["recent_generations"] == []
+            assert runtime.resource_snapshot()["submitted_generations"] == 0
+            assert await runtime.engine_snapshot() is None
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
 
 
 def test_session_ops_route_to_worker():

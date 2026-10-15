@@ -216,6 +216,7 @@ class MultiplexedWorkerClient:
 
     Reservations, queued work, and unconsumed completions share the request
     budget. Cancellation operations have an independent, equally bounded budget.
+    Runtime statistics have one separate slot, available at request capacity.
     A supplied process must have binary pipes and a stdout stream limit at least
     max_message_bytes. The factory configures those pipes before readiness.
 
@@ -238,6 +239,7 @@ class MultiplexedWorkerClient:
         max_buffered_chars: int = 1024 * 1024,
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
         max_request_bytes: int = _MAX_REQUEST_BYTES,
+        supports_runtime_stats: bool = False,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -252,6 +254,8 @@ class MultiplexedWorkerClient:
         self._loop = asyncio.get_running_loop()
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
+        self.supports_runtime_stats = supports_runtime_stats
+        self._stats_lock = asyncio.Lock()
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
         self._max_message_bytes = max_message_bytes
@@ -330,7 +334,11 @@ class MultiplexedWorkerClient:
 
     def _reserve(self, op="generate", ack="done"):
         self._ensure_usable()
-        if len(self._requests) >= self.max_inflight_requests:
+        stats_pending = any(s.op == "stats" for s in self._requests.values())
+        if (op == "stats" and stats_pending) or (
+            op != "stats"
+            and len(self._requests) - stats_pending >= self.max_inflight_requests
+        ):
             raise WorkerError(
                 "worker request capacity exhausted", code="capacity_exhausted"
             )
@@ -545,7 +553,7 @@ class MultiplexedWorkerClient:
         MultiplexedWorkerClient._validate_id(msg.get("request_id"))
         kinds = [
             key
-            for key in ("token", "done", "error", "opened", "closed", "reset")
+            for key in ("token", "done", "error", "opened", "closed", "reset", "stats")
             if key in msg
         ]
         if "cancelled" in msg and "done" not in msg:
@@ -554,7 +562,10 @@ class MultiplexedWorkerClient:
             raise WorkerError(f"invalid worker response shape: {msg}")
         kind = kinds[0]
         value = msg[kind]
-        if kind in ("token", "error"):
+        if kind == "stats":
+            if not isinstance(value, dict):
+                raise WorkerError("invalid worker runtime stats")
+        elif kind in ("token", "error"):
             if not isinstance(value, str):
                 raise WorkerError(f"invalid worker {kind}")
         elif value is not True:
@@ -660,7 +671,11 @@ class MultiplexedWorkerClient:
             result = (
                 WorkerError(msg["error"], code=msg.get("code"))
                 if kind == "error"
-                else WorkerStats.from_message(msg) if state.op == "generate" else None
+                else (
+                    WorkerStats.from_message(msg)
+                    if state.op == "generate"
+                    else msg["stats"] if state.op == "stats" else None
+                )
             )
             self._complete(state, result)
         else:
@@ -729,6 +744,24 @@ class MultiplexedWorkerClient:
             if request_id is not None and self._terminal_error is None:
                 self.release_request(request_id)
             raise
+
+    async def runtime_stats(self) -> Optional[dict]:
+        if not self.supports_runtime_stats:
+            return None
+        self._check_loop()
+        async with self._stats_lock:
+            state = self._submit({"op": "stats"}, op="stats", ack="stats")
+            try:
+                result = await asyncio.wait_for(asyncio.shield(state.completion), 2.0)
+                if isinstance(result, WorkerError):
+                    raise result
+                return result
+            except asyncio.TimeoutError as error:
+                raise WorkerError(
+                    "worker runtime stats timed out", code="timeout"
+                ) from error
+            finally:
+                self._abandon(state)
 
     async def _op(self, op, session_id, ack):
         state = self._submit({"op": op, "session_id": session_id}, op=op, ack=ack)
@@ -824,6 +857,7 @@ async def spawn_multiplexed_worker(
             proc,
             max_named_sessions=msg.get("max_named_sessions", 0),
             max_inflight_requests=msg.get("max_inflight_requests", 64),
+            supports_runtime_stats=msg.get("runtime_stats") is True,
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from executorch.examples.llm_server.python import multiplexed_worker_client
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
@@ -584,3 +583,131 @@ async def test_slow_consumer_does_not_stall_another_request(native_worker):
     text, stats = await collect(generate(client, "still healthy", key="c", count=2))
     assert len(text) == stats.num_generated_tokens == 2
     assert client.healthy
+
+
+@pytest.mark.anyio
+async def test_resource_snapshot_tracks_wire_work_and_completed_rates(native_worker):
+    worker, _ = await native_worker(gate=True)
+    runtime = SessionRuntime(worker)
+    first = runtime.generate_stream(
+        "a", PromptInput(text="first"), GenerationOptions(4)
+    )
+    pending = asyncio.create_task(first.result())
+    try:
+
+        async def submitted():
+            while not runtime.resource_snapshot()["submitted_generations"]:
+                await asyncio.sleep(0.001)
+
+        await asyncio.wait_for(submitted(), 5)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 1
+        assert not snapshot["recent_generations"]
+        second = runtime.generate_stream(
+            "b", PromptInput(text="second"), GenerationOptions(4)
+        )
+        await asyncio.wait_for(asyncio.gather(pending, second.result()), 10)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 0
+        assert snapshot["waiting_for_runtime_lease"] == 0
+        assert {s["session_id"] for s in snapshot["recent_generations"]} == {"a", "b"}
+        for sample in snapshot["recent_generations"]:
+            assert (
+                sample["prompt_tokens"]
+                == sample["uncached_tokens"] + sample["reused_tokens"]
+            )
+            assert sample["age_ms"] >= 0
+            assert sample["output_tokens"] == 4
+    finally:
+        await runtime.aclose_worker()
+        await asyncio.gather(pending, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_live_engine_stats_track_overlapping_native_sessions(native_worker):
+    worker, _ = await native_worker(gate=True)
+    runtime = SessionRuntime(worker)
+    requests = [
+        asyncio.create_task(
+            runtime.generate_stream(
+                key, PromptInput(text="hello"), GenerationOptions(64)
+            ).result()
+        )
+        for key in ("a", "b")
+    ]
+    observed = []
+    try:
+
+        async def observe():
+            while not all(request.done() for request in requests):
+                observed.append(await runtime.engine_snapshot())
+                await asyncio.sleep(0.002)
+
+        await asyncio.wait_for(asyncio.gather(*requests, observe()), 15)
+        final = await runtime.engine_snapshot()
+        assert max(s["decode_sequences"] for s in observed) == 2
+        assert final["decode_sequences"] == 0
+        assert final["prefill_sequences"] == 0
+        assert final["decode_tokens"] == 126
+        assert final["prefill_tokens"] == 10
+        assert {s["session_id"] for s in final["sessions"]} == {"a", "b"}
+        assert all(s["committed_position"] == 68 for s in final["sessions"])
+        assert final["kv_allocated_bytes"] is None
+        steps = final["recent_steps"]
+        assert len(steps) <= 128
+        assert len({step["id"] for step in steps}) == len(steps)
+        paired = [
+            step for step in steps if sum(i["decode"] for i in step["inputs"]) == 2
+        ]
+        assert paired
+        assert all(step["succeeded"] and step["elapsed_ms"] >= 0 for step in paired)
+        decode_ms = final["decode_only_ms"] + final["mixed_ms"]
+        assert final["aggregate_decode_tokens_per_second"] == pytest.approx(
+            126000 / decode_ms
+        )
+        await runtime.close("a")
+        assert [
+            s["session_id"] for s in (await runtime.engine_snapshot())["sessions"]
+        ] == ["b"]
+    finally:
+        await runtime.aclose_worker()
+        await asyncio.gather(*requests, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_resource_route_returns_unknown_rates_before_first_generation(
+    native_http,
+):
+    _, _, _, client = native_http
+    response = await client.get("/v1/runtime/stats")
+    assert response.status_code == 200
+    assert response.json()["submitted_generations"] == 0
+    assert response.json()["recent_generations"] == []
+    engine = response.json()["engine"]
+    assert engine["aggregate_decode_tokens_per_second"] is None
+    assert engine["decode_sequences"] == 0
+    assert engine["sessions"] == []
+
+
+@pytest.mark.anyio
+async def test_cancelled_generation_remains_in_resource_accounting(native_worker):
+    worker, _ = await native_worker()
+    runtime = SessionRuntime(worker)
+    generation = runtime.generate_stream(
+        "cancel", PromptInput(text="hello"), GenerationOptions(1024)
+    )
+    try:
+        assert await asyncio.wait_for(anext(generation), 5)
+        generation.cancel()
+        await asyncio.wait_for(generation.aclose(), 10)
+        snapshot = runtime.resource_snapshot()
+        assert snapshot["submitted_generations"] == 0
+        sample = snapshot["recent_generations"][-1]
+        assert sample["cancelled"]
+        assert sample["output_tokens"] > 0
+        assert (
+            sample["prompt_tokens"]
+            == sample["uncached_tokens"] + sample["reused_tokens"]
+        )
+    finally:
+        await runtime.aclose_worker()
