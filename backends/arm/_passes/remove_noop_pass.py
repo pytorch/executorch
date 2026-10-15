@@ -120,7 +120,15 @@ class RemoveNoopPass(ArmOpTargetedPass):
             return True
 
         if node.target == exir_ops.edge.aten.copy.default:
-            return True
+            destination, source = node.args[:2]
+            if not isinstance(destination, Node) or not isinstance(source, Node):
+                return False
+            destination_val = destination.meta["val"]
+            source_val = source.meta["val"]
+            return (
+                destination_val.shape == source_val.shape
+                and destination_val.dtype == source_val.dtype
+            )
 
         if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
             input_node = node.args[0]
@@ -212,7 +220,41 @@ class RemoveNoopPass(ArmOpTargetedPass):
         if input_dtype != output_dtype:
             return super().call_operator(op, args, kwargs, meta, updated)
 
-        # copy writes its source (args[1]); the remaining targets return args[0].
+        # copy writes its source (args[1]) into the shape and dtype of args[0].
         if op == exir_ops.edge.aten.copy.default:
-            return args[1]
+            source = args[1]
+            source_data = source.data
+            if source_data.dtype != input_dtype:
+                source = super().call_operator(
+                    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                    (source,),
+                    {"dtype": input_dtype},
+                    meta,
+                    updated=True,
+                )
+
+            output_shape = args[0].data.shape
+            if source_data.shape != output_shape:
+                rank_padding = len(output_shape) - len(source_data.shape)
+                aligned_shape = (1,) * rank_padding + tuple(source_data.shape)
+                if rank_padding:
+                    source = super().call_operator(
+                        exir_ops.edge.aten.view_copy.default,
+                        (source, aligned_shape),
+                        {},
+                        meta,
+                        updated=True,
+                    )
+                multiples = [
+                    output_dim if source_dim == 1 else 1
+                    for source_dim, output_dim in zip(aligned_shape, output_shape)
+                ]
+                source = super().call_operator(
+                    exir_ops.edge.aten.repeat.default,
+                    (source, multiples),
+                    {},
+                    meta,
+                    updated=True,
+                )
+            return source
         return args[0]
