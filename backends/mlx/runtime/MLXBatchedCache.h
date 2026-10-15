@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "MLXCache.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
 
 #include <executorch/extension/llm/cache/cache.h>
 
