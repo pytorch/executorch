@@ -122,6 +122,9 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
     if (!cache::valid(geometry, cfg)) {
       throw std::runtime_error("MLXCellCache: invalid geometry or config");
     }
+    if (geometry.dflash_block_size.has_value()) {
+      throw std::runtime_error("MLXCellCache: DFlash is unsupported");
+    }
     return geometry;
   }
 
