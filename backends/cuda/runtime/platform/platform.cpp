@@ -60,10 +60,12 @@ namespace cuda {
 executorch::runtime::Result<void*> load_library(
     const std::filesystem::path& path) {
 #ifdef _WIN32
-  std::string utf8 = path.u8string();
-  auto lib_handle = LoadLibrary(utf8.c_str());
+  auto lib_handle = LoadLibraryW(path.c_str());
   if (lib_handle == NULL) {
     const DWORD err = GetLastError();
+    // u8string() returns std::u8string under C++20, so copy into std::string.
+    const auto u8 = path.u8string();
+    const std::string utf8(u8.begin(), u8.end());
     ET_LOG(
         Error,
         "Failed to load %s with error %lu: %s",

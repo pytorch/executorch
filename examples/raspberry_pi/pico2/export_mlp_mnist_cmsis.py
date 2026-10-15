@@ -96,12 +96,9 @@ def export_to_pte(quantized_model, example_input, output_path: str):
 
     logger.info("Applying Cortex-M optimization passes...")
     pass_manager = CortexMPassManager(
-        edge_program.exported_program(),
         target_config=CortexMTargetConfig(cpu=CortexM.M33),
     )
-    transformed_ep = pass_manager.transform()
-
-    edge_program = to_edge(transformed_ep, compile_config=edge_config)
+    edge_program = edge_program.transform(pass_manager)
 
     logger.info("Converting to ExecuTorch format...")
     exec_program = edge_program.to_executorch(

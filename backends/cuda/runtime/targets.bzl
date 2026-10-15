@@ -35,11 +35,7 @@ def define_common_targets(is_fbcode = False):
         name = "runtime_shims",
         srcs = [
             "shims/cuda_guard.cpp",
-            "shims/int4_plain_mm.cu",
             "shims/int4mm.cu",
-            "shims/int5_plain_mm.cu",
-            "shims/int6_plain_mm.cu",
-            "shims/int8_plain_mm.cu",
             "shims/memory.cpp",
             "shims/rand.cu",
             "shims/sort.cu",
@@ -47,16 +43,8 @@ def define_common_targets(is_fbcode = False):
         ],
         headers = [
             "shims/cuda_guard.h",
-            "shims/int4_plain_mm.cuh",
-            "shims/int4_plain_mm.h",
             "shims/int4mm.cuh",
             "shims/int4mm.h",
-            "shims/int5_plain_mm.cuh",
-            "shims/int5_plain_mm.h",
-            "shims/int6_plain_mm.cuh",
-            "shims/int6_plain_mm.h",
-            "shims/int8_plain_mm.cuh",
-            "shims/int8_plain_mm.h",
             "shims/memory.h",
             "shims/rand.h",
             "shims/sort.h",
@@ -91,31 +79,16 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    # Deprecated stub left behind after the move to extension/cuda; depend on
+    # //executorch/extension/cuda:cuda_allocator directly instead.
     runtime.cxx_library(
         name = "cuda_allocator",
-        srcs = [
-            "cuda_allocator.cpp",
-        ],
         headers = [
             "cuda_allocator.h",
         ],
-        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-        link_whole = True,
-        supports_python_dlopen = True,
         visibility = ["PUBLIC"],
         exported_deps = [
-            "//executorch/runtime/core:device_allocator",
-        ],
-        deps = [
-            "//executorch/extension/cuda:caller_stream",
-            "//executorch/runtime/platform:platform",
-        ],
-        nvcc_flags = get_nvcc_arch_args() + [
-            "-_NVCC_HOST_COMPILER_FLAG_",
-            "gcc",
-        ],
-        external_deps = [
-            ("cuda", None, "cuda-lazy"),
+            "//executorch/extension/cuda:cuda_allocator",
         ],
     )
 
@@ -123,11 +96,16 @@ def define_common_targets(is_fbcode = False):
         name = "cuda_backend",
         srcs = [
             "cuda_backend.cpp",
+            "cuda_kv_cache.cpp",
+            "cuda_kv_pool.cpp",
             "cuda_mutable_state.cpp",
             "cuda_weight_cache.cpp",
         ],
         headers = [
+            "backend_options.h",
             "cuda_delegate_handle.h",
+            "cuda_kv_cache.h",
+            "cuda_kv_pool.h",
             "cuda_mutable_state.h",
             "cuda_weight_cache.h",
         ],
@@ -136,27 +114,35 @@ def define_common_targets(is_fbcode = False):
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        preprocessor_flags = [
+            "-DCUDA_AVAILABLE=1",
+            # Always built with the LLM extension's cache here.
+            "-DEXECUTORCH_BUILD_EXTENSION_LLM",
+        ],
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/backends/aoti:delegate_handle",
             "//executorch/backends/aoti/slim/core:slimtensor",
             "//executorch/extension/cuda:runtime_api",
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
         ],
         deps = [
             ":cuda_platform",
             ":runtime_shims",
-            ":cuda_allocator",
             ":cuda_platform",
             "//executorch/backends/aoti:aoti_common_slim",
             "//executorch/backends/aoti/slim/factory:empty",
             "//executorch/backends/aoti/slim/factory:from_blob",
             "//executorch/backends/aoti/slim/factory:from_etensor",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/backends/aoti/slim/util:size_util",
             "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/cuda:cuda_allocator",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         external_deps = [
@@ -177,6 +163,27 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_kv_cache",
+        srcs = [
+            "test/test_cuda_kv_cache.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/runtime/core:core",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),
@@ -212,6 +219,7 @@ def define_common_targets(is_fbcode = False):
         srcs = ["test/test_cuda_allocator.cpp"],
         deps = [
             ":cuda_allocator",
+            ":cuda_backend",
             "//executorch/extension/cuda:caller_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",

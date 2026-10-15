@@ -58,6 +58,8 @@ fbcode_target(
     deps = [
         ":core",
         ":arm_pass_manager_base" if runtime.is_oss else ":arm_pass_manager_fb",
+        "//executorch/backends/arm:arm_vela",
+        "//executorch/backends/arm/operators:op_tosa_rescale",
         "//executorch/backends/transforms:aten_to_dialect_pass",
         "//executorch/backends/transforms:dim_maps",
         "//executorch/backends/arm/tosa:utils",

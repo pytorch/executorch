@@ -136,6 +136,10 @@ bool is_supported_device_type(int32_t device_type) {
   return device_type == 0 || device_type == 1; // CPU or CUDA
 }
 
+bool is_offgraph_kv_fqn(const std::string& fqn) {
+  return fqn.rfind(kOffGraphKVFqnPrefix, 0) == 0;
+}
+
 } // namespace
 
 bool CudaWeightCache::is_serialized(const void* data, size_t size) {
@@ -484,6 +488,17 @@ Error CudaWeightCache::acquire_storage(
   return Error::Ok;
 }
 
+std::unordered_map<std::string, std::vector<int64_t>>
+CudaWeightCache::offgraph_kv_sizes(const Metadata& metadata) {
+  std::unordered_map<std::string, std::vector<int64_t>> sizes;
+  for (const Entry& entry : metadata.entries) {
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      sizes.emplace(entry.fqn, entry.sizes);
+    }
+  }
+  return sizes;
+}
+
 Error CudaWeightCache::load(
     CudaDelegateHandle* handle,
     const NamedDataMap* named_data_map,
@@ -560,6 +575,7 @@ Error CudaWeightCache::load(
   pairs.reserve(metadata.entries.size());
   std::unordered_set<std::string> bound_fqns;
   size_t reused_storages = 0;
+  size_t external_storages = 0;
   handle->fqn_weight_tensors.reserve(metadata.entries.size());
 
   for (const Entry& entry : metadata.entries) {
@@ -586,6 +602,11 @@ Error CudaWeightCache::load(
         InvalidProgram,
         "CUDA FQN weight '%s' appears more than once in serialized metadata",
         entry.fqn.c_str());
+
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      ++external_storages;
+      continue;
+    }
 
     std::shared_ptr<CudaWeightStorage> storage;
     bool reused = false;
@@ -628,19 +649,25 @@ Error CudaWeightCache::load(
     }
   }
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      handle->update_user_managed_constant_buffer_pairs(
-          handle->container_handle,
-          pairs.data(),
-          pairs.size(),
-          /*use_inactive=*/false,
-          /*validate_full_update=*/true),
-      "Failed to bind CUDA FQN weights");
+  if (!pairs.empty()) {
+    // Full validation stays on with off-graph KV present: those constants are
+    // AOTI buffers, which the check permits to be absent, while every weight
+    // must still be supplied.
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->update_user_managed_constant_buffer_pairs(
+            handle->container_handle,
+            pairs.data(),
+            pairs.size(),
+            /*use_inactive=*/false,
+            /*validate_full_update=*/true),
+        "Failed to bind CUDA FQN weights");
+  }
   ET_LOG(
       Info,
-      "Loaded %zu CUDA FQN weights (%zu reused across methods)",
-      metadata.entries.size(),
-      reused_storages);
+      "Loaded %zu CUDA FQN weights (%zu reused, %zu runtime-owned)",
+      metadata.entries.size() - external_storages,
+      reused_storages,
+      external_storages);
   return Error::Ok;
 }
 

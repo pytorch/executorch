@@ -4,7 +4,7 @@ standard on-device iOS and Android mobile deployments. One of the main goals for
 ExecuTorch is to enable wider customization and deployment capabilities of the
 PyTorch programs.
 
-* Supported python versions: 3.10, 3.11, 3.12, 3.13, 3.14
+* Supported Python versions: 3.11, 3.12, 3.13, 3.14, 3.15
 * Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64, Windows x86_64
 
 Backend export tools can require optional Python dependencies. For example,
@@ -37,6 +37,10 @@ to run ExecuTorch `.pte` files, with some restrictions:
 * \[Linux] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
   prebuilt module. OpenVINO requires the runtime to be installed separately:
   `pip install executorch[openvino]`
+
+On Linux, macOS and Windows the runtime, kernels and backends also ship as shared libraries
+with headers and a CMake package, so a C++ application can link them without building
+ExecuTorch; see [Using ExecuTorch with C++](docs/source/using-executorch-cpp.md).
 
 Please visit the [ExecuTorch website](https://pytorch.org/executorch) for
 tutorials and documentation. Here are some starting points:

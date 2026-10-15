@@ -141,6 +141,61 @@ There is also an `mlx-debug` preset useful during development:
 cmake --workflow --preset mlx-debug
 ```
 
+## Runtime Options
+
+The MLX backend reads optional per-model runtime specs, set through a
+`LoadBackendOptionsMap` keyed by the backend id `MLXBackend`. All are optional
+and off by default.
+
+### `eval_threshold_bytes` (int)
+
+MLX is lazy: dispatching an instruction only builds a graph node, and nothing is
+materialized until the method's outputs are evaluated. For a long instruction
+chain that means every intermediate in the method is live at the same instant,
+so peak memory tracks the size of the whole graph rather than the working set.
+Whisper-small's 495-instruction `encode` peaks at 1105 MB of MLX allocation
+against 95 MB of steady-state active memory.
+
+Set this key to N to evaluate the live per-execution tensors once the
+intermediates produced since the last evaluation exceed N bytes. Each evaluation
+costs a GPU sync, so the cost tracks the *number* of evaluations, and budgeting
+bytes rather than instructions puts them only in the methods that actually
+allocate.
+
+`0` (the default) disables the mechanism entirely, preserving the previous
+behaviour with no accounting overhead of any kind.
+
+```cpp
+#include <executorch/backends/mlx/runtime/backend_options.h>
+#include <executorch/runtime/backend/options.h>
+
+executorch::runtime::BackendOptions<1> opts;
+opts.set_option(executorch::backends::mlx::kEvalThresholdBytesKey,
+                512 * 1024 * 1024);
+```
+
+Measured on an iPhone 16, whisper-small int8, full pipeline, medians of
+interleaved rounds:
+
+| setting | peak MB | peak while loaded | pipeline ms |
+| --- | --- | --- | --- |
+| `0` (disabled) | 1194.4 | 763.7 | 885.2 |
+| `512 MB` | 692.8 | 261.0 | 831.3 |
+
+This is a **threshold, not a hard memory limit**. It is best-effort evaluation
+scheduling and peak footprint can exceed the value:
+
+- A long `SCAN` or `IF` branch accumulates across its whole body and is only
+  checked once control returns to the enclosing chain, so it can overshoot by
+  the size of that body.
+- The per-instruction estimate is the largest tensor the instruction touches,
+  which can overcount (an op that only reads a large tensor is charged for it)
+  and so can evaluate earlier than the true pending bytes warrant.
+- Ops that evaluate internally reduce the real pending work without reducing
+  the running estimate.
+
+Tune it against measurements rather than expecting the value to bound RSS.
+
 ## Reference
 
 **→{doc}`/backends/mlx/mlx-troubleshooting` — Debug common issues.**

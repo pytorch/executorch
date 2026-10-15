@@ -170,7 +170,7 @@ def apply_pre_edge_transform_passes(
     PassManager(
         [
             FuseQATConvBN(converted_program),
-            QuantFusionPass(patterns),
+            QuantFusionPass(patterns, converted_program),
         ]
     )(converted_program.graph_module)
 

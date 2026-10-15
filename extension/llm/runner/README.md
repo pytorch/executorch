@@ -274,9 +274,13 @@ token_ids = [1, 15043, 445, 2420]  # Example token IDs
 token_input = make_token_input(token_ids)
 
 # 3. Image input from torch tensor
-# Supports channels-first (C,H,W), or (1,C,H,W) with batch size 1
+# CHW is the default, including when width is 3 or 4
 image_chw = torch.randint(0, 255, (3, 224, 224), dtype=torch.uint8)
 image_input = make_image_input(image_chw)
+
+# HWC inputs require an explicit layout, including when height is 3 or 4
+image_hwc = torch.randint(0, 255, (224, 224, 3), dtype=torch.uint8)
+image_input_hwc = make_image_input(image_hwc, layout="HWC")
 
 # Float tensors also supported for normalized images
 image_float = torch.rand(3, 224, 224, dtype=torch.float32)  # CHW, normalized

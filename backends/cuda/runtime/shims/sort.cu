@@ -14,7 +14,10 @@
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 
+#include <new>
+
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/sort.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
@@ -108,6 +111,29 @@ void launch_permute(
   }
 }
 
+// Stream-ordered scratch for thrust. With par_nosync this keeps each slice sort
+// from blocking on cudaMalloc/cudaFree and synchronizing the stream. Falls back
+// to those on a device without memory pools.
+struct StreamOrderedAllocator {
+  using value_type = char;
+
+  char* allocate(std::ptrdiff_t bytes) {
+    auto ptr = CudaAllocator::allocate_stream_ordered(
+        static_cast<size_t>(bytes), device, stream);
+    if (!ptr.ok()) {
+      throw std::bad_alloc();
+    }
+    return static_cast<char*>(ptr.get());
+  }
+
+  void deallocate(char* ptr, size_t) {
+    (void)CudaAllocator::deallocate_stream_ordered(ptr, device, stream);
+  }
+
+  int32_t device;
+  cudaStream_t stream;
+};
+
 template <typename T>
 void sort_slice_impl(
     T* keys,
@@ -115,20 +141,20 @@ void sort_slice_impl(
     int64_t n,
     bool descending,
     bool stable,
+    int32_t device,
     cudaStream_t stream) {
   auto k = thrust::device_pointer_cast(keys);
   auto v = thrust::device_pointer_cast(values);
+  StreamOrderedAllocator allocator{device, stream};
+  const auto policy = thrust::cuda::par_nosync(allocator).on(stream);
   if (stable && descending) {
-    thrust::stable_sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v, thrust::greater<T>());
+    thrust::stable_sort_by_key(policy, k, k + n, v, thrust::greater<T>());
   } else if (stable) {
-    thrust::stable_sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v);
+    thrust::stable_sort_by_key(policy, k, k + n, v);
   } else if (descending) {
-    thrust::sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v, thrust::greater<T>());
+    thrust::sort_by_key(policy, k, k + n, v, thrust::greater<T>());
   } else {
-    thrust::sort_by_key(thrust::cuda::par.on(stream), k, k + n, v);
+    thrust::sort_by_key(policy, k, k + n, v);
   }
 }
 
@@ -296,14 +322,24 @@ AOTITorchError aoti_torch_cuda_sort_stable(
       inner_size *= input_sizes[d];
     }
 
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMallocAsync(
-        &temp_values_buf,
-        static_cast<size_t>(total_elements * elem_size),
-        stream));
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMallocAsync(
-        &temp_indices_buf,
+    auto values = CudaAllocator::allocate_stream_ordered(
+        static_cast<size_t>(total_elements * elem_size), device_idx, stream);
+    ET_CHECK_OR_RETURN_ERROR(
+        values.ok(),
+        MemoryAllocationFailed,
+        "sort: allocating the transposed values failed");
+    temp_values_buf = values.get();
+    auto indices = CudaAllocator::allocate_stream_ordered(
         static_cast<size_t>(total_elements) * sizeof(int64_t),
-        stream));
+        device_idx,
+        stream);
+    if (!indices.ok()) {
+      (void)CudaAllocator::deallocate_stream_ordered(
+          temp_values_buf, device_idx, stream);
+      ET_LOG(Error, "sort: allocating the transposed indices failed");
+      return Error::MemoryAllocationFailed;
+    }
+    temp_indices_buf = indices.get();
 
     // Gather: [outer, sort, inner] → [outer, inner, sort]
     launch_permute(
@@ -354,6 +390,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             sort_size,
             desc,
             is_stable,
+            device_idx,
             stream);
         break;
       }
@@ -364,6 +401,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             sort_size,
             desc,
             is_stable,
+            device_idx,
             stream);
         break;
       }
@@ -374,6 +412,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             sort_size,
             desc,
             is_stable,
+            device_idx,
             stream);
         break;
       }
@@ -384,6 +423,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             sort_size,
             desc,
             is_stable,
+            device_idx,
             stream);
         break;
       }
@@ -394,6 +434,7 @@ AOTITorchError aoti_torch_cuda_sort_stable(
             sort_size,
             desc,
             is_stable,
+            device_idx,
             stream);
         break;
       }
@@ -428,8 +469,10 @@ AOTITorchError aoti_torch_cuda_sort_stable(
         stream);
     ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFreeAsync(temp_values_buf, stream));
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFreeAsync(temp_indices_buf, stream));
+    ET_CHECK_OK_OR_RETURN_ERROR(CudaAllocator::deallocate_stream_ordered(
+        temp_values_buf, device_idx, stream));
+    ET_CHECK_OK_OR_RETURN_ERROR(CudaAllocator::deallocate_stream_ordered(
+        temp_indices_buf, device_idx, stream));
   }
 
   return Error::Ok;

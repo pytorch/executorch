@@ -17,13 +17,18 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
-TORCHAO_NIGHTLY_VERSION = "0.18.0.dev20260729"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260811"
-# These wheels' metadata pairs August 11 domain libraries with August 10 torch.
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
+# Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
+# are py3-none-any only, and none are published after 0.19.0.dev20260831.
+ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
+# torchvision 0.30.0.dev20260922 requires exactly torch 2.15.0.dev20260921.
+# download.pytorch.org keeps about 60 days of nightlies, so this pin expires; 2026-09-22
+# is the newest date whose torch, torchvision and torchaudio still all carry cp310.
 CU134_TORCH_PACKAGES = [
-    "torch==2.14.0.dev20260810+cu134",
-    "torchvision==0.29.0.dev20260811+cu134",
-    "torchaudio==2.11.0.dev20260811+cu134",
+    "torch==2.15.0.dev20260921+cu134",
+    "torchvision==0.30.0.dev20260922+cu134",
+    "torchaudio==2.11.0.dev20260922+cu134",
 ]
 
 

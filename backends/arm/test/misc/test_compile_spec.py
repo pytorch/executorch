@@ -15,6 +15,7 @@ from executorch.backends.arm.ethosu import (
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir._warnings import ExperimentalWarning
 from pytest import mark, raises, warns
 
 
@@ -127,6 +128,16 @@ def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
     assert roundtripped.tosa_dev_mode is True
 
 
+def test_emit_debug_info_roundtrip_vgf_FP_INT():
+    disabled = VgfCompileSpec()
+    disabled_roundtripped = VgfCompileSpec._from_list(disabled._to_list())
+    assert disabled_roundtripped.emit_debug_info is False
+
+    enabled = VgfCompileSpec(emit_debug_info=True)
+    enabled_roundtripped = VgfCompileSpec._from_list(enabled._to_list())
+    assert enabled_roundtripped.emit_debug_info is True
+
+
 def test_preserve_io_quantization_warns_for_u55_INT():
     with warns(
         UserWarning,
@@ -154,3 +165,24 @@ def test_ethosu_scratch_capacity_roundtrip(max_scratch_size):
 def test_ethosu_scratch_capacity_rejects_invalid_values(max_scratch_size):
     with raises(ValueError, match="max_scratch_size must be a positive integer"):
         EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)
+
+
+@mark.parametrize("enabled", [False, True])
+def test_ethosu_delegate_mutable_buffers_roundtrip_u85_INT(enabled):
+    compile_spec = EthosUCompileSpec("ethos-u85-256")
+    with warns(ExperimentalWarning, match="experimental"):
+        compile_spec.set_delegate_mutable_buffers(enabled)
+    flag = "--separate-persistent-region"
+    assert (flag in compile_spec.compiler_flags) == enabled
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.delegate_mutable_buffers == enabled
+    assert roundtripped.compiler_flags.count(flag) == int(enabled)
+
+
+def test_ethosu_persistent_region_extra_flag_does_not_delegate_buffers_u85_INT():
+    compile_spec = EthosUCompileSpec(
+        "ethos-u85-256", extra_flags=["--separate-persistent-region"]
+    )
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert not compile_spec.delegate_mutable_buffers
+    assert not roundtripped.delegate_mutable_buffers

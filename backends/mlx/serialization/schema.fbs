@@ -646,6 +646,12 @@ table CumsumNode {
     inclusive: bool = true;
 }
 
+table CummaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
 table StackNode {
     tensors: [Tid] (required);
     out: Tid (required);
@@ -1204,7 +1210,8 @@ union OpNode {
     RandomBitsNode,
     UpdateAndAttendNode,
     TruncNode,
-    FlipNode
+    FlipNode,
+    CummaxNode
     // BC: Add new op nodes here (append only)
 }
 

@@ -75,6 +75,7 @@ class QcomChipset(IntEnum):
     SW6100 = 96  # v81
     QCM6490 = 93  # v68
     SM8845 = 97  # v81
+    SA8540 = 62  # v68
 
 
 @dataclass
@@ -112,6 +113,7 @@ _soc_info_table = {
     QcomChipset.SW6100: SocInfo(QcomChipset.SW6100, HtpInfo(HtpArch.V81, 4)),
     QcomChipset.QCM6490: SocInfo(QcomChipset.QCM6490, HtpInfo(HtpArch.V68, 2)),
     QcomChipset.SM8845: SocInfo(QcomChipset.SM8845, HtpInfo(HtpArch.V81, 8)),
+    QcomChipset.SA8540: SocInfo(QcomChipset.SA8540, HtpInfo(HtpArch.V68, 8)),
 }
 
 
@@ -201,6 +203,7 @@ class QnnExecuTorchHtpBackendOptions:
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
     use_slc_allocator: bool = False
+    use_graph_splitting: bool = False
 
 
 @unique
@@ -295,6 +298,24 @@ class QnnExecuTorchOpPackageOptions:
 
 
 @dataclass
+class QnnExecuTorchTarget:
+    """Backend configurations for one SoC target.
+
+    Currently, we support exactly one backend option per SoC.
+    """
+
+    soc_info: SocInfo
+    backend_options: List[QnnExecuTorchBackendOptions] = field(default_factory=list)
+
+
+@dataclass
+class QnnExecuTorchTargetOptions:
+    targets: List[QnnExecuTorchTarget] = field(default_factory=list)
+    # Applies only while appending host-AOT contexts to an FCB DLC.
+    fcb_reference_weight_sharing: bool = True
+
+
+@dataclass
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
@@ -311,3 +332,4 @@ class QnnExecuTorchOptions:
         default_factory=QnnExecuTorchOpPackageOptions
     )
     use_mha2sha: bool = False
+    target_options: Optional[QnnExecuTorchTargetOptions] = None

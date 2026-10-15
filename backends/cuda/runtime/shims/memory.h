@@ -195,6 +195,10 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking);
 
+/// Zeros a contiguous CUDA tensor on the current AOTI stream. Inductor uses it
+/// to clear split-scan workspaces.
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_zero_(SlimTensor* self);
+
 /// See aoti_torch_item_uint8.
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);

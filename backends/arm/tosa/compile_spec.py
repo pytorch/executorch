@@ -28,17 +28,8 @@ class TosaCompileSpec(ArmCompileSpec):
             raise ValueError(
                 f"TosaCompileSpec can't have compiler flags, got {self.compiler_flags}"
             )
-        pass
 
     @classmethod
     def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "tosa"
-
-    @classmethod
-    def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
-        super()._from_list_hook(compile_spec, specs)
-
-    def _create_default_pipeline_config(self):
-        config = super()._create_default_pipeline_config()
-        return config

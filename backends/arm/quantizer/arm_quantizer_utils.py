@@ -511,13 +511,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.while_loop,
         torch.ops.higher_order.cond,
     ]
-    _UINT8_IO_BRIDGE_OPS: set[Callable[..., object]] = {
-        torch.ops.aten.cat.default,
-        torch.ops.aten.concatenate.default,
-        torch.ops.aten.stack.default,
-        torch.ops.aten.pixel_shuffle.default,
-        torch.ops.aten.slice.Tensor,
-    }
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
@@ -746,15 +739,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
 
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
-
-        if touches_uint8_quantized_io and any(
-            node.target in self._UINT8_IO_BRIDGE_OPS for node in shared_nodes
-        ):
-            self.report_reject(
-                ordered_nodes,
-                "Shared-qspec bridge cluster touches uint8 model IO.",
-            )
-            return
 
         if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return

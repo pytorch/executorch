@@ -20,7 +20,7 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
     lower_run_compare,
-    ReferenceModel,
+    ReferenceRunner,
 )
 from executorch.backends.nxp.tests.simple_models import (
     Conv2dModule,
@@ -43,7 +43,7 @@ def assert_delegated_and_correct(
     use_qat=False,
     exp_delegated_ops=None,
     exp_non_delegated_ops=None,
-    et_ref_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+    et_ref_model=ReferenceRunner.QUANTIZED_EXECUTORCH_CPP,
 ):
     if exp_delegated_ops is None:
         exp_delegated_ops = {Convolution: 1}
@@ -70,7 +70,7 @@ def assert_delegated_and_correct(
         comparator,
         use_qat=use_qat,
         remove_quant_io_ops=remove_quant_io_ops,
-        reference_model=et_ref_model,
+        reference_runner=et_ref_model,
     )
 
 
@@ -198,9 +198,9 @@ class TestTrConv:
         # Running `conv_transpose2d` with `output_channels = 1` produces errors in Executorch. The issue has been reported:
         # https://github.com/pytorch/executorch/issues/20804
         ref_model = (
-            ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+            ReferenceRunner.QUANTIZED_EXECUTORCH_CPP
             if use_et_ref_model
-            else ReferenceModel.QUANTIZED_EDGE_PYTHON
+            else ReferenceRunner.QUANTIZED_EDGE_PYTHON
         )
 
         assert_delegated_and_correct(

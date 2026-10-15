@@ -216,8 +216,9 @@ class CollapseDtypeConversionPass(ExportPass):
 
     _to_copy(dtype=bf16)(_to_copy(dtype=f32)(x)) → _to_copy(dtype=bf16)(x)
 
-    Only the final dtype matters. Only collapses when both nodes are pure dtype
-    conversions (no device/layout/memory_format changes).
+    Only collapse when the intermediate cast preserves every source value.
+    Narrowing or cross-kind casts may round, truncate, or overflow and must stay.
+    Both nodes must be pure dtype conversions (no device/layout/memory_format changes).
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -244,8 +245,31 @@ class CollapseDtypeConversionPass(ExportPass):
             if not _is_pure_dtype_cast(node_kw) or not _is_pure_dtype_cast(parent_kw):
                 continue
 
+            source = parent.args[0]
+            source_val = source.meta.get("val") if isinstance(source, Node) else None
+            if source_val is None:
+                continue
+            source_dtype = source_val.dtype
+            intermediate_dtype = parent_kw["dtype"]
+            if source_dtype != intermediate_dtype and (
+                source_dtype,
+                intermediate_dtype,
+            ) not in {
+                # Boolean values 0 and 1 are exact in each floating-point dtype.
+                (torch.bool, torch.float16),
+                (torch.bool, torch.bfloat16),
+                (torch.bool, torch.float32),
+                (torch.bool, torch.float64),
+                (torch.float16, torch.float32),
+                (torch.bfloat16, torch.float32),
+                (torch.float16, torch.float64),
+                (torch.bfloat16, torch.float64),
+                (torch.float32, torch.float64),
+            }:
+                continue
+
             # Rewrite: to_copy(to_copy(x, dtype=d1), dtype=d2) → to_copy(x, dtype=d2)
-            node.args = (parent.args[0],)
+            node.args = (source,)
             graph.erase_node(parent)
             modified = True
 

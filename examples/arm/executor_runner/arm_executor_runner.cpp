@@ -643,8 +643,8 @@ Error read_input_files(
     if (buffer == nullptr) {
       ET_LOG(
           Error,
-          "Reading input tensor %zu from file %s failed.",
-          i + 1,
+          "Reading input tensor %lu from file %s failed.",
+          static_cast<printf_size_t>(i + 1),
           input_filenames[i]);
       return Error::AccessFailed;
     }
@@ -1449,8 +1449,8 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
+  for (int i = 1; i + 1 < argc; i += 2) {
+    ET_LOG(Info, "   %s %s", argv[i], argv[i + 1]);
   }
 #else
   (void)argc;

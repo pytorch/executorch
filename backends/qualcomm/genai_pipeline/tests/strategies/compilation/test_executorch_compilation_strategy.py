@@ -8,6 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+    ARTIFACT_TOK_EMBEDDING,
+)
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_input_config import (
     CompilationInputConfig,
 )
@@ -26,6 +30,8 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.executor
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
     make_test_context,
+    TEST_BACKEND_TYPE,
+    TEST_SOC_CHIPSET,
 )
 
 
@@ -33,7 +39,7 @@ def _make_mock_adapter():
     """Create a mock compiler adapter returning a valid CompilationResult."""
     adapter = MagicMock()
     adapter.compile_model.return_value = CompilationResult(
-        artifact_paths=[Path("/tmp/test_model.pte")],
+        artifact_paths={ARTIFACT_TEXT_DECODER: Path("/tmp/test_model.pte")},
         etrecord=None,
     )
     return adapter
@@ -42,8 +48,8 @@ def _make_mock_adapter():
 def _make_valid_input_config(**overrides):
     """Create a valid CompilationInputConfig with defaults."""
     defaults = {
-        "soc_model": MagicMock(name="SM8750"),
-        "backend_type": MagicMock(name="kHtpBackend"),
+        "soc_model": TEST_SOC_CHIPSET,
+        "backend_type": TEST_BACKEND_TYPE,
         "model": MagicMock(name="test_model"),
         "example_inputs": (MagicMock(name="example_input"),),
         "artifact_dir": Path("/tmp/artifacts"),
@@ -87,7 +93,10 @@ class TestExecuTorchCompilationStrategy(unittest.TestCase):
         result = strategy.invoke(context, input_config)
 
         self.assertIsInstance(result, CompilationOutputConfig)
-        self.assertEqual(result.artifact_paths, [Path("/tmp/test_model.pte")])
+        self.assertEqual(
+            result.artifact_paths,
+            {ARTIFACT_TEXT_DECODER: Path("/tmp/test_model.pte")},
+        )
 
     def test_invoke_passes_correct_args_to_adapter(self):
         """compile_model receives model, specs, artifact_dir, etc."""
@@ -230,7 +239,7 @@ class TestExecuTorchCompilationStrategy(unittest.TestCase):
         adapter = _make_mock_adapter()
         mock_etrecord = MagicMock(name="etrecord")
         adapter.compile_model.return_value = CompilationResult(
-            artifact_paths=[Path("/tmp/test.pte")],
+            artifact_paths={ARTIFACT_TEXT_DECODER: Path("/tmp/test.pte")},
             etrecord=mock_etrecord,
         )
         strategy = ExecuTorchCompilationStrategy(compiler_adapter=adapter)
@@ -243,16 +252,23 @@ class TestExecuTorchCompilationStrategy(unittest.TestCase):
         """Multiple artifact paths from adapter are forwarded correctly."""
         adapter = _make_mock_adapter()
         adapter.compile_model.return_value = CompilationResult(
-            artifact_paths=[Path("/tmp/prefill.pte"), Path("/tmp/decode.pte")],
+            artifact_paths={
+                ARTIFACT_TEXT_DECODER: Path("/tmp/decode.pte"),
+                ARTIFACT_TOK_EMBEDDING: Path("/tmp/tok_embedding.pte"),
+            },
             etrecord=None,
         )
         strategy = ExecuTorchCompilationStrategy(compiler_adapter=adapter)
 
         result = strategy.invoke(make_test_context(), _make_valid_input_config())
 
-        self.assertEqual(len(result.artifact_paths), 2)
-        self.assertEqual(result.artifact_paths[0], Path("/tmp/prefill.pte"))
-        self.assertEqual(result.artifact_paths[1], Path("/tmp/decode.pte"))
+        self.assertEqual(
+            result.artifact_paths,
+            {
+                ARTIFACT_TEXT_DECODER: Path("/tmp/decode.pte"),
+                ARTIFACT_TOK_EMBEDDING: Path("/tmp/tok_embedding.pte"),
+            },
+        )
 
 
 if __name__ == "__main__":

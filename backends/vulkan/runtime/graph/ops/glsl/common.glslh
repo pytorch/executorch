@@ -35,6 +35,34 @@
 #define mod_4(x) ((x) & 3)
 #define mod_8(x) ((x) & 7)
 
+// Branch access avoids Adreno compiler crashes from runtime-indexed UBO vectors.
+int safe_idx(const ivec4 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  if (idx == 2) return v.z;
+  return v.w;
+}
+
+uint safe_idx(const uvec4 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  if (idx == 2) return v.z;
+  return v.w;
+}
+
+int safe_idx(const ivec3 v, const int idx) {
+  if (idx == 0) return v.x;
+  if (idx == 1) return v.y;
+  return v.z;
+}
+
+void safe_set(inout ivec4 v, const int idx, const int val) {
+  if (idx == 0) { v.x = val; }
+  else if (idx == 1) { v.y = val; }
+  else if (idx == 2) { v.z = val; }
+  else { v.w = val; }
+}
+
 
 int sign_extend_8bit(const int val) {
   if ((val & 0x80) != 0) {
