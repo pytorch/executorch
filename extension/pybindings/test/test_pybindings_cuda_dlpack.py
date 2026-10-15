@@ -75,10 +75,7 @@ class CudaDLPackTest(unittest.TestCase):
     @classmethod
     def _export_delegate(cls):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-        from executorch.exir import (
-            ExecutorchBackendConfig,
-            to_edge_transform_and_lower,
-        )
+        from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
         from executorch.exir.backend.compile_spec_schema import CompileSpec
         from executorch.exir.passes import MemoryPlanningPass
         from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
@@ -277,25 +274,28 @@ class CudaDLPackTest(unittest.TestCase):
         stream = torch.cuda.current_stream(device_index)
         module = self.bindings._load_for_executorch_from_buffer(data)
         method = self.bindings._load_program_from_buffer(data).load_method("forward")
-        for executor in (module, method):
-            for clone_outputs in (False, True):
-                with self.subTest(executor=type(executor), clone_outputs=clone_outputs):
-                    output = executor(
-                        CudaDLPackOnly(value, stream), clone_outputs=clone_outputs
-                    )[0]
-                    tensor = self._tensor(output, device_index)
-                    self.assertEqual(tensor.stride(), value.stride())
-                    with torch.cuda.stream(self._consumer_stream(device_index)):
-                        torch.testing.assert_close(tensor.cpu(), value.cpu())
-                    if clone_outputs:
-                        self.assertNotEqual(tensor.data_ptr(), value.data_ptr())
-                    else:
-                        self.assertEqual(tensor.data_ptr(), value.data_ptr())
-                        roundtrip = executor(output, clone_outputs=False)[0]
-                        self.assertEqual(
-                            self._tensor(roundtrip, device_index).data_ptr(),
-                            value.data_ptr(),
-                        )
+        for input_value in (value, CudaDLPackOnly(value, stream)):
+            for executor in (module, method):
+                for clone_outputs in (False, True):
+                    with self.subTest(
+                        protocol=type(input_value),
+                        executor=type(executor),
+                        clone_outputs=clone_outputs,
+                    ):
+                        output = executor(input_value, clone_outputs=clone_outputs)[0]
+                        tensor = self._tensor(output, device_index)
+                        self.assertEqual(tensor.stride(), value.stride())
+                        with torch.cuda.stream(self._consumer_stream(device_index)):
+                            torch.testing.assert_close(tensor.cpu(), value.cpu())
+                        if clone_outputs:
+                            self.assertNotEqual(tensor.data_ptr(), value.data_ptr())
+                        else:
+                            self.assertEqual(tensor.data_ptr(), value.data_ptr())
+                            roundtrip = executor(output, clone_outputs=False)[0]
+                            self.assertEqual(
+                                self._tensor(roundtrip, device_index).data_ptr(),
+                                value.data_ptr(),
+                            )
 
 
 if __name__ == "__main__":

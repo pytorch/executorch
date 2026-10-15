@@ -9,15 +9,41 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
 #endif
 
 namespace executorch::extension::pybindings {
+
+inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
+#ifdef EXECUTORCH_PYBINDINGS_CUDA
+  const auto type = executorch::runtime::etensor::DeviceType::CUDA;
+  auto* allocator = executorch::runtime::get_device_allocator(type);
+  if (allocator == nullptr) {
+    // Windows ships the allocator without registering the CUDA delegate.
+    allocator = &executorch::extension::cuda::CudaAllocator::instance();
+  }
+  auto allocation = allocator->allocate(nbytes, index);
+  if (!allocation.ok()) {
+    throw std::runtime_error(
+        "Failed to allocate a CUDA ExecuTorchResult clone");
+  }
+  return std::shared_ptr<void>(
+      allocation.get(),
+      [allocator, index](void* data) { allocator->deallocate(data, index); });
+#else
+  (void)nbytes;
+  (void)index;
+  throw std::runtime_error(
+      "CUDA tensor interchange requires bindings built with CUDA support");
+#endif
+}
 
 // The Python boundary is synchronous until the runtime exposes readiness
 // events for inputs, output allocations, and caller-selected execution streams.

@@ -125,20 +125,13 @@ class PyExecuTorchResult final
       owner_ = py::none();
     } else if (clone) {
       if (nbytes_ != 0) {
-        const auto type = executorch::runtime::etensor::DeviceType::CUDA;
-        auto allocation = executorch::runtime::DeviceMemoryBuffer::create(
-            nbytes_, type, device_.index());
-        if (!allocation.ok()) {
-          throw std::runtime_error(
-              "Failed to allocate a CUDA ExecuTorchResult clone; a CUDA device allocator must be registered");
-        }
-        device_storage_ = std::move(allocation.get());
+        device_storage_ = allocate_cuda_result(nbytes_, device_.index());
         copy_cuda_storage(
-            device_storage_.data(),
+            device_storage_.get(),
             tensor.const_data_ptr(),
             nbytes_,
             device_.index());
-        data_ = device_storage_.data();
+        data_ = device_storage_.get();
       }
       owner_ = py::none();
     } else {
@@ -376,7 +369,7 @@ class PyExecuTorchResult final
 
   void* data_ = nullptr;
   std::vector<uint8_t> storage_;
-  executorch::runtime::DeviceMemoryBuffer device_storage_;
+  std::shared_ptr<void> device_storage_;
   std::vector<executorch::aten::SizesType> sizes_;
   std::vector<executorch::aten::StridesType> strides_;
   executorch::aten::ScalarType scalar_type_;

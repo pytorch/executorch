@@ -63,8 +63,10 @@ CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA result
 remain on CUDA and can be passed to another DLPack consumer or back into
 ExecuTorch without moving the data to the CPU.
 
-The Python CUDA execution boundary currently waits for device work through CUDA
-runtime APIs because the device allocator does not expose readiness events.
+CUDA DLPack inputs and `ExecuTorchResult` outputs require CUDA-enabled bindings.
+Torch CUDA inputs and outputs synchronize through Python Torch, including in
+CPU builds of the bindings. The Python CUDA execution boundary waits for device
+work because the device allocator does not expose readiness events.
 Execution is synchronous at this boundary, including producer and consumer
 stream readiness. The synchronization has no C++ ATen dependency.
 

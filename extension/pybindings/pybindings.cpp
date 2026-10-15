@@ -517,6 +517,12 @@ void validate_buffer_input(
 }
 
 #ifndef USE_ATEN_LIB
+void synchronize_torch_cuda_device(int index) {
+  py::reinterpret_borrow<py::object>(loaded_torch_module())
+      .attr("cuda")
+      .attr("synchronize")(index);
+}
+
 /** A zero-copy view built only from torch.Tensor's public Python API. */
 class TorchTensorView final {
  public:
@@ -569,7 +575,7 @@ class TorchTensorView final {
     }
     data_ = reinterpret_cast<void*>(address);
     if (device_.type() == executorch::aten::DeviceType::CUDA && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
+      synchronize_torch_cuda_device(device_.index());
     }
   }
 
@@ -721,7 +727,7 @@ class DLPackTensorView final {
             owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>()) {
     validate_advertised_device();
     capsule_ = advertised_device_.first == dlpack::CUDA
-        ? owner_.attr("__dlpack__")(py::arg("stream") = 2)
+        ? owner_.attr("__dlpack__")(py::arg("stream") = 1)
         : owner_.attr("__dlpack__")();
     if (!PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
       throw py::value_error("__dlpack__() did not return a dltensor capsule");
@@ -1113,7 +1119,7 @@ py::object module_aliased_torch_output(
     const auto offset = source.attr("storage_offset")().cast<int64_t>() +
         static_cast<int64_t>((address - start) / itemsize);
     if (!tensor.device().is_cpu()) {
-      synchronize_cuda_device(tensor.device().index());
+      synchronize_torch_cuda_device(tensor.device().index());
     }
     return source.attr("as_strided")(
         std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
@@ -1192,7 +1198,7 @@ py::object portable_tensor_result(
     if (tensor.const_data_ptr() == nullptr) {
       throw py::value_error("CUDA output tensor data is not allocated");
     }
-    synchronize_cuda_device(tensor.device().index());
+    synchronize_torch_cuda_device(tensor.device().index());
     // A byte capsule supports Torch dtypes that older DLPack dtype tables
     // cannot express. Torch reinterprets the same device storage afterward.
     auto output = torch_module
@@ -1202,7 +1208,7 @@ py::object portable_tensor_result(
                       .attr("as_strided")(shape, strides);
     if (clone) {
       output = output.attr("clone")();
-      synchronize_cuda_device(tensor.device().index());
+      synchronize_torch_cuda_device(tensor.device().index());
     }
     return output;
   }
@@ -2015,7 +2021,10 @@ struct PyModule final {
             view->strides());
         const auto method = module_->method(method_name);
         THROW_IF_ERROR(
-            method.error(), "Failed to load method %s", method_name.c_str());
+            method.error(),
+            "Failed to load method %s, error: 0x%" PRIx32,
+            method_name.c_str(),
+            static_cast<uint32_t>(method.error()));
         view->validate_device(*method.get(), i);
         view->use_layout(method_meta.input_tensor_meta(i)->dim_order());
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
@@ -2269,7 +2278,10 @@ struct PyModule final {
     const auto num_outputs = method_meta.num_outputs();
     const auto method = module_->method(method_name);
     THROW_IF_ERROR(
-        method.error(), "Failed to load method %s", method_name.c_str());
+        method.error(),
+        "Failed to load method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(method.error()));
 
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
@@ -3206,7 +3218,7 @@ struct PyMethod final {
           auto alias = aliased_torch_output(v.toTensor());
           if (!alias.is_none()) {
             if (!v.toTensor().device().is_cpu() && v.toTensor().nbytes() != 0) {
-              synchronize_cuda_device(v.toTensor().device().index());
+              synchronize_torch_cuda_device(v.toTensor().device().index());
             }
             list[i] = std::move(alias);
             continue;
