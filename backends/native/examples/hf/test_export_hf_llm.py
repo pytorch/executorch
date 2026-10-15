@@ -12,7 +12,7 @@ import unittest
 
 import gguf
 import torch
-from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+from executorch.backends.native.examples.hf.export_hf_llm import (
     _load,
     LastTokenLM,
     load_gguf,
