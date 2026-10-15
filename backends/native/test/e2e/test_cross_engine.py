@@ -20,10 +20,7 @@ from pathlib import Path
 
 import torch
 import torchvision
-from executorch.backends.native.examples.hf_llm.export_hf_llm import (
-    LastTokenLM,
-    load_gguf,
-)
+from executorch.backends.native.examples.hf.export_hf_llm import LastTokenLM, load_gguf
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim

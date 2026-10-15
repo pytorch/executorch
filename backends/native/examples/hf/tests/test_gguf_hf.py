@@ -11,10 +11,7 @@ import unittest
 import gguf
 import numpy as np
 import torch
-from executorch.backends.native.examples.hf_llm.gguf_hf import (
-    gguf_architecture,
-    gguf_to_hf,
-)
+from executorch.backends.native.examples.hf.gguf_hf import gguf_architecture, gguf_to_hf
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from transformers import (
     AutoModelForCausalLM,
