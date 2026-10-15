@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
@@ -757,6 +758,36 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if isinstance(inp, torch.fx.Node) and inp.meta.get("val") is not None:
                     if len(perm) != len(inp.meta["val"].shape):
                         return False
+
+        # Validate: no node in the region may broadcast operands of different
+        # rank. Broadcasting right-aligns shapes, so once the boundary permutes
+        # are removed a lower-rank operand lines up against different axes of
+        # the others and the region silently computes a differently shaped
+        # result -- a [216, 1] that met a [1, 1, 216, 1] now meets a
+        # [1, 216, 1, 1] and yields 216 * 216 elements. The mismatch only
+        # surfaces later, as a downstream view whose recorded shape no longer
+        # fits its input. Same-rank broadcasting is safe: every operand carries
+        # the region's permutation, and broadcasting commutes with applying one
+        # permutation to all operands. numel-1 operands broadcast identically
+        # under any permutation, and cat never broadcasts.
+        for node in subgraph.nodes:
+            if (
+                node in interleave_nodes
+                or node.target in self._VIEW_OPS
+                or node.target == exir_ops.edge.aten.cat.default
+            ):
+                continue
+            operand_ranks = {
+                len(shape)
+                for shape in (
+                    self._concrete_shape(inp)
+                    for inp in node.all_input_nodes
+                    if isinstance(inp.meta.get("val"), torch.Tensor)
+                )
+                if shape is not None and math.prod(shape) > 1
+            }
+            if len(operand_ranks) > 1:
+                return False
 
         # Handle dimension related node arguments FIRST, before
         # bypassing permutes (which changes node inputs/metadata).
