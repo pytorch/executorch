@@ -965,8 +965,25 @@ class _ExportPassBase(PassBase):
         self.tracer.fake_tensor_mode = fake_tensor_mode
         self.fake_tensor_mode = fake_tensor_mode
 
-        with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
-            result = self.call_submodule(graph_module, tuple(inputs))
+        shape_env = fake_tensor_mode.shape_env
+        outer_pending = None
+        outer_ignorable = None
+        if shape_env is not None:
+            # Replay may be nested inside an operator that owns pending symbols.
+            outer_pending = list(shape_env.pending_fresh_unbacked_symbols)
+            outer_ignorable = list(shape_env.ignorable_fresh_unbacked_symbols)
+            shape_env.pending_fresh_unbacked_symbols.clear()
+            shape_env.ignorable_fresh_unbacked_symbols.clear()
+
+        try:
+            with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
+                result = self.call_submodule(graph_module, tuple(inputs))
+        finally:
+            if shape_env is not None:
+                shape_env.pending_fresh_unbacked_symbols.clear()
+                shape_env.ignorable_fresh_unbacked_symbols.clear()
+                shape_env.pending_fresh_unbacked_symbols.extend(outer_pending)
+                shape_env.ignorable_fresh_unbacked_symbols.extend(outer_ignorable)
 
         return result
 

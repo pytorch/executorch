@@ -9,6 +9,7 @@
 
 import copy
 import unittest
+from typing import Any
 
 import executorch.exir as exir
 import torch
@@ -29,7 +30,11 @@ from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.experimental.proxy_tensor import make_fx
-from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.fx.experimental.symbolic_shapes import (
+    compute_unbacked_bindings,
+    PendingUnbackedSymbolNotFound,
+    ShapeEnv,
+)
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
@@ -519,8 +524,12 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         )(*fake_inputs)
 
         self.assertFalse(shape_env.pending_fresh_unbacked_symbols)
+        outer_pending = [shape_env.create_unbacked_symint().node.expr for _ in range(3)]
         replayed = ExportPass()(graph_module).graph_module
-        self.assertFalse(shape_env.pending_fresh_unbacked_symbols)
+        self.assertEqual(
+            shape_env.pending_fresh_unbacked_symbols,
+            outer_pending,
+        )
 
         item_node = next(
             node
@@ -534,6 +543,120 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         )
         self.assertTrue(item_node.meta.get("unbacked_bindings"))
         self.assertTrue(slice_node.meta.get("unbacked_bindings"))
+
+    def test_export_pass_rejects_unreturned_replay_symbol(self) -> None:
+        shape_env = ShapeEnv()
+        fake_mode = FakeTensorMode(shape_env=shape_env)
+        with fake_mode:
+            fake_input = fake_mode.from_tensor(torch.randn(4))
+        graph_module = make_fx(
+            lambda tensor: tensor + 1,
+            tracing_mode="fake",
+            _allow_non_fake_inputs=True,
+        )(fake_input)
+
+        class InvalidUnbackedSymbolPass(ExportPass):
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                assert self.fake_tensor_mode is not None
+                assert self.fake_tensor_mode.shape_env is not None
+                self.fake_tensor_mode.shape_env.create_unbacked_symint()
+                return super().call_operator(op, args, kwargs, meta)
+
+        with self.assertRaises(PendingUnbackedSymbolNotFound):
+            InvalidUnbackedSymbolPass()(graph_module)
+
+    def test_export_pass_restored_outer_symbol_remains_unbound(self) -> None:
+        shape_env = ShapeEnv()
+        fake_mode = FakeTensorMode(shape_env=shape_env)
+        with fake_mode:
+            fake_input = fake_mode.from_tensor(torch.randn(4))
+        graph_module = make_fx(
+            lambda tensor: tensor + 1,
+            tracing_mode="fake",
+            _allow_non_fake_inputs=True,
+        )(fake_input)
+
+        outer_symbol = shape_env.create_unbacked_symint()
+        ExportPass()(graph_module)
+        self.assertEqual(
+            shape_env.pending_fresh_unbacked_symbols,
+            [outer_symbol.node.expr],
+        )
+        with self.assertRaises(PendingUnbackedSymbolNotFound):
+            compute_unbacked_bindings(shape_env, fake_input)
+
+    def test_export_pass_preserves_multiple_nested_symbol_scopes(self) -> None:
+        shape_env = ShapeEnv()
+        fake_mode = FakeTensorMode(shape_env=shape_env)
+        with fake_mode:
+            fake_input = fake_mode.from_tensor(torch.randn(4))
+        graph_module = make_fx(
+            lambda tensor: tensor + 1,
+            tracing_mode="fake",
+            _allow_non_fake_inputs=True,
+        )(fake_input)
+
+        observed_scopes: list[tuple[int, list[Any], list[Any], Any]] = []
+
+        class NestedReplayPass(ExportPass):
+            def __init__(self, depth: int) -> None:
+                super().__init__()
+                self.depth = depth
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                if self.depth:
+                    assert self.fake_tensor_mode is not None
+                    nested_shape_env = self.fake_tensor_mode.shape_env
+                    assert nested_shape_env is not None
+                    owned_symbol = nested_shape_env.create_unbacked_symint()
+                    if self.depth % 2 == 0:
+                        nested_shape_env.ignorable_fresh_unbacked_symbols.append(
+                            owned_symbol.node.expr
+                        )
+
+                    NestedReplayPass(self.depth - 1)(graph_module)
+                    observed_scopes.append(
+                        (
+                            self.depth,
+                            list(nested_shape_env.pending_fresh_unbacked_symbols),
+                            list(nested_shape_env.ignorable_fresh_unbacked_symbols),
+                            owned_symbol.node.expr,
+                        )
+                    )
+                    compute_unbacked_bindings(nested_shape_env, owned_symbol)
+                return super().call_operator(op, args, kwargs, meta)
+
+        caller_symbols = [shape_env.create_unbacked_symint() for _ in range(2)]
+        shape_env.ignorable_fresh_unbacked_symbols.append(caller_symbols[1].node.expr)
+        NestedReplayPass(3)(graph_module)
+
+        self.assertEqual([scope[0] for scope in observed_scopes], [1, 2, 3])
+        for depth, pending, ignorable, owned_symbol in observed_scopes:
+            self.assertEqual(pending, [owned_symbol])
+            self.assertEqual(ignorable, [owned_symbol] if depth % 2 == 0 else [])
+        self.assertEqual(
+            shape_env.pending_fresh_unbacked_symbols,
+            [symbol.node.expr for symbol in caller_symbols],
+        )
+        self.assertEqual(
+            shape_env.ignorable_fresh_unbacked_symbols,
+            [caller_symbols[1].node.expr],
+        )
+        compute_unbacked_bindings(shape_env, caller_symbols[0])
+        self.assertFalse(shape_env.pending_fresh_unbacked_symbols)
+        self.assertFalse(shape_env.ignorable_fresh_unbacked_symbols)
 
     def test_export_pass_matches_symbolic_inputs_by_position(self) -> None:
         class RenamePlaceholderPass(ExportPass):
