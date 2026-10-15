@@ -190,19 +190,34 @@ if(TARGET mlxdelegate)
   executorch_target_copy_mlx_metallib(muse_glimmer_worker)
 endif()
 
-option(MUSE_GLIMMER_BUILD_BATCHING "Build MLX solo/image batching runners" OFF)
+option(MUSE_GLIMMER_BUILD_BATCHING
+       "Build the batching runner and worker (MLX or CUDA)" OFF
+)
 option(MUSE_GLIMMER_BUILD_BATCHING_TESTS
        "Build preparation/materialization tests without the batching executor"
        OFF
 )
+option(MUSE_GLIMMER_BUILD_CI_SMOKE
+       "Build the CI-only batching correctness workload" OFF
+)
+if(MUSE_GLIMMER_BUILD_CI_SMOKE AND NOT MUSE_GLIMMER_BUILD_BATCHING)
+  message(FATAL_ERROR "CI smoke requires MUSE_GLIMMER_BUILD_BATCHING=ON")
+endif()
+option(MUSE_GLIMMER_BUILD_CI_BENCHMARK
+       "Build the CI-only batching workload tool" OFF
+)
+if(MUSE_GLIMMER_BUILD_CI_BENCHMARK AND NOT MUSE_GLIMMER_BUILD_BATCHING)
+  message(FATAL_ERROR "CI benchmark requires MUSE_GLIMMER_BUILD_BATCHING=ON")
+endif()
 if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
-  if(NOT EXECUTORCH_BUILD_MLX
-     OR NOT TARGET mlxdelegate
-     OR EXECUTORCH_BUILD_CUDA
-  )
+  if(EXECUTORCH_BUILD_CUDA)
+    set(_batching_backend cuda)
+  elseif(EXECUTORCH_BUILD_MLX AND TARGET mlxdelegate)
+    set(_batching_backend mlx)
+  else()
     message(
       FATAL_ERROR
-        "Muse Glimmer batching targets require EXECUTORCH_BUILD_MLX=ON and an MLX-enabled ExecuTorch installation (without CUDA)"
+        "Muse Glimmer batching targets require EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON with an MLX-enabled ExecuTorch installation"
     )
   endif()
   foreach(_dependency extension_module extension_tensor tokenizers::tokenizers)
@@ -226,8 +241,19 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
     muse_glimmer_batching_preparation PUBLIC extension_module extension_tensor
                                              tokenizers::tokenizers
   )
+  if(_batching_backend STREQUAL "cuda")
+    # The vision runtime copies device-resident outputs back to the host.
+    target_link_libraries(muse_glimmer_batching_preparation PUBLIC CUDA::cudart)
+  endif()
 
   if(MUSE_GLIMMER_BUILD_BATCHING)
+    if(_batching_backend STREQUAL "cuda")
+      set(_batching_executor)
+      set(_batching_backend_library cuda_batching)
+    else()
+      set(_batching_executor runtime/mlx_executor.cpp)
+      set(_batching_backend_library mlx)
+    endif()
     set(_batching_dependencies
         extension_llm_batching
         extension_llm_cache
@@ -235,7 +261,7 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
         extension_module
         extension_tensor
         extension_llm_serving
-        mlx
+        ${_batching_backend_library}
     )
     foreach(_dependency IN ITEMS ${_batching_dependencies}
                                  extension_llm_batching_executor_utils
@@ -243,13 +269,13 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       if(NOT TARGET ${_dependency})
         message(
           FATAL_ERROR
-            "Muse Glimmer batching runtime requires ${_dependency}; install ExecuTorch with EXECUTORCH_BUILD_MLX=ON, EXECUTORCH_BUILD_EXTENSION_LLM=ON and EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON"
+            "Muse Glimmer batching runtime requires ${_dependency}; install ExecuTorch with EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON, EXECUTORCH_BUILD_EXTENSION_LLM=ON and EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON"
         )
       endif()
     endforeach()
     add_library(
       muse_glimmer_batching_runtime STATIC
-      runtime/backend_factory.cpp runtime/mlx_executor.cpp
+      runtime/backend_factory.cpp ${_batching_executor}
       runtime/runners/batching_bootstrap.cpp
     )
     target_link_libraries(
@@ -291,8 +317,56 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       muse_glimmer_batching_worker PRIVATE muse_glimmer_batching_runtime
                                            ${_batching_transport}
     )
-    executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
-    executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
+    if(_batching_backend STREQUAL "cuda")
+      if(NOT APPLE AND NOT MSVC)
+        # CUDA AOTI blobs resolve symbols from the host executable.
+        target_link_options(
+          muse_glimmer_batching_runner PRIVATE "LINKER:--export-dynamic"
+        )
+        target_link_options(
+          muse_glimmer_batching_worker PRIVATE "LINKER:--export-dynamic"
+        )
+      endif()
+    else()
+      executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
+      executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
+    endif()
+    if(MUSE_GLIMMER_BUILD_CI_SMOKE)
+      add_executable(
+        muse_glimmer_batching_smoke
+        ${EXECUTORCH_ROOT}/.ci/scripts/muse_glimmer_batching_smoke.cpp
+      )
+      target_link_libraries(
+        muse_glimmer_batching_smoke PRIVATE muse_glimmer_batching_runtime
+      )
+      if(_batching_backend STREQUAL "cuda")
+        if(NOT APPLE AND NOT MSVC)
+          target_link_options(
+            muse_glimmer_batching_smoke PRIVATE "LINKER:--export-dynamic"
+          )
+        endif()
+      else()
+        executorch_target_copy_mlx_metallib(muse_glimmer_batching_smoke)
+      endif()
+    endif()
+    if(MUSE_GLIMMER_BUILD_CI_BENCHMARK)
+      add_executable(
+        muse_glimmer_batching_bench
+        ${EXECUTORCH_ROOT}/.ci/scripts/muse_glimmer_batching_bench.cpp
+      )
+      target_link_libraries(
+        muse_glimmer_batching_bench PRIVATE muse_glimmer_batching_runtime
+      )
+      if(_batching_backend STREQUAL "cuda")
+        if(NOT APPLE AND NOT MSVC)
+          target_link_options(
+            muse_glimmer_batching_bench PRIVATE "LINKER:--export-dynamic"
+          )
+        endif()
+      else()
+        executorch_target_copy_mlx_metallib(muse_glimmer_batching_bench)
+      endif()
+    endif()
   endif()
 
   if(MUSE_GLIMMER_BUILD_BATCHING_TESTS)

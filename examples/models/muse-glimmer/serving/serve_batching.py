@@ -6,8 +6,10 @@
 
 """Serve Muse Glimmer solo text/images with the batching multiplexed worker.
 
-Requires an off-graph solo export. The legacy launcher and runners remain
-separate; this entry point does not select or fall back to DFlash.
+Requires an off-graph batching export: export_solo.py --use-offgraph-kv-cache
+for MLX (text and images); add --backend cuda for CUDA (text only). The legacy
+launcher and runners remain separate; this entry point does not select or fall
+back to DFlash.
 """
 
 import argparse
@@ -45,7 +47,7 @@ def _parse_args(argv=None):
     parser.add_argument("--tokenizer-path", required=True)
     parser.add_argument("--hf-tokenizer", required=True)
     parser.add_argument("--pos-embed-path")
-    parser.add_argument("--backend", choices=("mlx",), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "cuda"), default="mlx")
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-sessions", type=int, default=4)
@@ -93,6 +95,11 @@ def _parse_args(argv=None):
         parser.error("BOS and EOS IDs must be uint64 values")
     if 4 * ((args.max_image_bytes + 2) // 3) + 1024 > args.max_request_bytes:
         parser.error("--max-request-bytes must fit the base64 image plus JSON framing")
+    if args.backend == "cuda":
+        if args.data_path is None:
+            parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
+        if args.pos_embed_path is not None:
+            parser.error("--backend cuda serves text only; omit --pos-embed-path")
     _validate_paths(parser, args)
     return args
 
