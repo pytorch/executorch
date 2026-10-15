@@ -2762,6 +2762,26 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   session = Session{};
   fixture.runner.shutdown();
   const EngineMetrics m = fixture.runner.metrics();
+  const auto live = fixture.runner.snapshot();
+  EXPECT_EQ(live.decode_sequences, 0u);
+  EXPECT_EQ(live.prefill_sequences, 0u);
+  EXPECT_EQ(live.completed.steps, m.steps);
+  EXPECT_EQ(live.completed.decode_tokens_total, m.decode_tokens_total);
+  ASSERT_EQ(live.recent_steps.size(), 3u);
+  ASSERT_EQ(live.recent_steps[0].inputs.size(), 2u);
+  EXPECT_EQ(live.recent_steps[0].inputs[0].position, 0);
+  EXPECT_EQ(live.recent_steps[0].inputs[0].tokens, 8u);
+  EXPECT_EQ(live.recent_steps[0].inputs[1].position, 8);
+  EXPECT_EQ(live.recent_steps[0].inputs[1].tokens, 2u);
+  EXPECT_FALSE(live.recent_steps[0].inputs[0].decode);
+  std::int64_t measured_us = 0;
+  for (const auto& step : live.recent_steps) {
+    EXPECT_TRUE(step.succeeded);
+    measured_us += step.elapsed_us;
+  }
+  EXPECT_EQ(measured_us, m.step_latency_sum_us);
+  EXPECT_TRUE(live.recent_steps[1].inputs[0].decode);
+  EXPECT_EQ(live.recent_steps[1].inputs[0].position, 10);
 
   // One prefill step carrying both chunks, then one decode step per token
   // after the first, which the prefill produced.
@@ -2788,6 +2808,42 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   expect_balanced(m, 1);
   EXPECT_EQ(m.finished_token_limit, 1u);
 }
+
+TEST(EngineMetricsTest, CompletedStepHistoryIsBounded) {
+  FakeExecutor executor;
+  Fixture fixture(executor, 4, 8);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(1), config(140), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  fixture.runner.shutdown();
+  const auto snapshot = fixture.runner.snapshot();
+  ASSERT_EQ(snapshot.recent_steps.size(), 128u);
+  EXPECT_EQ(snapshot.recent_steps.front().id, 13u);
+  EXPECT_EQ(snapshot.recent_steps.back().id, 140u);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(EngineMetricsTest, FailedAllocationMeasurementDoesNotFailGeneration) {
+  class UnmeasurableExecutor : public FakeExecutor {
+   public:
+    std::optional<std::size_t> kv_allocated_bytes() const override {
+      throw std::runtime_error("allocation measurement unavailable");
+    }
+  } executor;
+  Fixture fixture(executor, 4, 8);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(10), config(3), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(updates->finish(), FinishReason::NewTokenLimit);
+  fixture.runner.shutdown();
+  EXPECT_FALSE(fixture.runner.snapshot().kv_allocated_bytes);
+  EXPECT_EQ(fixture.runner.snapshot().completed.steps, 3u);
+}
+#endif
 
 TEST(EngineMetricsTest, StartsAndCompletionsBalanceAcrossMixedOutcomes) {
   FakeExecutor executor;

@@ -219,12 +219,17 @@ MuseGlimmerMLXExecutor::MuseGlimmerMLXExecutor(
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
+      cache_memory_(cache->as<cache::CacheMemory>()),
       spec_(std::move(spec)),
       embeddings_(
           std::make_unique<EngineEmbeddings>(spec_, std::move(pos_embed_path))),
       max_sessions_(max_sessions) {}
 
 MuseGlimmerMLXExecutor::~MuseGlimmerMLXExecutor() = default;
+
+std::optional<std::size_t> MuseGlimmerMLXExecutor::kv_allocated_bytes() const {
+  return cache_memory_ ? cache_memory_->allocated_bytes() : std::nullopt;
+}
 
 runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
     const MuseGlimmerBackendConfig& config) {

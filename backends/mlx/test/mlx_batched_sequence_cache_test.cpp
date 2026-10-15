@@ -82,6 +82,56 @@ class MLXBatchedSequenceCacheTest : public ::testing::Test {
 
 // Two sequences in one step: each comes back with what it would have computed
 // alone, so neither saw the other's cells.
+TEST_F(MLXBatchedSequenceCacheTest, AllocationCountsSharedCloneBackingOnce) {
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
+  auto* memory = c.as<cache::CacheMemory>();
+  ASSERT_NE(memory, nullptr);
+  EXPECT_EQ(memory->allocated_bytes(), 0u);
+  c.bind_controller_stream(
+      ::mlx::core::default_stream(::mlx::core::Device::gpu));
+  const auto a = *c.seq_new();
+  array out = step(c, {a, a}, {0, 1}, randn(2), randn(2), randn(2));
+  EXPECT_EQ(out.status(), array::Status::unscheduled);
+  EXPECT_TRUE(memory->allocated_bytes());
+  EXPECT_EQ(out.status(), array::Status::unscheduled);
+  ::mlx::core::eval(out);
+  const auto original = memory->allocated_bytes();
+  ASSERT_TRUE(original);
+  EXPECT_GT(*original, 0u);
+  const auto b = c.seq_clone(a, 2);
+  ASSERT_TRUE(b);
+  EXPECT_EQ(memory->allocated_bytes(), original);
+  out = step(c, {*b}, {2}, randn(1), randn(1), randn(1));
+  ::mlx::core::eval(out);
+  ASSERT_TRUE(memory->allocated_bytes());
+  EXPECT_GT(*memory->allocated_bytes(), *original);
+  EXPECT_TRUE(c.seq_rm(*b));
+  EXPECT_EQ(memory->allocated_bytes(), original);
+  EXPECT_TRUE(c.seq_rm(a));
+  EXPECT_EQ(memory->allocated_bytes(), 0u);
+}
+
+TEST_F(
+    MLXBatchedSequenceCacheTest,
+    LazyPrefixRetainsAllocationAfterSourceCloses) {
+  auto c =
+      make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf, 1));
+  c.bind_controller_stream(
+      ::mlx::core::default_stream(::mlx::core::Device::gpu));
+  const auto a = *c.seq_new();
+  array out = step(c, {a, a, a, a}, {0, 1, 2, 3}, randn(4), randn(4), randn(4));
+  ::mlx::core::eval(out);
+  const auto original = c.allocated_bytes();
+  ASSERT_TRUE(original);
+  const auto b = c.seq_clone(a, 2);
+  ASSERT_TRUE(b);
+  EXPECT_EQ(c.allocated_bytes(), original);
+  EXPECT_TRUE(c.seq_rm(a));
+  EXPECT_EQ(c.allocated_bytes(), original);
+  EXPECT_TRUE(c.seq_rm(*b));
+  EXPECT_EQ(c.allocated_bytes(), 0u);
+}
+
 TEST_F(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
   auto c = make_cache<MLXBatchedSequenceCache>(
       flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));

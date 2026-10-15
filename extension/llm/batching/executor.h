@@ -86,6 +86,13 @@ class ET_EXPERIMENTAL Executor {
     return 0;
   }
 
+  // Buffers retained by cache state and pending cache operations, counting
+  // shared allocations once. Excludes allocator free lists; nullopt is unknown.
+  // Metadata-only: must not evaluate lazy work or synchronize the device.
+  virtual std::optional<std::size_t> kv_allocated_bytes() const {
+    return std::nullopt;
+  }
+
   // A session to route tasks to. nullopt = at capacity. Every successful id
   // must be unique for the lifetime of the consuming Runner, even after close.
   virtual std::optional<SessionId> open_session() = 0;
