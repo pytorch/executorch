@@ -68,6 +68,7 @@ def load_config(path):
         "temperature": 0.0,
         "agent_host": None,
         "session_affinity": None,
+        "compaction": "none",
     }
     options = config.get("terminal_bench", {})
     if unknown := options.keys() - defaults.keys():
@@ -96,6 +97,8 @@ def load_config(path):
 
 def commands(config, output):
     server, options = config["server"], config["terminal_bench"]
+    if options["compaction"] not in ("none", "cliff"):
+        raise ValueError("[terminal_bench].compaction must be 'none' or 'cliff'")
     serve = [server["python"], "-m", server["module"]]
     for key, value in server.items():
         if key in {"python", "module"}:
@@ -170,6 +173,15 @@ def commands(config, output):
                 f"base_url=http://{host}:{server['port']}/v1",
             ]
         )
+    if options["compaction"] == "cliff":
+        module = "executorch.examples.llm_server.evals.terminal_bench.compaction"
+        agent = (
+            "SessionCliffMiniSweAgent"
+            if options["concurrency"] > 1
+            else "CliffMiniSweAgent"
+        )
+        harbor[harbor.index("--agent") + 1] = f"{module}:{agent}"
+        harbor.extend(["--ae", "PYTHONPATH=/installed-agent"])
     for task in options["tasks"]:
         harbor.extend(["--include-task-name", task])
     probe = [
@@ -452,10 +464,13 @@ def main(argv=None):
         model_kwargs = {"temperature": config["terminal_bench"]["temperature"]}
         if affinity := config["terminal_bench"]["session_affinity"]:
             model_kwargs["extra_headers"] = {"x-session-affinity": affinity}
+        agent_config = {"step_limit": config["terminal_bench"]["step_limit"]}
+        if config["terminal_bench"]["compaction"] == "cliff":
+            agent_config["agent_class"] = "cliff_agent.CliffAgent"
         (output / "agent.yaml").write_text(
             json.dumps(
                 {
-                    "agent": {"step_limit": config["terminal_bench"]["step_limit"]},
+                    "agent": agent_config,
                     "model": {"model_kwargs": model_kwargs},
                 }
             )

@@ -55,6 +55,18 @@ unreleased capacity. Harbor retains the same mini-SWE-agent loop and per-trial
 verification.
 The run also checks that evaluation session IDs match the Harbor trial UUIDs.
 
+Enable experimental [CliffCompaction](https://arxiv.org/abs/2609.26779) with
+`[terminal_bench].compaction = "cliff"` (default `"none"`). It starts at an
+estimated **8,192 tokens**, preserves instructions and six recent turns, and
+removes large older tool outputs.
+
+For prefix reuse, configure `[server].prefix_cache_entries` and optional
+`prefix_checkpoint_interval` on a clone-capable batching worker. Retention uses
+global LRU without protected early checkpoints; see [cache behavior](../../spec/batching.md).
+
+Full trajectories include compaction events under `info.compaction`.
+`server.log` reports reused and prefilled tokens.
+
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns
 its server process.
