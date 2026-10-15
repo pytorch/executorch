@@ -617,7 +617,7 @@ class ServingChat:
             if entered:
                 await lease.__aexit__(None, None, None)
 
-    async def _create(self, req: ChatCompletionRequest, lease):
+    def _render_prompt(self, req: ChatCompletionRequest):
         if req.model is not None and req.model != self._model_id:
             raise ModelNotFound(req.model, self._model_id)
         self._reject_invalid_values(req)
@@ -633,6 +633,15 @@ class ServingChat:
         prompt = self._template.render(
             req.messages, tools=template_tools, template_kwargs=template_kwargs
         )
+        return prompt, template_tools, template_kwargs
+
+    def prompt_token_count(self, req: ChatCompletionRequest):
+        """Count a fresh rendered prompt, without accessing session transcripts."""
+        prompt, _, _ = self._render_prompt(req)
+        return self._template.count_tokens(prompt)
+
+    async def _create(self, req: ChatCompletionRequest, lease):
+        prompt, template_tools, template_kwargs = self._render_prompt(req)
         # Token-ID segments splice prior assistant turns' exact ids so warm resume
         # survives the template's lossy tool-call re-render; plain text when
         # there's nothing to splice or on ambiguity (the worker verifies the
