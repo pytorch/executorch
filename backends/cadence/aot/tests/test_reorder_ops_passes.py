@@ -734,6 +734,58 @@ class TestReorderPasses(unittest.TestCase):
             1,
         )
 
+    def test_postpone_pre_edge_cadence_dequantize_below_permute(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder(
+            "x", torch.randint(-128, 127, (1, 3, 4, 5), dtype=torch.int8)
+        )
+        dequant = builder.call_operator(
+            op=torch.ops.cadence.dequantize_per_tensor.default,
+            args=(x, 0.1, 0, -128, 127, torch.int8),
+        )
+        permute = builder.call_operator(
+            op=torch.ops.aten.permute_copy.default,
+            args=(dequant, [2, 0, 1, 3]),
+        )
+        builder.output([permute])
+        result = cast(
+            PassResult,
+            PostponeDequantizeOpBelowUseChainPass().call(builder.get_graph_module()),
+        )
+        self.assertTrue(result.modified)
+        (permute,) = result.graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.permute_copy.default
+        )
+        self.assertEqual(permute.args[0].op, "placeholder")
+        (dequant,) = permute.users
+        self.assertEqual(
+            dequant.target, torch.ops.cadence.dequantize_per_tensor.default
+        )
+
+    def test_advance_pre_edge_cadence_quantize_above_permute(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 4, 5))
+        permute = builder.call_operator(
+            op=torch.ops.aten.permute_copy.default,
+            args=(x, [2, 0, 1, 3]),
+        )
+        quant = builder.call_operator(
+            op=torch.ops.cadence.quantize_per_tensor.default,
+            args=(permute, 0.1, 0, -128, 127, torch.int8),
+        )
+        builder.output([quant])
+        result = cast(
+            PassResult,
+            AdvanceQuantizeOpAboveDefChainPass().call(builder.get_graph_module()),
+        )
+        self.assertTrue(result.modified)
+        (permute,) = result.graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.permute_copy.default
+        )
+        self.assertEqual(
+            permute.args[0].target, torch.ops.cadence.quantize_per_tensor.default
+        )
+
     # 4d -> permute -> 4d -> view -> 3d
     def test_permute3_view4_chains(self) -> None:
         builder = GraphBuilder()

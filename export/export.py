@@ -714,7 +714,7 @@ class ExportSession:
         )
         if not lowering_stage:
             raise RuntimeError(
-                "No delegation info available, atleast one of the lowering stages should be present"
+                "No delegation info available, at least one of the lowering stages should be present"
             )
 
         stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])

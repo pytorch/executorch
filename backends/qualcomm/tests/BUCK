@@ -18,6 +18,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = runtime.python_library,
     name = "test_qnn_delegate",
     srcs = [
+        "rework/src/fcb_utils.py",
         "test_qnn_delegate.py",
         "utils.py",
     ],
