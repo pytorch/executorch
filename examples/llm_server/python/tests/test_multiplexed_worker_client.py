@@ -56,10 +56,14 @@ def test_stats_have_a_bounded_slot_independent_of_generation_capacity():
             reservation = client.reserve_request()
             pending = asyncio.create_task(client.runtime_stats())
             request = await proc.stdin.frames.get()
-            with pytest.raises(WorkerError, match="capacity exhausted"):
-                await client.runtime_stats()
+            second = asyncio.create_task(client.runtime_stats())
+            await asyncio.sleep(0)
+            assert proc.stdin.frames.empty()
             proc.send(request["request_id"], stats={"decode_sequences": 2})
             assert await pending == {"decode_sequences": 2}
+            request = await proc.stdin.frames.get()
+            proc.send(request["request_id"], stats={"decode_sequences": 1})
+            assert await second == {"decode_sequences": 1}
             assert client.release_request(reservation)
             assert client.healthy
 

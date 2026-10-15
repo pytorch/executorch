@@ -14,6 +14,9 @@ methods. Implementation can change freely as long as these pass.
 import json
 
 import pytest
+from executorch.examples.llm_server.python.errors import SessionCapacity
+from executorch.examples.llm_server.python.server import build_app
+from fastapi.testclient import TestClient
 
 
 def _sse_chunks(text):
@@ -53,8 +56,9 @@ def test_models_listing_shape(make_client):
     assert body["data"][0]["object"] == "model"
 
 
-def test_count_fresh_chat_prompt_without_generating(make_client):
-    client, worker = make_client(prompt_tokens=123)
+@pytest.mark.parametrize("offset", [0, 1])
+def test_count_fresh_chat_prompt_without_generating(make_client, offset):
+    client, worker = make_client(prompt_tokens=123, prompt_token_offset=offset)
     response = client.post(
         "/v1/chat/tokenize",
         json={
@@ -69,7 +73,7 @@ def test_count_fresh_chat_prompt_without_generating(make_client):
         },
     )
     assert response.status_code == 200
-    assert response.json() == {"prompt_tokens": 123}
+    assert response.json() == {"prompt_tokens": 123 + offset}
     assert worker.captured_config is None
     assert not worker.opened_log
 
@@ -80,6 +84,17 @@ def test_prompt_count_is_unknown_without_tokenizer(make_client):
         "/v1/chat/tokenize", json={"messages": [{"role": "user", "content": "hi"}]}
     )
     assert response.json() == {"prompt_tokens": None}
+
+
+def test_runtime_stats_preserves_api_error_status():
+    class UnavailableStats:
+        async def resource_snapshot(self):
+            raise SessionCapacity("capacity_exhausted")
+
+    client = TestClient(build_app(UnavailableStats(), "test-model"))
+    response = client.get("/v1/runtime/stats")
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "capacity_exhausted"
 
 
 def test_chat_nonstreaming_shape(make_client):
