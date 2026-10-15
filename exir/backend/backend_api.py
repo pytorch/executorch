@@ -111,7 +111,9 @@ def _(
     # All backend implementation are final, so we don't need to consider nested subclasses.
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
-            copied_edge_program = copy.deepcopy(edge_program)
+            copied_edge_program = cls.copy_exported_program_for_preprocess(
+                edge_program, compile_specs
+            )
             preprocess_result: PreprocessResult = cls.preprocess(
                 copied_edge_program,
                 compile_specs,
@@ -122,6 +124,7 @@ def _(
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
@@ -616,6 +619,7 @@ def lower_all_submodules_to_backend(
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_spec,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map,

@@ -82,7 +82,16 @@ endfunction()
 # options are also emitted before the ordered link libraries, which keeps a
 # bundled archive ahead of anything that would otherwise satisfy the same
 # symbols.
+#
+# EXPORTED says the archive's symbols are part of what the target exports. On
+# Windows that bundles the archive as objects, because the export list
+# WINDOWS_EXPORT_ALL_SYMBOLS builds covers only the target's own objects;
+# without it the archive is bundled with /WHOLEARCHIVE and stays private to the
+# DLL. Stated by the caller rather than inferred from that property, so the
+# result does not depend on the order of calls. Ignored elsewhere, where the
+# whole archive is exported either way.
 function(executorch_target_whole_archive target_name archive_target)
+  cmake_parse_arguments(ARG "EXPORTED" "" "" ${ARGN})
   # One self-contained option per archive. The path sits inside the option so
   # its text is unique, which matters because CMake removes a duplicate option
   # and that would leave every archive after the first outside the scope,
@@ -103,6 +112,25 @@ function(executorch_target_whole_archive target_name archive_target)
     target_link_options(
       ${target_name} PRIVATE
       "SHELL:LINKER:-force_load,$<TARGET_FILE:${archive_target}>"
+    )
+  elseif(MSVC AND ARG_EXPORTED)
+    # Objects rather than /WHOLEARCHIVE: WINDOWS_EXPORT_ALL_SYMBOLS builds the
+    # .def from the target's own objects and cannot read an archive, so a
+    # whole-archived runtime would link but export nothing. COMPILE_ONLY takes
+    # the usage requirements without the archive or its interface link options:
+    # a /WHOLEARCHIVE among them is processed ahead of these objects and pulls
+    # the same members out of the archive again, which is a duplicate symbol.
+    # The ordinary link below is not needed: the objects are direct inputs of
+    # this link, so a rebuilt archive cannot leave stale contents behind.
+    target_sources(${target_name} PRIVATE $<TARGET_OBJECTS:${archive_target}>)
+    target_link_libraries(
+      ${target_name} PRIVATE $<COMPILE_ONLY:${archive_target}>
+    )
+    return()
+  elseif(MSVC)
+    target_link_options(
+      ${target_name} PRIVATE
+      "LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${archive_target}>"
     )
   else()
     target_link_options(
@@ -127,11 +155,17 @@ function(executorch_target_link_options_shared_lib target_name)
   # constructor. Export scoped --no-as-needed retention instead, which is what
   # actually keeps a registration-only shared library on the link line.
   get_target_property(_target_type ${target_name} TYPE)
+  # A Windows DLL is retained by its anchor, which
+  # executorch_target_shipped_runtime_path adds together with the /INCLUDE its
+  # consumers need; a DLL without one has nothing to reference.
+  if(_target_type STREQUAL "SHARED_LIBRARY" AND MSVC)
+    return()
+  endif()
   # A shared library is never an archive, so the archive handling below does not
   # apply to one on any platform. On Apple it actively harms: -force_load on a
   # shared library makes every consumer absorb a copy of its contents, which put
   # a second operator registry inside the runtime library.
-  if(_target_type STREQUAL "SHARED_LIBRARY" AND NOT MSVC)
+  if(_target_type STREQUAL "SHARED_LIBRARY")
     # Mach-O keeps a library named on the link line whether or not anything
     # references it, so there is nothing to counter and ld rejects the GNU
     # flags.
@@ -401,6 +435,33 @@ function(executorch_target_retain_shared_library target_name library_target)
     target_link_options(
       ${target_name} PRIVATE "$<TARGET_FILE:${library_target}>"
     )
+  elseif(MSVC)
+    # The Visual Studio generator emits link options after the libraries, so the
+    # import library is prepended to LINK_LIBRARIES instead, as a plain path so
+    # it carries no usage requirements: the runtime's
+    # C10_USING_CUSTOM_GENERATED_MACROS would strip torch's dllimport from a
+    # target compiling against ATen. First on the line, it resolves the runtime
+    # ahead of any static core that arrives transitively. The anchor keeps a
+    # registration-only DLL in the import table.
+    get_target_property(_existing_link_libraries ${target_name} LINK_LIBRARIES)
+    if(NOT _existing_link_libraries)
+      set(_existing_link_libraries "")
+    endif()
+    set_property(
+      TARGET ${target_name}
+      PROPERTY LINK_LIBRARIES "$<TARGET_LINKER_FILE:${library_target}>"
+               ${_existing_link_libraries}
+    )
+    target_link_options(
+      ${target_name} PRIVATE
+      "LINKER:/INCLUDE:$<TARGET_PROPERTY:${library_target},EXECUTORCH_ANCHOR>"
+    )
+    add_dependencies(${target_name} ${library_target})
+    target_include_directories(
+      ${target_name}
+      PRIVATE $<TARGET_PROPERTY:${library_target},INTERFACE_INCLUDE_DIRECTORIES>
+    )
+    return()
   else()
     target_link_options(
       ${target_name}
@@ -420,8 +481,57 @@ endfunction()
 # records, and in the build tree these libraries are NOT siblings: the runtime
 # sits at the top while the others are in their own subdirectories. Those
 # recorded directories are what resolves them there, and packaging strips them
-# so nothing absolute ships.
+# so nothing absolute ships. A registration-only Windows DLL stays in a
+# consumer's import table only if the consumer references one of its symbols, so
+# each shipped DLL exports an empty C function its consumers force-reference
+# with /INCLUDE, the counterpart of --no-as-needed. Named after the shipped
+# file, without any configuration postfix, so the name is the same in every
+# configuration. Written out rather than left as a generator expression, because
+# the link option is exported and an installed imported target has no
+# OUTPUT_NAME to evaluate it against. Scheduled by
+# executorch_target_shipped_runtime_path for the end of configure.
+function(_executorch_add_windows_anchor target_name binary_dir)
+  get_target_property(_name ${target_name} OUTPUT_NAME)
+  if(NOT _name)
+    set(_name ${target_name})
+  endif()
+  set(_anchor "executorch_anchor_${_name}")
+  set(_anchor_source "${binary_dir}/${target_name}_anchor.cpp")
+  # Written now rather than with file(GENERATE): this runs in the top-level
+  # directory, and a generated file is only known as such in the directory that
+  # generates it, so the target's own directory would look for it on disk.
+  file(CONFIGURE OUTPUT "${_anchor_source}" CONTENT
+       "extern \"C\" __declspec(dllexport) void ${_anchor}(void) {}\n"
+  )
+  target_sources(${target_name} PRIVATE "${_anchor_source}")
+  set_target_properties(
+    ${target_name} PROPERTIES EXECUTORCH_ANCHOR "${_anchor}"
+  )
+  target_link_options(${target_name} INTERFACE "LINKER:/INCLUDE:${_anchor}")
+endfunction()
+
 function(executorch_target_shipped_runtime_path target_name)
+  if(WIN32)
+    # No export annotations in the runtime, so each shipped component DLL
+    # exports all of its symbols, plus a C anchor consumers force-reference to
+    # keep it loaded. A target that set WINDOWS_EXPORT_ALL_SYMBOLS OFF exports
+    # through its own annotations and keeps that choice.
+    get_target_property(_export_all ${target_name} WINDOWS_EXPORT_ALL_SYMBOLS)
+    if(NOT DEFINED _export_all OR _export_all STREQUAL "_export_all-NOTFOUND")
+      set_target_properties(
+        ${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+      )
+    endif()
+    # The anchor is named after the shipped file, which some targets name only
+    # after this call (the optimized kernels are renamed once gen_operators_lib
+    # returns), so it is added when configuration ends.
+    cmake_language(
+      EVAL
+      CODE
+      "cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL _executorch_add_windows_anchor [[${target_name}]] [[${CMAKE_CURRENT_BINARY_DIR}]])"
+    )
+    return()
+  endif()
   # Mach-O spells the same idea @loader_path.
   if(APPLE)
     set(_origin "@loader_path")

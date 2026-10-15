@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from io import StringIO
 
+import numpy as np
 import torch
 
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -22,6 +23,9 @@ from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
     ModuleAddConstReturn,
+    ModuleAddEmpty,
+    ModuleAddHalf,
+    ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
     ModuleChannelsLast,
@@ -67,6 +71,150 @@ class PybindingsTest(unittest.TestCase):
         executorch_output = executorch_module.forward(inputs)[0]
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_numpy_buffer_inputs(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module.forward([value.numpy() for value in inputs])[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_numpy_float16_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddHalf())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
+    def test_buffer_input_does_not_import_torch(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        torch_module = sys.modules.pop("torch")
+        try:
+            output = executorch_module(inputs[0].numpy())[0]
+            self.assertNotIn("torch", sys.modules)
+        finally:
+            sys.modules["torch"] = torch_module
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
+    def test_empty_numpy_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddEmpty())
+        array = np.zeros((3, 0), dtype=np.float32)
+
+        module = self.load_fn(exported_program.buffer)
+        self.assertTrue(torch.equal(module(array)[0], inputs[0] + inputs[0]))
+
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        self.assertTrue(torch.equal(method(array)[0], inputs[0] + inputs[0]))
+
+    def test_default_numpy_integer_dtype_error_is_descriptive(self):
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(ValueError, "dtype Long.*expects Float"):
+            executorch_module(np.ones((2, 2), dtype=int))
+
+    def test_numpy_float_scalar_input(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module.forward([inputs[0], np.float64(inputs[1])])[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+
+    def test_numpy_float_scalar_set_inputs(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+
+        method.set_inputs([inputs[0], np.float64(inputs[1])])
+        method.execute()
+
+        self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
+
+    def test_method_rejects_tensor_for_scalar_input(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        with self.assertRaises(RuntimeError):
+            method.set_inputs([inputs[0], torch.ones(1)])
+
+    def test_numpy_array_is_a_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[0]))
+
+    def test_mixed_tensor_protocols_are_rejected(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(TypeError, "cannot mix buffer and torch"):
+            executorch_module.forward([inputs[0], inputs[1].numpy()])
+
+    def test_non_dense_numpy_input_is_rejected(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        non_dense = np.zeros((4, 4), dtype=np.float32)[::2, ::2]
+
+        with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
+            executorch_module(non_dense)
+
+    def test_complex_numpy_input_is_rejected(self):
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(BufferError, "Unsupported buffer format"):
+            executorch_module(np.ones((2, 2), dtype=np.complex64))
+
+    def test_readonly_buffer_input_is_copied(self):
+        exported_program, inputs = create_program(
+            ModuleAddSingleInput(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+        array = inputs[0].numpy()
+        method.set_inputs(memoryview(array).toreadonly())
+        array.fill(3)
+
+        method.execute()
+
+        self.assertTrue(torch.equal(method.get_outputs()[0], torch.full((2, 2), 2.0)))
+
+    def test_numpy_layout_must_match_exported_layout(self):
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        executorch_module = self.load_fn(exported_program.buffer)
+        contiguous = inputs[0].contiguous().numpy()
+
+        with self.assertRaisesRegex(ValueError, "method expects stride"):
+            executorch_module(contiguous)
+
+    def test_tensor_subclass_without_storage_is_rejected(self):
+        class Wrapper(torch.Tensor):
+            @staticmethod
+            def __new__(cls, elem):
+                return torch.Tensor._make_wrapper_subclass(
+                    cls, elem.shape, dtype=elem.dtype
+                )
+
+            @classmethod
+            def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+                raise NotImplementedError(func)
+
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(ValueError, "data is not allocated"):
+            executorch_module(Wrapper(inputs[0]))
 
     def test_multiple_entry(self):
         program, inputs = create_program(ModuleMulti())
@@ -342,6 +490,88 @@ class PybindingsTest(unittest.TestCase):
 
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_program_keeps_buffer_alive(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        program_data = bytes(exported_program.buffer)
+        initial_refcount = sys.getrefcount(program_data)
+
+        program = self.load_prog_fn(program_data)
+
+        self.assertGreater(sys.getrefcount(program_data), initial_refcount)
+        del program_data
+        output = program.load_method("forward")(inputs)[0]
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+
+    def test_method_preserves_unplanned_input_that_is_also_an_output(self):
+        class ReturnInputAndSum(torch.nn.Module):
+            def forward(self, x, y):
+                return x, x + y
+
+            def get_methods_to_export(self):
+                return ("forward",)
+
+            def get_inputs(self):
+                return (torch.ones(2, 2), torch.full((2, 2), 2.0))
+
+        exported_program, inputs = create_program(
+            ReturnInputAndSum(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        outputs = method(inputs)
+
+        self.assertTrue(torch.equal(outputs[0], inputs[0]))
+        self.assertTrue(torch.equal(outputs[1], inputs[0] + inputs[1]))
+
+    def test_failed_set_inputs_keeps_buffer_storage_alive(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+        method.set_inputs([value.numpy() for value in inputs])
+
+        with self.assertRaises(ValueError):
+            method.set_inputs([inputs[0].numpy(), inputs[1].to(torch.int32).numpy()])
+
+        method.execute()
+        output = method.get_outputs()[0]
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_method_rejects_resized_borrowed_input(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        protocol_inputs = {
+            "torch": [value.clone() for value in inputs],
+            "numpy": [value.numpy().copy() for value in inputs],
+        }
+
+        for protocol, values in protocol_inputs.items():
+            with self.subTest(protocol=protocol):
+                method = self.load_prog_fn(exported_program.buffer).load_method(
+                    "forward"
+                )
+                method.set_inputs(values)
+                if protocol == "torch":
+                    values[0].resize_(64, 64)
+                else:
+                    values[0].resize((64, 64), refcheck=False)
+
+                with self.assertRaisesRegex(
+                    ValueError, "Input 0 storage changed.*call set_inputs"
+                ):
+                    method.execute()
 
     def test_method_callable(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -831,6 +1061,87 @@ class PybindingsTest(unittest.TestCase):
 
         # A failed load must leave the method that already loaded usable.
         self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
+
+    def test_unplanned_device_output_is_device_memory(self):
+        # A program exported with alloc_graph_output=False leaves its outputs to the caller, and a
+        # device-resident one tags them for the device, so the bindings supply that memory. They
+        # used to supply host memory, which the CUDA backend rejects (InvalidArgument) and which a
+        # delegate without that check writes into, failing later wherever the GPU cannot read
+        # pageable host memory. This checks that the output buffer is real device memory.
+        if "CudaBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs a build with the CUDA backend linked in")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        import ctypes
+
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+        from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
+        from executorch.runtime import Runtime
+
+        class Delegated(torch.nn.Module):
+            def forward(self, x, y):
+                return (x + y) * 2.0
+
+        inputs = (torch.ones(4, 4), torch.ones(4, 4))
+        edge = to_edge_transform_and_lower(
+            {"forward": export(Delegated(), inputs, strict=True)},
+            partitioner={
+                "forward": [CudaPartitioner([CompileSpec("method_name", b"forward")])]
+            },
+        )
+        exported_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        # Without this the test would quietly stop covering the unplanned path if the planner
+        # started placing these outputs: a planned device arena is device memory too, so the
+        # pointer check below would still pass.
+        plan = exported_program.executorch_program.execution_plan[0]
+        for index in plan.outputs:
+            output_tensor = plan.values[index].val
+            self.assertIsNone(output_tensor.allocation_info)
+            self.assertEqual(
+                output_tensor.extra_tensor_info.device_type, DeviceType.CUDA
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "program.pte")
+            with open(pte_path, "wb") as pte_file:
+                exported_program.write_to_file(pte_file)
+            data_names = sorted(exported_program._tensor_data or {})
+            exported_program.write_tensor_data_to_file(directory)
+            data_path = (
+                os.path.join(directory, data_names[0] + ".ptd") if data_names else None
+            )
+            method = (
+                Runtime.get()
+                .load_program(pte_path, data_path=data_path)
+                .load_method("forward")
+            )
+            cuda_inputs = [tensor.cuda() for tensor in inputs]
+            output = method._method(cuda_inputs, clone_outputs=False)[0]
+            # Ask the driver what the uncloned output points at, not the tensor's device tag,
+            # which says cuda either way. CU_POINTER_ATTRIBUTE_MEMORY_TYPE is 2 and
+            # CU_MEMORYTYPE_DEVICE is 2. The driver does not know a pageable host pointer at
+            # all, and returns an error for it.
+            memory_type = ctypes.c_uint(0)
+            status = ctypes.CDLL("libcuda.so.1").cuPointerGetAttribute(
+                ctypes.byref(memory_type), 2, ctypes.c_uint64(output.data_ptr())
+            )
+            self.assertEqual((status, memory_type.value), (0, 2))
+            torch.testing.assert_close(
+                method.execute(cuda_inputs)[0].cpu(), torch.full((4, 4), 4.0)
+            )
 
     def test_device_planned_method_allocates_on_the_device(self):
         # The other device test covers the refusal. This one covers what the

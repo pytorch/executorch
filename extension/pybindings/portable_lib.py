@@ -66,6 +66,11 @@ if sys.platform == "win32":
         # The extension DLL should be in the same directory as this file.
         pybindings_dir = os.path.dirname(os.path.abspath(__file__))
         os.add_dll_directory(pybindings_dir)
+        # The shared runtime and its components ship in executorch/lib. Windows
+        # records no search path in a DLL, so the directory is registered here.
+        _lib_dir = os.path.join(pybindings_dir, os.pardir, os.pardir, "lib")
+        if os.path.isdir(_lib_dir):
+            os.add_dll_directory(os.path.abspath(_lib_dir))
     except Exception as e:
         logger.error(
             "Failed to add the pybinding extension DLL to the search path. "
@@ -83,6 +88,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _create_profile_block,  # noqa: F401
     _dump_profile_results,  # noqa: F401
     _get_operator_names,  # noqa: F401
+    _get_option,  # noqa: F401
     _get_registered_backend_names,  # noqa: F401
     _is_available,  # noqa: F401
     _load_bundled_program_from_buffer,  # noqa: F401
@@ -93,6 +99,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _load_program,  # noqa: F401
     _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
+    _set_option,  # noqa: F401
     _threadpool_get_thread_count,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
     BundledModule,  # noqa: F401

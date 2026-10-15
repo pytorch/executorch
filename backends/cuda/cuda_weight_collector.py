@@ -399,15 +399,29 @@ class CudaWeightCollector:
         storages: Dict[str, FileBackedData] = {}
 
         for fqn, (tensor, properties) in weights.items():
+            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             storage = tensor.untyped_storage()
             storage_nbytes = storage.nbytes()
+            # AOTI clones buffers into compact storage that starts at the view,
+            # with the same shape and strides, so the original storage size and
+            # offset do not describe it.
+            is_compact_clone = (
+                not is_offgraph_kv
+                and getattr(properties, "storage_ptr", None)
+                not in (None, storage.data_ptr())
+                and tuple(tensor.shape) == tuple(getattr(properties, "shape", ()))
+                and tuple(tensor.stride()) == tuple(getattr(properties, "stride", ()))
+            )
             del storage
             device_type = device_type_for_weight(tensor)
-            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             expected_storage_nbytes = int(
                 getattr(properties, "storage_size", None) or 0
             )
-            if not is_offgraph_kv and storage_nbytes < expected_storage_nbytes:
+            if (
+                not is_offgraph_kv
+                and not is_compact_clone
+                and storage_nbytes < expected_storage_nbytes
+            ):
                 raise RuntimeError(
                     "AOTI cloned storage is smaller than its TensorProperties "
                     f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
@@ -427,7 +441,11 @@ class CudaWeightCollector:
             strides = tuple(
                 int(stride) for stride in getattr(properties, "stride", tensor.stride())
             )
-            storage_offset = int(getattr(properties, "offset", tensor.storage_offset()))
+            storage_offset = (
+                tensor.storage_offset()
+                if is_compact_clone
+                else int(getattr(properties, "offset", tensor.storage_offset()))
+            )
             required_nbytes = _required_view_nbytes(
                 fqn, sizes, strides, storage_offset, tensor.element_size()
             )
@@ -435,6 +453,11 @@ class CudaWeightCollector:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "
                     f"{storage_nbytes}-byte cloned storage"
+                )
+            if is_compact_clone and required_nbytes != storage_nbytes:
+                raise RuntimeError(
+                    f"AOTI compact clone of {fqn!r} should span exactly its "
+                    f"{storage_nbytes}-byte storage, but its view needs {required_nbytes}"
                 )
             if is_offgraph_kv:
                 # Preserve the AOTI view contract; the runtime supplies storage.

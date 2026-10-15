@@ -86,16 +86,28 @@ Package::Package()
 
 Package Package::load(OwnedBytes bytes) {
   Package out;
-  out.archive_bytes_ = std::move(bytes);
-  if (out.archive_bytes_.span().size() > detail::kMaxPackageBytes) {
+  out.archive_bytes_ = std::make_shared<const OwnedBytes>(std::move(bytes));
+  if (out.archive_bytes_->span().size() > detail::kMaxPackageBytes) {
     throw ResourceLimitError("package: image exceeds size limit");
   }
-  out.zip_ = ZipReader::open(out.archive_bytes_.span());
+  out.zip_ = ZipReader::open(out.archive_bytes_->span());
   out.load_metadata();
   return out;
 }
 
 Package Package::load(const std::string& path) {
+  std::optional<OwnedBytes> mapped;
+  try {
+    mapped = OwnedBytes::from_file(path, true, detail::kMaxPackageBytes);
+  } catch (const ResourceLimitError&) {
+    throw;
+  } catch (const std::runtime_error&) {
+    // No mmap on this platform or filesystem. Opening through libzip reports
+    // any error that is not about mapping.
+  }
+  if (mapped) {
+    return load(std::move(*mapped));
+  }
   Package out;
   out.zip_ = ZipReader::open(path);
   out.load_metadata();
@@ -200,6 +212,22 @@ std::optional<OwnedBytes> Package::acquire_constant(
   std::vector<uint8_t> bytes(info->nbytes);
   load_constant_into(key, MutableByteSpan(bytes));
   return OwnedBytes::from_vector(std::move(bytes));
+}
+
+std::optional<OwnedBytes> Package::view_constant(const std::string& key) const {
+  const std::optional<ConstantInfo> info = constant_info(key);
+  if (!info) {
+    return std::nullopt;
+  }
+  const std::optional<ByteSpan> member = zip_->member_bytes(kSafeTensorsEntry);
+  if (!member) {
+    return std::nullopt;
+  }
+  return OwnedBytes::view(
+      archive_bytes_,
+      member->subspan(
+          tensor_data_offset_ + tensors_->find(info->owner)->offset,
+          info->nbytes));
 }
 
 bool Package::load_constant_into(

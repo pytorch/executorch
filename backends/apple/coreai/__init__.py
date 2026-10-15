@@ -8,7 +8,6 @@ from typing import List
 
 from executorch.backends.apple.coreai.compiler.preprocess import (
     AOTCompileConfig,
-    coreai_sidecar_dir,
     CoreAIBackend,
 )
 from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
@@ -48,7 +47,6 @@ __all__ = [
     "AOTCompileConfig",
     "CoreAIBackend",
     "CoreAIPartitioner",
-    "coreai_sidecar_dir",
     "get_default_compile_config",
     "get_default_passes",
 ]

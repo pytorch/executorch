@@ -3,11 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import pytest
 import torch
+from executorch.backends.arm._passes.decompose_topk_pass import get_static_topk_config
 from executorch.backends.arm.operator_support.index_tensor_support import (
     IndexTensorSupported,
 )
+from executorch.backends.arm.operator_support.topk_support import TopKSupported
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckFPComparisonInputs,
     CheckKnownUnsupportedTOSASemantics,
@@ -36,6 +40,14 @@ def _checker() -> CheckKnownUnsupportedTOSASemantics:
 
 def _fp_comparison_checker() -> CheckFPComparisonInputs:
     return CheckFPComparisonInputs(WhyNoPartitionReporter())
+
+
+def _topk_node(shape=(2, 8), dtype=torch.float32, args=(2,), kwargs=None):
+    graph = torch.fx.Graph()
+    scores = _placeholder(graph, "scores", shape, dtype)
+    return graph.call_function(
+        exir_ops.edge.aten.topk.default, (scores, *args), kwargs or {}
+    )
 
 
 @pytest.mark.parametrize(
@@ -183,3 +195,64 @@ def test_rejects_index_tensor_data_dependent_shapes(
     assert not checker.is_node_supported({}, node)
     assert "Symbolic value or index shapes" in reporter.get_table_report()
     assert not shape_env.guards
+
+
+@pytest.mark.parametrize(
+    "shape,dtype,args,kwargs,reason",
+    [
+        ((8,), torch.float32, (1,), {}, "rank-2"),
+        ((0, 8), torch.float32, (1,), {}, "positive static"),
+        ((2, 0), torch.float32, (1,), {}, "positive static"),
+        ((1, 2147483648), torch.float32, (1,), {}, "int32"),
+        ((2, 8), torch.float32, (0,), {}, "constant"),
+        ((2, 2), torch.float32, (3,), {}, "constant"),
+        ((2, 8), torch.float32, (True,), {}, "constant"),
+        ((2, 8), torch.float32, (2, 0), {}, "dim"),
+        ((2, 8), torch.float32, (2, 3), {}, "dim"),
+        ((2, 8), torch.float32, (2, True), {}, "dim"),
+        ((2, 8), torch.float32, (2, -1, False), {}, "largest"),
+        ((2, 8), torch.float32, (2,), {"sorted": False}, "sorted"),
+        ((2, 8), torch.bfloat16, (1,), {}, "FP16 or FP32"),
+        ((2, 8), torch.float64, (1,), {}, "FP16 or FP32"),
+        ((2, 8), torch.int32, (1,), {}, "FP16 or FP32"),
+    ],
+)
+def test_topk_unsupported_metadata(shape, dtype, args, kwargs, reason) -> None:
+    node = _topk_node(shape, dtype, args, kwargs)
+    spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT+bf16")
+    reporter = WhyNoPartitionReporter()
+    assert not TopKSupported(spec, reporter).is_node_supported({}, node)
+    assert reason in reporter.get_table_report()
+
+
+def test_topk_rejects_runtime_k() -> None:
+    node = _topk_node()
+    with node.graph.inserting_before(node):
+        k = node.graph.placeholder("k")
+    node.args = (node.args[0], k)
+    config, reason = get_static_topk_config(
+        node, TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+    )
+    assert config is None
+    assert reason is not None and "constant" in reason
+
+
+@pytest.mark.parametrize("index", [-2, -1], ids=["values", "indices"])
+def test_topk_rejects_negative_tuple_indices(index) -> None:
+    topk = _topk_node()
+    extraction = topk.graph.call_function(operator.getitem, (topk, index))
+    topk.graph.output(extraction)
+    spec = TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+    reporter = WhyNoPartitionReporter()
+    assert not TopKSupported(spec, reporter).is_node_supported({}, topk)
+    assert "canonical" in reporter.get_table_report()
+
+
+@pytest.mark.parametrize("dim", [-1, 1])
+def test_topk_keyword_arguments(dim) -> None:
+    node = _topk_node(args=(), kwargs={"k": 4, "dim": dim})
+    config, reason = get_static_topk_config(
+        node, TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
+    )
+    assert config is not None and config.k == 4
+    assert reason is None

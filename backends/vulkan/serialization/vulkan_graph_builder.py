@@ -231,13 +231,7 @@ class VkGraphBuilder:
         return new_id
 
     def get_or_create_scalar_value(self, scalar: _ScalarType) -> int:
-        scalar_key = scalar
-        # Since Python considers 1 and True to be "equivalent" (as well as 0 and False)
-        # to distinguish entries in the dictionary, if scalar is bool then convert it
-        # to a string representation to use as a key for the dictionary
-        if isinstance(scalar, bool):
-            scalar_key = str(scalar)
-
+        scalar_key = (type(scalar), repr(scalar))
         if scalar_key in self.const_scalar_to_value_ids:
             return self.const_scalar_to_value_ids[scalar_key]
 
@@ -480,10 +474,13 @@ class VkGraphBuilder:
             if not self.delegate_mapping_builder
             else self.delegate_mapping_builder.insert_delegate_mapping_entry(node)
         )
+        operator_name = node.target.__name__
+        if node.target == torch.ops.aten.scalar_tensor.default:
+            operator_name = "aten.scalar_tensor.default"
         self.chain.append(
             vk_graph_schema.OperatorCall(
                 node_id=operator_node_id,  # pyre-ignore[6]: this is going to be an int
-                name=node.target.__name__,
+                name=operator_name,
                 args=operator_call_args,
             ),
         )

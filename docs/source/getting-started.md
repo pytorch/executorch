@@ -8,7 +8,7 @@ This section is intended to describe the necessary steps to take a PyTorch model
 ## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
-- Python 3.10 - 3.14
+- Python 3.11 - 3.15
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
@@ -34,19 +34,19 @@ pip install executorch torch \
 | Machine you export on | Variant |
 | --- | --- |
 | CPU only | `cpu` |
-| NVIDIA GPU, CUDA 13.0 | `cu130` |
 | NVIDIA GPU, CUDA 13.2 | `cu132` |
 | NVIDIA GPU, CUDA 13.4 | `cu134` |
 
 The CUDA packages are built for Linux, on x86_64 and ARM64. Use the `cpu`
 variant on macOS and on Windows. If your CUDA version is not in the table,
 choose the closest lower one with the same major version, because CUDA works
-across minor versions but not across major ones. There is no package for CUDA
-12, so on CUDA 12 use the `cpu` variant or build from source.
+across minor versions but not across major ones. There is no package for CUDA 12,
+so on CUDA 12 use the `cpu` variant or build from source. On CUDA 13.0 or 13.1 no
+lower variant exists, so use `cu132`.
 
 To get a change that has landed on the `main` branch but is not in a release
 yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front
-of the variant name, for example `nightly/cu130`, and add `--pre` to the
+of the variant name, for example `nightly/cu132`, and add `--pre` to the
 command, otherwise pip skips development versions. Nightly builds cover the same
 variants. CUDA 13.4 is the newest, and until the next release it is in nightly
 builds only.

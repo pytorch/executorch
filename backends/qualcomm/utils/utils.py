@@ -47,6 +47,8 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
+    QnnExecuTorchTarget,
+    QnnExecuTorchTargetOptions,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
@@ -230,8 +232,13 @@ def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
                 processed_bytes = program.backend_delegate_data[
                     delegate.processed.index
                 ].data
+                options = flatbuffer_to_option(
+                    generate_qnn_executorch_option(delegate.compile_specs)
+                )
                 binary = PyQnnManagerAdaptor.StripProtocol(processed_bytes)
-                file_extension = ".bin"
+                file_extension = (
+                    ".dlc" if options.target_options is not None else ".bin"
+                )
                 if len(binary) == 0:
                     binary = processed_bytes
                     file_extension = ".dlc"
@@ -1094,6 +1101,7 @@ def generate_htp_compiler_spec(
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
     use_slc_allocator: bool = False,
+    use_graph_splitting: bool = False,
     htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ) -> QnnExecuTorchBackendOptions:
     """
@@ -1113,6 +1121,8 @@ def generate_htp_compiler_spec(
         use_slc_allocator: Allows user to enable the usage of the System Level Cache Allocator for a given graph.
             It will help the by reducing overall bandwith on the use case.
             The feature is only supported by specific SOCs.
+        use_graph_splitting: When enabled, the compiled graph is split based on
+            its structure and each part is compiled as an independent subgraph.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1131,6 +1141,7 @@ def generate_htp_compiler_spec(
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
     htp_options.use_slc_allocator = use_slc_allocator
+    htp_options.use_graph_splitting = use_graph_splitting
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
@@ -1206,8 +1217,8 @@ def generate_lpai_compiler_spec(
 
 
 def generate_qnn_executorch_compiler_spec(  # noqa: C901
-    soc_model: QcomChipset,
-    backend_options: QnnExecuTorchBackendOptions,
+    soc_model: Union[QcomChipset | List[QcomChipset]],
+    backend_options: QnnExecuTorchBackendOptions | List[QnnExecuTorchBackendOptions],
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
@@ -1217,50 +1228,107 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     is_from_context_binary: bool = False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
     use_mha2sha: bool = False,
+    fcb_reference_weight_sharing: bool = True,
 ) -> List[CompileSpec]:
     """
-    Helper function generating compiler specs for Qualcomm AI Engine Direct
+    Helper function generating compiler specs for Qualcomm AI Engine Direct.
 
     Args:
-        soc_model: The SoC you plan to run the compiled model. Please check
-            QcomChipset for supported SoC.
-            SM7675(Snapdragon 7+ Gen 3)
-            SM8450 (Snapdragon 8 Gen 1)
-            SM8475(Snapdragon 8 Gen 1+)
-            SM8550(Snapdragon 8 Gen 2)
-            SM8635(Snapdragon 8s Gen 3)
-            SM8650(Snapdragon 8 Gen 3)
-            SM8750(Snapdragon 8 Elite)
-            SM8850(Snapdragon 8 Elite Gen 5)
-        backend_options: Options required by different backends.
+        soc_model: The SoC you plan to run the compiled model. Pass one
+            ``QcomChipset`` with scalar ``backend_options`` for a normal target.
+            Check a connected Android device with ``adb shell getprop ro.soc.model``
+            (Refer to qc_schema.py for a complete list of supported SoCs).
+            Pass an ordered list with an equal-length ``backend_options`` list to
+            create a Flexible Context Binary (FCB). Each position
+            supplies the SoC and HTP options for one context in the output DLC.
+            Use FCB to ship one artifact to a known set of HTP SoCs; it is not a
+            runtime backend fallback.
+        backend_options: Options required by different backends. In FCB mode,
+            each entry must select HTP and provide HTP options for its paired SoC.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
-        online_prepare: Compose QNN graph on device if set to True
+        online_prepare: Compose QNN graph on device if set to True. FCB requires
+            offline preparation.
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
-        dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
-            This option exists for debugging accuracy issues
-        profile_level: Enable profiling the performance of per operator.
-            Note that for now only support kProfileDetailed and kProfileOptrace.
-        shared_buffer: Enables usage of shared buffer between application
-            and backend for graph I/O.
-        is_from_context_binary: True if current graph comes from pre-built context binary.
-        op_package_options: Optional structure to specify op packages
-            loaded and used by the backend.
-        use_mha2sha: This experimental parameter is used to decide whether to enable multi-head attention to single-head attention pass, aiming to reduce time consumption in AOT and improve performance on HTP.
+        dump_intermediate_outputs: If tensor dump is enabled, all intermediate
+            tensors output will be dumped. This option exists for debugging
+            accuracy issues.
+        profile_level: Enable profiling the performance of per operator. Note
+            that for now only kProfileDetailed and kProfileOptrace are supported.
+        shared_buffer: Enables usage of shared buffer between application and
+            backend for graph I/O.
+        is_from_context_binary: True if current graph comes from pre-built
+            context binary.
+        op_package_options: Optional structure to specify op packages loaded and
+            used by the backend.
+        use_mha2sha: Experimental switch for the multi-head-attention to
+            single-head-attention pass.
+        fcb_reference_weight_sharing: Enable reference-weight sharing while the
+            host AOT flow appends FCB contexts to its DLC. Enabled by default;
+            has no effect for a scalar target. It cannot be combined with DLBC.
+            This differs from ``use_weight_sharing``, which shares weights
+            between multiple graphs in one HTP context.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
 
     Raises:
-        ValueError: The value QcomChipset is currently not supported.
-        ValueError: Confliction between compiler specs.
+        ValueError: The requested SoC, target pairing, or backend configuration
+            is unsupported. FCB requires at least two unique HTP SoCs, no online
+            preparation, and no DLBC when reference-weight sharing is enabled.
     """
-    _supported_soc_models = {soc_model.value for soc_model in QcomChipset}
-    if soc_model not in _supported_soc_models:
-        raise ValueError(f"unknown SoC model for QNN: {soc_model}")
+    setup_qnn_sdk()
+    # Normalize inputs
+    soc_models = soc_model if isinstance(soc_model, list) else [soc_model]
+    target_backend_options = (
+        backend_options if isinstance(backend_options, list) else [backend_options]
+    )
+    if len(soc_models) != len(target_backend_options):
+        raise ValueError(
+            "soc_model and backend_options must have the same number of entries"
+        )
+    is_fcb = len(soc_models) > 1
+    if len(set(soc_models)) != len(soc_models):
+        raise ValueError("soc_model must contain unique QcomChipset values")
+    if any(model not in _soc_info_table for model in soc_models):
+        raise ValueError(f"unknown SoC model for QNN: {soc_models}")
+    if is_fcb:
+        if online_prepare:
+            raise ValueError("FCB requires offline_prepare")
+        if any(
+            option.backend_type != QnnExecuTorchBackendType.kHtpBackend
+            or option.htp_options is None
+            for option in target_backend_options
+        ):
+            raise ValueError("FCB requires HTP backend options")
+        if fcb_reference_weight_sharing and any(
+            option.htp_options.use_dlbc for option in target_backend_options
+        ):
+            warnings.warn(
+                "FCB reference weight sharing might conflict with DLBC", stacklevel=1
+            )
+        htp_arches = {_soc_info_table[model].htp_info.htp_arch for model in soc_models}
+        has_v6x_target = bool(htp_arches & {HtpArch.V68, HtpArch.V69})
+        has_v7x_or_newer_target = bool(
+            htp_arches & {HtpArch.V73, HtpArch.V75, HtpArch.V79, HtpArch.V81}
+        )
+        if has_v6x_target and has_v7x_or_newer_target:
+            warnings.warn(
+                "Combining HTP v6x and v7x-or-newer targets in an FCB may reduce "
+                "weight-sharing effectiveness, increase PTE size, and increase runtime "
+                "memory consumption.",
+                stacklevel=1,
+            )
+        if is_qnn_sdk_version_less_than("2.48"):
+            raise ValueError(
+                "FCB requires QNN SDK version >= 2.48; "
+                f"current QNN SDK version: {describe_sdk_build_id()}"
+            )
 
+    primary_soc_model = soc_models[0]
+    backend_options = target_backend_options[0]
     if profile_level and dump_intermediate_outputs:
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
@@ -1269,8 +1337,16 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         )
 
     qnn_executorch_options = QnnExecuTorchOptions(
-        _soc_info_table[soc_model], backend_options
+        _soc_info_table[primary_soc_model], backend_options
     )
+    if is_fcb:
+        qnn_executorch_options.target_options = QnnExecuTorchTargetOptions(
+            targets=[
+                QnnExecuTorchTarget(_soc_info_table[model], [option])
+                for model, option in zip(soc_models, target_backend_options)
+            ],
+            fcb_reference_weight_sharing=fcb_reference_weight_sharing,
+        )
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
@@ -1316,9 +1392,9 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         raise ValueError("LPAI does not support online prepare.")
 
     if backend_options.backend_type == QnnExecuTorchBackendType.kLpaiBackend:
-        if soc_model.name not in get_soc_to_lpai_hw_ver_map():
+        if primary_soc_model.name not in get_soc_to_lpai_hw_ver_map():
             raise ValueError(
-                f"Target soc_model({soc_model.name}) doesn't support LPAI backend. \n"
+                f"Target soc_model({primary_soc_model.name}) doesn't support LPAI backend. \n"
                 "Please choose the following SOC: "
                 f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
             )
@@ -1328,10 +1404,10 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
         # through QNN_SDK_ROOT.
         setup_qnn_sdk()
         if get_soc_to_lpai_hw_ver_map()[
-            soc_model.name
+            primary_soc_model.name
         ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
             raise ValueError(
-                f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
+                f"Target soc_model({primary_soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
                 f"Current QNN SDK version: {describe_sdk_build_id()}"
             )
 

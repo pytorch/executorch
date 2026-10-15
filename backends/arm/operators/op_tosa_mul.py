@@ -32,7 +32,7 @@ class MulVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_same_dtype(self.target, [*inputs, output])
         validate_valid_dtype(
             self.target,
             [*inputs, output],
@@ -44,7 +44,6 @@ class MulVisitor(NodeVisitor):
                 ts.DType.BF16,
                 ts.DType.FP16,
             ],
-            self.tosa_spec,
         )
 
         shift = tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")

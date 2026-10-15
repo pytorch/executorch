@@ -405,7 +405,8 @@ class _ImageRuntime:
         yield "answer"
 
 
-def test_muse_glimmer_serving_injects_image_segment_into_runtime():
+@pytest.mark.parametrize("stream", [False, True])
+def test_muse_glimmer_serving_injects_image_segment_into_runtime(stream):
     template = _ImageTemplate()
     runtime = _ImageRuntime()
     serving = serve.MuseGlimmerServingChat(
@@ -414,9 +415,11 @@ def test_muse_glimmer_serving_injects_image_segment_into_runtime():
     data = base64.b64encode(b"png").decode("ascii")
     request = _image_request(f"data:image/png;base64,{data}")
 
-    response = asyncio.run(serving.create(request))
+    response = asyncio.run(
+        _create_message(serving, request.model_copy(update={"stream": stream}))
+    )
 
-    assert response.choices[0].message.content == "answer"
+    assert response["content"] == "answer"
     assert runtime.prompt == PromptInput(
         segments=[
             {"text": "<|start|>user<|message|>before"},
@@ -562,7 +565,9 @@ class _FakeRuntime:
             stats.prompt_tokens = out.get("prompt_tokens", 0)
             stats.completion_tokens = out.get("completion_tokens", 0)
             stats.finish_reason = out.get("finish_reason", "stop")
-            stats.generated_token_ids = list(out.get("gen_ids", []))
+            stats.generated_token_ids = (
+                list(out["gen_ids"]) if out.get("gen_ids") is not None else None
+            )
             stats.session_reset_reason = out.get("reason")
             stats.reused_prompt_tokens = out.get("reused", 0)
             stats.prefilled_prompt_tokens = out.get("prefilled", 0)
@@ -590,7 +595,7 @@ def _glimmer_serving(raw_texts, template=None):
     # plugged into the serving layer; assertions below target only responses
     # and worker prompts, never the extractor itself.
     runtime = _FakeRuntime(raw_texts)
-    serving = ServingChat(
+    serving = serve.MuseGlimmerServingChat(
         runtime,
         template or _StubTemplate(),
         "test-model",
@@ -599,6 +604,137 @@ def _glimmer_serving(raw_texts, template=None):
         content_filter_specials=serve._MUSE_GLIMMER_HEADER_SPECIALS,
     )
     return serving, runtime
+
+
+@pytest.mark.parametrize("serving_cls", [ServingChat, serve.MuseGlimmerServingChat])
+@pytest.mark.parametrize("stream", [False, True])
+def test_bare_generator_stop_is_scoped_and_finalizes(serving_cls, stream):
+    class Runtime(_FakeRuntime):
+        def __init__(self):
+            super().__init__(
+                [
+                    {
+                        "text": "keepSTOPdrop",
+                        "finish_reason": "length",
+                        "completion_tokens": 3,
+                    }
+                ]
+            )
+            self.stops = 0
+            self.closed = []
+
+        def stop(self):
+            self.stops += 1
+
+        async def generate_stream(self, session_id, prompt, options, stats=None):
+            try:
+                async for token in super().generate_stream(
+                    session_id, prompt, options, stats
+                ):
+                    yield token
+            finally:
+                self.closed.append(session_id)
+
+    async def scenario():
+        runtime = Runtime()
+        serving = serving_cls(runtime, _StubTemplate(), "test-model")
+        response = await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content="hi")],
+                session_id="s",
+                stream=stream,
+                stop="STOP",
+            ),
+        )
+        assert response["content"] == "keep"
+        assert runtime.stops == 1
+        assert runtime.closed == ["s"]
+        assert serving._transcript._turns["s"][0]["ids"] is None
+        assert not serving._transactions._entries
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("serving_cls", [ServingChat, serve.MuseGlimmerServingChat])
+@pytest.mark.parametrize("stream", [False, True])
+def test_bare_generator_cancellation_keeps_transaction_until_cleanup(
+    serving_cls, stream
+):
+    class Runtime(_FakeRuntime):
+        def __init__(self):
+            super().__init__([])
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.closing = asyncio.Event()
+            self.finish_cleanup = asyncio.Event()
+            self.closed = asyncio.Event()
+            self.reset_called = asyncio.Event()
+
+        async def generate_stream(self, session_id, prompt, options, stats=None):
+            try:
+                yield "first"
+                self.started.set()
+                await self.release.wait()
+            finally:
+                self.closing.set()
+                await self.finish_cleanup.wait()
+                self.closed.set()
+
+        async def reset(self, session_id):
+            assert self.closed.is_set()
+            self.reset_called.set()
+
+    async def scenario():
+        runtime = Runtime()
+        serving = serving_cls(runtime, _StubTemplate(), "test-model")
+        request = ChatCompletionRequest(
+            messages=[ChatMessage(role="user", content="hi")],
+            session_id="s",
+            stream=stream,
+        )
+        tasks = []
+        try:
+            if stream:
+                response = await serving.create(request)
+
+                async def consume():
+                    async for _ in response:
+                        pass
+
+                reader = asyncio.create_task(consume())
+            else:
+                reader = asyncio.create_task(serving.create(request))
+            tasks.append(reader)
+            await asyncio.wait_for(runtime.started.wait(), 2)
+            if stream:
+                close = asyncio.create_task(response.aclose())
+                tasks.append(close)
+            else:
+                reader.cancel()
+            await asyncio.wait_for(runtime.closing.wait(), 2)
+            reset = asyncio.create_task(serving.reset_session("s"))
+            tasks.append(reset)
+            await asyncio.sleep(0)
+            assert not runtime.reset_called.is_set()
+            assert serving._transactions._entries["s"].users == 2
+            runtime.finish_cleanup.set()
+            if stream:
+                await asyncio.wait_for(close, 2)
+            with pytest.raises(asyncio.CancelledError):
+                await reader
+            await asyncio.wait_for(reset, 2)
+            assert runtime.closed.is_set() and runtime.reset_called.is_set()
+            assert not serving._transactions._entries
+            assert "s" not in serving._transcript._turns
+        finally:
+            runtime.finish_cleanup.set()
+            runtime.release.set()
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(scenario())
 
 
 def test_thinking_survives_response_verbatim():

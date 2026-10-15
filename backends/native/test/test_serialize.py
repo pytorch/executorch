@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import unittest
 from collections import namedtuple
 from dataclasses import dataclass
@@ -128,6 +129,7 @@ def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
         edge_ep.graph_signature,
         edge_ep.state_dict,
         edge_ep.constants,
+        edge_ep.range_constraints,
     )
     method = deserialize_program(data).methods[0]
     # Baseline invariants asserted for every roundtrip so each test starts from a
@@ -510,6 +512,21 @@ class DynamicShapeTest(unittest.TestCase):
         self.assertEqual(len(il.refs), len(il.values))
         self.assertTrue(any(r for r in il.refs))
         self.assertTrue(any(not r for r in il.refs))
+
+    def test_dynamic_dim_keeps_declared_min(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([x, x]) * 2
+
+        graph = _roundtrip(
+            M(),
+            (torch.randn(4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("b", min=1, max=16)}},
+        ).graph
+        ranges = {
+            (d.min, d.max) for tv in graph.tensor_values or [] for d in tv.meta.sizes
+        }
+        self.assertEqual(ranges, {(1, 16), (2, 32)})
 
     def test_dynamic_dim_not_frozen_in_tensor_meta(self):
         # int(sym) would specialize to the hint and freeze the dim; TensorMeta must
@@ -1080,3 +1097,51 @@ class ArgValueDispatchTest(unittest.TestCase):
         self.assertIsInstance(v, OptionalTensorListArg)
         self.assertEqual(v.names, ["a", ""])
         self.assertEqual(v.has_value, [True, False])
+
+
+class NonFiniteFloatRoundTripTest(unittest.TestCase):
+    """flatc emits non-finite doubles as bare `inf`/`-inf`/`nan`, which Python's
+    json module rejects."""
+
+    def _roundtrip_values(self, values):
+        node = Node(
+            name="n",
+            op_kind=OpKind.CALL_FUNCTION,
+            target="torch.ops.aten.eq.Scalar",
+            inputs=[
+                NamedArgument(name=f"a{i}", arg=Argument(value=v))
+                for i, v in enumerate(values)
+            ],
+            outputs=[Output(name="n")],
+        )
+        graph = Graph(nodes=[node])
+        program = Program(version="1", methods=[Method(name="forward", graph=graph)])
+        out = deserialize_program(_compile_to_bytes(program))
+        return [na.arg.value for na in (out.methods[0].graph.nodes[0].inputs or [])]
+
+    def test_non_finite_float_args_roundtrip(self):
+        values = self._roundtrip_values(
+            [
+                FloatArg(value=float("-inf")),
+                FloatArg(value=float("inf")),
+                FloatArg(value=float("nan")),
+            ]
+        )
+        self.assertEqual(values[0].value, float("-inf"))
+        self.assertEqual(values[1].value, float("inf"))
+        self.assertTrue(math.isnan(values[2].value))
+
+    def test_non_finite_float_list_roundtrips(self):
+        [value] = self._roundtrip_values(
+            [FloatListArg(values=[1.0, float("inf"), float("-inf"), float("nan")])]
+        )
+        self.assertIsInstance(value, FloatListArg)
+        self.assertEqual(value.values[0], 1.0)
+        self.assertEqual(value.values[1], float("inf"))
+        self.assertEqual(value.values[2], float("-inf"))
+        self.assertTrue(math.isnan(value.values[3]))
+
+    def test_string_arg_containing_inf_preserved(self):
+        [value] = self._roundtrip_values([StringArg(value="inf")])
+        self.assertIsInstance(value, StringArg)
+        self.assertEqual(value.value, "inf")

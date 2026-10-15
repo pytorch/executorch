@@ -9,11 +9,9 @@ from typing import List, Optional, Tuple
 
 import executorch.exir as exir
 import torch
+from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer.quantizer import EnnQuantizer, Precision
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -59,7 +57,6 @@ def quantize_module(
     quantizer.setup_quant_params(precision, is_per_channel, is_qat)
     logging.info("Export nn module for quantization...")
     exported_module = torch.export.export(module, inputs).module()
-    DecomposeScaledDotProductAttention()(exported_module)
     logging.info("Quantizing the module...")
     annotated_module = prepare_pt2e(exported_module, quantizer)
     for data in calibration_dataset:
@@ -77,6 +74,7 @@ def to_edge_transform_and_lower_to_enn(
 ) -> exir.ExecutorchProgramManager:
     assert compile_specs is not None, "For now, we must deliver complile specs"
     prog = torch.export.export(module, inputs)
+    EnnPassManager().transform_for_export_pass(prog)
     return to_edge_transform_and_lower(
         prog,
         partitioner={"forward": [EnnPartitioner(compile_specs)]},

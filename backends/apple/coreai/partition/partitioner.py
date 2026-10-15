@@ -197,7 +197,6 @@ class CoreAIPartitioner(Partitioner):
     def __init__(
         self,
         *,
-        uses_sidecar: bool = False,
         aot_compile_config: Optional[AOTCompileConfig] = None,
         min_deployment_version: Optional[str] = None,
         input_enumerations: Optional[
@@ -206,13 +205,6 @@ class CoreAIPartitioner(Partitioner):
         take_over_constant_data: bool = True,
         take_over_mutable_buffer: bool = True,
     ) -> None:
-        # uses_sidecar selects sidecar delivery (vs inline). It is embedded as a
-        # compile spec because the runtime needs to know how to load the asset,
-        # but it carries only the mode, no path. The build-time output directory
-        # comes from the COREAI_SIDECAR_DIR env var (see preprocess.py /
-        # coreai_sidecar_dir), never a compile spec, so no build-machine path is
-        # serialized.
-        #
         # aot_compile_config requests ahead-of-time ``xcrun coreai-build
         # compile`` in preprocess, emitting per-architecture ``.aimodelc``
         # bundles instead of the portable ``.aimodel``. It is serialized as a
@@ -225,8 +217,6 @@ class CoreAIPartitioner(Partitioner):
         # symbols in :meth:`partition` and propagated to each subgraph boundary
         # in preprocess, so it is not built into a compile spec here.
         specs = []
-        if uses_sidecar:
-            specs.append(CompileSpec(COMPILE_SPEC_KEYS.USES_SIDECAR.value, b"1"))
         if min_deployment_version is not None:
             specs.append(
                 CompileSpec(

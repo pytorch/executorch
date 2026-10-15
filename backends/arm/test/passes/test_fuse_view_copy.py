@@ -5,7 +5,7 @@
 
 
 import torch
-from executorch.backends.arm._passes import ConvertPermuteSingletonToViewPass
+from executorch.backends.arm._passes import CanonicalizeViewCopyPermutePass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
@@ -30,13 +30,6 @@ class _AssertAfterInitialFusePass(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         assert _count_node(graph_module, _VIEW) == 1
         assert _count_node(graph_module, _PERMUTE) == 1
-        return PassResult(graph_module, False)
-
-
-class _AssertAfterPermuteToViewPass(ExportPass):
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        assert _count_node(graph_module, _VIEW) == 2
-        assert _count_node(graph_module, _PERMUTE) == 0
         return PassResult(graph_module, False)
 
 
@@ -119,7 +112,7 @@ def test_fuse_view_copy_transform_tosa_FP(model):
     pipeline.run()
 
 
-def test_fuse_view_copy_transform_runs_again_after_new_fusable_view_tosa_FP():
+def test_canonicalize_fuses_view_introduced_from_permute_tosa_FP():
     model = FuseViewsIntroducedByLaterPass()
     pipeline = PassPipeline(
         model,
@@ -138,9 +131,7 @@ def test_fuse_view_copy_transform_runs_again_after_new_fusable_view_tosa_FP():
         pass_list=[
             FuseViewCopyTransform,
             _AssertAfterInitialFusePass,
-            ConvertPermuteSingletonToViewPass,
-            _AssertAfterPermuteToViewPass,
-            FuseViewCopyTransform,
+            CanonicalizeViewCopyPermutePass,
         ],
     )
     pipeline.run()

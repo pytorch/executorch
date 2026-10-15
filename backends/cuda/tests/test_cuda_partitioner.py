@@ -39,6 +39,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
 from executorch.exir.delegate import executorch_call_delegate
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch._inductor.compile_fx import clone_preserve_strides
 from torch.export import export
 from torch.export.pt2_archive._package_weights import TensorProperties, Weights
 from torch.fx.passes.utils.fuser_utils import validate_partition
@@ -232,8 +233,8 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         weights = Weights(
             {
                 "base": (base, TensorProperties(base)),
-                # AOTI may return a cloned value tensor; TensorProperties is
-                # the source of truth for reconstructing the original view.
+                # The value shares the view's storage, so the offset from
+                # TensorProperties applies.
                 "view": (base, TensorProperties(view)),
             }
         )
@@ -248,6 +249,101 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual(1, artifact.entries[1].storage_offset)
             self.assertEqual((3, 3), artifact.entries[1].sizes)
             self.assertEqual((4, 1), artifact.entries[1].strides)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_compact_clone_of_a_view_uses_the_written_storage(self) -> None:
+        # AOTI clones a buffer that views a larger tensor into compact storage
+        # but reports TensorProperties of the original view.
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        clone = view.clone()
+        weights = Weights({"w": (clone, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(0, entry.storage_offset)
+            self.assertEqual(48, entry.storage_nbytes)
+            self.assertEqual((3, 4), entry.sizes)
+            data = artifact.storages[entry.storage_key].to_bytes()
+            self.assertEqual(bytes(clone.untyped_storage()), data)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_compact_clone_with_too_little_storage_is_rejected(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        truncated = view.clone()
+        truncated.untyped_storage().resize_(8 * truncated.element_size())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "requires 48 bytes"):
+                self._materialize(
+                    Weights({"w": (truncated, TensorProperties(view))}), directory
+                )
+
+    def test_compact_clone_with_bytes_past_its_view_is_rejected(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        padded = view.clone()
+        padded.untyped_storage().resize_(16 * padded.element_size())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "span exactly its 64-byte"):
+                self._materialize(
+                    Weights({"w": (padded, TensorProperties(view))}), directory
+                )
+
+    def test_value_with_the_same_shape_but_other_strides_is_not_a_clone(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        transposed = torch.arange(12, dtype=torch.float32).reshape(4, 3).t()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                RuntimeError, "smaller than its TensorProperties"
+            ):
+                self._materialize(
+                    Weights({"w": (transposed, TensorProperties(view))}), directory
+                )
+
+    def test_compact_clone_of_a_strided_view_spans_its_storage(self) -> None:
+        # A strided view's clone keeps the gaps between its rows, so it spans
+        # more bytes than its elements take.
+        view = torch.arange(64, dtype=torch.float32).reshape(8, 8)[:, 1:3]
+        clone = clone_preserve_strides(view)
+        weights = Weights({"w": (clone, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(0, entry.storage_offset)
+            self.assertEqual(232, entry.storage_nbytes)
+            self.assertEqual((8, 1), entry.strides)
+            data = artifact.storages[entry.storage_key].to_bytes()
+            self.assertEqual(bytes(clone.untyped_storage()), data)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_view_sharing_its_storage_keeps_the_view_offset(self) -> None:
+        # AOTI does not clone parameters, so a parameter that slices a fused
+        # tensor arrives in the fused tensor's storage.
+        fused = torch.arange(36, dtype=torch.float32).reshape(9, 4)
+        view = fused[3:6]
+        weights = Weights({"w": (view, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(12, entry.storage_offset)
+            self.assertEqual(144, entry.storage_nbytes)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_value_with_other_layout_keeps_the_view_offset(self) -> None:
+        # A value in a different storage that is not a compact clone of the view
+        # (other shape) keeps the offset its TensorProperties records.
+        base = torch.arange(32, dtype=torch.float32).reshape(8, 4)
+        view = base[:, 1:]
+        weights = Weights({"w": (base.clone(), TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(1, artifact.entries[0].storage_offset)
             for storage in artifact.storages.values():
                 storage.close()
 

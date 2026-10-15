@@ -24,3 +24,11 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:memory_planning",
         ],
     )
+
+    runtime.cxx_test(
+        name = "tensor_meta_test",
+        srcs = ["test_tensor_meta.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:tensor_meta",
+        ],
+    )
