@@ -26,7 +26,8 @@ CACHE = Path(
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def resolve_server_paths(server, config_dir):
+def resolve_paths(config, config_dir):
+    server = config["server"]
     for key in ("worker_bin", "model_path", "tokenizer_path", "hf_tokenizer", "python"):
         if key not in server:
             continue
@@ -39,6 +40,12 @@ def resolve_server_paths(server, config_dir):
             server[key] = str(
                 resolved.absolute() if key == "python" else resolved.resolve()
             )
+
+    options = config.get("terminal_bench", {})
+    if options.get("model_cost_path"):
+        options["model_cost_path"] = str(
+            (config_dir / Path(options["model_cost_path"]).expanduser()).resolve()
+        )
 
 
 def load_config(path):
@@ -58,7 +65,7 @@ def load_config(path):
     server.setdefault("module", "executorch.examples.llm_server.python.server")
     server.setdefault("host", "0.0.0.0")
     server.setdefault("port", 8000)
-    resolve_server_paths(server, path.parent)
+    resolve_paths(config, path.parent)
     defaults = {
         "tasks": ["fix-git"],
         "attempts": 1,
@@ -70,6 +77,7 @@ def load_config(path):
         "session_affinity": None,
         "agent": "mini-swe-agent",
         "child_output_tokens": 1536,
+        "model_cost_path": None,
     }
     options = config.get("terminal_bench", {})
     if unknown := options.keys() - defaults.keys():
@@ -97,6 +105,10 @@ def load_config(path):
 
 
 def resource_command(server, options, output):
+    if options["agent"] == "resource" and not options.get("model_cost_path"):
+        raise ValueError(
+            "Set [terminal_bench].model_cost_path for calibrated delegation"
+        )
     if options["agent"] not in {"inline", "resource"}:
         raise ValueError("agent must be mini-swe-agent, inline, or resource")
     if options["concurrency"] != 1:
@@ -130,6 +142,10 @@ def resource_command(server, options, output):
         "step_limit": options["step_limit"],
         "child_output_tokens": options["child_output_tokens"],
     }
+    if server.get("hf_tokenizer"):
+        arguments["hf_tokenizer"] = server["hf_tokenizer"]
+    if options.get("model_cost_path"):
+        arguments["calibration_path"] = str(output / "calibration.json")
     for key, value in arguments.items():
         harbor.extend(
             [
@@ -358,6 +374,42 @@ def summarize(harbor_dir):
         )
 
 
+def calibrate_server(config, output, env):
+    if not config["terminal_bench"].get("model_cost_path"):
+        return
+    server = config["server"]
+    host = "127.0.0.1" if server["host"] == "0.0.0.0" else server["host"]
+    command = [
+        str(CACHE / "terminal-bench/venv/bin/python"),
+        "-m",
+        "executorch.examples.llm_server.evals.terminal_bench.calibration",
+        "--base-url",
+        f"http://{host}:{server['port']}/v1",
+        "--model",
+        server["model_id"],
+        "--max-context",
+        str(server["max_context"]),
+        "--profile",
+        config["terminal_bench"]["model_cost_path"],
+        "--output",
+        str(output / "calibration.json"),
+    ]
+    with (output / "calibration.log").open("w") as log:
+        calibrated = subprocess.run(
+            command,
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            timeout=900,
+        )
+    if calibrated.returncode:
+        raise RuntimeError("Inference calibration failed; see calibration.log")
+    print(
+        "Inference calibration passed; shared by all trials in this run.",
+        flush=True,
+    )
+
+
 def run(config, output, serve, harbor, probe):
     server = config["server"]
     process = job = None
@@ -416,8 +468,9 @@ def run(config, output, serve, harbor, probe):
                     stderr=subprocess.DEVNULL,
                     timeout=20,
                 )
-            metrics_start = server_log.tell()
             print("Generation preflight passed.", flush=True)
+            calibrate_server(config, output, env)
+            metrics_start = server_log.tell()
             job = subprocess.Popen(
                 harbor,
                 env=env,

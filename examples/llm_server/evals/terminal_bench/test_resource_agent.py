@@ -4,20 +4,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 import asyncio
 import copy
 import json
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from types import SimpleNamespace
 
 import httpx
-
 import pytest
-
 from harbor.models.agent.context import AgentContext
+from tokenizers import models, pre_tokenizers, Tokenizer
 
 from .resource_agent import ResourceAgent, SYSTEM
+from .runner import resource_command
+
+SNAPSHOT = {
+    "max_inflight_requests": 4,
+    "submitted_generations": 0,
+    "waiting_for_runtime_lease": 0,
+}
 
 
 @pytest.fixture
@@ -57,11 +63,22 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
         {
             "role": "assistant",
             "tool_calls": [
-                call("spawn", question="inspect a", parent_command="inspect b")
+                call(
+                    "spawn",
+                    question="inspect a",
+                    parent_command="inspect b",
+                    expected_output_tokens=200,
+                )
             ],
         },
     ]
     original = copy.deepcopy(messages)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    obj.report = report
+    obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 300
 
     async def completion(role, history, cap):
         assert role == "child" and cap == obj.child_output_tokens
@@ -165,6 +182,10 @@ async def test_run_keeps_telemetry_out_of_prompt_history(tmp_path):
     obj.report, obj.completion = report, completion
     await obj.run("inspect a", Environment(), obj.context)
     assert turns == [0, 1, 2, "final"]
+    selections = [e for e in obj.records if e["type"] == "action_selection"]
+    assert len(selections) == 3
+    assert all(not e["delegation_proposed"] for e in selections)
+    assert not any(e["type"] == "delegation_decision" for e in obj.records)
     for messages in requests:
         assert [m for m in messages if m["role"] == "user"] == [
             {"role": "user", "content": "inspect a"}
@@ -176,6 +197,8 @@ async def test_run_keeps_telemetry_out_of_prompt_history(tmp_path):
 @pytest.mark.anyio
 async def test_child_total_budget_limits_later_requests(tmp_path):
     obj = agent(tmp_path, enabled=True, child_output_tokens=100)
+    obj.child_expected_output_tokens = 20
+    obj.child_expected_thinking_tokens = 30
     caps = []
 
     async def completion(role, messages, cap):
@@ -193,6 +216,12 @@ async def test_child_total_budget_limits_later_requests(tmp_path):
     result = await obj.investigate(Environment())
     assert caps == [100, 40]
     assert result["status"] == "budget_exhausted"
+    outcome = next(e for e in obj.records if e["type"] == "child_output")
+    assert outcome["expected_output_tokens"] == 20
+    assert outcome["expected_thinking_tokens"] == 30
+    assert outcome["expected_total_tokens"] == 50
+    assert outcome["actual_output_tokens"] == outcome["output_limit"] == 100
+    assert outcome["status"] == "budget_exhausted"
 
 
 @pytest.mark.anyio
@@ -214,6 +243,8 @@ async def test_cancel_waits_for_child_cleanup(tmp_path):
     result = await obj.parent_tool(call("cancel"), [], Environment())
     assert json.loads(result)["status"] == "cancelled"
     assert closed.is_set() and obj.child.done()
+    outcome = next(e for e in obj.records if e["type"] == "child_output")
+    assert outcome["status"] == "cancelled"
 
 
 @pytest.mark.anyio
@@ -221,9 +252,363 @@ async def test_inline_rejects_spawn_and_child_cannot_recurse(tmp_path):
     obj = agent(tmp_path)
     with pytest.raises(ValueError, match="No child budget"):
         await obj.parent_tool(
-            call("spawn", question="a", parent_command="cat b"), [], Environment()
+            call(
+                "spawn",
+                question="a",
+                parent_command="cat b",
+                expected_output_tokens=200,
+            ),
+            [],
+            Environment(),
         )
     assert not obj.child_used
+
+
+@pytest.mark.anyio
+async def test_enabled_agent_spawns_without_cost_or_thinking_history(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    async def completion(role, messages, cap):
+        return {"message": {"content": "finding"}, "finish_reason": "stop"}
+
+    async def close(role):
+        pass
+
+    obj.report, obj.completion, obj.close_session = report, completion, close
+    await obj.parent_tool(
+        call(
+            "spawn",
+            question="inspect a",
+            parent_command="inspect b",
+            expected_output_tokens=200,
+        ),
+        [],
+        Environment(),
+    )
+    await obj.child
+    assert obj.child_used and obj.child.result()["status"] == "complete"
+    decision = next(e for e in obj.records if e["type"] == "delegation_decision")
+    assert decision["inference_estimate"] is None
+    assert decision["decision"]["expected_thinking_tokens"] is None
+
+
+@pytest.mark.anyio
+async def test_run_hides_rates_and_declines_at_request_limit(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+    requests = []
+
+    async def report(turn):
+        return SNAPSHOT | {
+            "submitted_generations": 3,
+            "last_observation": {"prefill_tokens_per_second": 100},
+        }
+
+    async def completion(role, messages, cap):
+        requests.append(role)
+        assert "Resource report:" not in json.dumps(messages)
+        assert "prefill_tokens_per_second" not in json.dumps(messages)
+        message = (
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    call(
+                        "spawn",
+                        question="a",
+                        parent_command="b",
+                        expected_output_tokens=200,
+                    )
+                ],
+            }
+            if len(requests) == 1
+            else {"role": "assistant", "content": "finished inline"}
+        )
+        messages.append(message)
+        return {"message": message, "finish_reason": "stop"}
+
+    obj.report, obj.completion = report, completion
+    await obj.run("task", Environment(), obj.context)
+    assert requests == ["parent", "parent"]
+    assert obj.child is None and not obj.child_used
+    history = json.loads((tmp_path / "parent.json").read_text())
+    assert any(
+        m["role"] == "tool"
+        and "Delegation declined: inflight_request_limit" in m["content"]
+        for m in history
+    )
+
+
+@pytest.mark.anyio
+async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_path):
+    obj = agent(tmp_path, enabled=True)
+    obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 50
+    snapshot = SNAPSHOT | {"submitted_generations": 3}
+    caps = []
+
+    async def report(turn):
+        return snapshot
+
+    async def completion(role, messages, cap):
+        caps.append(cap)
+        obj.output_tokens[role] += 150
+        return {
+            "message": (
+                {"tool_calls": [call("shell", command="cat a")]}
+                if len(caps) == 1
+                else {"content": "finding"}
+            ),
+            "finish_reason": "stop",
+        }
+
+    async def close(role):
+        pass
+
+    obj.report, obj.completion, obj.close_session = report, completion, close
+    spawn = call(
+        "spawn",
+        question="inspect a",
+        parent_command="inspect b",
+        expected_output_tokens=200,
+    )
+    messages = [{"role": "assistant", "tool_calls": [spawn]}]
+    with pytest.raises(ValueError, match="inflight_request_limit"):
+        await obj.parent_tool(spawn, messages, Environment())
+    assert not obj.child_used
+    snapshot = SNAPSHOT
+    await obj.parent_tool(spawn, messages, Environment())
+    await obj.child
+    assert caps == [obj.child_output_tokens, obj.child_output_tokens - 150]
+    assert obj.child.result()["status"] == "complete"
+    assert f"{obj.child_output_tokens} tokens" in obj.child_messages[1]["content"]
+    outcomes = [e for e in obj.records if e["type"] == "child_output"]
+    assert len(outcomes) == 1
+    assert outcomes[0]["expected_output_tokens"] == 200
+    assert outcomes[0]["expected_thinking_tokens"] == 50
+    assert outcomes[0]["expected_total_tokens"] == 250
+    assert outcomes[0]["actual_output_tokens"] == 300
+    assert outcomes[0]["output_limit"] == obj.child_output_tokens
+    assert outcomes[0]["status"] == "complete"
+
+
+def test_thinking_forecast_is_observational_and_can_be_overridden(
+    tmp_path,
+):
+    obj = agent(tmp_path, enabled=True)
+    proposal = {
+        "question": "inspect a",
+        "parent_command": "inspect b",
+        "expected_output_tokens": 200,
+    }
+    decision = obj.admission([], SNAPSHOT, proposal)
+    assert decision["allowed"]
+    assert decision["reason"] == "within_limits"
+    assert decision["expected_thinking_tokens"] is None
+    assert decision["expected_total_tokens"] is None
+
+    def thinking(messages, snapshot, proposed):
+        assert snapshot is SNAPSHOT and proposed is proposal
+        return 300
+
+    obj.estimate_thinking_tokens = thinking
+    decision = obj.admission([], SNAPSHOT, proposal)
+    assert decision["allowed"]
+    assert decision["expected_output_tokens"] == 200
+    assert decision["expected_thinking_tokens"] == 300
+    assert decision["expected_total_tokens"] == 500
+    obj.estimate_thinking_tokens = lambda *args: 10000
+    assert obj.admission([], SNAPSHOT, proposal)["allowed"]
+
+
+def test_thinking_average_pools_parent_and_child_tokens(tmp_path):
+    obj = agent(tmp_path)
+    proposal = {"expected_output_tokens": 11}
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) is None
+    for role, thinking, total in [("parent", 10, 40), ("child", 40, 50)]:
+        obj.observe_thinking_tokens(
+            {
+                "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+                "usage": {
+                    "completion_tokens": total,
+                    "completion_tokens_details": {"reasoning_tokens": thinking},
+                },
+            },
+            role,
+        )
+    assert obj.observed_thinking_tokens == 50
+    assert obj.observed_non_thinking_tokens == 40
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) == 14
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": 0},
+            },
+        },
+        "parent",
+    )
+    assert obj.estimate_thinking_tokens([], SNAPSHOT, proposal) == 11
+
+
+@pytest.mark.parametrize("thinking,expected", [(0, 0), (10, None)])
+def test_thinking_average_handles_zero_counts(tmp_path, thinking, expected):
+    obj = agent(tmp_path)
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": "done"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": thinking},
+            },
+        },
+        "parent",
+    )
+    assert (
+        obj.estimate_thinking_tokens([], SNAPSHOT, {"expected_output_tokens": 100})
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "thinking,finish",
+    [(None, "stop"), (True, "stop"), (-1, "stop"), (11, "stop"), (8, "length")],
+)
+def test_unknown_invalid_or_capped_thinking_samples_are_ignored(
+    tmp_path, thinking, finish
+):
+    obj = agent(tmp_path)
+    obj.observe_thinking_tokens(
+        {
+            "choices": [{"finish_reason": finish, "message": {"content": "partial"}}],
+            "usage": {
+                "completion_tokens": 10,
+                "completion_tokens_details": {"reasoning_tokens": thinking},
+            },
+        },
+        "parent",
+    )
+    assert obj.observed_thinking_tokens == obj.observed_non_thinking_tokens == 0
+    assert (
+        obj.estimate_thinking_tokens([], SNAPSHOT, {"expected_output_tokens": 100})
+        is None
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("reported_thinking", [None, 1])
+async def test_stream_measures_thinking_with_model_tokenizer_or_usage(
+    tmp_path, reported_thinking
+):
+    tokenizer = Tokenizer(models.WordLevel({"[UNK]": 0, "think": 1}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(tmp_path / "tokenizer.json"))
+    obj = agent(tmp_path, hf_tokenizer=str(tmp_path))
+
+    def respond(request):
+        chunks = [
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "reasoning_content": "think think think",
+                            "content": "finding",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 8,
+                    "completion_tokens_details": {
+                        "reasoning_tokens": reported_thinking
+                    },
+                },
+            },
+        ]
+        return httpx.Response(
+            200,
+            text="".join("data: " + json.dumps(c) + "\n\n" for c in chunks)
+            + "data: [DONE]\n\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.completion("parent", [{"role": "user", "content": "question"}], 10)
+    thinking = 3 if reported_thinking is None else reported_thinking
+    assert obj.observed_thinking_tokens == thinking
+    assert obj.observed_non_thinking_tokens == 8 - thinking
+    assert obj.estimate_thinking_tokens(
+        [], SNAPSHOT, {"expected_output_tokens": 10}
+    ) == (6 if reported_thinking is None else 2)
+    observation = next(e for e in obj.records if e["type"] == "thinking_observation")
+    assert observation["source"] == (
+        "tokenizer" if reported_thinking is None else "usage"
+    )
+
+
+def test_resource_launcher_passes_configured_tokenizer(tmp_path):
+    command = resource_command(
+        {
+            "host": "127.0.0.1",
+            "port": 8000,
+            "model_id": "test",
+            "hf_tokenizer": str(tmp_path),
+        },
+        {
+            "agent": "resource",
+            "concurrency": 1,
+            "attempts": 1,
+            "max_output_tokens": 4096,
+            "temperature": 0.8,
+            "step_limit": 100,
+            "child_output_tokens": 1536,
+            "model_cost_path": str(tmp_path / "model-cost.json"),
+        },
+        tmp_path,
+    )
+    assert f"hf_tokenizer={tmp_path}" in command
+    assert f"calibration_path={tmp_path / 'calibration.json'}" in command
+
+
+def test_resource_launcher_requires_calibration_inputs(tmp_path):
+    with pytest.raises(ValueError, match="model_cost_path"):
+        resource_command({}, {"agent": "resource"}, tmp_path)
+
+
+def test_agent_rejects_calibration_for_another_model(tmp_path):
+    profile = tmp_path / "calibration.json"
+    profile.write_text(json.dumps({"model_id": "different-model"}))
+    with pytest.raises(ValueError, match="Calibration model"):
+        agent(tmp_path, calibration_path=profile)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("forecast", [None, True, 0, 1537])
+async def test_spawn_rejects_invalid_forecast_without_starting_work(tmp_path, forecast):
+    obj = agent(tmp_path, enabled=True)
+
+    async def report(turn):
+        return SNAPSHOT
+
+    def estimate(*args):
+        pytest.fail("Invalid proposals must not reach the estimator")
+
+    obj.report = report
+    obj.estimate_thinking_tokens = estimate
+    proposal = {"question": "inspect a", "parent_command": "inspect b"}
+    if forecast is not None:
+        proposal["expected_output_tokens"] = forecast
+    with pytest.raises(
+        ValueError, match="invalid_output_forecast|forecast_exceeds_budget"
+    ):
+        await obj.parent_tool(call("spawn", **proposal), [], Environment())
+    assert obj.child is None and not obj.child_used
+    assert not any(e["type"] == "tool" for e in obj.records)
 
 
 @pytest.mark.anyio
@@ -237,6 +622,12 @@ async def test_stream_accounting_and_role_tools(tmp_path, role):
         assert names == (
             ["shell"] if role == "child" else ["shell", "spawn", "wait", "cancel"]
         )
+        if role == "parent":
+            parameters = body["tools"][1]["function"]["parameters"]
+            assert "expected_output_tokens" in parameters["required"]
+            assert (
+                parameters["properties"]["expected_output_tokens"]["type"] == "integer"
+            )
         assert body["session_id"].endswith("-" + role)
         chunks = [
             {
@@ -399,6 +790,28 @@ async def test_cancel_before_child_starts_is_not_a_trial_failure(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_child_prompt_count_uses_server_rendering(tmp_path):
+    from .test_inference_cost import COST
+
+    obj = agent(tmp_path)
+    obj.cost_model = COST
+
+    async def respond(request):
+        assert request.url.path == "/v1/chat/tokenize"
+        body = json.loads(request.content)
+        assert "session_id" not in body
+        assert body["messages"] == obj.child_prompt(
+            "inspect a", obj.child_output_tokens
+        )
+        assert [tool["function"]["name"] for tool in body["tools"]] == ["shell"]
+        return httpx.Response(200, json={"prompt_tokens": 123})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.count_child_prompt("inspect a")
+    assert obj.child_prompt_tokens == 123
+
+
+@pytest.mark.anyio
 async def test_reasoning_cap_error_keeps_consumed_token_accounting(tmp_path):
     obj = agent(tmp_path)
     chunk = {
@@ -447,3 +860,91 @@ async def test_cleanup_error_preserves_primary_error_and_trace(tmp_path):
         == "error"
     )
     assert any(e["type"] == "cleanup_error" for e in obj.records)
+
+
+@pytest.mark.parametrize("relative_error", [0.0, 0.9])
+def test_cost_and_uncertainty_are_logged_without_changing_admission(
+    tmp_path, relative_error
+):
+    from .test_inference_cost import COST
+
+    obj = agent(tmp_path, enabled=True)
+    obj.cost_model = replace(COST, relative_error=relative_error)
+    obj.child_prompt_tokens = 200
+    snapshot = SNAPSHOT | {
+        "engine": {
+            "sessions": [
+                {"session_id": obj.prefix + "-parent", "committed_position": 2048}
+            ]
+        }
+    }
+    proposal = {
+        "question": "Inspect a",
+        "parent_command": "cat b",
+        "expected_output_tokens": 200,
+    }
+    decision = obj.admission([], snapshot, proposal)
+    assert decision["allowed"] and decision["reason"] == "within_limits"
+    logged = obj.records[-1]
+    assert logged["proposal"] == proposal
+    estimate = logged["inference_estimate"]
+    assert estimate["cold_prefill_s"] > 0
+    assert estimate["solo_decode_step_s"] < estimate["paired_decode_step_s"]
+    assert estimate["paired_decode_step_s"] < 2 * estimate["solo_decode_step_s"]
+    obj.cost_model = None
+    assert obj.admission([], snapshot, proposal) == decision
+    assert obj.records[-1]["inference_estimate"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("prior_work", [False, True])
+async def test_step_predictions_skip_prior_work_and_deduplicate(tmp_path, prior_work):
+    from .test_inference_cost import COST, input_at
+
+    obj = agent(tmp_path)
+    obj.cost_model = COST
+    steps = [{"id": 1, "succeeded": True, "inputs": [input_at(1024)], "elapsed_ms": 40}]
+    if not prior_work:
+        steps.clear()
+
+    def respond(request):
+        return httpx.Response(
+            200, json={"recent_generations": [], "engine": {"recent_steps": steps}}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.report(0)
+        assert not any(e["type"] == "inference_step" for e in obj.records)
+        steps.append(
+            {
+                "id": 2,
+                "succeeded": True,
+                "inputs": [input_at(2048), input_at(1024)],
+                "elapsed_ms": 55,
+            }
+        )
+        await obj.report(1)
+        await obj.report(2)
+    measured = [e for e in obj.records if e["type"] == "inference_step"]
+    assert len(measured) == 1
+    assert measured[0]["step_id"] == 2 and measured[0]["measured_ms"] == 55
+    assert measured[0]["predicted_ms"] == pytest.approx(
+        1000 * COST.step(steps[-1]["inputs"])
+    )
+
+
+@pytest.mark.anyio
+async def test_unavailable_prompt_count_does_not_block_admission(tmp_path):
+    from .test_inference_cost import COST
+
+    obj = agent(tmp_path, enabled=True)
+    obj.cost_model = COST
+    obj.child_prompt_tokens = 123
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(503))
+    ) as obj.client:
+        await obj.count_child_prompt("inspect a")
+    assert obj.child_prompt_tokens is None
+    assert obj.records[-1]["type"] == "inference_estimate_unavailable"
+    decision = obj.admission([], SNAPSHOT, {"expected_output_tokens": 200})
+    assert decision["allowed"]

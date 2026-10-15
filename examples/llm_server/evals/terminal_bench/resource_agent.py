@@ -8,13 +8,18 @@
 
 import asyncio
 import json
+import math
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 from harbor.agents.base import BaseAgent
+from tokenizers import Tokenizer
 
+from .delegation import decide_delegation
+from .inference_cost import InferenceCost
 from .streaming import ChatCompletionStream
 
 SYSTEM = """Solve the user's task in the container. Inspect before editing, use tools for evidence,
@@ -23,8 +28,23 @@ The parent owns edits and final verification. A delegated child investigates onl
 question without modifying files or delegating. Do not edit files a running child is inspecting.
 
 Optimize time to verified correct completion, including all parent and child work.
-Before spawning: choose one necessary independent question and an unfinished parent shell action.
+Generation batching shares parameter reads; each sequence adds computation and KV-cache reads.
+A larger generation batch can improve aggregate throughput while increasing per-token latency.
+The in-flight request limit is not the generation batch size.
+Longer context increases KV-cache reads; sliding-window attention can cap this cost.
+Prefill can delay ongoing generation. Prefix caching avoids repeated prefill, not later attention cost.
+Shorter context does not necessarily free allocated memory.
+
+The harness checks configured limits and logs inference costs for measurement.
+If a spawn is declined, continue inline without retrying delegation.
+Do not infer permission from idle hardware or invent hardware rates or execution times.
+Available decode slots do not imply free capacity.
+
+Before spawning: choose one necessary independent question and a parent shell action you still need to run.
 Pass that action as parent_command; the harness runs it alongside the child and returns its output.
+Provide expected_output_tokens for the child's tool arguments, intermediate responses and final
+findings across all turns, excluding thinking. The harness estimates thinking separately and
+enforces a total output cap covering both.
 Delegate before solving the child's question. If nothing independent remains, work inline.
 Use at most the available child budget.
 Do not duplicate work.
@@ -37,6 +57,7 @@ Children may use shell for read-only inspection and computation. Return findings
 summary call is needed. Child results arrive between turns. Wait only when the result is needed;
 cancel obsolete work. Incorporate required findings before finishing.
 Faster failure, unnecessary reasoning, and higher token throughput are not improvements.
+Do not narrate performance arithmetic; act on the task.
 """
 
 
@@ -72,7 +93,12 @@ TOOLS = [
             },
             "parent_command": {
                 "type": "string",
-                "description": "An unfinished, necessary shell action independent of the child's question.",
+                "description": "A necessary shell action you still need to run, independent of the child's question.",
+            },
+            "expected_output_tokens": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Expected child tool arguments and answer text across all turns, excluding thinking; not the total output cap.",
             },
         },
     ),
@@ -86,11 +112,13 @@ class ResourceAgent(BaseAgent):
         self,
         *args,
         base_url,
+        hf_tokenizer=None,
         enabled=False,
         max_tokens=4096,
         child_output_tokens=1536,
         step_limit=100,
         temperature=0.8,
+        calibration_path=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -103,6 +131,8 @@ class ResourceAgent(BaseAgent):
         self.enabled = enabled
         self.max_tokens = max_tokens
         self.child_output_tokens = child_output_tokens
+        self.child_expected_output_tokens = None
+        self.child_expected_thinking_tokens = None
         self.step_limit = step_limit
         self.temperature = temperature
         self.child = None
@@ -113,10 +143,30 @@ class ResourceAgent(BaseAgent):
         self.records = []
         self.output_tokens = {"parent": 0, "child": 0}
         self.engine_samples = {}
+        self.cost_model = None
+        self.child_prompt_tokens = None
+        self.last_step_id = None
+        if calibration_path:
+            calibration = json.loads(Path(calibration_path).read_text())
+            if calibration["model_id"] != self.model_name.removeprefix("openai/"):
+                raise ValueError("Calibration model does not match the agent model")
+            self.cost_model = InferenceCost.from_dict(calibration["cost"])
         self.started = time.monotonic()
         self.prefix = str(uuid.uuid4())
         self.client = None
         self.context = None
+        self.observed_thinking_tokens = 0
+        self.observed_non_thinking_tokens = 0
+        self.tokenizer = None
+        if hf_tokenizer:
+            path = Path(hf_tokenizer).expanduser()
+            if path.is_dir():
+                path /= "tokenizer.json"
+            self.tokenizer = (
+                Tokenizer.from_file(str(path))
+                if path.is_file()
+                else Tokenizer.from_pretrained(hf_tokenizer)
+            )
 
     @staticmethod
     def name():
@@ -139,6 +189,29 @@ class ResourceAgent(BaseAgent):
         response.raise_for_status()
         snapshot = response.json()
         self.record("request_stats", turn=turn, snapshot=snapshot)
+        steps = (snapshot.get("engine") or {}).get("recent_steps", [])
+        for step in steps:
+            if (
+                self.cost_model is not None
+                and self.last_step_id is not None
+                and step["id"] > self.last_step_id
+                and step["succeeded"]
+            ):
+                try:
+                    predicted_ms = self.cost_model.step(step["inputs"]) * 1000
+                except ValueError as error:
+                    self.record("inference_estimate_unavailable", error=str(error))
+                else:
+                    self.record(
+                        "inference_step",
+                        step_id=step["id"],
+                        inputs=step["inputs"],
+                        predicted_ms=predicted_ms,
+                        measured_ms=step["elapsed_ms"],
+                    )
+        self.last_step_id = max(
+            (step["id"] for step in steps), default=self.last_step_id or 0
+        )
         samples = snapshot["recent_generations"]
         for sample in samples:
             if sample["session_id"] in {
@@ -147,6 +220,100 @@ class ResourceAgent(BaseAgent):
             }:
                 self.engine_samples[sample["id"]] = sample
         return snapshot
+
+    def estimate_child_inference(self, snapshot):
+        """Estimate cold prefill and decode steps at the current prompt lengths."""
+        cost = self.cost_model
+        if cost is None or self.child_prompt_tokens is None:
+            return None
+        child = {"position": self.child_prompt_tokens, "tokens": 1, "decode": True}
+        positions = {
+            s["session_id"]: s["committed_position"]
+            for s in (snapshot.get("engine") or {}).get("sessions", [])
+        }
+        parent_position = positions.get(self.prefix + "-parent")
+        paired = None
+        if type(parent_position) is int and parent_position >= 0:
+            paired = cost.step(
+                [child, {"position": parent_position, "tokens": 1, "decode": True}]
+            )
+        return {
+            "child_prompt_tokens": self.child_prompt_tokens,
+            "parent_position": parent_position,
+            "cold_prefill_s": cost.prefill(0, self.child_prompt_tokens),
+            "solo_decode_step_s": cost.step([child]),
+            "paired_decode_step_s": paired,
+        }
+
+    def estimate_thinking_tokens(self, messages, snapshot, proposal) -> int | None:
+        """Scale expected output by the observed ratio of thinking to other tokens."""
+        if not self.observed_non_thinking_tokens:
+            return None
+        return math.ceil(
+            proposal["expected_output_tokens"]
+            * self.observed_thinking_tokens
+            / self.observed_non_thinking_tokens
+        )
+
+    def observe_thinking_tokens(self, response, role):
+        choice = response["choices"][0]
+        if choice["finish_reason"] not in {"stop", "tool_calls"}:
+            return
+        usage = response["usage"]
+        thinking = (usage.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        )
+        source = "usage"
+        if thinking is None and self.tokenizer is not None:
+            thinking = len(
+                self.tokenizer.encode(
+                    choice["message"].get("reasoning_content") or "",
+                    add_special_tokens=False,
+                ).ids
+            )
+            source = "tokenizer"
+        if type(thinking) is not int or not 0 <= thinking <= usage["completion_tokens"]:
+            return
+        other = usage["completion_tokens"] - thinking
+        self.observed_thinking_tokens += thinking
+        self.observed_non_thinking_tokens += other
+        self.record(
+            "thinking_observation",
+            role=role,
+            thinking_tokens=thinking,
+            non_thinking_tokens=other,
+            source=source,
+        )
+
+    def admission(self, messages, snapshot, proposal):
+        decision = decide_delegation(
+            snapshot,
+            child_available=self.enabled and not self.child_used,
+            expected_output_tokens=proposal.get("expected_output_tokens"),
+            output_limit=self.child_output_tokens,
+        )
+        thinking_tokens = (
+            self.estimate_thinking_tokens(messages, snapshot, proposal)
+            if decision["allowed"]
+            else None
+        )
+        decision["expected_thinking_tokens"] = thinking_tokens
+        decision["expected_total_tokens"] = (
+            proposal["expected_output_tokens"] + thinking_tokens
+            if thinking_tokens is not None
+            else None
+        )
+        self.record(
+            "delegation_decision",
+            phase="launch",
+            policy="limits_only",
+            proposal=proposal,
+            observed_thinking_tokens=self.observed_thinking_tokens,
+            observed_non_thinking_tokens=self.observed_non_thinking_tokens,
+            inference_estimate=self.estimate_child_inference(snapshot),
+            decision=decision,
+        )
+        return decision
 
     async def completion(self, role, messages, cap):
         session_id = self.prefix + "-" + role
@@ -217,6 +384,7 @@ class ResourceAgent(BaseAgent):
                     "an answer or tool call"
                 )
             raise RuntimeError("Completion contains no answer or tool call")
+        self.observe_thinking_tokens(data, role)
         messages.append(choice["message"])
         return choice
 
@@ -306,13 +474,18 @@ class ResourceAgent(BaseAgent):
         self.child_messages.append(reply)
 
     async def investigate(self, environment):
+        result = {
+            "status": "budget_exhausted",
+            "findings": "No complete findings; inspect child trace if needed.",
+        }
         try:
             for _ in range(6):
                 remaining = self.child_output_tokens - self.output_tokens["child"]
                 if remaining <= 0:
                     break
                 if len(json.dumps(self.child_messages).encode()) > 16384:
-                    return {"status": "context_budget_exhausted"}
+                    result = {"status": "context_budget_exhausted"}
+                    break
                 choice = await self.completion(
                     "child", self.child_messages, min(self.max_tokens, remaining)
                 )
@@ -321,23 +494,36 @@ class ResourceAgent(BaseAgent):
                 message = choice["message"]
                 calls = message.get("tool_calls") or []
                 if not calls:
-                    return {
+                    result = {
                         "status": "complete",
                         "findings": message.get("content", ""),
                     }
+                    break
                 for call in calls:
                     await self.child_tool(call, environment)
-            return {
-                "status": "budget_exhausted",
-                "findings": "No complete findings; inspect child trace if needed.",
-            }
         except asyncio.CancelledError:
-            return {"status": "cancelled"}
+            result = {"status": "cancelled"}
         except Exception as error:
             self.record("child_error", error=str(error))
-            return {"status": "error", "error": str(error)}
+            result = {"status": "error", "error": str(error)}
         finally:
+            self.record(
+                "child_output",
+                expected_output_tokens=self.child_expected_output_tokens,
+                expected_thinking_tokens=self.child_expected_thinking_tokens,
+                expected_total_tokens=(
+                    self.child_expected_output_tokens
+                    + self.child_expected_thinking_tokens
+                    if self.child_expected_output_tokens is not None
+                    and self.child_expected_thinking_tokens is not None
+                    else None
+                ),
+                actual_output_tokens=self.output_tokens["child"],
+                output_limit=self.child_output_tokens,
+                status=result["status"],
+            )
             await self.close_session("child")
+        return result
 
     def notify(self, messages):
         if self.child is None or not self.child.done() or self.child_delivered:
@@ -352,6 +538,27 @@ class ResourceAgent(BaseAgent):
         self.record("child_result", result=result)
         return True
 
+    async def count_child_prompt(self, question):
+        self.child_prompt_tokens = None
+        if self.cost_model is None:
+            return
+        try:
+            response = await self.client.post(
+                self.base_url + "/chat/tokenize",
+                json={
+                    "model": self.model_name.removeprefix("openai/"),
+                    "messages": self.child_prompt(question, self.child_output_tokens),
+                    "tools": TOOLS[:1],
+                },
+            )
+            response.raise_for_status()
+            count = response.json()["prompt_tokens"]
+            self.child_prompt_tokens = (
+                count if type(count) is int and count > 0 else None
+            )
+        except (httpx.HTTPError, KeyError, ValueError) as error:
+            self.record("inference_estimate_unavailable", error=str(error))
+
     async def parent_tool(self, call, messages, environment):
         arguments = json.loads(call["function"]["arguments"])
         name = call["function"]["name"]
@@ -361,15 +568,23 @@ class ResourceAgent(BaseAgent):
             if not self.enabled or self.child_used:
                 raise ValueError("No child budget available; work inline")
             if not all(
-                isinstance(arguments[k], str) and arguments[k].strip()
+                isinstance(arguments.get(k), str) and arguments[k].strip()
                 for k in ("question", "parent_command")
             ):
+                raise ValueError("Provide a question and an independent parent command")
+            self.child_prompt(arguments["question"], self.child_output_tokens)
+            await self.count_child_prompt(arguments["question"])
+            snapshot = await self.report("admission")
+            decision = self.admission(messages, snapshot, arguments)
+            if not decision["allowed"]:
                 raise ValueError(
-                    "Provide the question and an independent parent shell command"
+                    f"Delegation declined: {decision['reason']}; work inline"
                 )
             self.child_messages = self.child_prompt(
                 arguments["question"], self.child_output_tokens
             )
+            self.child_expected_output_tokens = arguments["expected_output_tokens"]
+            self.child_expected_thinking_tokens = decision["expected_thinking_tokens"]
             self.child_used = True
             self.child = asyncio.create_task(self.investigate(environment))
             self.record("spawn", **arguments)
@@ -411,6 +626,10 @@ class ResourceAgent(BaseAgent):
             {"role": "user", "content": instruction},
         ]
         status = "error"
+        self.record(
+            "inference_calibration",
+            cost=self.cost_model.to_dict() if self.cost_model is not None else None,
+        )
         async with httpx.AsyncClient(timeout=180, trust_env=False) as self.client:
             try:
                 for turn in range(self.step_limit):
@@ -420,6 +639,16 @@ class ResourceAgent(BaseAgent):
                     if choice["finish_reason"] == "length":
                         raise RuntimeError("Parent response exhausted output cap")
                     calls = choice["message"].get("tool_calls") or []
+                    self.record(
+                        "action_selection",
+                        turn=turn,
+                        tools=[call["function"]["name"] for call in calls],
+                        delegation_proposed=any(
+                            call["function"]["name"] == "spawn" for call in calls
+                        ),
+                        child_available=self.enabled and not self.child_used,
+                        child_active=self.child is not None and not self.child.done(),
+                    )
                     if not calls:
                         if self.notify(messages):
                             continue
@@ -438,6 +667,12 @@ class ResourceAgent(BaseAgent):
                             output = await self.parent_tool(call, messages, environment)
                         except (ValueError, KeyError, TypeError) as error:
                             output = f"Tool error: {error}"
+                            self.record(
+                                "tool_error",
+                                turn=turn,
+                                tool=call["function"]["name"],
+                                error=str(error),
+                            )
                         messages.append(
                             {
                                 "role": "tool",
