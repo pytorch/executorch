@@ -226,6 +226,7 @@ Error XNNWeightsCache::initialize_for_runtime(
   }
   unpacked_data_.clear();
   unpacked_data_to_name_.clear();
+  unpacked_data_to_qualifier_.clear();
 
 #ifndef _WIN32
   if (packed_cache_path_.empty() || packed_file_fd_ >= 0) {
@@ -342,6 +343,7 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   }
   unpacked_data_.clear();
   unpacked_data_to_name_.clear();
+  unpacked_data_to_qualifier_.clear();
 
   std::vector<std::string> packed_data_names;
   // update the reference count of all the packed data
@@ -394,8 +396,37 @@ Result<const uint8_t*> XNNWeightsCache::load_unpacked_data(
   const uint8_t* data_pointer =
       static_cast<const uint8_t*>(named_data.get().data());
   unpacked_data_.push_back(std::move(named_data.get()));
-  unpacked_data_to_name_[data_pointer] = name;
+  // A data map that hands out its own storage (BufferDataLoader) returns the
+  // same pointer for every load of one key; keep what qualify_unpacked_name
+  // already made of it.
+  if (unpacked_data_to_qualifier_.find(data_pointer) ==
+      unpacked_data_to_qualifier_.end()) {
+    unpacked_data_to_name_[data_pointer] = name;
+  }
   return data_pointer;
+}
+
+void XNNWeightsCache::qualify_unpacked_name(
+    const void* data_ptr,
+    const std::string& suffix) {
+  auto entry = unpacked_data_to_name_.find(data_ptr);
+  if (entry == unpacked_data_to_name_.end()) {
+    return;
+  }
+  auto qualifier = unpacked_data_to_qualifier_.find(data_ptr);
+  if (qualifier == unpacked_data_to_qualifier_.end()) {
+    unpacked_data_to_qualifier_.emplace(data_ptr, suffix);
+    entry->second.append(suffix);
+  } else if (qualifier->second != suffix) {
+    ET_LOG(
+        Info,
+        "Unpacked data '%s' is packed with conflicting parameters ('%s' vs "
+        "'%s'); packing it outside the weights cache",
+        entry->second.c_str(),
+        qualifier->second.c_str(),
+        suffix.c_str());
+    unpacked_data_to_name_.erase(entry);
+  }
 }
 
 void XNNWeightsCache::release_entry(void* packed_data_ptr) {
