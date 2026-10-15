@@ -61,12 +61,12 @@ native tokenizer directory; `--hf-tokenizer` overrides it. Approximate ChatML
 fallback is not enabled by this launcher.
 
 `--max-context` is required and sets both the HTTP limit and native session-token
-limit; choose a value supported by the export. Capacity defaults are
+limit; choose a value supported by the export. Worker defaults are
 `--max-sessions 16`, `--max-decode-sequences 8`, `--max-inflight-requests 64`, and
-`--prefix-cache-entries 0`. Logical sessions, packed decode width, and in-flight
-request capacity are independent limits. Python concurrency follows advertised
-request capacity, not the single native delivery thread. Python reads native
-async streams directly through bounded per-request mailboxes, without a thread
+`--prefix-cache-entries 0`. The session limit, maximum generation batch size, and
+in-flight request limit are independent. Python concurrency follows the advertised
+in-flight request limit. Python reads native async streams directly through
+bounded per-request mailboxes, without a thread
 pool or a second token queue. A paused consumer does not stall peers, but consumers
 must not block the event loop; native callbacks must also do short, bounded,
 nonblocking work. Prefix snapshots require extra native capacity, which the worker
@@ -131,19 +131,27 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-`GET /v1/runtime/stats` reports request capacity, submitted generations, session-lease
-waiters, and the last 16 successful or cancelled generation measurements with their
+`GET /v1/runtime/stats` reports the in-flight request limit, submitted generations,
+session-lease waiters, and the last 16 successful or cancelled generation measurements with their
 age. Failed requests are excluded. A one-token completion has no decode-rate sample.
 
-For batching workers, `engine` adds live decode/prefill width, committed session
-positions, KV allocation, and cumulative step counters and aggregate rates. Decode
+For batching workers, `engine` adds the current generation batch size, number of
+prefilling sequences, committed session positions, KV allocation, and cumulative
+step counters and aggregate rates. Decode
 throughput counts processed decode tokens over decode-only plus mixed-step time;
 prefill uses prefill-only plus mixed-step time. Neither rate includes tool waits.
 Counters and KV allocation are sampled between steps (`sample_age_ms`). KV bytes
 count buffers retained by cache arrays and pending copy dependencies, with shared
-allocations counted once. Process memory and allocator free lists are separate.
+allocations counted once. This measures allocated KV-cache memory, not the KV bytes
+read by attention per step. Process memory and allocator free lists are separate.
 Unsupported measurements are `null`; older workers return `engine: null`. Request
-counts are not engine batch width or GPU utilization.
+counts are not the generation batch size or GPU utilization.
+
+| Field | Meaning |
+|---|---|
+| `max_inflight_requests` | In-flight request limit; independent of batch size |
+| `engine.decode_sequences` | Current generation batch size |
+| `engine.max_decode_sequences` | Maximum generation batch size allowed by the scheduler |
 
 `engine.recent_steps` retains the last 128 completed forwards, including failures.
 Each has a worker-local ID, execution time, success flag and input positions,
