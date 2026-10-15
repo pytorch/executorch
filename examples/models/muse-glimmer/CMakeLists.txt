@@ -390,11 +390,17 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       target_compile_definitions(gtest PUBLIC GTEST_HAS_POSIX_RE=0)
       add_executable(
         muse_glimmer_cuda_dflash_test tests/cuda_dflash_executor_test.cpp
+                                      tests/cuda_dflash_native_test.cpp
       )
       target_link_libraries(
         muse_glimmer_cuda_dflash_test PRIVATE muse_glimmer_batching_runtime
                                               GTest::gtest_main
       )
+      if(NOT APPLE AND NOT MSVC)
+        target_link_options(
+          muse_glimmer_cuda_dflash_test PRIVATE "LINKER:--export-dynamic"
+        )
+      endif()
       add_test(NAME muse_glimmer_cuda_dflash
                COMMAND muse_glimmer_cuda_dflash_test
       )

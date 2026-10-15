@@ -629,6 +629,7 @@ std::optional<SessionId> MuseGlimmerCudaDFlashExecutor::clone(
 #endif
     State copy{*target_id, *draft_id};
     copy.frontier = upto;
+    copy.pending = upto == state.frontier ? state.pending : std::nullopt;
     copy.hidden = state.hidden;
     if (!df::trim_hidden(copy.hidden, row_bytes_, draft_position, upto)) {
       target_->cache_control().seq_rm(*target_id);
@@ -674,6 +675,7 @@ bool MuseGlimmerCudaDFlashExecutor::rewind(State& state, int position) {
     return false;
   }
   state.frontier = position;
+  state.pending.reset();
   return true;
 }
 
@@ -877,7 +879,8 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
 
 bool MuseGlimmerCudaDFlashExecutor::speculate(
     const batching::BatchInput& batch,
-    batching::BatchOutput& out) {
+    batching::BatchOutput& out,
+    bool pending_decode) {
   std::size_t cursor = 0;
   while (cursor < batch.inputs.size()) {
     std::vector<SessionId> owners;
@@ -889,8 +892,9 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
       auto& state = sessions_.at(input.sid);
       const auto end =
           static_cast<std::int64_t>(input.position) + input.offset + input.size;
-      if (!out.outputs[cursor] || end != state.frontier ||
-          end > max_context_ - block_) {
+      const int seed_rows = pending_decode ? 1 : 0;
+      if (!out.outputs[cursor] || end != state.frontier + seed_rows ||
+          end - seed_rows > max_context_ - block_) {
         ++cursor;
         continue;
       }
@@ -907,7 +911,10 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
       }
       context += static_cast<int>(rows);
       owners.push_back(input.sid);
-      anchors.push_back(out.outputs[cursor]->tokens.front());
+      anchors.push_back(
+          pending_decode ? (*std::get<batching::TokenInputPtr>(
+                               input.payload))[input.offset]
+                         : out.outputs[cursor]->tokens.front());
       indices.push_back(cursor++);
     }
     if (owners.empty()) {
@@ -970,9 +977,9 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
         return false;
       }
       state.frontier = committed;
-      // The regular preamble's prediction is new output, now committed by
-      // verification. Append only predictions after that anchor. The last
-      // prediction remains uncommitted: frontier = input.end + out.size() - 1.
+      // Pending decode consumes Input's already-emitted token; preamble mode
+      // consumes its new anchor. Both append only new predictions, leaving
+      // correction/bonus pending: frontier = input.end + out.size() - 1.
       auto& output_tokens = out.outputs[indices[i]]->tokens;
       output_tokens.insert(
           output_tokens.end(), burst.tokens.begin(), burst.tokens.end());
@@ -996,6 +1003,7 @@ bool MuseGlimmerCudaDFlashExecutor::fail_batch(
     failed_ = true;
     for (auto& item : sessions_) {
       item.second.poisoned = true;
+      item.second.pending.reset();
       item.second.hidden.clear();
     }
     // An abandoned declaration/forward affects the entire shared draft pool.
@@ -1027,6 +1035,7 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
     std::vector<SessionId> token_owners;
     std::unordered_map<SessionId, int> cursor;
     std::vector<std::pair<SessionId, int>> rewinds;
+    bool pending_decode = !batch.inputs.empty();
     for (const auto& input : batch.inputs) {
       const auto it = sessions_.find(input.sid);
       const auto* payload =
@@ -1062,6 +1071,13 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       if (start < at->second) {
         rewinds.emplace_back(input.sid, static_cast<int>(start));
       }
+      // A one-token prompt/replay is not necessarily emitted decode feedback.
+      // Stay on the legacy path unless every owner has an exact pending seed,
+      // one input, and room for the complete trained draft block.
+      pending_decode = pending_decode && first && input.produce_output &&
+          input.size == 1 && start == it->second.frontier &&
+          start <= max_context_ - block_ && it->second.pending &&
+          *it->second.pending == (**payload)[input.offset];
       at->second = static_cast<int>(end);
       for (std::size_t j = 0; j < input.size; ++j) {
         const auto token = (**payload)[input.offset + j];
@@ -1084,34 +1100,77 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
         return fail_batch(batch, out);
       }
     }
-    std::vector<Token> predictions;
-    if (!run_target(step, token_owners, predictions, true)) {
+    const auto before = stats_;
+    if (pending_decode) {
+      ++stats_.pending_decode_batches;
+      stats_.pending_decode_owners += batch.inputs.size();
+      for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+        out.outputs[i] = batching::Output{batch.inputs[i].sid, {}};
+      }
+    } else {
+      std::vector<Token> predictions;
+      if (!run_target(step, token_owners, predictions, true)) {
+        return fail_batch(batch, out);
+      }
+      for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+        sessions_.at(batch.inputs[i].sid).pending.reset();
+        if (batch.inputs[i].produce_output) {
+          out.outputs[i] =
+              batching::Output{batch.inputs[i].sid, {predictions[i]}};
+        }
+      }
+    }
+    if (!speculate(batch, out, pending_decode)) {
       return fail_batch(batch, out);
     }
     for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
-      if (batch.inputs[i].produce_output) {
-        out.outputs[i] =
-            batching::Output{batch.inputs[i].sid, {predictions[i]}};
+      if (out.outputs[i]) {
+        const auto& tokens = out.outputs[i]->tokens;
+        const auto& input = batch.inputs[i];
+        auto& state = sessions_.at(input.sid);
+        const auto end = static_cast<std::int64_t>(input.position) +
+            input.offset + input.size;
+        if (tokens.empty()) {
+          return fail_batch(batch, out);
+        }
+        const auto expected =
+            end + static_cast<std::int64_t>(tokens.size()) - 1;
+        if (pending_decode && expected != state.frontier) {
+          return fail_batch(batch, out);
+        }
+        // Only the final input for a repeated owner may seed the next cycle.
+        if (expected == state.frontier) {
+          state.pending = tokens.back();
+        }
       }
-    }
-    const auto before = stats_;
-    if (!speculate(batch, out)) {
-      return fail_batch(batch, out);
     }
     ++stats_.executions;
     ET_LOG(
         Info,
-        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu target_preamble_calls_total=%llu target_verify_calls_total=%llu target_preamble_forwards_total=%llu target_verify_forwards_total=%llu hidden_rows_d2h_total=%llu hidden_bytes_d2h_total=%llu hidden_rows_d2d_total=%llu hidden_bytes_d2d_total=%llu",
+        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu",
         static_cast<unsigned long long>(stats_.cycles - before.cycles),
         static_cast<unsigned long long>(stats_.proposed - before.proposed),
         static_cast<unsigned long long>(stats_.accepted - before.accepted),
         static_cast<unsigned long long>(stats_.rejected - before.rejected),
         static_cast<unsigned long long>(stats_.bonuses - before.bonuses),
-        static_cast<unsigned long long>(stats_.draft_forwards),
+        static_cast<unsigned long long>(stats_.draft_forwards));
+    // Keep each record below the runtime's 256-byte log-message limit.
+    ET_LOG(
+        Info,
+        "DFLASH_PENDING_STATS executions_total=%llu pending_decode_batches_total=%llu pending_decode_owners_total=%llu",
+        static_cast<unsigned long long>(stats_.executions),
+        static_cast<unsigned long long>(stats_.pending_decode_batches),
+        static_cast<unsigned long long>(stats_.pending_decode_owners));
+    ET_LOG(
+        Info,
+        "DFLASH_TARGET_STATS target_preamble_calls_total=%llu target_verify_calls_total=%llu target_preamble_forwards_total=%llu target_verify_forwards_total=%llu",
         static_cast<unsigned long long>(stats_.target_preamble_calls),
         static_cast<unsigned long long>(stats_.target_verify_calls),
         static_cast<unsigned long long>(stats_.target_preamble_forwards),
-        static_cast<unsigned long long>(stats_.target_verify_forwards),
+        static_cast<unsigned long long>(stats_.target_verify_forwards));
+    ET_LOG(
+        Info,
+        "DFLASH_HIDDEN_STATS hidden_rows_d2h_total=%llu hidden_bytes_d2h_total=%llu hidden_rows_d2d_total=%llu hidden_bytes_d2d_total=%llu",
         static_cast<unsigned long long>(stats_.hidden_rows_d2h),
         static_cast<unsigned long long>(stats_.hidden_bytes_d2h),
         static_cast<unsigned long long>(stats_.hidden_rows_d2d),
