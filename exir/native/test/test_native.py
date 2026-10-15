@@ -27,7 +27,12 @@ from executorch.backends.native.serialization.schema import (
     Program,
 )
 from executorch.exir import to_edge_transform_and_lower
-from executorch.exir._serialize._ptn import ALIASES_ENTRY, PTG_ENTRY, SAFETENSORS_ENTRY
+from executorch.exir._serialize._ptn import (
+    ALIASES_ENTRY,
+    PTG_ENTRY,
+    read_ptn,
+    SAFETENSORS_ENTRY,
+)
 from executorch.exir.lowered_backend_module import (
     executorch_call_delegate,
     get_lowered_submodules,
@@ -391,6 +396,54 @@ class DelegateContractTest(unittest.TestCase):
     def test_dropped_public_input_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "does not pass its inputs"):
             self._check(self._graph_module(drop_input=True))
+
+
+class LiftedConstantCollisionTest(unittest.TestCase):
+    def _scalar_shift(self, offset: float):
+        class Shift(nn.Module):
+            def forward(self, x):
+                return x + offset
+
+        return torch.export.export(Shift(), (torch.randn(2, 4),))
+
+    def _read(self, native) -> tuple[Program, dict[str, torch.Tensor]]:
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "m.ptn")
+            native.save(path)
+            ptg, constants = read_ptn(path)
+        return deserialize_program(ptg), constants
+
+    def _lifted_keys(self, program: Program, method_name: str) -> list[str]:
+        (method,) = [m for m in program.methods if m.name == method_name]
+        return [c.data_key for c in method.constants or [] if "lifted" in c.data_key]
+
+    def test_distinct_lifted_constants_are_namespaced(self):
+        programs = {"a": self._scalar_shift(1.0), "b": self._scalar_shift(2.0)}
+        native = to_native(programs)
+        self.assertEqual(native.methods, {"a", "b"})
+        program, constants = self._read(native)
+        (a_key,) = self._lifted_keys(program, "a")
+        (b_key,) = self._lifted_keys(program, "b")
+        self.assertEqual(b_key, f"b/{a_key}")
+        self.assertTrue(torch.all(constants[a_key] == 1.0), constants[a_key])
+        self.assertTrue(torch.all(constants[b_key] == 2.0), constants[b_key])
+
+    def test_identical_lifted_constants_stay_shared(self):
+        programs = {"a": self._scalar_shift(1.0), "b": self._scalar_shift(1.0)}
+        program, constants = self._read(to_native(programs))
+        self.assertEqual(
+            self._lifted_keys(program, "a"), self._lifted_keys(program, "b")
+        )
+        lifted = {k for k in constants if "lifted" in k}
+        self.assertEqual(len(lifted), 1, lifted)
+
+    def test_parameter_fqn_collision_is_still_rejected(self):
+        programs = {
+            "a": torch.export.export(nn.Linear(4, 4), (torch.randn(1, 4),)),
+            "b": torch.export.export(nn.Linear(4, 4), (torch.randn(1, 4),)),
+        }
+        with self.assertRaisesRegex(ValueError, "differs between methods"):
+            to_native(programs)
 
 
 class MutableBufferDedupTest(unittest.TestCase):
