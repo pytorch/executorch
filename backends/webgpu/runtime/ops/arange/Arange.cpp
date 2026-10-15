@@ -126,6 +126,11 @@ void arange_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   ArangeParams params = {};
   params.num_elements = num_elements;
   if (is_int) {
+    // Truncating start/step before iterating is torch's integer semantics, not
+    // an approximation: arange(0.5, 10.0, 1.5, dtype=int32) is [0, 1, ..., 6]
+    // in eager, and a step that truncates to 0 yields all zeros there too.
+    // Casting start + i * step per element would give [0, 2, 3, 5, 6, 8, 9]
+    // instead.
     params.start.i = static_cast<int32_t>(start);
     params.step.i = static_cast<int32_t>(step);
   } else {

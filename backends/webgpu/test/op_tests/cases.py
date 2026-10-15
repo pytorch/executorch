@@ -2240,5 +2240,15 @@ def _arange_suite() -> WebGPUTestSuite:
                 },
                 inputs=((7,),),
             ),
+            Case(
+                name="int_fractional_negative",
+                construct={
+                    "start": -2.7,
+                    "end": 3.0,
+                    "step": 1.9,
+                    "dtype": torch.int32,
+                },
+                inputs=((4,),),
+            ),
         ],
     )

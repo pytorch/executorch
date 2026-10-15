@@ -92,6 +92,8 @@ class TestArange(unittest.TestCase):
         # [0..6] here; computing in float and casting at store would give
         # [0, 2, 3, 5, 6, 8, 9]. The runtime follows torch.
         self._check(ArangeModule(0.5, 10.0, 1.5, torch.int32), (torch.randn(7),))
+        # Truncation is toward zero, as in eager: [-2, -1, 0, 1].
+        self._check(ArangeModule(-2.7, 3.0, 1.9, torch.int32), (torch.randn(4),))
 
     def test_arange_empty(self) -> None:
         self._check(ArangeModule(0.0, 0.0, 1.0), (torch.randn(0),))
