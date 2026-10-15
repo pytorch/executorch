@@ -27,7 +27,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #pragma clang diagnostic pop
 
-#include <executorch/backends/mlx/runtime/MLXSequenceCacheV2.h>
+#include <executorch/backends/mlx/runtime/MLXSequenceCache.h>
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>

@@ -12,7 +12,7 @@
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
 #include "mlx_mutable_state.h"
 
 #ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES

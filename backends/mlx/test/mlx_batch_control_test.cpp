@@ -15,7 +15,7 @@
 // Must run on Apple Silicon: MLX needs the Metal backend.
 
 #include "MLXCache.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
 #include "backend_options.h" // kMLXBackendId
 #include "utils.h" // allclose, flat_config, ring_config
 

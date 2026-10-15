@@ -8,7 +8,7 @@
 
 // Direct, op-level SequenceControl tests; requires Apple Silicon / Metal.
 #include "MLXCellCache.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
 #include "backend_options.h"
 #include "utils.h"
 
