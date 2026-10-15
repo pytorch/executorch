@@ -25,10 +25,10 @@
 
 namespace executorch::backends::mlx {
 
-class MLXSequenceCacheV2;
+class MLXSequenceCache;
 
 namespace cache = ::executorch::extension::llm::cache;
-namespace sequence_v2 {
+namespace sequence {
 
 struct KV {
   Tensor k;
@@ -127,17 +127,17 @@ class AttentionLayerFactory {
   virtual ~AttentionLayerFactory() = default;
 
  private:
-  friend class ::executorch::backends::mlx::MLXSequenceCacheV2;
+  friend class ::executorch::backends::mlx::MLXSequenceCache;
 
   static std::unique_ptr<AttentionLayer> create(
       std::shared_ptr<const AttentionLayerFactory> owner,
       const cache::LayerGeometry& geometry,
       const cache::CacheConfig& cfg) {
-    detail::require(owner != nullptr, "sequence v2: null layer factory");
+    detail::require(owner != nullptr, "sequence: null layer factory");
     auto layer = owner->create_layer(owner, geometry, cfg);
-    detail::require(layer != nullptr, "sequence v2: null attention layer");
+    detail::require(layer != nullptr, "sequence: null attention layer");
     detail::require(
-        layer->length() == 0, "sequence v2: initial layer must be empty");
+        layer->length() == 0, "sequence: initial layer must be empty");
     return layer;
   }
 
@@ -183,7 +183,7 @@ class Storage {
     slots_ = static_cast<int>(slots);
     initial_slots_ = ring_ ? slots_ : std::min(cfg.initial_capacity, slots_);
     check_allocation_bounded(
-        {1, heads_, slots_, head_dim_}, dtype_, "sequence v2 storage");
+        {1, heads_, slots_, head_dim_}, dtype_, "sequence storage");
   }
 
   int capacity() const {
@@ -416,7 +416,7 @@ class KVAttentionPolicy : public AttentionLayerFactory {
     detail::require(
         storage.slots() >=
             required_slots(storage.capacity(), storage.max_write()),
-        "sequence v2: storage cannot cover policy history/write span");
+        "sequence: storage cannot cover policy history/write span");
   }
 
   // Read-only count/storage checks shared by append admission and updates.
@@ -453,34 +453,34 @@ class KVAttentionPolicy : public AttentionLayerFactory {
     if (allows_history_updates) {
       require(
           position >= 0 && position <= storage.length(),
-          "sequence v2: aligned update must not leave a hole");
+          "sequence: aligned update must not leave a hole");
     } else {
       require(
           position >= 0 && position == complete_prefix,
-          "sequence v2: update must start at complete prefix");
+          "sequence: update must start at complete prefix");
     }
     require(
         q.ndim() == 4 && q.shape(0) == 1 && q.shape(1) > 0 &&
             q.shape(1) % storage.heads() == 0 && q.shape(2) > 0 &&
             q.shape(3) == storage.head_dim() && detail::floating(q.dtype()) &&
             std::isfinite(scale),
-        "sequence v2: invalid query geometry, dtype or scale");
+        "sequence: invalid query geometry, dtype or scale");
     for (const Tensor* t : {&incoming.k, &incoming.v}) {
       require(
           t->ndim() == 4 && t->shape(0) == 1 &&
               t->shape(1) == storage.heads() &&
               t->shape(3) == storage.head_dim() && t->shape(2) > 0 &&
               t->dtype() == q.dtype(),
-          "sequence v2: invalid K/V geometry or dtype");
+          "sequence: invalid K/V geometry or dtype");
     }
     const int n = incoming.k.shape(2);
     require(
         incoming.v.shape(2) == n && q.shape(2) == query_tokens(n),
-        "sequence v2: K/V or policy query counts differ");
+        "sequence: K/V or policy query counts differ");
     const auto persistent = admission(storage, position, n);
     require(
         persistent.has_value(),
-        "sequence v2: invalid policy counts, capacity/write limits, positions "
+        "sequence: invalid policy counts, capacity/write limits, positions "
         "or retained prefix");
     return *persistent;
   }
@@ -698,7 +698,7 @@ class KVAttentionLayer final : public AttentionLayer {
       const cache::LayerGeometry& geometry,
       const cache::CacheConfig& cfg)
       : policy_(std::move(policy)), storage_(geometry, cfg) {
-    require(policy_ != nullptr, "sequence v2: null KV policy");
+    require(policy_ != nullptr, "sequence: null KV policy");
     policy_->validate(storage_);
   }
 
@@ -707,12 +707,12 @@ class KVAttentionLayer final : public AttentionLayer {
     return storage_.length();
   }
   QuerySpan query_span(int kv_tokens) const override {
-    require(kv_tokens > 0, "sequence v2: query span needs positive K/V count");
+    require(kv_tokens > 0, "sequence: query span needs positive K/V count");
     const int count = policy_->query_tokens(kv_tokens);
     require(
         count > 0 && count <= kv_tokens &&
             (!policy_->is_causal || count == kv_tokens),
-        "sequence v2: invalid policy query span");
+        "sequence: invalid policy query span");
     return {kv_tokens - count, count};
   }
   std::optional<int> admission(int position, int kv_tokens) const override {
@@ -755,7 +755,7 @@ class KVAttentionLayer final : public AttentionLayer {
     require(
         position >= 0 && persistent >= 0 &&
             int64_t{position} + persistent <= storage_.capacity(),
-        "sequence v2: invalid KV update end");
+        "sequence: invalid KV update end");
     const int end = position + persistent;
     return {end, policy_->allows_history_updates && end <= length()};
   }
@@ -772,7 +772,7 @@ class KVAttentionLayer final : public AttentionLayer {
         staged, position, q, incoming, scale, s, mask);
     require(
         staged.length() == std::max(length(), update.end),
-        "sequence v2: policy changed persistent growth");
+        "sequence: policy changed persistent growth");
     static_assert(std::is_nothrow_move_assignable_v<Storage>);
     storage_ = std::move(staged);
     return output;
@@ -796,13 +796,13 @@ inline std::unique_ptr<AttentionLayer> KVAttentionPolicy::create_layer(
 }
 
 } // namespace detail
-} // namespace sequence_v2
+} // namespace sequence
 
 // Single-sequence implementation used by MLXBatchedCache.
 // Capacity limits persistent logical length per sequence, not temporary blocks.
 // Example (one layer, flat storage, four-token draft block):
 //   geometry.dflash_block_size = 4;
-//   MLXSequenceCacheV2 c(geometry, cfg);
+//   MLXSequenceCache c(geometry, cfg);
 //   Tensor out = c.attend(0, positions, q, k, v, scale, stream);
 // K/V contain [new context, block]; positions cover both, and Q covers the
 // block.
@@ -823,53 +823,53 @@ inline std::unique_ptr<AttentionLayer> KVAttentionPolicy::create_layer(
 // Graphs retain the storage they need. Execution and synchronization belong to
 // the caller; neither attend() nor clear() executes work or waits.
 // Calls and lifecycle controls must be externally serialized.
-class MLXSequenceCacheV2 final : public MLXCache,
-                                 public cache::SequenceControl {
+class MLXSequenceCache final : public cache::Cache,
+                               public MLXCache,
+                               public cache::SequenceControl {
  public:
-  MLXSequenceCacheV2(
+  MLXSequenceCache(
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg)
-      : MLXSequenceCacheV2(geometry, cfg, make_factories(geometry)) {}
+      : MLXSequenceCache(geometry, cfg, make_factories(geometry)) {}
 
-  MLXSequenceCacheV2(
+  MLXSequenceCache(
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg,
-      std::vector<std::shared_ptr<const sequence_v2::AttentionLayerFactory>>
+      std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
           factories)
       : capacity_(cfg.capacity) {
-    using sequence_v2::detail::require;
-    require(cache::valid(cfg), "sequence v2: invalid config");
-    require(!geometry.layers.empty(), "sequence v2: no layers");
+    using sequence::detail::require;
+    require(cache::valid(cfg), "sequence: invalid config");
+    require(!geometry.layers.empty(), "sequence: no layers");
     require(
-        factories.size() == geometry.layers.size(),
-        "sequence v2: factory count");
+        factories.size() == geometry.layers.size(), "sequence: factory count");
     layers_.reserve(geometry.layers.size());
     for (size_t l = 0; l < geometry.layers.size(); ++l) {
-      auto attention = sequence_v2::AttentionLayerFactory::create(
+      auto attention = sequence::AttentionLayerFactory::create(
           std::move(factories[l]), geometry.layers[l], cfg);
       layers_.push_back({std::move(attention)});
     }
   }
 
   // Lazy, independently writable fork with prefix-aware per-layer storage.
-  MLXSequenceCacheV2(const MLXSequenceCacheV2& source, int keep)
+  MLXSequenceCache(const MLXSequenceCache& source, int keep)
       : capacity_(source.capacity_) {
-    using sequence_v2::detail::require;
-    require(source.can_fork(keep), "sequence v2: unavailable fork");
+    using sequence::detail::require;
+    require(source.can_fork(keep), "sequence: unavailable fork");
     cached_mask_ = source.cached_mask_;
     layers_.reserve(source.layers_.size());
     for (const auto& layer : source.layers_) {
       auto attention = layer.attention->clone(keep);
       require(
           attention != nullptr && attention->length() == keep,
-          "sequence v2: invalid cloned layer");
+          "sequence: invalid cloned layer");
       layers_.push_back({std::move(attention)});
     }
     reset_forward(keep);
   }
 
-  MLXSequenceCacheV2(const MLXSequenceCacheV2&) = delete;
-  MLXSequenceCacheV2& operator=(const MLXSequenceCacheV2&) = delete;
+  MLXSequenceCache(const MLXSequenceCache&) = delete;
+  MLXSequenceCache& operator=(const MLXSequenceCache&) = delete;
 
   // Maximum persistent logical length of this sequence.
   int capacity() const override {
@@ -882,18 +882,18 @@ class MLXSequenceCacheV2 final : public MLXCache,
   int reserved_length() const {
     return pending_end_.value_or(length_);
   }
-  using QuerySpan = sequence_v2::AttentionLayer::QuerySpan;
+  using QuerySpan = sequence::AttentionLayer::QuerySpan;
 
   // Layout only: valid for placed overwrites and unfinished forwards too.
   QuerySpan query_span(int layer, int kv_tokens) const {
-    using sequence_v2::detail::require;
+    using sequence::detail::require;
     const auto& attention = layers_[checked_layer(layer)].attention;
-    require(kv_tokens > 0, "sequence v2: query span needs positive K/V count");
+    require(kv_tokens > 0, "sequence: query span needs positive K/V count");
     const auto span = attention->query_span(kv_tokens);
     require(
         span.begin >= 0 && span.count > 0 &&
             int64_t{span.begin} + span.count <= kv_tokens,
-        "sequence v2: invalid layer query span");
+        "sequence: invalid layer query span");
     return span;
   }
 
@@ -976,24 +976,24 @@ class MLXSequenceCacheV2 final : public MLXCache,
       const Tensor& v,
       float scale,
       StreamOrDevice s) override {
-    using sequence_v2::detail::require;
+    using sequence::detail::require;
     const size_t l = checked_layer(layer);
-    require(!positions.empty(), "sequence v2: positions must not be empty");
-    const sequence_v2::KV incoming{k, v};
+    require(!positions.empty(), "sequence: positions must not be empty");
+    const sequence::KV incoming{k, v};
     require(
         k.ndim() > 2 && k.shape(2) > 0 &&
             positions.size() == static_cast<size_t>(k.shape(2)),
-        "sequence v2: expected one position per incoming K/V token");
+        "sequence: expected one position per incoming K/V token");
     require(
         positions.front() >= 0 &&
             int64_t{positions.front()} + k.shape(2) <=
                 std::numeric_limits<int>::max(),
-        "sequence v2: incoming K/V positions exceed integer bounds");
+        "sequence: incoming K/V positions exceed integer bounds");
     for (size_t i = 0; i < positions.size(); ++i) {
       require(
           int64_t{positions[i]} ==
               int64_t{positions.front()} + static_cast<int64_t>(i),
-          "sequence v2: positions must be contiguous and dense");
+          "sequence: positions must be contiguous and dense");
     }
     const auto update = layers_[l].attention->validate(
         positions.front(), length_, q, incoming, scale);
@@ -1001,23 +1001,28 @@ class MLXSequenceCacheV2 final : public MLXCache,
         l, positions.front(), q, incoming, update, scale, s);
   }
 
+ protected:
+  void* face(cache::FaceId id) override {
+    return cache::expose<cache::SequenceControl, MLXCache>(this, id);
+  }
+
  private:
-  static std::vector<std::shared_ptr<const sequence_v2::AttentionLayerFactory>>
+  static std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
   make_factories(const cache::CacheGeometry& geometry) {
-    std::vector<std::shared_ptr<const sequence_v2::AttentionLayerFactory>>
+    std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
         factories;
     factories.reserve(geometry.layers.size());
     for (const auto& layer : geometry.layers) {
       const bool windowed = layer.policy.kind == cache::LayerPolicy::Kind::Ring;
       if (geometry.dflash_block_size.has_value()) {
-        factories.push_back(std::make_shared<sequence_v2::detail::DFlash>(
+        factories.push_back(std::make_shared<sequence::detail::DFlash>(
             geometry,
             windowed ? std::optional<int>(layer.policy.window) : std::nullopt));
       } else if (windowed) {
         factories.push_back(
-            std::make_shared<sequence_v2::detail::SWA>(layer.policy.window));
+            std::make_shared<sequence::detail::SWA>(layer.policy.window));
       } else {
-        factories.push_back(std::make_shared<sequence_v2::detail::Full>());
+        factories.push_back(std::make_shared<sequence::detail::Full>());
       }
     }
     return factories;
@@ -1036,23 +1041,23 @@ class MLXSequenceCacheV2 final : public MLXCache,
       size_t l,
       int position,
       const Tensor& q,
-      const sequence_v2::KV& incoming,
-      const sequence_v2::AttentionLayer::UpdateInfo& update,
+      const sequence::KV& incoming,
+      const sequence::AttentionLayer::UpdateInfo& update,
       float scale,
       StreamOrDevice s) {
-    using sequence_v2::detail::require;
+    using sequence::detail::require;
     auto& layer = layers_[l];
     require(
         update.end >= position && update.end <= capacity_ &&
             int64_t{update.end} - position <= incoming.k.shape(2) &&
             (update.overwrite ? update.end <= layer.attention->length()
                               : update.end >= length_),
-        "sequence v2: invalid layer update end");
+        "sequence: invalid layer update end");
     if (!update.overwrite) {
-      require(!layer.visited, "sequence v2: repeated layer within forward");
+      require(!layer.visited, "sequence: repeated layer within forward");
       require(
           !pending_end_ || *pending_end_ == update.end,
-          "sequence v2: unequal persistent ends");
+          "sequence: unequal persistent ends");
     }
     Tensor output = layer.attention->update_and_attend(
         position, q, incoming, scale, update, s, cached_mask_);
@@ -1068,14 +1073,14 @@ class MLXSequenceCacheV2 final : public MLXCache,
 
   size_t checked_layer(int layer) const {
     if (layer < 0 || static_cast<size_t>(layer) >= layers_.size()) {
-      throw std::out_of_range("sequence v2: layer out of range");
+      throw std::out_of_range("sequence: layer out of range");
     }
     return static_cast<size_t>(layer);
   }
 
   int capacity_;
-  std::vector<sequence_v2::detail::LayerEntry> layers_;
-  std::optional<sequence_v2::detail::CachedMask> cached_mask_;
+  std::vector<sequence::detail::LayerEntry> layers_;
+  std::optional<sequence::detail::CachedMask> cached_mask_;
   size_t visited_count_ = 0;
   int length_ = 0;
   std::optional<int> pending_end_;
