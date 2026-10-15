@@ -131,6 +131,7 @@ def make_client():
         gen_ids=None,
         reuse=0,
         reasoning_extractor=None,
+        prompt_token_offset=0,
     ):
         fake = FakeRunner(
             tokens,
@@ -151,6 +152,7 @@ def make_client():
             max_context=max_context,
             tool_detector_cls=HermesDetector,
             reasoning_extractor=reasoning_extractor,
+            prompt_token_offset=prompt_token_offset,
         )
         return TestClient(build_app(serving, "test-model")), fake
 
