@@ -170,6 +170,13 @@ def _current_serving(app: FastAPI) -> ServingChat:
     return serving
 
 
+async def tokenize_chat(req: ChatCompletionRequest, request: Request):
+    try:
+        return {"prompt_tokens": _current_serving(request.app).prompt_token_count(req)}
+    except APIError as error:
+        return JSONResponse(error.body(), status_code=error.status)
+
+
 def build_app(
     serving: Optional[ServingChat],
     model_id: str,
@@ -196,6 +203,8 @@ def build_app(
     @app.get("/v1/models")
     async def list_models() -> ModelList:
         return ModelList(data=[ModelCard(id=model_id)])
+
+    app.post("/v1/chat/tokenize")(tokenize_chat)
 
     @app.post("/v1/chat/completions")
     async def chat_completions(

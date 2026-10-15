@@ -53,6 +53,35 @@ def test_models_listing_shape(make_client):
     assert body["data"][0]["object"] == "model"
 
 
+def test_count_fresh_chat_prompt_without_generating(make_client):
+    client, worker = make_client(prompt_tokens=123)
+    response = client.post(
+        "/v1/chat/tokenize",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "inspect", "parameters": {"type": "object"}},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"prompt_tokens": 123}
+    assert worker.captured_config is None
+    assert not worker.opened_log
+
+
+def test_prompt_count_is_unknown_without_tokenizer(make_client):
+    client, _ = make_client()
+    response = client.post(
+        "/v1/chat/tokenize", json={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert response.json() == {"prompt_tokens": None}
+
+
 def test_chat_nonstreaming_shape(make_client):
     client, _ = make_client(tokens=["Hello", ", ", "world"])
     resp = client.post(

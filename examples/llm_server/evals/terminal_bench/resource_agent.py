@@ -211,6 +211,11 @@ class ResourceAgent(BaseAgent):
         if not choice["message"].get("tool_calls") and not choice["message"].get(
             "content"
         ):
+            if choice["finish_reason"] == "length":
+                raise RuntimeError(
+                    f"Reasoning exhausted the {cap}-token response cap without "
+                    "an answer or tool call"
+                )
             raise RuntimeError("Completion contains no answer or tool call")
         messages.append(choice["message"])
         return choice

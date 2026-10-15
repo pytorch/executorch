@@ -337,14 +337,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     }
 #endif
     std::lock_guard<std::mutex> lock(snapshot_mutex_);
-    snapshot_ = {
-        metrics_,
-        MetricsClock::now(),
-        0,
-        0,
-        0,
-        scheduler_->decode_capacity(),
-        bytes};
+    snapshot_.completed = metrics_;
+    snapshot_.measured_at = MetricsClock::now();
+    snapshot_.max_decode_sequences = scheduler_->decode_capacity();
+    snapshot_.kv_allocated_bytes = bytes;
   }
 
   enum class Lifecycle { Running, Stopping, Stopped };
@@ -1092,8 +1088,16 @@ bool RunnerImpl::execute_one_batch_() {
   std::uint64_t decode_tokens = 0;
   std::uint64_t prefill_tokens = 0;
   std::vector<SessionId> prefilling; // small: bounded by the batch width
+  StepMeasurement measurement;
+  measurement.id = metrics_.steps + 1;
+  measurement.inputs.reserve(tasks.size());
   const MetricsTime step_start = MetricsClock::now();
   for (const Task& task : tasks) {
+    measurement.inputs.push_back(
+        {static_cast<std::int64_t>(task.input.position) +
+             static_cast<std::int64_t>(task.input.offset),
+         task.input.size,
+         task.is_decode});
     bool first_chunk = false;
     if (task.is_decode) {
       ++decode_sessions;
@@ -1192,11 +1196,17 @@ bool RunnerImpl::execute_one_batch_() {
   BatchOutput out;
   const bool ok = executor_.execute(batch, out);
   const MetricsTime step_end = MetricsClock::now();
+  measurement.elapsed_us = us_between(exec_start, step_end);
+  measurement.succeeded = ok;
   {
     std::lock_guard<std::mutex> lock(snapshot_mutex_);
     snapshot_.decode_sequences = 0;
     snapshot_.prefill_sequences = 0;
     snapshot_.context_tokens = 0;
+    if (snapshot_.recent_steps.size() == 128) {
+      snapshot_.recent_steps.erase(snapshot_.recent_steps.begin());
+    }
+    snapshot_.recent_steps.push_back(std::move(measurement));
   }
 
   const std::int64_t latency = us_between(exec_start, step_end);
