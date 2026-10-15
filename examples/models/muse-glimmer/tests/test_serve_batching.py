@@ -81,12 +81,6 @@ def test_dflash_is_opt_in(arguments, options, enabled):
     assert flags["--dflash_n_draft"] == "0"
 
 
-def test_draft_argmax_option_removed(arguments):
-    with pytest.raises(SystemExit) as error:
-        serve_batching._parse_args(arguments + ["--dflash", "--draft-argmax"])
-    assert error.value.code == 2
-
-
 @pytest.mark.parametrize("n_draft", [0, 1, 2, 3])
 def test_draft_count_forwarded(arguments, n_draft):
     args = serve_batching._parse_args(

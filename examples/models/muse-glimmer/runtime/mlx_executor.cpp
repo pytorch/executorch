@@ -159,11 +159,15 @@ std::mt19937 draw_rng(uint64_t seed, batching::Position position, int purpose) {
 } // namespace
 
 struct MuseGlimmerMLXExecutor::DFlash {
+  explicit DFlash(aten::ScalarType activation_dtype)
+      : activation_dtype(activation_dtype) {}
+
+  const aten::ScalarType activation_dtype;
   std::unique_ptr<cache::InstallGuard> guard;
   cache::BatchControl* ctl = nullptr;
   int block = 0, mask = 0, hidden = 0, context = 0, max_owners = 0;
   size_t row_bytes() const {
-    return static_cast<size_t>(hidden) * 2;
+    return static_cast<size_t>(hidden) * runtime::elementSize(activation_dtype);
   }
 };
 
@@ -362,10 +366,16 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
           check_vision_abi(*module, hidden, dtype, config.max_vision_patches));
       max_soft_tokens = soft_tokens;
     }
-    const int capacity = config.max_session_tokens ? config.max_session_tokens
-                                                   : static_cast<int>(context);
+    const int session_capacity = config.max_session_tokens
+        ? config.max_session_tokens
+        : static_cast<int>(context);
+    if (session_capacity >
+        std::numeric_limits<int>::max() / config.max_sessions) {
+      return Error::InvalidArgument;
+    }
     cache::CacheConfig cache_config{};
-    cache_config.capacity = capacity;
+    // Each cache shares one logical token budget across all sessions.
+    cache_config.capacity = config.max_sessions * session_capacity;
     cache_config.kv_dtype = static_cast<int>(dtype);
     cache_config.max_write = static_cast<int>(width);
     std::unique_ptr<DFlash> dflash;
@@ -457,11 +467,11 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
           cache::CacheFactory::global().build(
               kBackend, cache::kind::kBatched, dg, dc));
       auto* dctl = dcache->as<cache::BatchControl>();
-      if (!dctl || dctl->capacity() < capacity ||
+      if (!dctl || dctl->capacity() < dc.capacity ||
           (dctl->max_seqs() && config.max_sessions > *dctl->max_seqs())) {
         return Error::InvalidProgram;
       }
-      dflash = std::make_unique<DFlash>();
+      dflash = std::make_unique<DFlash>(dtype);
       dflash->guard = std::make_unique<cache::InstallGuard>(dcache);
       dflash->ctl = dctl;
       dflash->block = static_cast<int>(block);
@@ -497,7 +507,7 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
         MuseGlimmerPreparationSpec{
             dtype,
             hidden,
-            capacity,
+            session_capacity,
             static_cast<int32_t>(width),
             static_cast<int32_t>(vocab),
             has_vision,

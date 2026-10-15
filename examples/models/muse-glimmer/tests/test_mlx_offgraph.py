@@ -314,7 +314,7 @@ class MLXOffgraphTest(unittest.TestCase):
         )
         from executorch.extension.llm.cache.reference_cache import AttendSpec, MaskKind
 
-        cfg = DFlashConfig(dim=32, n_layers=1, ffn_dim=64, target_layers=[1])
+        cfg = DFlashConfig(dim=32, n_layers=2, ffn_dim=64, target_layers=[1])
         with tempfile.TemporaryDirectory() as directory, patch.object(
             preprocess, "serialize_mlx_graph", wraps=preprocess.serialize_mlx_graph
         ) as capture, patch.object(
@@ -339,6 +339,7 @@ class MLXOffgraphTest(unittest.TestCase):
         draft = lower.call_args.args[0]["draft_forward"].module()
         with patch.object(REGISTRY, "current") as cache, torch.no_grad():
             for owners, block, context in ((1, 2, 0), (1, 3, 1), (1, 16, 2), (2, 3, 3)):
+                cache.return_value.update_and_fetch.reset_mock()
                 queries = owners * block
                 cache.return_value.update_and_fetch.side_effect = (
                     lambda layer, k, v, pos, queries=queries: [
@@ -353,6 +354,13 @@ class MLXOffgraphTest(unittest.TestCase):
                 )
                 self.assertEqual(logits.shape, (1, queries, CONFIG.vocab_size))
                 self.assertTrue(torch.isfinite(logits).all())
+                self.assertEqual(
+                    [
+                        call.args[0]
+                        for call in cache.return_value.update_and_fetch.call_args_list
+                    ],
+                    list(range(cfg.n_layers)),
+                )
             with self.assertRaises(RuntimeError):
                 draft(
                     torch.zeros((1, cfg.block_size + 1), dtype=torch.long),

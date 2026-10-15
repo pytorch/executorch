@@ -183,6 +183,28 @@ TEST_P(MLXSequenceControlTest, CapacityBoundsAdmissionEvenForRingStorage) {
   ASSERT_NO_FATAL_FAILURE(forward(5, {9}, {{7}}));
 }
 
+TEST_P(MLXSequenceControlTest, InvalidQueriesLeaveCacheUsable) {
+  using namespace ::mlx::core;
+  for (const auto& shape : std::vector<Shape>{
+           {1, kHeads, 0, kDim},
+           {1, kHeads, 1, kDim},
+           {1, kHeads, 3, kDim},
+           {1, kDim}}) {
+    SCOPED_TRACE(::testing::PrintToString(shape));
+    create(config());
+    ASSERT_NO_FATAL_FAILURE(forward(0, {1, 3}, {{1, 2}}));
+    ASSERT_TRUE(admit(2));
+    const auto q = zeros(shape, float32);
+    const auto k = zeros({1, kHeads, 2, kDim}, float32);
+    EXPECT_ANY_THROW(
+        attention_->attend(0, {2, 3}, q, k, values({99, 99}), 1.0f, {}));
+    ASSERT_EQ(length(), 2);
+    EXPECT_TRUE(control_->can_extend(14));
+    ASSERT_NO_FATAL_FAILURE(forward(2, {5, 7}, {{3, 4}}));
+    EXPECT_EQ(length(), 4);
+  }
+}
+
 TEST_P(MLXSequenceControlTest, HalfAndBFloat16StorageCastsBeforeAttention) {
   for (auto dtype : {ScalarType::Half, ScalarType::BFloat16}) {
     SCOPED_TRACE(static_cast<int>(dtype));

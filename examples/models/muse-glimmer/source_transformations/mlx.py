@@ -458,6 +458,7 @@ class MLXDFlashAttention(nn.Module):
         cls,
         attn,
         max_context_length: int,
+        layer_idx: int,
         dtype: torch.dtype = torch.bfloat16,
         is_sliding: bool = False,
         window_size: int | None = None,
@@ -467,6 +468,7 @@ class MLXDFlashAttention(nn.Module):
         m = cls.__new__(cls)
         nn.Module.__init__(m)
 
+        m.layer_idx = layer_idx
         m.n_heads = attn.n_heads
         m.n_kv_heads = attn.n_kv_heads
         m.head_dim = attn.head_dim
@@ -692,13 +694,13 @@ def dflash_mlx_source_transformations(
         layer.self_attn = MLXDFlashAttention.from_attention(
             layer.self_attn,
             max_context_length,
-            dtype,
+            layer_idx=i,
+            dtype=dtype,
             is_sliding=is_sliding,
             window_size=sliding_window if is_sliding else None,
             max_write_len=max_write_len if is_sliding else None,
             use_offgraph_kv_cache=use_offgraph_kv_cache,
         )
-        layer.self_attn.layer_idx = i
         _replace_dflash_layer_forward(layer)
 
     _replace_dflash_model_forward(model)
