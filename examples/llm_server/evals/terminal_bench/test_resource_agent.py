@@ -25,15 +25,7 @@ SNAPSHOT = {
     "submitted_generations": 0,
     "waiting_for_runtime_lease": 0,
 }
-ESTIMATE = DelegationEstimate(
-    uncached_input_tokens=200,
-    prefill_tokens_s=100,
-    decode_tokens_s=20,
-    child_tool_s=0,
-    parent_work_s=30,
-    inline_s=50,
-    integration_s=1,
-)
+ESTIMATE = DelegationEstimate(30, 50, 1, 30, 12, 2)
 
 
 @pytest.fixture
@@ -92,7 +84,7 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
 
     obj.report = report
     obj.estimate_delegation = lambda messages, snapshot, proposal: replace(
-        ESTIMATE, decode_tokens_s=100
+        ESTIMATE, child_s=4
     )
     obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 300
 
@@ -432,7 +424,7 @@ def test_thinking_is_unknown_without_observations_and_policy_can_be_overridden(
     assert decision["expected_output_tokens"] == 200
     assert decision["expected_thinking_tokens"] == 300
     assert decision["expected_total_tokens"] == 500
-    assert decision["expected_child_s"] == 27
+    assert decision["expected_child_s"] == ESTIMATE.child_s
 
 
 def test_thinking_average_pools_parent_and_child_tokens(tmp_path):
@@ -581,10 +573,24 @@ def test_resource_launcher_passes_configured_tokenizer(tmp_path):
             "temperature": 0.8,
             "step_limit": 100,
             "child_output_tokens": 1536,
+            "model_cost_path": str(tmp_path / "model-cost.json"),
         },
         tmp_path,
     )
     assert f"hf_tokenizer={tmp_path}" in command
+    assert f"calibration_path={tmp_path / 'calibration.json'}" in command
+
+
+def test_resource_launcher_requires_calibration_inputs(tmp_path):
+    with pytest.raises(ValueError, match="model_cost_path"):
+        resource_command({}, {"agent": "resource"}, tmp_path)
+
+
+def test_agent_rejects_calibration_for_another_model(tmp_path):
+    profile = tmp_path / "calibration.json"
+    profile.write_text(json.dumps({"model_id": "different-model"}))
+    with pytest.raises(ValueError, match="Calibration model"):
+        agent(tmp_path, calibration_path=profile)
 
 
 @pytest.mark.anyio
@@ -791,6 +797,56 @@ async def test_cancel_before_child_starts_is_not_a_trial_failure(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_child_prompt_count_uses_server_rendering(tmp_path):
+    from .test_inference_cost import COST
+
+    obj = agent(tmp_path)
+    obj.cost_model = COST
+
+    async def respond(request):
+        assert request.url.path == "/v1/chat/tokenize"
+        body = json.loads(request.content)
+        assert "session_id" not in body
+        assert body["messages"] == obj.child_prompt(
+            "inspect a", obj.child_output_tokens
+        )
+        assert [tool["function"]["name"] for tool in body["tools"]] == ["shell"]
+        return httpx.Response(200, json={"prompt_tokens": 123})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.count_child_prompt("inspect a")
+    assert obj.child_prompt_tokens == 123
+
+
+@pytest.mark.anyio
+async def test_reasoning_cap_error_keeps_consumed_token_accounting(tmp_path):
+    obj = agent(tmp_path)
+    chunk = {
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"reasoning_content": "still thinking"},
+                "finish_reason": "length",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 64, "total_tokens": 74},
+    }
+
+    async def respond(request):
+        return httpx.Response(
+            200, text="data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n"
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        with pytest.raises(
+            RuntimeError, match="Reasoning exhausted the 64-token response cap"
+        ):
+            await obj.completion("parent", [], 64)
+    assert obj.context.n_output_tokens == 64
+    assert obj.output_tokens["parent"] == 64
+
+
+@pytest.mark.anyio
 async def test_cleanup_error_preserves_primary_error_and_trace(tmp_path):
     obj = agent(tmp_path)
 
@@ -834,30 +890,33 @@ def test_default_estimator_produces_admission_without_an_override(
         },
         "parent",
     )
-    obj.decode_rates.observe(
-        {"decode_tokens": 0, "decode_only_ms": 0, "mixed_ms": 0, "mean_decode_width": 0}
+    from .inference_cost import AttentionGroup, InferenceCost, ModelCost
+
+    obj.cost_model = InferenceCost(
+        ModelCost(
+            16_762_600_196,
+            25_163_726_848,
+            1_344_831_488,
+            (
+                AttentionGroup(13, 32, 2, 128, 2),
+                AttentionGroup(39, 32, 2, 128, 2, 2048),
+            ),
+        ),
+        438e9,
+        11.64e12,
+        1.0 if shared else 2.0,
+        1.0,
+        256,
+        0.0,
     )
-    obj.decode_rates.observe(
-        {
-            "decode_tokens": 300,
-            "decode_only_ms": 10000,
-            "mixed_ms": 0,
-            "mean_decode_width": 1,
-        }
-    )
-    if shared:
-        obj.decode_rates.observe(
-            {
-                "decode_tokens": 900,
-                "decode_only_ms": 10000 + 600 / 45 * 1000,
-                "mixed_ms": 0,
-                "mean_decode_width": 1.5,
-            }
-        )
+    obj.child_prompt_tokens = 200
     snapshot = SNAPSHOT | {
-        "recent_generations": [
-            {"cancelled": False, "uncached_tokens": 1000, "prefill_ms": 1000}
-        ]
+        "engine": {
+            "max_decode_sequences": 2,
+            "sessions": [
+                {"session_id": obj.prefix + "-parent", "committed_position": 2048}
+            ],
+        }
     }
     proposal = {
         "question": "Inspect a",
@@ -869,11 +928,5 @@ def test_default_estimator_produces_admission_without_an_override(
     decision = obj.admission([], snapshot, proposal)
     assert decision["allowed"] is allowed
     assert decision["reason"] != "unknown_cost"
-    assert decision["estimate"]["solo_decode_tokens_s"] == 30
-    assert decision["estimate"]["decode_tokens_s"] == pytest.approx(
-        22.5 if shared else 15
-    )
-    assert decision["estimate"]["decode_rate_source"] == (
-        "observed_aggregate" if shared else "no_batching_gain"
-    )
+    assert decision["estimate"]["prefill_s"] > 0
     assert decision["parent_delay_s"] > 0

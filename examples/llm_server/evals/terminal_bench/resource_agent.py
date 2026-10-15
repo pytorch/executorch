@@ -18,7 +18,8 @@ import httpx
 from harbor.agents.base import BaseAgent
 from tokenizers import Tokenizer
 
-from .delegation import decide_delegation, DecodeRates, DelegationEstimate
+from .delegation import decide_delegation, DelegationEstimate
+from .inference_cost import InferenceCost
 from .streaming import ChatCompletionStream
 
 SYSTEM = """Solve the user's task in the container. Inspect before editing, use tools for evidence,
@@ -128,6 +129,7 @@ class ResourceAgent(BaseAgent):
         child_output_tokens=1536,
         step_limit=100,
         temperature=0.8,
+        calibration_path=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -152,7 +154,13 @@ class ResourceAgent(BaseAgent):
         self.records = []
         self.output_tokens = {"parent": 0, "child": 0}
         self.engine_samples = {}
-        self.decode_rates = DecodeRates()
+        self.cost_model = None
+        self.child_prompt_tokens = None
+        if calibration_path:
+            calibration = json.loads(Path(calibration_path).read_text())
+            if calibration["model_id"] != self.model_name.removeprefix("openai/"):
+                raise ValueError("Calibration model does not match the agent model")
+            self.cost_model = InferenceCost.from_dict(calibration["cost"])
         self.started = time.monotonic()
         self.prefix = str(uuid.uuid4())
         self.client = None
@@ -190,7 +198,6 @@ class ResourceAgent(BaseAgent):
         response = await self.client.get(self.base_url + "/runtime/stats")
         response.raise_for_status()
         snapshot = response.json()
-        self.decode_rates.observe(snapshot.get("engine"))
         self.record("request_stats", turn=turn, snapshot=snapshot)
         samples = snapshot["recent_generations"]
         for sample in samples:
@@ -204,12 +211,22 @@ class ResourceAgent(BaseAgent):
     def estimate_delegation(
         self, messages, snapshot, proposal
     ) -> DelegationEstimate | None:
-        """Price model work forecasts using observed execution and tool costs."""
+        """Price separate parent and child work with the run's inference calibration."""
+        cost = self.cost_model
+        engine = snapshot.get("engine") or {}
+        positions = {
+            s["session_id"]: s["committed_position"] for s in engine.get("sessions", [])
+        }
+        position = positions.get(self.prefix + "-parent")
         if (
-            self.tokenizer is None
-            or self.decode_rates.solo is None
+            cost is None
+            or self.tokenizer is None
+            or self.child_prompt_tokens is None
             or not self.observed_non_thinking_tokens
+            or type(position) is not int
+            or position < 0
             or snapshot.get("submitted_generations", 0)
+            or (engine.get("max_decode_sequences") or 0) < 2
         ):
             return None
         parent_output = proposal.get("parent_output_tokens")
@@ -221,20 +238,6 @@ class ResourceAgent(BaseAgent):
             or inline_output <= 0
         ):
             return None
-        samples = [
-            sample
-            for sample in snapshot.get("recent_generations", [])
-            if not sample["cancelled"]
-            and sample["uncached_tokens"] > 0
-            and sample["prefill_ms"] > 0
-        ]
-        if not samples:
-            return None
-        prefill_rate = (
-            sum(s["uncached_tokens"] for s in samples)
-            * 1000
-            / sum(s["prefill_ms"] for s in samples)
-        )
         observations = sum(e["type"] == "thinking_observation" for e in self.records)
         if not observations:
             return None
@@ -242,6 +245,9 @@ class ResourceAgent(BaseAgent):
         ratio = 1 + self.observed_thinking_tokens / self.observed_non_thinking_tokens
         parent_tokens = math.ceil(parent_output * ratio)
         inline_tokens = math.ceil(inline_output * ratio)
+        child_tokens = proposal[
+            "expected_output_tokens"
+        ] + self.estimate_thinking_tokens(messages, snapshot, proposal)
         tools = [e for e in self.records if e["type"] == "tool"]
         mean_tool_s = sum(e["seconds"] for e in tools) / len(tools) if tools else 0
         mean_tool_tokens = (
@@ -255,29 +261,55 @@ class ResourceAgent(BaseAgent):
         )
         child_tools = max(1, proposal["expected_output_tokens"] / mean_output - 1)
         parent_tools = max(1, parent_output / mean_output)
-        tool_tokens = math.ceil((child_tools + parent_tools) * mean_tool_tokens)
-        child_prompt = self.child_prompt(proposal["question"], self.child_output_tokens)
-        prompt_tokens = len(
-            self.tokenizer.encode(
-                json.dumps({"messages": child_prompt, "tools": TOOLS[:1]}),
-                add_special_tokens=False,
-            ).ids
+        parent_input = math.ceil(parent_tools * mean_tool_tokens)
+        child_tool_input = math.ceil(child_tools * mean_tool_tokens)
+        child_input = self.child_prompt_tokens + child_tool_input
+        tool_seconds = [parent_tools * mean_tool_s, child_tools * mean_tool_s]
+        finishes, prefill_s = cost.parallel(
+            [position, 0],
+            [parent_input, child_input],
+            [parent_tokens, child_tokens],
+            tool_seconds,
         )
-        solo = self.decode_rates.solo
+        inline_input = parent_input + child_tool_input
+        inline_s = (
+            sum(tool_seconds)
+            + cost.prefill(position, inline_input)
+            + cost.decode(
+                position + inline_input, max(0, inline_tokens - bool(inline_input))
+            )
+        )
+        parent_work_s = (
+            tool_seconds[0]
+            + cost.prefill(position, parent_input)
+            + cost.decode(
+                position + parent_input, max(0, parent_tokens - bool(parent_input))
+            )
+        )
+        parent_end = position + parent_input + parent_tokens
+        integration_s = cost.prefill(
+            parent_end, proposal["expected_output_tokens"]
+        ) + cost.decode(
+            parent_end + proposal["expected_output_tokens"],
+            math.ceil(mean_output * ratio),
+        )
+        self.record(
+            "work_forecast",
+            parent_context=position,
+            parent_input_tokens=parent_input,
+            child_input_tokens=child_input,
+            parent_output_tokens=parent_tokens,
+            child_output_tokens=child_tokens,
+            inline_output_tokens=inline_tokens,
+        )
         return DelegationEstimate(
-            uncached_input_tokens=prompt_tokens + tool_tokens,
-            prefill_tokens_s=prefill_rate,
-            decode_tokens_s=solo * self.decode_rates.shared_fraction,
-            solo_decode_tokens_s=solo,
-            parent_decode_tokens=parent_tokens,
-            parent_work_s=parent_tokens / solo + parent_tools * mean_tool_s,
-            child_tool_s=child_tools * mean_tool_s,
-            inline_s=inline_tokens / solo
-            + tool_tokens / prefill_rate
-            + (parent_tools + child_tools) * mean_tool_s,
-            integration_s=proposal["expected_output_tokens"] / prefill_rate
-            + mean_output * ratio / solo,
-            decode_rate_source=self.decode_rates.source,
+            parent_work_s,
+            inline_s,
+            integration_s,
+            finishes[0],
+            finishes[1],
+            prefill_s,
+            cost.relative_error,
         )
 
     def estimate_thinking_tokens(self, messages, snapshot, proposal) -> int | None:
@@ -408,6 +440,11 @@ class ResourceAgent(BaseAgent):
         if not choice["message"].get("tool_calls") and not choice["message"].get(
             "content"
         ):
+            if choice["finish_reason"] == "length":
+                raise RuntimeError(
+                    f"Reasoning exhausted the {cap}-token response cap without "
+                    "an answer or tool call"
+                )
             raise RuntimeError("Completion contains no answer or tool call")
         self.observe_thinking_tokens(data, role)
         messages.append(choice["message"])
@@ -563,6 +600,21 @@ class ResourceAgent(BaseAgent):
         self.record("child_result", result=result)
         return True
 
+    async def count_child_prompt(self, question):
+        if self.cost_model is None:
+            return
+        response = await self.client.post(
+            self.base_url + "/chat/tokenize",
+            json={
+                "model": self.model_name.removeprefix("openai/"),
+                "messages": self.child_prompt(question, self.child_output_tokens),
+                "tools": TOOLS[:1],
+            },
+        )
+        response.raise_for_status()
+        count = response.json()["prompt_tokens"]
+        self.child_prompt_tokens = count if type(count) is int and count > 0 else None
+
     async def parent_tool(self, call, messages, environment):
         arguments = json.loads(call["function"]["arguments"])
         name = call["function"]["name"]
@@ -584,6 +636,7 @@ class ResourceAgent(BaseAgent):
                 raise ValueError(
                     "Provide a question, independent parent command, nonnegative parent_output_tokens and positive inline_output_tokens"
                 )
+            await self.count_child_prompt(arguments["question"])
             snapshot = await self.report("admission")
             decision = self.admission(messages, snapshot, arguments)
             if not decision["allowed"]:

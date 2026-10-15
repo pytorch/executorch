@@ -1,75 +1,74 @@
 # Background-agent experiment
 
-This compares the same agent with delegation disabled (`agent = "inline"`) or
-one optional background child (`agent = "resource"`). The parent owns edits;
-the child investigates one question using only the shell tool. A spawn also runs
-an independent parent shell command and returns its output. The child receives
-a self-contained assignment, has a total output budget, and uses a separate session.
+Compare the same agent with delegation disabled (`agent = "inline"`) or one
+optional background child (`agent = "resource"`). The parent owns edits and
+verification. A child receives one self-contained inspection question, a bounded
+output budget and a separate session. A spawn also runs an independent parent
+shell command. Children cannot delegate.
 
-Admission runs in the harness. The model forecasts non-thinking output for the
-child, independent parent work, and the same remaining work done inline.
-The default estimator prices these forecasts using observed inference rates,
-tool timings and output sizes. Unknown costs or no predicted benefit mean inline.
-Override `estimate_delegation(messages, snapshot, proposal)` to change the policy.
+## Configuration
 
-The model supplies `expected_output_tokens` for tool arguments and answer text,
-excluding thinking. The harness estimates thinking as
-`ceil(expected_output_tokens × observed_thinking / observed_non_thinking)`.
-This scales the ratio of averages across completed parent and child responses
-within the trial to the whole child's expected output. Capped or interrupted responses are excluded.
-Counts come from usage metadata, or approximately from returned reasoning text
-using `[server].hf_tokenizer`. Without observations the estimate stays unknown.
-Override `estimate_thinking_tokens` to use another policy.
-
-Admission prices the combined forecast; `child_output_tokens` caps all generation.
-`child_output` events record both forecasts, their total, actual total usage, cap
-and completion status. Interrupted or exhausted children are not complete work
-estimates. Hardware rates and workload costs belong in the estimator.
-
-Use the batching server with prefix caching enabled, capacity for two sessions,
-and at least two decode sequences. In a working model TOML:
+Use a batching server with prefix caching, capacity for two sessions and at least
+two decode sequences. Add to a working model TOML:
 
 ```toml
 [terminal_bench]
 agent = "resource" # "inline" for the baseline
-child_output_tokens = 1536
 concurrency = 1
+child_output_tokens = 1536
+model_cost_path = "/path/to/model-cost.json"
 ```
 
-Keep the model, server limits, tasks, sampling and output limits identical across
-modes. Run through `bash run.sh --config /path/to/model.toml`.
+The model-cost JSON describes the actual export, not its advertised model size:
 
-Assignments are limited to 4 KiB; child message history is capped at 16 KiB before
-requests. Oversized tool output is omitted so the child can narrow its command.
-Request telemetry stays in the logs, without adding per-turn prompt messages.
-These bounds do not enforce GPU memory limits or filesystem isolation.
+| Field | Meaning |
+|---|---|
+| `weight_bytes` | Forward weights, including quantization metadata; exclude the embedding lookup table |
+| `linear_parameters` | Parameters used in transformer-body matrix multiplies |
+| `output_parameters` | Parameters in the output projection, evaluated at selected positions |
+| `attention` | List of groups with `layers`, `query_heads`, `kv_heads`, `head_dim`, `kv_bytes` and `window` (0 for global attention) |
 
-Harbor owns the task deadline. Generation reads allow buffered tool responses;
-connection, metadata, and cleanup requests retain bounded HTTP timeouts.
+Run `bash run.sh --config /path/to/model.toml`. Before Harbor starts, the launcher
+warms the model and measures solo, paired and mixed prefill/decode execution.
+It validates predictions at different prompt lengths; calibration must meet a
+30% p90 relative-error limit in each execution category. `calibration.json` is
+shared by all trials in the run. Calibration is outside agent time and excluded
+from evaluation metrics. Use identical model-cost settings for both A/B modes.
 
-`GET /v1/runtime/stats` reports submitted generations, requests waiting for a
-runtime session lease, and the last 16 completed worker measurements. Submitted
-work includes the engine queue; these counts do not measure GPU utilization or
-decode width. Rates describe individual requests under their observed load and
-context, and include their age. Unknown rates remain unknown.
+## Admission
 
-The harness checks estimated costs and request capacity at launch; a rejected
-spawn returns its reason as a tool result. Request slots are not decode capacity.
-Native decode windows supply solo throughput and observed aggregate throughput
-for overlapping sequences. Until batching gains are observed, two sequences
-share the solo throughput. The estimate includes parent slowdown, charges extra
-prefill as a shared stall, and returns the surviving sequence to solo speed.
-Tools can overlap inference; integration costs an average parent response plus
-reading the child result. Unobserved tool times provide no assumed time savings.
+The model forecasts non-thinking output for the child, independent parent work,
+and the same remaining work done inline. Thinking is estimated as
+`ceil(expected_output_tokens * observed_thinking / observed_non_thinking)` over
+completed parent and child responses. Capped or interrupted responses do not
+count as completed work. The output cap covers thinking and visible output.
 
-These are approximate workload costs, not a calibrated roofline model. Prompt
-sizes are estimated with the configured tokenizer; task work still depends on
-model forecasts. There is no engine-memory admission check. Child shell
-commands are instructed to be read-only; this is not an OS-enforced filesystem
-boundary.
+The harness prices these forecasts using a calibrated
+[roofline model](https://jax-ml.github.io/scaling-book/inference/): prefill depends
+on uncached tokens and retained context; decoding depends on weight sharing,
+compute and each active context. It accounts for mixed steps, paired decoding,
+the solo tail, tools and integration. Parent and child contexts remain separate.
+Prompt counts come from the server's renderer. Unknown costs or savings smaller
+than the calibration error mean inline. The model does not choose hardware rates.
 
-Compare verifier results and agent completion time first, then parent waiting,
-all generated tokens and uncached input (`input - cached`). `agent/events.jsonl`
-records requests, resource reports, tool execution and delegation; `parent.json`
-and `child.json` preserve conversations. A task with no delegation is a valid
-result. Two tasks establish feasibility, not a statistically reliable speedup.
+Future tool work and output remain estimates. Tool durations and sizes use
+observed averages; the two-request approximation places each side's forecast
+tool work before its input. Calibration error measures inference timing error,
+not uncertainty in the model's work forecast. Contexts outside calibration are
+extrapolations. Override `estimate_delegation` or `estimate_thinking_tokens` to
+change these policies.
+
+## Evaluation
+
+Compare verifier results and time to successful completion first, then parent
+waiting, all generated tokens and uncached input. `agent/events.jsonl` records
+forecasts, admission decisions, requests and tools; `parent.json` and `child.json`
+preserve conversations. A run with no spawn proposals does not validate admission
+or batching benefits. Reasoning that exhausts a response cap without an answer
+or tool call is an error in both modes.
+
+Assignments are limited to 4 KiB and child history to 16 KiB; oversized tool
+output is omitted. Request metadata stays out of the conversation. Harbor owns
+the task deadline. Session/request checks do not reserve GPU memory; child
+read-only behavior is an instruction, not filesystem isolation. This experiment
+supports dense attention models and at most one child, without speculative decoding.

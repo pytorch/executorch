@@ -145,6 +145,15 @@ allocations counted once. Process memory and allocator free lists are separate.
 Unsupported measurements are `null`; older workers return `engine: null`. Request
 counts are not engine batch width or GPU utilization.
 
+`engine.recent_steps` retains the last 128 completed forwards, including failures.
+Each has a worker-local ID, execution time, success flag and input positions,
+token counts and decode/prefill classification. These pair timings with workload
+shape for calibration without running profiling callbacks on the engine thread.
+
+`POST /v1/chat/tokenize` accepts a chat request and returns `prompt_tokens` using
+the server's renderer and tokenizer (`null` when unavailable). It counts a fresh
+prompt without generating, restoring a cache or consulting a session transcript.
+
 ## Sessions
 
 When the worker reports named-session capacity (a worker whose engine supports
