@@ -75,6 +75,38 @@ class PybindingsTest(unittest.TestCase):
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
 
+    def test_method_load_error_preserves_runtime_code(self):
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import (
+            BackendDelegate,
+            BackendDelegateDataReference,
+            BackendDelegateInlineData,
+            DataLocation,
+        )
+
+        exported_program, inputs = create_program(ModuleAdd())
+        schema = exported_program.executorch_program
+        schema.execution_plan[0].delegates.append(
+            BackendDelegate(
+                id="MissingBackendForErrorTest",
+                processed=BackendDelegateDataReference(
+                    location=DataLocation.INLINE,
+                    index=len(schema.backend_delegate_data),
+                ),
+                compile_specs=[],
+            )
+        )
+        schema.backend_delegate_data.append(BackendDelegateInlineData(data=b""))
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+        for protocol, values in (
+            ("torch", inputs),
+            ("numpy", [value.numpy() for value in inputs]),
+        ):
+            with self.subTest(protocol=protocol):
+                module = self.load_fn(data)
+                with self.assertRaisesRegex(RuntimeError, r"\b0x:?20\b"):
+                    module.run_method("forward", values)
+
     def test_numpy_buffer_inputs(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -854,15 +886,13 @@ print("all calls finished")
         )
         script = """
 import gc
-import importlib.util
 import sys
 import weakref
 import numpy as np
 
-spec = importlib.util.spec_from_file_location("_C", sys.argv[1])
-runtime = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(runtime)
-with open(sys.argv[2], "rb") as program_file:
+from executorch.extension.pybindings import portable_lib as runtime
+
+with open(sys.argv[1], "rb") as program_file:
     data = program_file.read()
 def readonly_array(value):
     array = np.asarray(value)
@@ -889,7 +919,6 @@ for copied_root in (False, True):
 import array
 import gc
 import importlib.abc
-import importlib.util
 import sys
 import weakref
 
@@ -898,10 +927,10 @@ class BlockTensorPackages(importlib.abc.MetaPathFinder):
         if fullname.split(".")[0] in ("numpy", "torch"):
             raise ModuleNotFoundError(fullname, name=fullname)
 sys.meta_path.insert(0, BlockTensorPackages())
-spec = importlib.util.spec_from_file_location("_C", sys.argv[1])
-runtime = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(runtime)
-with open(sys.argv[2], "rb") as program_file:
+
+from executorch.extension.pybindings import portable_lib as runtime
+
+with open(sys.argv[1], "rb") as program_file:
     data = program_file.read()
 method = runtime._load_program_from_buffer(data).load_method("forward")
 value = memoryview(array.array("f", [3.0] * 4)).cast("B").cast("f", (2, 2))
@@ -926,7 +955,6 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
                         sys.executable,
                         "-c",
                         code,
-                        sys.modules[self.runtime.ExecuTorchResult.__module__].__file__,
                         path,
                     ],
                     env={

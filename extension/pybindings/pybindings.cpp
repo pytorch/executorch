@@ -1469,7 +1469,10 @@ struct PyModule final {
             tensor->strides());
         const auto method = module_->method(method_name);
         THROW_IF_ERROR(
-            method.error(), "Failed to load method %s", method_name.c_str());
+            method.error(),
+            "Failed to load method %s, error: 0x%" PRIx32,
+            method_name.c_str(),
+            static_cast<uint32_t>(method.error()));
         tensor->validate_device(*method.get(), i);
         tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
         input_sizes.emplace_back(
