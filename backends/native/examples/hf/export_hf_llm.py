@@ -16,24 +16,15 @@ packed in the PTN.
 """
 
 import argparse
-import collections
 import logging
-import operator
 
 import torch
 import torch.nn as nn
-from executorch.backends.native import get_default_compile_config
-from executorch.backends.native.examples.hf_llm.gguf_hf import (
+from executorch.backends.native.examples.hf.gguf_hf import (
     gguf_architecture,
     gguf_to_hf,
 )
-from executorch.backends.native.partitioner import NativePartitioner
-from executorch.backends.native.passes import get_default_passes
-from executorch.exir import to_edge_transform_and_lower
-from executorch.exir.lowered_backend_module import (
-    executorch_call_delegate,
-    get_lowered_submodules,
-)
+from executorch.backends.native.examples.hf.hf_utils import report_lowering
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from torch.export import Dim, export
@@ -218,14 +209,6 @@ def _quantize_8da4w(
     )
 
 
-def _histogram(gm: torch.fx.GraphModule) -> collections.Counter:
-    return collections.Counter(
-        str(n.target)
-        for n in gm.graph.nodes
-        if n.op == "call_function"
-        and n.target not in (executorch_call_delegate, operator.getitem)
-    )
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -287,29 +270,7 @@ def main() -> None:
             dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
             strict=not args.non_strict,
         )
-    print("== exported aten ops ==", flush=True)
-    for k, v in sorted(_histogram(ep.graph_module).items()):
-        print(f"  {v:4d} {k}")
-
-    edge = to_edge_transform_and_lower(
-        ep,
-        transform_passes=get_default_passes(),
-        partitioner=[
-            NativePartitioner(external_constants_tag=None, _serialize_as_ptn=True)
-        ],
-        compile_config=get_default_compile_config(),
-    )
-    gm = edge.exported_program().graph_module
-    lowered = get_lowered_submodules(gm)
-    print(f"== {len(lowered)} native delegate(s) ==")
-    delegated = collections.Counter()
-    for _, module, _ in lowered:
-        delegated += _histogram(module.original_module.graph_module)
-    for k, v in sorted(delegated.items()):
-        print(f"  {v:4d} {k}")
-    print("== residual (not delegated) ==")
-    for k, v in sorted(_histogram(gm).items()):
-        print(f"  {v:4d} {k}")
+    report_lowering(ep, "forward")
 
     if args.output:
         to_native(ep).save(args.output)

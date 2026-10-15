@@ -20,7 +20,7 @@ from pathlib import Path
 
 import torch
 import torchvision
-from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+from executorch.backends.native.examples.hf.export_hf_llm import (
     LastTokenLM,
     load_gguf,
 )

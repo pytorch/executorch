@@ -16,7 +16,7 @@ fbcode_target(
     },
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
+        "//executorch/backends/native/examples/hf:export_hf_llm_lib",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",
         "//pytorch/vision:torchvision",
