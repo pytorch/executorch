@@ -21,10 +21,14 @@ import yaml
 from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.tests.config_importer import test_config
-from executorch.backends.nxp.tests.dataset_creator import (
-    CopyDatasetCreator,
+from executorch.backends.nxp.tests.dataset_creators.quant_helpers import (
     create_quantized_variant_of_dataset,
     InputQuantizationSpec,
+)
+from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import (
+    CopyDatasetCreator,
+)
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
     RandomDatasetCreator,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import (

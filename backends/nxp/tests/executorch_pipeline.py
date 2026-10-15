@@ -17,6 +17,7 @@ from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
@@ -57,6 +58,17 @@ class ModelInputSpec:
     shape: tuple[int, ...]
     dtype: torch.dtype = torch.float32
     dim_order: memory_format = torch.contiguous_format
+
+    @property
+    def shape_as_contiguous(self) -> tuple[int, ...]:
+        """Return the shape in the memory format described by dim_order (NCHW for contiguous, NHWC for channels_last)."""
+        match self.dim_order:
+            case torch.contiguous_format:
+                return tuple(self.shape)
+            case torch.channels_last:
+                return tuple(translator.dims_to_channels_last(list(self.shape)))
+            case _:
+                raise ValueError(f"Unsupported dim_order: {self.dim_order}")
 
 
 def handle_kernel_selection(model_name: str = ""):

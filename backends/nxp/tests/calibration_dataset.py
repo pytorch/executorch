@@ -12,7 +12,9 @@ from torch.utils.data.dataset import Dataset
 
 
 class CalibrationDataset(Dataset):
-    def __init__(self, data_path):
+    def __init__(self, data_path, example_shape: list[int]):
+        self.example_shape = tuple(example_shape)
+
         if data_path.endswith(".xz"):
             with lzma.open(data_path) as f:
                 self.examples = pickle.load(f)
@@ -22,6 +24,45 @@ class CalibrationDataset(Dataset):
             )
         else:
             raise ValueError("Invalid file format, supported formats are .xz, .pt.")
+
+        # convert data to numpy, preserving (data, label) structure
+        self.examples = [
+            self._get_example_as_np_data(example, self.example_shape)
+            for example in self.examples
+        ]
+
+    @staticmethod
+    def _get_example_as_np_data(example, example_shape):
+        if isinstance(example, tuple):
+            if len(example) == 2:
+                data, label = example
+            elif len(example) == 1:
+                data = example[0]
+                label = None
+            else:
+                raise ValueError(f"Unexpected number of elements in {example}.")
+        else:
+            raise NotImplementedError("Examples other than tuple are not supported.")
+
+        example_shape = tuple(example_shape)
+        if isinstance(data, torch.Tensor):
+            np_data = [
+                (
+                    data.numpy()
+                    if data.shape == example_shape
+                    else data.unsqueeze(0).numpy()
+                )
+            ]
+        elif isinstance(data, list) and all(
+            isinstance(dt, torch.Tensor) for dt in data
+        ):
+            np_data = [
+                dt.numpy() if dt.shape == example_shape else dt.unsqueeze(0).numpy()
+                for dt in data
+            ]
+        else:
+            raise TypeError("Data must be a single Tensor or a list of Tensors.")
+        return np_data, label
 
     def __len__(self):
         return len(self.examples)
