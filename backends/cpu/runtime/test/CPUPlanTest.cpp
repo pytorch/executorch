@@ -147,6 +147,53 @@ TEST_F(CPUPlanTest, ConnectedRegionsExposeIntermediateModelOutputs) {
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 5);
 }
 
+TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.values.back().role = ptn::ValueRole::UserInput;
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.input_ids = {0};
+  ptn::Node softmax;
+  softmax.name = "softmax";
+  softmax.target = "torch.ops.aten._softmax.default";
+  softmax.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"dim", ptn::IntArg{-1}},
+      {"half_to_float", ptn::BoolArg{false}}};
+  softmax.outputs = {{ptn::OutputValueKind::Tensor, 1}};
+  graph.nodes.push_back(std::move(softmax));
+  finish({1});
+
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  const std::array<float, 12> input{
+      0, 0, 0, 0, 1, 2, 1000, 1000, 1000, -1000, -999, -998};
+  std::copy(input.begin(), input.end(), static_cast<float*>(buffers[0].data));
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  const float denominator = 1 + std::exp(1.0f) + std::exp(2.0f);
+  const std::array<float, 12> expected{
+      1.0f / 3,
+      1.0f / 3,
+      1.0f / 3,
+      1 / denominator,
+      std::exp(1.0f) / denominator,
+      std::exp(2.0f) / denominator,
+      1.0f / 3,
+      1.0f / 3,
+      1.0f / 3,
+      1 / denominator,
+      std::exp(1.0f) / denominator,
+      std::exp(2.0f) / denominator};
+  const auto* result = static_cast<const float*>(buffers[1].data);
+  for (size_t index = 0; index < expected.size(); ++index) {
+    EXPECT_NEAR(result[index], expected[index], 1e-5) << index;
+  }
+}
+
 TEST_F(
     CPUPlanTest,
     DisconnectedBranchesRemainSeparateAndRejectNonTopologicalSchedule) {
