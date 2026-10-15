@@ -16,7 +16,6 @@ import pytest
 from harbor.models.agent.context import AgentContext
 from tokenizers import models, pre_tokenizers, Tokenizer
 
-from .delegation import DelegationEstimate
 from .resource_agent import ResourceAgent, SYSTEM
 from .runner import resource_command
 
@@ -25,7 +24,6 @@ SNAPSHOT = {
     "submitted_generations": 0,
     "waiting_for_runtime_lease": 0,
 }
-ESTIMATE = DelegationEstimate(30, 50, 1, 30, 12, 2)
 
 
 @pytest.fixture
@@ -34,9 +32,6 @@ def anyio_backend():
 
 
 def call(name, **arguments):
-    if name == "spawn":
-        arguments.setdefault("parent_output_tokens", 200)
-        arguments.setdefault("inline_output_tokens", 1000)
     return {
         "id": name,
         "type": "function",
@@ -83,9 +78,6 @@ async def test_background_child_overlaps_parent_and_releases_session(tmp_path):
         return SNAPSHOT
 
     obj.report = report
-    obj.estimate_delegation = lambda messages, snapshot, proposal: replace(
-        ESTIMATE, child_s=4
-    )
     obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 300
 
     async def completion(role, history, cap):
@@ -190,6 +182,10 @@ async def test_run_keeps_telemetry_out_of_prompt_history(tmp_path):
     obj.report, obj.completion = report, completion
     await obj.run("inspect a", Environment(), obj.context)
     assert turns == [0, 1, 2, "final"]
+    selections = [e for e in obj.records if e["type"] == "action_selection"]
+    assert len(selections) == 3
+    assert all(not e["delegation_proposed"] for e in selections)
+    assert not any(e["type"] == "delegation_decision" for e in obj.records)
     for messages in requests:
         assert [m for m in messages if m["role"] == "user"] == [
             {"role": "user", "content": "inspect a"}
@@ -269,35 +265,46 @@ async def test_inline_rejects_spawn_and_child_cannot_recurse(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_enabled_agent_rejects_unknown_cost_without_consuming_child(tmp_path):
+async def test_enabled_agent_spawns_without_cost_or_thinking_history(tmp_path):
     obj = agent(tmp_path, enabled=True)
 
     async def report(turn):
         return SNAPSHOT
 
-    obj.report = report
-    with pytest.raises(ValueError, match="unknown_cost"):
-        await obj.parent_tool(
-            call(
-                "spawn",
-                question="inspect a",
-                parent_command="inspect b",
-                expected_output_tokens=200,
-            ),
-            [],
-            Environment(),
-        )
-    assert obj.child is None and not obj.child_used
-    assert not obj.sessions
+    async def completion(role, messages, cap):
+        return {"message": {"content": "finding"}, "finish_reason": "stop"}
+
+    async def close(role):
+        pass
+
+    obj.report, obj.completion, obj.close_session = report, completion, close
+    await obj.parent_tool(
+        call(
+            "spawn",
+            question="inspect a",
+            parent_command="inspect b",
+            expected_output_tokens=200,
+        ),
+        [],
+        Environment(),
+    )
+    await obj.child
+    assert obj.child_used and obj.child.result()["status"] == "complete"
+    decision = next(e for e in obj.records if e["type"] == "delegation_decision")
+    assert decision["inference_estimate"] is None
+    assert decision["decision"]["expected_thinking_tokens"] is None
 
 
 @pytest.mark.anyio
-async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
+async def test_run_hides_rates_and_declines_at_request_limit(tmp_path):
     obj = agent(tmp_path, enabled=True)
     requests = []
 
     async def report(turn):
-        return SNAPSHOT | {"last_observation": {"prefill_tokens_per_second": 100}}
+        return SNAPSHOT | {
+            "submitted_generations": 3,
+            "last_observation": {"prefill_tokens_per_second": 100},
+        }
 
     async def completion(role, messages, cap):
         requests.append(role)
@@ -327,7 +334,8 @@ async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
     assert obj.child is None and not obj.child_used
     history = json.loads((tmp_path / "parent.json").read_text())
     assert any(
-        m["role"] == "tool" and "Delegation declined: unknown_cost" in m["content"]
+        m["role"] == "tool"
+        and "Delegation declined: inflight_request_limit" in m["content"]
         for m in history
     )
 
@@ -335,13 +343,6 @@ async def test_run_hides_rates_and_declines_a_forced_spawn(tmp_path):
 @pytest.mark.anyio
 async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_path):
     obj = agent(tmp_path, enabled=True)
-    proposals = []
-
-    def estimate(messages, snapshot, proposal):
-        proposals.append(proposal.copy())
-        return ESTIMATE
-
-    obj.estimate_delegation = estimate
     obj.estimate_thinking_tokens = lambda messages, snapshot, proposal: 50
     snapshot = SNAPSHOT | {"submitted_generations": 3}
     caps = []
@@ -380,13 +381,6 @@ async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_pa
     await obj.child
     assert caps == [obj.child_output_tokens, obj.child_output_tokens - 150]
     assert obj.child.result()["status"] == "complete"
-    assert proposals[-1] == {
-        "question": "inspect a",
-        "parent_command": "inspect b",
-        "expected_output_tokens": 200,
-        "parent_output_tokens": 200,
-        "inline_output_tokens": 1000,
-    }
     assert f"{obj.child_output_tokens} tokens" in obj.child_messages[1]["content"]
     outcomes = [e for e in obj.records if e["type"] == "child_output"]
     assert len(outcomes) == 1
@@ -398,19 +392,18 @@ async def test_launch_checks_proposal_and_preserves_configured_output_cap(tmp_pa
     assert outcomes[0]["status"] == "complete"
 
 
-def test_thinking_is_unknown_without_observations_and_policy_can_be_overridden(
+def test_thinking_forecast_is_observational_and_can_be_overridden(
     tmp_path,
 ):
     obj = agent(tmp_path, enabled=True)
-    obj.estimate_delegation = lambda messages, snapshot, proposal: ESTIMATE
     proposal = {
         "question": "inspect a",
         "parent_command": "inspect b",
         "expected_output_tokens": 200,
     }
     decision = obj.admission([], SNAPSHOT, proposal)
-    assert not decision["allowed"]
-    assert decision["reason"] == "unknown_cost"
+    assert decision["allowed"]
+    assert decision["reason"] == "within_limits"
     assert decision["expected_thinking_tokens"] is None
     assert decision["expected_total_tokens"] is None
 
@@ -424,7 +417,8 @@ def test_thinking_is_unknown_without_observations_and_policy_can_be_overridden(
     assert decision["expected_output_tokens"] == 200
     assert decision["expected_thinking_tokens"] == 300
     assert decision["expected_total_tokens"] == 500
-    assert decision["expected_child_s"] == ESTIMATE.child_s
+    obj.estimate_thinking_tokens = lambda *args: 10000
+    assert obj.admission([], SNAPSHOT, proposal)["allowed"]
 
 
 def test_thinking_average_pools_parent_and_child_tokens(tmp_path):
@@ -605,7 +599,6 @@ async def test_spawn_rejects_invalid_forecast_without_starting_work(tmp_path, fo
         pytest.fail("Invalid proposals must not reach the estimator")
 
     obj.report = report
-    obj.estimate_delegation = estimate
     obj.estimate_thinking_tokens = estimate
     proposal = {"question": "inspect a", "parent_command": "inspect b"}
     if forecast is not None:
@@ -869,71 +862,89 @@ async def test_cleanup_error_preserves_primary_error_and_trace(tmp_path):
     assert any(e["type"] == "cleanup_error" for e in obj.records)
 
 
-@pytest.mark.parametrize(
-    "inline,shared,allowed",
-    [(1000, False, True), (400, False, False), (400, True, True)],
-)
-def test_default_estimator_produces_admission_without_an_override(
-    tmp_path, inline, shared, allowed
+@pytest.mark.parametrize("relative_error", [0.0, 0.9])
+def test_cost_and_uncertainty_are_logged_without_changing_admission(
+    tmp_path, relative_error
 ):
-    tokenizer = Tokenizer(models.WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
-    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-    tokenizer.save(str(tmp_path / "tokenizer.json"))
-    obj = agent(tmp_path, enabled=True, hf_tokenizer=str(tmp_path))
-    obj.observe_thinking_tokens(
-        {
-            "choices": [{"finish_reason": "tool_calls", "message": {}}],
-            "usage": {
-                "completion_tokens": 200,
-                "completion_tokens_details": {"reasoning_tokens": 100},
-            },
-        },
-        "parent",
-    )
-    from .inference_cost import AttentionGroup, InferenceCost, ModelCost
+    from .test_inference_cost import COST
 
-    obj.cost_model = InferenceCost(
-        ModelCost(
-            16_762_600_196,
-            25_163_726_848,
-            1_344_831_488,
-            (
-                AttentionGroup(13, 32, 2, 128, 2),
-                AttentionGroup(39, 32, 2, 128, 2, 2048),
-            ),
-        ),
-        438e9,
-        11.64e12,
-        1.0 if shared else 2.0,
-        1.0,
-        256,
-        0.0,
-    )
+    obj = agent(tmp_path, enabled=True)
+    obj.cost_model = replace(COST, relative_error=relative_error)
     obj.child_prompt_tokens = 200
     snapshot = SNAPSHOT | {
         "engine": {
-            "max_decode_sequences": 2,
             "sessions": [
                 {"session_id": obj.prefix + "-parent", "committed_position": 2048}
-            ],
+            ]
         }
     }
     proposal = {
         "question": "Inspect a",
         "parent_command": "cat b",
         "expected_output_tokens": 200,
-        "parent_output_tokens": 200,
-        "inline_output_tokens": inline,
     }
     decision = obj.admission([], snapshot, proposal)
-    assert decision["allowed"] is allowed
-    assert decision["reason"] != "unknown_cost"
-    assert decision["estimate"]["prefill_s"] > 0
-    assert decision["parent_delay_s"] > 0
-    for request_limit in (8, 64):
-        assert (
-            obj.admission(
-                [], snapshot | {"max_inflight_requests": request_limit}, proposal
-            )
-            == decision
+    assert decision["allowed"] and decision["reason"] == "within_limits"
+    logged = obj.records[-1]
+    assert logged["proposal"] == proposal
+    estimate = logged["inference_estimate"]
+    assert estimate["cold_prefill_s"] > 0
+    assert estimate["solo_decode_step_s"] < estimate["paired_decode_step_s"]
+    assert estimate["paired_decode_step_s"] < 2 * estimate["solo_decode_step_s"]
+    obj.cost_model = None
+    assert obj.admission([], snapshot, proposal) == decision
+    assert obj.records[-1]["inference_estimate"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("prior_work", [False, True])
+async def test_step_predictions_skip_prior_work_and_deduplicate(tmp_path, prior_work):
+    from .test_inference_cost import COST, input_at
+
+    obj = agent(tmp_path)
+    obj.cost_model = COST
+    steps = [{"id": 1, "succeeded": True, "inputs": [input_at(1024)], "elapsed_ms": 40}]
+    if not prior_work:
+        steps.clear()
+
+    def respond(request):
+        return httpx.Response(
+            200, json={"recent_generations": [], "engine": {"recent_steps": steps}}
         )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as obj.client:
+        await obj.report(0)
+        assert not any(e["type"] == "inference_step" for e in obj.records)
+        steps.append(
+            {
+                "id": 2,
+                "succeeded": True,
+                "inputs": [input_at(2048), input_at(1024)],
+                "elapsed_ms": 55,
+            }
+        )
+        await obj.report(1)
+        await obj.report(2)
+    measured = [e for e in obj.records if e["type"] == "inference_step"]
+    assert len(measured) == 1
+    assert measured[0]["step_id"] == 2 and measured[0]["measured_ms"] == 55
+    assert measured[0]["predicted_ms"] == pytest.approx(
+        1000 * COST.step(steps[-1]["inputs"])
+    )
+
+
+@pytest.mark.anyio
+async def test_unavailable_prompt_count_does_not_block_admission(tmp_path):
+    from .test_inference_cost import COST
+
+    obj = agent(tmp_path, enabled=True)
+    obj.cost_model = COST
+    obj.child_prompt_tokens = 123
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(503))
+    ) as obj.client:
+        await obj.count_child_prompt("inspect a")
+    assert obj.child_prompt_tokens is None
+    assert obj.records[-1]["type"] == "inference_estimate_unavailable"
+    decision = obj.admission([], SNAPSHOT, {"expected_output_tokens": 200})
+    assert decision["allowed"]

@@ -81,19 +81,10 @@ def test_small_prefill_has_a_weight_read_floor():
     assert COST.prefill(0, 1) > COST.prefill(0, 256) / 256
 
 
-def test_pair_finishes_with_a_solo_tail():
-    (parent, child), prefill = COST.parallel([8192, 1024], [0, 0], [100, 300], [0, 0])
-    assert prefill == 0
-    assert child - parent == pytest.approx(COST.decode(1124, 200))
-    assert parent == pytest.approx(COST.overlap(8192, 100, 1024, 100)[0])
-
-
-def test_mixed_prefill_charges_interference_and_allows_parent_progress():
-    (parent, child), prefill = COST.parallel([8192, 0], [0, 2048], [2, 100], [0, 0])
-    assert 0 < parent < prefill < child
-    slow = replace(COST, mixed_factor=2)
-    (slow_parent, _), _ = slow.parallel([8192, 0], [0, 2048], [2, 100], [0, 0])
-    assert slow_parent > parent
+def test_mixed_prefill_increases_decode_step_latency():
+    decode = COST.step([input_at(8192)])
+    mixed = COST.step([input_at(8192), input_at(0, 255, False)])
+    assert mixed > decode
 
 
 def measurements(cost, offset=0):

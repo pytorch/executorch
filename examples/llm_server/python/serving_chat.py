@@ -638,7 +638,7 @@ class ServingChat:
     def prompt_token_count(self, req: ChatCompletionRequest):
         """Count a fresh rendered prompt, without accessing session transcripts."""
         prompt, _, _ = self._render_prompt(req)
-        return self._template.count_tokens(prompt)
+        return self._count_prompt_tokens(PromptInput(text=prompt))
 
     async def _create(self, req: ChatCompletionRequest, lease):
         prompt, template_tools, template_kwargs = self._render_prompt(req)

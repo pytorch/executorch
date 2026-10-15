@@ -35,13 +35,19 @@ It validates predictions at different prompt lengths; calibration must meet a
 shared by all trials in the run. Calibration is outside agent time and excluded
 from evaluation metrics. Use identical model-cost settings for both A/B modes.
 
-## Admission
+## Admission and measurement
 
-The model forecasts non-thinking output for the child, independent parent work,
-and the same remaining work done inline. Thinking is estimated as
+The model proposes one independent question and a parent shell action. The
+harness checks the child budget, proposal and in-flight request limit. A child
+has at most six turns, 16 KiB of history and the configured total output cap.
+These checks do not reserve GPU memory; the server enforces session capacity.
+
+The model supplies only the child's expected non-thinking output tokens, within
+the configured output cap.
+Thinking is estimated as
 `ceil(expected_output_tokens * observed_thinking / observed_non_thinking)` over
-completed parent and child responses. Capped or interrupted responses do not
-count as completed work. The output cap covers thinking and visible output.
+completed responses. Forecasts are logged; missing thinking or timing estimates
+do not block admission. Actual generation enforces the total output cap.
 
 The harness uses the [Scaling Book's generation cost model](https://jax-ml.github.io/scaling-book/inference/)
 as its baseline when attention is memory-bandwidth-bound:
@@ -63,29 +69,23 @@ memory terms for attention. Calibration adds empirical timing corrections for
 generation at batch size 2, mixed steps and fixed prefill overhead. These corrections
 do not measure physical byte traffic or peak hardware rates.
 
-Parent and child contexts are priced together during overlap; a remaining sequence
-returns to batch size 1. Tools and integration are included. Prompt counts come from
-the server's renderer. Unknown costs or savings smaller than the calibration error
-mean inline. The model forecasts work, not hardware rates.
-
-Future tool work and output remain estimates. Tool durations and sizes use
-observed averages; the two-request approximation places each side's forecast
-tool work before its input. Calibration error measures inference timing error,
-not uncertainty in the model's work forecast. Contexts outside calibration are
-extrapolations. Override `estimate_delegation` or `estimate_thinking_tokens` to
-change these policies.
+At a proposal, the harness logs cold prefill cost and solo/paired decode step
+latency at the current prompt lengths. It compares predicted and measured
+forwards from the engine's recent-step history. These measurements do not
+predict tool execution, future tool outputs or task completion time, and do not
+control admission. Calibration error describes inference timing; contexts beyond
+the calibration range are extrapolations.
 
 ## Evaluation
 
 Compare verifier results and time to successful completion first, then parent
 waiting, all generated tokens and uncached input. `agent/events.jsonl` records
-forecasts, admission decisions, requests and tools; `parent.json` and `child.json`
-preserve conversations. A run with no spawn proposals does not validate admission
-or batching benefits. Reasoning that exhausts a response cap without an answer
-or tool call is an error in both modes.
+model action selections, admission reasons, forecasts and predicted/measured
+step times; `parent.json` and `child.json` preserve conversations. A run with no
+spawn proposals does not validate admission or batching benefits. Reasoning that
+exhausts a response cap without an answer or tool call is an error in both modes.
 
-Assignments are limited to 4 KiB and child history to 16 KiB; oversized tool
-output is omitted. Request metadata stays out of the conversation. Harbor owns
-the task deadline. Session/request checks do not reserve GPU memory; child
+Assignments are limited to 4 KiB; oversized tool output is omitted. Request
+metadata stays out of the conversation. Harbor owns the task deadline. Child
 read-only behavior is an instruction, not filesystem isolation. This experiment
 supports dense attention models and at most one child, without speculative decoding.
