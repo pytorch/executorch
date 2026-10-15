@@ -10,9 +10,9 @@
 #include <cuda_runtime.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
-#include <executorch/runtime/backend/backend_options_map.h>
 
 #include <algorithm>
 #include <cmath>
@@ -78,7 +78,7 @@ std::optional<DraftPlan> pack_draft(
   if (owners.empty() || owners.size() > 4 || block < 2 || context_limit < 0 ||
       max_context < block || row_bytes == 0 ||
       block > (std::numeric_limits<int>::max() - context_limit) /
-          static_cast<int>(owners.size())) {
+              static_cast<int>(owners.size())) {
     return std::nullopt;
   }
   DraftPlan plan;
@@ -89,8 +89,8 @@ std::optional<DraftPlan> pack_draft(
   for (std::size_t owner = 0; owner < owners.size(); ++owner) {
     const auto& row = owners[owner];
     if (!seen.insert(row.id).second || row.id < 0 || !row.hidden ||
-        row.hidden->size() % row_bytes != 0 ||
-        row.count < 0 || row.position < 0 || row.count > context_limit - c ||
+        row.hidden->size() % row_bytes != 0 || row.count < 0 ||
+        row.position < 0 || row.count > context_limit - c ||
         row.position > max_context - block - row.count ||
         static_cast<std::size_t>(row.count) > row.hidden->size() / row_bytes) {
       return std::nullopt;
@@ -360,8 +360,7 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   const int draft_budget = (max_cells - 1 - temporary) / config.max_sessions;
   const int max_context = std::min(target->max_session_tokens(), draft_budget);
   ET_CHECK_OR_RETURN_ERROR(
-      max_context > block &&
-          draft_tokens.sizes()[1] == temporary &&
+      max_context > block && draft_tokens.sizes()[1] == temporary &&
           draft_hidden.sizes()[1] >= max_write - temporary &&
           draft_positions.sizes()[0] >= max_write &&
           (!config.max_session_tokens ||
@@ -429,8 +428,10 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
   }
   if (!target_->initialize() ||
       batching::load_method_with_cache(
-          target_->module(), df::kForward,
-          ::executorch::backends::cuda::kCudaBackendId, draft_install_) != Error::Ok) {
+          target_->module(),
+          df::kForward,
+          ::executorch::backends::cuda::kCudaBackendId,
+          draft_install_) != Error::Ok) {
     ET_LOG(
         Error,
         "CUDA DFlash: could not initialize distinct target/draft caches");
