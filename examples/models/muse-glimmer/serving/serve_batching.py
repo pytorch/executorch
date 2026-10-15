@@ -8,8 +8,10 @@
 
 Requires an off-graph batching export: export_solo.py --use-offgraph-kv-cache
 for MLX (text and images); add --backend cuda for CUDA (text only). The legacy
-launcher and runners remain separate; this entry point does not select or fall
-back to DFlash.
+launcher and runners remain separate. CUDA DFlash is opt-in with --dflash and
+requires a packed tapped-target/draft artifact and temperature=0. There is no
+fallback. A native co-batch failure invalidates the whole draft cache and requires
+restarting the model worker; existing sessions cannot be recovered in place.
 """
 
 import argparse
@@ -39,7 +41,8 @@ _INT32_MAX = (1 << 31) - 1
 _UINT64_MAX = (1 << 64) - 1
 
 
-def _parse_args(argv=None):
+# Keep backend-specific validation beside the CLI arguments it validates.
+def _parse_args(argv=None):  # noqa: C901
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worker-bin", required=True)
     parser.add_argument("--model-path", required=True)
@@ -48,6 +51,15 @@ def _parse_args(argv=None):
     parser.add_argument("--hf-tokenizer", required=True)
     parser.add_argument("--pos-embed-path")
     parser.add_argument("--backend", choices=("mlx", "cuda"), default="mlx")
+    parser.add_argument(
+        "--dflash", action="store_true", help="Enable CUDA DFlash speculative decoding."
+    )
+    parser.add_argument(
+        "--dflash-n-draft",
+        type=int,
+        default=0,
+        help="Draft token count; zero uses draft model metadata. Requires --dflash.",
+    )
     parser.add_argument("--model-id", default="muse_glimmer")
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-sessions", type=int, default=4)
@@ -81,6 +93,15 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
     _validate_limits(parser, args)
+    if not 0 <= args.dflash_n_draft <= _INT32_MAX:
+        parser.error(f"--dflash-n-draft must be between 0 and {_INT32_MAX}")
+    if args.dflash_n_draft != 0 and not args.dflash:
+        parser.error("--dflash-n-draft requires --dflash when nonzero")
+    if args.dflash and args.backend != "cuda":
+        parser.error(
+            "--dflash supports only --backend cuda; "
+            "the MLX reference adapter is not ported here"
+        )
     if not 4 <= args.max_vision_patches <= _INT32_MAX:
         parser.error(f"--max-vision-patches must be between 4 and {_INT32_MAX}")
     if args.max_context <= 1:
@@ -135,6 +156,7 @@ def _worker_command(args):
         ("pte", args.model_path),
         ("tokenizer", args.tokenizer_path),
         ("backend", args.backend),
+        ("n_draft", args.dflash_n_draft),
         ("max_sessions", args.max_sessions),
         ("max_session_tokens", args.max_context),
         ("max_decode_sequences", args.max_decode_sequences),
@@ -151,7 +173,22 @@ def _worker_command(args):
     ):
         if value is not None:
             command.extend((f"--{flag}", str(value)))
+    # gflags boolean values must use equals form, not a separate value argument.
+    command.append(f"--dflash={str(args.dflash).lower()}")
     return command
+
+
+class _DFlashServingChat(legacy.MuseGlimmerServingChat):
+    @staticmethod
+    def _reject_invalid_values(req):
+        legacy.MuseGlimmerServingChat._reject_invalid_values(req)
+        if req.temperature is not None and req.temperature != 0.0:
+            raise legacy.APIError(
+                400,
+                "CUDA DFlash supports temperature=0 only.",
+                "invalid_request_error",
+                "unsupported_parameter",
+            )
 
 
 def build_app_from_args(args):
@@ -173,7 +210,10 @@ def build_app_from_args(args):
         runtime = None
         try:
             runtime = SessionRuntime(worker)
-            yield legacy.MuseGlimmerServingChat(
+            chat_type = (
+                _DFlashServingChat if args.dflash else legacy.MuseGlimmerServingChat
+            )
+            yield chat_type(
                 runtime,
                 template,
                 args.model_id,

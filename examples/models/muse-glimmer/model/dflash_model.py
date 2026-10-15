@@ -395,6 +395,47 @@ class DFlashDraftModel(nn.Module):
         return self.norm(x)
 
 
+class DFlashPackedExportModel(nn.Module):
+    """Packed export with shared weights named exactly as in target forwards."""
+
+    def __init__(self, target: nn.Module, draft: nn.Module):
+        super().__init__()
+        self.embed_tokens = target.embed_tokens
+        self.lm_head = target.lm_head
+        self.draft = draft
+        self.activation_dtype = target.activation_dtype
+
+    def forward(self, draft_tokens, target_hidden, positions, kv_order):
+        return _packed_draft_forward(
+            self.embed_tokens,
+            self.lm_head,
+            self.draft,
+            self.activation_dtype,
+            draft_tokens,
+            target_hidden,
+            positions,
+            kv_order,
+        )
+
+
+def _packed_draft_forward(
+    embed_tokens,
+    lm_head,
+    draft,
+    activation_dtype,
+    draft_tokens,
+    target_hidden,
+    positions,
+    kv_order,
+):
+    torch._check(draft_tokens.shape[0] == 1)
+    torch._check(target_hidden.shape[0] == 1)
+    torch._check(draft_tokens.shape[1] % draft.config.block_size == 0)
+    torch._check(draft_tokens.shape[1] >= draft.config.block_size)
+    noise_embedding = embed_tokens(draft_tokens).to(activation_dtype)
+    return lm_head(draft(noise_embedding, target_hidden, positions, kv_order)).float()
+
+
 class MuseGlimmerWithDFlash(nn.Module):
     """Wrapper combining target and draft models with shared weights.
 
@@ -453,6 +494,25 @@ class MuseGlimmerWithDFlash(nn.Module):
             h = self.draft(noise_embedding, target_hidden, input_pos, valid_ctx_len)
 
         return self.target.lm_head(h).float()
+
+    def draft_forward_packed(
+        self,
+        draft_tokens: torch.Tensor,
+        target_hidden: torch.Tensor,
+        positions: torch.Tensor,
+        kv_order: torch.Tensor,
+    ) -> torch.Tensor:
+        """Cell-cache ABI; fourth input is explicitly not valid_ctx_len."""
+        return _packed_draft_forward(
+            self.target.embed_tokens,
+            self.target.lm_head,
+            self.draft,
+            self.target.activation_dtype,
+            draft_tokens,
+            target_hidden,
+            positions,
+            kv_order,
+        )
 
     def draft_prefill(
         self,

@@ -11,6 +11,7 @@
 #endif
 #if defined(EXECUTORCH_BUILD_CUDA)
 #include <executorch/backends/cuda/batching/cuda_executor.h>
+#include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 #endif
 
 #include <memory>
@@ -19,6 +20,18 @@
 namespace executorch::extension::llm {
 runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     const MuseGlimmerBackendConfig& config) {
+  ET_CHECK_OR_RETURN_ERROR(
+      config.dflash_n_draft >= 0,
+      InvalidArgument,
+      "Muse Glimmer DFlash: n_draft must be nonnegative");
+  ET_CHECK_OR_RETURN_ERROR(
+      config.use_dflash || config.dflash_n_draft == 0,
+      InvalidArgument,
+      "Muse Glimmer DFlash: n_draft requires DFlash to be enabled");
+  ET_CHECK_OR_RETURN_ERROR(
+      !config.use_dflash || config.backend == "cuda",
+      NotSupported,
+      "Muse Glimmer DFlash supports only CUDA; the MLX reference adapter is not ported here");
 #if defined(EXECUTORCH_BUILD_MLX)
   if (config.backend == "mlx") {
     return MuseGlimmerMLXExecutor::create(config);
@@ -31,6 +44,9 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
         config.max_session_tokens != 1,
         InvalidArgument,
         "Muse Glimmer CUDA: a session needs room for a prompt and prediction");
+    if (config.use_dflash) {
+      return MuseGlimmerCudaDFlashExecutor::create(config);
+    }
     cb::CudaExecutorConfig executor_config;
     executor_config.model_path = config.model_path;
     if (!config.data_path.empty()) {

@@ -1,7 +1,17 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 oncall("executorch")
+
+if is_fbcode():
+    cpp_unittest(
+        name = "cuda_dflash_executor_test",
+        srcs = ["cuda_dflash_executor_test.cpp"],
+        deps = ["//executorch/examples/models/muse-glimmer/runtime:cuda_dflash_executor"],
+        external_deps = ["nlohmann_json"],
+    )
 
 fbcode_target(
     _kind = python_unittest,

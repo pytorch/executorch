@@ -1,0 +1,32 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+if is_fbcode():
+    runtime.cxx_library(
+        name = "cuda_dflash_executor",
+        srcs = ["cuda_dflash_executor.cpp"],
+        header_namespace = "executorch/examples/models/muse-glimmer/runtime",
+        exported_headers = [
+            "backend_factory.h",
+            "cuda_dflash_executor.h",
+            "engine/muse_glimmer_vision_runtime.h",
+            "prompt_preparation.h",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/llm/runner:stats",
+            "//executorch/runtime/backend:interface",
+        ],
+        exported_deps = [
+            "//executorch/backends/cuda/batching:cuda_executor",
+            "//executorch/extension/llm/batching:batching",
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/extension/llm/serving:serving_runtime",
+            "//executorch/extension/module:module",
+            "//executorch/extension/tensor:tensor",
+        ],
+        external_deps = [("cuda", None, "cuda-lazy"), "nlohmann_json"],
+    )

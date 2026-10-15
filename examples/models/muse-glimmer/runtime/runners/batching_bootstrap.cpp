@@ -23,11 +23,16 @@ DEFINE_string(backend, "cuda", "Executor backend");
 #else
 DEFINE_string(backend, "mlx", "Executor backend");
 #endif
+DEFINE_bool(dflash, false, "Enable CUDA DFlash speculative decoding");
+DEFINE_int32(
+    n_draft,
+    0,
+    "DFlash draft token count; zero uses draft model metadata");
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
 DEFINE_int32(
     max_session_tokens,
     0,
-    "Context cap; zero uses model metadata (CUDA: the cell pool shared evenly)");
+    "Context cap; zero divides CUDA cell pools across sessions, reserving DFlash temporary blocks");
 DEFINE_int32(max_decode_sequences, 4, "Maximum decodes in a batch");
 DEFINE_int32(max_inflight_requests, 4, "Maximum admitted requests");
 DEFINE_int32(
@@ -57,6 +62,14 @@ DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 namespace executorch::extension::llm {
 std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
+  if (FLAGS_n_draft < 0 || (!FLAGS_dflash && FLAGS_n_draft != 0)) {
+    throw std::invalid_argument(
+        "n_draft must be nonnegative and requires --dflash when nonzero");
+  }
+  if (FLAGS_dflash && FLAGS_backend != "cuda") {
+    throw std::invalid_argument(
+        "DFlash supports only CUDA; the MLX reference adapter is not ported here");
+  }
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
       FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
       FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
@@ -86,6 +99,8 @@ create_muse_glimmer_batching_runtime() {
   }
   MuseGlimmerBackendConfig backend;
   backend.backend = FLAGS_backend;
+  backend.use_dflash = FLAGS_dflash;
+  backend.dflash_n_draft = FLAGS_n_draft;
   backend.model_path = FLAGS_pte;
   backend.data_path = FLAGS_data_path;
   backend.pos_embed_path = FLAGS_pos_embed_path;

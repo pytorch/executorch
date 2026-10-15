@@ -18,6 +18,7 @@ from executorch.examples.models.muse_glimmer.serving import (  # noqa: E402
     serve_batching,
 )
 from executorch.examples.models.muse_glimmer.tests.test_serve import (  # noqa: E402
+    _FakeRuntime,
     _StubTemplate,
 )
 
@@ -69,6 +70,11 @@ def test_worker_forwards_mg_options(arguments):
     assert flags["--bos_id"] == "200000"
     assert flags["--eos_id"] == "200001"
     assert flags["--prefix_checkpoint_interval"] == "512"
+    assert not args.dflash
+    assert args.dflash_n_draft == 0
+    assert flags["--n_draft"] == "0"
+    assert command[-1] == "--dflash=false"
+    assert "--dflash" not in command
 
 
 @pytest.mark.parametrize(
@@ -87,34 +93,92 @@ def test_launcher_rejects_invalid_options(arguments, flag, value):
     assert error.value.code == 2
 
 
-def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
+@pytest.mark.parametrize("n_draft", [None, 0, 1, 7, (1 << 31) - 1])
+def test_cuda_worker_takes_the_weights_file(arguments, tmp_path, n_draft):
     data = tmp_path / "aoti_cuda_blob.ptd"
     data.touch()
-    args = serve_batching._parse_args(
-        arguments + ["--backend", "cuda", "--data-path", str(data)]
-    )
+    argv = arguments + ["--backend", "cuda", "--data-path", str(data)]
+    if n_draft is not None:
+        argv += ["--dflash"]
+        if n_draft:
+            argv += ["--dflash-n-draft", str(n_draft)]
+    args = serve_batching._parse_args(argv)
     command = serve_batching._worker_command(args)
     flags = dict(zip(command[1::2], command[2::2]))
     assert flags["--backend"] == "cuda"
     assert flags["--data_path"] == str(data)
+    assert flags["--max_session_tokens"] == "4096"
+    assert flags["--max_sessions"] == "4"
+    assert flags["--max_decode_sequences"] == "4"
+    assert flags["--max_inflight_requests"] == "4"
+    assert flags["--prefix_cache_entries"] == "0"
+    assert flags["--n_draft"] == str(n_draft or 0)
+    assert args.dflash is (n_draft is not None)
+    assert command[-1] == ("--dflash=false" if n_draft is None else "--dflash=true")
+    assert "--dflash" not in command
+    assert "--dflash-n-draft" not in command
     assert "--pos_embed_path" not in flags
 
 
+@pytest.mark.parametrize("dflash", [False, True])
 @pytest.mark.parametrize("pos_embed", [False, True])
 def test_cuda_launcher_rejects_missing_weights_or_vision(
-    arguments, tmp_path, pos_embed
+    arguments, tmp_path, pos_embed, dflash
 ):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
     table.touch()
     argv = arguments + ["--backend", "cuda"]
+    if dflash:
+        argv += ["--dflash"]
     argv += (
         ["--data-path", str(data), "--pos-embed-path", str(table)] if pos_embed else []
     )
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(argv)
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "options,message",
+    [
+        (["--dflash"], "--dflash supports only --backend cuda"),
+        (
+            ["--backend", "mlx", "--dflash", "--dflash-n-draft", "4"],
+            "the MLX reference adapter is not ported here",
+        ),
+        (["--dflash-n-draft", "4"], "--dflash-n-draft requires --dflash"),
+        (
+            ["--backend", "cuda", "--dflash-n-draft", "4"],
+            "--dflash-n-draft requires --dflash",
+        ),
+        (["--dflash-n-draft", "-1"], "--dflash-n-draft must be between"),
+        (
+            ["--backend", "cuda", "--dflash", "--dflash-n-draft", "-1"],
+            "--dflash-n-draft must be between",
+        ),
+        (
+            ["--backend", "cuda", "--dflash", "--dflash-n-draft", str(1 << 31)],
+            "--dflash-n-draft must be between",
+        ),
+        (["--dflash-n-draft", "not-an-int"], "invalid int value"),
+    ],
+)
+def test_launcher_rejects_invalid_dflash_options(arguments, capsys, options, message):
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(arguments + options)
+    assert error.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_zero_draft_count_without_dflash_is_allowed(arguments):
+    args = serve_batching._parse_args(arguments + ["--dflash-n-draft", "0"])
+    command = serve_batching._worker_command(args)
+    flags = dict(zip(command[1::2], command[2::2]))
+    assert flags["--backend"] == "mlx"
+    assert flags["--n_draft"] == "0"
+    assert command[-1] == "--dflash=false"
 
 
 @pytest.mark.parametrize("shortfall", [0, 1])
@@ -193,3 +257,76 @@ def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure)
         asyncio.run(scenario())
     assert worker.closed
     assert captured["command"] == serve_batching._worker_command(args)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("temperature", [0.01, 0.5, 2.0])
+def test_dflash_http_rejects_sampling_before_worker_admission(stream, temperature):
+    from fastapi.testclient import TestClient
+
+    runtime = _FakeRuntime([])
+    chat = serve_batching._DFlashServingChat(runtime, _StubTemplate(), "muse_glimmer")
+    app = serve_batching.build_app(chat, "muse_glimmer")
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "muse_glimmer",
+                "messages": [{"role": "user", "content": "hi"}],
+                "temperature": temperature,
+                "stream": stream,
+                "max_tokens": 512,
+            },
+        )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_parameter"
+    assert "temperature=0" in response.json()["error"]["message"]
+    assert runtime.prompts == []
+
+
+@pytest.mark.parametrize("temperature", [None, 0.0])
+@pytest.mark.parametrize("dflash", [False, True])
+def test_four_http_stream_requests_preserve_512_token_accounting(temperature, dflash):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    runtime = _FakeRuntime(
+        [
+            {"text": "answer", "completion_tokens": 512, "finish_reason": "length"}
+            for _ in range(4)
+        ]
+    )
+    chat_type = (
+        serve_batching._DFlashServingChat if dflash else serve.MuseGlimmerServingChat
+    )
+    chat = chat_type(runtime, _StubTemplate(), "muse_glimmer")
+    app = serve_batching.build_app(chat, "muse_glimmer")
+    with TestClient(app) as client:
+        for _ in range(4):
+            request = {
+                "model": "muse_glimmer",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 512,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            if temperature is not None:
+                request["temperature"] = temperature
+            response = client.post("/v1/chat/completions", json=request)
+            assert response.status_code == 200
+            events = [
+                line[6:]
+                for line in response.text.splitlines()
+                if line.startswith("data: ")
+            ]
+            assert events[-1] == "[DONE]"
+            chunks = [json.loads(event) for event in events[:-1]]
+            usage = next(chunk["usage"] for chunk in chunks if chunk.get("usage"))
+            assert usage["completion_tokens"] == 512
+            assert any(
+                choice.get("finish_reason") == "length"
+                for chunk in chunks
+                for choice in chunk.get("choices", [])
+            )
+    assert len(runtime.prompts) == 4
