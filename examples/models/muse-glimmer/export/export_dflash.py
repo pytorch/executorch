@@ -549,7 +549,8 @@ def _export_dflash_cuda(
     combined.to(activation_dtype)
 
     # -- Export the target contract --
-    target_max_len = 4
+    exported_block_size = min(draft_config.block_size, 16)
+    target_max_len = exported_block_size
     target_seq_dim = Dim("target_seq_len", min=1, max=target_max_len)
     target_tokens = torch.arange(target_max_len, dtype=torch.long).unsqueeze(0)
     target_input_pos = torch.arange(target_tokens.size(1), dtype=torch.long)
@@ -598,10 +599,13 @@ def _export_dflash_cuda(
         print("=" * 60)
 
     # -- Export the prefill contract --
-    target_prefill_dim = Dim("target_prefill_seq_len", min=5, max=max_target_prefill)
+    min_prefill = exported_block_size + 1
+    target_prefill_dim = Dim(
+        "target_prefill_seq_len", min=min_prefill, max=max_target_prefill
+    )
     print("=" * 60)
     print(
-        f"Exporting target_prefill_from_embeddings (T in [5, {max_target_prefill}])..."
+        f"Exporting target_prefill_from_embeddings (T in [{min_prefill}, {max_target_prefill}])..."
     )
     print("=" * 60)
     with (
@@ -625,10 +629,9 @@ def _export_dflash_cuda(
     print("=" * 60)
     print("Exporting draft_forward...")
     print("=" * 60)
-    exported_block_size = min(draft_config.block_size, 4)
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
-    new_ctx_max = 4
+    new_ctx_max = exported_block_size
 
     block_dim = Dim("block_len", min=2, max=exported_block_size)
     draft_input_pos = torch.tensor([0], dtype=torch.long)
@@ -636,7 +639,7 @@ def _export_dflash_cuda(
     with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
         # Keep every input byte size fixed for CUDA Graph replay. The
         # valid-length scalar preserves cache/attention semantics when the
-        # previous speculative step committed fewer than four positions.
+        # previous speculative step committed fewer positions than the input width.
         draft_ep = export(
             combined,
             (
@@ -650,9 +653,11 @@ def _export_dflash_cuda(
         )
 
     max_draft_prefill = _max_draft_prefill_len(draft_config, max_target_prefill)
-    draft_prefill_dim = Dim("draft_prefill_seq_len", min=5, max=max_draft_prefill)
+    draft_prefill_dim = Dim(
+        "draft_prefill_seq_len", min=min_prefill, max=max_draft_prefill
+    )
     print("=" * 60)
-    print(f"Exporting draft_prefill (T in [5, {max_draft_prefill}])...")
+    print(f"Exporting draft_prefill (T in [{min_prefill}, {max_draft_prefill}])...")
     print("=" * 60)
     with common.BoundMethodForward(combined, combined.draft_prefill), torch.no_grad():
         draft_prefill_ep = export(
@@ -731,9 +736,9 @@ def _export_dflash_cuda(
     )
     constant_methods.update(
         {
-            "get_min_target_prefill_chunk": 5,
+            "get_min_target_prefill_chunk": min_prefill,
             "get_max_target_prefill_chunk": max_target_prefill,
-            "get_min_draft_prefill_chunk": 5,
+            "get_min_draft_prefill_chunk": min_prefill,
             "get_max_draft_prefill_chunk": max_draft_prefill,
         }
     )
