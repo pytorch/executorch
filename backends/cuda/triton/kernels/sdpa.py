@@ -619,6 +619,14 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
                 qk = tl.where(
                     mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
                 )
+            elif not (IS_CAUSAL or MASK_IS_CAUSAL):
+                # The K load zero-fills positions past kv_len, and only a mask or
+                # causal masking would give them -inf.
+                qk = tl.where(
+                    (offs_n < kv_len)[None, :],
+                    qk,
+                    tl.full(qk.shape, -float("inf"), dtype=tl.float32),
+                )
 
             if IS_CAUSAL:
                 causal = offs_n[None, :] > seq_pos[:, None]
