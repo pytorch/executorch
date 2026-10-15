@@ -502,7 +502,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
             .count();
-    ET_LOG(Debug, "Execution time: %" PRId64 " ms.", duration);
+    ET_LOG(
+        Debug, "Execution time: %" PRId64 " ms.", static_cast<int64_t>(duration));
 
 #else
     auto result = module_->execute(method, evalues);
