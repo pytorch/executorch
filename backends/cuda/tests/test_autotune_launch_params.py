@@ -160,6 +160,29 @@ class AutotuneLaunchParamTest(unittest.TestCase):
             second(self.x)
         self.assertEqual([p.choice for p in stats.picks], [1, 2])
 
+    def test_a_prepass_runs_every_legal_candidate_once_before_timing(self) -> None:
+        events: list[str] = []
+
+        class _Scope:
+            def __enter__(self):
+                events.append("enter")
+
+            def __exit__(self, *exc):
+                events.append("exit")
+                return False
+
+        launch = autotune_launch_param("split_k", (1, 2, 4), candidate_prepass=_Scope)(
+            _toy_launch.__wrapped__
+        )
+        with autotune_launch_params() as stats:
+            launch(self.x, 4)
+        self.assertEqual(stats.picks[0].choice, 4)
+        # One explicit scope around one untimed call of each legal candidate,
+        # followed by the timed rounds and final call.
+        self.assertEqual(events, ["enter", "exit"])
+        self.assertEqual(_CALLS[:3], [1, 2, 4])
+        self.assertGreater(len(_CALLS), 3)
+
     def test_parameter_must_exist(self) -> None:
         with self.assertRaisesRegex(TypeError, "has no parameter 'num_splits'"):
 

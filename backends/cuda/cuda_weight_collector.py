@@ -12,8 +12,8 @@ import os
 import struct
 import tempfile
 import threading
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.cuda.passes.lower_offgraph_kv import OFFGRAPH_KV_FQN_PREFIX
@@ -45,6 +45,9 @@ class CudaWeightEntry:
 class CudaWeightArtifact:
     entries: List[CudaWeightEntry]
     storages: Dict[str, FileBackedData]
+    # Storage keys an earlier method of this collector already stored with the
+    # same bytes; they are not written again.
+    stored: Set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,52 @@ def _materialize_storage(tensor: torch.Tensor, directory: str) -> FileBackedData
         with contextlib.suppress(OSError):
             os.remove(storage_path)
         raise
+
+
+# Words hashed per step; two random int64 weight vectors of this length per device.
+_FINGERPRINT_CHUNK_WORDS = 8 * 1024 * 1024
+_fingerprint_weights: Dict[torch.device, Tuple[torch.Tensor, torch.Tensor]] = {}
+
+
+def _cuda_storage_fingerprint(tensor: torch.Tensor) -> Tuple[int, int, int, bytes]:
+    """A content fingerprint of ``tensor``'s whole CUDA storage, computed on the
+    device: its size, two independent random linear hashes of its 8-byte words,
+    and its trailing bytes. Equal fingerprints mean equal bytes (a mismatch
+    within the same size passes with probability ~2**-128)."""
+    device = tensor.device
+    weights = _fingerprint_weights.get(device)
+    if weights is None:
+        generator = torch.Generator(device=device).manual_seed(0x5EED_CAFE)
+        low, high = -(1 << 63), (1 << 63) - 1
+        weights = tuple(
+            torch.randint(
+                low,
+                high,
+                (_FINGERPRINT_CHUNK_WORDS,),
+                dtype=torch.int64,
+                device=device,
+                generator=generator,
+            )
+            for _ in range(2)
+        )
+        _fingerprint_weights[device] = weights
+    storage = tensor.untyped_storage()
+    nbytes = storage.nbytes()
+    data = torch.empty(0, dtype=torch.uint8, device=device).set_(
+        storage, 0, (nbytes,), (1,)
+    )
+    words = nbytes // 8
+    word_view = data[: words * 8].view(torch.int64)
+    first = torch.zeros((), dtype=torch.int64, device=device)
+    second = torch.zeros((), dtype=torch.int64, device=device)
+    for chunk, offset in enumerate(range(0, words, _FINGERPRINT_CHUNK_WORDS)):
+        part = word_view[offset : offset + _FINGERPRINT_CHUNK_WORDS]
+        n = part.numel()
+        # int64 arithmetic wraps; the chunk index keeps chunk order significant.
+        first += (part * weights[0][:n]).sum() * (2 * chunk + 1)
+        second += (part * weights[1][:n]).sum() * (2 * chunk + 3)
+    tail = bytes(data[words * 8 :].cpu().tolist())
+    return nbytes, int(first), int(second), tail
 
 
 def _required_view_nbytes(
@@ -365,6 +414,10 @@ class CudaWeightCollector:
     def __init__(self) -> None:
         self._store = NamedDataStore()
         self._results: List[PreprocessResult] = []
+        # Fingerprints of the CUDA storages already written to the store, by
+        # storage key. Methods share their weights, so a later method's
+        # identical storage is not copied, hashed and written again.
+        self._stored_fingerprints: Dict[str, Tuple[int, int, int, bytes]] = {}
 
     @contextlib.contextmanager
     def capture(
@@ -397,6 +450,7 @@ class CudaWeightCollector:
         trim_host_memory()
         entries: List[CudaWeightEntry] = []
         storages: Dict[str, FileBackedData] = {}
+        stored: Set[str] = set()
 
         for fqn, (tensor, properties) in weights.items():
             is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
@@ -429,11 +483,24 @@ class CudaWeightCollector:
 
             storage_key = _storage_key(fqn, device_type)
             if not is_offgraph_kv:
-                data = _materialize_storage(tensor, directory)
-                if storage_key in storages:
-                    data.close()
+                if storage_key in storages or storage_key in stored:
                     raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
-                storages[storage_key] = data
+                # Library-local constants are keyed per shared library, so
+                # only FQN weights can match an earlier method's storage.
+                fingerprint = (
+                    _cuda_storage_fingerprint(tensor)
+                    if tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
+                    else None
+                )
+                if (
+                    fingerprint is not None
+                    and self._stored_fingerprints.get(storage_key) == fingerprint
+                ):
+                    stored.add(storage_key)
+                else:
+                    storages[storage_key] = _materialize_storage(tensor, directory)
+                    if fingerprint is not None:
+                        self._stored_fingerprints.setdefault(storage_key, fingerprint)
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -478,7 +545,7 @@ class CudaWeightCollector:
             )
 
         trim_host_memory()
-        return CudaWeightArtifact(entries=entries, storages=storages)
+        return CudaWeightArtifact(entries=entries, storages=storages, stored=stored)
 
     def _merge_aoti_data(
         self,
@@ -564,6 +631,11 @@ class CudaWeightCollector:
                 )
             if data is not None:
                 self._add_weight(entry, data, external_tag)
+            elif entry.storage_key in artifact.stored:
+                if entry.storage_key not in self._store.key_to_buffer_idx:
+                    raise RuntimeError(
+                        f"CUDA FQN weight {entry.fqn!r} was reused but never stored"
+                    )
             elif not _is_offgraph_kv_fqn(entry.fqn):
                 raise RuntimeError(f"Missing CUDA FQN weight storage for {entry.fqn!r}")
             serialized_entries.append(entry)
