@@ -70,6 +70,25 @@ class RemoveNodesWithKnownOutputs(PassBase):
         users = list(node.users.keys())
         return all(_is_getitem(user) for user in users)
 
+    @staticmethod
+    def node_is_used_as_out_kwarg(node: Node) -> bool:
+        """Return `True` if `node` is passed as the `out=` kwarg of any of its users.
+
+        Such a node (typically a `torch.empty(...)` placeholder buffer feeding a `*.out`
+        overload) is about to be mutated in place by its consumer, so its "known" data
+        (e.g. uninitialized garbage from `empty.memory_format`) is not actually the value
+        observed at runtime, and it must not be folded into a static `Parameter`: `torch.export`
+        would then treat the mutated buffer as a learned weight, which breaks the exported
+        program's parameter/signature verification later in the pipeline.
+        """
+        for user in node.users:
+            if user.kwargs.get("out") is node:
+                return True
+            out_args = user.kwargs.get("out")
+            if isinstance(out_args, (list, tuple)) and node in out_args:
+                return True
+        return False
+
     def replace_node_with_static_data(self, node: Node, static_data: Parameter):
         """Remove the given `node` from the graph and replace it with a parameter node containing the `static_data`."""
         # Generate a unique name for the new static parameter.
@@ -104,7 +123,6 @@ class RemoveNodesWithKnownOutputs(PassBase):
                              after the `root_node`.
         :return: `True` if the replacement was successfully executed. `False` otherwise.
         """
-
         if not self.node_is_followed_only_by_getitem_nodes(root_node):
             return False  # Unexpected case.
 
@@ -157,6 +175,12 @@ class RemoveNodesWithKnownOutputs(PassBase):
         for node in module.graph.nodes:
             if node.op != "call_function":
                 continue  # Not a compute operator.
+
+            if self.node_is_used_as_out_kwarg(node):
+                # `node` is the `out=` buffer of a mutating `*.out` overload. Its "known"
+                #  output data is not what gets observed at runtime (it is about to be
+                #  overwritten), so it must not be folded into a static `Parameter`.
+                continue
 
             # Try to access the static data for the inputs of the node.
             args_with_data = self.replace_nodes_in_list_with_their_data(node.args)

@@ -72,10 +72,56 @@ class TestRemovingNodesWithKnownOutputs(unittest.TestCase):
         assert np.allclose(outputs_before[0], outputs_after[0])
         assert np.allclose(outputs_before[1], outputs_after[1])
 
+    def test_removing_nodes__out_kwarg_buffer_is_not_folded(self):
+        """
+        A `torch.empty(...)` node used as the `out=` kwarg of a mutating `*.out`-overload op
+        must NOT be folded into a static `Parameter`, even though its "known" uninitialized
+        output data is otherwise exactly the kind of thing `RemoveNodesWithKnownOutputs`
+        would normally fold. Folding it makes `torch.export` treat the mutated buffer as a
+        learned weight, which later breaks the exported program's parameter/signature
+        verification (`SpecViolationError: Parameter output ... does not point to a parameter
+        that exists`).
+        """
+
+        class LogOutModel(nn.Module):
+            def forward(self, input_):
+                return torch.ops.aten.log10.out(
+                    input_, out=torch.empty(input_.shape, dtype=torch.float32)
+                )
+
+        model = LogOutModel()
+        example_input = (torch.rand(4) + 0.1,)  # Avoid `log10(0)`.
+
+        exir_program_aten = torch.export.export(model, example_input).module()
+
+        # Make sure the `aten.empty.memory_format` is in the model before the pass runs.
+        assert graph_contains_any_of_ops(
+            exir_program_aten.graph, [torch.ops.aten.empty.memory_format]
+        )
+
+        # Apply the optimization.
+        NeutronAtenPassManager(neutron_target_spec, [RemoveNodesWithKnownOutputs()])(
+            exir_program_aten
+        )
+
+        # The `empty` node feeds the `out=` kwarg of a mutating op, so it must still be a
+        #  `call_function` node, NOT folded into a static `Parameter`/`get_attr` node.
+        assert graph_contains_any_of_ops(
+            exir_program_aten.graph, [torch.ops.aten.empty.memory_format]
+        ), (
+            "The `out=` buffer must not be folded into a static Parameter: doing so makes "
+            "torch.export treat the mutated buffer as a learned weight, which breaks the "
+            "exported program's signature verification later in the pipeline."
+        )
+
+        # No new parameter should have been registered for the `out=` buffer.
+        assert list(exir_program_aten.named_parameters()) == []
+
     @parameterized.expand([2, 8])
     def test_removing_nodes__split(self, num_layers):
         # `num_layers > 1` will result in a `split` operator being added. It's input will be a `zeros` operator, which
         #  provides the static 0s input data.
+
         model = GRUModel(num_layers).eval()
 
         input_shape = (8, 1, 8)
