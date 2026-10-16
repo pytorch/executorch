@@ -90,10 +90,9 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
       value.name.c_str());
   const auto& meta = value.tensor_meta();
   ET_CHECK_OR_RETURN_ERROR(
-      meta.dtype == ptn::ScalarType::Float && meta.is_contiguous() &&
-          meta.sizes.size() <= 16,
+      meta.is_contiguous() && meta.sizes.size() <= 16,
       NotSupported,
-      "CPU static delegate requires contiguous FP32 rank <= 16: %s",
+      "CPU static delegate requires contiguous rank <= 16: %s",
       value.name.c_str());
   size_t elements = 1;
   for (auto dimension = meta.sizes.rbegin(); dimension != meta.sizes.rend();
@@ -107,7 +106,13 @@ Result<size_t> tensor_bytes(const ptn::Value& value) {
         value.name.c_str());
     elements *= size;
   }
-  return elements * sizeof(float);
+  const auto element_size = ptn::element_size(meta.dtype);
+  ET_CHECK_OR_RETURN_ERROR(
+      elements <= SIZE_MAX / element_size,
+      NotSupported,
+      "CPU tensor byte size overflows size_t: %s",
+      value.name.c_str());
+  return elements * element_size;
 }
 
 Result<StorageRequirements> KernelImplementation::requirements(
