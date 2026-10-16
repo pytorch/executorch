@@ -123,6 +123,21 @@ namespace pybindings {
 
 namespace {
 
+PyObject* loaded_torch_module() {
+  // Retain the module for the interpreter's lifetime. This avoids repeated
+  // sys.modules lookups without creating a static py::object whose destructor
+  // could run after Python has finalized.
+  static PyObject* torch_module = nullptr;
+  if (torch_module == nullptr) {
+    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
+    if (loaded != nullptr) {
+      Py_INCREF(loaded);
+      torch_module = loaded;
+    }
+  }
+  return torch_module;
+}
+
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
@@ -147,6 +162,7 @@ void configure_portable_tensor_output() {
   }
   try {
     py::module_::import("torch");
+    (void)loaded_torch_module();
     portable_tensor_output() = PortableTensorOutput::Torch;
   } catch (py::error_already_set& error) {
     if (value != nullptr || !error.matches(PyExc_ImportError)) {
@@ -412,21 +428,6 @@ class BufferTensor final {
   executorch::aten::ScalarType scalar_type_;
 };
 
-PyObject* loaded_torch_module() {
-  // Retain the module for the interpreter's lifetime. This avoids repeated
-  // sys.modules lookups without creating a static py::object whose destructor
-  // could run after Python has finalized.
-  static PyObject* torch_module = nullptr;
-  if (torch_module == nullptr) {
-    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
-    }
-  }
-  return torch_module;
-}
-
 bool is_torch_tensor(const py::handle& value) {
   static PyObject* tensor_type = nullptr;
   if (tensor_type == nullptr) {
@@ -450,9 +451,7 @@ void validate_tensor_input(
     const MethodMeta& method_meta,
     size_t index,
     executorch::aten::ScalarType scalar_type,
-    const std::vector<int>& sizes,
-    const std::vector<int>& strides,
-    bool check_strides = true) {
+    const std::vector<int>& sizes) {
   const auto input_meta = method_meta.input_tensor_meta(index);
   THROW_IF_ERROR(input_meta.error(), "Input %zu is not a tensor input", index);
   if (input_meta->scalar_type() != scalar_type) {
@@ -462,37 +461,12 @@ void validate_tensor_input(
         " but the method expects " +
         std::string(runtime::toString(input_meta->scalar_type())));
   }
-  const auto expected_order = input_meta->dim_order();
-  if (expected_order.size() != sizes.size()) {
+  const auto expected_rank = input_meta->sizes().size();
+  if (expected_rank != sizes.size()) {
     throw py::value_error(
         "Input " + std::to_string(index) + " has rank " +
         std::to_string(sizes.size()) + ", but the method expects rank " +
-        std::to_string(expected_order.size()));
-  }
-  if (!check_strides) {
-    return;
-  }
-  if (strides.size() != sizes.size()) {
-    throw py::value_error(
-        "Input " + std::to_string(index) +
-        " has inconsistent shape and stride ranks");
-  }
-  std::vector<int> expected_strides(sizes.size());
-  const auto status = runtime::dim_order_to_stride(
-      sizes.data(),
-      expected_order.data(),
-      sizes.size(),
-      expected_strides.data());
-  THROW_IF_ERROR(status, "Invalid dimension order for input %zu", index);
-  const bool is_empty = std::find(sizes.begin(), sizes.end(), 0) != sizes.end();
-  for (size_t dim = 0; dim < sizes.size(); ++dim) {
-    if ((sizes[dim] > 1 || is_empty) && strides[dim] != expected_strides[dim]) {
-      throw py::value_error(
-          "Input " + std::to_string(index) + " has stride " +
-          std::to_string(strides[dim]) + " at dimension " +
-          std::to_string(dim) + ", but the method expects stride " +
-          std::to_string(expected_strides[dim]));
-    }
+        std::to_string(expected_rank));
   }
 }
 
@@ -508,8 +482,7 @@ void validate_buffer_input(
       method_meta,
       index,
       buffer.scalar_type(),
-      buffer.sizes(),
-      buffer.strides());
+      buffer.sizes());
 }
 
 #ifndef USE_ATEN_LIB
@@ -555,7 +528,9 @@ class TorchTensorView final {
         dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
           return strides_[a] > strides_[b];
         });
-    validate_dense_layout();
+    if (numel != 0) {
+      validate_dense_layout();
+    }
     const auto address =
         numel == 0 ? 0 : owner_.attr("data_ptr")().cast<uintptr_t>();
     if (address == 0 && numel != 0) {
@@ -598,8 +573,7 @@ class TorchTensorView final {
 
   void use_layout(Span<const uint8_t> dim_order) {
     dim_order_.assign(dim_order.begin(), dim_order.end());
-    // Singleton dimensions can have arbitrary strides. After validation,
-    // describe the same storage using the exported layout's canonical strides.
+    // Stride compatibility with the exported layout is deferred.
     const auto status = runtime::dim_order_to_stride(
         sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
     THROW_IF_ERROR(status, "Invalid dimension order for torch tensor input");
@@ -1470,15 +1444,11 @@ struct PyModule final {
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> tensor_strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
         validate_tensor_input(
             method_meta,
             i,
             at_tensor.scalar_type(),
-            tensor_sizes,
-            tensor_strides,
-            /*check_strides=*/false);
+            tensor_sizes);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
@@ -1488,12 +1458,11 @@ struct PyModule final {
             method_meta,
             i,
             tensor->scalar_type(),
-            tensor->sizes(),
-            tensor->strides());
+            tensor->sizes());
         const auto method = module_->method(method_name);
         THROW_IF_ERROR(
             method.error(),
-            "Failed to load method %s, error: 0x%" PRIx32,
+            "Failed to execute method %s, error: 0x%" PRIx32,
             method_name.c_str(),
             static_cast<uint32_t>(method.error()));
         tensor->validate_device(*method.get(), i);
@@ -2090,15 +2059,11 @@ struct PyMethod final {
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> tensor_strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
         validate_tensor_input(
             storage_->method->method_meta(),
             i,
             at_tensor.scalar_type(),
-            tensor_sizes,
-            tensor_strides,
-            /*check_strides=*/false);
+            tensor_sizes);
         const auto input_meta =
             storage_->method->method_meta().input_tensor_meta(i).get();
         if (!input_meta.is_memory_planned()) {
@@ -2113,8 +2078,7 @@ struct PyMethod final {
             storage_->method->method_meta(),
             i,
             view->scalar_type(),
-            view->sizes(),
-            view->strides());
+            view->sizes());
         view->validate_device(*storage_->method, i);
         view->use_layout(
             storage_->method->method_meta().input_tensor_meta(i)->dim_order());
@@ -2902,7 +2866,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #endif
 
   // Bind the verification enum to python.
-  py::enum_<Program::Verification>(m, "Verification")
+  py::enum_<Program::Verification>(m, "Verification", py::module_local())
       .value("Minimal", Program::Verification::Minimal)
       .value("InternalConsistency", Program::Verification::InternalConsistency);
 
@@ -3032,7 +2996,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       },
       call_guard);
 
-  py::class_<PyModule>(m, "ExecuTorchModule")
+  py::class_<PyModule>(m, "ExecuTorchModule", py::module_local())
       .def(
           "plan_execute",
           &PyModule::plan_execute,
@@ -3072,7 +3036,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard);
 
-  py::class_<PyBundledModule>(m, "BundledModule")
+  py::class_<PyBundledModule>(m, "BundledModule", py::module_local())
       .def(
           "verify_result_with_bundled_expected_output",
           &PyBundledModule::verify_result_with_bundled_expected_output,
@@ -3082,13 +3046,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("atol") = 1e-8,
           call_guard);
 
-  py::class_<PyTensorInfo>(m, "TensorInfo")
+  py::class_<PyTensorInfo>(m, "TensorInfo", py::module_local())
       .def("sizes", &PyTensorInfo::sizes, call_guard)
       .def("dtype", &PyTensorInfo::dtype, call_guard)
       .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
       .def("nbytes", &PyTensorInfo::nbytes, call_guard)
       .def("__repr__", &PyTensorInfo::repr, call_guard);
-  py::class_<PyMethodMeta>(m, "MethodMeta")
+  py::class_<PyMethodMeta>(m, "MethodMeta", py::module_local())
       .def("name", &PyMethodMeta::name, call_guard)
       .def("num_inputs", &PyMethodMeta::num_inputs, call_guard)
       .def("num_outputs", &PyMethodMeta::num_outputs, call_guard)
@@ -3130,7 +3094,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("data_path") = std::nullopt,
       py::arg("backend_options") = py::dict(),
       call_guard);
-  py::class_<PyProgram>(m, "ExecuTorchProgram")
+  py::class_<PyProgram>(m, "ExecuTorchProgram", py::module_local())
       .def("num_methods", &PyProgram::num_methods, call_guard)
       .def(
           "get_method_name",
@@ -3154,7 +3118,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("path"),
           py::arg("debug_buffer_path") = py::none(),
           call_guard);
-  py::class_<PyMethod>(m, "ExecuTorchMethod")
+  py::class_<PyMethod>(m, "ExecuTorchMethod", py::module_local())
       .def("set_inputs", &PyMethod::set_inputs, py::arg("inputs"), call_guard)
       .def("execute", &PyMethod::execute, call_guard)
       .def(
