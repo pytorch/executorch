@@ -1434,6 +1434,59 @@ def register_slice_copy():
 
 
 # =============================================================================
+# SliceScatter.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.slice_scatter.default)
+def register_slice_scatter():
+    def check_slice_scatter_node(node: torch.fx.Node) -> bool:
+        """Only delegate slice_scatter when its window is fixed at build time.
+
+        SliceScatter.cpp normalizes start/end against the scattered dim's size
+        and bakes them into push constants when the graph is built, so the
+        window must not depend on anything that changes at runtime: a symbolic
+        start/end (e.g. a KV-cache position) or a dynamic scattered dim (which
+        moves a negative or default start/end) would silently scatter into the
+        wrong rows. Same reasoning as _check_pad_is_static. Dynamic sizes on
+        the other dims are fine, since the shader reads those from the tensor
+        metadata UBOs.
+        """
+        # Schema: slice_scatter(self, src, dim=0, start=None, end=None, step=1)
+        args = list(node.args) + [None] * (6 - len(node.args))
+        self_arg, src_arg, dim, start, end, step = args[:6]
+        dim = 0 if dim is None else dim
+        step = 1 if step is None else step
+        if not isinstance(dim, int) or not isinstance(step, int):
+            return False
+        # A non-positive step has no meaning here and aten rejects it; the
+        # shader divides by step, so refuse rather than fault.
+        if step <= 0:
+            return False
+        if not all(i is None or isinstance(i, int) for i in (start, end)):
+            return False
+
+        for t in (self_arg, src_arg):
+            if not isinstance(t, torch.fx.Node):
+                return False
+            val = t.meta.get("val", None)
+            if not isinstance(val, torch.Tensor):
+                return False
+            if not -val.dim() <= dim < val.dim():
+                return False
+            if not isinstance(val.shape[dim], int):
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_slice_scatter_node,
+    )
+
+
+# =============================================================================
 # Split.cpp
 # =============================================================================
 
