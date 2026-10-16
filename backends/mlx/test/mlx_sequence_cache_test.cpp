@@ -26,6 +26,7 @@
 
 #include <numeric>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 using namespace ::executorch::backends::mlx;
@@ -539,6 +540,27 @@ TEST_F(MLXSequenceCacheTest, RingStepWrapsAndRejoinsInOrder) {
       spec.K,
       concatenate(std::vector<array>{toks[1], toks[2], toks[3], pair}, 2, s),
       0.0f));
+}
+
+TEST_F(MLXSequenceCacheTest, DFlashGeometryIsUnsupported) {
+  for (int block : {0, 2}) {
+    for (int window : {0, 4}) {
+      SCOPED_TRACE(block);
+      SCOPED_TRACE(window);
+      auto args = flat_config(32, 1, H, D, static_cast<int>(ScalarType::Half));
+      args.geometry.dflash_block_size = block;
+      if (window) {
+        args.geometry.layers[0].policy = {
+            cache::LayerPolicy::Kind::Ring, window};
+      }
+      try {
+        MLXSequenceCache unsupported(args.geometry, args.config);
+        FAIL() << "V1 sequence cache accepted DFlash geometry";
+      } catch (const std::runtime_error& error) {
+        EXPECT_STREQ(error.what(), "MLXSequenceCache: DFlash is unsupported");
+      }
+    }
+  }
 }
 
 // A negative initial_capacity is rejected rather than reaching MLX as a

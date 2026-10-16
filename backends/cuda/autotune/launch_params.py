@@ -49,6 +49,7 @@ A call that passes the parameter explicitly always uses it.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import functools
 import gc
 import inspect
@@ -114,6 +115,9 @@ _CACHE: dict[tuple, Any] = {}
 # Held while timing, so concurrent compiles do not time against each other
 # (re-entrant: a decorated function may call another one).
 _TIMING_LOCK = threading.RLock()
+_IN_PREPASS: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "autotune_in_prepass", default=False
+)
 
 
 @contextlib.contextmanager
@@ -193,6 +197,26 @@ def _random_like(value: Any) -> Any:
     return flat.as_strided(shape, stride)
 
 
+def _run_prepass(
+    fn: Callable[..., Any],
+    param: str,
+    candidates: tuple[Any, ...],
+    args: tuple,
+    kwargs: dict,
+    candidate_prepass: Callable[[], ContextManager[Any]],
+) -> None:
+    token = _IN_PREPASS.set(True)
+    try:
+        with candidate_prepass():
+            for value in candidates:
+                try:
+                    fn(*args, **kwargs, **{param: value})
+                except InvalidLaunchParam:
+                    pass
+    finally:
+        _IN_PREPASS.reset(token)
+
+
 def _time_candidates(
     fn: Callable[..., Any],
     param: str,
@@ -218,12 +242,9 @@ def _time_candidates(
             real_args = tuple(_random_like(a) for a in args)
             real_kwargs = {k: _random_like(v) for k, v in kwargs.items()}
             if candidate_prepass is not None:
-                with candidate_prepass():
-                    for value in candidates:
-                        try:
-                            fn(*real_args, **real_kwargs, **{param: value})
-                        except InvalidLaunchParam:
-                            pass
+                _run_prepass(
+                    fn, param, candidates, real_args, real_kwargs, candidate_prepass
+                )
             for value in candidates:
 
                 def run(value: Any = value) -> Any:
@@ -318,6 +339,11 @@ def autotune_launch_param(
             if param in kwargs or stats is None or len(candidates) == 1:
                 kwargs.setdefault(param, candidates[0])
                 return fn(*args, **kwargs)
+            if _IN_PREPASS.get():
+                raise RuntimeError(
+                    f"{name} runs inside another autotuned launch's candidate prepass; "
+                    "nested autotuning is not supported"
+                )
             device = _first_device((*args, *kwargs.values()))
             key = (
                 token,
