@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/CPUPlan.h>
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
 #include <algorithm>
 #include <cstring>
@@ -143,7 +144,13 @@ Error CPUPlan::execute(const ExecutionContext& context) {
     }
   }
   for (auto& step : steps_) {
+    const auto entry = event_tracer_start_profiling_delegate(
+        context.event_tracer,
+        step.trace_name.c_str(),
+        kUnsetDelegateDebugIntId);
     const auto error = step.executable->run(context);
+    event_tracer_end_profiling_delegate(context.event_tracer, entry);
+    step.executable->submit_trace();
     if (error != Error::Ok) {
       return error;
     }
@@ -351,6 +358,14 @@ Error CPUPlan::select() {
     step.region.outputs.assign(outputs.begin(), outputs.end());
     std::sort(step.region.inputs.begin(), step.region.inputs.end());
     std::sort(step.region.outputs.begin(), step.region.outputs.end());
+#ifdef ET_EVENT_TRACER_ENABLED
+    step.trace_name = std::string(step.provider->name()) + "/" +
+        std::string(step.implementation->name()) + ":" +
+        graph.node(step.region.nodes.front()).name;
+    if (step.region.nodes.size() > 1) {
+      step.trace_name += "+" + std::to_string(step.region.nodes.size() - 1);
+    }
+#endif
   }
   requirements_.resize(graph.values.size());
   for (size_t id = 0; id < graph.values.size(); ++id) {

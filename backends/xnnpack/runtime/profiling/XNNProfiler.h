@@ -12,6 +12,8 @@
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
 #include <xnnpack.h>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -28,9 +30,19 @@ class XNNProfiler {
 
   /**
    * Initialize the profiler. This must be called after model is
-   * compiled and before calling begin_execution.
+   * compiled and before calling begin_execution. Trace events are named
+   * {name} #{count}; runtimes sharing op_counts continue one numbering.
    */
-  executorch::runtime::Error initialize(xnn_runtime_t runtime);
+  executorch::runtime::Error initialize(
+      xnn_runtime_t runtime,
+      std::unordered_map<std::string, uint32_t>* op_counts = nullptr);
+
+  /**
+   * Attach metadata to each operator's trace event, in operator order. Fails
+   * if the count differs from the runtime's operator count.
+   */
+  executorch::runtime::Error set_operator_metadata(
+      std::vector<std::string> metadata);
 
   /**
    * Start a new profiling session. This is typically invoked
@@ -54,6 +66,8 @@ class XNNProfiler {
 
   size_t op_count_;
   std::vector<char> op_names_;
+  std::vector<std::string> op_event_names_;
+  std::vector<std::string> op_metadata_;
   std::vector<uint64_t> op_timings_;
   uint64_t run_count_;
   et_timestamp_t start_time_;
@@ -68,6 +82,8 @@ class XNNProfiler {
   executorch::runtime::Error get_runtime_operator_names();
   executorch::runtime::Error get_runtime_num_operators();
   executorch::runtime::Error get_runtime_operator_timings();
+  executorch::runtime::Error format_operator_event_names(
+      std::unordered_map<std::string, uint32_t>& op_counts);
 
   void log_operator_timings();
 
