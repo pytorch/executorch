@@ -80,6 +80,7 @@ def define_arm_tests():
         "misc/test_delegated_state_partitioning.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_reference_model.py",
         "misc/test_tosa_constant_pool.py",
         "misc/test_tosa_operator_support.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
@@ -172,6 +173,9 @@ def define_arm_tests():
                 "fbsource//third-party/tosa_tools:tosa",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
+                "//executorch/backends/arm/test:runner_utils",
+                "//executorch/backends/arm/tosa:reference_model",
+            ] if test_file == "misc/test_reference_model.py" else []) + ([
                 # Needed only by the OSS-only public API manifest tests above.
                 # Depending on them everywhere drags the top-level package
                 # __init__ (and its torch import) into pytest collection.
