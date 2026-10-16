@@ -129,50 +129,20 @@ def _materialize_storage(tensor: torch.Tensor, directory: str) -> FileBackedData
         raise
 
 
-# Words hashed per step; two random int64 weight vectors of this length per device.
-_FINGERPRINT_CHUNK_WORDS = 8 * 1024 * 1024
-_fingerprint_weights: Dict[torch.device, Tuple[torch.Tensor, torch.Tensor]] = {}
-
-
-def _cuda_storage_fingerprint(tensor: torch.Tensor) -> Tuple[int, int, int, bytes]:
-    """A content fingerprint of ``tensor``'s whole CUDA storage, computed on the
-    device: its size, two independent random linear hashes of its 8-byte words,
-    and its trailing bytes. Equal fingerprints mean equal bytes (a mismatch
-    within the same size passes with probability ~2**-128)."""
-    device = tensor.device
-    weights = _fingerprint_weights.get(device)
-    if weights is None:
-        generator = torch.Generator(device=device).manual_seed(0x5EED_CAFE)
-        low, high = -(1 << 63), (1 << 63) - 1
-        weights = tuple(
-            torch.randint(
-                low,
-                high,
-                (_FINGERPRINT_CHUNK_WORDS,),
-                dtype=torch.int64,
-                device=device,
-                generator=generator,
-            )
-            for _ in range(2)
-        )
-        _fingerprint_weights[device] = weights
+def _storage_bytes(tensor: torch.Tensor) -> torch.Tensor:
     storage = tensor.untyped_storage()
-    nbytes = storage.nbytes()
-    data = torch.empty(0, dtype=torch.uint8, device=device).set_(
-        storage, 0, (nbytes,), (1,)
+    return torch.empty(0, dtype=torch.uint8, device=tensor.device).set_(
+        storage, 0, (storage.nbytes(),), (1,)
     )
-    words = nbytes // 8
-    word_view = data[: words * 8].view(torch.int64)
-    first = torch.zeros((), dtype=torch.int64, device=device)
-    second = torch.zeros((), dtype=torch.int64, device=device)
-    for chunk, offset in enumerate(range(0, words, _FINGERPRINT_CHUNK_WORDS)):
-        part = word_view[offset : offset + _FINGERPRINT_CHUNK_WORDS]
-        n = part.numel()
-        # int64 arithmetic wraps; the chunk index keeps chunk order significant.
-        first += (part * weights[0][:n]).sum() * (2 * chunk + 1)
-        second += (part * weights[1][:n]).sum() * (2 * chunk + 3)
-    tail = bytes(data[words * 8 :].cpu().tolist())
-    return nbytes, int(first), int(second), tail
+
+
+def _same_cuda_storage(first: torch.Tensor, second: torch.Tensor) -> bool:
+    """Whether two CUDA tensors' whole storages hold the same bytes, compared on the device."""
+    if first.device != second.device:
+        return False
+    if first.untyped_storage().nbytes() != second.untyped_storage().nbytes():
+        return False
+    return torch.equal(_storage_bytes(first), _storage_bytes(second))
 
 
 def _required_view_nbytes(
@@ -414,10 +384,11 @@ class CudaWeightCollector:
     def __init__(self) -> None:
         self._store = NamedDataStore()
         self._results: List[PreprocessResult] = []
-        # Fingerprints of the CUDA storages already written to the store, by
-        # storage key. Methods share their weights, so a later method's
-        # identical storage is not copied, hashed and written again.
-        self._stored_fingerprints: Dict[str, Tuple[int, int, int, bytes]] = {}
+        # The CUDA storages already written to the store, by storage key. Methods
+        # share their weights, so a later method's identical storage is compared
+        # with the first one on the device and not written again. The weights
+        # must not change until finish() releases them.
+        self._stored_storages: Dict[str, torch.Tensor] = {}
 
     @contextlib.contextmanager
     def capture(
@@ -487,20 +458,18 @@ class CudaWeightCollector:
                     raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
                 # Library-local constants are keyed per shared library, so
                 # only FQN weights can match an earlier method's storage.
-                fingerprint = (
-                    _cuda_storage_fingerprint(tensor)
-                    if tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
-                    else None
-                )
+                shareable = tensor.is_cuda and not _is_aoti_library_local_fqn(fqn)
+                first = self._stored_storages.get(storage_key)
                 if (
-                    fingerprint is not None
-                    and self._stored_fingerprints.get(storage_key) == fingerprint
+                    shareable
+                    and first is not None
+                    and _same_cuda_storage(first, tensor)
                 ):
                     stored.add(storage_key)
                 else:
                     storages[storage_key] = _materialize_storage(tensor, directory)
-                    if fingerprint is not None:
-                        self._stored_fingerprints.setdefault(storage_key, fingerprint)
+                    if shareable:
+                        self._stored_storages.setdefault(storage_key, tensor)
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -650,3 +619,4 @@ class CudaWeightCollector:
         shared_output = self._store.get_named_data_store_output()
         for result in self._results:
             result.data_store_output = shared_output
+        self._stored_storages.clear()
