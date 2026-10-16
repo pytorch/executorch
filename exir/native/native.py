@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 """
 Direct native lowering.
 
@@ -37,9 +35,11 @@ import torch
 
 from executorch.backends.native.preprocess import NativeDelegateInfo
 from executorch.backends.native.serialization.graph_serialize import (
+    _compile_to_bytes,
     _same_tensor,
     collect_data_keys,
     deserialize_program,
+    map_data_keys,
     merge_programs,
     validate_program,
 )
@@ -254,13 +254,7 @@ def _delegate_info(lowered: object, method_name: str) -> NativeDelegateInfo:
 def _merge_constants(
     per_method: dict[str, dict[str, torch.Tensor]],
 ) -> dict[str, torch.Tensor]:
-    """Union per-method constants by fqn.
-
-    serialize_program treats an fqn as one buffer across every method, so hold to
-    that here rather than letting a later method silently clobber an earlier one.
-    _same_tensor short-circuits on identity and shared storage, which is the usual
-    case for a weight referenced by several methods.
-    """
+    """Merge constants by their final data keys, rejecting differing values."""
     merged: dict[str, torch.Tensor] = {}
     source: dict[str, str] = {}
     for method_name, constants in per_method.items():
@@ -363,6 +357,10 @@ def to_native(
     ``programs`` is a single ``ExportedProgram`` (lowered as the sole ``forward``
     method) or a dict mapping method name to ``ExportedProgram``.
 
+    Immutable constant keys are namespaced as ``<method>/<key>``, including for a
+    single method. Keys mutated by any method keep their original names so state
+    remains shared across methods. Equal immutable tensors deduplicate on save.
+
     Nothing about lowering is configurable yet. The passes, the partitioner, and
     the edge compile config are all owned here, because correctness of the package
     depends on them. Exposing the compile config is worth reconsidering.
@@ -378,9 +376,9 @@ def to_native(
         TypeError: If ``programs`` is not an ``ExportedProgram`` or a method-name
             dictionary containing only ``ExportedProgram`` values.
         ValueError: If the method dictionary is empty, a method name is empty, a
-            method does not fully delegate to the native backend, a constant
-            differs between methods, or a data key the graph references has no
-            backing tensor.
+            method does not fully delegate to the native backend, a mutable
+            constant differs between methods, namespaced keys conflict, or a data
+            key the graph references has no backing tensor.
     """
     method_programs = _normalize_programs(programs)
 
@@ -437,13 +435,33 @@ def to_native(
         method_blobs[method_name] = module.processed_bytes
         method_constants[method_name] = _delegate_info(module, method_name).constants
 
-    ptg_blob = merge_programs(method_blobs)
-    constants = _merge_constants(method_constants)
+    program = deserialize_program(merge_programs(method_blobs))
+    mutated_keys = _mutable_data_keys(program)
+    data_keys = set(mutated_keys)
+    for method in program.methods:
+        constants_for_method = method_constants[method.name]
+        mapping = {
+            key: f"{method.name}/{key}"
+            for key in constants_for_method
+            if key not in mutated_keys
+        }
+        conflicts = set(mapping.values()) & data_keys
+        if conflicts:
+            raise ValueError(
+                "to_native: namespaced constant keys already exist: "
+                f"{sorted(conflicts)}"
+            )
+        data_keys.update(mapping.values())
+        map_data_keys(method, lambda key, mapping=mapping: mapping.get(key, key))
+        method_constants[method.name] = {
+            mapping.get(key, key): tensor
+            for key, tensor in constants_for_method.items()
+        }
 
-    program = deserialize_program(ptg_blob)
+    constants = _merge_constants(method_constants)
     _validate_merged_program(program, constants)
 
-    return NativeProgramManager(ptg=ptg_blob, constants=constants)
+    return NativeProgramManager(ptg=_compile_to_bytes(program), constants=constants)
 
 
 __all__ = ["NativeProgramManager", "to_native"]

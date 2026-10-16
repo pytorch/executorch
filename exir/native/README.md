@@ -44,8 +44,14 @@ needed in the future like `constant_methods` and ETRecord integration.
 
 Raises `TypeError` for the wrong input or method-value types. Raises `ValueError`
 for an empty method mapping or method name, if a method does not fully delegate to
-the native backend, if a constant differs between methods, or if a data key the
-graph references has no backing tensor.
+the native backend, if a mutable constant differs between methods, if namespaced
+keys conflict, or if a data key the graph references has no backing tensor.
+
+All immutable constant keys are namespaced as `<method>/<key>`, including for a
+single method. Equal immutable tensors under different keys are deduplicated on
+save. A key mutated by any method keeps its original name in every method,
+including methods that only read it, preserving shared runtime state. Namespaced
+keys must not collide with each other or with preserved mutable keys.
 
 ## Current limitations: one complete delegate per method
 
