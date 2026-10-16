@@ -67,6 +67,23 @@ def _written(analysis) -> set:
     return {dep.name for dep in analysis.read_writes.writes}
 
 
+def _scale_with_num_warps(x: torch.Tensor, scale: float) -> torch.Tensor:
+    y = torch.empty_like(x)
+    z = torch.empty_like(x)
+    n = x.numel()
+    wrap_triton(_scale_kernel)[(triton.cdiv(n, 256),)](
+        x, y, z, n, scale, WRITE_Z=False, BLOCK=256, num_warps=4
+    )
+    return y
+
+
+class _NumWarpsLayers(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for _ in range(4):
+            x = _scale_with_num_warps(x, 0.5)
+        return x
+
+
 class TritonMutationCacheTest(unittest.TestCase):
     def setUp(self) -> None:
         if not torch.cuda.is_available():
@@ -280,3 +297,32 @@ class TritonMutationCacheTest(unittest.TestCase):
         self.assertEqual(counts["misses"], 1)
         self.assertGreaterEqual(counts["hits"], 3)
         self.assertEqual(cached, exported_code())
+
+    def test_a_launch_with_num_warps_is_analyzed_once(self) -> None:
+        x = torch.randn(1000, device="cuda")
+        with triton_mutation_cache.enabled() as counts:
+            torch.export.export(_NumWarpsLayers(), (x,)).run_decompositions({})
+        self.assertEqual(counts["misses"], 1)
+        self.assertGreaterEqual(counts["hits"], 3)
+
+    def test_inductor_compile_gives_eager_results_and_reaches_the_analysis(
+        self,
+    ) -> None:
+        x = torch.randn(1000, device="cuda")
+        with triton_mutation_cache.enabled() as counts:
+            out = torch.compile(_Layers(), fullgraph=True)(x)
+        torch.testing.assert_close(out, _Layers()(x))
+        self.assertGreaterEqual(counts["misses"], 1)
+        self.assertEqual(counts["uncached"], 0)
+
+    def test_a_dynamic_shape_export_analyzes_the_symbolic_size_once(self) -> None:
+        x = torch.randn(1000, device="cuda")
+        n = torch.export.Dim("n", min=2, max=1 << 20)
+        with triton_mutation_cache.enabled() as counts:
+            program = torch.export.export(
+                _Layers(), (x,), dynamic_shapes=({0: n},)
+            ).run_decompositions({})
+        self.assertEqual(counts["misses"], 1)
+        self.assertGreaterEqual(counts["hits"], 3)
+        other = torch.randn(4096, device="cuda")
+        torch.testing.assert_close(program.module()(other), _Layers()(other))
