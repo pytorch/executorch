@@ -5,9 +5,17 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.devtools.etrecord._etrecord import (
+    DelegatePartitionProvenance,
     ETRecord,
     generate_etrecord,
+    get_delegate_partition_provenance,
     parse_etrecord,
 )
 
-__all__ = ["ETRecord", "generate_etrecord", "parse_etrecord"]
+__all__ = [
+    "DelegatePartitionProvenance",
+    "ETRecord",
+    "generate_etrecord",
+    "get_delegate_partition_provenance",
+    "parse_etrecord",
+]
