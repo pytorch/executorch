@@ -783,6 +783,58 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def test_block_size_is_per_node(self):
+        """Every node in block_size_map must keep its own block size. The annotators
+        used to write it into the weight observer constructor shared by all nodes, so
+        the last node annotated set it for every one: a 2D linear block size reached a
+        4D conv weight and calibration asserted in _get_reduction_params."""
+        from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
+            PerBlockParamObserver,
+        )
+
+        class ConvConvLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv_a = torch.nn.Conv2d(32, 64, 1)
+                self.conv_b = torch.nn.Conv2d(64, 64, 1)
+                self.linear = torch.nn.Linear(64, 16)
+
+            def forward(self, x):
+                x = self.conv_b(torch.relu(self.conv_a(x)))
+                return self.linear(x.mean(dim=(2, 3)))
+
+        sample_input = (torch.randn(1, 32, 8, 8),)
+        gm = torch.export.export(ConvConvLinear().eval(), sample_input).module()
+        convs = [
+            n.name for n in gm.graph.nodes if n.target == torch.ops.aten.conv2d.default
+        ]
+        linears = [
+            n.name for n in gm.graph.nodes if n.target == torch.ops.aten.linear.default
+        ]
+        block_size_map = {
+            convs[0]: (1, 16, 1, 1),
+            convs[1]: (1, 32, 1, 1),
+            linears[0]: (1, 16),
+        }
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(
+            quant_dtype=QuantDtype.use_16a4w_block,
+            is_conv_per_channel=True,
+            is_linear_per_channel=True,
+        )
+        quantizer.set_block_size_map(block_size_map)
+        prepared = prepare_pt2e(gm, quantizer)
+        for _ in range(2):
+            prepared(*sample_input)
+
+        observed = sorted(
+            tuple(module.block_size)
+            for module in prepared.modules()
+            if isinstance(module, PerBlockParamObserver)
+        )
+        self.assertEqual(observed, sorted(block_size_map.values()))
+        convert_pt2e(prepared)(*sample_input)
+
     def test_lowering_accepts_exported_program_without_reexport(self):
         """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
         ExportedProgram as captured, never re-exporting it.

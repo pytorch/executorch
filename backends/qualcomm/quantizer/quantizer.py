@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import dataclasses
 import itertools
 import logging
 import operator
@@ -626,9 +627,9 @@ class QnnQuantizer(Quantizer):
             assert (
                 len(config.per_block_quant_config_list) > ch_axis
             ), f"Unsupported per block quantization axis: {ch_axis}, please increase the range of per_block_quant_config_list"
-            config = config.per_block_quant_config_list[ch_axis]
-            config.block_size = block_size
-            return config
+            return dataclasses.replace(
+                config.per_block_quant_config_list[ch_axis], block_size=block_size
+            )
 
         if op in config.use_per_channel_weight_quant_ops:
             ch_axis = config.use_per_channel_weight_quant_ops[op]
