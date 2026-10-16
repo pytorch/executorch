@@ -847,6 +847,56 @@ class GgmlOpsTest(unittest.TestCase):
 
         self._check(SqueezedEmbedding(), (torch.tensor([[1, 3, 9]]),))
 
+    def test_embedding_arange_indices(self):
+        class PositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(1, 10, 2)) + x
+
+        self._check(PositionEmbedding(), (torch.randn(5, 8),))
+
+    def test_embedding_arange_indices_rejects_out_of_bounds(self):
+        class InvalidPositionEmbedding(Embedding):
+            def forward(self, x):
+                return self.embedding(torch.arange(-1, 4)) + x
+
+        with self.assertRaisesRegex(AssertionError, "arange row index"):
+            # Export does not execute the invalid gather; the runner must reject it.
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                x = torch.randn(5, 8)
+                package = outdir / "model.ptn"
+                ep = torch.export.export(InvalidPositionEmbedding().eval(), (x,))
+                to_native(ep).save(str(package))
+                _run_ggml(package, [(x,)], outdir, 1)
+
+    def test_repeated_row_gather_rechecks_indices(self):
+        class RepeatedRowGather(Embedding):
+            def forward(self, indices):
+                return self.embedding.weight[indices.unsqueeze(0).repeat(2, 1)]
+
+        model = RepeatedRowGather().eval()
+        inputs = (torch.tensor([1, 3, 9]),)
+        self._check(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, inputs)).save(str(package))
+            for invalid in (-1, 10):
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(AssertionError, "row index is outside"):
+                        _run_ggml(
+                            package,
+                            [inputs, (torch.tensor([1, invalid, 3]),)],
+                            outdir,
+                            1,
+                        )
+
+    def test_repeat_tiles_non_singleton_dimensions(self):
+        self._check(
+            Lambda(lambda x: x.repeat(2, 3, 2)),
+            (torch.arange(6, dtype=torch.float32).reshape(2, 3),),
+        )
+
     def test_rms_norm(self):
         self._check(RMSNorm(), (torch.randn(2, 3, 16),))
 

@@ -45,7 +45,8 @@ needed in the future like `constant_methods` and ETRecord integration.
 Raises `TypeError` for the wrong input or method-value types. Raises `ValueError`
 for an empty method mapping or method name, if a method does not fully delegate to
 the native backend, if a constant differs between methods, or if a data key the
-graph references has no backing tensor.
+graph references has no backing tensor. Conflicting generated
+`_lifted_tensor_constant{i}` keys are namespaced as `<method>/<name>`.
 
 ## Current limitations: one complete delegate per method
 

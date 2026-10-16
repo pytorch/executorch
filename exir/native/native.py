@@ -37,10 +37,12 @@ import torch
 
 from executorch.backends.native.preprocess import NativeDelegateInfo
 from executorch.backends.native.serialization.graph_serialize import (
+    _compile_to_bytes,
     _same_tensor,
     collect_data_keys,
     deserialize_program,
     merge_programs,
+    rename_data_keys,
     validate_program,
 )
 from executorch.backends.native.serialization.schema import Program
@@ -278,6 +280,46 @@ def _merge_constants(
     return merged
 
 
+# Edge lowering generates these names independently for each method.
+_LIFTED_CONSTANT_PREFIX = "_lifted_tensor_constant"
+
+
+def _plan_lifted_constant_renames(
+    per_method: dict[str, dict[str, torch.Tensor]],
+    program: Program,
+) -> dict[str, dict[str, str]]:
+    """Plan ``<method>/<key>`` names for conflicting immutable lifted constants.
+
+    Equal tensors stay shared; keys mutated by any method are never renamed.
+    """
+    mutated_keys = _mutable_data_keys(program)
+    taken = {key for constants in per_method.values() for key in constants}
+    seen: dict[str, torch.Tensor] = {}
+    renames: dict[str, dict[str, str]] = {}
+    for method_name, constants in per_method.items():
+        mapping: dict[str, str] = {}
+        for key, tensor in constants.items():
+            existing = seen.get(key)
+            if existing is None:
+                seen[key] = tensor
+                continue
+            if _same_tensor(existing, tensor):
+                continue
+            if not key.startswith(_LIFTED_CONSTANT_PREFIX) or key in mutated_keys:
+                continue
+            new_key = f"{method_name}/{key}"
+            suffix = 1
+            while new_key in taken:
+                suffix += 1
+                new_key = f"{method_name}/{key}#{suffix}"
+            mapping[key] = new_key
+            taken.add(new_key)
+            seen[new_key] = tensor
+        if mapping:
+            renames[method_name] = mapping
+    return renames
+
+
 def _check_shared_mutable_buffers(program: Program) -> None:
     """Hold the merged Program to serialize_program's cross-method guarantee.
 
@@ -380,7 +422,8 @@ def to_native(
         ValueError: If the method dictionary is empty, a method name is empty, a
             method does not fully delegate to the native backend, a constant
             differs between methods, or a data key the graph references has no
-            backing tensor.
+            backing tensor. Conflicting generated ``_lifted_tensor_constant{i}``
+            keys are namespaced per method.
     """
     method_programs = _normalize_programs(programs)
 
@@ -435,12 +478,23 @@ def to_native(
             method_name,
         )
         method_blobs[method_name] = module.processed_bytes
-        method_constants[method_name] = _delegate_info(module, method_name).constants
+        method_constants[method_name] = dict(
+            _delegate_info(module, method_name).constants
+        )
 
     ptg_blob = merge_programs(method_blobs)
-    constants = _merge_constants(method_constants)
-
     program = deserialize_program(ptg_blob)
+
+    renames = _plan_lifted_constant_renames(method_constants, program)
+    if renames:
+        for method_name, mapping in renames.items():
+            rename_data_keys(program, method_name, mapping)
+            constants_for_method = method_constants[method_name]
+            for old_key, new_key in mapping.items():
+                constants_for_method[new_key] = constants_for_method.pop(old_key)
+        ptg_blob = _compile_to_bytes(program)
+
+    constants = _merge_constants(method_constants)
     _validate_merged_program(program, constants)
 
     return NativeProgramManager(ptg=ptg_blob, constants=constants)

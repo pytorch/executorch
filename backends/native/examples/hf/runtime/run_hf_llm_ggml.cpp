@@ -6,7 +6,7 @@
 
 #include <stdexcept>
 
-#include <executorch/backends/native/examples/hf_llm/runtime/LlmRunner.h>
+#include <executorch/backends/native/examples/hf/runtime/LlmRunner.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 #include <gflags/gflags.h>
 

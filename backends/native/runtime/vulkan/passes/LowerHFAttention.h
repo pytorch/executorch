@@ -50,7 +50,13 @@ void check_cache_positions(
 //   sdpa(rope(q), index_put_(k_cache, [None, None, cache_position], rope(k)),
 //        index_put_(v_cache, [None, None, cache_position], v), causal_mask)
 // into apply_rotary_emb_hf, llama.update_cache and causal llama.custom_sdpa,
-// re-laying the zero-initialized caches out as [1, S, H_kv, D]. cache_position
+// re-laying the zero-initialized caches out as [1, S, H_kv, D]. The rope()
+// applications are optional as a pair: learned-position models (Whisper)
+// match with neither present and feed q/k to the kernels unrotated, with an
+// aten.clone (.contiguous()) allowed in front of each permuted operand and
+// either of HF's two causal-mask arrangements accepted. A non-default SDPA
+// scale (Whisper pre-scales q and passes scale=1) is folded into q, since
+// llama.custom_sdpa applies the default scale itself. cache_position
 // must be a graph input, and causal_mask HF's static-cache causal mask over it.
 // The kernels read positions from cache_position[0] on, so it must hold
 // contiguous positions; the pass marks it with kCachePositionAttr for the
