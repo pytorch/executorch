@@ -27,10 +27,13 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import contextvars
+import functools
 import importlib
 import inspect
 import logging
 import os
+import pickle
+import sys
 import threading
 import typing
 import weakref
@@ -48,9 +51,9 @@ except (
 ):  # A Triton without parallel compile compiles each config on first use.
     _async_compile = None
 
-# Concurrent compiles of autotune configs. Each runs in a worker process: in
-# one process Triton's MLIR and LLVM passes hold the GIL, so threads alone keep
-# only a few compiles busy.
+# Concurrent compiles of autotune configs, each in a worker process. Threads
+# alone kept about 5 of 32 busy during a bucket-64 shape; the cause was not
+# isolated, and the workers are what was measured to help.
 _MAX_COMPILE_THREADS = 32
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -176,13 +179,6 @@ def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
     return _tuning_key(kernel, args, kwargs) not in kernel.cache
 
 
-# Tuning keys whose configs a candidate prepass compiled. Weak kernel keys and
-# one-shot values keep this bookkeeping bounded and prevent stale object-id hits.
-_COMPILED_AHEAD: weakref.WeakKeyDictionary[object, set[tuple]] = (
-    weakref.WeakKeyDictionary()
-)
-
-
 def _compile_workers() -> int:
     return min(_MAX_COMPILE_THREADS, os.cpu_count() or 1)
 
@@ -198,6 +194,8 @@ def _compile_process_pool():
     process that forks the workers, so they neither re-run the caller's main
     module (as ``spawn`` would) nor inherit its CUDA state (as ``fork`` would)."""
     global _process_pool
+    if torch.version.hip is not None:
+        return None
     with _PROCESS_POOL_LOCK:
         if _process_pool is None and not _process_pool_failed:
             from torch._inductor.compile_worker.subproc_pool import (
@@ -237,12 +235,18 @@ def _compile_in_process(
     target,
     options: dict,
     env_vars: dict,
-) -> None:
+    triton_env: dict,
+) -> Optional[str]:
     """Compiles one config in a worker process into the shared Triton cache.
     Returns ``_UNIMPORTABLE`` if the worker cannot find the kernel or source
     class, which no other config would find either."""
     # Compiling needs no GPU; keep the worker from initializing one.
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # Triton reads its settings from the environment at compile time, so the
+    # worker takes the parent's Triton environment as of this request.
+    for name in [name for name in os.environ if name.startswith("TRITON_")]:
+        del os.environ[name]
+    os.environ.update(triton_env)
     triton.knobs.cache.dir = cache_dir
     try:
         fn = importlib.import_module(module)
@@ -271,7 +275,12 @@ def _process_compile_request(compile_fn) -> Optional[tuple]:
     names = compile_fn.__code__.co_freevars
     if set(names) != {"env_vars", "options", "self", "src", "target"}:
         return None
-    cells = dict(zip(names, (cell.cell_contents for cell in compile_fn.__closure__)))
+    try:
+        cells = dict(
+            zip(names, (cell.cell_contents for cell in compile_fn.__closure__))
+        )
+    except (TypeError, ValueError):
+        return None
     src = cells["src"]
     jit_fn = getattr(src, "fn", None)
     module = getattr(jit_fn, "module", None)
@@ -290,9 +299,15 @@ def _process_compile_request(compile_fn) -> Optional[tuple]:
         cells["target"],
         cells["options"].__dict__,
         cells["env_vars"],
+        {
+            name: value
+            for name, value in os.environ.items()
+            if name.startswith("TRITON_")
+        },
     )
 
 
+# A string: the result is pickled back from the worker, so identity would not survive.
 _UNIMPORTABLE = "unimportable"
 
 
@@ -304,7 +319,10 @@ def _workers_failed(result=None, error: Optional[BaseException] = None) -> bool:
     from torch._inductor.compile_worker.subproc_pool import SubprocException
 
     if error is not None:
-        return not isinstance(error, SubprocException)
+        # The request itself could not be pickled: only that config falls back.
+        return not isinstance(
+            error, (SubprocException, pickle.PicklingError, TypeError, AttributeError)
+        )
     return result == _UNIMPORTABLE
 
 
@@ -314,15 +332,26 @@ def _compiled_in_a_process_first(compile_fn):
         return compile_fn
 
     def compile_then_load():
-        pool = _compile_process_pool()
+        try:
+            pool = _compile_process_pool()
+        except Exception as error:
+            _stop_using_processes(error)
+            pool = None
         if pool is not None:
             try:
                 result = pool.submit(_compile_in_process, *request).result()
             except Exception as error:
                 if _workers_failed(error=error):
                     _stop_using_processes(error)
-                # Otherwise this config also fails to compile in-process, where
-                # the benchmark skips it as before.
+                else:
+                    # This config also fails to compile in-process, where the
+                    # benchmark skips it as before.
+                    logger.warning(
+                        "Worker failed to compile %s.%s, compiling it in this process: %s",
+                        request[1],
+                        request[2],
+                        error,
+                    )
             else:
                 if _workers_failed(result=result):
                     _stop_using_processes(
@@ -338,11 +367,11 @@ def _compiled_in_a_process_first(compile_fn):
 if _async_compile is not None:
 
     class _ProcessCompileMode(_async_compile.AsyncCompileMode):
-        """Triton's async compile, with each compile done in a worker process."""
+        """Triton's async compile, starting each compile in a worker process."""
 
-        def submit(self, key, compile_fn, finalize_fn):
+        def submit(self, key, compile_fn, *args, **kwargs):
             return super().submit(
-                key, _compiled_in_a_process_first(compile_fn), finalize_fn
+                key, _compiled_in_a_process_first(compile_fn), *args, **kwargs
             )
 
 
@@ -362,20 +391,25 @@ def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
         return _compile_thread_pool
 
 
+@functools.cache
+def _parallel_compile_available() -> bool:
+    if _async_compile is None:
+        return False
+    # CPython before 3.11.8 and 3.12.2 cannot run ast.parse from several threads.
+    version = sys.version_info[:3]
+    return (3, 11, 8) <= version < (3, 12) or version >= (3, 12, 2)
+
+
 @contextlib.contextmanager
 def _compile_pool():
     with _ProcessCompileMode(_compile_threads(), ignore_errors=True):
         yield
 
 
-def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
-    """Queues the configs ``kernel`` is about to benchmark on the active compile
-    pool; False if there is no pool or nothing to compile."""
-    if _async_compile is None or _async_compile.active_mode.get() is None:
-        return False
+def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
+    """Warms up an untuned key so its configs compile on the active compile pool."""
     if not _has_untuned_configs(kernel, args, kwargs):
-        return False
-    key = _tuning_key(kernel, args, kwargs)
+        return
     try:
         kernel.warmup(*args, grid=(1,), **kwargs)
     except Exception as error:  # noqa: BLE001 - precompiling only saves time
@@ -383,9 +417,6 @@ def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
         logger.warning(
             "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
         )
-        return False
-    _COMPILED_AHEAD.setdefault(kernel, set()).add(key)
-    return True
 
 
 def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
@@ -397,26 +428,15 @@ def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
     pick, unchanged; it then times kernels that are already compiled. A config
     that fails to compile fails again in the benchmark, which skips it as before.
     """
-    if _async_compile is None or _async_compile.active_mode.get() is not None:
+    if (
+        not _parallel_compile_available()
+        or _async_compile.active_mode.get() is not None
+    ):
         return
     if not _has_untuned_configs(kernel, args, kwargs):
         return
-    key = _tuning_key(kernel, args, kwargs)
-    compiled_keys = _COMPILED_AHEAD.get(kernel)
-    if compiled_keys is not None and key in compiled_keys:
-        compiled_keys.remove(key)
-        if not compiled_keys:
-            del _COMPILED_AHEAD[kernel]
-        return
-    try:
-        with _compile_pool():
-            kernel.warmup(*args, grid=(1,), **kwargs)
-    except Exception as error:  # noqa: BLE001 - precompiling only saves time
-        # The launch compiles and benchmarks the configs itself, as without
-        # precompiling, and reports a real problem there.
-        logger.warning(
-            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
-        )
+    with _compile_pool():
+        _queue_untuned_configs(kernel, args, kwargs)
 
 
 # Set while every @autotune_launch_param candidate makes one untimed call: the
@@ -431,7 +451,10 @@ def _compile_every_candidate_at_once():
     """Compiles what all launch-parameter candidates (e.g. every split-K) will
     benchmark on one pool, rather than one candidate's configs at a time; leaving
     waits for all of them. Timing then runs as before on compiled kernels."""
-    if _async_compile is None or _async_compile.active_mode.get() is not None:
+    if (
+        not _parallel_compile_available()
+        or _async_compile.active_mode.get() is not None
+    ):
         yield
         return
     with _compile_pool():
@@ -467,7 +490,7 @@ def _tuned_kernel(kernel, args: Sequence, kwargs: dict):
         # A symbolic size in the key (a dynamic M the kernel tunes on): no
         # concrete pick to restrict to.
         return kernel
-    if config is None or config.pre_hook is not None:
+    if config is None:
         return kernel
     config_key = tuple(sorted(config.all_kwargs().items()))
     variants = _SINGLE_CONFIG_KERNELS.setdefault(kernel, {})
@@ -538,9 +561,13 @@ def launch_split_k_gemm(
     )
     kwargs = {"SPLIT_K": split_k, **constexprs}
     if _QUEUING_ONLY.get():
-        if _async_compile is None or _async_compile.active_mode.get() is None:
+        if (
+            not _parallel_compile_available()
+            or _async_compile.active_mode.get() is None
+        ):
             raise RuntimeError("candidate prepass lost its active compile pool")
         _queue_untuned_configs(kernel, args, kwargs)
+        # The prepass discards the result, so the output is not written.
         return out
     _precompile_untuned_configs(kernel, args, kwargs)
     wrap_triton(_tuned_kernel(kernel, args, kwargs))[grid](*args, **kwargs)

@@ -287,6 +287,10 @@ class MLXBatchedSequenceCache : public cache::Cache,
       throw std::runtime_error(
           "MLXBatchedSequenceCache: invalid geometry or config");
     }
+    if (geometry.dflash_block_size.has_value()) {
+      throw std::runtime_error(
+          "MLXBatchedSequenceCache: DFlash is unsupported");
+    }
     return geometry;
   }
 

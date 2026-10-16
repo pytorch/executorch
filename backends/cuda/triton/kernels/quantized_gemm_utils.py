@@ -27,7 +27,10 @@ import torch
 import triton
 import triton.language as tl
 import triton.testing
-from executorch.backends.cuda.autotune.cuda_graph_timing import time_with_cuda_graph_us
+from executorch.backends.cuda.autotune.cuda_graph_timing import (
+    graph_timing_active,
+    time_with_cuda_graph_us,
+)
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import wrap_triton
@@ -375,14 +378,15 @@ def _warn_graph_timing_fallback(error: RuntimeError) -> None:
 def autotune_do_bench(kernel_call, quantiles):
     """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``.
 
-    On a capturable stream (the launch-parameter timing runs on one) each
-    config is timed in a CUDA graph with a cold L2, like the split candidates
-    and Inductor's own candidates during an export: a saturated CPU makes
-    event-timed readings of these short kernels bimodal and their picks up to
-    several times slower (see autotune/cuda_graph_timing.py). On the legacy
-    default stream, or if the capture fails, it falls back to Triton's timing.
+    Inside ``cuda_graph_timing()`` on a capturable stream (the launch-parameter
+    timing runs on one) each config is timed in a CUDA graph with a cold L2,
+    like the split candidates and Inductor's own candidates during an export: a
+    saturated CPU makes event-timed readings of these short kernels bimodal and
+    their picks up to several times slower (see autotune/cuda_graph_timing.py).
+    Otherwise, on the legacy default stream, or if the capture fails, it falls
+    back to Triton's timing.
     """
-    if torch.cuda.current_stream().cuda_stream != 0:
+    if graph_timing_active() and torch.cuda.current_stream().cuda_stream != 0:
         try:
             ms = time_with_cuda_graph_us(kernel_call) / 1000.0
         except RuntimeError as error:

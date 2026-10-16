@@ -124,3 +124,35 @@ def test_fvp_classic_ml_success_is_reported(
     assert result.returncode == 0
     assert "Simulation complete, 0" in result.stdout
     assert "No problems found!" in result.stdout
+
+
+_U55_REDUCE_SUM_DIAGNOSTIC = (
+    "[critical][u_dut.u_npu.u_npu_cc.u_npu_cc_tsu.proc][10730081 ns] "
+    "Op=4: Invalid data type, ifm=5 ofm=1"
+)
+
+
+def test_fvp_known_u55_diagnostic_and_banner_are_accepted(
+    fvp_test_environment: tuple[Path, Path, dict[str, str]],
+) -> None:
+    result = run_fvp(
+        fvp_test_environment,
+        "Ethos-U rev 136b7d75 --- Apr  8 2024 21:45:17\n"
+        f"{_U55_REDUCE_SUM_DIAGNOSTIC}\nModel run: 1",
+    )
+
+    assert result.returncode == 0
+    assert (
+        _U55_REDUCE_SUM_DIAGNOSTIC.replace("[critical]", "[warning]") in result.stdout
+    )
+
+
+def test_fvp_known_diagnostic_does_not_hide_other_errors(
+    fvp_test_environment: tuple[Path, Path, dict[str, str]],
+) -> None:
+    result = run_fvp(
+        fvp_test_environment,
+        f"{_U55_REDUCE_SUM_DIAGNOSTIC}\nE [executorch] Incorrect output\nModel run: 1",
+    )
+
+    assert result.returncode == 1
