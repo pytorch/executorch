@@ -200,9 +200,10 @@ void main() {
   // the per-group tree reduction stays well-defined for valid peer groups.
   const int K4_eff = group_valid ? K4 : 0;
   for (int k4 = lid; k4 < K4_eff; k4 += WGS) {
-    // Update scales when crossing into a new group.
+    // A stride spanning a whole quantization group cannot reuse scales;
+    // specialize out the cache check in that case.
     const int group_idx = k4 / blocks_per_group;
-    if (group_idx != cur_group) {
+    if (blocks_per_group <= WGS || group_idx != cur_group) {
       sc_a_lo = load_scale_pair(n2_a_lo, group_idx, N2);
       sc_a_hi = load_scale_pair(n2_a_hi, group_idx, N2);
       sc_b_lo = load_scale_pair(n2_b_lo, group_idx, N2);
