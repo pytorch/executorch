@@ -161,7 +161,117 @@ The binaries are written to `cmake-out/examples/models/muse-glimmer/`:
 
 Run a binary with `--help` for its model-specific arguments.
 
+## Off-graph KV cache and batching
+
+The off-graph path keeps KV cache state in the runtime rather than inside the
+exported model graph. It supports packed multi-session batching, runtime-managed
+cache growth, and optional prefix snapshots for reuse across requests. The
+batching server uses a shared serving interface with backend-specific cache and
+model execution implementations, with optional DFlash speculative decoding.
+It uses separate batching runners and requires an off-graph export; legacy
+artifacts and workers are not interchangeable with it.
+
+MLX is currently supported; CUDA support is planned. The commands below show
+MLX as the available backend example, not a restriction of the off-graph design.
+
+### Export
+
+Select a supported backend
+example, using MLX and the checkpoint variables from [Model assets](#model-assets),
+export a text-only target:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_solo \
+  --backend mlx \
+  --gguf "$TARGET" \
+  --use-offgraph-kv-cache \
+  --activation-dtype float16 \
+  --max-prefill-chunk 512 \
+  --output-dir /path/to/exports/mg-offgraph
+```
+
+Or export the target and drafter for DFlash:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+  --backend mlx \
+  --target-gguf "$TARGET" \
+  --draft-gguf "$DRAFT" \
+  --use-offgraph-kv-cache \
+  --activation-dtype float16 \
+  --output-dir /path/to/exports/mg-offgraph-dflash
+```
+
+The server's `--max-context` sets the per-session runtime limit and must not
+exceed the exported limit. Runtime cache allocation is separate from that limit.
+For MLX, off-graph exports use the checkpoint's native context limit rather than
+`--max-seq-len`, and KV storage grows as needed instead of allocating the full
+context up front.
+
+### Set up the batching runtime
+
+After the general [environment setup](#supported-backends), use the Make target
+for your backend to build and install ExecuTorch and build the batching runner
+and worker. The current MLX setup command is:
+
+```bash
+cd /path/to/executorch
+make muse-glimmer-batching-mlx
+pip install -r /path/to/executorch/examples/llm_server/python/requirements.txt
+```
+
+The Make target builds the native dependencies and both batching executables;
+it does not export a model or start the server. CUDA will require its matching
+batching build target when support is available; the legacy CUDA runner target
+is not a substitute.
+
+### Start the batching server
+
+Replace the absolute example paths below with your checkout, export, and
+tokenizer locations. Select the backend matching the export and worker build.
+This MLX example uses four concurrent sessions, a 128K (131072-token) context
+limit, and up to 32 prefix snapshots:
+
+```bash
+python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
+  --worker-bin /path/to/executorch/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker \
+  --model-path /path/to/exports/mg-offgraph/model.pte \
+  --tokenizer-path /path/to/assets/hf/tokenizer.json \
+  --hf-tokenizer /path/to/assets/hf \
+  --backend mlx \
+  --model-id muse-glimmer-30B \
+  --max-context 131072 \
+  --max-sessions 4 \
+  --max-decode-sequences 4 \
+  --max-inflight-requests 4 \
+  --prefix-cache-entries 32 \
+  --tool-parser atem \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+For DFlash, use `/path/to/exports/mg-offgraph-dflash/model.pte` and add
+`--dflash --dflash-n-draft 3` to the launch command. The artifact must support
+at least three draft tokens (a block size of four). Omitting `--dflash-n-draft`,
+or setting it to zero, uses the exported maximum minus one. Draft proposals are
+always argmax; request sampling parameters apply to the target distribution.
+
+Choose concurrency and prefix-cache limits to fit available memory. Prefix
+snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.
+If the export stores weights separately, also pass `--data-path` with its data
+file. For vision, export with `--mmproj "$MMPROJ"` and pass
+`--pos-embed-path /path/to/exports/mg-offgraph/pos_embed.bin`, using the matching
+export directory.
+
+The endpoint is `http://127.0.0.1:8000/v1/chat/completions`; the smoke request and
+pi configuration below work with this server too. See the
+[batching serving guide](BATCHING_SERVING.md) for image support, session behavior,
+and detailed limits.
+
 ## Serve
+
+The following instructions use the legacy worker. For off-graph exports, use
+[the batching server](#start-the-batching-server) above instead.
 
 Install the shared server dependencies:
 
