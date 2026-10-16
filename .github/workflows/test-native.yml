@@ -9,6 +9,8 @@ on:
       - .ci/scripts/test-native.sh
       - .gitmodules
       - CMakeLists.txt
+      - backends/cpu/CMakeLists.txt
+      - backends/cpu/runtime/**
       - backends/native/**
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
@@ -22,9 +24,14 @@ on:
       - backends/vulkan/third-party/volk
       - backends/vulkan_shared/CMakeLists.txt
       - backends/vulkan_shared/runtime/**
+      - backends/xnnpack/CMakeLists.txt
+      - backends/xnnpack/cmake/**
       - backends/xnnpack/third-party/FXdiv
+      - backends/xnnpack/third-party/XNNPACK
       - backends/xnnpack/third-party/cpuinfo
       - backends/xnnpack/third-party/pthreadpool
+      - extension/threadpool/**
+      - kernels/**
       - runtime/**
       - third-party/**
       - tools/cmake/**
@@ -58,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [runtime, ggml, vulkan]
+        component: [runtime, cpu, ggml, vulkan]
     defaults:
       run:
         shell: bash
