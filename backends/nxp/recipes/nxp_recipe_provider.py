@@ -32,6 +32,12 @@ from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_n
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
+from executorch.backends.nxp.export.export_utils import (
+    get_default_quantizer,
+    handle_kernel_selection,
+    ModelInputSpec,
+    to_model_input_spec,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
@@ -42,12 +48,6 @@ from executorch.backends.nxp.quantizer.utils import (
     _replace_histogram_observers_for_integer_inputs,
 )
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    get_default_quantizer,
-    handle_kernel_selection,
-    ModelInputSpec,
-    to_model_input_spec,
-)
 from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
     QuantizeFusedConvBnBiasAtenPass,
 )
@@ -111,9 +111,14 @@ class NeutronRecipeConfig:
         use_profiling: Enable Neutron execution profiling. When True, the recipe
                        automatically sets generate_etrecord=True so that a matching
                        ETRecord is produced without any extra configuration.
-        train_fn: Training function required for QAT recipe types (INT8_QAT_NEUTRON and
+        train_fn: Training function for QAT recipe types (INT8_QAT_NEUTRON and
                   INT8_QAT_NO_DELEGATE). Receives the prepared GraphModule and must
-                  perform the training loop. Ignored for PTQ recipe types.
+                  perform the training loop. When train_fn is None, a train_fn that runs one
+                  forward pass with data created by `calibration_inputs_fn` is synthesized
+                  automatically. Ignored for PTQ recipe types.
+        calibration_inputs_fn: Optional callable that takes a tuple of ModelInputSpec and
+                               returns an iterable of input tuples used for PTQ calibration.
+                               When None, the example inputs are used for calibration.
     """
 
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
@@ -129,6 +134,10 @@ class NeutronRecipeConfig:
     dump_kernel_selection_code: bool = False
     use_profiling: bool = False
     train_fn: Callable[["torch.fx.GraphModule"], None] | None = None
+    calibration_inputs_fn: (
+        Callable[[tuple["ModelInputSpec", ...]], Iterable[tuple[torch.Tensor, ...]]]
+        | None
+    ) = None
 
 
 class NXPRecipeProvider(BackendRecipeProvider):
@@ -187,10 +196,28 @@ class NXPRecipeProvider(BackendRecipeProvider):
         delegate: bool,
     ) -> ExportRecipe:
         if is_qat and rc.train_fn is None:
-            raise ValueError(
-                f"NXP backend: Recipe `{recipe_type}` requires `train_fn` to be set in "
-                f"NeutronRecipeConfig. Provide a callable that trains the prepared model."
-            )
+            if rc.calibration_inputs_fn is None:
+                raise ValueError(
+                    f"NXP backend: QAT recipe `{recipe_type}` requires either `train_fn` or "
+                    f"`calibration_inputs_fn` in NeutronRecipeConfig."
+                )
+            # Synthesize a train_fn from calibration_inputs_fn so the QAT pipeline uses the same data as the
+            # imperative-path calibration and runs in eval mode, avoiding divergent quantization parameters between
+            # the imperative and recipe-based lowering.
+            _input_spec = rc.input_spec
+            _calib_fn = rc.calibration_inputs_fn
+
+            def _synthesized_train_fn(model, _fn=_calib_fn, _spec=_input_spec):
+                from torchao.quantization.pt2e import (
+                    move_exported_model_to_eval as _to_eval,
+                )
+
+                _to_eval(model)
+                with torch.no_grad():
+                    for inputs in _fn(_spec):
+                        model(*inputs)
+
+            rc.train_fn = _synthesized_train_fn
 
         neutron_target_spec = NeutronTargetSpec(rc.target)
 
@@ -277,6 +304,16 @@ def _build_quantization_recipe(
         post_prepare.append(_wrap_exir_pass(AddSimulatedLinearBatchNormFusionQATPass))
     post_prepare.append(_histogram_observer_fix_pass)
 
+    # Wrap the caller-provided calibration_inputs_fn (which takes input_spec) into
+    # the zero-argument factory expected by QuantizationRecipe.
+    calib_fn = None
+    if not is_qat and rc.calibration_inputs_fn is not None:
+        _input_spec = rc.input_spec
+        _raw_fn = rc.calibration_inputs_fn
+
+        def calib_fn():  # noqa F811
+            return _raw_fn(_input_spec)
+
     if is_qat:
         # pre_convert_passes: tear down the simulated fusion and fold BN into
         # the linear weights before convert_pt2e.
@@ -307,6 +344,7 @@ def _build_quantization_recipe(
         return QuantizationRecipe(
             quantizers=[_quantizer],
             post_prepare_passes=post_prepare,
+            calibration_inputs_fn=calib_fn,
         )
 
 

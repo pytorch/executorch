@@ -853,7 +853,7 @@ class TestQuantizeStage(unittest.TestCase):
     @patch("executorch.export.stages.prepare_qat_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
     @patch("torch.export.export")
-    def test_run_qat_model_put_in_train_mode_before_export(
+    def test_run_qat_model_put_in_eval_mode_before_export(
         self,
         mock_torch_export: Mock,
         mock_composable_quantizer: Mock,
@@ -863,8 +863,8 @@ class TestQuantizeStage(unittest.TestCase):
         mock_move_to_eval: Mock,
         mock_allow_train_eval: Mock,
     ) -> None:
-        """QAT: model.train() must be called before torch.export.export so that
-        batch_norm and dropout decompose with training-mode semantics."""
+        """QAT: model.eval() is called before torch.export.export to avoid
+        BatchNorm variance=0 crashes on single-sample inputs."""
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
@@ -876,9 +876,9 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe.pre_convert_passes = None
         mock_recipe.post_convert_passes = None
 
-        # Start model in eval mode; the stage must switch it to train.
-        self.model.eval()
-        self.assertFalse(self.model.training)
+        # Start model in train mode. The stage must call eval() before export.
+        self.model.train()
+        self.assertTrue(self.model.training)
 
         training_at_export_time = []
 
@@ -896,8 +896,8 @@ class TestQuantizeStage(unittest.TestCase):
         stage = QuantizeStage(mock_recipe)
         stage.run(PipelineArtifact(data=self.models_dict, context=self.context))
 
-        # The model must have been in training mode when export was called.
-        self.assertEqual(training_at_export_time, [True])
+        # The stage must have called model.eval() before export.
+        self.assertEqual(training_at_export_time, [False])
 
     @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")

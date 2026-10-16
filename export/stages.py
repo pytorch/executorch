@@ -598,10 +598,10 @@ class QuantizeStage(Stage):
                     {0: batch} if isinstance(t, torch.Tensor) else None for t in inputs
                 )
 
-            # QAT requires the model to be in training mode at capture time so
-            # that batch_norm and dropout decompose with training-mode semantics.
-            if recipe.is_qat:
-                model.train()
+            # Export in eval mode for both PTQ and QAT. The torchao-recommended
+            # QAT workflow exports the model in eval mode and calls model.train()
+            # only inside the train_fn, after prepare_qat_pt2e.
+            model.eval()
 
             with torch.no_grad():
                 for hook in self._pre_trace_hooks or []:
