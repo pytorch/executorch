@@ -312,13 +312,6 @@ override option. To use a different D, export a new artifact with the correspond
 drafter configuration. Changing N does not change D: a D = 16 export still
 evaluates 16 drafter rows per session when N = 3, and its default is N = 15.
 
-Sampling behavior depends on the backend. On MLX, draft proposals are always
-argmax; request sampling parameters apply to the target distribution. On CUDA,
-the request's temperature, top-k, and top-p settings apply to both the draft and
-target distributions. Temperature zero selects greedy sampling. For stochastic
-sampling, verification uses the draft probabilities for acceptance and samples
-from the residual distribution when a proposal is rejected.
-
 Choose concurrency and prefix-cache limits to fit available memory. Prefix
 snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.
 If the export stores weights separately, also pass `--data-path` with its data
