@@ -61,6 +61,18 @@ def test_canonicalize_conv(request, kwargs):
 
 @enumerate_backends()
 @repack_pass_fixtures
+def test_constant_folding(request, kwargs):
+    ConstantFolding.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends()
+@repack_pass_fixtures
+def test_constant_folding_idempotent(request, kwargs):
+    ConstantFolding.test_idempotent(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends()
+@repack_pass_fixtures
 def test_convert_bmm_to_matmul(request, kwargs):
     ConvertBmmToMatmul.test(request, kwargs)  # noqa: F405
 
