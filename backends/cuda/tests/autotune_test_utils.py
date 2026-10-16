@@ -149,18 +149,20 @@ def record_autotune_picks(
         # Our kernels' configs are picked by their own triton.autotune (during
         # the launch-parameter timing), and AOTI traces only the pick.
         tuned = set(self.cache)
+        timings_before = getattr(self, "configs_timings", None)
         result = orig_triton_run(self, *args, **kwargs)
         new_keys = set(self.cache) - tuned
-        if not new_keys:
+        # A single pruned config is cached without a benchmark, which leaves
+        # configs_timings as it was.
+        if not new_keys or getattr(self, "configs_timings", None) is timings_before:
             return result
+        pick = (id(self), next(iter(new_keys)))
         timings = {
             c: t[0] if isinstance(t, (list, tuple)) else t
             for c, t in self.configs_timings.items()
         }
         if not measure:
-            record(
-                "custom", self.base_fn.__name__, timings, timings, next(iter(new_keys))
-            )
+            record("custom", self.base_fn.__name__, timings, timings, pick)
             return result
 
         def graph_timed(kernel_call, quantiles):
@@ -179,9 +181,7 @@ def record_autotune_picks(
         finally:
             del self.__dict__["do_bench"]
             self.nargs = None
-        record(
-            "custom", self.base_fn.__name__, timings, reference, next(iter(new_keys))
-        )
+        record("custom", self.base_fn.__name__, timings, reference, pick)
         return result
 
     CachingAutotuner.benchmark_all_configs = kernel_hook

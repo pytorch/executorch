@@ -64,16 +64,30 @@ def _extend_permutation_with_singletons(
 ) -> list[int] | None:
     """Extend a partial permutation with missing singleton axes."""
     try:
-        extended_dims = _normalize_dims(dims, len(shape))
+        normalized_dims = _normalize_dims(dims, len(shape))
+    except AssertionError:
+        return None
+    extended_dims = _extend_permutation(normalized_dims, len(shape))
+    if extended_dims is None:
+        return None
+    missing_dims = [dim for dim in range(len(shape)) if dim not in set(normalized_dims)]
+    return (
+        extended_dims
+        if all(_dim_equals(shape[dim], 1) for dim in missing_dims)
+        else None
+    )
+
+
+def _extend_permutation(dims: Sequence[int], rank: int) -> list[int] | None:
+    """Extend a partial permutation while leaving missing axes in place."""
+    try:
+        extended_dims = _normalize_dims(dims, rank)
     except AssertionError:
         return None
     if len(set(extended_dims)) != len(extended_dims):
         return None
 
-    missing_dims = [dim for dim in range(len(shape)) if dim not in set(extended_dims)]
-    if any(not _dim_equals(shape[dim], 1) for dim in missing_dims):
-        return None
-
+    missing_dims = [dim for dim in range(rank) if dim not in set(extended_dims)]
     for dim in reversed(missing_dims):
         insert_at = next(
             (
@@ -84,7 +98,7 @@ def _extend_permutation_with_singletons(
             len(extended_dims),
         )
         extended_dims.insert(insert_at, dim)
-    return extended_dims if _is_permutation(extended_dims, len(shape)) else None
+    return extended_dims if _is_permutation(extended_dims, rank) else None
 
 
 def _dim_expr(dim: _Dim) -> sympy.Basic:
@@ -1028,3 +1042,47 @@ class PermuteMap:
         """
         normalized_dims = _normalize_dims(dims, len(self.permute_dims))
         return [self.permute_dims[dim] for dim in normalized_dims]
+
+    def lift_to_rank(self, retained_axes: Sequence[int], rank: int) -> list[int] | None:
+        """Lift this permutation onto ``retained_axes`` of a larger rank."""
+        if len(retained_axes) != len(self.permute_dims):
+            return None
+        try:
+            normalized_axes = _normalize_dims(retained_axes, rank)
+        except AssertionError:
+            return None
+        if len(set(normalized_axes)) != len(normalized_axes):
+            return None
+        return _extend_permutation(
+            [normalized_axes[dim] for dim in self.permute_dims], rank
+        )
+
+    def project_to_axes(
+        self,
+        retained_axes: Sequence[int],
+        *,
+        require_other_axes_preserved: bool = False,
+    ) -> list[int] | None:
+        """Project this permutation onto a subset of its axes.
+
+        When ``require_other_axes_preserved`` is true, each omitted axis must
+        stay in its original position. This is required when an operation
+        recreates those axes after the projected permutation.
+        """
+        rank = len(self.permute_dims)
+        try:
+            normalized_axes = _normalize_dims(retained_axes, rank)
+        except AssertionError:
+            return None
+        if len(set(normalized_axes)) != len(normalized_axes):
+            return None
+
+        retained = set(normalized_axes)
+        other_axes = [dim for dim in range(rank) if dim not in retained]
+        if require_other_axes_preserved and any(
+            self.permute_dims[position] != position for position in other_axes
+        ):
+            return None
+
+        axis_positions = {dim: index for index, dim in enumerate(normalized_axes)}
+        return [axis_positions[dim] for dim in self.permute_dims if dim in retained]

@@ -77,6 +77,13 @@ class _State(threading.local):
 
 
 _STATE = _State()
+
+
+def graph_timing_active() -> bool:
+    """Whether a ``cuda_graph_timing()`` context is active on this thread."""
+    return _STATE.stats is not None
+
+
 _INSTALL_LOCK = threading.Lock()
 _installed_previous: Callable[..., Any] | None = None
 _install_count = 0

@@ -6,7 +6,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **162**.
+Total supported PyTorch APIs: **163**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -49,6 +49,7 @@ Total supported PyTorch APIs: **162**.
 | `torch.cumsum` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.div` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.div` / `/` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.einsum` | FP | `FP32` | - |
 | `torch.eq` / `==` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.erf` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.erfinv` | FP, INT | `FP32`, `FP16`, `INT8` | 8x8 |

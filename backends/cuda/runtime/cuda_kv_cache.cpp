@@ -705,6 +705,10 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg) {
+  if (geometry.dflash_block_size.has_value()) {
+    ET_LOG(Error, "offgraph_kv: DFlash is unsupported on CUDA");
+    return nullptr;
+  }
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   // Checked before constructing: SequenceCache asserts on an invalid geometry,
   // and returning null lets CacheFactory report the failure instead.
@@ -731,6 +735,10 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
 std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg) {
+  if (geometry.dflash_block_size.has_value()) {
+    ET_LOG(Error, "offgraph_kv: DFlash is unsupported on CUDA");
+    return nullptr;
+  }
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   if (!cache::valid(geometry, cfg) || cfg.initial_capacity <= 0 ||
       cfg.initial_capacity > cfg.capacity ||
