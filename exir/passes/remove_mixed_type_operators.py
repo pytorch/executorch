@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from types import MappingProxyType
+
 import torch
 from executorch.exir.pass_base import ExportPass, map_args, NodeMetadata, ProxyValue
 from torch import SymBool, SymFloat, SymInt
@@ -14,13 +16,8 @@ from torch.utils._pytree import PyTree
 
 
 class RemoveMixedTypeOperators(ExportPass):
-    # pyre-ignore
-    def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
-        if len(args) <= 1:
-            # Unary Operators are not mixed type
-            return super().call_operator(op, args, kwargs, meta)
-
-        promotion_type_allow_list = {
+    promotion_type_allow_list = MappingProxyType(
+        {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.sub.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
@@ -30,9 +27,18 @@ class RemoveMixedTypeOperators(ExportPass):
             torch.ops.aten.div.Tensor_mode: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.minimum.default: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
         }
+    )
+    enable_fast_copy = True
+    targeted_ops = frozenset(promotion_type_allow_list)
 
-        if op in promotion_type_allow_list:
-            promotion_kind = promotion_type_allow_list[op]
+    # pyre-ignore
+    def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
+        if len(args) <= 1:
+            # Unary Operators are not mixed type
+            return super().call_operator(op, args, kwargs, meta)
+
+        if op in self.promotion_type_allow_list:
+            promotion_kind = self.promotion_type_allow_list[op]
             if (
                 op == torch.ops.aten.div.Tensor_mode
                 and kwargs.get("rounding_mode") is None
