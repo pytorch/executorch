@@ -89,6 +89,21 @@ _installed_previous: Callable[..., Any] | None = None
 _install_count = 0
 
 
+def time_with_cuda_graph_us_counted(fn: Callable[[], Any]) -> float:
+    """``time_with_cuda_graph_us`` with the out-of-memory retries and the captured
+    and fallback counts of the active ``cuda_graph_timing()``."""
+    stats = _STATE.stats
+    if stats is None:
+        return time_with_cuda_graph_us(fn)
+    try:
+        us = _time_capturing_robustly(fn, stats)
+    except Exception:
+        stats.fallbacks += 1
+        raise
+    stats.captured += 1
+    return us
+
+
 def _default_cuda_bench(
     bench: benchmarking.Benchmarker,
     fn: Callable[[], Any],

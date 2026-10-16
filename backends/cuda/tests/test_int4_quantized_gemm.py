@@ -351,6 +351,16 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
     def test_a_closed_pool_stops_process_compiles(self) -> None:
         self.assertTrue(self._through_pool(RuntimeError("SubprocPool closed")))
 
+    def test_submit_forwards_the_arguments_triton_passes(self) -> None:
+        mode = object.__new__(quantized_gemm_family._ProcessCompileMode)
+        base = quantized_gemm_family._async_compile.AsyncCompileMode
+        with mock.patch.object(base, "submit", return_value="future") as submit:
+            self.assertEqual(
+                mode.submit("key", lambda: None, "finalize", "cleanup"), "future"
+            )
+        self.assertEqual(submit.call_args.args[0], "key")
+        self.assertEqual(submit.call_args.args[2:], ("finalize", "cleanup"))
+
     def test_fake_tensors_are_not_precompiled(self) -> None:
         # A full launch of a shape no other test tunes, so only the fake-tensor
         # check can keep it off the pool: the same launch on real tensors uses it.
@@ -1078,6 +1088,21 @@ class AutotuneDoBenchTest(unittest.TestCase):
             self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
         graph.assert_called_once_with(kernel_call)
         bench.assert_not_called()
+
+    def test_out_of_memory_while_capturing_is_retried_and_counted(self) -> None:
+        from executorch.backends.cuda.autotune import cuda_graph_timing as cgt_module
+
+        kernel_call = mock.Mock()
+        stream = torch.cuda.Stream()
+        with torch.cuda.stream(stream), cuda_graph_timing() as stats, mock.patch.object(
+            cgt_module,
+            "time_with_cuda_graph_us",
+            side_effect=[torch.OutOfMemoryError("capture"), 1500.0],
+        ):
+            self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
+        self.assertEqual(
+            (stats.oom_retries, stats.captured, stats.fallbacks), (1, 1, 0)
+        )
 
     def test_outside_graph_timing_uses_triton(self) -> None:
         kernel_call = mock.Mock()

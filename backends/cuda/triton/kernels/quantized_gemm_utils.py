@@ -29,7 +29,7 @@ import triton.language as tl
 import triton.testing
 from executorch.backends.cuda.autotune.cuda_graph_timing import (
     graph_timing_active,
-    time_with_cuda_graph_us,
+    time_with_cuda_graph_us_counted,
 )
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
@@ -388,7 +388,7 @@ def autotune_do_bench(kernel_call, quantiles):
     """
     if graph_timing_active() and torch.cuda.current_stream().cuda_stream != 0:
         try:
-            ms = time_with_cuda_graph_us(kernel_call) / 1000.0
+            ms = time_with_cuda_graph_us_counted(kernel_call) / 1000.0
         except RuntimeError as error:
             _warn_graph_timing_fallback(error)
         else:
