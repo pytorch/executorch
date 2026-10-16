@@ -1045,3 +1045,110 @@ TEST_F(DelegateScratchTest, ProgramWithoutScratchDeliversAnEmptySpan) {
   ASSERT_EQ(method->execute(), Error::Ok);
   EXPECT_TRUE(executed);
 }
+
+/**
+ * Loads a program whose delegate declared two state buffers: one with an
+ * initial image and one that starts zero-filled.
+ */
+class DelegateStateTest : public ::testing::Test {
+ protected:
+  // Must match --state_bytes in the genrule that produced the program.
+  static constexpr size_t kStateBytes = 64;
+
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+    ASSERT_EQ(StubBackend::register_singleton(), Error::Ok);
+    program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_STATE_PATH");
+    ASSERT_FALSE(program_path_.empty());
+    no_state_program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_PATH");
+    ASSERT_FALSE(no_state_program_path_.empty());
+  }
+
+  void TearDown() override {
+    StubBackend::singleton().reset();
+  }
+
+  std::string program_path_;
+  std::string no_state_program_path_;
+};
+
+TEST_F(DelegateStateTest, StateStartsFromItsImageAndPersistsAcrossExecutions) {
+  int calls = 0;
+  StubBackend::singleton().install_execute(
+      [&](BackendExecutionContext& backend_execution_context,
+          ET_UNUSED DelegateHandle* handle,
+          ET_UNUSED Span<EValue*> args) -> Error {
+        Span<const Span<uint8_t>> state =
+            backend_execution_context.state_buffers();
+        EXPECT_EQ(backend_execution_context.scratch_buffers().size(), 0u);
+        EXPECT_EQ(state.size(), 2u);
+        if (state.size() != 2 || state[0].size() != kStateBytes ||
+            state[1].size() != kStateBytes) {
+          return Error::Internal;
+        }
+        // Each call sees what the previous one left, so the first byte of
+        // each buffer counts the calls on top of its initial value.
+        EXPECT_EQ(state[0][0], 1 + calls);
+        EXPECT_EQ(state[1][0], calls);
+        for (size_t i = 1; i < kStateBytes; ++i) {
+          EXPECT_EQ(state[0][i], i % 255 + 1) << "image byte " << i;
+          EXPECT_EQ(state[1][i], 0) << "zero-filled byte " << i;
+        }
+        ++state[0][0];
+        ++state[1][0];
+        ++calls;
+        return Error::Ok;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path_.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Not zero to begin with, so a buffer the runtime failed to zero-fill
+  // would be caught rather than passing on a fresh allocation's luck.
+  std::vector<uint8_t> planned(kDefaultNonConstMemBytes, 0xAA);
+  Span<uint8_t> planned_span(planned.data(), planned.size());
+  executorch::runtime::HierarchicalAllocator planned_memory({&planned_span, 1});
+  std::vector<uint8_t> method_pool(kDefaultRuntimeMemBytes);
+  executorch::runtime::MemoryAllocator method_allocator(
+      method_pool.size(), method_pool.data());
+  executorch::runtime::MemoryManager memory_manager(
+      &method_allocator, &planned_memory);
+
+  Result<Method> method = program->load_method("forward", &memory_manager);
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto inputs = executorch::extension::prepare_input_tensors(*method);
+  ASSERT_EQ(inputs.error(), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  EXPECT_EQ(calls, 2);
+}
+
+TEST_F(DelegateStateTest, ProgramWithoutStateDeliversAnEmptySpan) {
+  bool executed = false;
+  StubBackend::singleton().install_execute(
+      [&](BackendExecutionContext& backend_execution_context,
+          ET_UNUSED DelegateHandle* handle,
+          ET_UNUSED Span<EValue*> args) -> Error {
+        executed = true;
+        EXPECT_EQ(backend_execution_context.state_buffers().size(), 0u);
+        return Error::Ok;
+      });
+
+  Result<FileDataLoader> loader =
+      FileDataLoader::from(no_state_program_path_.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto inputs = executorch::extension::prepare_input_tensors(*method);
+  ASSERT_EQ(inputs.error(), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  EXPECT_TRUE(executed);
+}

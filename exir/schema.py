@@ -193,10 +193,18 @@ class DelegateScratch:
 
 
 @dataclass
+class DelegateState:
+    allocation: AllocationDetails
+    size: int
+    initial_data_idx: int
+
+
+@dataclass
 class DelegateCall:
     delegate_index: int
     args: List[int]
     scratch: Optional[List[DelegateScratch]] = None
+    state: Optional[List[DelegateState]] = None
 
 
 @dataclass

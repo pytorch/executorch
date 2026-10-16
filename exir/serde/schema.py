@@ -17,7 +17,7 @@ import executorch.exir.serde.schema as export_schema
 from executorch.exir.serde.union import _Union
 
 # NOTE: Please update this value if any modifications are made to the schema
-SCHEMA_VERSION = (5, 5)
+SCHEMA_VERSION = (5, 6)
 TREESPEC_VERSION = 1
 
 
@@ -405,6 +405,14 @@ class DelegateScratchSpec:
 
 
 @dataclass
+class DelegateStateSpec:
+    nbytes: int
+    label: str = ""
+    # Base64, like processed_bytes. None for a buffer that starts zero-filled.
+    initial_data: Optional[str] = None
+
+
+@dataclass
 class LoweredBackendModule:
     backend_id: str
     processed_bytes: str
@@ -415,3 +423,5 @@ class LoweredBackendModule:
     named_data_store: Optional[bytes] = None
     # The delegate scratch buffers, in declaration order.
     scratch_specs: Optional[List[DelegateScratchSpec]] = None
+    # The delegate state buffers, in declaration order.
+    state_specs: Optional[List[DelegateStateSpec]] = None

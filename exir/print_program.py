@@ -234,6 +234,13 @@ def print_program(  # noqa: C901
                     for s in delegate.scratch
                 )
                 argstr = f"{argstr} scratch=[{scratchstr}]"
+            if delegate.state:
+                statestr = ",".join(
+                    f"m{s.allocation.memory_id}.{s.allocation.memory_offset}"
+                    f"[{s.size}]"
+                    for s in delegate.state
+                )
+                argstr = f"{argstr} state=[{statestr}]"
             print(f"{backend_id} {argstr}", file=out)
         elif isinstance(instr.instr_args, JumpFalseCall):
             jfcall = instr.instr_args

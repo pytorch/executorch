@@ -52,6 +52,42 @@ class DelegateScratchSpec:
             )
 
 
+@experimental("This API is experimental and subject to change without notice.")
+@dataclass
+class DelegateStateSpec:
+    """A buffer the delegate keeps across execute() calls for the Method's lifetime.
+
+    For state the delegate has taken over from the graph, such as a mutable
+    buffer whose readers and writer it all claimed. The memory planner gives it
+    bytes nothing else in the plan shares, and the runtime installs
+    ``initial_data`` there once when the Method loads, or zero-fills the buffer
+    when there is none. The delegate supplies the image because it chose the
+    layout: the framework knows neither where each piece of state sits in the
+    buffer nor how it is encoded. The buffers arrive at ``execute()`` through
+    ``BackendExecutionContext::state_buffers()``.
+
+    ``label`` means what it means for ``DelegateScratchSpec``. State gets the
+    plan's alignment like every tensor in its pool, with no way to ask for
+    more: the image is installed at the start of the buffer, so a backend that
+    aligned the pointer itself would read it at the wrong offset.
+    """
+
+    nbytes: int
+    label: str = ""
+    initial_data: Optional[bytes] = None
+
+    def __post_init__(self) -> None:
+        if self.nbytes <= 0:
+            raise ValueError(
+                f"State buffer size must be positive, got {self.nbytes} bytes."
+            )
+        if self.initial_data is not None and len(self.initial_data) != self.nbytes:
+            raise ValueError(
+                f"State buffer initial data is {len(self.initial_data)} bytes but "
+                f"the buffer is {self.nbytes} bytes."
+            )
+
+
 @dataclass
 class PreprocessResult:
     processed_bytes: bytes = bytes()
@@ -73,6 +109,11 @@ class PreprocessResult:
     # the arena and delivered through BackendExecutionContext::scratch_buffers()
     # in this order. They are not arguments of the delegate call.
     scratch_specs: Optional[List[DelegateScratchSpec]] = None
+
+    # Buffers the delegate keeps across execute() calls, memory planned for the
+    # Method's lifetime and delivered through
+    # BackendExecutionContext::state_buffers() in this order.
+    state_specs: Optional[List[DelegateStateSpec]] = None
 
 
 """

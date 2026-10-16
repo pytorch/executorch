@@ -7,6 +7,7 @@ import flatbuffers
 from flatbuffers.compat import import_numpy
 from typing import Any
 from executorch.exir._serialize.generated.executorch_flatbuffer.DelegateScratch import DelegateScratch
+from executorch.exir._serialize.generated.executorch_flatbuffer.DelegateState import DelegateState
 from typing import Optional
 np = import_numpy()
 
@@ -90,8 +91,32 @@ class DelegateCall(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         return o == 0
 
+    # DelegateCall
+    def State(self, j: int) -> Optional[DelegateState]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            x = self._tab.Vector(o)
+            x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
+            x = self._tab.Indirect(x)
+            obj = DelegateState()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
+    # DelegateCall
+    def StateLength(self) -> int:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # DelegateCall
+    def StateIsNone(self) -> bool:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        return o == 0
+
 def DelegateCallStart(builder: flatbuffers.Builder):
-    builder.StartObject(3)
+    builder.StartObject(4)
 
 def Start(builder: flatbuffers.Builder):
     DelegateCallStart(builder)
@@ -126,6 +151,18 @@ def DelegateCallStartScratchVector(builder, numElems: int) -> int:
 def StartScratchVector(builder, numElems: int) -> int:
     return DelegateCallStartScratchVector(builder, numElems)
 
+def DelegateCallAddState(builder: flatbuffers.Builder, state: int):
+    builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(state), 0)
+
+def AddState(builder: flatbuffers.Builder, state: int):
+    DelegateCallAddState(builder, state)
+
+def DelegateCallStartStateVector(builder, numElems: int) -> int:
+    return builder.StartVector(4, numElems, 4)
+
+def StartStateVector(builder, numElems: int) -> int:
+    return DelegateCallStartStateVector(builder, numElems)
+
 def DelegateCallEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -133,6 +170,7 @@ def End(builder: flatbuffers.Builder) -> int:
     return DelegateCallEnd(builder)
 
 from executorch.exir._serialize.generated.executorch_flatbuffer import DelegateScratch
+from executorch.exir._serialize.generated.executorch_flatbuffer import DelegateState
 try:
     from typing import List
 except:
@@ -145,6 +183,7 @@ class DelegateCallT(object):
         self.delegateIndex = 0  # type: int
         self.args = None  # type: List[int]
         self.scratch = None  # type: List[executorch_flatbuffer.DelegateScratch.DelegateScratchT]
+        self.state = None  # type: List[executorch_flatbuffer.DelegateState.DelegateStateT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -167,7 +206,8 @@ class DelegateCallT(object):
         return type(self) == type(other) and \
             self.delegateIndex == other.delegateIndex and \
             self.args == other.args and \
-            self.scratch == other.scratch
+            self.scratch == other.scratch and \
+            self.state == other.state
 
     # DelegateCallT
     def _UnPack(self, delegateCall):
@@ -189,6 +229,14 @@ class DelegateCallT(object):
                 else:
                     delegateScratch_ = executorch_flatbuffer.DelegateScratch.DelegateScratchT.InitFromObj(delegateCall.Scratch(i))
                     self.scratch.append(delegateScratch_)
+        if not delegateCall.StateIsNone():
+            self.state = []
+            for i in range(delegateCall.StateLength()):
+                if delegateCall.State(i) is None:
+                    self.state.append(None)
+                else:
+                    delegateState_ = executorch_flatbuffer.DelegateState.DelegateStateT.InitFromObj(delegateCall.State(i))
+                    self.state.append(delegateState_)
 
     # DelegateCallT
     def Pack(self, builder):
@@ -208,11 +256,21 @@ class DelegateCallT(object):
             for i in reversed(range(len(self.scratch))):
                 builder.PrependUOffsetTRelative(scratchlist[i])
             scratch = builder.EndVector()
+        if self.state is not None:
+            statelist = []
+            for i in range(len(self.state)):
+                statelist.append(self.state[i].Pack(builder))
+            DelegateCallStartStateVector(builder, len(self.state))
+            for i in reversed(range(len(self.state))):
+                builder.PrependUOffsetTRelative(statelist[i])
+            state = builder.EndVector()
         DelegateCallStart(builder)
         DelegateCallAddDelegateIndex(builder, self.delegateIndex)
         if self.args is not None:
             DelegateCallAddArgs(builder, args)
         if self.scratch is not None:
             DelegateCallAddScratch(builder, scratch)
+        if self.state is not None:
+            DelegateCallAddState(builder, state)
         delegateCall = DelegateCallEnd(builder)
         return delegateCall

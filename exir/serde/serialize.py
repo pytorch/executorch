@@ -24,7 +24,10 @@ import torch.export.exported_program as ep
 from executorch.exir import delegate
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
-from executorch.exir.backend.backend_details import DelegateScratchSpec
+from executorch.exir.backend.backend_details import (
+    DelegateScratchSpec,
+    DelegateStateSpec,
+)
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
@@ -38,6 +41,7 @@ from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
     DelegateScratchSpec as SerdeDelegateScratchSpec,
+    DelegateStateSpec as SerdeDelegateStateSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
     SCHEMA_VERSION,
     SchemaVersion,
@@ -313,6 +317,18 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             scratch_specs=[
                 SerdeDelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in lowered_module.scratch_specs
+            ],
+            state_specs=[
+                SerdeDelegateStateSpec(
+                    nbytes=spec.nbytes,
+                    label=spec.label,
+                    initial_data=(
+                        None
+                        if spec.initial_data is None
+                        else serialize_bytes(spec.initial_data)
+                    ),
+                )
+                for spec in lowered_module.state_specs
             ],
         )
 
@@ -635,6 +651,18 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             [
                 DelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
                 for spec in (serialized_lowered_module.scratch_specs or [])
+            ],
+            [
+                DelegateStateSpec(
+                    nbytes=spec.nbytes,
+                    label=spec.label,
+                    initial_data=(
+                        None
+                        if spec.initial_data is None
+                        else base64.b64decode(spec.initial_data)
+                    ),
+                )
+                for spec in (serialized_lowered_module.state_specs or [])
             ],
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
