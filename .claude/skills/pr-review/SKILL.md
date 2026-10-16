@@ -123,6 +123,7 @@ A single line of code can have deep cross-cutting implications. **Treat every li
 6. **Match the immediate context** — Read how similar features are already implemented in the same file. Pattern mismatches within a file are always wrong.
 7. **Assume competence** — The author knows ExecuTorch; explain only non-obvious context.
 8. **No repetition** — Each observation appears in exactly one section of the review output.
+9. **Everything is a must-fix** — There are no "nits." If it's worth mentioning, it's worth fixing. Every inconsistency degrades the codebase over time.
 
 ### Using sub-agents
 
@@ -203,7 +204,7 @@ What the PR does (1 sentence), then the overall verdict.
 ### Recommendation
 **Approve** / **Request Changes** / **Needs Discussion**
 
-Confirmed unnecessary use of GitHub Actions storage (see the confirmation bar in [review-checklist.md](review-checklist.md)) always means **Request Changes**. Unconfirmed storage questions do not.
+Missing tests (new functionality without tests, bug fixes without regression tests) and confirmed unnecessary use of GitHub Actions storage (see the confirmation bar in [review-checklist.md](review-checklist.md)) always mean **Request Changes**. Unconfirmed storage questions do not.
 
 [Brief justification — focus on what blocks approval, if anything]
 ```
