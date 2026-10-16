@@ -183,6 +183,9 @@ define_overridable_option(
   OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" BOOL OFF
 )
 define_overridable_option(
@@ -523,6 +526,10 @@ check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+)
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_NATIVE_VISION_RUNNER REQUIRES
   EXECUTORCH_BUILD_NATIVE_VULKAN
