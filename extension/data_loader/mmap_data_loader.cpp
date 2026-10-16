@@ -79,7 +79,10 @@ Result<MmapDataLoader> MmapDataLoader::from(
     return Error::AccessFailed;
   }
   if ((page_size & ~(page_size - 1)) != page_size) {
-    ET_LOG(Error, "Page size 0x%lx is not a power of 2", page_size);
+    ET_LOG(
+        Error,
+        "Page size 0x%lx is not a power of 2",
+        static_cast<unsigned long>(page_size));
     return Error::InvalidState;
   }
 
