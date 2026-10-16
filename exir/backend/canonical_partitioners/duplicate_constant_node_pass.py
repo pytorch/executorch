@@ -97,26 +97,11 @@ def duplicate_constant_node(
                     copied_constant_or_attribute_node.meta["val"] = (
                         constant_or_attribute_node.meta["val"]
                     )
-                    new_args = tuple(
-                        [
-                            (
-                                arg
-                                if arg != constant_or_attribute_node
-                                else copied_constant_or_attribute_node
-                            )
-                            for arg in users[ith].args
-                        ]
+                    # Rewires the constant wherever it appears in the user's
+                    # args/kwargs, including inside lists such as aten.cat's.
+                    users[ith].replace_input_with(
+                        constant_or_attribute_node, copied_constant_or_attribute_node
                     )
-                    new_kwargs = {
-                        key: (
-                            value
-                            if value != constant_or_attribute_node
-                            else copied_constant_or_attribute_node
-                        )
-                        for key, value in users[ith].kwargs.items()
-                    }
-                    users[ith].args = new_args
-                    users[ith].kwargs = new_kwargs
                     if old_input_spec.kind == InputKind.CONSTANT_TENSOR:
                         exported_program.constants[copy_constant_or_attribute_fqn] = (
                             copy.deepcopy(constant_or_attribute)
