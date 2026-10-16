@@ -156,6 +156,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.channel_shuffle.default,
         torch.ops.aten.col2im.default,
+        torch.ops.aten.convolution_backward.default,
         torch.ops.aten.elu.default,
         torch.ops.aten.floor_divide.default,
         torch.ops.aten.hardsigmoid.default,
