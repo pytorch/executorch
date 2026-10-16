@@ -119,7 +119,7 @@ class TestNsysDebugResults:
         test_name = get_test_name(request)
         # Running by CI scripts adds prefix to the name
         assert (
-            "TestNsysDebugResults__test_nsys_test_debug_results__multiple_input"
+            "TestNsysDebugResults_test_nsys_test_debug_results__multiple_input"
             in test_name
         )
         assert os.path.isdir(
