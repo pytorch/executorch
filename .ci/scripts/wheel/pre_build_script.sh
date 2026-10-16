@@ -33,6 +33,15 @@ fi
 popd
 
 if [[ "$(uname -m)" == "aarch64" ]]; then
+  # pip's SentencePiece source build also links -latomic, but the manylinux
+  # image only has the versioned runtime library.
+  atomic_lib=$(cc -print-file-name=libatomic.so.1)
+  if [[ -f "${atomic_lib}" ]]; then
+    atomic_link_dir=$(mktemp -d)
+    ln -s "${atomic_lib}" "${atomic_link_dir}/libatomic.so"
+    export LIBRARY_PATH="${atomic_link_dir}${LIBRARY_PATH:+:${LIBRARY_PATH}}"
+  fi
+
   # On some Linux aarch64 systems, the "atomic" library is not found during linking.
   # To work around this, replace "atomic" with the literal ${ATOMIC_LIB} so the
   # build system uses the full path to the atomic library.

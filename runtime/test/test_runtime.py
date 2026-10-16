@@ -14,7 +14,6 @@ from pathlib import Path
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.passes import MemoryPlanningPass
-
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
@@ -200,12 +199,49 @@ class RuntimeTest(unittest.TestCase):
         # Fails on the position, after the new cache was already set.
         new_cache = torch.zeros(3, 4)
         with self.assertRaises(RuntimeError):
-            method._method.set_inputs((x, new_cache, torch.tensor([1.0])))
+            method._method.set_inputs((x, new_cache, 1))
         method._method.execute()
         outputs = method._method.get_outputs()
         self.assertIsNot(outputs[0], cache)
         self.assertTrue(torch.equal(outputs[0], new_cache))
         self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
+
+    def test_failed_input_prevalidation_preserves_previous_inputs(self):
+        x, cache, pos = _cache_inputs()
+        method, _buffer = _load_cache_update_method()
+        method._method.set_inputs((x, cache, pos))
+        new_cache = torch.zeros_like(cache)
+        with self.assertRaises(ValueError):
+            method._method.set_inputs((x, new_cache, torch.tensor([1.0])))
+        method._method.execute()
+        self.assertTrue(torch.equal(cache[1], x[0]))
+        self.assertTrue(torch.equal(new_cache, torch.zeros_like(cache)))
+
+    def test_aliased_output_rejects_replaced_input_storage(self):
+        x = torch.ones(2, 2)
+        method, _buffer = _load_unplanned_io_method(ModuleInputAndIncrement(), (x,))
+        method._method.set_inputs((x,))
+        method._method.execute()
+        x.data = torch.zeros_like(x)
+        with self.assertRaisesRegex(ValueError, "Input storage changed"):
+            method._method.get_outputs(clone_outputs=False)
+
+    def test_aliased_output_preserves_written_metadata(self):
+        for parameter in (False, True):
+            with self.subTest(parameter=parameter):
+                x = torch.ones(2, 3)
+                if parameter:
+                    x = torch.nn.Parameter(x, requires_grad=False)
+                method, _buffer = _load_unplanned_io_method(
+                    ModuleInputAndIncrement(), (x,)
+                )
+                method._method.set_inputs((x,))
+                method._method.execute()
+                x.transpose_(0, 1)
+                output = method._method.get_outputs(clone_outputs=False)[0]
+                self.assertEqual(output.shape, (2, 3))
+                self.assertEqual(output.stride(), (3, 1))
+                self.assertEqual(output.data_ptr(), x.data_ptr())
 
     def test_bound_output_is_not_cloned(self):
         x = torch.ones(2)

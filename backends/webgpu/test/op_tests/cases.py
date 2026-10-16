@@ -30,6 +30,7 @@ from executorch.backends.webgpu.test.ops.test_add import (
     AddModule,
     AddSelfModule,
 )
+from executorch.backends.webgpu.test.ops.test_arange import ArangeModule
 from executorch.backends.webgpu.test.ops.test_argmax import (
     argmax_tie_gen,
     ArgmaxModule,
@@ -878,9 +879,26 @@ def _index_select_suite() -> WebGPUTestSuite:
 
 @register_op_test("conv_with_clamp")
 def _conv_with_clamp_suite() -> WebGPUTestSuite:
-    # nn.Conv2d + F.relu6 -> delegated et_vk.conv_with_clamp (fp32 conv + clamp
-    # [0,6]). Golden = fp32 eager. Covers k3/stride/dilation/no_bias (groups==1).
-    def case(name, shape, ic, oc, k, stride, padding, dilation, bias=True):
+    # nn.Conv2d + F.relu6 / F.relu -> delegated et_vk.conv_with_clamp (fp32 conv
+    # + clamp [0,6] / [0,inf)). Golden = fp32 eager. groups==1 convs large enough
+    # for the conv2d GEMM run on it with the clamp fused: wide_relu_large (no
+    # upper bound, multi-tile OC), pw_relu6_large (1x1, inputs scaled so both
+    # bounds clip). Smaller convs (the rest), grouped (groups=2) and outputs too
+    # large for the GEMM grid stay on the direct conv_with_clamp kernel.
+    def case(
+        name,
+        shape,
+        ic,
+        oc,
+        k,
+        stride,
+        padding,
+        dilation,
+        bias=True,
+        groups=1,
+        act="relu6",
+        heavy=False,
+    ):
         return Case(
             name=name,
             construct={
@@ -891,8 +909,11 @@ def _conv_with_clamp_suite() -> WebGPUTestSuite:
                 "padding": padding,
                 "dilation": dilation,
                 "bias": bias,
+                "groups": groups,
+                "act": act,
             },
             inputs=(shape,),
+            heavy=heavy,
         )
 
     return WebGPUTestSuite(
@@ -905,6 +926,54 @@ def _conv_with_clamp_suite() -> WebGPUTestSuite:
             # Fully axis-asymmetric (Kh!=Kw, H!=W, sh!=sw, ph!=pw, dh!=dw) so an
             # H<->W index swap would diverge from the golden.
             case("asym", (1, 3, 7, 9), 3, 5, (2, 3), (1, 2), (1, 0), (2, 1)),
+            case("wide_relu", (1, 16, 12, 12), 16, 40, 3, 1, 1, 1, act="relu"),
+            case(
+                "saturate",
+                InputSpec(
+                    shape=(1, 8, 10, 10),
+                    gen=lambda s: 20
+                    * torch.randn(s, generator=torch.Generator().manual_seed(0)),
+                ),
+                8,
+                8,
+                3,
+                1,
+                1,
+                1,
+            ),
+            case("pw_relu6", (1, 16, 9, 7), 16, 24, 1, 1, 0, 1),
+            case("grouped", (1, 8, 8, 8), 8, 8, 3, 1, 1, 1, groups=2),
+            # GEMM tiles would be mostly padding (OC and reduction tiny) -> direct.
+            case("tiny_relu", (1, 1, 32, 32), 1, 1, 1, 1, 0, 1, act="relu"),
+            case("wide_relu_large", (1, 16, 66, 130), 16, 40, 3, 1, 1, 1, act="relu"),
+            case(
+                "pw_relu6_large",
+                InputSpec(
+                    shape=(1, 16, 65, 127),
+                    gen=lambda s: 20
+                    * torch.randn(s, generator=torch.Generator().manual_seed(0)),
+                ),
+                16,
+                24,
+                1,
+                1,
+                0,
+                1,
+            ),
+            # Passes the GEMM fill gate but needs more tiles than one dispatch
+            # dimension allows -> direct kernel.
+            case(
+                "pw_relu_grid_limit",
+                (1, 16, 2048, 1024),
+                16,
+                8,
+                1,
+                1,
+                0,
+                1,
+                act="relu",
+                heavy=True,
+            ),
         ],
         golden_dtype="float32",
         atol=1e-3,
@@ -1051,7 +1120,17 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
 
 @register_op_test("slice")
 def _slice_suite() -> WebGPUTestSuite:
-    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    suite = _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    # Output past the 65535 x 64 1D dispatch limit -> 2D-folded grid.
+    suite.cases.append(
+        Case(
+            name="grid_limit",
+            construct={"fn": lambda x: x[:, :1]},
+            inputs=((1, 2, 2100, 2100),),
+            heavy=True,
+        )
+    )
+    return suite
 
 
 @register_op_test("permute")
@@ -1075,6 +1154,15 @@ def _cat_suite() -> WebGPUTestSuite:
         cases=[
             Case(name=n, construct={"dim": dim}, inputs=tuple(shapes))
             for n, (shapes, dim) in _CAT_CONFIGS.items()
+        ]
+        + [
+            # Per-input dispatch past the 65535 x 64 1D limit -> 2D-folded grid.
+            Case(
+                name="grid_limit",
+                construct={"dim": 1},
+                inputs=((1, 1, 2100, 2100), (1, 1, 2100, 2100)),
+                heavy=True,
+            )
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
@@ -1256,7 +1344,9 @@ def _conv2d_suite() -> WebGPUTestSuite:
     # folded by the `transposed` arg). NCHW fp32. Routing coverage (all vs the
     # same fp64 golden): patch_embed/conv3x3_pad1/strided are groups==1 → im2col
     # tiled GEMM; grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise
-    # (groups=8, icpg=1) → direct scalar; transpose2x → conv_transpose2d.
+    # (groups=8, icpg=1) → direct scalar; transpose2x_tiled/transpose3x
+    # (stride == kernel) → conv_transpose2d_gemm; transpose2x (too small for the
+    # GEMM) and transpose_overlap → conv_transpose2d gather.
     # No batched (B>1) case: check_conv_node in backends/vulkan/op_registry.py
     # refuses to delegate a 4-D convolution whose batch is not 1, so the export
     # would fall back to CPU and test nothing. Add one back once it is accepted.
@@ -1316,6 +1406,54 @@ def _conv2d_suite() -> WebGPUTestSuite:
                     "transposed": True,
                 },
                 inputs=(InputSpec(shape=(1, 4, 4, 4), gen=_chw_ramp),),
+            ),
+            Case(
+                name="transpose2x_tiled",
+                construct={
+                    "in_ch": 40,
+                    "out_ch": 12,
+                    "kernel": 2,
+                    "stride": 2,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 40, 63, 67), gen=_chw_ramp),),
+            ),
+            Case(
+                name="transpose3x",
+                construct={
+                    "in_ch": 16,
+                    "out_ch": 5,
+                    "kernel": 3,
+                    "stride": 3,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 16, 61, 71), gen=_chw_ramp),),
+            ),
+            # Large enough for the GEMM, but needs more tiles than one dispatch
+            # dimension allows -> gather.
+            Case(
+                name="transpose2x_grid_limit",
+                construct={
+                    "in_ch": 16,
+                    "out_ch": 2,
+                    "kernel": 2,
+                    "stride": 2,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 16, 2048, 1024), gen=_chw_ramp),),
+                heavy=True,
+            ),
+            Case(
+                name="transpose_overlap",
+                construct={
+                    "in_ch": 4,
+                    "out_ch": 4,
+                    "kernel": 3,
+                    "stride": 2,
+                    "padding": 1,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 4, 5, 5), gen=_chw_ramp),),
             ),
         ],
         atol=1e-4,
@@ -2196,4 +2334,58 @@ def _argmin_suite() -> WebGPUTestSuite:
             Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmin_tie_gen),)),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("arange")
+def _arange_suite() -> WebGPUTestSuite:
+    # Numeric coverage for aten.arange.start_step. The int32 case pins the i32
+    # shader variant; the no-dtype case traces as int64 and exercises the
+    # downcast path that models actually hit.
+    return WebGPUTestSuite(
+        module_factory=ArangeModule,
+        cases=[
+            Case(
+                name="float",
+                construct={"start": 0.0, "end": 16.0, "step": 1.0},
+                inputs=((16,),),
+            ),
+            Case(
+                name="float_step",
+                construct={"start": 3.0, "end": 35.0, "step": 2.0},
+                inputs=((16,),),
+            ),
+            Case(
+                name="int32",
+                construct={"start": 0, "end": 16, "step": 1, "dtype": torch.int32},
+                inputs=((16,),),
+            ),
+            Case(
+                name="int_default",
+                construct={"start": 0, "end": 16, "step": 1},
+                inputs=((16,),),
+            ),
+            # Fractional scalars with an integer dtype follow torch, which casts
+            # start/step before iterating rather than casting each value.
+            Case(
+                name="int_fractional",
+                construct={
+                    "start": 0.5,
+                    "end": 10.0,
+                    "step": 1.5,
+                    "dtype": torch.int32,
+                },
+                inputs=((7,),),
+            ),
+            Case(
+                name="int_fractional_negative",
+                construct={
+                    "start": -2.7,
+                    "end": 3.0,
+                    "step": 1.9,
+                    "dtype": torch.int32,
+                },
+                inputs=((4,),),
+            ),
+        ],
     )
