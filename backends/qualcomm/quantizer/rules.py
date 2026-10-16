@@ -14,7 +14,6 @@ from executorch.backends.qualcomm.quantizer.validators import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema import SocInfo
 
-from executorch.backends.qualcomm.utils.constants import QCOM_BLOCK_SIZE
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.fx import Node
@@ -24,7 +23,7 @@ from torchao.quantization.pt2e.quantizer import (
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
-from .qconfig import QuantizationConfig
+from .qconfig import get_weight_qspec, QuantizationConfig
 
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
@@ -189,12 +188,6 @@ def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
 
-    # block quantization
-    if quantization_config.block_size is not None:
-        quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
-            {QCOM_BLOCK_SIZE: quantization_config.block_size}
-        )
-
     input_qspec_map = {}
     input_act_qspec = quantization_config.input_activation
     input_act = node.args[0]
@@ -204,7 +197,7 @@ def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
 
     weight = node.args[1]
     assert isinstance(weight, Node)
-    input_qspec_map[weight] = quantization_config.weight
+    input_qspec_map[weight] = get_weight_qspec(quantization_config)
 
     if len(node.args) > 2:
         bias = node.args[2]
