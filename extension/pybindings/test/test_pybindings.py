@@ -153,7 +153,7 @@ class BlockTorch(importlib.abc.MetaPathFinder):
         if fullname == "torch" or fullname.startswith("torch."):
             raise ImportError("torch is unavailable")
 
-entrypoint, policy, available, program_path, native_path = sys.argv[1:]
+entrypoint, native_name, policy, available, program_path, native_path = sys.argv[1:]
 if sys.platform == "win32":
     native_directory = Path(native_path).parent
     os.add_dll_directory(str(native_directory))
@@ -165,11 +165,16 @@ if available == "no":
     sys.meta_path.insert(0, blocker)
 try:
     bindings = importlib.import_module(entrypoint)
-except ImportError:
+except (ImportError, SystemError) as error:
+    # Built-in extension loaders may wrap initialization errors.
     assert policy == "torch" and available == "no"
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert isinstance(error, ImportError)
+    assert "torch is unavailable" in str(error)
 else:
     assert policy != "torch" or available == "yes"
-    native = sys.modules["executorch.extension.pybindings._C"]
+    native = sys.modules[native_name]
     expected = "torch" if policy != "executorch" and available == "yes" else "executorch"
     assert native._tensor_output == expected
     assert ("torch" in sys.modules) == (expected == "torch")
@@ -189,15 +194,13 @@ else:
         assert isinstance(output, torch.Tensor)
         torch.testing.assert_close(output, torch.full((2, 2), 2.0))
 """
-        native_path = sys.modules["executorch.extension.pybindings._C"].__spec__.origin
+        native_name = self.load_fn.__module__
+        native_path = sys.modules[native_name].__spec__.origin
         with tempfile.TemporaryDirectory() as directory:
             program_path = os.path.join(directory, "add.pte")
             with open(program_path, "wb") as handle:
                 handle.write(program.buffer)
-            for entrypoint in (
-                "executorch.extension.pybindings.portable_lib",
-                "executorch.extension.pybindings._C",
-            ):
+            for entrypoint in dict.fromkeys((self.runtime.__name__, native_name)):
                 for policy in (None, "torch", "executorch"):
                     for available in ("yes", "no"):
                         with self.subTest(
@@ -215,6 +218,7 @@ else:
                                     "-c",
                                     script,
                                     entrypoint,
+                                    native_name,
                                     str(policy),
                                     available,
                                     program_path,
