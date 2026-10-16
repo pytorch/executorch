@@ -12,6 +12,7 @@
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/Conv2d.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_gemm_wgsl.h>
@@ -19,8 +20,11 @@
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <stdexcept>
+#include <utility>
 
 namespace executorch::backends::webgpu {
 
@@ -44,7 +48,7 @@ struct ConvParams {
   uint32_t dW;
   uint32_t groups;
   uint32_t has_bias;
-  uint32_t has_clamp; // conv2d_gemm only
+  uint32_t has_clamp; // conv2d_gemm / conv2d_shmem only
   float out_min;
   float out_max;
 };
@@ -399,27 +403,75 @@ bool add_conv2d(
     throw std::runtime_error("WebGPU conv2d: fused clamp needs groups == 1");
   }
   // Small GEMMs (M = OC, N = output pixels, K = IC*KH*KW) leave to a caller's
-  // direct kernel, which is faster there. Declining also keeps a caller's
-  // folded dispatch for outputs whose GEMM grid would not fit.
-  if (can_decline) {
-    const uint64_t max_wgs = utils::queried_max_workgroups(device);
-    const uint64_t gemm_cols =
-        utils::div_up<uint64_t>(uint64_t(B) * OH * OW, kConv2dGemmTile);
-    const uint64_t gemm_rows = utils::div_up<uint64_t>(OC, kConv2dGemmTile);
-    const bool gemm_pays_off = OC >= kGemmMinM &&
-        uint64_t(IC) * KH * KW >= kGemmMinK &&
-        gemm_cols * gemm_rows >= kGemmMinWorkgroups;
-    if (!use_gemm || !gemm_pays_off || gemm_cols > max_wgs ||
-        gemm_rows > max_wgs) {
-      return false;
-    }
+  // direct kernel, which is faster there, before conv2d_shmem is considered.
+  const uint64_t max_wgs = utils::queried_max_workgroups(device);
+  const uint64_t gemm_cols =
+      utils::div_up<uint64_t>(uint64_t(B) * OH * OW, kConv2dGemmTile);
+  const uint64_t gemm_rows = utils::div_up<uint64_t>(OC, kConv2dGemmTile);
+  const bool gemm_pays_off = OC >= kGemmMinM &&
+      uint64_t(IC) * KH * KW >= kGemmMinK &&
+      gemm_cols * gemm_rows >= kGemmMinWorkgroups;
+  if (can_decline && (!use_gemm || !gemm_pays_off)) {
+    return false;
   }
 
   // Compute the dispatch grid UP-FRONT, before any buffer alloc, so a throw
   // (grid exceeds the device dispatch/tile limit) can't leak the uniform/bias.
+  // groups==1 with more than one tap -> conv2d_shmem, which stages each tile's
+  // input in shared memory once and reuses it across all KH*KW taps (the
+  // im2col GEMM refetches it per tap). Narrower channel tiles for small OC.
+  const uint32_t wg_m = OC > 16u ? 8u : OC > 8u ? 4u : OC > 4u ? 2u : 1u;
+  const uint32_t tile_m = 4u * wg_m;
+  constexpr uint32_t kShmemPpt = 8u;
+  constexpr uint32_t kShmemTw = 16u;
+  const uint32_t th = (64u / wg_m) * kShmemPpt / kShmemTw;
+  // 64-bit, and each footprint side bounded by the storage's float capacity
+  // before any product, so large dilation or padding cannot wrap into a small
+  // size.
+  constexpr uint64_t kShmemBytes = 16384u;
+  const uint64_t footprint_h =
+      uint64_t(th - 1u) * sH + uint64_t(KH - 1u) * dH + 1u;
+  const uint64_t footprint_w =
+      uint64_t(kShmemTw - 1u) * sW + uint64_t(KW - 1u) * dW + 1u;
+  const bool footprint_fits = footprint_h <= kShmemBytes / sizeof(float) &&
+      footprint_w <= kShmemBytes / sizeof(float);
+  auto shmem_bytes = [&](uint64_t ict) {
+    return ict * (footprint_h * footprint_w + uint64_t(KH) * KW * tile_m) *
+        sizeof(float);
+  };
+  // Deepest input-channel chunk, no deeper than IC, that fits WebGPU's 16 KiB
+  // default.
+  uint32_t ict = std::min(8u, IC);
+  while (footprint_fits && ict > 1u && shmem_bytes(ict) > kShmemBytes) {
+    ict /= 2u;
+  }
+  // A shmem tile is large (up to 32 channels x 64 pixels), so small outputs
+  // launch too few workgroups to fill the GPU; there the GEMM's smaller tiles
+  // are as fast or faster. Its grid is not folded, so it must also fit one
+  // dispatch; otherwise the GEMM takes the conv.
+  constexpr uint64_t kShmemMinWorkgroups = 128u;
+  const uint64_t shmem_grid_x = utils::div_up<uint64_t>(OW, kShmemTw) *
+      utils::div_up<uint64_t>(OC, tile_m);
+  const uint64_t shmem_grid_y = utils::div_up<uint64_t>(OH, th) * B;
+  const bool use_shmem = use_gemm && KH * KW > 1u && footprint_fits &&
+      shmem_bytes(ict) <= kShmemBytes &&
+      shmem_grid_x * shmem_grid_y >= kShmemMinWorkgroups &&
+      shmem_grid_x <= max_wgs && shmem_grid_y <= max_wgs;
+
+  // Declining also keeps a caller's folded dispatch for outputs whose GEMM
+  // grid would not fit.
+  if (can_decline && !use_shmem &&
+      (gemm_cols > max_wgs || gemm_rows > max_wgs)) {
+    return false;
+  }
+
   utils::WgCount gemm_grid = {};
   utils::DispatchGrid direct_grid = {};
-  if (use_gemm) {
+  if (use_shmem) {
+    gemm_grid = {
+        static_cast<uint32_t>(shmem_grid_x),
+        static_cast<uint32_t>(shmem_grid_y)};
+  } else if (use_gemm) {
     // 2D tile grid over (N cols, M rows); folds past the 65535 per-dim ceiling.
     gemm_grid = utils::compute_tile_grid_2d(
         device,
@@ -474,7 +526,50 @@ bool add_conv2d(
       has_bias ? graph.get_tensor(bias_id).buffer : nullptr,
       has_bias ? graph.get_tensor(bias_id).nbytes : 0);
 
-  if (use_gemm) {
+  if (use_shmem) {
+    const std::array<std::pair<const char*, uint32_t>, 8> values = {{
+        {"WG_M", wg_m},
+        {"PPT", kShmemPpt},
+        {"TW", kShmemTw},
+        {"ICT", ict},
+        {"KH", KH},
+        {"KW", KW},
+        {"HH", static_cast<uint32_t>(footprint_h)},
+        {"HW", static_cast<uint32_t>(footprint_w)},
+    }};
+    std::array<WGPUConstantEntry, 8> constants = {};
+    for (size_t i = 0; i < values.size(); i++) {
+      constants[i].key = {values[i].first, WGPU_STRLEN};
+      constants[i].value = values[i].second;
+    }
+    utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+        device,
+        kConv2dShmemWGSL,
+        {
+            {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+            {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+            {2,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             weight.buffer,
+             weight.nbytes},
+            {3,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             bias.buffer,
+             bias.nbytes},
+            {4,
+             WGPUBufferBindingType_Uniform,
+             uniform_buffer,
+             sizeof(ConvParams)},
+        },
+        constants.data(),
+        constants.size());
+    graph.add_dispatch(
+        {bundle.pipeline,
+         bundle.bind_group,
+         gemm_grid.x,
+         "conv2d_shmem",
+         gemm_grid.y});
+  } else if (use_gemm) {
     // vec4-over-IC is inert for NCHW (strided channel gather), so the GEMM is
     // scalar — ORT skips vec4 for NCHW too.
     utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
