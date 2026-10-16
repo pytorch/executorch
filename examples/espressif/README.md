@@ -8,6 +8,38 @@ ESP32-S3 microcontrollers. It is based on the
 [Arm Cortex-M executor runner](../arm/executor_runner/) and adapted for the
 ESP-IDF build system and ESP32 memory architecture.
 
+## ESP-IDF component (generated, source-vendored)
+
+For integrating ExecuTorch into an existing ESP-IDF project without the
+cross-compile-then-link flow below, generate a self-contained ESP-IDF
+component from sources in this repository:
+
+```bash
+./examples/espressif/build_idf_component.sh --profiles wakeword_int8 \
+    --out /path/to/your_project/components/executorch
+```
+
+The output is a registry-shaped component (`idf_component.yml`,
+`CMakeLists.txt`, `Kconfig`, `VERSION`) containing the runtime,
+per-profile kernel registration (selected via
+`CONFIG_ET_OP_PROFILE_*`), the shared ESP-IDF PAL from
+`platform/esp_pal.cpp` (ESP_LOG + `esp_timer` timing), and a C
+inference API (`et_model.h`, flash-XIP model bytes
+with internal/PSRAM arena placement). Application pipelines built on
+the runtime (for example wake word front ends and detectors) stay
+with the application. Op profiles are defined in
+`idf_profiles/<name>.ops`; `wakeword_int8` is an int8 wake-word
+example profile for a Cadence-backend export — profiles may list
+`cadence::` ops, which the generator binds to the Cadence backend's
+generic (portable) kernels under `backends/cadence/generic`, next to
+the `aten::` ops the same profile needs from the portable kernels.
+Consumers need only ESP-IDF — no host CMake build, no flatc. To
+smoke-test a generation, build a consumer project for one Xtensa and
+one RISC-V target (for example esp32s3 and esp32c5).
+
+The executor runner below remains the reference for the prebuilt-library
+flow and for benchmarking.
+
 ## Supported Targets
 
 | Chip     | CPU           | Internal SRAM | PSRAM (optional) |
