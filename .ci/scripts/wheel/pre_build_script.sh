@@ -171,7 +171,8 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     # existing build dependencies and Visual Studio environment before smoke install.
     # MSBuild's file tracker needs a short path even during CMake compiler checks.
     tokenizer_source_dir=$(mktemp -d /c/et-tok.XXXXXX)
-    cp -R extension/llm/tokenizers/. "${tokenizer_source_dir}"
+    # Dereference submodule symlinks because MSYS cannot recreate them on every runner.
+    cp -RL extension/llm/tokenizers/. "${tokenizer_source_dir}"
     cmd //c '.ci\scripts\wheel\vc_env_helper.bat' python -m pip install \
       --no-build-isolation "$(cygpath -w "${tokenizer_source_dir}")"
     rm -rf "${tokenizer_source_dir}"
