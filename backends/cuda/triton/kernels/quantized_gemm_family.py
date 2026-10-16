@@ -25,9 +25,11 @@ split-K workspace allocation, the grid, and the reduce after the main kernel.
 from __future__ import annotations
 
 import concurrent.futures
+import functools
 import inspect
 import logging
 import os
+import sys
 import threading
 import typing
 from typing import Callable, Optional, Sequence
@@ -171,6 +173,15 @@ def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
         return _compile_thread_pool
 
 
+@functools.cache
+def _parallel_compile_available() -> bool:
+    if _async_compile is None:
+        return False
+    # CPython before 3.11.8 and 3.12.2 cannot run ast.parse from several threads.
+    version = sys.version_info[:3]
+    return (3, 11, 8) <= version < (3, 12) or version >= (3, 12, 2)
+
+
 def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
     """Compiles every config an autotuned kernel is about to benchmark, in parallel.
 
@@ -181,7 +192,7 @@ def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
     that fails to compile fails again in the benchmark, which skips it as before.
     """
     if (
-        _async_compile is None
+        not _parallel_compile_available()
         or not isinstance(kernel, triton.runtime.Autotuner)
         or len(kernel.configs) <= 1
         or _async_compile.active_mode.get() is not None
