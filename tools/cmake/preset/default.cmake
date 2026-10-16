@@ -193,7 +193,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
-  "Build the native vision classification runner (run_classification)" BOOL OFF
+  "Build the native vision classification runners" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
@@ -530,10 +530,15 @@ check_required_options_on(
   IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
   EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
-check_required_options_on(
-  IF_ON EXECUTORCH_BUILD_NATIVE_VISION_RUNNER REQUIRES
-  EXECUTORCH_BUILD_NATIVE_VULKAN
+if(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+   AND NOT EXECUTORCH_BUILD_NATIVE_CPU
+   AND NOT EXECUTORCH_BUILD_NATIVE_VULKAN
 )
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_NATIVE_VISION_RUNNER requires EXECUTORCH_BUILD_NATIVE_CPU=ON or EXECUTORCH_BUILD_NATIVE_VULKAN=ON"
+  )
+endif()
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
   message(

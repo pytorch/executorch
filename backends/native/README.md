@@ -93,26 +93,38 @@ prefix (or the corresponding `CMAKE_INSTALL_DATADIR` location).
 CPU engine tests, including quantized linear execution, graph caching, and
 mutable buffers.
 
-## Vision classification runner
+## Vision classification runners
 
-Enable `EXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON` together with
-`EXECUTORCH_BUILD_NATIVE_VULKAN=ON` to build `run_classification` from
-`examples/vision`. The runner additionally requires gflags; an OSS build uses
-the vendored copy, and other builds resolve an installed gflags package.
-Running the runner requires a Vulkan device.
+`examples/vision` shares model loading, FP32 input/output handling, top-5 display,
+and eager-reference comparison between the CPU and Vulkan engines. Buck builds
+`run_classification_cpu` and `run_classification_vulkan`; `run_classification`
+remains the Vulkan command for existing callers.
+
+For a CPU-only CMake build:
 
 ```sh
 cmake -S . -B cmake-out -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTORCH_BUILD_NATIVE_VULKAN=ON \
+  -DEXECUTORCH_BUILD_NATIVE_CPU=ON \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
   -DEXECUTORCH_BUILD_NATIVE_VISION_RUNNER=ON
-cmake --build cmake-out --target run_classification
+cmake --build cmake-out --target run_classification_cpu
 cmake --install cmake-out --prefix install
-install/bin/run_classification \
+install/bin/run_classification_cpu \
   --package mv2.ptn --input mv2_input.bin \
   --expected mv2_expected.bin --categories categories.txt
 ```
 
+`EXECUTORCH_BUILD_NATIVE_CPU` provides `native_cpu_engine`, using
+XNNPACK and the Reference provider with optimized/portable operator registrations.
+The CPU build does not need a Vulkan SDK or device. Enable
+`EXECUTORCH_BUILD_NATIVE_VULKAN=ON` to also build `run_classification_vulkan` and
+`run_classification`; both engines can be enabled together. The runners require
+gflags (vendored in OSS builds, or an installed package).
+
 Export the `.ptn`, input, reference logits, and labels with
-[`export.py`](../../examples/native/vision/export.py). The runner prints the
-top-5 logits and, when `--expected` is given, exits nonzero if the logits
-differ from the reference beyond `--rtol`/`--atol` (both default to `1e-3`).
+[`export.py`](../../examples/native/vision/export.py). The same package and FP32
+artifacts are accepted by either runner, subject to each engine's supported
+operators. Each runner prints the selected engine and device, the top-5 logits,
+and, when `--expected` is given, exits nonzero if the logits differ from the
+reference beyond `--rtol`/`--atol` (both default to `1e-3`).
