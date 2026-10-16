@@ -258,7 +258,7 @@ class Cat(GeneralOpDef):
                 observer_or_fake_quant_ctr=concat_observer_ctr(
                     # we need to know the concat node in order to hack all the input observers' data range
                     # since deep copy of fake tensor (node.meta["val"]) is inhibited
-                    # we could only ship grap & node name and perform postprocess inside observer currently
+                    # we could only ship graph & node name and perform postprocess inside observer currently
                     node.name,
                     node.graph,
                     quantization_config.output_activation,
