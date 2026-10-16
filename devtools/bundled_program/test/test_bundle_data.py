@@ -10,6 +10,7 @@
 import tempfile
 import unittest
 from typing import List
+from unittest.mock import patch
 
 import executorch.devtools.bundled_program.schema as bp_schema
 
@@ -25,6 +26,7 @@ from executorch.devtools.bundled_program.util.test_util import (
 )
 from executorch.exir import to_edge
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
+from executorch.exir._serialize._program import _get_extended_header
 from executorch.exir.tensor import stride_from_dim_order
 from torch.export import export
 
@@ -153,6 +155,62 @@ class TestBundle(unittest.TestCase):
                         self.assertEqual(
                             value.val.data, source.contiguous().numpy().tobytes()
                         )
+
+    def test_pte_reader_matches_in_memory_program(self) -> None:
+        program, suites = get_common_executorch_program()
+        expected = BundledProgram(program, suites).serialize_to_schema()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as pte_file:
+                pte_file.write(program.buffer)
+            actual = BundledProgram(
+                None, suites, pte_file_path=pte_path
+            ).serialize_to_schema()
+        self.assertEqual(actual, expected)
+
+    def test_pte_reader_does_not_unpack_program_payloads(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.arange(6).reshape(2, 3).float())
+
+            def forward(self, x):
+                return x + self.weight
+
+        model = Model()
+        tensor = torch.arange(6).reshape(3, 2).t().float()
+        expected = model(tensor)
+        program = to_edge(export(model, (torch.zeros(2, 3),))).to_executorch()
+        program_bytes = program.buffer
+        header = _get_extended_header(program_bytes)
+        assert header is not None
+        self.assertGreater(header.segment_data_size, 0)
+        suites = [MethodTestSuite("forward", [MethodTestCase((tensor,), (expected,))])]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as pte_file:
+                pte_file.write(program_bytes)
+            with (
+                patch(
+                    "executorch.exir._serialize._flatbuffer_program.ProgramT.InitFromPackedBuf",
+                    side_effect=AssertionError("Full program must not be unpacked"),
+                ),
+                patch(
+                    "executorch.exir._serialize._program._restore_segments",
+                    side_effect=AssertionError("Program payloads must not be restored"),
+                ),
+            ):
+                bundle = BundledProgram(None, suites, pte_file_path=pte_path)
+                schema = bundle.serialize_to_schema()
+
+            self.assertEqual(schema.program, program_bytes)
+            case = schema.method_test_suites[0].test_cases[0]
+            for value, source in zip(
+                case.inputs + case.expected_outputs, (tensor, expected)
+            ):
+                self.assertEqual(value.val.dim_order, [0, 1])
+                self.assertEqual(value.val.sizes, [2, 3])
+                self.assertEqual(value.val.data, source.contiguous().numpy().tobytes())
 
     def assertIOsetDataEqual(
         self,
