@@ -20,10 +20,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
-#: The exact key set ``GraphBundle.quant_io_dtypes`` carries when it is not
-#: ``None``. The quantized-IO tagger indexes both, so a mapping missing either
-#: one is rejected at construction rather than at lowering.
-_QUANT_IO_DTYPE_KEYS = frozenset({"kv_type", "io_type"})
+#: The supported key sets ``GraphBundle.quant_io_dtypes`` carries when it is
+#: not ``None``. Graphs without KV caches only carry ``io_type``.
+_QUANT_IO_DTYPE_KEY_SETS = (
+    frozenset({"kv_type", "io_type"}),
+    frozenset({"io_type"}),
+)
 
 
 @dataclass(frozen=True)
@@ -67,11 +69,18 @@ class GraphBundle:
             attributes written during ``convert_pt2e``. Becomes the ``.pte``'s
             constant methods, so it is complete only **after** quantization has
             run.
-        quant_io_dtypes: The graph-boundary dtypes quantization chose, as
-            ``{"kv_type": torch.dtype, "io_type": torch.dtype}``. Compilation
-            builds the ``TagQuantIO`` pass settings from these; it cannot derive
-            them, since they come from the quantization recipe's KV and logits
-            bit widths.
+        quant_io_dtypes: The graph-boundary dtypes quantization chose.
+            Compilation builds the ``TagQuantIO`` pass settings from these; it
+            cannot derive them, since they come from the quantization recipe's
+            KV and logits bit widths.
+
+            A non-``None`` mapping has one of these shapes:
+
+            * ``{"kv_type": torch.dtype, "io_type": torch.dtype}`` for a
+              graph with a KV cache, such as a decoder.
+            * ``{"io_type": torch.dtype}`` for a graph without a KV cache,
+              such as an encoder. Encoders derive ``io_type`` from their
+              quantization recipe, but have no ``kv_type`` to record.
 
             ``None`` means *this graph's boundary dtypes were not chosen by a
             recipe* -- which happens for two different reasons, and compilation
@@ -79,24 +88,14 @@ class GraphBundle:
 
             * **Quantization was skipped** for the graph, so its IO stays
               float32 and ``TagQuantIO`` is left inactive.
-            * **The component never derives dtypes from a recipe.** Encoder
-              graphs are the case: the legacy flow tags an encoder's boundary
-              ``torch.float32`` from a literal and never consults the encoder
-              recipe, which exposes no KV or logits bit width at all. Such a
-              graph still needs ``TagQuantIO`` active when it is sharded, to
-              tag the ``llama.fallback.default`` boundary -- so ``None`` here
-              must not be read as "nothing to tag".
+            * **No fixed-point boundary dtype was selected.** For example, a
+              recipe bit width may not map to a fixed-point dtype. The whole
+              mapping is then ``None`` rather than a mapping with one missing
+              key.
 
-            The compilation stage's pass policy distinguishes the two by
-            component, since only the component knows whether a recipe was meant
-            to supply these at all.
-
-            **Both keys or neither.** The tagger indexes both unconditionally,
-            once per node, so a mapping carrying only one of them is not a
-            partially-quantized boundary -- it is a ``KeyError`` during
-            lowering. A recipe whose bit width maps to no fixed-point dtype
-            makes the whole mapping ``None``; it does not drop a single key.
-            ``__post_init__`` rejects anything else.
+            ``io_type`` is required whenever the mapping is present.
+            ``kv_type`` is required only for graphs with a KV cache.
+            ``__post_init__`` rejects every other key combination.
         modality_inputs: Encoder inputs for a multimodal model, keyed by
             modality. ``None`` for a text-only model.
         executorch_config: Optional override for the ``to_executorch``
@@ -114,18 +113,21 @@ class GraphBundle:
     executorch_config: Optional[Any] = None
 
     def __post_init__(self) -> None:
-        """Reject a ``quant_io_dtypes`` mapping that is not both keys.
+        """Reject an unsupported ``quant_io_dtypes`` key combination.
 
         Raises:
             ValueError: If ``quant_io_dtypes`` is a mapping whose keys are not
-                exactly ``kv_type`` and ``io_type``.
+                ``io_type`` alone or ``kv_type`` and ``io_type`` together.
         """
         if self.quant_io_dtypes is None:
             return
 
-        keys = set(self.quant_io_dtypes)
-        if keys != _QUANT_IO_DTYPE_KEYS:
+        keys = frozenset(self.quant_io_dtypes)
+        if keys not in _QUANT_IO_DTYPE_KEY_SETS:
+            valid_key_sets = " or ".join(
+                str(sorted(key_set)) for key_set in _QUANT_IO_DTYPE_KEY_SETS
+            )
             raise ValueError(
                 "quant_io_dtypes must carry exactly "
-                f"{sorted(_QUANT_IO_DTYPE_KEYS)} or be None; got {sorted(keys)}"
+                f"{valid_key_sets} or be None; got {sorted(keys)}"
             )
