@@ -1,9 +1,8 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_preprocessor_flags(is_fbcode):
-    flags = ["-DSTANDALONE_TORCH_HEADER"]
     if runtime.is_oss:
-        return flags
+        return []
     # AT_BUILD_ARM_VEC256_WITH_SLEEF is off on Windows because Sleef
     # is off on Windows per get_sleef_deps below.
     arm64_flags = select({
@@ -31,7 +30,7 @@ def get_preprocessor_flags(is_fbcode):
         "ovr_config//cpu:arm64": arm64_flags,
         "DEFAULT": default_flags,
     })
-    return flags + ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"] + (fbcode_flags if is_fbcode else non_fbcode_flags)
+    return ["-DET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"] + (fbcode_flags if is_fbcode else non_fbcode_flags)
 
 def get_sleef_deps():
     if runtime.is_oss:
