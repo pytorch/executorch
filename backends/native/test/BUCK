@@ -76,3 +76,20 @@ fbcode_target(
         "//executorch/extension/llm/export:gguf",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_hf_whisper",
+    srcs = ["test_hf_whisper.py"],
+    resources = {
+        "//executorch/backends/native/examples/audio:run_whisper_ggml_cpu": "run_whisper_ggml_cpu",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/examples/hf:hf_whisper",
+        "//executorch/exir:lib",
+        "//executorch/exir/native:native",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)

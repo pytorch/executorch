@@ -18,8 +18,8 @@
 #include <utility>
 #include <vector>
 
-#include <executorch/backends/native/examples/hf_llm/runtime/LlmRunner.h>
-#include <executorch/backends/native/examples/hf_llm/runtime/LlmRunnerUtils.h>
+#include <executorch/backends/native/examples/hf/runtime/LlmRunner.h>
+#include <executorch/backends/native/examples/hf/runtime/LlmRunnerUtils.h>
 #include <executorch/backends/native/examples/runner_utils/runner_utils.h>
 #include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>

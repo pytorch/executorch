@@ -1,0 +1,90 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# Engine-neutral Whisper app logic. Each binary below links exactly one engine.
+runtime.cxx_library(
+    name = "whisper_runner",
+    srcs = ["WhisperRunner.cpp"],
+    exported_headers = ["WhisperRunner.h"],
+    deps = [
+        "//executorch/backends/native/examples/runner_utils:runner_utils",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/graph:scalar_type",
+    ],
+    exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_whisper",
+    srcs = ["run_whisper.cpp"],
+    deps = [
+        ":whisper_runner",
+        "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_whisper_ggml_cpu",
+    srcs = ["run_whisper_ggml.cpp"],
+    deps = [
+        ":whisper_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_whisper_ggml_cuda",
+    srcs = ["run_whisper_ggml.cpp"],
+    deps = [
+        ":whisper_runner",
+        # The CUDA device code lives in a shared fatbin. Stage the core shared
+        # library beside the binary. Buck does not stage the CUDA driver stub's
+        # library; add its directory to LD_LIBRARY_PATH when running.
+        "fbsource//third-party/llama.cpp:ggml_base[prefer-shared]",
+        "//executorch/backends/native/runtime/engine:ggml_engine_cuda",
+    ],
+    external_deps = [
+        "gflags",
+        # ggml's VMM pool calls the driver API, which //third-party/cuda:libcuda does not link on fbcode.
+        ("cuda", None, "cuda_driver_api-lazy"),
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_whisper_ggml_hip",
+    srcs = ["run_whisper_ggml.cpp"],
+    deps = [
+        ":whisper_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_hip",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+# Apple Silicon: ggml-metal with an arm64 CPU fallback. Mac builds go through
+# xplat, so this one is declared for the non-fbcode cell.
+non_fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_whisper_ggml_metal",
+    srcs = ["run_whisper_ggml.cpp"],
+    deps = [
+        ":whisper_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_metal",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)

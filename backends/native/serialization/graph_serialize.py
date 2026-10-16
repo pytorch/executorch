@@ -31,6 +31,7 @@ from dataclasses import fields, is_dataclass
 from enum import IntEnum
 from typing import (
     Any,
+    Callable,
     cast,
     get_args,
     get_origin,
@@ -1487,8 +1488,8 @@ def _iter_graph_args(value: object) -> Iterator[GraphArg]:
             yield from _iter_graph_args(item)
 
 
-def collect_data_keys(program: Program) -> set[str]:
-    """Return every out-of-line data key the program references.
+def _map_data_keys(method: Method, fn: Callable[[str], str]) -> None:
+    """Replace every out-of-line data key in ``method`` with ``fn(key)``, in place.
 
     Covers constant references (NamedTensorRef.data_key) plus the quant keys
     (AffineGroup scale and zero-point) carried on any TensorMeta.quant, whether
@@ -1496,31 +1497,51 @@ def collect_data_keys(program: Program) -> set[str]:
     recursing into HOP subgraphs wherever a schema field carries a ``GraphArg``.
     PackedQuant carries no external keys.
     """
-    keys: set[str] = set()
 
-    def add_meta(meta: Optional[TensorMeta]) -> None:
+    def map_meta(meta: Optional[TensorMeta]) -> None:
         if meta is None or meta.quant is None:
             return
         scheme = meta.quant.scheme
         if isinstance(scheme, AffineGroup):
-            keys.add(scheme.scale_data_key)
+            scheme.scale_data_key = fn(scheme.scale_data_key)
             if scheme.zero_point_data_key:
-                keys.add(scheme.zero_point_data_key)
+                scheme.zero_point_data_key = fn(scheme.zero_point_data_key)
 
     def visit_graph(graph: Graph) -> None:
         for value in graph.tensor_values or []:
-            add_meta(value.meta)
+            map_meta(value.meta)
         for node in graph.nodes:
             for graph_arg in _iter_graph_args(node):
                 visit_graph(graph_arg.graph)
 
-    for method in program.methods:
-        for constant in method.constants or []:
-            keys.add(constant.data_key)
-            add_meta(constant.meta)
-        visit_graph(method.graph)
+    for constant in method.constants or []:
+        constant.data_key = fn(constant.data_key)
+        map_meta(constant.meta)
+    visit_graph(method.graph)
 
+
+def collect_data_keys(program: Program) -> set[str]:
+    """Return every out-of-line data key the program references."""
+    keys: set[str] = set()
+
+    def add(key: str) -> str:
+        keys.add(key)
+        return key
+
+    for method in program.methods:
+        _map_data_keys(method, add)
     return keys
+
+
+def rename_data_keys(
+    program: Program, method_name: str, mapping: dict[str, str]
+) -> None:
+    """Rename one method's data keys in place; keys absent from ``mapping`` stay."""
+    for method in program.methods:
+        if method.name == method_name:
+            _map_data_keys(method, lambda key: mapping.get(key, key))
+            return
+    raise ValueError(f"rename_data_keys: no method named {method_name!r}.")
 
 
 def _check_optional_tensor_list_refs(

@@ -179,6 +179,27 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
+  OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_GGML "Build the native GGML engine" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+  "Build the native vision classification runner (run_classification)" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER
+  "Build the native Whisper speech recognition runners" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(
@@ -508,6 +529,20 @@ check_conflicting_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_VISION_RUNNER REQUIRES
+  EXECUTORCH_BUILD_NATIVE_VULKAN
+)
+
+if((EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
+   AND NOT (EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML)
+)
+  message(
+    FATAL_ERROR
+      "Native audio/LLM runners require EXECUTORCH_BUILD_NATIVE_VULKAN=ON or EXECUTORCH_BUILD_NATIVE_GGML=ON"
+  )
+endif()
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
   message(

@@ -55,7 +55,7 @@ ${layout_declare_tensor(B, "w", "t_attn_weights", OUT_DTYPE, IO_STORAGE, is_scal
 ${layout_declare_tensor(B, "r", "t_q", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_k", IN_DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
 $if HAS_BIAS:
-  ${layout_declare_tensor(B, "r", "t_bias", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_bias", IN_DTYPE, IO_STORAGE)}
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
