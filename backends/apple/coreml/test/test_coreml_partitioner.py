@@ -433,6 +433,43 @@ class TestCoreMLPartitioner(unittest.TestCase):
         self.assertIn("executorch_call_delegate", op_names)
         self.assertNotIn("aten.argmax.default", op_names)
 
+    def test_instance_norm_3d_is_decomposed(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11702.
+
+        Core ML's instance_norm only accepts rank 3 and 4 inputs, so
+        InstanceNorm3d lowered fine but failed to load ("parameter x[0] has
+        invalid rank 5").  The partitioner must not keep it whole, so it
+        decomposes into ops Core ML can run; InstanceNorm2d stays intact.
+        """
+        cases = [
+            (torch.nn.InstanceNorm3d(3), torch.randn(1, 3, 4, 4, 4)),
+            (torch.nn.InstanceNorm3d(3, affine=True), torch.randn(2, 3, 4, 5, 6)),
+        ]
+        for model, x in cases:
+            model = model.eval()
+            ep = torch.export.export(model, (x,), strict=True)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertNotIn(torch.ops.aten.instance_norm.default, not_decomposed)
+
+            edge = executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner()]
+            )
+            if _TEST_RUNTIME:
+                et_prog = edge.to_executorch()
+                program = Runtime.get().load_program(et_prog.buffer)
+                et_outputs = program.load_method("forward").execute((x,))[0]
+                self.assertTrue(
+                    torch.allclose(et_outputs, model(x), atol=1e-02, rtol=1e-02),
+                    model,
+                )
+
+        ep = torch.export.export(
+            torch.nn.InstanceNorm2d(3).eval(), (torch.randn(1, 3, 6, 6),)
+        )
+        not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+        self.assertIn(torch.ops.aten.instance_norm.default, not_decomposed)
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
@@ -572,6 +609,7 @@ if __name__ == "__main__":
     test_runner.test_take_over_constant_data_false()
     test_runner.test_aten_rand_default_falls_back_to_portable()
     test_runner.test_aten_randn_is_still_delegated()
+    test_runner.test_instance_norm_3d_is_decomposed()
     test_runner.test_tied_embedding_is_quantized_with_its_linear()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
