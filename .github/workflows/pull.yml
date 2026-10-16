@@ -1581,6 +1581,10 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
 
+        # Build the WebGPU configuration of the Wasm bindings. Build only:
+        # running a delegated model needs a browser with WebGPU.
+        PYTHON_EXECUTABLE=python bash scripts/build_wasm_tests.sh --webgpu
+
   unittest-wasm-bindings:
     needs: docker-image
     name: unittest-wasm-bindings
