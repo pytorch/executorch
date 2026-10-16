@@ -1052,7 +1052,17 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
 
 @register_op_test("slice")
 def _slice_suite() -> WebGPUTestSuite:
-    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    suite = _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    # Output past the 65535 x 64 1D dispatch limit -> 2D-folded grid.
+    suite.cases.append(
+        Case(
+            name="grid_limit",
+            construct={"fn": lambda x: x[:, :1]},
+            inputs=((1, 2, 2100, 2100),),
+            heavy=True,
+        )
+    )
+    return suite
 
 
 @register_op_test("permute")
@@ -1076,6 +1086,15 @@ def _cat_suite() -> WebGPUTestSuite:
         cases=[
             Case(name=n, construct={"dim": dim}, inputs=tuple(shapes))
             for n, (shapes, dim) in _CAT_CONFIGS.items()
+        ]
+        + [
+            # Per-input dispatch past the 65535 x 64 1D limit -> 2D-folded grid.
+            Case(
+                name="grid_limit",
+                construct={"dim": 1},
+                inputs=((1, 1, 2100, 2100), (1, 1, 2100, 2100)),
+                heavy=True,
+            )
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
