@@ -55,6 +55,13 @@ requiring a GPU. When the vision runner below is enabled,
 `native_runner_utils_test` covers its shared runner utilities. Run these with
 `ctest --test-dir cmake-out -R native_`.
 
+The `Test Native Engines` CI workflow has separate Linux jobs for the shared
+runtime, GGML, and Vulkan, with each test suite run once. To reproduce with
+dependencies installed, run `bash .ci/scripts/test-native.sh runtime`,
+`bash .ci/scripts/test-native.sh ggml`, or
+`bash .ci/scripts/test-native.sh vulkan` from the OSS checkout. The Vulkan job
+also builds `run_classification`; its tests do not require a GPU.
+
 ## GGML engine
 
 Native GGML builds the GGML subtree of the llama.cpp submodule at
