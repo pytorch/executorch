@@ -25,7 +25,11 @@ from torchao.quantization.pt2e.quantizer import (
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
-from .passes import GroupWarpSamplerInputsPass, RewriteWarpDownsampleToTosaCustomPass
+from .passes import (
+    GroupWarpSamplerInputsPass,
+    PackRifeWarpsAndConcatPass,
+    RewriteWarpDownsampleToTosaCustomPass,
+)
 
 _RIFE_LIBRARY: torch.library.Library | None = None
 _RIFE_FAKE_IMPLS_REGISTERED = False
@@ -181,6 +185,7 @@ def configure_rife_vgf(partitioner: VgfPartitioner | None = None) -> None:
             partitioner.register_custom_partition_op(target)
 
     _register_pass_before(RewriteConvPass, RewriteWarpDownsampleToTosaCustomPass())
+    _register_pass_before(EnsureUniqueOutputNodesPass, PackRifeWarpsAndConcatPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, GroupWarpSamplerInputsPass())
 
 
