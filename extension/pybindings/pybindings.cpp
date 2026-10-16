@@ -479,10 +479,7 @@ void validate_buffer_input(
     buffer.use_layout_for_empty(input_meta->dim_order());
   }
   validate_tensor_input(
-      method_meta,
-      index,
-      buffer.scalar_type(),
-      buffer.sizes());
+      method_meta, index, buffer.scalar_type(), buffer.sizes());
 }
 
 #ifndef USE_ATEN_LIB
@@ -1445,20 +1442,14 @@ struct PyModule final {
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
         validate_tensor_input(
-            method_meta,
-            i,
-            at_tensor.scalar_type(),
-            tensor_sizes);
+            method_meta, i, at_tensor.scalar_type(), tensor_sizes);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& tensor = torch_inputs.back();
         validate_tensor_input(
-            method_meta,
-            i,
-            tensor->scalar_type(),
-            tensor->sizes());
+            method_meta, i, tensor->scalar_type(), tensor->sizes());
         const auto method = module_->method(method_name);
         THROW_IF_ERROR(
             method.error(),

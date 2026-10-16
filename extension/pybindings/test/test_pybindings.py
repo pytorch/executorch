@@ -265,9 +265,7 @@ else:
                         output = executor(input_tensor, clone_outputs=clone_outputs)[0]
                     self.assertEqual(output.device, input_tensor.device)
                     self.assertEqual(output.stride(), (24, 1, 8, 2))
-                    self.assertEqual(
-                        executor(output)[0].stride(), (24, 1, 8, 2)
-                    )
+                    self.assertEqual(executor(output)[0].stride(), (24, 1, 8, 2))
 
     def test_torch_inputs_are_safe_across_threads(self):
         if self.kernel_mode != "portable":
@@ -598,6 +596,7 @@ print("all calls finished")
     def test_torch_input_layout_matches_exported_dim_order(self):
         if self.kernel_mode != "portable":
             self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
+
         class AddInput(ModuleAddSingleInput):
             def __init__(self, input_tensor):
                 super().__init__()
