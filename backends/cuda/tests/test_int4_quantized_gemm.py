@@ -16,7 +16,9 @@ is saturated (on CUDA; see Int4AutotunePickTest for ROCm).
     python -m pytest backends/cuda/tests/test_int4_quantized_gemm.py -v
 """
 
+import contextlib
 import statistics
+import types
 import unittest
 from unittest import mock
 
@@ -52,6 +54,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
 from executorch.extension.llm.export.int4 import ExportableInt4Tensor
 from executorch.extension.llm.export.quant.quantize import quantize_weight
 from executorch.extension.llm.export.quant.recipe import QuantConfig
+from torch._library.triton import set_wrap_triton_enabled
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 GROUP_SIZE = 32
@@ -103,8 +106,8 @@ def _check_close(test, out, ref):
 
 
 @unittest.skipIf(
-    quantized_gemm_family._async_compile is None,
-    "this Triton has no parallel compile",
+    not quantized_gemm_family._parallel_compile_available(),
+    "this Triton or Python cannot compile in parallel",
 )
 class Int4ParallelPrecompileTest(unittest.TestCase):
     """launch_split_k_gemm compiles an untuned shape's configs in parallel."""
@@ -140,7 +143,8 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
         x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
         counts, patch = self._count_pooled()
         before = self._compiled(bucket)
-        with patch:
+        # Launch the bucket's autotuner directly, so its cache gets the tuning key.
+        with patch, set_wrap_triton_enabled(False):
             out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
             pooled, compiled = counts["pooled"], self._compiled(bucket)
             again = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
@@ -161,26 +165,28 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
         n, k, bucket = 320, 2560, 2
         weights = _packed(n, k, seed=11)
         x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
-        pools = {"count": 0}
         compile_pool = quantized_gemm_family._compile_pool
+        compiled_at_pool_exit: list[int] = []
 
-        def counting_pool():
-            pools["count"] += 1
-            return compile_pool()
+        @contextlib.contextmanager
+        def recording_pool():
+            with compile_pool():
+                yield
+            compiled_at_pool_exit.append(self._compiled(bucket))
 
         counts, patch = self._count_pooled()
         before = self._compiled(bucket)
         with patch, mock.patch.object(
-            quantized_gemm_family, "_compile_pool", counting_pool
+            quantized_gemm_family, "_compile_pool", recording_pool
         ), autotune_launch_params() as stats:
             out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
         self.assertEqual(stats.measured, 1)
         self.assertGreater(len(stats.picks[0].times_us), 1)
-        self.assertEqual(pools["count"], 1)
-        # Every kernel the split candidates benchmarked came from that pool.
-        self.assertGreater(self._compiled(bucket), before)
+        # The first pool, which holds every split candidate, compiles every
+        # kernel the timed launches then benchmark.
+        self.assertGreater(compiled_at_pool_exit[0], before)
+        self.assertEqual(self._compiled(bucket), compiled_at_pool_exit[0])
         self.assertLessEqual(self._compiled(bucket) - before, counts["pooled"])
-        self.assertFalse(quantized_gemm_family._COMPILED_AHEAD)
         _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
 
     def test_fake_tensors_are_not_precompiled(self) -> None:
@@ -239,10 +245,71 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
         # eager path tunes a fresh copy on every call).
         with mock.patch.object(quantized_gemm_family, "wrap_triton", recording):
             INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
-        _, args, kwargs = next(l for l in launches if l[0] is autotuner)
+        _, args, kwargs = next(launch for launch in launches if launch[0] is autotuner)
         self.assertIn(
             quantized_gemm_family._tuning_key(autotuner, args, kwargs), autotuner.cache
         )
+
+
+class ParallelCompileGateTest(unittest.TestCase):
+    def _available(self, *, version: tuple) -> bool:
+        fake_sys = types.SimpleNamespace(version_info=version)
+        quantized_gemm_family._parallel_compile_available.cache_clear()
+        self.addCleanup(quantized_gemm_family._parallel_compile_available.cache_clear)
+        with mock.patch.object(
+            quantized_gemm_family, "_async_compile", types.SimpleNamespace()
+        ), mock.patch.object(quantized_gemm_family, "sys", fake_sys):
+            return quantized_gemm_family._parallel_compile_available()
+
+    def test_a_triton_without_async_compile_compiles_serially(self) -> None:
+        self.addCleanup(quantized_gemm_family._parallel_compile_available.cache_clear)
+        quantized_gemm_family._parallel_compile_available.cache_clear()
+        with mock.patch.object(quantized_gemm_family, "_async_compile", None):
+            self.assertFalse(quantized_gemm_family._parallel_compile_available())
+
+    def test_cpython_before_the_ast_fix_compiles_serially(self) -> None:
+        for version in (
+            (3, 11, 4, "final", 0),
+            (3, 11, 7, "final", 0),
+            (3, 12, 1, "final", 0),
+        ):
+            with self.subTest(version=version):
+                self.assertFalse(self._available(version=version))
+
+    def test_cpython_with_the_ast_fix_compiles_in_parallel(self) -> None:
+        for version in (
+            (3, 11, 8, "final", 0),
+            (3, 12, 2, "final", 0),
+            (3, 13, 0, "final", 0),
+        ):
+            with self.subTest(version=version):
+                self.assertTrue(self._available(version=version))
+
+    def test_a_gated_off_prepass_neither_pools_nor_queues(self) -> None:
+        with mock.patch.object(
+            quantized_gemm_family, "_parallel_compile_available", return_value=False
+        ), mock.patch.object(quantized_gemm_family, "_compile_pool") as pool:
+            with quantized_gemm_family._compile_every_candidate_at_once():
+                self.assertFalse(quantized_gemm_family._QUEUING_ONLY.get())
+        pool.assert_not_called()
+
+    def test_the_gate_decides_whether_an_eligible_launch_precompiles(self) -> None:
+        for gate, precompiled in ((False, False), (True, True)):
+            with self.subTest(gate=gate):
+                kernel = mock.Mock(
+                    spec=triton.runtime.Autotuner,
+                    configs=[1, 2],
+                    cache={},
+                    arg_names=[],
+                    keys=[],
+                )
+                with mock.patch.object(
+                    quantized_gemm_family,
+                    "_parallel_compile_available",
+                    return_value=gate,
+                ):
+                    quantized_gemm_family._precompile_untuned_configs(kernel, (), {})
+                self.assertEqual(kernel.warmup.called, precompiled)
 
 
 class Int4QuantizedGemmRulesTest(unittest.TestCase):

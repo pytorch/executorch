@@ -211,6 +211,15 @@ class VgfRepr {
     return zero_copy_import_manager_.slot(io_index);
   }
 
+  // Select which tensor view is written to all descriptor bindings associated
+  // with this boundary IO. Selection itself is cheap; Vulkan descriptor writes
+  // are deferred until flush_boundary_bindings().
+  bool activate_imported_binding(size_t io_index);
+  bool activate_owned_binding(size_t io_index);
+  bool is_import_active(size_t io_index) const;
+  bool flush_boundary_bindings(
+      executorch::runtime::EventTracer* event_tracer = nullptr);
+
   ~VgfRepr() {
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
@@ -242,6 +251,32 @@ class VgfRepr {
   VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
   VgfZeroCopyImportManager zero_copy_import_manager_;
 
+  std::vector<VgfBoundaryBindingState> zero_copy_binding_states_;
+
+  struct VgfAliasImageRecordState {
+    bool needs_tensor_aliasing = false;
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    std::vector<VkImage> images;
+  };
+
+  struct VgfAliasLayoutUse {
+    uint32_t alias_group = 0;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  };
+
+  struct VgfSegmentRecordPlan {
+    std::vector<VgfAliasLayoutUse> alias_layouts;
+  };
+
+  // The VGF decoders are temporary. Persist only the small amount of alias
+  // information required to re-record the execute command buffer after a
+  // descriptor update.
+  std::unordered_map<uint32_t, VgfAliasImageRecordState>
+      execute_alias_image_states_;
+  std::vector<uint32_t> execute_output_image_alias_groups_;
+  std::vector<VgfSegmentRecordPlan> execute_segment_record_plans_;
+
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;
   double timestamp_period_ns = 0.0;
@@ -251,7 +286,16 @@ class VgfRepr {
   // than once) in execute_vgf
   VkCommandBuffer vk_execute_cmd = VK_NULL_HANDLE;
   VkFence vk_execute_fence = VK_NULL_HANDLE;
+  // True only while vk_execute_cmd has an outstanding queue submission.
+  // A freshly-created unsignaled fence is not evidence of pending execution.
+  bool execute_submission_pending_ = false;
   // Note: the vector of tensor memory is stored in IOs above
+
+  bool record_execute_command_buffer(VkCommandBuffer command_buffer);
+  bool select_boundary_tensor_view(
+      size_t io_index,
+      VkTensorViewARM tensor_view,
+      bool imported);
 
   bool init_timestamp_queries();
   void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);

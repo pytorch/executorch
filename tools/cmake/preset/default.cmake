@@ -305,8 +305,7 @@ define_overridable_option(
   EXECUTORCH_XNNPACK_SHARED_WORKSPACE
   "Enable workspace sharing across different delegate instances" BOOL ON
 )
-# Keeping this OFF by default due to regressions in decode and model load with
-# kleidi kernels
+# Enable KleidiAI kernels by default when building the XNNPACK backend.
 define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" BOOL ON
 )

@@ -27,12 +27,13 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import contextvars
+import functools
 import inspect
 import logging
 import os
+import sys
 import threading
 import typing
-import weakref
 from typing import Callable, Optional, Sequence
 
 import torch
@@ -174,13 +175,6 @@ def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
     return _tuning_key(kernel, args, kwargs) not in kernel.cache
 
 
-# Tuning keys whose configs a candidate prepass compiled. Weak kernel keys and
-# one-shot values keep this bookkeeping bounded and prevent stale object-id hits.
-_COMPILED_AHEAD: weakref.WeakKeyDictionary[object, set[tuple]] = (
-    weakref.WeakKeyDictionary()
-)
-
-
 _COMPILE_THREADS_LOCK = threading.Lock()
 _compile_thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
@@ -197,20 +191,25 @@ def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
         return _compile_thread_pool
 
 
+@functools.cache
+def _parallel_compile_available() -> bool:
+    if _async_compile is None:
+        return False
+    # CPython before 3.11.8 and 3.12.2 cannot run ast.parse from several threads.
+    version = sys.version_info[:3]
+    return (3, 11, 8) <= version < (3, 12) or version >= (3, 12, 2)
+
+
 @contextlib.contextmanager
 def _compile_pool():
     with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
         yield
 
 
-def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
-    """Queues the configs ``kernel`` is about to benchmark on the active compile
-    pool; False if there is no pool or nothing to compile."""
-    if _async_compile is None or _async_compile.active_mode.get() is None:
-        return False
+def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
+    """Warms up an untuned key so its configs compile on the active compile pool."""
     if not _has_untuned_configs(kernel, args, kwargs):
-        return False
-    key = _tuning_key(kernel, args, kwargs)
+        return
     try:
         kernel.warmup(*args, grid=(1,), **kwargs)
     except Exception as error:  # noqa: BLE001 - precompiling only saves time
@@ -218,9 +217,6 @@ def _queue_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
         logger.warning(
             "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
         )
-        return False
-    _COMPILED_AHEAD.setdefault(kernel, set()).add(key)
-    return True
 
 
 def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
@@ -232,26 +228,15 @@ def _precompile_untuned_configs(kernel, args: Sequence, kwargs: dict) -> None:
     pick, unchanged; it then times kernels that are already compiled. A config
     that fails to compile fails again in the benchmark, which skips it as before.
     """
-    if _async_compile is None or _async_compile.active_mode.get() is not None:
+    if (
+        not _parallel_compile_available()
+        or _async_compile.active_mode.get() is not None
+    ):
         return
     if not _has_untuned_configs(kernel, args, kwargs):
         return
-    key = _tuning_key(kernel, args, kwargs)
-    compiled_keys = _COMPILED_AHEAD.get(kernel)
-    if compiled_keys is not None and key in compiled_keys:
-        compiled_keys.remove(key)
-        if not compiled_keys:
-            del _COMPILED_AHEAD[kernel]
-        return
-    try:
-        with _compile_pool():
-            kernel.warmup(*args, grid=(1,), **kwargs)
-    except Exception as error:  # noqa: BLE001 - precompiling only saves time
-        # The launch compiles and benchmarks the configs itself, as without
-        # precompiling, and reports a real problem there.
-        logger.warning(
-            "Not precompiling %s's configs: %s", kernel.base_fn.__name__, error
-        )
+    with _compile_pool():
+        _queue_untuned_configs(kernel, args, kwargs)
 
 
 # Set while every @autotune_launch_param candidate makes one untimed call: the
@@ -266,7 +251,10 @@ def _compile_every_candidate_at_once():
     """Compiles what all launch-parameter candidates (e.g. every split-K) will
     benchmark on one pool, rather than one candidate's configs at a time; leaving
     waits for all of them. Timing then runs as before on compiled kernels."""
-    if _async_compile is None or _async_compile.active_mode.get() is not None:
+    if (
+        not _parallel_compile_available()
+        or _async_compile.active_mode.get() is not None
+    ):
         yield
         return
     with _compile_pool():
@@ -337,9 +325,13 @@ def launch_split_k_gemm(
     )
     kwargs = {"SPLIT_K": split_k, **constexprs}
     if _QUEUING_ONLY.get():
-        if _async_compile is None or _async_compile.active_mode.get() is None:
+        if (
+            not _parallel_compile_available()
+            or _async_compile.active_mode.get() is None
+        ):
             raise RuntimeError("candidate prepass lost its active compile pool")
         _queue_untuned_configs(kernel, args, kwargs)
+        # The prepass discards the result, so the output is not written.
         return out
     _precompile_untuned_configs(kernel, args, kwargs)
     wrap_triton(kernel)[grid](*args, **kwargs)
