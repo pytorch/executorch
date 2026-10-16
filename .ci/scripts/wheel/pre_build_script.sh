@@ -11,6 +11,10 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
+# The reusable smoke installer selects PyTorch's index; ET also needs PyPI packages.
+export PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:+${PIP_EXTRA_INDEX_URL} }https://pypi.org/simple"
+echo "PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}" >> "${GITHUB_ENV}"
+
 # Initialize submodules here instead of during checkout so we can use OpenSSL
 # on Windows (schannel fails with SEC_E_ILLEGAL_MESSAGE on some gitlab hosts).
 UNAME_S=$(uname -s)

@@ -150,7 +150,17 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.assertIn(f"torchaudio=={audio}", domains)
                     self.assertIn("torchvision==0.29.0", domains)
 
-    def test_python315_preserves_cuda_and_source_pins(self):
+    def test_python315_cuda_domains_use_available_torchaudio(self):
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine):
+                _, _, domains, _ = self.install_commands(
+                    (13, 2), machine=machine, python_version=(3, 15)
+                )
+                self.assertIn("torchaudio==2.11.1", domains)
+                self.assertIn("torchvision==0.29.0", domains)
+                self.assertIn("https://download.pytorch.org/whl/test/cu132", domains)
+
+    def test_python315_preserves_cu134_and_source_pins(self):
         for cuda in ((13, 2), (13, 4)):
             for nightly in (True, False):
                 with self.subTest(cuda=cuda, nightly=nightly):
@@ -160,7 +170,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     audio = (
                         "torchaudio==2.11.0.dev20260922+cu134"
                         if nightly and cuda == (13, 4)
-                        else "torchaudio==2.11.0" if nightly else "torchaudio"
+                        else "torchaudio==2.11.1" if nightly else "torchaudio"
                     )
                     self.assertIn(audio, domains)
 
