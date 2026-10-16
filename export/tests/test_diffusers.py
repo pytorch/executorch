@@ -363,6 +363,8 @@ class DiffusersExportTest(unittest.TestCase):
             image = DiffusionRunner(program, [Tokenizer()], Scheduler()).generate(
                 "cat", steps=1, cfg_scale=1.0, seed=9
             )
+            # Release the memory-mapped PTE before Windows removes the directory.
+            del program
 
         self.assertEqual(image.shape, (1, 3, 1, 1))
         torch.testing.assert_close(image, torch.full_like(image, 0.5))
