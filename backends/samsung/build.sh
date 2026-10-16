@@ -44,6 +44,8 @@ function build_x86_64() {
         -DCMAKE_INSTALL_PREFIX=${X86_64_BUILD_DIR} \
         -DEXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT} \
         -DEXECUTORCH_BUILD_ENN=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
 	      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
@@ -58,6 +60,7 @@ function build_x86_64() {
 
   rm -f ${PROJECT_DIR}/backends/samsung/python/Py*so
   cp -fv ${X86_64_BUILD_DIR}/backends/samsung/Py*so ${PROJECT_DIR}/backends/samsung/python/
+  cp -fv ${X86_64_BUILD_DIR}/kernels/quantized/libquantized_ops_aot_lib.so ${PROJECT_DIR}/kernels/quantized/
   cp -fv ${PROJECT_DIR}/schema/*.fbs ${PROJECT_DIR}/exir/_serialize/
 }
 
@@ -89,6 +92,7 @@ function build_android() {
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_ENN=ON \
         -DEXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT} \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
