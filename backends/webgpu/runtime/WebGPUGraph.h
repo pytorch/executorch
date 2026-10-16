@@ -251,6 +251,20 @@ class WebGPUGraph {
   void add_symint_dim_source(int symint_id, int tensor_id, int dim) {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
+  const std::vector<SymIntDimSource>& symint_dim_sources() const {
+    return symint_dim_sources_;
+  }
+
+  // Records a SymInt that a resize hook RECOMPUTES at execute (SymInt
+  // arithmetic). The SymIntSource registries above name where a SymInt is read
+  // from; resize_hooks_ is keyed by the hook's trigger operand, not its result,
+  // so neither can answer "does some op write this id?".
+  void add_symint_computed(int symint_id) {
+    symint_computed_.insert(symint_id);
+  }
+  const std::unordered_set<int>& symint_computed() const {
+    return symint_computed_;
+  }
 
   bool tensor_has_dynamic_dims(int tensor_id) const {
     return dynamic_tensor_ids_.count(tensor_id) != 0;
@@ -597,6 +611,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> symint_computed_;
   std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
