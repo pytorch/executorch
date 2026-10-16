@@ -79,3 +79,18 @@ if(TARGET native_runner_utils)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
 endif()
+
+if(EXECUTORCH_BUILD_NATIVE_CPU)
+  add_executable(native_cpu_engine_test runtime/cpu/test_cpu_engine.cpp)
+  target_link_libraries(
+    native_cpu_engine_test PRIVATE native_cpu_engine native_api
+                                   native_graph_schema GTest::gtest_main
+  )
+  add_dependencies(native_cpu_engine_test native_graph_schema_gen)
+  add_test(NAME native_cpu_engine_test COMMAND native_cpu_engine_test)
+  target_compile_options(
+    native_cpu_engine_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+endif()
