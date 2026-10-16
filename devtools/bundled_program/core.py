@@ -168,15 +168,15 @@ class BundledProgram:
         )
         return self._bundled_program_in_schema
 
+    @staticmethod
     def _emit_bundled_tensor(
-        self,
         tensor: torch.Tensor,
         dim_order: List[int],
         bundled_values: List[bp_schema.Value],
     ) -> None:
         sizes = list(tensor.shape)
         # Store bytes in the physical order declared by the method's I/O tensor.
-        tensor = tensor.permute(dim_order).contiguous()
+        tensor = tensor.permute(dim_order).contiguous().resolve_conj().resolve_neg()
         tensor_data = (
             ctypes.string_at(tensor.data_ptr(), tensor.nbytes) if tensor.nbytes else b""
         )

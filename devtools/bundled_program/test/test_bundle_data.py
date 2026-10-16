@@ -39,7 +39,9 @@ class TestBundle(unittest.TestCase):
             def forward(self, x):
                 return x * 2
 
-        program = to_edge(export(Model(), (input_tensor,))).to_executorch()
+        program = to_edge(
+            export(Model(), (input_tensor.resolve_neg().resolve_conj(),))
+        ).to_executorch()
         with tempfile.TemporaryDirectory() as tmp_dir:
             pte_path = f"{tmp_dir}/model.pte"
             with open(pte_path, "wb") as pte_file:
@@ -117,6 +119,31 @@ class TestBundle(unittest.TestCase):
                 stride_from_dim_order(bundled_tensor.sizes, bundled_tensor.dim_order),
             )
             self.assertTrue(torch.equal(decoded, view))
+
+    def test_pending_negative_input_and_output(self) -> None:
+        tensor = torch.tensor([1 + 2j]).conj().imag
+        self.assertTrue(tensor.is_contiguous())
+        self.assertTrue(tensor.is_neg())
+        expected = torch.tensor([1 + 4j]).conj().imag
+        test_case = self._serialize_tensor_test_case(tensor, expected)
+
+        for value, expected_value in zip(
+            test_case.inputs + test_case.expected_outputs, (-2.0, -4.0)
+        ):
+            self.assertEqual(value.val.dim_order, [0])
+            self.assertEqual(value.val.sizes, [1])
+            self.assertEqual(
+                value.val.data, torch.tensor([expected_value]).numpy().tobytes()
+            )
+
+    def test_pending_conjugate_tensor(self) -> None:
+        tensor = torch.tensor([1 + 2j]).conj()
+        self.assertTrue(tensor.is_conj())
+        values: List[bp_schema.Value] = []
+        BundledProgram._emit_bundled_tensor(tensor, [0], values)
+        self.assertEqual(values[0].val.dim_order, [0])
+        self.assertEqual(values[0].val.sizes, [1])
+        self.assertEqual(values[0].val.data, tensor.resolve_conj().numpy().tobytes())
 
     def test_bundle_uses_program_dim_order(self) -> None:
         class Permute(torch.nn.Module):
