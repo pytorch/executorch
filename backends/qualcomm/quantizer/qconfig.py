@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+import dataclasses
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -19,6 +22,7 @@ from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer
 from executorch.backends.qualcomm.utils.constants import (
     DEFAULT_EPS_16BIT,
     DEFAULT_EPS_8BIT,
+    QCOM_BLOCK_SIZE,
 )
 from torch import Tensor
 from torch.fx import Node
@@ -43,6 +47,26 @@ class QuantizationConfig:
     bias: Optional[QuantizationSpec | Callable]
     block_size: Optional[Tuple] = None
     per_channel_embedding: bool = False
+
+
+def get_weight_qspec(
+    quantization_config: QuantizationConfig,
+) -> Optional[QuantizationSpec]:
+    """
+    The weight spec for one node. With a block size it returns a copy carrying it:
+    the observer constructor is shared by every node annotated with this config, so
+    writing the block size into it hands every node the last one written.
+    """
+    weight = quantization_config.weight
+    if quantization_config.block_size is None:
+        return weight
+    ctr = copy.copy(weight.observer_or_fake_quant_ctr)
+    ctr.p = partial(
+        ctr.p.func,
+        *ctr.p.args,
+        **{**ctr.p.keywords, QCOM_BLOCK_SIZE: quantization_config.block_size},
+    )
+    return dataclasses.replace(weight, observer_or_fake_quant_ctr=ctr)
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
