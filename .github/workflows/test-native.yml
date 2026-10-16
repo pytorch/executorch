@@ -1,0 +1,96 @@
+name: Test Native Engines
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/test-native.yml
+      - .github/workflows/_docker-image.yml
+      - .ci/docker/**
+      - .ci/scripts/test-native.sh
+      - .gitmodules
+      - CMakeLists.txt
+      - backends/native/**
+      - backends/vulkan/CMakeLists.txt
+      - backends/vulkan/cmake/**
+      - backends/vulkan/runtime/api/**
+      - backends/vulkan/runtime/vk_api/**
+      - backends/vulkan/runtime/graph/**
+      - backends/vulkan/runtime/utils/**
+      - backends/vulkan/runtime/gen_vulkan_spv.py
+      - backends/vulkan/third-party/Vulkan-Headers
+      - backends/vulkan/third-party/VulkanMemoryAllocator
+      - backends/vulkan/third-party/volk
+      - backends/vulkan_shared/CMakeLists.txt
+      - backends/vulkan_shared/runtime/**
+      - backends/xnnpack/third-party/FXdiv
+      - backends/xnnpack/third-party/cpuinfo
+      - backends/xnnpack/third-party/pthreadpool
+      - runtime/**
+      - third-party/**
+      - tools/cmake/**
+      - build/**
+      - codegen/**
+      - schema/**
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' && github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
+  test-native:
+    name: native-${{ matrix.component }}
+    needs: docker-image
+    runs-on: mt-l-x86iavx512-8-64
+    container:
+      image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [runtime, ggml, vulkan]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}"
+
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Build and test native ${{ matrix.component }}
+        env:
+          NATIVE_COMPONENT: ${{ matrix.component }}
+        run: |
+          set -exo pipefail
+          eval "$(/opt/conda/bin/conda shell.bash hook)"
+          CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+          conda activate "${CONDA_ENV}"
+
+          unset SCCACHE_BUCKET SCCACHE_S3_KEY_PREFIX
+          export SCCACHE_DIR=/tmp/sccache
+
+          packages=(libzip)
+          if [[ "${NATIVE_COMPONENT}" == "vulkan" ]]; then
+            packages+=(shaderc)
+          fi
+          conda create -y -p /tmp/native-deps -c conda-forge "${packages[@]}"
+          export CMAKE_PREFIX_PATH="/tmp/native-deps:${CMAKE_PREFIX_PATH:-}"
+          export PATH="/tmp/native-deps/bin:${PATH}"
+
+          CMAKE_BUILD_PARALLEL_LEVEL=8 bash .ci/scripts/test-native.sh "${NATIVE_COMPONENT}"

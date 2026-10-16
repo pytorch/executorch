@@ -179,6 +179,23 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
+  OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_GGML "Build the native GGML engine" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+  "Build the native vision classification runner (run_classification)" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(
@@ -507,6 +524,15 @@ check_conflicting_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+)
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_VISION_RUNNER REQUIRES
+  EXECUTORCH_BUILD_NATIVE_VULKAN
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
