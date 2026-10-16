@@ -34,6 +34,14 @@ void add_quantize_and_pack_4h4w_node(
     const ValueRef packed_int_input,
     const ValueRef group_size);
 
+// Global work grid of the *_with_group_sums packers (_o2w32 / _o4w16
+// variants); empty for GEMV inputs.
+GlobalWorkGrid pick_quantize_and_pack_4h4w_with_group_sums_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
 void add_quantize_and_pack_4h4w_with_group_sums_node(
     ComputeGraph& graph,
     const QuantizationConfig& input_quant_config,
