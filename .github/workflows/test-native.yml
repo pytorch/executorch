@@ -7,6 +7,7 @@ on:
       - .github/workflows/_docker-image.yml
       - .ci/docker/**
       - .ci/scripts/test-native.sh
+      - .ci/scripts/test_native_llm_runner.py
       - .gitmodules
       - CMakeLists.txt
       - backends/native/**
@@ -25,6 +26,10 @@ on:
       - backends/xnnpack/third-party/FXdiv
       - backends/xnnpack/third-party/cpuinfo
       - backends/xnnpack/third-party/pthreadpool
+      - examples/models/llama/tokenizer/**
+      - extension/llm/tokenizers
+      - extension/llm/export/**
+      - exir/**
       - runtime/**
       - third-party/**
       - tools/cmake/**
@@ -92,5 +97,9 @@ jobs:
           conda create -y -p /tmp/native-deps -c conda-forge "${packages[@]}"
           export CMAKE_PREFIX_PATH="/tmp/native-deps:${CMAKE_PREFIX_PATH:-}"
           export PATH="/tmp/native-deps/bin:${PATH}"
+
+          if [[ "${NATIVE_COMPONENT}" == "ggml" ]]; then
+            ./install_requirements.sh --use-pt-pinned-commit
+          fi
 
           CMAKE_BUILD_PARALLEL_LEVEL=8 bash .ci/scripts/test-native.sh "${NATIVE_COMPONENT}"
