@@ -27,7 +27,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -64,7 +64,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -86,7 +86,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -129,7 +129,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -153,7 +153,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -206,7 +206,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -231,7 +231,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -253,7 +253,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
@@ -279,7 +279,7 @@ def define_common_targets(is_fbcode = False):
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
-            subplatform = "A100-exclusive",
+            subplatform = "A100",
         ),
     )
 
