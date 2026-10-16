@@ -188,6 +188,7 @@ def define_common_targets(is_fbcode = False):
         name = "test_int5_quantized_gemm",
         srcs = [
             "test_int5_dispatch.py",
+            "test_int5_large_quantized_gemm.py",
             "test_int5_quantized_gemm.py",
         ],
         visibility = [
@@ -195,6 +196,7 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
             "//executorch/backends/cuda:dp4a_planar_int5_tensor",
             "//executorch/backends/cuda:quantize_op_dispatch",
             "//executorch/backends/cuda:triton_kernels",

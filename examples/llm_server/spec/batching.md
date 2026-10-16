@@ -11,50 +11,48 @@ speculative drafting/verification remain inside the runner and executor.
 - Prompts are full inputs, made from ordered text and exact token-ID segments.
   Text segments are encoded separately without implicit BOS/EOS. Chat templates
   must supply the model's required markers.
-- Exact strict history extensions reuse the existing session. Equal, mismatched,
-  or dirty histories cold-replay. Reset destroys the old session and reopens
-  under the same reserved key; failed reopen leaves that key unavailable.
+- Exact history extensions continue the existing session. With prefix caching
+  enabled, clean prompt replacements can reuse live state or shared snapshots.
+  Unavailable or dirty state falls back to full prefill without changing the
+  session key. Explicit reset discards state; failed reopen leaves the key
+  unavailable.
 - Prefix caching is optional and disabled by default. It supports both greedy
-  and sampled requests, but only for implicit new-session initialization, never
-  ordinary continuation, explicit open, reset, or replay. Snapshot capacity is
-  additional to logical serving capacity. The worker's `--prefix_cache_entries`
-  option reserves those snapshots plus one transient capture row without reducing
-  logical `--max_sessions`.
+  and sampled requests for implicit new-session initialization and clean prompt
+  replacement. Explicit open/reset bypass reuse. `--prefix_cache_entries`
+  reserves snapshot capacity in addition to logical `--max_sessions`.
+  Reuse requires a clone-capable executor and complete model state at the
+  requested boundary; missing state falls back to prefill.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
-- Different sessions can run concurrently. Same-session transcript preparation,
-  generation, native wire completion, and transcript commit remain ordered.
-  Cancellation targets one request. Native output and completion-preparation
-  callbacks run in request order on one shared delivery thread, never the engine
-  or control thread. They must do short, bounded, nonblocking work: no blocking
-  I/O, synchronous runtime shutdown/destruction, or waits for runtime work.
-  A blocked native callback delays other native delivery. The native transport
-  enqueues bounded output and writes pipes separately. Python uses one async
-  stdout reader and bounded per-request mailboxes. Native HTTP consumers read
-  those streams directly, without an executor or a second token queue. A paused
-  consumer does not stall peers, but consumers must not block the event loop.
-- Image/audio preparation is not implemented by this worker. The existing
-  muse-glimmer image-serving path remains on its legacy worker. This change does
-  not make existing glimmer embedding-forward exports compatible with the packed
-  `ModuleExecutor` or implement solo/DFlash executors for MLX or CUDA.
+
+- Different sessions run concurrently; requests within a session remain ordered.
+  Callbacks must be nonblocking, and cancellation targets one request.
+- Input support depends on the worker and export. The generic module worker
+  accepts text; model-specific workers may also support images.
+
+`--prefix-checkpoint-interval N` captures prompt snapshots at absolute multiples
+of N and at the initial prompt end. It requires `--prefix-cache-entries > 0`.
+Zero (the default) captures only the initial prompt. Capture is best effort.
+Retention uses global LRU; early checkpoints are not protected.
+
+C++ applications can customize two independent policies in
+[`ServingRuntimeConfig`](../../../extension/llm/serving/serving_runtime.h):
+
+- `prefix_checkpoint_policy` chooses capture positions and optional application metadata.
+- `prefix_cache_retention` chooses which snapshots to retain, including early anchors.
+
+The [retention interface and default LRU policy](../../../extension/llm/batching/prefix_cache_retention.h)
+also work with `PrefixCache` directly. Runner users can request exact boundaries
+through `GenConfig::prefill_breakpoints` and `on_prefill`; see [runner.h](../../../extension/llm/batching/runner.h).
 
 ## Select the Worker Explicitly
 
-Use `await spawn_multiplexed_worker(...)` for native batching. It requires a
-positive `multiplexed: true` readiness capability and rejects and reaps older
-workers rather than silently serializing. The synchronous `spawn_worker` factory
-is legacy-only and rejects multiplexed workers.
+Use `await spawn_multiplexed_worker(...)` with a worker advertising multiplexing
+support. Create, use, and close the client on the same event loop.
 
-Create, use, and close the native client on the same event loop. For HTTP serving,
-the async-context-manager factory passed to `build_app` owns startup and awaited
-shutdown inside the ASGI lifespan. `SessionRuntime` retains admission and session
-ordering through actual wire completion, not merely a cancel acknowledgement.
-
-The dedicated CLI always requires multiplexing and closes the worker on shutdown
-or post-spawn startup failure. It does not change the legacy generic or Muse
-launchers. Replace all `/path/to` paths with matching local artifacts; this
-example uses Llama 3 chat formatting:
+For HTTP serving, use the dedicated launcher with compatible local artifacts.
+This example uses Llama 3 chat formatting:
 
 ```bash
 python -m executorch.examples.llm_server.python.serve \
@@ -114,19 +112,9 @@ EXECUTORCH_BATCHING_TEST_WORKER=/tmp/et-serving-worker-tests/test_batching_worke
   /path/to/executorch/examples/llm_server/python/tests/test_batching_end_to_end.py -q
 ```
 
-The Python environment needs the example server's HTTP/test dependencies and an
-importable checkout. The async tests use AnyIO's asyncio backend. No model weights
-or GPU are needed. The test worker uses the real transport, serving runtime, and
-runner with a fake executor and byte tokenizer. Its test-only scheduler gate
-waits for two queued session IDs without blocking the engine, and its trace
-records distinct session IDs in each `execute` call.
-
-These checks prove concurrent admission and a multi-session executor batch,
-including requests through the OpenAI endpoint. They also exercise cancellation,
-slow Python consumer isolation, exact-ID continuation, reset/close, out-of-order reserved
-request IDs, creation-only prefix caching through the Python runtime, and
-unknown-versus-empty replay metadata. They do not prove a combined real-model
-forward.
+The tests need the server's HTTP/test dependencies and an importable checkout,
+but no model weights or GPU. They cover serving, batching, cancellation, and
+prefix reuse with a fake executor.
 
 ## Real-Model Checks
 

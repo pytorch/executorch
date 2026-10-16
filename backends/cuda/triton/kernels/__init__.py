@@ -4,11 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.cuda.triton.kernels import triton_mutation_cache
-
-# Tracing these kernels analyzes each call site's TTIR; repeats reuse it.
-triton_mutation_cache.install()
-
 from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe,
     fused_moe_batched,

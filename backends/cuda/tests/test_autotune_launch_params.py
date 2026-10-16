@@ -6,6 +6,7 @@
 
 """Tests for @autotune_launch_param (autotune/launch_params.py)."""
 
+import contextlib
 import unittest
 from unittest import mock
 
@@ -160,28 +161,41 @@ class AutotuneLaunchParamTest(unittest.TestCase):
             second(self.x)
         self.assertEqual([p.choice for p in stats.picks], [1, 2])
 
-    def test_a_prepass_runs_every_legal_candidate_once_before_timing(self) -> None:
-        events: list[str] = []
+    def test_a_prepass_calls_every_legal_candidate_once_inside_its_scope(self) -> None:
+        scoped: list[list[int]] = []
 
         class _Scope:
             def __enter__(self):
-                events.append("enter")
+                self.start = len(_CALLS)
+                return self
 
             def __exit__(self, *exc):
-                events.append("exit")
+                scoped.append(_CALLS[self.start :])
                 return False
 
         launch = autotune_launch_param("split_k", (1, 2, 4), candidate_prepass=_Scope)(
             _toy_launch.__wrapped__
         )
         with autotune_launch_params() as stats:
-            launch(self.x, 4)
-        self.assertEqual(stats.picks[0].choice, 4)
-        # One explicit scope around one untimed call of each legal candidate,
-        # followed by the timed rounds and final call.
-        self.assertEqual(events, ["enter", "exit"])
-        self.assertEqual(_CALLS[:3], [1, 2, 4])
-        self.assertGreater(len(_CALLS), 3)
+            launch(self.x, 2)
+        # split_k=4 is illegal for max_split=2, so the scope runs 1 and 2 only.
+        self.assertEqual(scoped, [[1, 2]])
+        self.assertEqual(stats.picks[0].choice, 2)
+
+    def test_an_autotuned_launch_inside_a_prepass_is_refused(self) -> None:
+        @autotune_launch_param("split_k", (1, 2))
+        def inner(x, *, split_k):
+            return x @ x
+
+        @autotune_launch_param(
+            "split_k", (1, 2), candidate_prepass=contextlib.nullcontext
+        )
+        def outer(x, *, split_k):
+            return inner(x)
+
+        with autotune_launch_params():
+            with self.assertRaisesRegex(RuntimeError, "nested autotuning"):
+                outer(self.x)
 
     def test_parameter_must_exist(self) -> None:
         with self.assertRaisesRegex(TypeError, "has no parameter 'num_splits'"):
