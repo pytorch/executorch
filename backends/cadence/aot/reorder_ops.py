@@ -568,6 +568,7 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         # Different supported dequant ops have their own default variants
         packet_to_overload_map = {
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor: "default",
+            torch.ops.cadence.dequantize_per_tensor: "default",
             exir_ops.edge.quantized_decomposed.dequantize_per_channel: "default",
             exir_ops.edge.cadence.dequantize_per_tensor: "default",
         }
