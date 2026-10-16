@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -46,13 +46,25 @@ constexpr size_t kMaxDim = 16;
 at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ET_CHECK(bundled_tensor->sizes()->size() <= kMaxDim);
   int64_t ret_t_sizes[kMaxDim];
+  int64_t ret_t_strides[kMaxDim];
+  const size_t dim = bundled_tensor->sizes()->size();
 
-  for (size_t i = 0; i < bundled_tensor->sizes()->size(); i++) {
+  ET_CHECK(bundled_tensor->dim_order() != nullptr);
+  ET_CHECK(bundled_tensor->dim_order()->size() == dim);
+
+  for (size_t i = 0; i < dim; i++) {
     ret_t_sizes[i] = static_cast<int64_t>(bundled_tensor->sizes()->data()[i]);
   }
+  ET_CHECK(
+      executorch::runtime::dim_order_to_stride(
+          ret_t_sizes,
+          bundled_tensor->dim_order()->data(),
+          dim,
+          ret_t_strides) == Error::Ok);
 
-  at::Tensor ret_tensor = at::zeros(
-      {ret_t_sizes, bundled_tensor->sizes()->size()},
+  at::Tensor ret_tensor = at::empty_strided(
+      {ret_t_sizes, dim},
+      {ret_t_strides, dim},
       at::dtype(static_cast<ScalarType>(bundled_tensor->scalar_type())));
 
   // Validate data buffer exists and has sufficient size

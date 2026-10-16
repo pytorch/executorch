@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import math
-import typing
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
@@ -50,8 +49,8 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
 
 
 def dim_order_from_stride(
-    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
-) -> Tuple[bytes]:
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
+) -> Tuple[int, ...]:
     """
     Dimension order represents how dimensions are laid out in memory,
     starting from the outer-most to the inner-most dimension.
@@ -115,7 +114,7 @@ def dim_order_from_stride(
         expected = make_channels_last_strides_for(sizes)
         if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
             sorted_dims = [0, *range(2, ndim), 1]
-    return tuple(typing.cast(Tuple[bytes], sorted_dims))
+    return tuple(sorted_dims)
 
 
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
@@ -207,9 +206,12 @@ class TensorSpec:
         return num_bytes_from_shape_and_dtype(self.shape, self.dtype)
 
     @classmethod
-    def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
+    def from_tensor(
+        cls,
+        tensor: torch.Tensor,
+        const: bool = False,
+    ) -> TensorSpec:
         if const:
-            # for non-contigous tensors, convert to a contiguous one
             tensor = tensor.contiguous()
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
