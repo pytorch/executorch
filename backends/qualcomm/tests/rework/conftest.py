@@ -376,6 +376,7 @@ def verify_output_remote(
     executorch_prog: ExecutorchProgramManager,
     metrics: Metrics,
     qnn_config: QnnConfig,
+    output_callback=None,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
         ref_outputs = _get_expected_output(module=module, inputs=inputs)
@@ -409,7 +410,10 @@ def verify_output_remote(
         )
         adb.push(inputs=[inputs], init_env=False)
         adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-        adb.execute(method_index=getattr(qnn_config, "method_index", 0))
+        adb.execute(
+            method_index=getattr(qnn_config, "method_index", 0),
+            output_callback=output_callback,
+        )
         adb.pull(host_output_path=tmp_dir, callback=post_process)
         metrics.assert_close(device_output=device_outputs, ref_output=ref_outputs)
 
@@ -419,6 +423,7 @@ def verify_output_emulator(
     inputs: Tuple[torch.Tensor],
     executorch_prog: ExecutorchProgramManager,
     metrics: Metrics,
+    output_callback=None,
     **_: Any,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -454,6 +459,8 @@ def verify_output_emulator(
             env=env,
             cwd=tmp_dir,
         )
+        if output_callback:
+            output_callback(proc)
         assert (
             proc.returncode == 0
         ), f"qnn_executorch_runner return {proc.returncode}, STDOUT=\n {proc.stdout}"
@@ -478,6 +485,7 @@ def export_and_verify(
     quantizer: QnnQuantizer,
     compile_specs: List[Any],
     metrics: Metrics,
+    output_callback=None,
 ):
     with calibrate(module, [inputs], quantizer) as exported_module:
         fake_tensors = (
@@ -557,6 +565,7 @@ def export_and_verify(
         executorch_prog=executorch_prog,
         metrics=metrics,
         qnn_config=qnn_config,
+        output_callback=output_callback,
     )
 
 
