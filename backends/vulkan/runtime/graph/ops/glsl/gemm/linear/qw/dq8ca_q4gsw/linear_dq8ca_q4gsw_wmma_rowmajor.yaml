@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Variants of the row-major-activation 8da4w int8 cooperative-matrix linear.
+# Each one is referenced by a row in impl/gemm/linear/qw/CoopmatFamily.cpp,
+# which also carries its tile geometry; the two must stay in sync.
+#
+# Name: t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
+# mk32 (MMA_K = 32).
+
+linear_dq8ca_q4gsw_wmma_rowmajor:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    IO_STORAGE: texture3d
+    WEIGHT_STORAGE: texture2d
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 32
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 64
+    SG_GRID_X: 2
+    SG_GRID_Y: 4
+    SUBGROUP_SIZE: 32
+  shader_variants:
+    # NVIDIA: subgroup 32, int8 MMA 16x16x32.
+    - NAME: linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d_texture2d_half

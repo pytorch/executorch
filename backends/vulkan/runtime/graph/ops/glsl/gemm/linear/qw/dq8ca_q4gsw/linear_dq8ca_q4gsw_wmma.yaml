@@ -1,0 +1,51 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Variants of the architecture-family 8da4w int8 cooperative-matrix linear
+# (4h4w int8 activations). Each one is referenced by a row in
+# impl/gemm/linear/qw/CoopmatFamily.cpp, which also carries its tile geometry;
+# the two must stay in sync.
+#
+# Name: t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
+# m8 (MMA_M = 8), then i (dispatch order) or n<ORDER_NB_MAX> (blocked order).
+
+linear_dq8ca_q4gsw_wmma:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    IO_STORAGE: buffer
+    WEIGHT_STORAGE: texture2d
+    A_MAP_FULL: false
+    A_MULTI_BLOCK: false
+    A_BLOCKS: 1
+    MMA_M: 8
+    MMA_N: 16
+    MMA_K: 32
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 64
+    SG_GRID_X: 8
+    SG_GRID_Y: 4
+    SUBGROUP_SIZE: 16
+    ORDER_NB_MAX: 0
+  shader_variants:
+    # Intel Xe2: subgroup 16, int8 MMA 8x16x32, dispatch order.
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_texture3d_texture2d_half
+      IO_STORAGE: texture3d
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i_buffer_texture2d_half
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+    # Same tile, blocked workgroup order (weight-heavy projections).
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_texture3d_texture2d_half
+      IO_STORAGE: texture3d
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+      ORDER_NB_MAX: 13
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13_buffer_texture2d_half
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+      ORDER_NB_MAX: 13
