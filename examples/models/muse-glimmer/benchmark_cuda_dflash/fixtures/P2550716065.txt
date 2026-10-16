@@ -1,0 +1,14 @@
+conda run --no-capture-output -n et-extra python -u - <<'PY'
+import json, urllib.request; from rich.live import Live; from rich.markdown import Markdown
+request = urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=json.dumps({"model": "muse_glimmer", "messages": [{"role": "user", "content": "Write a python program that responds with jokes over an HTTP server."}], "stream": True, "max_tokens": 512, "temperature": 0}).encode(), headers={"Content-Type": "application/json"})
+thinking = text = ""
+with urllib.request.urlopen(request, timeout=600) as response, Live("Waiting...", refresh_per_second=8, vertical_overflow="visible") as live:
+    for raw in response:
+        if not raw.startswith(b"data:"): continue
+        if raw.strip() == b"data: [DONE]": break
+        event = json.loads(raw[5:])
+        if "error" in event: raise RuntimeError(event["error"])
+        for choice in event.get("choices", []):
+            delta = choice.get("delta", {}); thinking += delta.get("reasoning_content") or ""; text += delta.get("content") or ""
+        if thinking or text: live.update(Markdown(("### Thinking\n\n" + thinking + "\n\n---\n\n" if thinking else "") + text))
+PY

@@ -1,0 +1,14 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Local offline validation evidence and runner state are not benchmark results.
+__pycache__/
+.pytest_cache/
+validation/lint-data/
+validation/tmp/
+validation/*.log
+validation/*.sha256
+validation/worktree_*.txt

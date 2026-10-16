@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "P2550715258",
+      "source_file": "P2550715258.txt",
+      "source_sha256": "6b606822ff9bf7bcfced64555cbc948176f30c181e5e2bf2efd501f1b5c58d53",
+      "payload": {
+        "model": "muse_glimmer",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a python program to count primes from 1 to n."
+          }
+        ],
+        "stream": true,
+        "max_tokens": 512,
+        "temperature": 0
+      }
+    },
+    {
+      "id": "P2550716065",
+      "source_file": "P2550716065.txt",
+      "source_sha256": "a618c3e704417b5750d57a04f6fbdc3155951861c2f2ce959f6509fa5a605cbd",
+      "payload": {
+        "model": "muse_glimmer",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a python program that responds with jokes over an HTTP server."
+          }
+        ],
+        "stream": true,
+        "max_tokens": 512,
+        "temperature": 0
+      }
+    },
+    {
+      "id": "P2550716727",
+      "source_file": "P2550716727.txt",
+      "source_sha256": "66e8e536aa3423580001a7a9bd4c63cbdfbcedfba12d57ce3927b3066e36f2dc",
+      "payload": {
+        "model": "muse_glimmer",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a Python program that reads a CSV file of expenses with date, category, and amount columns, then prints a monthly spending summary grouped by category. Include sample data and handle invalid rows gracefully."
+          }
+        ],
+        "stream": true,
+        "max_tokens": 512,
+        "temperature": 0
+      }
+    },
+    {
+      "id": "P2550717696",
+      "source_file": "P2550717696.txt",
+      "source_sha256": "b6e51d7541e190afc5f32cc3cbef6b03c8639d0d7c8e077e24ef19c6a80a4ab4",
+      "payload": {
+        "model": "muse_glimmer",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a Python program for a two-player tic-tac-toe game in the terminal. Display the board after each move, validate input, detect wins and draws, and let the players start another game."
+          }
+        ],
+        "stream": true,
+        "max_tokens": 512,
+        "temperature": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Load after the root config. lintrunner 0.12.7 replaces the linter list,
+# so repeat all five requested adapters and scope each to the new Python.
+[[linter]]
+code = 'FLAKE8'
+include_patterns = [
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/compare_http.py',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/test_compare_http.py',
+]
+command = [
+    'python', '-m', 'lintrunner_adapters', 'run', 'flake8_linter',
+    '--append-config',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/validation/flake8.ini',
+    '--', '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'UFMT'
+include_patterns = [
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/compare_http.py',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/test_compare_http.py',
+]
+command = [
+    'python', '-m', 'lintrunner_adapters', 'run', 'ufmt_linter',
+    '--', '@{{PATHSFILE}}',
+]
+is_formatter = true
+
+[[linter]]
+code = 'NEWLINE'
+include_patterns = [
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/compare_http.py',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/test_compare_http.py',
+]
+command = [
+    'python', '-m', 'lintrunner_adapters', 'run', 'newlines_linter',
+    '--', '@{{PATHSFILE}}',
+]
+is_formatter = true
+
+[[linter]]
+code = 'LICENSELINT'
+include_patterns = [
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/compare_http.py',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/test_compare_http.py',
+]
+command = [
+    'python', '-m', 'lintrunner_adapters', 'run', 'grep_linter',
+    '--pattern=Confidential and propri[e]tary',
+    '--linter-name=LICENSELINT', '--error-name=Wrong license',
+    '--error-description=Use the BSD-style root license.',
+    '--', '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'BANDIT'
+include_patterns = [
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/compare_http.py',
+    'examples/models/muse-glimmer/benchmark_cuda_dflash/test_compare_http.py',
+]
+command = [
+    'python', '-m', 'lintrunner_adapters', 'run', 'bandit_linter',
+    '--configfile', '.bandit.yaml', '--', '@{{PATHSFILE}}',
+]
