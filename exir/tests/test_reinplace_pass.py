@@ -200,6 +200,52 @@ class TestReinplacePass(unittest.TestCase):
                     loaded.forward(inputs)[0], reference(*inputs)
                 )
 
+    def test_accumulating_index_put_reinplaced(self) -> None:
+        """Accumulation must retain repeated-index semantics after rewriting."""
+
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                intermediate = x + 1
+                return intermediate.index_put((indices,), values, accumulate=True)
+
+        inputs = (
+            torch.zeros(5),
+            torch.tensor([1, 1]),
+            torch.tensor([2.0, 3.0]),
+        )
+        edge = to_edge(export(AccumulateModel(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        self.assertEqual(
+            len(_find_nodes(et.exported_program(), "index_put", excludes="index_put_")),
+            0,
+        )
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        torch.testing.assert_close(
+            loaded.forward(inputs)[0], AccumulateModel()(*inputs)
+        )
+
+    def test_accumulating_index_put_kwarg_reinplaced(self) -> None:
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return (x + 1).index_put((indices,), values, accumulate=True)
+
+        inputs = (torch.zeros(5), torch.tensor([1]), torch.tensor([2.0]))
+        ep = to_edge(export(AccumulateModel(), inputs, strict=True)).exported_program()
+        node = _find_nodes(ep, "index_put", excludes="index_put_")[0]
+        # Export normally normalizes accumulate to a positional argument.
+        # Exercise the keyword form too, as the pass forwards kwargs.
+        self.assertIs(node.args[3], True)
+        node.args = node.args[:3]
+        node.kwargs = {"accumulate": True}
+
+        reinplace_pass(ep)
+        inplace = _find_nodes(ep, "index_put_")
+        self.assertEqual(len(inplace), 1)
+        self.assertIs(inplace[0].kwargs["accumulate"], True)
+        self.assertEqual(len(_find_nodes(ep, "index_put", excludes="index_put_")), 0)
+
     def test_cant_reinplace(self) -> None:
         """Test that index_put on a mutable buffer that is viewed later is not safe."""
 
@@ -317,8 +363,7 @@ class TestReinplacePass(unittest.TestCase):
     def test_kwargs_are_forwarded(self) -> None:
         """When the matched node carries a value in ``node.kwargs`` (e.g.
         ``accumulate=True`` for ``index_put``), the rewrite must forward
-        those kwargs to the in-place form. Otherwise the in-place op
-        falls back to the schema default and silently changes semantics.
+        those kwargs to the in-place form.
 
         ``export`` normalizes most arguments into positional form, so we
         explicitly move ``accumulate`` into ``node.kwargs`` after export
@@ -351,14 +396,9 @@ class TestReinplacePass(unittest.TestCase):
         self.assertEqual(len(functionals), 1, "Should find a functional index_put")
         functional = functionals[0]
 
-        # index_put schema: (self, indices, values, accumulate=False).
-        # Move arg[3] -> kwargs["accumulate"] if present.
-        if len(functional.args) >= 4:
-            new_args = functional.args[:3]
-            new_kwargs = dict(functional.kwargs)
-            new_kwargs["accumulate"] = functional.args[3]
-            functional.args = new_args
-            functional.kwargs = new_kwargs
+        # Export normalizes the argument to positional form.
+        functional.args = functional.args[:3]
+        functional.kwargs = {**functional.kwargs, "accumulate": True}
         self.assertEqual(
             functional.kwargs.get("accumulate"),
             True,
