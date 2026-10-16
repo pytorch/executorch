@@ -4,12 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-if(NOT EXECUTORCH_BUILD_NATIVE_VULKAN)
-  message(
-    FATAL_ERROR "run_classification requires EXECUTORCH_BUILD_NATIVE_VULKAN=ON"
-  )
-endif()
-
 if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
   find_package(gflags REQUIRED)
 endif()
@@ -19,15 +13,42 @@ else()
   set(_native_vision_gflags gflags)
 endif()
 
-add_executable(run_classification run_classification.cpp)
+add_library(native_classification_runner STATIC ClassificationRunner.cpp)
 target_link_libraries(
-  run_classification
-  PRIVATE ${_native_vision_gflags} native_engine native_package
-          native_runner_utils native_runtime native_vulkan_engine
+  native_classification_runner
+  PUBLIC native_engine
+  PRIVATE ${_native_vision_gflags} native_runner_utils
 )
 target_compile_options(
-  run_classification PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
-                             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  native_classification_runner
+  PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+          $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
 )
 
-install(TARGETS run_classification RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+function(add_native_classification_runner target source engine)
+  add_executable(${target} ${source})
+  target_link_libraries(
+    ${target}
+    PRIVATE native_classification_runner ${_native_vision_gflags} ${engine}
+  )
+  target_compile_options(
+    ${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+                      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+  install(TARGETS ${target} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endfunction()
+
+if(EXECUTORCH_BUILD_NATIVE_VULKAN)
+  add_native_classification_runner(
+    run_classification run_classification.cpp native_vulkan_engine
+  )
+  add_native_classification_runner(
+    run_classification_vulkan run_classification.cpp native_vulkan_engine
+  )
+endif()
+
+if(EXECUTORCH_BUILD_NATIVE_CPU)
+  add_native_classification_runner(
+    run_classification_cpu run_classification_cpu.cpp native_cpu_engine
+  )
+endif()
