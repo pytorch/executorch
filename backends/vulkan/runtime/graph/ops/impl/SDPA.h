@@ -35,6 +35,17 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_weights,
     const SDPAMode mode);
 
+// Decode-only fused Q @ K^T + softmax, LLM mode. It is added alongside the
+// separate attn-weights and softmax nodes; their work group pickers make sure
+// exactly one of the two paths dispatches for the current context length.
+void add_sdpa_compute_attn_weights_with_softmax_node(
+    ComputeGraph& graph,
+    const ValueRef q,
+    const ValueRef k,
+    const ValueRef input_pos_symint,
+    const float scale_val,
+    const ValueRef attn_weights_softmax);
+
 void add_sdpa_attn_weights_softmax_node(
     ComputeGraph& graph,
     const ValueRef attn_weights,

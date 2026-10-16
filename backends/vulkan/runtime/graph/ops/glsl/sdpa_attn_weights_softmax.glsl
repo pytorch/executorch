@@ -42,11 +42,6 @@ $if MODE == "llm":
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// Shared memory for cooperative max finding and exp sum reduction.
-// For fused SDPA, reductions happen in fp32 for numerical stability.
-shared SOFTMAX_ACC_T shared_max[NUM_WORKERS_PER_WG];
-shared SOFTMAX_ACC_T shared_exp_sum[NUM_WORKERS_PER_WG];
-
 SOFTMAX_IN_VEC4_T load_attn_weights_c4(
     const int c4,
     const int s,
@@ -75,6 +70,8 @@ void store_attn_weights_softmax_c4(
   imageStore(t_attn_weights_softmax, ivec3(c4, s, q_h), out_texel);
 #endif
 }
+
+#include "sdpa_attn_weights_softmax_row.glslh"
 
 /*
  * 3-pass numerically stable softmax over the context_len dimension of
@@ -119,7 +116,6 @@ void main() {
 #else
   const int context_len = k_sizes.y;
 #endif
-  const int context_texel_len = div_up_4(context_len);
 
   // LLM: attn_weights S dim is padded to S_aligned; fused: not padded.
 #ifdef HAS_INPUT_POS
@@ -134,131 +130,5 @@ void main() {
     return;
   }
 
-  const int context_len_aligned_down = context_len - mod_4(context_len);
-  const int C4_limit = div_4(context_len_aligned_down);
-
-  // =========================================================================
-  // Pass 1: Find the maximum value across the row for numerical stability.
-  // Without this, exp(x) can overflow float32 when x > ~88.7.
-  // =========================================================================
-
-  SOFTMAX_ACC_T local_max = SOFTMAX_ACC_T(-1.0 / 0.0); // -infinity
-
-  for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
-    SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-        c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-    for (int comp = 0; comp < 4; comp++) {
-      local_max = max(local_max, SOFTMAX_ACC_T(in_texel[comp]));
-    }
-  }
-  if (worker_id == 0) {
-    for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
-      const int c_base = mul_4(c4);
-      SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-          c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-      [[unroll]] for (int comp = 0; comp < 4; comp++) {
-        if (c_base + comp < context_len) {
-          local_max = max(local_max, SOFTMAX_ACC_T(in_texel[comp]));
-        }
-      }
-    }
-  }
-
-  shared_max[worker_id] = local_max;
-
-  memoryBarrierShared();
-  barrier();
-
-  // Tree reduction to find the global max
-  for (int i = NUM_WORKERS_PER_WG / 2; i > 0; i >>= 1) {
-    if (worker_id < i) {
-      shared_max[worker_id] = max(
-          shared_max[worker_id], shared_max[worker_id + i]);
-    }
-    memoryBarrierShared();
-    barrier();
-  }
-
-  const SOFTMAX_ACC_T global_max = shared_max[0];
-
-  // =========================================================================
-  // Pass 2: Compute sum(exp(x - max)) using the global max for stability
-  // =========================================================================
-
-  SOFTMAX_ACC_T local_exp_sum = SOFTMAX_ACC_T(0);
-
-  for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
-    SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-        c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-    for (int comp = 0; comp < 4; comp++) {
-      local_exp_sum += exp(SOFTMAX_ACC_T(in_texel[comp]) - global_max);
-    }
-  }
-  if (worker_id == 0) {
-    for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
-      const int c_base = mul_4(c4);
-      SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-          c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-      [[unroll]] for (int comp = 0; comp < 4; comp++) {
-        if (c_base + comp < context_len) {
-          local_exp_sum += exp(SOFTMAX_ACC_T(in_texel[comp]) - global_max);
-        }
-      }
-    }
-  }
-
-  shared_exp_sum[worker_id] = local_exp_sum;
-
-  memoryBarrierShared();
-  barrier();
-
-  // Tree reduction to compute the overall exp sum
-  for (int i = NUM_WORKERS_PER_WG / 2; i > 0; i >>= 1) {
-    if (worker_id < i) {
-      shared_exp_sum[worker_id] = shared_exp_sum[worker_id] +
-          shared_exp_sum[worker_id + i];
-    }
-    memoryBarrierShared();
-    barrier();
-  }
-
-  local_exp_sum = shared_exp_sum[0];
-
-  // =========================================================================
-  // Pass 3: Normalize each element: out = exp(x - max) / sum(exp(x - max))
-  // =========================================================================
-
-  for (int c4 = worker_id; c4 < C4_limit; c4 += NUM_WORKERS_PER_WG) {
-    SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-        c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-    VEC4_T out_texel;
-    [[unroll]] for (int comp = 0; comp < 4; comp++) {
-      out_texel[comp] = T(
-          exp(SOFTMAX_ACC_T(in_texel[comp]) - global_max) / local_exp_sum);
-    }
-    store_attn_weights_softmax_c4(
-        out_texel, c4, s, q_h, context_texel_len, attn_S, Q_H);
-  }
-  if (worker_id == 0) {
-    for (int c4 = C4_limit; c4 < context_texel_len; ++c4) {
-      const int c_base = mul_4(c4);
-      SOFTMAX_IN_VEC4_T in_texel = load_attn_weights_c4(
-          c4, s, q_h, context_texel_len, attn_S, Q_H);
-
-      VEC4_T out_texel = VEC4_T(0);
-      [[unroll]] for (int comp = 0; comp < 4; comp++) {
-        if (c_base + comp < context_len) {
-          out_texel[comp] = T(
-              exp(SOFTMAX_ACC_T(in_texel[comp]) - global_max) / local_exp_sum);
-        }
-      }
-      store_attn_weights_softmax_c4(
-          out_texel, c4, s, q_h, context_texel_len, attn_S, Q_H);
-    }
-  }
+  softmax_attn_weights_row(worker_id, s, q_h, context_len, attn_S, Q_H);
 }
