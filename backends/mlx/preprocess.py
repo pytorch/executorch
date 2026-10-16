@@ -57,6 +57,11 @@ class MLXBackend(BackendDetails):
     EXPECTED_MAGIC: ClassVar[bytes] = MAGIC
     EXPECTED_LENGTH: ClassVar[int] = HEADER_LENGTH
 
+    # MLXBackend::execute releases an input that is also an output before
+    # evaluating, so MLX can update it in its own memory, and only writes
+    # outputs once everything reading inputs is done.
+    writes_mutated_inputs_in_place: ClassVar[bool] = True
+
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
