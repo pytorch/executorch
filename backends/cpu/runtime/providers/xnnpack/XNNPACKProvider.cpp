@@ -6,7 +6,11 @@
 
 #include <executorch/backends/cpu/runtime/op_helpers/Convolution.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <xnnpack.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include "src/xnnpack/subgraph.h" // @manual
+#endif
 
 #include <algorithm>
 #include <array>
@@ -14,12 +18,15 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
+using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -38,6 +45,17 @@ Error check(xnn_status status, const char* operation) {
       return cpu_xnn_error;                                      \
     }                                                            \
   } while (false)
+
+bool profiling_ok(Error error, const char* operation) {
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "CPU XNNPACK profiling %s failed: %u",
+        operation,
+        static_cast<unsigned int>(error));
+  }
+  return error == Error::Ok;
+}
 
 bool constant(const ptn::Value& value) {
   return value.role == ptn::ValueRole::Parameter ||
@@ -101,6 +119,8 @@ class XNNState {
     return Error::Ok;
   }
   std::map<std::pair<ptn::ValueId, bool>, Buffer> converted_weights;
+  /// Numbers ETDump operator names uniquely across the provider's regions.
+  std::unordered_map<std::string, uint32_t> operator_counts;
   xnn_workspace_t workspace = nullptr;
   xnn_weights_cache_t cache = nullptr;
 };
@@ -184,13 +204,27 @@ class XNNExecutable final : public Executable {
         return error;
       }
     }
+    uint32_t runtime_flags = 0;
+#ifdef ET_EVENT_TRACER_ENABLED
+    auto* tracer = context_.execution.event_tracer;
+    if (tracer &&
+        tracer->event_tracer_profiling_level() >
+            EventTracerProfilingLevel::kProfileMethodOnly) {
+      runtime_flags |= XNN_FLAG_BASIC_PROFILING;
+    }
+#endif
     CPU_XNN_CHECK(xnn_create_runtime_v4(
         subgraph_,
         state_.cache,
         state_.workspace,
         context_.execution.threadpool,
-        0,
+        runtime_flags,
         &runtime_));
+    if (runtime_flags & XNN_FLAG_BASIC_PROFILING) {
+      profiling_ = profiling_ok(
+          profiler_.initialize(runtime_, &state_.operator_counts),
+          "initialization");
+    }
     return Error::Ok;
   }
 
@@ -209,6 +243,11 @@ class XNNExecutable final : public Executable {
           "XNNPACK inferred a different semantic shape for %s",
           context_.graph.value(binding.id).name.c_str());
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    if (profiling_) {
+      profiling_ok(describe_operators(), "metadata");
+    }
+#endif
     return Error::Ok;
   }
 
@@ -231,18 +270,63 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
-  Error run(const ExecutionContext&) override {
+  Error run(const ExecutionContext& context) override {
     ET_CHECK_OR_RETURN_ERROR(
         bound_, InvalidState, "XNNPACK requires a successful bind");
     // Shared workspace growth can relocate another region's internal values.
     CPU_XNN_CHECK(
         xnn_setup_runtime_v2(runtime_, external_.size(), external_.data()));
+    tracing_ = profiling_ &&
+        profiling_ok(profiler_.start(context.event_tracer), "start");
     CPU_XNN_CHECK(xnn_invoke_runtime(runtime_));
     return Error::Ok;
   }
 
+  void submit_trace() override {
+    if (tracing_) {
+      tracing_ = false;
+      profiling_ok(profiler_.end(), "end");
+    }
+  }
+
  private:
   friend const XNNOp* find_op(std::string_view target);
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  // Reads XNNPACK's internal runtime, which the public API does not expose:
+  // profiling reports one entry per opdata with a primary operator, in order.
+  Error describe_operators() {
+    std::vector<std::string> shapes;
+    for (size_t index = 0; index < runtime_->num_ops; ++index) {
+      const auto& op = runtime_->opdata[index];
+      if (op.operator_objects[0] != nullptr) {
+        shapes.push_back(
+            "{\"inputs\":" + value_shapes(op.inputs, op.num_inputs) +
+            ",\"outputs\":" + value_shapes(op.outputs, op.num_outputs) + "}");
+      }
+    }
+    return profiler_.set_operator_metadata(std::move(shapes));
+  }
+
+  std::string value_shapes(const uint32_t* ids, uint32_t count) const {
+    std::string text = "[";
+    for (uint32_t index = 0; index < count; ++index) {
+      text += index ? "," : "";
+      if (ids[index] == XNN_INVALID_VALUE_ID ||
+          ids[index] >= runtime_->num_values) {
+        text += "null";
+        continue;
+      }
+      const auto& shape = runtime_->values[ids[index]].shape;
+      text += "[";
+      for (size_t dim = 0; dim < shape.num_dims; ++dim) {
+        text += (dim ? "," : "") + std::to_string(shape.dim[dim]);
+      }
+      text += "]";
+    }
+    return text + "]";
+  }
+#endif
 
   std::vector<size_t> dimensions(ptn::ValueId id) const {
     const auto& sizes = context_.graph.value(id).tensor_meta().sizes;
@@ -849,6 +933,9 @@ class XNNExecutable final : public Executable {
   bool bound_ = false;
   std::vector<Binding> bindings_;
   std::vector<xnn_external_value> external_;
+  XNNProfiler profiler_;
+  bool profiling_ = false;
+  bool tracing_ = false;
 };
 
 const XNNOp* find_op(std::string_view target) {
