@@ -31,6 +31,97 @@ def is_sdpa_with_kv_cache_node(node: Any) -> bool:
     return utils.node_has_target(node, "llama::sdpa_with_kv_cache")
 
 
+# Positions of (query, key_cache, attn_mask, is_causal) in the op's args.
+_LLM_SDPA_ARG_IDX = {
+    "llama::custom_sdpa": (0, 1, 4, 6),
+    "llama::sdpa_with_kv_cache": (0, 3, 7, 9),
+}
+
+
+def _is_update_cache_node(node: torch.fx.Node) -> bool:
+    if node.target in (
+        torch.ops.higher_order.auto_functionalized,
+        torch.ops.higher_order.auto_functionalized_v2,
+    ):
+        op = node.args[0]
+        return hasattr(op, "name") and op.name() == "llama::update_cache"
+    return utils.node_has_target(node, "llama::update_cache")
+
+
+def _check_update_cache_node(node: torch.fx.Node) -> bool:
+    # custom_sdpa reads either the mutated cache directly, or the cache returned
+    # by the auto_functionalized update_cache.
+    readers = set(node.users)
+    for user in node.users:
+        readers.update(user.users)
+    if utils.node_has_target(node, "llama::update_cache") and isinstance(
+        node.args[1], torch.fx.Node
+    ):
+        readers.update(node.args[1].users)
+    return all(
+        check_llm_sdpa_node(reader)
+        for reader in readers
+        if utils.node_has_target(reader, "llama::custom_sdpa")
+    )
+
+
+def _check_llm_sdpa_mask(
+    attn_mask: torch.fx.Node, q: torch.fx.Node, cache: torch.fx.Node
+) -> bool:
+    mask_val = attn_mask.meta.get("val", None)
+    q_val = q.meta.get("val", None)
+    cache_val = cache.meta.get("val", None)
+    if not all(isinstance(v, torch.Tensor) for v in (mask_val, q_val, cache_val)):
+        return False
+    if mask_val.dim() != 2 or mask_val.dtype != q_val.dtype:
+        return False
+    # The mask must be [S, C]. Only reject sizes that are known to mismatch.
+    return all(
+        not (isinstance(size, int) and isinstance(expected, int)) or size == expected
+        for size, expected in (
+            (mask_val.shape[0], q_val.shape[1]),
+            (mask_val.shape[1], cache_val.shape[1]),
+        )
+    )
+
+
+def check_llm_sdpa_node(node: torch.fx.Node) -> bool:
+    """
+    The Vulkan LLM SDPA is either causal without an attn_mask, or takes a 2D
+    [S, C] additive attn_mask (with is_causal unset) of the same dtype as the
+    query. Other configurations stay on CPU instead of failing at load time.
+    An update_cache stays on CPU with the custom_sdpa that reads its cache, so
+    that both see the same cache.
+    """
+    if _is_update_cache_node(node):
+        return _check_update_cache_node(node)
+
+    arg_idx = next(
+        (
+            idx
+            for target, idx in _LLM_SDPA_ARG_IDX.items()
+            if utils.node_has_target(node, target)
+        ),
+        None,
+    )
+    if arg_idx is None:
+        return True
+    q_idx, cache_idx, mask_idx, is_causal_idx = arg_idx
+
+    def get_arg(idx: int, name: str, default: Any) -> Any:
+        if idx < len(node.args):
+            return node.args[idx]
+        return node.kwargs.get(name, default)
+
+    attn_mask = get_arg(mask_idx, "attn_mask", None)
+    is_causal = get_arg(is_causal_idx, "is_causal", False)
+    if attn_mask is None:
+        return bool(is_causal)
+    if is_causal or not isinstance(attn_mask, torch.fx.Node):
+        return False
+    return _check_llm_sdpa_mask(attn_mask, node.args[q_idx], node.args[cache_idx])
+
+
 class CausalSDPAMatch(PatternMatch):
     def __init__(self, custom_sdpa_node: torch.fx.Node) -> None:
         self.anchor_node = custom_sdpa_node
@@ -87,6 +178,11 @@ def find_causal_sdpa_patterns(
     node: torch.fx.Node,
 ) -> Optional[CausalSDPAMatch]:
     if not is_custom_sdpa_node(node):
+        return None
+
+    # A matched node is delegated without the partitioner's per-op checks, so
+    # leave unsupported mask configurations unmatched to keep them on CPU.
+    if not check_llm_sdpa_node(node):
         return None
 
     matched_pattern = CausalSDPAMatch(node)

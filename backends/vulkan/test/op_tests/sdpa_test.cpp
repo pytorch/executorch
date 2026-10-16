@@ -20,8 +20,10 @@
 
 #include "test_utils.h"
 
+#include <array>
 #include <cassert>
 #include <iostream>
+#include <optional>
 
 //
 // SDPA Mode Enum
@@ -891,4 +893,384 @@ TEST(VulkanSDPATest, test_sdpa_op_gqa_group4) {
 
   test_vulkan_sdpa(
       0, {5, 1, 1, 1, 1, 3, 1}, head_dim, num_heads, num_kv_heads, 1);
+}
+
+//
+// KV-cache SDPA with an optional additive attn_mask and an optional scale. As
+// in the CPU op, a mask replaces the causal mask and covers every key in the
+// cache.
+//
+
+enum class LLMSDPAMask {
+  // No mask, is_causal = true
+  CAUSAL,
+  // Each query sees the last sliding_window keys up to its own position
+  SLIDING_WINDOW,
+  // Random finite values over every key in the cache, so keys after
+  // input_pos + S contribute to the output
+  RANDOM,
+};
+
+struct LLMSDPAStep {
+  int input_pos;
+  int seq_len;
+};
+
+std::vector<LLMSDPAStep> consecutive_steps(const std::vector<int>& seq_lens) {
+  std::vector<LLMSDPAStep> steps;
+  int input_pos = 0;
+  for (const int seq_len : seq_lens) {
+    steps.push_back({input_pos, seq_len});
+    input_pos += seq_len;
+  }
+  return steps;
+}
+
+void test_vulkan_llm_sdpa(
+    const std::vector<LLMSDPAStep>& steps,
+    const int head_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const int max_context_len,
+    const LLMSDPAMask mask_kind,
+    const int sliding_window,
+    const std::optional<double> scale,
+    vkcompute::utils::StorageType storage_type,
+    at::ScalarType dtype = at::kFloat,
+    const bool use_custom_sdpa = false) {
+  using namespace vkcompute;
+
+  const bool has_mask = mask_kind != LLMSDPAMask::CAUSAL;
+
+  int max_seq_len = 0;
+  for (const LLMSDPAStep& step : steps) {
+    ASSERT_LE(step.input_pos + step.seq_len, max_context_len);
+    max_seq_len = std::max(max_seq_len, step.seq_len);
+  }
+
+  // Reference caches are kept in fp32
+  at::Tensor k_cache = at::zeros(
+      {1, max_context_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor v_cache = at::zeros_like(k_cache);
+  at::Tensor k_cache_data = at::zeros_like(k_cache).to(dtype);
+  at::Tensor v_cache_data = at::zeros_like(v_cache).to(dtype);
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef r_q = graph.add_input_tensor(
+      {1, max_seq_len, num_heads, head_dim},
+      from_at_scalartype(dtype),
+      storage_type);
+  IOValueRef r_k = graph.add_input_tensor(
+      {1, max_seq_len, num_kv_heads, head_dim},
+      from_at_scalartype(dtype),
+      storage_type);
+  IOValueRef r_v = graph.add_input_tensor(
+      {1, max_seq_len, num_kv_heads, head_dim},
+      from_at_scalartype(dtype),
+      storage_type);
+  IOValueRef r_mask = {kDummyValueRef, kDummyValueRef};
+  if (has_mask) {
+    r_mask = graph.add_input_tensor(
+        {max_seq_len, max_context_len},
+        from_at_scalartype(dtype),
+        storage_type);
+  }
+
+  const ValueRef r_input_pos_symint = graph.add_symint(0);
+  const ValueRef r_out = graph.add_tensor(
+      {1, max_seq_len, num_heads, head_dim},
+      from_at_scalartype(dtype),
+      storage_type);
+  const ValueRef r_is_causal = graph.add_scalar<bool>(!has_mask);
+  const ValueRef r_scale = scale.has_value()
+      ? graph.add_scalar<double>(scale.value())
+      : kDummyValueRef;
+
+  if (use_custom_sdpa) {
+    const ValueRef r_k_cache = graph.add_tensor(
+        k_cache_data.sizes().vec(), from_at_scalartype(dtype), storage_type);
+    const ValueRef r_v_cache = graph.add_tensor(
+        v_cache_data.sizes().vec(), from_at_scalartype(dtype), storage_type);
+    const ValueRef r_dummy_out =
+        graph.add_tensor({1}, from_at_scalartype(dtype), utils::kBuffer);
+    VK_GET_OP_FN("update_cache.default")
+    (graph, {r_k.value, r_k_cache, r_input_pos_symint, r_dummy_out});
+    VK_GET_OP_FN("update_cache.default")
+    (graph, {r_v.value, r_v_cache, r_input_pos_symint, r_dummy_out});
+    VK_GET_OP_FN("llama.custom_sdpa.default")
+    (graph,
+     {
+         r_q.value,
+         r_k_cache,
+         r_v_cache,
+         r_input_pos_symint,
+         r_mask.value,
+         kDummyValueRef, // dropout_p
+         r_is_causal,
+         r_scale,
+         r_out,
+     });
+  } else {
+    const ValueRef r_k_cache_data = graph.add_tensorref(
+        k_cache_data.sizes().vec(),
+        from_at_scalartype(dtype),
+        k_cache_data.const_data_ptr());
+    const ValueRef r_v_cache_data = graph.add_tensorref(
+        v_cache_data.sizes().vec(),
+        from_at_scalartype(dtype),
+        v_cache_data.const_data_ptr());
+    VK_GET_OP_FN("sdpa_with_kv_cache.default")
+    (graph,
+     {
+         r_q.value,
+         r_k.value,
+         r_v.value,
+         r_k_cache_data,
+         r_v_cache_data,
+         r_input_pos_symint,
+         kDummyValueRef, // sequence_len
+         r_mask.value,
+         kDummyValueRef, // dropout_p
+         r_is_causal,
+         r_scale,
+         r_out,
+     });
+  }
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  torch::manual_seed(0);
+
+  const double scale_val =
+      scale.has_value() ? scale.value() : 1.0 / std::sqrt(head_dim);
+
+  for (const LLMSDPAStep& step : steps) {
+    const int input_pos = step.input_pos;
+    const int seq_len = step.seq_len;
+
+    const at::Tensor q =
+        (at::rand({1, seq_len, num_heads, head_dim}) * 2 - 1).to(dtype);
+    const at::Tensor k =
+        (at::rand({1, seq_len, num_kv_heads, head_dim}) * 2 - 1).to(dtype);
+    const at::Tensor v =
+        (at::rand({1, seq_len, num_kv_heads, head_dim}) * 2 - 1).to(dtype);
+
+    // Query i is at position input_pos + i
+    const at::Tensor q_pos = at::arange(seq_len).unsqueeze(1) + input_pos;
+    const at::Tensor k_pos = at::arange(max_context_len).unsqueeze(0);
+    at::Tensor visible = k_pos <= q_pos;
+    if (mask_kind == LLMSDPAMask::SLIDING_WINDOW) {
+      visible = at::logical_and(visible, k_pos > q_pos - sliding_window);
+    }
+    at::Tensor mask = mask_kind == LLMSDPAMask::RANDOM
+        ? at::randn({seq_len, max_context_len}) * 2
+        : at::zeros({seq_len, max_context_len})
+              .masked_fill(at::logical_not(visible), -INFINITY);
+    mask = mask.to(dtype);
+
+    // Reference, in fp32 from the dtype-rounded inputs
+    k_cache.slice(1, input_pos, input_pos + seq_len).copy_(k.to(at::kFloat));
+    v_cache.slice(1, input_pos, input_pos + seq_len).copy_(v.to(at::kFloat));
+    const int num_repeats = num_heads / num_kv_heads;
+    const at::Tensor q_t = q.to(at::kFloat).transpose(1, 2);
+    const at::Tensor k_t =
+        at::repeat_interleave(k_cache, num_repeats, 2).transpose(1, 2);
+    const at::Tensor v_t =
+        at::repeat_interleave(v_cache, num_repeats, 2).transpose(1, 2);
+    const at::Tensor attn = at::matmul(q_t, k_t.transpose(-2, -1)) * scale_val +
+        mask.to(at::kFloat);
+    const at::Tensor reference_out =
+        at::matmul(at::softmax(attn, -1), v_t).transpose(1, 2);
+
+    graph.set_symint(r_input_pos_symint, input_pos);
+    graph.resize_input(0, q.sizes().vec());
+    graph.resize_input(1, k.sizes().vec());
+    graph.resize_input(2, v.sizes().vec());
+    if (has_mask) {
+      graph.resize_input(3, mask.sizes().vec());
+    }
+    graph.propagate_resize();
+
+    graph.maybe_cast_and_copy_into_staging(
+        r_q.staging, q.const_data_ptr(), q.numel(), from_at_scalartype(dtype));
+    graph.maybe_cast_and_copy_into_staging(
+        r_k.staging, k.const_data_ptr(), k.numel(), from_at_scalartype(dtype));
+    graph.maybe_cast_and_copy_into_staging(
+        r_v.staging, v.const_data_ptr(), v.numel(), from_at_scalartype(dtype));
+    if (has_mask) {
+      graph.maybe_cast_and_copy_into_staging(
+          r_mask.staging,
+          mask.const_data_ptr(),
+          mask.numel(),
+          from_at_scalartype(dtype));
+    }
+
+    graph.execute();
+
+    at::Tensor vk_out = at::zeros_like(q).contiguous();
+    graph.maybe_cast_and_copy_from_staging(
+        staging_out,
+        vk_out.mutable_data_ptr(),
+        vk_out.numel(),
+        from_at_scalartype(dtype));
+    vk_out = vk_out.to(at::kFloat);
+
+    const double atol = dtype == at::kHalf ? 1e-2 : 1e-4;
+    const double rtol = dtype == at::kHalf ? 1e-2 : 1e-5;
+    const bool output_correct = at::allclose(reference_out, vk_out, rtol, atol);
+    if (!output_correct) {
+      std::cout << "LLM SDPA failed at input_pos " << input_pos
+                << " with seq_len " << seq_len << " (" << storage_type
+                << " storage, dtype " << dtype << "), max diff "
+                << at::max(at::abs(reference_out - vk_out)).item() << std::endl;
+    }
+    ASSERT_TRUE(output_correct);
+  }
+}
+
+constexpr std::array<vkcompute::utils::StorageType, 2> kLLMSDPAStorageTypes = {
+    vkcompute::utils::kTexture3D,
+    vkcompute::utils::kBuffer};
+
+TEST(VulkanSDPATest, test_sdpa_op_sliding_window_mask) {
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({7, 1, 1, 1, 5, 1, 1}),
+        64,
+        8,
+        2,
+        32,
+        LLMSDPAMask::SLIDING_WINDOW,
+        4,
+        1.0,
+        storage_type);
+  }
+}
+
+// A cache length that is not a multiple of 4 leaves the buffer-backed mask's
+// rows unaligned to texels.
+TEST(VulkanSDPATest, test_sdpa_op_sliding_window_mask_unaligned_context) {
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({6, 1, 1, 3, 1}),
+        32,
+        6,
+        2,
+        30,
+        LLMSDPAMask::SLIDING_WINDOW,
+        5,
+        0.25,
+        storage_type);
+  }
+}
+
+TEST(VulkanSDPATest, test_sdpa_op_sliding_window_mask_fp16) {
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({7, 1, 1, 1, 5, 1, 1}),
+        64,
+        8,
+        2,
+        32,
+        LLMSDPAMask::SLIDING_WINDOW,
+        4,
+        1.0,
+        storage_type,
+        at::kHalf);
+  }
+}
+
+// Without a scale argument the mask path uses 1/sqrt(head_dim). MHA (no GQA)
+// takes a different decode AV shader than the GQA cases above.
+TEST(VulkanSDPATest, test_sdpa_op_sliding_window_mask_mha_default_scale) {
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({5, 1, 1, 2, 1}),
+        32,
+        4,
+        4,
+        24,
+        LLMSDPAMask::SLIDING_WINDOW,
+        6,
+        std::nullopt,
+        storage_type);
+  }
+}
+
+// After a first step fills the whole cache, the later steps rewind input_pos so
+// that keys after input_pos + S hold real values, and the random mask gives
+// them a finite weight. The output only matches the reference if every key in
+// the cache is attended, i.e. if the shaders are given C - S as input_pos.
+TEST(VulkanSDPATest, test_sdpa_op_random_mask_attends_full_cache) {
+  const std::vector<LLMSDPAStep> steps = {
+      {0, 30}, {5, 1}, {12, 3}, {20, 1}, {3, 6}, {29, 1}};
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    for (const auto dtype : {at::kFloat, at::kHalf}) {
+      // GQA
+      test_vulkan_llm_sdpa(
+          steps,
+          32,
+          6,
+          2,
+          30,
+          LLMSDPAMask::RANDOM,
+          0,
+          0.25,
+          storage_type,
+          dtype);
+      // MHA
+      test_vulkan_llm_sdpa(
+          steps,
+          32,
+          4,
+          4,
+          30,
+          LLMSDPAMask::RANDOM,
+          0,
+          0.25,
+          storage_type,
+          dtype);
+    }
+  }
+}
+
+// The same through the unfused update_cache + llama.custom_sdpa entry point.
+TEST(VulkanSDPATest, test_sdpa_op_custom_sdpa_random_mask) {
+  const std::vector<LLMSDPAStep> steps = {{0, 30}, {5, 1}, {12, 3}, {29, 1}};
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        steps,
+        32,
+        6,
+        2,
+        30,
+        LLMSDPAMask::RANDOM,
+        0,
+        0.25,
+        storage_type,
+        at::kFloat,
+        /*use_custom_sdpa=*/true);
+  }
+}
+
+// An explicit scale on the causal (unmasked) path.
+TEST(VulkanSDPATest, test_sdpa_op_causal_explicit_scale) {
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    test_vulkan_llm_sdpa(
+        consecutive_steps({7, 1, 1, 3, 1}),
+        64,
+        8,
+        2,
+        32,
+        LLMSDPAMask::CAUSAL,
+        0,
+        0.3,
+        storage_type);
+  }
 }
