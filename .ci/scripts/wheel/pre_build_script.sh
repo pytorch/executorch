@@ -164,6 +164,16 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  PYTHON_BIN=$(command -v python || command -v python3)
+  if "${PYTHON_BIN}" -c 'import sys; sys.exit(sys.version_info < (3, 15))'; then
+    # No cp315 tokenizer wheel is published. Build the pinned source with the
+    # existing build dependencies and Visual Studio environment before smoke install.
+    cmd //c '.ci\scripts\wheel\vc_env_helper.bat' python -m pip install \
+      --no-build-isolation extension/llm/tokenizers
+  fi
+fi
+
 # Enable VGF in pybind wheel builds when the platform-specific build input is
 # available from pip.
 if [[ "$UNAME_S" == "Linux" || "$UNAME_S" == "Darwin" ]]; then
