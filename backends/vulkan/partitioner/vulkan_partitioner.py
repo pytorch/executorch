@@ -71,8 +71,14 @@ class VulkanSupportedOperators(OperatorSupportBase):
         nn_module_allowlist: Optional[Set[str]] = None,
         downcast_64_bit: bool = True,
         constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
         super().__init__()
+        # Backends that consume the Vulkan serialization but implement less of an
+        # op than the Vulkan registry advertises supply their own features here.
+        self.op_features_overrides: Dict[OpKey, OpFeatures] = (
+            op_features_overrides if op_features_overrides is not None else {}
+        )
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
@@ -304,17 +310,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        features = None
-        if target not in vulkan_supported_ops:
+        features = self.op_features_overrides.get(target)
+        if features is None:
+            if target in vulkan_supported_ops:
+                features = vulkan_supported_ops[target]
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
+            elif hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")
                 return False
-        else:
-            features = vulkan_supported_ops[target]
 
         assert features is not None
 
@@ -401,7 +407,9 @@ class VulkanPartitioner(Partitioner):
         operator_allowlist: Optional[List[OpKey]] = None,
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
+        self.op_features_overrides = op_features_overrides
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
             self.options = compile_options
@@ -476,6 +484,7 @@ class VulkanPartitioner(Partitioner):
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
                 downcast_64_bit=self.options.get("downcast_64_bit", True),
+                op_features_overrides=self.op_features_overrides,
                 constant_nodes={
                     node
                     for node in exported_program.graph.nodes
