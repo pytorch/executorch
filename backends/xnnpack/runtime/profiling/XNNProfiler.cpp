@@ -20,6 +20,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <utility>
 // NOLINTEND
 
 namespace executorch::backends::xnnpack::delegate::profiling {
@@ -32,15 +33,35 @@ using executorch::runtime::EventTracer;
 XNNProfiler::XNNProfiler()
     : state_(XNNProfilerState::Uninitialized), run_count_(0) {}
 
-Error XNNProfiler::initialize(xnn_runtime_t runtime) {
+Error XNNProfiler::initialize(
+    xnn_runtime_t runtime,
+    std::unordered_map<std::string, uint32_t>* op_counts) {
   runtime_ = runtime;
 
   // Fetch the runtime operator information from XNNPACK.
   ET_CHECK_OK_OR_RETURN_ERROR(get_runtime_num_operators());
   ET_CHECK_OK_OR_RETURN_ERROR(get_runtime_operator_names());
+  std::unordered_map<std::string, uint32_t> local_op_counts;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      format_operator_event_names(op_counts ? *op_counts : local_op_counts));
 
   state_ = XNNProfilerState::Ready;
 
+  return Error::Ok;
+}
+
+Error XNNProfiler::set_operator_metadata(std::vector<std::string> metadata) {
+  ET_CHECK_OR_RETURN_ERROR(
+      state_ != XNNProfilerState::Uninitialized,
+      InvalidState,
+      "XNNProfiler must be initialized prior to setting operator metadata.");
+  ET_CHECK_OR_RETURN_ERROR(
+      metadata.size() == op_count_,
+      Internal,
+      "XNNPACK described %zu operators but profiles %zu",
+      metadata.size(),
+      op_count_);
+  op_metadata_ = std::move(metadata);
   return Error::Ok;
 }
 
@@ -168,6 +189,28 @@ Error XNNProfiler::get_runtime_operator_timings() {
   return Error::Ok;
 }
 
+Error XNNProfiler::format_operator_event_names(
+    std::unordered_map<std::string, uint32_t>& op_counts) {
+  op_event_names_.clear();
+  op_event_names_.reserve(op_count_);
+  size_t name_len = 0;
+  for (size_t i = 0; i < op_count_; i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        name_len < op_names_.size(),
+        Internal,
+        "XNNPACK reported %zu operators but %zu names",
+        op_count_,
+        i);
+    auto op_name = std::string(&op_names_[name_len]);
+    name_len += op_name.size() + 1;
+
+    // Format the op name as {name} #{count}.
+    const auto count = ++op_counts[op_name];
+    op_event_names_.push_back(op_name + " #" + std::to_string(count));
+  }
+  return Error::Ok;
+}
+
 void XNNProfiler::log_operator_timings() {
 #ifdef ENABLE_XNNPACK_PROFILING
   // Update running average state and log average timing for each op.
@@ -202,20 +245,9 @@ void XNNProfiler::submit_trace() {
   auto tick_ns_conv_multiplier = runtime::pal_ticks_to_ns_multiplier();
 
   ET_CHECK(op_timings_.size() == op_count_);
-  size_t name_len = 0;
   et_timestamp_t time = start_time_;
-  std::unordered_map<std::string, uint32_t> op_counts;
 
   for (auto i = 0u; i < op_count_; i++) {
-    auto op_name = &op_names_[name_len];
-    name_len += strlen(op_name) + 1;
-
-    // Format the op name as {name} #{count}.
-    auto op_name_str = std::string(op_name);
-    op_counts[op_name_str]++;
-    auto name_formatted =
-        op_name_str + " #" + std::to_string(op_counts[op_name_str]);
-
     // Convert from microseconds (XNNPACK) to PAL ticks (ET).
     // The tick_ns_conv_ratio is ns / tick. We want ticks:
     //  ticks = us * (ns / us) / conv_ratio
@@ -226,12 +258,15 @@ void XNNProfiler::submit_trace() {
 
     auto end_time = time + interval_ticks;
 
+    const auto* metadata = op_metadata_.empty() ? nullptr : &op_metadata_[i];
     executorch::runtime::event_tracer_log_profiling_delegate(
         event_tracer_,
-        name_formatted.c_str(),
+        op_event_names_[i].c_str(),
         /*delegate_debug_id=*/static_cast<executorch::runtime::DebugHandle>(-1),
         time,
-        end_time);
+        end_time,
+        metadata ? metadata->data() : nullptr,
+        metadata ? metadata->size() : 0);
 
     // Assume that the next op starts immediately after the previous op.
     // This may not be strictly true, but it should be close enough.
@@ -246,8 +281,16 @@ void XNNProfiler::submit_trace() {
 // Stub implementation for when profiling is disabled.
 XNNProfiler::XNNProfiler() {}
 
-Error XNNProfiler::initialize(xnn_runtime_t runtime) {
+Error XNNProfiler::initialize(
+    xnn_runtime_t runtime,
+    std::unordered_map<std::string, uint32_t>* op_counts) {
   (void)runtime;
+  (void)op_counts;
+  return Error::Ok;
+}
+
+Error XNNProfiler::set_operator_metadata(std::vector<std::string> metadata) {
+  (void)metadata;
   return Error::Ok;
 }
 

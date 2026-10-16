@@ -65,6 +65,8 @@ struct ExecutionContext {
   size_t threads = 1;
   bool avx2_fma = false;
   pthreadpool* threadpool = nullptr;
+  /// Providers enable internal profiling when set during preparation. The plan
+  /// records one delegate event per step when set during execution.
   runtime::EventTracer* event_tracer = nullptr;
 };
 
@@ -114,6 +116,9 @@ class Executable {
   virtual runtime::Error reshape() = 0;
   virtual runtime::Error bind(const Buffer& scratch = {}) = 0;
   virtual runtime::Error run(const ExecutionContext& context) = 0;
+  /// Called after the plan closes the step's trace event, so internal events
+  /// are logged without inflating it. Called even when run fails.
+  virtual void submit_trace() {}
 };
 
 class KernelImplementation {
