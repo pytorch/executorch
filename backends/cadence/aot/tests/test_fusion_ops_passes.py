@@ -792,6 +792,51 @@ class TestFusionPasses(TestFusionPassesBase):
                 deq_scale = node.args[1]
         self.assertEqual(deq_scale, DEQUANT_SCALE * FULL_VALUE)
 
+    @parameterized.expand([("zero", 0.0), ("negative", -1.0)])
+    def test_keep_non_positive_mul_tensor_after_dequant(
+        self, _name: str, mul_value: float
+    ) -> None:
+        input_shape: Final[List[int]] = [4, 32]
+        dequant_scale = 1.5
+
+        builder = GraphBuilder()
+        x = builder.placeholder(
+            "x", torch.randint(0, 255, input_shape, dtype=torch.uint8)
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, dequant_scale, 0, 0, 255, torch.uint8),
+        )
+        full = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(input_shape, mul_value),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(dequant, full),
+        )
+        builder.output([mul])
+
+        result = cast(
+            PassResult,
+            FuseMulTensorIntoDequantPass()(builder.get_graph_module()),
+        )
+
+        self.assertFalse(result.modified)
+        self.check_op_counts(
+            result.graph_module,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 1,
+                exir_ops.edge.aten.full.default: 1,
+                exir_ops.edge.aten.mul.Tensor: 1,
+            },
+        )
+        dequant_nodes = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        )
+        self.assertEqual(dequant_nodes[0].args[1], dequant_scale)
+
     def test_fuse_mul_into_dequant_no_match(self) -> None:
         """
         Test that FuseMulTensorIntoDequantPass does NOT modify the graph
@@ -880,6 +925,45 @@ class TestFusionPasses(TestFusionPassesBase):
                 deq_scale = node.args[1]
         self.assertEqual(deq_scale, dequant_scale * mul_value)
 
+    @parameterized.expand([("zero", 0.0), ("negative", -1.0)])
+    def test_keep_non_positive_mul_scalar_after_dequant(
+        self, _name: str, mul_value: float
+    ) -> None:
+        dequant_scale = 0.006
+
+        builder = GraphBuilder()
+        x = builder.placeholder(
+            "x", torch.randint(-128, 127, (2, 3, 4), dtype=torch.int8)
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, dequant_scale, 5, -128, 127, torch.int8),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Scalar,
+            args=(dequant, mul_value),
+        )
+        builder.output([mul])
+
+        result = cast(
+            PassResult,
+            FuseMulScalarIntoDequantPass()(builder.get_graph_module()),
+        )
+
+        self.assertFalse(result.modified)
+        self.check_op_counts(
+            result.graph_module,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 1,
+                exir_ops.edge.aten.mul.Scalar: 1,
+            },
+        )
+        dequant_nodes = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        )
+        self.assertEqual(dequant_nodes[0].args[1], dequant_scale)
+
     def test_fuse_mul_into_quant(self) -> None:
         quant_scale = 5
         mul_value = 10
@@ -930,6 +1014,48 @@ class TestFusionPasses(TestFusionPassesBase):
         ):
             new_quant_scale = node.args[1]
             self.assertEqual(new_quant_scale, quant_scale / mul_value)
+
+    @parameterized.expand([("zero", 0.0), ("negative", -1.0)])
+    def test_keep_non_positive_mul_tensor_before_quant(
+        self, _name: str, mul_value: float
+    ) -> None:
+        quant_scale = 5.0
+
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 32, dtype=torch.float32))
+        full = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], mul_value),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(x, full),
+        )
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(mul, quant_scale, 7, 0, 255, torch.uint8),
+        )
+        builder.output([quant])
+
+        result = cast(
+            PassResult,
+            FuseMulTensorIntoQuantPass()(builder.get_graph_module()),
+        )
+
+        self.assertFalse(result.modified)
+        self.check_op_counts(
+            result.graph_module,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
+                exir_ops.edge.aten.full.default: 1,
+                exir_ops.edge.aten.mul.Tensor: 1,
+            },
+        )
+        quant_nodes = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        self.assertEqual(quant_nodes[0].args[1], quant_scale)
 
     def test_fuse_then_transpose_pass(self) -> None:
         # Create a graph with full -> transpose -> permute -> view.
