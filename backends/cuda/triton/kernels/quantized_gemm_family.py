@@ -147,7 +147,7 @@ class QuantizedGemmFamily:
 
 def _tuning_key(kernel, args: Sequence, kwargs: dict) -> tuple:
     # Mirrors the key triton.runtime.Autotuner.run caches its pick under (built
-    # the same way in the Triton 3.5 to 3.9 in fbsource). Should Triton change
+    # the same way in Triton 3.8). Should Triton change
     # it, lookups miss and work is redone, never skipped;
     # test_the_tuning_key_is_the_autotuners_cache_key catches the change.
     named = {**dict(zip(kernel.arg_names, args)), **kwargs}
