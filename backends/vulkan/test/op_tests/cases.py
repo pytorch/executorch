@@ -771,6 +771,44 @@ def get_conv_inputs():
             output_padding=[0, 0],
             groups=8,
         ),
+        # dilation > 1 on the generic shader: the tap positions are
+        # ipos + k * dilation, both with stride != dilation (7x7 s1 d2) and
+        # with stride == dilation (6x6 s3 d3).
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[6, 6],
+            dilation=[2, 2],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 6, 6),
+            bias=None,
+            stride=[3, 3],
+            padding=[2, 2],
+            dilation=[3, 3],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        # Non-square kernel, stride, padding and input, so that any x/y swap
+        # in kernel_size / stride / padding / in_sizes changes the result.
+        Test(
+            self=(1, 8, 31, 37),
+            weight=(8, 1, 3, 5),
+            bias=(8,),
+            stride=[2, 1],
+            padding=[1, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
     ]
 
     test_suite = VkTestSuite(test_cases)
