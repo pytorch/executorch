@@ -657,21 +657,31 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
 endif()
 
 #
-# executorch: Primary runtime library with primitive operators.
+# prim_ops_lib: Primary runtime library with primitive operators.
 #
-# Provides the Program and Method interfaces, along with primitive operators.
-# Does not contain portable kernels or other full operators. Does not contain
-# any backends.
+# Provides primitive operators. Does not contain portable kernels or other full
+# operators. Does not contain any backends. Pulls executorch_core transitively.
 #
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+add_library(prim_ops_lib ${_prim_ops_lib__srcs})
+# We keep the output name as "executorch" so that the compiled archive is still
+# libexecutorch.a, ensuring scripts and iOS Xcode projects do not break.
+set_target_properties(prim_ops_lib PROPERTIES OUTPUT_NAME "executorch")
+
+# DEPRECATED: executorch alias is kept purely for backwards compatibility.
+# External consumers linking to `executorch` will transparently link
+# `prim_ops_lib`.
+add_library(executorch INTERFACE)
+target_link_libraries(executorch INTERFACE prim_ops_lib)
+target_link_libraries(prim_ops_lib PRIVATE executorch_core)
+target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
+target_compile_definitions(
+  prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
-  target_compile_definitions(executorch PUBLIC ET_LOG_ENABLED=0)
+  target_compile_definitions(prim_ops_lib PUBLIC ET_LOG_ENABLED=0)
 endif()
-target_compile_options(executorch PUBLIC ${_common_compile_options})
-executorch_target_link_options_shared_lib(executorch)
+target_compile_options(prim_ops_lib PUBLIC ${_common_compile_options})
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -761,7 +771,7 @@ install(
   PATTERN "*.h"
 )
 install(
-  TARGETS executorch executorch_core
+  TARGETS prim_ops_lib executorch executorch_core
   EXPORT ExecuTorchTargets
   INCLUDES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -1042,7 +1052,7 @@ if(EXECUTORCH_BUILD_SHARED)
   if(MSVC)
     # Bundled as objects like the rest; linking it would bring its interface
     # /WHOLEARCHIVE, which lld-link processes ahead of the bundled objects.
-    set(_executorch_shared_whole_archive executorch executorch_core)
+    set(_executorch_shared_whole_archive prim_ops_lib executorch_core)
     # The objects come through $<COMPILE_ONLY>, which does not pass on
     # executorch_core's cxx_std_20. The public headers need it on Windows (the
     # vendored c10 reaches std::countl_zero on the MSVC branch), so a consumer
@@ -1059,7 +1069,7 @@ if(EXECUTORCH_BUILD_SHARED)
                                                      ET_PAL_STRONG_SYMBOLS
     )
   else()
-    target_link_libraries(executorch_shared PRIVATE executorch)
+    target_link_libraries(executorch_shared PRIVATE prim_ops_lib)
     set(_executorch_shared_whole_archive executorch_core)
   endif()
   foreach(_ext_target
@@ -1121,7 +1131,7 @@ endif()
 # when it is named.
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   target_compile_definitions(executorch_core INTERFACE ET_EVENT_TRACER_ENABLED)
-  target_compile_definitions(executorch INTERFACE ET_EVENT_TRACER_ENABLED)
+  target_compile_definitions(prim_ops_lib INTERFACE ET_EVENT_TRACER_ENABLED)
   if(TARGET executorch_shared)
     target_compile_definitions(
       executorch_shared INTERFACE ET_EVENT_TRACER_ENABLED
@@ -1448,7 +1458,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(EXECUTORCH_BUILD_SHARED)
     target_link_libraries(util PRIVATE torch c10 executorch_shared)
   else()
-    target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+    target_link_libraries(util PRIVATE torch c10 prim_ops_lib extension_tensor)
   endif()
 
   # pybind portable_lib
@@ -1562,7 +1572,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       data_loader "extension/pybindings" "executorch/extension/pybindings"
     )
   else()
-    target_link_libraries(data_loader PRIVATE executorch)
+    target_link_libraries(data_loader PRIVATE prim_ops_lib)
   endif()
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
@@ -1753,7 +1763,7 @@ install(TARGETS executorch_backends executorch_extensions executorch_kernels
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch extension_evalue_util
+  set(_executor_runner_libs prim_ops_lib extension_evalue_util
                             extension_runner_util gflags executorch_backends
   )
 

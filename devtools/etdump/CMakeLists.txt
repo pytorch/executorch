@@ -76,7 +76,7 @@ if(EXECUTORCH_BUILD_SHARED)
   executorch_target_shipped_runtime_path(etdump)
 else()
   target_link_libraries(etdump PUBLIC flatccrt)
-  target_link_libraries(etdump PRIVATE executorch)
+  target_link_libraries(etdump PRIVATE prim_ops_lib)
 endif()
 
 target_include_directories(
