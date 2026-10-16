@@ -206,12 +206,9 @@ class TensorSpec:
         return num_bytes_from_shape_and_dtype(self.shape, self.dtype)
 
     @classmethod
-    def from_tensor(
-        cls,
-        tensor: torch.Tensor,
-        const: bool = False,
-    ) -> TensorSpec:
+    def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
+            # for non-contigous tensors, convert to a contiguous one
             tensor = tensor.contiguous()
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
