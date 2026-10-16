@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
 import operator
 import os
@@ -743,7 +744,10 @@ class QAT:
         from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
             PerBlockParamFakeQuantize,
         )
-        from torchao.quantization.pt2e import FusedMovingAvgObsFakeQuantize
+        from torchao.quantization.pt2e import (
+            FakeQuantizeBase,
+            FusedMovingAvgObsFakeQuantize,
+        )
 
         module = _UtilsModel()
         inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 8, 8))
@@ -755,9 +759,7 @@ class QAT:
             exported = torch.export.export(module, inputs, strict=True).module()
             prepared = prepare_qat_pt2e(exported, q)
             fq_modules = [
-                m
-                for m in prepared.modules()
-                if isinstance(m, FusedMovingAvgObsFakeQuantize)
+                m for m in prepared.modules() if isinstance(m, FakeQuantizeBase)
             ]
             assert len(fq_modules) > 0, "no FusedMovingAvgObsFakeQuantize found"
             # activation FQs have uint16 range (quant_max=65535)
@@ -816,6 +818,146 @@ class QAT:
             assert len(weight_fqs) > 0, "no int8-range weight FQ found for fp16a8w"
             # should complete without error
             __class__._get_converted_module(module, prepared, inputs)
+
+
+class ConcatObserverDeepcopy:
+    """copy.deepcopy of a prepared model, as done before convert_pt2e by
+    training frameworks, must not walk the graph through ConcatObserver's
+    fx.Node references.
+    """
+
+    class _DeepCat(torch.nn.Module):
+        def __init__(self, depth: int = 300):
+            super().__init__()
+            self.depth = depth
+
+        def forward(self, x, y):
+            for _ in range(self.depth):
+                x = x + 0.5
+            return torch.cat([x, y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
+            ConcatObserver,
+        )
+
+        module = __class__._DeepCat()
+        inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8))
+        q = make_quantizer(quant_dtype=QuantDtype.use_8a8w, soc_model="SM8650")
+        exported = torch.export.export(module, inputs, strict=True).module()
+        prepared = prepare_pt2e(exported, q)
+        prepared(*inputs)
+
+        with subtests.test(msg="deepcopy_and_convert"):
+            copied = copy.deepcopy(prepared)
+            convert_pt2e(copied)
+
+        with subtests.test(msg="copy_input_observers_point_into_the_copy"):
+            [(name, observer)] = [
+                (n, m)
+                for n, m in prepared.named_modules()
+                if isinstance(m, ConcatObserver)
+            ]
+            assert len(observer.input_observers) == 2
+            names = {id(m): n for n, m in prepared.named_modules() if n}
+            input_names = [names[id(obs)] for obs in observer.input_observers]
+
+            copied = copy.deepcopy(prepared)
+            copied_observer = copied.get_submodule(name)
+            for input_name, copied_input in zip(
+                input_names, copied_observer.input_observers
+            ):
+                assert copied_input is copied.get_submodule(input_name)
+            assert copied_observer.concat_node is observer.concat_node
+            torch.testing.assert_close(copied_observer.min_val, observer.min_val)
+            torch.testing.assert_close(copied_observer.max_val, observer.max_val)
+
+
+class QATConcat:
+    """Multiple QAT steps with per-step shifting input ranges."""
+
+    class _ConcatQatModel(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.cat([x, y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        module = __class__._ConcatQatModel()
+        # step 1 sets a wide baseline, step 2 is narrower than history
+        # (shared range must not shrink), step 3 widens again on the
+        # *other* input (union must keep growing on either side).
+        steps = [
+            (torch.ones(1, 4, 8) * 1.0, torch.ones(1, 4, 8) * 4.0),
+            (torch.ones(1, 4, 8) * 0.1, torch.ones(1, 4, 8) * 0.1),
+            (torch.ones(1, 4, 8) * 8.0, torch.ones(1, 4, 8) * 0.5),
+        ]
+
+        q = QAT._make_qat_quantizer(QuantDtype.use_8a8w)
+        exported = torch.export.export(module, steps[0], strict=True).module()
+        prepared = prepare_qat_pt2e(exported, q)
+
+        [cat] = [
+            n for n in prepared.graph.nodes if n.target == torch.ops.aten.cat.default
+        ]
+        output_module = prepared.get_submodule(list(cat.users)[0].target)
+        input_modules = [prepared.get_submodule(n.target) for n in cat.args[0]]
+        concat_observer = output_module.activation_post_process
+
+        running_min, running_max = float("inf"), float("-inf")
+        prev_shared_min, prev_shared_max = float("inf"), float("-inf")
+        prior_running_min, prior_running_max = running_min, running_max
+        for step_idx, (x, y) in enumerate(steps):
+            prepared(x, y)
+            running_min = min(running_min, x.min().item(), y.min().item())
+            running_max = max(running_max, x.max().item(), y.max().item())
+
+            with subtests.test(msg=f"step_{step_idx}_shared_range_never_shrinks"):
+                #
+                assert concat_observer.min_val.item() <= prev_shared_min
+                assert concat_observer.max_val.item() >= prev_shared_max
+
+            if step_idx > 0:
+                with subtests.test(
+                    msg=f"step_{step_idx}_shared_range_covers_prior_union"
+                ):
+                    # EMA observers need a step to settle after a sudden
+                    # widen, so only require the shared range to have
+                    # caught up with the union as of the *previous* step,
+                    # not this step's own fresh extremes.
+                    quant_step = (prior_running_max - prior_running_min) / 255
+                    assert (
+                        concat_observer.min_val.item() <= prior_running_min + quant_step
+                    )
+                    assert (
+                        concat_observer.max_val.item() >= prior_running_max - quant_step
+                    )
+
+            prev_shared_min = concat_observer.min_val.item()
+            prev_shared_max = concat_observer.max_val.item()
+            prior_running_min, prior_running_max = running_min, running_max
+
+            with subtests.test(msg=f"step_{step_idx}_every_input_exactly_synced"):
+                for input_module in input_modules:
+                    target = input_module.activation_post_process
+                    torch.testing.assert_close(target.min_val, concat_observer.min_val)
+                    torch.testing.assert_close(target.max_val, concat_observer.max_val)
+
+        with subtests.test(msg="convert_after_multi_step_gives_one_qparam"):
+            converted = convert_pt2e(prepared)
+            [cat] = [
+                n
+                for n in converted.graph.nodes
+                if n.target == torch.ops.aten.cat.default
+            ]
+            cat_users = list(cat.users)
+            assert (
+                len(cat_users) == 1
+            ), f"Expected 1 user of cat, got {len(cat_users)}: {cat_users}"
+            dequant = cat_users[0]
+            qparam_nodes = list(cat.args[0]) + [dequant]
+            qparams = {tuple(n.args[1:3]) for n in qparam_nodes}
+            assert len(qparams) == 1, qparams
 
 
 class LoweringWithExportedProgram:
