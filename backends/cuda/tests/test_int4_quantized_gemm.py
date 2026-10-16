@@ -920,6 +920,21 @@ class AutotuneDoBenchTest(unittest.TestCase):
         graph.assert_called_once_with(kernel_call)
         bench.assert_not_called()
 
+    def test_out_of_memory_while_capturing_is_retried_and_counted(self) -> None:
+        from executorch.backends.cuda.autotune import cuda_graph_timing as cgt_module
+
+        kernel_call = mock.Mock()
+        stream = torch.cuda.Stream()
+        with torch.cuda.stream(stream), cuda_graph_timing() as stats, mock.patch.object(
+            cgt_module,
+            "time_with_cuda_graph_us",
+            side_effect=[torch.OutOfMemoryError("capture"), 1500.0],
+        ):
+            self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
+        self.assertEqual(
+            (stats.oom_retries, stats.captured, stats.fallbacks), (1, 1, 0)
+        )
+
     def test_outside_graph_timing_uses_triton(self) -> None:
         kernel_call = mock.Mock()
         with self._on_stream(1), mock.patch.object(
