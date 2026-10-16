@@ -58,6 +58,7 @@ from executorch.devtools.inspector._inspector_utils import (
     gen_etdump_object,
     gen_graphs_from_etrecord,
     get_aot_debug_handle_to_op_name_mapping,
+    get_forward_edge_dialect_program,
     inflate_runtime_output,
     is_debug_output,
     is_inference_output_equal,
@@ -1197,6 +1198,7 @@ class Inspector:
                 debug handle backpropagation fails for "exported_program".
         """
         resolved_graph_name = reference_graph
+        edge_dialect_program = get_forward_edge_dialect_program(self._etrecord)
 
         # Determine the reference graph to use
         if reference_graph is None or reference_graph == "exported_program":
@@ -1204,7 +1206,7 @@ class Inspector:
             if self._etrecord.exported_program and propagate_back_debug_handle(
                 self._etrecord.exported_program,
                 self._etrecord.export_graph_id,
-                self._etrecord.edge_dialect_program,
+                edge_dialect_program,
                 disable_debug_handle_validation,
             ):
                 resolved_graph_name = "exported_program"
@@ -1221,7 +1223,7 @@ class Inspector:
                 )
 
         if resolved_graph_name == "edge_dialect_exported_program":
-            export_program = self._etrecord.edge_dialect_program
+            export_program = edge_dialect_program
             log.info(
                 "Using 'edge_dialect_exported_program' (Edge dialect) as reference graph"
             )
