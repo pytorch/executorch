@@ -59,10 +59,21 @@ jobs:
 
         echo "::group::Install ExecuTorch and Core AI requirements"
         ${CONDA_RUN} python install_executorch.py --editable > /dev/null
-        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt "cmake>=3.31,<4" ninja
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
         echo "::group::Run Core AI export tests"
         ${CONDA_RUN} python -m pytest backends/apple/coreai
+        echo "::endgroup::"
+
+        echo "::group::Build and run Core AI runtime tests"
+        ${CONDA_RUN} cmake -S . -B cmake-out-coreai -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
+          -DEXECUTORCH_BUILD_COREAI=ON \
+          -DEXECUTORCH_BUILD_TESTS=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+        ${CONDA_RUN} cmake --build cmake-out-coreai --target backends/apple/coreai/all -j$(sysctl -n hw.ncpu)
+        ${CONDA_RUN} ctest --test-dir cmake-out-coreai/backends/apple/coreai --output-on-failure --no-tests=error
         echo "::endgroup::"
