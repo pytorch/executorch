@@ -104,25 +104,23 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "correctness") {
               {32, 256, 128, 64},
               {256, 128, 128, 32}, // M=256 > K=128; all dims < kRefDimSizeLimit
 
-              // Coopmat-eligible correctness shapes (M%64==0, N%64==0,
-              // K%32==0, group_size%32==0). The Buffer+Half variant fires
-              // linear_q4gsw_coopmat / linear_dq8ca_q4gsw_coopmat and is
-              // validated against the CPU reference.
+              // Small correctness shapes.
               {64, 64, 64, 64},
               {64, 128, 64, 64},
               {64, 256, 128, 128},
+              // Singleton-batch activations used by LLM prefill.
+              {128,
+               64,
+               64,
+               64,
+               false,
+               "placeholder",
+               "linear_dq8ca_q4gsw",
+               true},
               // With bias
               {4, 64, 32, 16, true},
               {4, 128, 64, 32, true},
               {32, 128, 64, 32, true},
-              // NOTE: coopmat correctness coverage is NOT in this list. The
-              // coopmat dispatch gate requires M%64==0, N%64==0, K%32==0; the
-              // smallest qualifying shape (M=64, K=64, N=64) produces enough
-              // cancellation outputs that fp16 accumulation drift exceeds any
-              // reasonable tolerance against the fp32 reference. Validating
-              // the coopmat shader needs a different strategy (e.g.
-              // positive-only inputs, or simulating fp16 accumulation in the
-              // reference).
           },
           /*storage_types=*/{utils::kTexture3D, utils::kBuffer},
           // Both fp32 and fp16 activations, so the test covers the _float and
@@ -142,7 +140,7 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "performance") {
       generate_test_cases(
           {
               // A couple of representative performance shapes
-              // (coopmat-eligible, M % 64 == 0). The full Llama 3.1 8B prefill
+              // (coopmat-eligible, M % 128 == 0). The full Llama 3.1 8B prefill
               // sweep lived here during the study; trimmed to keep this a fast
               // unit test.
               {128, 2048, 2048, 128},
