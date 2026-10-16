@@ -22,11 +22,13 @@ CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
-# These wheels' metadata pairs August 11 domain libraries with August 10 torch.
+# torchvision 0.30.0.dev20260922 requires exactly torch 2.15.0.dev20260921.
+# download.pytorch.org keeps about 60 days of nightlies, so this pin expires; 2026-09-22
+# is the newest date whose torch, torchvision and torchaudio still all carry cp310.
 CU134_TORCH_PACKAGES = [
-    "torch==2.14.0.dev20260810+cu134",
-    "torchvision==0.29.0.dev20260811+cu134",
-    "torchaudio==2.11.0.dev20260811+cu134",
+    "torch==2.15.0.dev20260921+cu134",
+    "torchvision==0.30.0.dev20260922+cu134",
+    "torchaudio==2.11.0.dev20260922+cu134",
 ]
 
 
@@ -131,6 +133,25 @@ def install_requirements(use_pytorch_nightly):
     if torchao_from_source():
         LOCAL_REQUIREMENTS.append("third-party/ao")
     if sys.platform != "win32":
+        if sys.platform == "darwin" and sys.version_info >= (3, 15):
+            # SentencePiece 0.2.2 hardcodes a 10.9 compile target despite the
+            # wheel's newer deployment target. Scope the libc++ workaround to it.
+            sentencepiece_env = os.environ.copy()
+            sentencepiece_env["CXXFLAGS"] = (
+                f"{sentencepiece_env.get('CXXFLAGS', '')} -D_LIBCPP_DISABLE_AVAILABILITY"
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-build-isolation",
+                    "sentencepiece==0.2.2",
+                ],
+                env=sentencepiece_env,
+                check=True,
+            )
         # TODO(larryliu0820): Setup a pypi package for this.
         LOCAL_REQUIREMENTS.append("extension/llm/tokenizers")
     # TODO(gjcomer): Re-enable when buildable on Windows.
@@ -185,9 +206,14 @@ def install_optional_example_requirements(use_pytorch_nightly):
     )
 
     print("Installing torch domain libraries")
+    torchaudio_version = (
+        "2.11.1"
+        if sys.version_info >= (3, 15) and torch_url.endswith("/cpu")
+        else "2.11.0"
+    )
     DOMAIN_LIBRARIES = cu134_packages or [
         ("torchvision==0.29.0" if use_pytorch_nightly else "torchvision"),
-        ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
+        (f"torchaudio=={torchaudio_version}" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(

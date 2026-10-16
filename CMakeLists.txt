@@ -330,63 +330,6 @@ endif()
 
 add_subdirectory(third-party)
 
-# On Apple, pybind11 SHARED extension modules must not link libpython directly.
-# When python_add_library creates a SHARED library, it links Python::Python (via
-# pybind11::embed) which pulls in libpython. This conflicts with pybind11
-# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
-# state crash at import time. This function replaces pybind11::embed with
-# pybind11::module (which links Python::Module instead of Python::Python —
-# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
-# symbol resolution.
-#
-# Linux needs the same treatment for a different reason. An extension is loaded
-# by an interpreter that already has the Python runtime in the process, so it
-# must not carry its own dependency on libpython: the interpreter's library
-# directory is not on any search path a wheel can predict, and an interpreter
-# built with a shared libpython leaves the extension unable to resolve it. The
-# undefined symbols are supplied by the loading process, which is how a Python
-# extension normally works. No-op on Windows, where extensions link the import
-# library by design.
-function(strip_python_lib target)
-  if(MSVC)
-    return()
-  endif()
-  # The module helper links the embedding form of Python for anything that is
-  # not a MODULE library, and that form brings a hard dependency on the
-  # interpreter's shared library plus an absolute path to wherever it was found
-  # on the build machine. Neither survives being shipped: the loader cannot
-  # satisfy the dependency from an installed wheel, and the absolute path names
-  # the build machine.
-  #
-  # These targets cannot simply become MODULE libraries, because other targets
-  # link them and CMake refuses to link a MODULE. So keep the type and replace
-  # the Python library instead. An extension does not need it: the interpreter
-  # already provides those symbols to anything it loads.
-  #
-  # The interfaces arrive as PRIVATE links, so they appear in LINK_LIBRARIES
-  # wrapped rather than as bare target names. Rewrite the property from the
-  # filtered list instead of relying on a name match against the wrapped form.
-  get_target_property(_libs ${target} LINK_LIBRARIES)
-  if(_libs)
-    set(_kept "")
-    foreach(_lib IN LISTS _libs)
-      # Match the embedding interfaces however they are spelled, including
-      # inside a wrapper.
-      if(NOT _lib MATCHES "(pybind11::embed|Python3?::Python)")
-        list(APPEND _kept "${_lib}")
-      endif()
-    endforeach()
-    list(APPEND _kept pybind11::module)
-    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_kept}")
-  endif()
-  if(APPLE)
-    # Apple's linker needs telling that the undefined symbols resolve at load
-    # time. The Linux loader already permits that for a shared object and does
-    # not accept the flag.
-    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
-  endif()
-endfunction()
-
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
 # ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
 # -fno-exceptions is safe. Suppressing .eh_frame via -fno-unwind-tables is safe
@@ -985,6 +928,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
+  install(
+    DIRECTORY extension/flat_tensor/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/flat_tensor
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
   list(APPEND _executorch_extensions extension_flat_tensor)
 endif()
 
@@ -1503,8 +1452,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # pybind portable_lib
-  pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
-  strip_python_lib(portable_lib)
+  executorch_add_pybind_module(portable_lib extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package. PyTorch requires C++20, so
   # pybindings must be compiled with C++20.
@@ -1593,10 +1541,9 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind data_loader module - provides PyDataLoader type for external
   # pybinding extensions to create custom data loaders
-  pybind11_add_module(
-    data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
+  executorch_add_pybind_module(
+    data_loader extension/pybindings/pybindings_data_loader.cpp
   )
-  strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
   # This module only exposes a pybind type and calls into no runtime symbols.

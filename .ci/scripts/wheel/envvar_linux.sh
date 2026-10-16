@@ -9,3 +9,6 @@
 # any variables so that subprocesses will see them.
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
+
+# The reusable smoke installer selects PyTorch's index; ET also needs PyPI packages.
+export PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:+${PIP_EXTRA_INDEX_URL} }https://pypi.org/simple"

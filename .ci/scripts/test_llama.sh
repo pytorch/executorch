@@ -121,7 +121,7 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
   cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
-  cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+  cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor*.so backends/qualcomm/python
 
 else
   QNN=OFF
@@ -276,7 +276,8 @@ RESULT=$(cat result.txt)
 EXPECTED_PREFIX="Once upon a time,"
 # Expected result - may take too long to generate:
 # "Once upon a time, there was a little girl named Lily. She loved to play outside" ...
-if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
+# QNN libnative may print an initialization message to stdout before the generated text.
+if grep -qF -- "${EXPECTED_PREFIX}" result.txt; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Success"
