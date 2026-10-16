@@ -212,8 +212,8 @@ cache growth, and optional prefix snapshots for reuse across requests.
 Batching supports both text-only and vision-enabled exports, with or without
 DFlash.
 
-It uses separate batching runners
-artifacts and workers are not interchangeable with it.
+It uses separate batching runners and workers. Regular runner artifacts and
+workers are not interchangeable with batching artifacts and workers.
 
 The commands below use MLX as an example. Select the backend matching your
 hardware, export, and worker build.
@@ -244,6 +244,8 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
   --activation-dtype float16 \
   --output-dir /path/to/exports/mg-offgraph-dflash
 ```
+
+For CUDA exports, use `--backend cuda` and `--activation-dtype bfloat16` instead.
 
 To enable image input, add `--mmproj "$MMPROJ"` to either export command above.
 This includes the vision encoder and writes its position-embedding data alongside
@@ -298,10 +300,24 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 ```
 
 For DFlash, use `/path/to/exports/mg-offgraph-dflash/model.pte` and add
-`--dflash --dflash-n-draft 3` to the launch command. The artifact must support
-at least three draft tokens (a block size of four). Omitting `--dflash-n-draft`,
-or setting it to zero, uses the exported maximum minus one. Draft proposals are
-always argmax; request sampling parameters apply to the target distribution.
+`--dflash --dflash-n-draft 3` to the launch command. `--dflash-n-draft` is a
+runtime server option controlling the number of proposals per verification step
+(N). Set it when starting the server; changing N does not require re-exporting.
+N must be smaller than the exported drafter block size (D). Omitting the option,
+or setting it to zero, uses N = D - 1.
+
+On CUDA, D is fixed at export time from the drafter checkpoint configuration and
+cannot be changed at runtime. The exporter currently has no separate block-size
+override option. To use a different D, export a new artifact with the corresponding
+drafter configuration. Changing N does not change D: a D = 16 export still
+evaluates 16 drafter rows per session when N = 3, and its default is N = 15.
+
+Sampling behavior depends on the backend. On MLX, draft proposals are always
+argmax; request sampling parameters apply to the target distribution. On CUDA,
+the request's temperature, top-k, and top-p settings apply to both the draft and
+target distributions. Temperature zero selects greedy sampling. For stochastic
+sampling, verification uses the draft probabilities for acceptance and samples
+from the residual distribution when a proposal is rejected.
 
 Choose concurrency and prefix-cache limits to fit available memory. Prefix
 snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.
