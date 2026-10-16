@@ -328,6 +328,12 @@ else()
   set(BUILD_TESTING OFF)
 endif()
 
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_GGML
+)
+  set(JSON_Install ON)
+endif()
 add_subdirectory(third-party)
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
@@ -781,6 +787,27 @@ elseif(EXECUTORCH_BUILD_CUDA)
          "find_dependency(CUDAToolkit)\n"
   )
 endif()
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_GGML
+)
+  string(APPEND _executorch_backend_dependencies
+         "find_dependency(libzip CONFIG)\n"
+         "find_dependency(nlohmann_json CONFIG)\n"
+  )
+endif()
+if(EXECUTORCH_BUILD_NATIVE_GGML)
+  string(APPEND _executorch_backend_dependencies
+         "find_dependency(ggml 0.24 CONFIG)\n"
+  )
+endif()
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_GGML
+   OR EXECUTORCH_BUILD_VULKAN
+)
+  string(APPEND _executorch_backend_dependencies "find_dependency(Threads)\n")
+endif()
 configure_file(
   tools/cmake/executorch-backend-dependencies.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake @ONLY
@@ -788,7 +815,10 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
-if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+if(EXECUTORCH_BUILD_VULKAN
+   OR EXECUTORCH_BUILD_VGF
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
 endif()
 
@@ -958,7 +988,9 @@ if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
     set(SUPPORT_REGEX_LOOKAHEAD ON)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
     # that transitively depends on tokenizers. Need to build tokenizers with
@@ -969,7 +1001,9 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
-  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+     OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
+  )
     set(CMAKE_POSITION_INDEPENDENT_CODE
         ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
     )
@@ -1591,6 +1625,13 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
+endif()
+
+if(EXECUTORCH_BUILD_NATIVE
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_GGML
+)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/native)
 endif()
 
 if(EXECUTORCH_BUILD_WEBGPU)

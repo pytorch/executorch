@@ -49,6 +49,7 @@ constexpr std::array<std::string_view, 2> kExpands{
 constexpr std::array<std::string_view, 2> kAliases{
     "torch.ops.aten.alias.default",
     "torch.ops.aten.alias_copy.default"};
+constexpr std::string_view kClone = "torch.ops.aten.clone.default";
 constexpr const char* kSelectAsSymInt =
     "torch.ops.et_vk.select_as_symint.default";
 constexpr const char* kPrepack = "torch.ops.et_vk.prepack.default";
@@ -145,8 +146,26 @@ const std::vector<int64_t>& sizes_of(const Graph& graph, ValueId id) {
   return graph.value(id).tensor_meta().sizes;
 }
 
+// Whisper's attention materializes permuted q/k/v with .contiguous()
+// (aten.clone) where Llama's feeds the permute straight into SDPA / the
+// cache write. The clone only realizes layout, so matching looks through it.
+ValueId uncloned(const Graph& graph, ValueId id) {
+  while (const Node* node = producer(graph, id)) {
+    if (node->target != kClone) {
+      break;
+    }
+    const std::optional<ValueId> self = tensor_id(get_arg(*node, "self", 0));
+    if (!self) {
+      break;
+    }
+    id = *self;
+  }
+  return id;
+}
+
 // Returns x for permute(x, [0, 2, 1, 3]).
 std::optional<ValueId> unpermuted(const Graph& graph, ValueId id) {
+  id = uncloned(graph, id);
   const Node* node = producer(graph, id);
   if (node == nullptr || !is_any(node->target, kPermutes) ||
       !is_int_list(get_arg(*node, "dims", 1), {0, 2, 1, 3})) {
@@ -164,6 +183,7 @@ struct Rope {
 };
 
 std::optional<Rope> match_rope(const Graph& graph, ValueId id) {
+  id = uncloned(graph, id);
   const Node* node = producer(graph, id);
   if (node == nullptr || node->target != kRope ||
       !is_bool_or_absent(get_arg(*node, "interleaved", 3), false)) {
@@ -270,6 +290,91 @@ bool is_kv_index(
       is_int_or_absent(get_arg(*node, "step", 2), 1);
 }
 
+// The base value under a chain of unsqueeze/alias/clone wrappers.
+ValueId source_through_wrappers(const Graph& graph, ValueId id) {
+  while (true) {
+    id = uncloned(graph, id);
+    if (const std::optional<ValueId> inner =
+            operand_of(graph, id, kUnsqueezes)) {
+      id = *inner;
+      continue;
+    }
+    if (const std::optional<ValueId> inner = operand_of(graph, id, kAliases)) {
+      id = *inner;
+      continue;
+    }
+    return id;
+  }
+}
+
+// HF may interleave expands and unsqueezes around its causal comparison.
+// Every wrapper must preserve the query/key axes, even when T == cache_len.
+bool is_causal_mask_broadcast(
+    const Graph& graph,
+    ValueId mask,
+    ValueId cache_position,
+    int64_t cache_len,
+    std::optional<ValueId>& kv_offset) {
+  const std::vector<int64_t>& position_sizes = sizes_of(graph, cache_position);
+  if (position_sizes.size() != 1) {
+    return false;
+  }
+  const std::vector<int64_t> mask_sizes{1, 1, position_sizes[0], cache_len};
+  ValueId cur = mask;
+  const Node* compare = nullptr;
+  while (true) {
+    std::vector<int64_t> sizes = sizes_of(graph, cur);
+    if (sizes.size() < 2 || sizes.size() > 4) {
+      return false;
+    }
+    sizes.insert(sizes.begin(), 4 - sizes.size(), 1);
+    if (sizes != mask_sizes) {
+      return false;
+    }
+    compare = producer(graph, cur);
+    if (compare == nullptr) {
+      return false;
+    }
+    if (compare->target == kLe) {
+      break;
+    }
+    if (compare->target != kClone && !is_any(compare->target, kAliases) &&
+        !is_any(compare->target, kExpands) &&
+        !is_any(compare->target, kUnsqueezes)) {
+      return false;
+    }
+    const std::optional<ValueId> self = tensor_id(get_arg(*compare, "self", 0));
+    if (!self) {
+      return false;
+    }
+    cur = *self;
+  }
+  const std::optional<ValueId> lhs = tensor_id(get_arg(*compare, "self", 0));
+  const std::optional<ValueId> rhs = tensor_id(get_arg(*compare, "other", 1));
+  if (!lhs || !rhs) {
+    return false;
+  }
+  std::vector<int64_t> kv_sizes = sizes_of(graph, *lhs);
+  std::vector<int64_t> query_sizes = sizes_of(graph, *rhs);
+  if (kv_sizes.size() > 4 || query_sizes.size() > 4) {
+    return false;
+  }
+  kv_sizes.insert(kv_sizes.begin(), 4 - kv_sizes.size(), 1);
+  query_sizes.insert(query_sizes.begin(), 4 - query_sizes.size(), 1);
+  if (kv_sizes != std::vector<int64_t>{1, 1, 1, cache_len} ||
+      query_sizes != std::vector<int64_t>{1, 1, position_sizes[0], 1}) {
+    return false;
+  }
+  const ValueId kv_source = source_through_wrappers(graph, *lhs);
+  ValueId query_source = source_through_wrappers(graph, *rhs);
+  if (const std::optional<ValueId> viewed =
+          operand_of(graph, query_source, kViews)) {
+    query_source = *viewed;
+  }
+  return query_source == cache_position &&
+      is_kv_index(graph, kv_source, cache_len, kv_offset);
+}
+
 // HF's static-cache causal mask:
 //   expand(unsqueeze(unsqueeze(le(kv_index, view(cache_position, [-1, 1])),
 //          0), 1), [1, -1, -1, -1]),
@@ -281,6 +386,10 @@ bool is_causal_mask(
     ValueId cache_position,
     int64_t cache_len,
     std::optional<ValueId>& kv_offset) {
+  if (is_causal_mask_broadcast(
+          graph, mask, cache_position, cache_len, kv_offset)) {
+    return true;
+  }
   while (const std::optional<ValueId> aliased =
              operand_of(graph, mask, kAliases)) {
     mask = *aliased;
@@ -321,41 +430,56 @@ struct Match {
   NodeId sdpa_id;
   NodeId output_permute_id;
   ValueId output; // [1, T, Hq, D], after the token-major permute
-  Rope q_rope;
-  Rope k_rope;
+  // RoPE blocks (Llama) set both; learned-position blocks (Whisper) set
+  // neither and feed q_input/k_input to the kernels unrotated.
+  std::optional<Rope> q_rope;
+  std::optional<Rope> k_rope;
+  ValueId q_input; // [1, T, Hq, D], before the head-major permute
+  ValueId k_input; // [1, T, Hkv, D], before the head-major permute
   CacheWrite k_write;
   CacheWrite v_write;
   ValueId v_input; // [1, T, Hkv, D], before the head-major permute
   std::optional<ValueId> kv_offset;
+  // llama.custom_sdpa requires scale=None (it applies 1/sqrt(D) itself), so
+  // a non-default SDPA scale is folded into q by this factor instead:
+  // scale * sqrt(D). Whisper pre-scales q and passes scale=1.
+  double q_scale_factor = 1.0;
 };
 
 bool compatible_shapes(const Graph& graph, const Match& m) {
-  const std::vector<int64_t>& q = sizes_of(graph, m.q_rope.input);
-  const std::vector<int64_t>& k = sizes_of(graph, m.k_rope.input);
+  const std::vector<int64_t>& q = sizes_of(graph, m.q_input);
+  const std::vector<int64_t>& k = sizes_of(graph, m.k_input);
   const std::vector<int64_t>& v = sizes_of(graph, m.v_input);
   const TensorMeta& kc = graph.value(m.k_write.cache).tensor_meta();
   const TensorMeta& vc = graph.value(m.v_write.cache).tensor_meta();
-  const TensorMeta& inv_freq = graph.value(m.q_rope.inv_freq).tensor_meta();
-  const ScalarType dtype = graph.value(m.q_rope.input).tensor_meta().dtype;
+  const ScalarType dtype = graph.value(m.q_input).tensor_meta().dtype;
   if (q.size() != 4 || k.size() != 4 || k != v || kc.sizes != vc.sizes ||
       kc.sizes.size() != 4 || kc.sizes[2] <= 0 || !kc.lower_bounds.empty() ||
-      !vc.lower_bounds.empty() || inv_freq.sizes.size() != 1 ||
-      inv_freq.sizes[0] <= 0 || inv_freq.dtype != ScalarType::Float ||
-      dtype != ScalarType::Float) {
+      !vc.lower_bounds.empty() || dtype != ScalarType::Float) {
     return false;
   }
   const int64_t head_dim = q[3];
+  if (!(q[0] == 1 && k[0] == 1 && q[1] == k[1] && k[3] == head_dim &&
+        kc.sizes[0] == 1 && kc.sizes[1] == k[2] && kc.sizes[3] == head_dim &&
+        kc.dtype == dtype && vc.dtype == dtype &&
+        graph.value(m.k_input).tensor_meta().dtype == dtype &&
+        graph.value(m.v_input).tensor_meta().dtype == dtype)) {
+    return false;
+  }
+  if (!m.q_rope) {
+    return true;
+  }
+  const TensorMeta& inv_freq = graph.value(m.q_rope->inv_freq).tensor_meta();
+  if (inv_freq.sizes.size() != 1 || inv_freq.sizes[0] <= 0 ||
+      inv_freq.dtype != ScalarType::Float) {
+    return false;
+  }
   const int64_t rotary_dim = 2 * inv_freq.sizes[0];
-  return q[0] == 1 && k[0] == 1 && q[1] == k[1] && k[3] == head_dim &&
-      kc.sizes[0] == 1 && kc.sizes[1] == k[2] && kc.sizes[3] == head_dim &&
-      kc.dtype == dtype && vc.dtype == dtype &&
-      graph.value(m.k_rope.input).tensor_meta().dtype == dtype &&
-      graph.value(m.v_input).tensor_meta().dtype == dtype &&
-      rotary_dim <= head_dim && rotary_dim % 8 == 0;
+  return rotary_dim <= head_dim && rotary_dim % 8 == 0;
 }
 
 bool supported_sdpa_args(const Graph& graph, const Node& sdpa, Match& m) {
-  const int64_t head_dim = sizes_of(graph, m.q_rope.input)[3];
+  const int64_t head_dim = sizes_of(graph, m.q_input)[3];
   const std::optional<ValueId> mask = tensor_id(get_arg(sdpa, "attn_mask", 3));
   const bool causal_mask = mask &&
       is_causal_mask(graph,
@@ -366,14 +490,19 @@ bool supported_sdpa_args(const Graph& graph, const Node& sdpa, Match& m) {
   const std::optional<double> dropout =
       float_or_absent(get_arg(sdpa, "dropout_p", 4), 0.0);
   const NamedArgument* scale = get_arg(sdpa, "scale", 6);
-  const bool default_scale = scale == nullptr ||
-      scale->arg.kind() == ArgKind::None ||
-      (scale->arg.kind() == ArgKind::Float &&
-       !valid(scale->arg.as_float().id) &&
-       std::abs(
-           scale->arg.as_float().value -
-           1.0 / std::sqrt(static_cast<double>(head_dim))) < 1e-6);
-  return causal_mask && dropout == 0.0 && default_scale &&
+  bool scale_ok = false;
+  if (scale == nullptr || scale->arg.kind() == ArgKind::None) {
+    m.q_scale_factor = 1.0;
+    scale_ok = true;
+  } else if (
+      scale->arg.kind() == ArgKind::Float && !valid(scale->arg.as_float().id) &&
+      std::isfinite(scale->arg.as_float().value) &&
+      scale->arg.as_float().value > 0) {
+    m.q_scale_factor =
+        scale->arg.as_float().value * std::sqrt(static_cast<double>(head_dim));
+    scale_ok = true;
+  }
+  return causal_mask && dropout == 0.0 && scale_ok &&
       is_bool_or_absent(get_arg(sdpa, "is_causal", 5), false);
 }
 
@@ -400,21 +529,41 @@ std::optional<Match> match(const Graph& graph, NodeId sdpa_id) {
   const std::optional<Rope> q_rope = match_rope(graph, *query);
   const std::optional<CacheWrite> k_write = match_cache_write(graph, *key);
   const std::optional<CacheWrite> v_write = match_cache_write(graph, *value);
-  if (!q_rope || !k_write || !v_write) {
+  if (!k_write || !v_write) {
     return std::nullopt;
   }
   const std::optional<Rope> k_rope = match_rope(graph, k_write->values);
   const std::optional<ValueId> v_input = unpermuted(graph, v_write->values);
-  if (!k_rope || !v_input) {
+  if (!v_input) {
+    return std::nullopt;
+  }
+  // Both q and k are RoPE-rotated (Llama), or neither is (Whisper's
+  // learned positions are added before the block). Mixed forms have no
+  // kernel story.
+  std::optional<ValueId> q_input;
+  std::optional<ValueId> k_input;
+  if (q_rope && k_rope) {
+    if (k_rope->position_ids != q_rope->position_ids ||
+        k_rope->inv_freq != q_rope->inv_freq ||
+        k_rope->attention_scale != q_rope->attention_scale ||
+        !is_unsqueezed(
+            graph, q_rope->position_ids, k_write->cache_position, 0)) {
+      return std::nullopt;
+    }
+    q_input = q_rope->input;
+    k_input = k_rope->input;
+  } else if (!q_rope && !k_rope) {
+    q_input = unpermuted(graph, *query);
+    k_input = unpermuted(graph, k_write->values);
+    if (!q_input || !k_input) {
+      return std::nullopt;
+    }
+  } else {
     return std::nullopt;
   }
   if (!is_graph_input(graph, k_write->cache_position) ||
       v_write->cache_position != k_write->cache_position ||
-      k_write->cache == v_write->cache ||
-      k_rope->position_ids != q_rope->position_ids ||
-      k_rope->inv_freq != q_rope->inv_freq ||
-      k_rope->attention_scale != q_rope->attention_scale ||
-      !is_unsqueezed(graph, q_rope->position_ids, k_write->cache_position, 0)) {
+      k_write->cache == v_write->cache) {
     return std::nullopt;
   }
 
@@ -432,8 +581,10 @@ std::optional<Match> match(const Graph& graph, NodeId sdpa_id) {
       .sdpa_id = sdpa_id,
       .output_permute_id = permute_id,
       .output = permute.outputs[0].value_id,
-      .q_rope = *q_rope,
-      .k_rope = *k_rope,
+      .q_rope = q_rope,
+      .k_rope = k_rope,
+      .q_input = *q_input,
+      .k_input = *k_input,
       .k_write = *k_write,
       .v_write = *v_write,
       .v_input = *v_input,
@@ -461,27 +612,46 @@ class Lowering {
     if (m.kv_offset) {
       graph_.value(*m.kv_offset).attrs.try_emplace(kZeroConstantAttr, true);
     }
-    const auto [cos, sin] = tables_for(m.q_rope, max_seq_len, m.sdpa_id);
     const IntArg start_pos_arg{.id = start_pos};
     // Copies: appending nodes and values reallocates the graph's lists.
     const std::string name = graph_.node(m.sdpa_id).name;
-    const TensorMeta q_meta = graph_.value(m.q_rope.input).tensor_meta();
-    const TensorMeta k_meta = graph_.value(m.k_rope.input).tensor_meta();
-    const ValueId q = add_tensor(graph_, name + "_rope_q", q_meta);
-    const ValueId k = add_tensor(graph_, name + "_rope_k", k_meta);
-    insert(
-        m.sdpa_id,
-        Node{
-            .name = name + "_rope",
-            .target = kRopeHF,
-            .inputs =
-                {{.name = "xq", .arg = TensorArg{m.q_rope.input}},
-                 {.name = "xk", .arg = TensorArg{m.k_rope.input}},
-                 {.name = "freqs_cos", .arg = TensorArg{cos}},
-                 {.name = "freqs_sin", .arg = TensorArg{sin}},
-                 {.name = "start_pos", .arg = start_pos_arg}},
-            .outputs = {{.value_id = q}, {.value_id = k}},
-        });
+    ValueId q = m.q_input;
+    ValueId k = m.k_input;
+    if (m.q_rope) {
+      const auto [cos, sin] = tables_for(*m.q_rope, max_seq_len, m.sdpa_id);
+      const TensorMeta q_meta = graph_.value(m.q_input).tensor_meta();
+      const TensorMeta k_meta = graph_.value(m.k_input).tensor_meta();
+      q = add_tensor(graph_, name + "_rope_q", q_meta);
+      k = add_tensor(graph_, name + "_rope_k", k_meta);
+      insert(
+          m.sdpa_id,
+          Node{
+              .name = name + "_rope",
+              .target = kRopeHF,
+              .inputs =
+                  {{.name = "xq", .arg = TensorArg{m.q_input}},
+                   {.name = "xk", .arg = TensorArg{m.k_input}},
+                   {.name = "freqs_cos", .arg = TensorArg{cos}},
+                   {.name = "freqs_sin", .arg = TensorArg{sin}},
+                   {.name = "start_pos", .arg = start_pos_arg}},
+              .outputs = {{.value_id = q}, {.value_id = k}},
+          });
+    }
+    if (m.q_scale_factor != 1.0) {
+      const ValueId scaled =
+          add_tensor(graph_, name + "_q_scaled", graph_.value(q).tensor_meta());
+      insert(
+          m.sdpa_id,
+          Node{
+              .name = name + "_q_scaled",
+              .target = "torch.ops.aten.mul.Scalar",
+              .inputs =
+                  {{.name = "self", .arg = TensorArg{q}},
+                   {.name = "other", .arg = FloatArg{m.q_scale_factor}}},
+              .outputs = {{.value_id = scaled}},
+          });
+      q = scaled;
+    }
     update_cache(
         m.sdpa_id, name + "_k_update", k, m.k_write.cache, start_pos_arg);
     update_cache(
@@ -523,13 +693,12 @@ class Lowering {
     graph_.replace_all_uses(m.output, output);
     graph_.replace_all_uses(k_written, m.k_write.cache, m.k_write.node_id);
     graph_.replace_all_uses(v_written, m.v_write.cache, m.v_write.node_id);
+    // Dead-node cleanup removes RoPE after any intervening clones.
     for (const NodeId node_id :
          {m.output_permute_id,
           m.sdpa_id,
           m.k_write.node_id,
-          m.v_write.node_id,
-          m.q_rope.node_id,
-          m.k_rope.node_id}) {
+          m.v_write.node_id}) {
       graph_.erase_node(node_id);
     }
   }

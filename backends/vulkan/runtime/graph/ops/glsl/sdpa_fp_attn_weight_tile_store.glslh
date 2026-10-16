@@ -134,10 +134,15 @@ void apply_bias(
         const int bias_c4 = c4_start + c4;
         if (bias_c4 < bias_C4) {
 #ifdef INPUT_BUFFER
-          const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
-              LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(
-                  t_bias[(bias_bh * bias_S * bias_C4) + (bias_s * bias_C4) +
-                         bias_c4]));
+          LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
+              LINEAR_FP_OUTPUT_TILE_VEC4_T(0);
+          for (int comp = 0; comp < 4; ++comp) {
+            const int bias_c = mul_4(bias_c4) + comp;
+            if (bias_c < bias_sizes.x) {
+              bias_val[comp] = t_bias[
+                  (bias_bh * bias_S + bias_s) * bias_sizes.x + bias_c];
+            }
+          }
 #else
           const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_val =
               LINEAR_FP_OUTPUT_TILE_VEC4_T(VEC4_T(

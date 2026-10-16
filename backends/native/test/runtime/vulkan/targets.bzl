@@ -57,6 +57,7 @@ def define_common_targets():
             "test_insert_prepack.cpp",
             "test_lower_hf_attention.cpp",
             "test_lower_rms_norm.cpp",
+            "test_lower_sdpa.cpp",
             "test_materialize_view_copies.cpp",
         ],
         deps = [

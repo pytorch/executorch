@@ -71,7 +71,9 @@ size_t materialize_view_copies(
   size_t count = 0;
   for (const NodeId node_id : graph.schedule) {
     Node& node = graph.node(node_id);
-    if (!node.is_call() || node.target != "torch.ops.aten.view.default" ||
+    const bool permute = node.target == "torch.ops.aten.permute.default";
+    if (!node.is_call() ||
+        (!permute && node.target != "torch.ops.aten.view.default") ||
         node.outputs.size() != 1 ||
         node.outputs[0].kind != OutputValueKind::Tensor ||
         !valid(node.outputs[0].value_id)) {
@@ -82,7 +84,20 @@ size_t materialize_view_copies(
         has_mutated_alias_use(graph, output_id)) {
       continue;
     }
-    node.target = "torch.ops.aten.view_copy.default";
+    node.target = permute ? "torch.ops.aten.permute_copy.default"
+                          : "torch.ops.aten.view_copy.default";
+    if (permute) {
+      const int64_t rank = graph.value(output_id).tensor_meta().ndim();
+      for (NamedArgument& input : node.inputs) {
+        if (input.name == "dims" && input.arg.kind() == ArgKind::IntList) {
+          IntListArg dims = input.arg.as_int_list();
+          for (int64_t& dim : dims.values) {
+            dim = dim < 0 ? dim + rank : dim;
+          }
+          input.arg = std::move(dims);
+        }
+      }
+    }
     graph.value(output_id).alias_id = kInvalid;
     ++count;
   }
