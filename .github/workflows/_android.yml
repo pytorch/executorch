@@ -2,7 +2,17 @@ name: Android
 
 on:
   workflow_call:
+    inputs:
+      split-backends:
+        description: Build XNNPACK and Vulkan as their own shared libraries
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      split-backends:
+        description: Build XNNPACK and Vulkan as their own shared libraries
+        type: boolean
+        default: false
 
 jobs:
   build-android:
@@ -39,12 +49,40 @@ jobs:
           echo "Using Android NDK: $ANDROID_NDK"
           echo "ANDROID_NDK=$ANDROID_NDK" >> "$GITHUB_ENV"
 
+      - name: Install Vulkan SDK
+        if: ${{ inputs.split-backends }}
+        run: |
+          set -eux
+          curl -fsSLO https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
+          tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
+          echo "/tmp/1.4.321.1/x86_64/bin" >> "$GITHUB_PATH"
+
       - name: Build Android library
+        env:
+          EXECUTORCH_BUILD_VULKAN: ${{ inputs.split-backends && 'ON' || 'OFF' }}
+          EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED: ${{ inputs.split-backends && 'ON' || 'OFF' }}
+          EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED: ${{ inputs.split-backends && 'ON' || 'OFF' }}
         run: |
           set -eux
           export BUILD_AAR_DIR=aar-out
           mkdir -p $BUILD_AAR_DIR
           bash scripts/build_android_library.sh
+
+      - name: Check split backend libraries
+        if: ${{ inputs.split-backends }}
+        run: |
+          set -eux
+          BIN=$(ls -d "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin)
+          for abi in arm64-v8a x86_64; do
+            unzip -l aar-out/executorch.aar "jni/${abi}/libexecutorch.so"
+            for backend in xnnpack vulkan; do
+              unzip -l aar-out/executorch.aar "jni/${abi}/lib${backend}_executorch_backend.so"
+              lib="cmake-out-android-so/${abi}/lib${backend}_executorch_backend.so"
+              # The backend registers into the runtime's registry rather than a copy of its own.
+              "$BIN/llvm-readelf" -d "$lib" | grep -F '[libexecutorch.so]'
+              "$BIN/llvm-nm" -DC --undefined-only "$lib" | grep -F 'executorch::runtime::register_backend'
+            done
+          done
 
       - name: Build Android test APK
         run: |
@@ -56,7 +94,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: android-apps
+          name: android-apps${{ inputs.split-backends && '-split-backends' || '' }}
           path: |
             aar-out/executorch.aar
             extension/android/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk
@@ -83,7 +121,7 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: android-apps
+          name: android-apps${{ inputs.split-backends && '-split-backends' || '' }}
 
       - name: Prepare test APK
         run: |
