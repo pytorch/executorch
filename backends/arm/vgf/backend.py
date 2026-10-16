@@ -50,7 +50,8 @@ from executorch.backends.arm.vgf.model_converter import (
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
-from torch.export.exported_program import ExportedProgram
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind, InputSpec, OutputKind, OutputSpec
 
 # debug functionality
 logger = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ logger = logging.getLogger(__name__)
 STATUS_OK = "PASS"
 STATUS_FAIL = "FAIL"
 VGF_BACKEND_NAME = "VgfBackend"
+MUTABLE_BUFFER_PAIRS_KEY = "mutable_buffer_pairs"
+MUTABLE_BUFFER_OWNERSHIP_KEY = "vgf_partitioned_mutable_buffer"
 
 
 @dataclass(frozen=True)
@@ -219,6 +222,86 @@ class VgfBackend(BackendDetails):
         return binary
 
     @staticmethod
+    def _validate_mutable_buffer_contents(edge_program: ExportedProgram) -> None:
+        signature = edge_program.graph_signature
+        mutated_buffers = set(signature.buffers_to_mutate.values())
+        for buffer_name in mutated_buffers:
+            buffer = (
+                edge_program.constants.get(buffer_name)
+                if buffer_name in signature.non_persistent_buffers
+                else edge_program.state_dict.get(buffer_name)
+            )
+            if buffer is None:
+                raise ValueError(f"VGF mutable buffer {buffer_name!r} must be present.")
+            if buffer.count_nonzero().item() != 0:
+                raise ValueError(
+                    f"VGF mutable buffer {buffer_name!r} must be zero-initialized."
+                )
+
+    @staticmethod
+    def _internalize_mutable_buffers(edge_program: ExportedProgram) -> None:
+        mutated_buffers = set(edge_program.graph_signature.buffers_to_mutate.values())
+        input_specs = [
+            (
+                InputSpec(InputKind.USER_INPUT, spec.arg, None)
+                if spec.kind == InputKind.BUFFER and spec.target in mutated_buffers
+                else spec
+            )
+            for spec in edge_program.graph_signature.input_specs
+        ]
+        input_specs.sort(key=lambda spec: spec.kind == InputKind.USER_INPUT)
+        edge_program.graph_signature.input_specs = input_specs
+
+        nodes_by_name = {
+            node.name: node
+            for node in edge_program.graph.nodes
+            if node.op == "placeholder"
+        }
+        first_operation = next(
+            node for node in edge_program.graph.nodes if node.op != "placeholder"
+        )
+        for spec in input_specs:
+            first_operation.prepend(nodes_by_name[spec.arg.name])
+
+        edge_program.graph_signature.output_specs = [
+            (
+                OutputSpec(OutputKind.USER_OUTPUT, spec.arg, None)
+                if spec.kind == OutputKind.BUFFER_MUTATION
+                else spec
+            )
+            for spec in edge_program.graph_signature.output_specs
+        ]
+        edge_program.graph_module.recompile()
+
+    @staticmethod
+    def _serialize_mutable_buffer_pairs(
+        edge_program: ExportedProgram, mutable_buffer_ids: dict[str, int]
+    ) -> bytes:
+        input_positions: dict[str, int] = {}
+        sequence_input = 0
+        for spec in edge_program.graph_signature.input_specs:
+            if spec.kind == InputKind.USER_INPUT or (
+                spec.kind == InputKind.BUFFER and spec.target in mutable_buffer_ids
+            ):
+                if spec.target in mutable_buffer_ids:
+                    input_positions[spec.target] = sequence_input
+                sequence_input += 1
+
+        output_positions = {
+            spec.target: position
+            for position, spec in enumerate(edge_program.graph_signature.output_specs)
+            if spec.kind == OutputKind.BUFFER_MUTATION
+            and spec.target in mutable_buffer_ids
+        }
+        pairs = [
+            f"{buffer_id}:{input_positions[name]}:{output_positions[name]}"
+            for name, buffer_id in sorted(
+                mutable_buffer_ids.items(), key=lambda item: item[1]
+            )
+        ]
+        return ",".join(pairs).encode()
+
+    @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
@@ -240,11 +323,46 @@ class VgfBackend(BackendDetails):
         try:
             _register_vgf_rewrite_passes()
             compile_spec = VgfCompileSpec._from_list(compile_specs)
+            owns_mutable_buffers = any(
+                spec.key == MUTABLE_BUFFER_OWNERSHIP_KEY and spec.value == b"1"
+                for spec in compile_specs
+            )
+            compile_specs[:] = [
+                spec
+                for spec in compile_specs
+                if spec.key
+                not in (MUTABLE_BUFFER_PAIRS_KEY, MUTABLE_BUFFER_OWNERSHIP_KEY)
+            ]
+            mutable_buffer_ids: dict[str, int] = {}
+            if compile_spec.alias_buffer_mutations:
+                mutable_buffer_ids = {
+                    name: index
+                    for index, name in enumerate(
+                        sorted(
+                            set(edge_program.graph_signature.buffers_to_mutate.values())
+                        )
+                    )
+                }
+                if mutable_buffer_ids:
+                    if not owns_mutable_buffers:
+                        raise ValueError(
+                            "VGF mutable buffer aliasing requires VgfPartitioner "
+                            "to transfer buffer ownership."
+                        )
+                    compile_specs.append(
+                        CompileSpec(
+                            MUTABLE_BUFFER_PAIRS_KEY,
+                            VgfBackend._serialize_mutable_buffer_pairs(
+                                edge_program, mutable_buffer_ids
+                            ),
+                        )
+                    )
+                    VgfBackend._validate_mutable_buffer_contents(edge_program)
+                    VgfBackend._internalize_mutable_buffers(edge_program)
             # deduce TOSA compile_spec from VGF compile spec. We get a new
             # compile spec list, containing only elements relevant for the
             # TOSABackend.
             tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
-
             # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
             # ('All backend implementation are final...'), so use composition instead.
             # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
