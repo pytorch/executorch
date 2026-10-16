@@ -433,6 +433,58 @@ class TestCoreMLPartitioner(unittest.TestCase):
         self.assertIn("executorch_call_delegate", op_names)
         self.assertNotIn("aten.argmax.default", op_names)
 
+    def test_nonconstant_pad_beyond_last_two_dims_is_decomposed(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11708
+        and https://github.com/pytorch/executorch/issues/11709.
+
+        Core ML only supports reflect / replicate padding on the last two
+        dimensions.  Handing it a wider pad lowers fine but the model fails to
+        load ("Padding for more than two dimensions only supports `constant`
+        mode").  The partitioner must not keep such a pad whole, so it
+        decomposes into ops Core ML can run; 2D reflect padding stays intact.
+        """
+
+        class Pad(torch.nn.Module):
+            def __init__(self, pad, mode):
+                super().__init__()
+                self.pad = pad
+                self.mode = mode
+
+            def forward(self, x):
+                return torch.nn.functional.pad(x, self.pad, mode=self.mode)
+
+        x5 = torch.randn(1, 3, 6, 6, 6)
+        cases = [
+            (torch.nn.ReflectionPad3d(2), x5),
+            (torch.nn.ReplicationPad3d(2), x5),
+            # Pads a single dimension, but not one of the last two.
+            (Pad((0, 0, 0, 0, 1, 1), "reflect"), x5),
+        ]
+        for model, x in cases:
+            model = model.eval()
+            ep = torch.export.export(model, (x,), strict=True)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertNotIn(torch.ops.aten.pad.default, not_decomposed, model)
+
+            edge = executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner()]
+            )
+            if _TEST_RUNTIME:
+                et_prog = edge.to_executorch()
+                program = Runtime.get().load_program(et_prog.buffer)
+                et_outputs = program.load_method("forward").execute((x,))[0]
+                self.assertTrue(
+                    torch.allclose(et_outputs, model(x), atol=1e-02, rtol=1e-02),
+                    model,
+                )
+
+        ep = torch.export.export(
+            Pad((1, 1, 1, 1), "reflect").eval(), (torch.randn(1, 3, 6, 6),)
+        )
+        not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+        self.assertIn(torch.ops.aten.pad.default, not_decomposed)
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
@@ -572,6 +624,7 @@ if __name__ == "__main__":
     test_runner.test_take_over_constant_data_false()
     test_runner.test_aten_rand_default_falls_back_to_portable()
     test_runner.test_aten_randn_is_still_delegated()
+    test_runner.test_nonconstant_pad_beyond_last_two_dims_is_decomposed()
     test_runner.test_tied_embedding_is_quantized_with_its_linear()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
