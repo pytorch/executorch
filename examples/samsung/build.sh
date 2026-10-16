@@ -19,8 +19,30 @@ echo ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}
 echo ANDROID_ABI=${ANDROID_ABI}
 echo ANDROID_PLATFORM=${ANDROID_PLATFORM}
 
+usage() {
+      echo "Usage: $0 [--llm] [--llm-wrapper-so]"
+      echo "    --llm               Also build enn_executor_llm_runner."
+      echo "    --llm-wrapper-so    Also build libexynos_llm_wrapper.so and exynos_llm_wrapper_sample (implies --llm)."
+}
+
 main() {
+      local build_llm_runner=OFF
+      local build_llm_wrapper_so=OFF
+      for arg in "$@"; do
+          case "$arg" in
+          "--llm") build_llm_runner=ON ;;
+          "--llm-wrapper-so") build_llm_runner=ON; build_llm_wrapper_so=ON ;;
+          "--help"|"-h") usage; exit 0 ;;
+          *) echo "Unknown option: $arg"; usage; exit 1 ;;
+          esac
+      done
+
       cd "$PROJECT_DIR"
+
+      if [[ -z ${ANDROID_NDK} ]]; then
+          ANDROID_NDK=${ANDROID_NDK_ROOT}
+      fi
+
       local build_dir_root="build_samsung_android"
       local example_root="examples/samsung"
       local build_dir_example="$PROJECT_DIR/${build_dir_root}/${example_root}"
@@ -37,9 +59,16 @@ main() {
             -DANDROID_PLATFORM=$ANDROID_PLATFORM \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DCMAKE_BUILD_TYPE=Release \
+            -DEXYNOS_BUILD_LLM_RUNNER=${build_llm_runner} \
+            -DEXYNOS_BUILD_LLM_WRAPPER_SO=${build_llm_wrapper_so} \
             -B"${build_dir_example}" \
             "$PROJECT_DIR/${example_root}"
-      cmake --build build_samsung_android/examples/samsung/ --config Release
+      cmake --build ${build_dir_example} --config Release
+
+      if [[ ${build_llm_wrapper_so} == OFF ]]; then
+          rm -f "${build_dir_example}/libexynos_llm_wrapper.so" \
+                "${build_dir_example}/exynos_llm_wrapper_sample"
+      fi
 }
 
 main "$@"

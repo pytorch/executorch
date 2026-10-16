@@ -20,28 +20,77 @@ namespace executor {
 namespace enn {
 
 Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
+  return initialize(binary_buf_addr, buf_size, nullptr, 0, false);
+}
+
+Error EnnExecutor::initialize(
+    const char* binary_buf_addr,
+    size_t buf_size,
+    const char* weight_buf_addr,
+    size_t weight_size,
+    bool use_weight_fd) {
   EXYNOS_ATRACE_FUNCTION_LINE();
   auto sm_instance = executorch::backends::enn::shared_memory_manager::
       SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   ET_CHECK_OR_RETURN_ERROR(
       enn_api_inst->isInitialized(), Internal, "Enn initialize failed.");
+  // EnnInitialize() resets the calling thread's preference on every call, so
+  // re-apply it right before opening the model.
+  enn_api_inst->applyPerfConfigFromSoc();
+  ET_CHECK_OR_RETURN_ERROR(
+      buf_size <= UINT32_MAX && weight_size <= UINT32_MAX,
+      InvalidArgument,
+      "Model (%zu) or weight (%zu) buffer exceeds the 4GiB ENN limit",
+      buf_size,
+      weight_size);
   EnnReturn ret = ENN_RET_SUCCESS;
 
   ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);
 
-  EnnBufferPtr shared_buffer = nullptr;
-  if (sm_instance->query(&shared_buffer, binary_buf_addr, buf_size)) {
+  EnnBufferPtr pte_buffer = nullptr;
+  if (sm_instance->query(&pte_buffer, binary_buf_addr, buf_size)) {
     int32_t fd;
-    if (shared_buffer->va == binary_buf_addr &&
-        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(shared_buffer, &fd)) {
-      ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
-      if (ret == ENN_RET_SUCCESS) {
-        ET_LOG(Info, "Opened model from file descriptor, so fd is closed");
-        sm_instance->free(shared_buffer->va);
+    if (pte_buffer->va == binary_buf_addr &&
+        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(pte_buffer, &fd)) {
+      if (use_weight_fd) {
+        ET_CHECK_OR_RETURN_ERROR(
+            enn_api_inst->EnnOpenModelFromFdWithWeight != nullptr,
+            NotSupported,
+            "This ENN runtime cannot open models with external weights.");
+        EnnBufferPtr ptd_buffer = nullptr;
+        ET_CHECK_OR_RETURN_ERROR(
+            sm_instance->query(&ptd_buffer, weight_buf_addr, weight_size),
+            Internal,
+            "PTD EnnBuffer not found.");
+        ET_LOG(
+            Info,
+            "Open FD & weights. fd: %d, model size %zu, offset: %u, weight buffer: %p",
+            fd,
+            buf_size,
+            pte_buffer->offset,
+            ptd_buffer->va);
+        ret = enn_api_inst->EnnOpenModelFromFdWithWeight(
+            fd, buf_size, pte_buffer->offset, &ptd_buffer, 1, &model_id_);
+        ET_CHECK_OR_RETURN_ERROR(
+            ret == ENN_RET_SUCCESS,
+            Internal,
+            "Open model with weights failed.");
+        ET_LOG(Info, "Opened model from file descriptor with weights");
+        sm_instance->free(pte_buffer->va);
+      } else {
+        ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
+        if (ret == ENN_RET_SUCCESS) {
+          ET_LOG(Info, "Opened model from file descriptor, so fd is closed");
+          sm_instance->free(pte_buffer->va);
+        }
       }
     }
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      !use_weight_fd || model_id_,
+      Internal,
+      "Failed to open the model with external weights from file descriptor.");
   if (!model_id_) {
     ET_LOG(Info, "Open model from memory");
     ret = enn_api_inst->EnnOpenModelFromMemory(
@@ -96,10 +145,13 @@ Error EnnExecutor::eval(
   }
   EXYNOS_ATRACE_END();
 
-  ENN_LOG_DEBUG("Start to execute model.");
+  ENN_LOG_DEBUG("Starting model execution");
   auto ret = enn_api_inst->EnnExecuteModel(model_id_);
   if (ret != ENN_RET_SUCCESS) {
-    ENN_LOG_ERROR("EnnExecuteModel Failed");
+    ENN_LOG_ERROR(
+        "EnnExecuteModel failed, ret=%d (model_id=0x%" PRIX64 ")",
+        ret,
+        model_id_);
     return Error::Internal;
   }
 
@@ -124,6 +176,11 @@ EnnExecutor::~EnnExecutor() {
     enn_api_inst->EnnReleaseBuffers(alloc_buffer_, num_of_buffers);
   }
   enn_api_inst->EnnCloseModel(model_id_);
+
+  ET_LOG(
+      Info,
+      "EnnExecutor destroyed: model 0x%" PRIX64 " closed, resources released",
+      model_id_);
 }
 
 } // namespace enn

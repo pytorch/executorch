@@ -1,0 +1,20 @@
+{
+  "model_id": "exynos_llama3_1b",
+  "description": "Exynos Optimized Llama3 1B Configuration",
+  "hidden_dim": 2048,
+  "n_heads": 32,
+  "n_kv_heads": 8,
+  "n_layers": 16,
+  "head_dim": 64,
+  "vocab_size": 128256,
+  "max_seq_len": 1024,
+  "max_context_len": 8192,
+  "embedding_strategy": "global_only",
+  "masking_strategy": "causal",
+  "model_version": "llama3",
+  "tokenizer_type": "tiktoken",
+  "prefill_seq_len": 128,
+  "decode_seq_len": 1,
+  "attn_mask_rows": 128,
+  "attn_mask_cols": 1024
+}
