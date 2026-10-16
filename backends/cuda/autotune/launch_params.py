@@ -335,15 +335,15 @@ def autotune_launch_param(
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            stats = _STATE.stats
-            if param in kwargs or stats is None or len(candidates) == 1:
-                kwargs.setdefault(param, candidates[0])
-                return fn(*args, **kwargs)
             if _IN_PREPASS.get():
                 raise RuntimeError(
                     f"{name} runs inside another autotuned launch's candidate prepass; "
                     "nested autotuning is not supported"
                 )
+            stats = _STATE.stats
+            if param in kwargs or stats is None or len(candidates) == 1:
+                kwargs.setdefault(param, candidates[0])
+                return fn(*args, **kwargs)
             device = _first_device((*args, *kwargs.values()))
             key = (
                 token,

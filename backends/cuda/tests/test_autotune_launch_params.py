@@ -197,6 +197,21 @@ class AutotuneLaunchParamTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "nested autotuning"):
                 outer(self.x)
 
+    def test_an_explicit_nested_launch_inside_a_prepass_is_refused(self) -> None:
+        @autotune_launch_param("split_k", (1, 2))
+        def inner(x, *, split_k):
+            return x @ x
+
+        @autotune_launch_param(
+            "split_k", (1, 2), candidate_prepass=contextlib.nullcontext
+        )
+        def outer(x, *, split_k):
+            return inner(x, split_k=2)
+
+        with autotune_launch_params():
+            with self.assertRaisesRegex(RuntimeError, "nested autotuning"):
+                outer(self.x)
+
     def test_parameter_must_exist(self) -> None:
         with self.assertRaisesRegex(TypeError, "has no parameter 'num_splits'"):
 
