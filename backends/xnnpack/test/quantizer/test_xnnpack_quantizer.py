@@ -9,6 +9,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from parameterized import parameterized
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (
     default_dynamic_fake_quant,
@@ -628,6 +629,92 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
+
+    @parameterized.expand(
+        [
+            ("transpose", torch.ops.aten.transpose.int, lambda x: x.transpose(0, 1)),
+            (
+                "transpose_copy",
+                torch.ops.aten.transpose_copy.int,
+                lambda x: torch.transpose_copy(x, 0, 1),
+            ),
+            ("t", torch.ops.aten.t.default, torch.t),
+            ("t_copy", torch.ops.aten.t_copy.default, torch.t_copy),
+            (
+                "swapaxes",
+                torch.ops.aten.swapaxes.default,
+                lambda x: torch.swapaxes(x, 0, 1),
+            ),
+            (
+                "swapdims",
+                torch.ops.aten.swapdims.default,
+                lambda x: torch.swapdims(x, 0, 1),
+            ),
+        ]
+    )
+    def test_transpose_cat_shared_qparams(self, _name, target, transpose_fn):
+        """transpose feeding cat must share quantization parameters.
+
+        When a transpose output feeds into cat alongside a branch with a larger
+        activation range, XNNPACK's cat annotator ties the transpose output to
+        the combined-range scale while the transpose input keeps the upstream
+        (narrow) scale.  Without SharedQuantizationSpec on transpose the two
+        scales diverge and XNNPACK rejects the model with
+        xnn_status_invalid_parameter at load_method time.
+        """
+
+        class TransposeCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.l1 = torch.nn.Linear(16, 16)
+                self.l2 = torch.nn.Linear(8, 8)
+
+            def forward(self, x, y):
+                a = transpose_fn(self.l1(x))  # (16, 8) — narrow range
+                b = self.l2(y)  # (16, 8) — large range
+                return torch.cat([a, b], dim=0)
+
+        torch.manual_seed(0)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config())
+        example_inputs = (torch.randn(8, 16), torch.randn(16, 8) * 8.0)
+        m = TransposeCat().eval()
+        m = export(m, example_inputs, strict=True).module()
+        m = prepare_pt2e(m, quantizer)
+
+        torch.manual_seed(0)
+        for _ in range(30):
+            m(torch.randn(8, 16), torch.randn(16, 8) * 8.0)
+
+        m = convert_pt2e(m)
+
+        # After convert_pt2e, the Q/DQ flanking the transpose must carry
+        # identical scale/zero_point; XNNStaticTranspose hard-requires this.
+        nodes = [
+            n for n in m.graph.nodes if n.op == "call_function" and n.target == target
+        ]
+        self.assertEqual(len(nodes), 1, f"expected exactly one {target} node")
+        n = nodes[0]
+        dq_in = n.args[0]
+        q_out = next(
+            (
+                u
+                for u in n.users
+                if u.op == "call_function" and "quantize" in str(u.target)
+            ),
+            None,
+        )
+        self.assertIsNotNone(q_out, "expected a quantize node after transpose")
+        self.assertEqual(
+            dq_in.args[1],
+            q_out.args[1],
+            "transpose input/output scale must match for XNNPACK",
+        )
+        self.assertEqual(
+            dq_in.args[2],
+            q_out.args[2],
+            "transpose input/output zero_point must match for XNNPACK",
+        )
 
     def test_propagate_annotation(self):
         quantizer = XNNPACKQuantizer()
