@@ -276,7 +276,8 @@ RESULT=$(cat result.txt)
 EXPECTED_PREFIX="Once upon a time,"
 # Expected result - may take too long to generate:
 # "Once upon a time, there was a little girl named Lily. She loved to play outside" ...
-if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
+# QNN libnative may print an initialization message to stdout before the generated text.
+if grep -qF -- "${EXPECTED_PREFIX}" result.txt; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Success"

@@ -328,6 +328,67 @@ TEST_P(MLXBatchedCacheTest, RemovedSequenceStartsOverOnReuse) {
   EXPECT_TRUE(allclose(out, alone(solo, {0}, q, k, v), 1e-2f));
 }
 
+TEST_P(MLXBatchedCacheTest, RemovingSequencePreservesLiveHistoryDuringReuse) {
+  using namespace ::mlx::core;
+  ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(4, 1, H, D, kHalf, 2)));
+  const auto a = batch_->seq_new();
+  const auto b = batch_->seq_new();
+  ASSERT_TRUE(a);
+  ASSERT_TRUE(b);
+  const auto tensor = [&](const std::vector<float>& data) {
+    const int count = static_cast<int>(data.size());
+    return broadcast_to(array(data.data(), {1, 1, count, 1}), {1, H, count, D});
+  };
+  const auto forward = [&](int32_t seq,
+                           int position,
+                           const std::vector<float>& keys,
+                           const std::vector<float>& vals) {
+    const int count = static_cast<int>(keys.size());
+    std::vector<int32_t> positions(keys.size());
+    std::iota(positions.begin(), positions.end(), position);
+    EXPECT_TRUE(batch_->declare_step(std::vector<int32_t>(keys.size(), seq)));
+    return attention_->attend(
+        0,
+        positions,
+        ones({1, H, count, D}, float32),
+        tensor(keys),
+        tensor(vals),
+        1.0f / D,
+        s);
+  };
+  eval(forward(*a, 0, {2, 3, 4}, {100, 200, 300}));
+  EXPECT_TRUE(allclose(forward(*b, 0, {0}, {2}), tensor({2}), 1e-5f));
+  EXPECT_EQ(batch_->pos(*a), 3);
+  EXPECT_EQ(batch_->pos(*b), 1);
+  EXPECT_FALSE(batch_->declare_step({*b}));
+  ASSERT_TRUE(batch_->seq_rm(*a));
+  EXPECT_EQ(batch_->pos(*a), 0);
+  EXPECT_EQ(batch_->pos(*b), 1);
+
+  // Unit queries and scale 1/D give exp(key). All K/V are exactly representable
+  // in Half, so this host reference needs no cache or attention implementation.
+  double weighted = 2, weights = 1;
+  const auto check = [&](int position,
+                         const std::vector<float>& keys,
+                         const std::vector<float>& vals) {
+    std::vector<float> expected;
+    for (size_t i = 0; i < keys.size(); ++i) {
+      const double weight = std::exp(static_cast<double>(keys[i]));
+      weighted += weight * vals[i];
+      weights += weight;
+      expected.push_back(static_cast<float>(weighted / weights));
+    }
+    const auto out = forward(*b, position, keys, vals);
+    EXPECT_TRUE(allclose(out, tensor(expected), 1e-5f));
+    EXPECT_EQ(batch_->pos(*b), position + static_cast<int>(keys.size()));
+  };
+  // Cell reuses a hole below B's history while other holes remain masked.
+  ASSERT_NO_FATAL_FAILURE(check(1, {1}, {6}));
+  // Reuse the remaining capacity; the first query must exclude the second.
+  ASSERT_NO_FATAL_FAILURE(check(2, {-1, 2}, {10, 14}));
+  EXPECT_FALSE(batch_->declare_step({*b}));
+}
+
 // Undeclared, miscounted and out-of-order steps are refused.
 TEST_P(MLXBatchedCacheTest, IllFormedStepsThrow) {
   ASSERT_NO_FATAL_FAILURE(
@@ -546,8 +607,9 @@ TEST_P(MLXBatchedCacheTest, SharedCapacityChargesRetainedClonePrefixes) {
 }
 
 TEST_P(MLXBatchedCacheTest, SharedCapacityIncludesPartialForwards) {
-  if (GetParam() != cache::kind::kBatched) {
-    GTEST_SKIP() << "V2 commits positions only after all layers have advanced";
+  if (GetParam() == cache::kind::kBatchedCell) {
+    GTEST_SKIP()
+        << "Sequence caches commit positions only after all layers have advanced";
   }
   ASSERT_NO_FATAL_FAILURE(create_cache(flat_config(4, 2, H, D, kHalf)));
   const int32_t a = *batch_->seq_new();
@@ -722,17 +784,13 @@ class MLXDFlashBatchedCacheTest
           cache::LayerPolicy::Kind::Ring, window()};
     }
     const auto& kind = std::get<0>(GetParam());
-    if (kind != cache::kind::kBatched) {
+    if (kind == cache::kind::kBatchedCell) {
       try {
         cache::CacheFactory::global().build(
             kMLXBackendId, kind, args.geometry, args.config);
         ADD_FAILURE() << kind << " accepted DFlash geometry";
       } catch (const std::runtime_error& error) {
-        EXPECT_STREQ(
-            error.what(),
-            kind == cache::kind::kBatchedCell
-                ? "MLXCellCache: DFlash is unsupported"
-                : "MLXBatchedSequenceCache: DFlash is unsupported");
+        EXPECT_STREQ(error.what(), "MLXCellCache: DFlash is unsupported");
       }
       return false;
     }
