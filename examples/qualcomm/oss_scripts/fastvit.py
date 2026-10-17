@@ -14,10 +14,10 @@ import torch
 
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserverWithLossEvaluation,
@@ -130,19 +130,19 @@ def main(args):
         custom_quantizer=quantizer,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

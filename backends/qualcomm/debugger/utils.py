@@ -269,7 +269,7 @@ class QnnTool:
         self,
         artifact_dir,
         soc_id,
-        adb,
+        device,
         sample_input=None,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
@@ -290,7 +290,7 @@ class QnnTool:
 
         self.artifact_dir = artifact_dir
         self.workspace = workspace
-        self.adb = adb
+        self.device = device
         self.sample_input = sample_input
         self.soc_id = soc_id
 
@@ -382,7 +382,7 @@ class QnnTool:
         ), f"qnn-context-binary-generator ran but did not produce {expected}"
 
     def _qnn_net_run(self, graph_name: str) -> None:
-        # backend-extensions library path is device-relative when running via adb
+        # backend-extensions library path is device-relative.
         backend_ext = {
             "shared_library_path": f"./{_BACKEND_EXTENSIONS_LIB}",
             "config_file_path": "config.json",
@@ -411,18 +411,14 @@ class QnnTool:
             "--profiling_level detailed",
             "--profiling_option optrace",
         ]
-        self.adb.push(
+        self.device.push(
             inputs=self.sample_input,
             files=files,
         )
-        self.adb.execute(custom_runner_cmd=" ".join(cmds))
-        self.adb._adb(
-            [
-                "pull",
-                "-a",
-                f"{self.workspace}/output/qnn-profiling-data_0.log",
-                self.artifact_dir,
-            ]
+        self.device.execute(custom_runner_cmd=" ".join(cmds))
+        self.device.pull(
+            host_output_path=self.artifact_dir,
+            device_output_path=f"{self.workspace}/output/qnn-profiling-data_0.log",
         )
 
         assert os.path.isfile(
@@ -616,11 +612,11 @@ def _generate_htp_analysis_result(
     pte_path: str,
     mode: Literal["optrace", "hextimate"],
     inputs: Optional[Sequence[Tuple[torch.Tensor]]] = None,
-    adb=None,
+    device=None,
 ) -> List[QnnHtpProfileArtifacts]:
     assert mode in ("optrace", "hextimate"), f"unknown mode {mode!r}"
     if mode == "optrace":
-        assert adb is not None, "optrace requires adb for on-device execution"
+        assert device is not None, "optrace requires a device for on-device execution"
     _validate_pte_profile_level(pte_path)
 
     dumpfiles = dump_context_from_pte(pte_path, output_dir=artifact_dir)
@@ -629,8 +625,8 @@ def _generate_htp_analysis_result(
         artifact_dir=artifact_dir,
         sample_input=inputs,
         soc_id=soc_id,
-        adb=adb,
-        workspace=(adb.workspace if adb is not None else None),
+        device=device,
+        workspace=(device.workspace if device is not None else None),
     )
 
     return [qnn_tool.run(mode=mode, binary_file=os.path.basename(f)) for f in dumpfiles]
@@ -640,12 +636,12 @@ def _generate_htp_analysis_result(
 def generate_optrace(
     artifact: str,
     soc_id: QcomChipset,
-    adb,
+    device,
     pte_path: str,
     inputs: Sequence[Tuple[torch.Tensor]],
 ) -> List[QnnHtpProfileArtifacts]:
     """Legacy positional wrapper for generate_htp_profile_result()."""
-    return generate_htp_profile_result(artifact, soc_id, pte_path, inputs, adb)
+    return generate_htp_profile_result(artifact, soc_id, pte_path, inputs, device)
 
 
 def generate_htp_profile_result(
@@ -653,7 +649,7 @@ def generate_htp_profile_result(
     soc_id: QcomChipset,
     pte_path: str,
     inputs: Sequence[Tuple[torch.Tensor]],
-    adb,
+    device,
 ) -> List[QnnHtpProfileArtifacts]:
     """Generate HTP optrace artifacts from a .pte by running on device.
 
@@ -663,7 +659,7 @@ def generate_htp_profile_result(
     - soc_id: target SoC used by the compiled `.pte`; must match the device.
     - pte_path: `.pte` produced by build_executorch_binary().
     - inputs: sample input tensors used by qnn-net-run for optrace collection.
-    - adb: SimpleADB helper for pushing files, running qnn-net-run, and
+    - device: Device helper for pushing files, running qnn-net-run, and
       pulling `qnn-profiling-data_0.log` from the device.
 
     Supported prepare modes for the input pte file:
@@ -674,13 +670,17 @@ def generate_htp_profile_result(
       We will extract schematic and context binary from pte and continue device execution.
 
     """
+    if device.is_windows_target:
+        raise RuntimeError(
+            "generate_htp_profile_result() only supports Android devices."
+        )
     return _generate_htp_analysis_result(
         artifact_dir=artifact_dir,
         soc_id=soc_id,
         pte_path=pte_path,
         inputs=inputs,
         mode="optrace",
-        adb=adb,
+        device=device,
     )
 
 

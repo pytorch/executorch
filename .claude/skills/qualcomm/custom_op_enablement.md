@@ -173,7 +173,7 @@ Five things that are easy to get wrong:
   `current_platform` stayed `UNKNOWN` and every registration was silently
   skipped — no error, just an op that never ran.
 * **`--domain_id 0`** selects the ADSP. The default `3` is the CDSP, where LPAI
-  is absent. `SimpleADB` passes this automatically when `direct_build_folder` is
+  is absent. `Device` passes this automatically when `direct_build_folder` is
   set; a hand-written invocation must not omit it.
 * **`registerOpPackage`'s 4th argument is backend specific.** CPU/HTP take a
   processor target name (`"CPU"`, `"HTP"`); LPAI takes an *optional target memory
@@ -189,7 +189,7 @@ Five things that are easy to get wrong:
   populate both, keep them identical or you will run a stale kernel.
 
 Everything the drivers need follows from `direct_build_folder` in `QnnConfig`:
-`SimpleADB` selects `qnn_executor_direct_runner`, appends `--domain_id`, and
+`Device` selects `qnn_executor_direct_runner`, appends `--domain_id`, and
 `get_lpai_target_env()` returns `kAdsp`. Forgetting to forward that one field
 produces a non-direct `.pte` run by the FastRPC runner — which fails on the DSP,
 not at compile time.
