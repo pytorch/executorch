@@ -16,8 +16,12 @@ is saturated (on CUDA; see Int4AutotunePickTest for ROCm).
     python -m pytest backends/cuda/tests/test_int4_quantized_gemm.py -v
 """
 
+import concurrent.futures
 import contextlib
+import os
+import pickle
 import statistics
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -191,6 +195,171 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
         self.assertEqual(self._compiled(bucket), compiled_at_pool_exit[0])
         self.assertLessEqual(self._compiled(bucket) - before, counts["pooled"])
         _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
+    def _cache_hits(self, bucket: int):
+        """Cache hits and misses of the bucket's autotuned kernel in this
+        process (its helper kernels, such as the split-K reduce, are not
+        autotuned and compile here as before)."""
+        name = int4_kernel._BUCKET_KERNELS[bucket].fn.fn.__name__
+        hits = {"hit": 0, "miss": 0}
+
+        def listener(src, metadata, metadata_group, times, cache_hit):
+            if src.name == name:
+                hits["hit" if cache_hit else "miss"] += 1
+
+        return hits, mock.patch.object(triton.knobs.compilation, "listener", listener)
+
+    @unittest.skipIf(torch.version.hip is not None, "worker compiles are CUDA-only")
+    def test_configs_compile_in_worker_processes(self) -> None:
+        # A shape no other test tunes; with an empty Triton cache, every config
+        # this process loads is one a worker compiled into the shared cache.
+        n, k, bucket = 448, 1792, 2
+        weights = _packed(n, k, seed=13)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        hits, patch = self._cache_hits(bucket)
+        with tempfile.TemporaryDirectory() as cache_dir, triton.knobs.cache.scope(), (
+            patch
+        ):
+            triton.knobs.cache.dir = cache_dir
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertIsNotNone(quantized_gemm_family._compile_process_pool())
+        self.assertGreater(hits["hit"], 1)
+        self.assertEqual(hits["miss"], 0)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
+    @unittest.skipIf(torch.version.hip is not None, "worker compiles are CUDA-only")
+    def test_workers_that_cannot_import_the_kernel_fall_back_to_this_process(
+        self,
+    ) -> None:
+        n, k, bucket = 448, 2816, 2
+        weights = _packed(n, k, seed=17)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        request = quantized_gemm_family._process_compile_request
+
+        def unimportable(compile_fn):
+            args = request(compile_fn)
+            return None if args is None else (args[0], "no_such_module", *args[2:])
+
+        hits, patch = self._cache_hits(bucket)
+        # An empty Triton cache: what this process compiles shows up as misses.
+        with tempfile.TemporaryDirectory() as cache_dir, triton.knobs.cache.scope(), mock.patch.object(
+            quantized_gemm_family, "_process_compile_request", unimportable
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool_failed", False
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool", None
+        ), patch:
+            triton.knobs.cache.dir = cache_dir
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+            self.assertTrue(quantized_gemm_family._process_pool_failed)
+        # Compiled here instead, and still correct.
+        self.assertGreater(hits["miss"], 0)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
+    def test_only_unusable_workers_stop_process_compiles(self) -> None:
+        from torch._inductor.compile_worker.subproc_pool import SubprocException
+
+        failed = quantized_gemm_family._workers_failed
+        # One config failing to compile in a worker keeps the workers.
+        self.assertFalse(failed(error=SubprocException("ptxas error")))
+        self.assertFalse(failed(error=pickle.PicklingError("local object")))
+        self.assertFalse(failed(result=None))
+        # The kernel cannot be imported there, or the pool closed or broke.
+        self.assertTrue(failed(result=quantized_gemm_family._UNIMPORTABLE))
+        self.assertTrue(failed(error=RuntimeError("SubprocPool closed")))
+        self.assertTrue(
+            failed(error=concurrent.futures.process.BrokenProcessPool("died"))
+        )
+
+    def test_a_worker_applies_the_triton_environment_of_its_request(self) -> None:
+        with mock.patch.dict(
+            os.environ, {"TRITON_STALE": "1"}
+        ), triton.knobs.cache.scope():
+            result = quantized_gemm_family._compile_in_process(
+                tempfile.gettempdir(),
+                "no_such_module",
+                "kernel",
+                "no_such_module",
+                "Source",
+                {},
+                {},
+                {},
+                None,
+                {},
+                {},
+                {"TRITON_DISABLE_LINE_INFO": "1"},
+            )
+            self.assertEqual(os.environ["TRITON_DISABLE_LINE_INFO"], "1")
+            self.assertNotIn("TRITON_STALE", os.environ)
+        self.assertEqual(result, quantized_gemm_family._UNIMPORTABLE)
+
+    def test_a_pool_that_cannot_start_stops_process_compiles(self) -> None:
+        n, k, bucket = 448, 3072, 2
+        weights = _packed(n, k, seed=31)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        with mock.patch(
+            "torch._inductor.compile_worker.subproc_pool.SubprocPool",
+            side_effect=OSError("out of file descriptors"),
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool", None
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool_failed", False
+        ):
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+            self.assertTrue(quantized_gemm_family._process_pool_failed)
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
+    def _through_pool(self, error: BaseException):
+        future = concurrent.futures.Future()
+        future.set_exception(error)
+        pool = mock.Mock()
+        pool.submit.return_value = future
+        request = (
+            "cache",
+            "module",
+            "qualname",
+            "module",
+            "Source",
+            {},
+            {},
+            {},
+            None,
+            {},
+            {},
+            {},
+        )
+        compile_fn = mock.Mock()
+        with mock.patch.object(
+            quantized_gemm_family, "_process_compile_request", return_value=request
+        ), mock.patch.object(
+            quantized_gemm_family, "_compile_process_pool", return_value=pool
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool_failed", False
+        ), mock.patch.object(
+            quantized_gemm_family, "_process_pool", None
+        ):
+            quantized_gemm_family._compiled_in_a_process_first(compile_fn)()
+            failed = quantized_gemm_family._process_pool_failed
+        compile_fn.assert_called_once_with()
+        return failed
+
+    def test_a_config_failing_in_a_worker_keeps_the_pool(self) -> None:
+        from torch._inductor.compile_worker.subproc_pool import SubprocException
+
+        self.assertFalse(self._through_pool(SubprocException("ptxas error")))
+
+    def test_a_closed_pool_stops_process_compiles(self) -> None:
+        self.assertTrue(self._through_pool(RuntimeError("SubprocPool closed")))
+
+    def test_submit_forwards_the_arguments_triton_passes(self) -> None:
+        mode = object.__new__(quantized_gemm_family._ProcessCompileMode)
+        base = quantized_gemm_family._async_compile.AsyncCompileMode
+        with mock.patch.object(base, "submit", return_value="future") as submit:
+            self.assertEqual(
+                mode.submit("key", lambda: None, "finalize", "cleanup"), "future"
+            )
+        self.assertEqual(submit.call_args.args[0], "key")
+        self.assertEqual(submit.call_args.args[2:], ("finalize", "cleanup"))
 
     def test_fake_tensors_are_not_precompiled(self) -> None:
         # A full launch of a shape no other test tunes, so only the fake-tensor
