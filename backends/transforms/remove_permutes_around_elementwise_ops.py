@@ -119,6 +119,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             torch.fx.Node,
             tuple[int, int, torch.fx.Node, torch.fx.Node] | None,
         ] = {}
+        self._pending_visits = None
 
     _VIEW_OPS = (
         exir_ops.edge.aten.view_copy.default,
@@ -451,7 +452,37 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return PassResult(graph_module, False)
 
-    def visit(  # noqa: C901
+    def visit(
+        self,
+        node: torch.fx.Node,
+        subgraph: Subgraph,
+        processed_nodes: set[torch.fx.Node],
+        current_end_permute: list[int] | None = None,
+        current_start_permute: list[int] | None = None,
+    ) -> bool:
+        visit = (
+            node,
+            subgraph,
+            processed_nodes,
+            current_end_permute,
+            current_start_permute,
+        )
+        if self._pending_visits is not None:
+            self._pending_visits.append(visit)
+            return True
+
+        pending = [visit]
+        try:
+            while pending:
+                self._pending_visits = []
+                if not self._visit(*pending.pop()):
+                    return False
+                pending.extend(reversed(self._pending_visits))
+        finally:
+            self._pending_visits = None
+        return True
+
+    def _visit(  # noqa: C901
         self,
         node: torch.fx.Node,
         subgraph: Subgraph,
