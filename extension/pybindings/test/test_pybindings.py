@@ -25,6 +25,7 @@ from executorch.exir.schema import DeviceType
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
+    ModuleAddBFloat16,
     ModuleAddConstReturn,
     ModuleAddEmpty,
     ModuleAddHalf,
@@ -37,6 +38,17 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleMulti,
 )
 from torch.export import export
+
+
+class DLPackOnly:
+    def __init__(self, array) -> None:
+        self.array = array
+
+    def __dlpack__(self, stream=None):
+        return self.array.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        return self.array.__dlpack_device__()
 
 
 class PybindingsTest(unittest.TestCase):
@@ -101,6 +113,7 @@ class PybindingsTest(unittest.TestCase):
         for protocol, values in (
             ("torch", inputs),
             ("numpy", [value.numpy() for value in inputs]),
+            ("dlpack", [DLPackOnly(value.numpy()) for value in inputs]),
         ):
             with self.subTest(protocol=protocol):
                 module = self.load_fn(data)
@@ -108,6 +121,11 @@ class PybindingsTest(unittest.TestCase):
                     RuntimeError, "Failed to execute method forward, error: 0x20"
                 ):
                     module.run_method("forward", values)
+        module = self.load_fn(data)
+        with self.assertRaisesRegex(
+            RuntimeError, "Failed to execute method forward, error: 0x20"
+        ):
+            module.run_method("forward")
 
     def test_numpy_buffer_inputs(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -383,6 +401,300 @@ print("all calls finished")
         with self.assertRaises(RuntimeError):
             method.set_inputs([inputs[0], torch.ones(1)])
 
+    def test_dlpack_inputs(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor([DLPackOnly(value.numpy()) for value in inputs])[0]
+                torch.testing.assert_close(output, inputs[0] + inputs[1])
+
+    def test_dlpack_input_layout_comparison_is_deferred(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("portable input layout compatibility")
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(DLPackOnly(inputs[0].numpy().T))[0]
+                torch.testing.assert_close(output, inputs[0] + inputs[0])
+
+    def test_borrowed_result_feedback_has_bounded_ownership(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement ExecuTorchResult outputs")
+
+        class Identity(torch.nn.Module):
+            def forward(self, value):
+                return value
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        script = """
+import gc
+import sys
+import weakref
+from pathlib import Path
+import numpy as np
+
+from executorch.extension.pybindings import portable_lib as runtime
+
+native = sys.modules["executorch.extension.pybindings._C"]
+assert Path(native.__file__).resolve() == Path(sys.argv[2]).resolve()
+
+class DLPackOnly:
+    def __init__(self, value):
+        self.value = value
+    def __dlpack__(self, stream=None):
+        return self.value.__dlpack__(stream=stream)
+    def __dlpack_device__(self):
+        return self.value.__dlpack_device__()
+
+assert not runtime._uses_aten
+assert native._tensor_output == "executorch"
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+
+def live_lists():
+    gc.collect()
+    return sum(isinstance(value, list) for value in gc.get_objects())
+
+def check_feedback(executor):
+    source = np.arange(4, dtype=np.float32).reshape(2, 2)
+    source_ref = weakref.ref(source)
+    executor_ref = weakref.ref(executor)
+    pointer = source.ctypes.data
+    result = executor(source, clone_outputs=False)[0]
+    def advance(result, count):
+        for index in range(count):
+            producer = result if index % 2 == 0 else DLPackOnly(result)
+            result = executor(producer, clone_outputs=False)[0]
+            del producer
+            view = np.from_dlpack(result)
+            assert view.ctypes.data == pointer
+            np.testing.assert_array_equal(view, source)
+            del view
+        return result
+    result = advance(result, 16)
+    before = live_lists()
+    result = advance(result, 128)
+    after = live_lists()
+    # Repeated feedback must release old ownership containers, even while
+    # the current result still shares the original allocation.
+    assert after < before + 32, (type(executor), before, after)
+    del executor, source
+    gc.collect()
+    np.testing.assert_array_equal(np.from_dlpack(result), np.arange(4).reshape(2, 2))
+    del result, advance
+    gc.collect()
+    assert executor_ref() is None
+    assert source_ref() is None
+
+check_feedback(runtime._load_for_executorch_from_buffer(data))
+check_feedback(runtime._load_program_from_buffer(data).load_method("forward"))
+print("Borrowed result feedback retained bounded ownership")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "identity.pte")
+            with open(path, "wb") as source:
+                source.write(program.buffer)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    path,
+                    sys.modules[self.runtime.ExecuTorchResult.__module__].__file__,
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn(
+            "Borrowed result feedback retained bounded ownership", completed.stdout
+        )
+
+    def test_module_retains_dlpack_inputs_for_reexecution(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement generic DLPack inputs")
+        program, _ = create_program(
+            ModuleAddSingleInput(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        module = self.load_fn(program.buffer)
+        source = np.ones((2, 2), dtype=np.float32)
+        producer = DLPackOnly(source)
+        producer_ref = weakref.ref(producer)
+        source_ref = weakref.ref(source)
+        output = module(producer, clone_outputs=False)[0]
+        del producer, source
+        gc.collect()
+        self.assertIsNotNone(producer_ref())
+        self.assertIsNotNone(source_ref())
+
+        source_ref().fill(3.0)
+        repeated = module()[0]
+        planned = module.plan_execute("forward", clone_outputs=False)[0]
+        torch.testing.assert_close(repeated, torch.full((2, 2), 6.0))
+        torch.testing.assert_close(planned, torch.full((2, 2), 6.0))
+        del output, repeated, planned
+
+        replacement = DLPackOnly(np.full((2, 2), 5.0, dtype=np.float32))
+        replacement_ref = weakref.ref(replacement)
+        module(replacement)
+        del replacement
+        gc.collect()
+        self.assertIsNone(producer_ref())
+        self.assertIsNone(source_ref())
+        self.assertIsNotNone(replacement_ref())
+        output = module.plan_execute("forward", clone_outputs=False)[0]
+        del module
+        gc.collect()
+        self.assertIsNone(replacement_ref())
+        torch.testing.assert_close(output, torch.full((2, 2), 10.0))
+        del output
+        gc.collect()
+        self.assertIsNone(replacement_ref())
+
+    def test_cuda_dlpack_producer_and_executorch_result(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement ExecuTorchResult outputs")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        value = torch.ones(2, 3, 4, 5).to(memory_format=torch.channels_last)
+        program = to_edge(export(Identity(), (value,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        schema = program.executorch_program
+        device_index = torch.cuda.device_count() - 1
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=device_index
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+
+        # No delegate or device arena is needed for this identity. Both APIs
+        # must consume the generic producer rather than the Torch input path.
+        value = value.to(f"cuda:{device_index}")
+        module = self.load_fn(data)
+        method = self.load_prog_fn(data).load_method("forward")
+        for executor in (module, method):
+            for clone_outputs in (False, True):
+                with self.subTest(executor=type(executor), clone=clone_outputs):
+                    output = executor(DLPackOnly(value), clone_outputs=clone_outputs)[0]
+                    self.assertEqual(output.device, value.device)
+                    self.assertEqual(output.dtype, value.dtype)
+                    self.assertEqual(output.stride(), value.stride())
+                    torch.testing.assert_close(output, value)
+                    if clone_outputs:
+                        self.assertNotEqual(output.data_ptr(), value.data_ptr())
+                    else:
+                        self.assertEqual(output.data_ptr(), value.data_ptr())
+
+        script = """
+import sys
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+class DLPackOnly:
+    def __init__(self, tensor):
+        self.tensor = tensor
+    def __dlpack__(self, stream=None):
+        return self.tensor.__dlpack__(stream=stream)
+    def __dlpack_device__(self):
+        return self.tensor.__dlpack_device__()
+
+assert not runtime._uses_aten
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+device_index = int(sys.argv[2])
+value = torch.ones(2, 3, 4, 5, device=f"cuda:{device_index}").to(
+    memory_format=torch.channels_last
+)
+module = runtime._load_for_executorch_from_buffer(data)
+method = runtime._load_program_from_buffer(data).load_method("forward")
+for executor in (module, method):
+    output = executor(DLPackOnly(value), clone_outputs=False)[0]
+    assert isinstance(output, runtime.ExecuTorchResult)
+    assert output.__dlpack_device__() == (2, device_index)
+    tensor = torch.from_dlpack(output)
+    assert tensor.data_ptr() == value.data_ptr()
+    assert tensor.stride() == value.stride()
+    torch.testing.assert_close(tensor, value)
+    roundtrip = executor(output, clone_outputs=False)[0]
+    assert isinstance(roundtrip, runtime.ExecuTorchResult)
+    assert roundtrip.__dlpack_device__() == (2, device_index)
+    torch.testing.assert_close(torch.from_dlpack(roundtrip), value)
+print("CUDA DLPack roundtrip preserved device storage")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "cuda_identity.pte")
+            with open(path, "wb") as source:
+                source.write(data)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path, str(device_index)],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn(
+            "CUDA DLPack roundtrip preserved device storage", completed.stdout
+        )
+
+    def test_bfloat16_raw_buffer_inputs(self):
+        exported_program, inputs = create_program(ModuleAddBFloat16())
+        executorch_module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        raw_inputs = [value.view(torch.uint8).numpy().tobytes() for value in inputs]
+
+        for executor in (executorch_module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(raw_inputs)[0]
+                self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+                for noncontiguous in (
+                    np.arange(16, dtype=np.uint8)[::2],
+                    np.arange(8, dtype=np.uint8)[::-1],
+                ):
+                    with self.assertRaisesRegex(BufferError, "contiguous byte buffers"):
+                        executor([noncontiguous, raw_inputs[1]])
+
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -391,12 +703,23 @@ print("all calls finished")
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[0]))
 
-    def test_mixed_tensor_protocols_are_rejected(self):
+    def test_mixed_tensor_protocols(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
 
-        with self.assertRaisesRegex(TypeError, "cannot mix buffer and torch"):
-            executorch_module.forward([inputs[0], inputs[1].numpy()])
+        for executor in (executorch_module, method):
+            for mixed_inputs in (
+                [inputs[0], inputs[1].numpy()],
+                [inputs[0], DLPackOnly(inputs[1].numpy())],
+                [inputs[0].numpy(), DLPackOnly(inputs[1].numpy())],
+            ):
+                with self.subTest(
+                    executor=type(executor),
+                    protocols=[type(value) for value in mixed_inputs],
+                ):
+                    output = executor(mixed_inputs)[0]
+                    self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
     def test_non_dense_numpy_input_is_rejected(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
