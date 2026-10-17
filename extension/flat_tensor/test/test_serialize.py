@@ -309,6 +309,20 @@ class TestSerialize(unittest.TestCase):
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
 
+    def test_reads_only_header_bytes(self) -> None:
+        # Passing data[8:] to from_bytes() would copy the whole file.
+        serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+
+        with mock.patch.object(
+            FlatTensorHeader, "from_bytes", wraps=FlatTensorHeader.from_bytes
+        ) as from_bytes:
+            serializer.deserialize(Cord(serialized_data))
+
+        self.assertEqual(
+            len(from_bytes.call_args.args[0]), FlatTensorHeader.EXPECTED_LENGTH
+        )
+
     def test_deserialize_refuses_newer_version(self) -> None:
         # A file whose version is newer than this reader understands must be
         # refused, rather than silently misread. Serialize with a bumped
