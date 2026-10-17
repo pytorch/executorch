@@ -3,7 +3,6 @@
 The batching runner and multiplexed worker support MLX autoregressive generation
 with text only or text plus one image across the submitted conversation. They are
 opt-in entry points; the legacy runners and export defaults remain unchanged.
-Batching CUDA and DFlash execution are not supported.
 
 ## Export
 
@@ -36,6 +35,16 @@ an error. The three relevant limits are independent:
 - The server's `--max-context` controls the runtime context/cache budget and may be
   lower than the exported limit. Exporting the full context does not allocate that
   full KV capacity at runtime.
+
+The DFlash exporter accepts `--backend mlx --use-offgraph-kv-cache`.
+Serve that artifact with `--dflash`. Draft proposals are always greedy;
+temperature, top-p, and top-k apply only to the target distribution.
+Set `--dflash-n-draft N` at startup to propose N tokens using block size N+1.
+Omitted or zero uses the exported maximum minus one; larger values are rejected.
+Re-export older fixed-block artifacts before using this option. One updated
+artifact supports different draft counts without another export. Draft tokens
+have separate `[owners, block_size]` axes; each block ranges from 2 to the
+exported maximum. Torch infers the concatenated context-plus-block K/V length.
 
 ## Build
 
