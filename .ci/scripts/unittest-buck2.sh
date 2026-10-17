@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -42,6 +43,8 @@ for op in "build" "test"; do
           $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
           //runtime/executor: //runtime/kernel/... //runtime/platform/...
 done
+
+bash .ci/scripts/unittest-arm-buck2.sh
 
 # Build only without testing
 buck2 build //codegen/tools/... \

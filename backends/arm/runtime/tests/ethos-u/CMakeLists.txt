@@ -56,7 +56,7 @@ message(
 add_executable(
   vela_external_blocks_test
   "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
-  "${EXECUTORCH_ROOT}/backends/arm/test/vela_external_blocks_test.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/test/vela/vela_external_blocks_test.cpp"
 )
 target_link_libraries(
   vela_external_blocks_test PRIVATE executorch_core GTest::gtest_main

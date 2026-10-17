@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -34,6 +35,13 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
 
 namespace {
+
+class VelaExternalBlocksTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+};
 
 constexpr std::string_view kExternalKey =
     "g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -132,7 +140,7 @@ class FakeNamedDataMap final : public NamedDataMap {
 
 } // namespace
 
-TEST(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
+TEST_F(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
   alignas(16) const std::array<uint8_t, 16> command{
       'C', 'O', 'P', '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   const std::vector<uint8_t> weights{1, 2, 3, 4};
@@ -163,7 +171,7 @@ TEST(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
       std::memcmp(handles.weight_data, weights.data(), weights.size()), 0);
 }
 
-TEST(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
+TEST_F(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
   alignas(16) const std::array<uint8_t, 4> opaque_command{'B', 'A', 'D', '1'};
   const auto stream = stream_with_external_key("cmd_data");
   FakeNamedDataMap data_map(
@@ -179,7 +187,7 @@ TEST(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
       Error::InvalidProgram);
 }
 
-TEST(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
+TEST_F(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
   alignas(16) const std::array<uint8_t, 4> command{'C', 'O', 'P', '1'};
   const auto stream = stream_with_external_key("cmd_data", "not-a-hash");
   FakeNamedDataMap data_map("not-a-hash", command.data(), command.size());
@@ -194,7 +202,7 @@ TEST(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
       Error::InvalidProgram);
 }
 
-TEST(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
+TEST_F(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
   const std::vector<uint8_t> command{
       'C', 'O', 'P', '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   std::vector<uint8_t> stream;
@@ -215,7 +223,7 @@ TEST(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
   EXPECT_EQ(std::memcmp(handles.cmd_data, command.data(), command.size()), 0);
 }
 
-TEST(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
+TEST_F(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
   alignas(16) const std::array<uint8_t, 16> weight_data{
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   alignas(16) const std::array<uint8_t, 4> scratch_size{32, 0, 0, 0};
@@ -260,7 +268,7 @@ TEST(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
   }
 }
 
-TEST(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
+TEST_F(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
   alignas(16) std::array<uint8_t, 4> inputs_data{1, 0, 0, 0};
   alignas(16) std::array<uint8_t, 4> outputs_data{2, 0, 0, 0};
   std::vector<uint8_t> stream;
@@ -296,8 +304,7 @@ TEST(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
   EXPECT_EQ(handles.outputs->count, 2);
 }
 
-TEST(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
-  executorch::runtime::runtime_init();
+TEST_F(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
   alignas(16) const std::array<uint8_t, 4> payload{1, 2, 3, 4};
   const auto stream = stream_with_external_key("unsupported");
   FakeNamedDataMap data_map(kExternalKey, payload.data(), payload.size());
@@ -310,4 +317,12 @@ TEST(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
           &data_map,
           &handles),
       Error::InvalidProgram);
+}
+
+// Keep initialization in the fixture: the default OSS Buck test main
+// initializes the runtime globally, which can hide failures when cases run
+// independently.
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }
