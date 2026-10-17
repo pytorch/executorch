@@ -18,6 +18,7 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 
 @torch.library.custom_op("unsupported::linear", mutates_args=())
@@ -442,7 +443,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
         with a constant weight lowered fine but failed to load.  The
         partitioner must leave it (and any constant-only op feeding its
         weight) to the portable backend, while still delegating the rest of
-        the graph, integer ``mm`` of two runtime inputs, and float ``mm``.
+        the graph, integer ``mm`` of two runtime inputs, and fp32 / fp16
+        ``mm`` with a constant weight.
         """
 
         def int_mat():
@@ -462,16 +464,16 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 self.register_buffer("w", int_mat())
 
             def forward(self, x):
-                return torch.mm(x, self.w.t())
+                return torch.mm(torch.abs(x), self.w.t())
 
         class TwoInputs(torch.nn.Module):
             def forward(self, x, y):
                 return torch.mm(x, y)
 
         class FloatWeight(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, dtype):
                 super().__init__()
-                self.w = torch.nn.Parameter(torch.randn(8, 8))
+                self.w = torch.nn.Parameter(torch.randn(8, 8, dtype=dtype))
 
             def forward(self, x):
                 return torch.mm(x, self.w)
@@ -480,23 +482,45 @@ class TestCoreMLPartitioner(unittest.TestCase):
             (ConstWeight(), (int_mat(),), True),
             (TransposedBuffer(), (int_mat(),), True),
             (TwoInputs(), (int_mat(), int_mat()), False),
-            (FloatWeight(), (torch.randn(8, 8),), False),
+            (FloatWeight(torch.float32), (torch.randn(8, 8),), False),
+            (
+                FloatWeight(torch.float16),
+                (torch.randn(8, 8, dtype=torch.float16),),
+                False,
+            ),
         ]
         for model, inputs, falls_back in cases:
             model = model.eval()
             ep = torch.export.export(model, inputs, strict=True)
+            compile_specs = None
+            if inputs[0].dtype == torch.float16:
+                # Core ML needs iOS16+ for fp16 inputs and outputs.
+                compile_specs = CoreMLBackend.generate_compile_specs(
+                    minimum_deployment_target=ct.target.iOS16
+                )
             edge = executorch.exir.to_edge_transform_and_lower(
-                ep, partitioner=[CoreMLPartitioner()]
+                ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
             )
             op_names = [
                 n.target.__name__
                 for n in edge.exported_program().graph.nodes
                 if n.op == "call_function"
             ]
+            delegated_op_names = [
+                n.target.__name__
+                for _, lowered, _ in get_lowered_submodules(
+                    edge.exported_program().graph_module
+                )
+                for n in lowered.original_module.graph.nodes
+                if n.op == "call_function"
+            ]
+            # Every case keeps something delegated: either the mm itself, or
+            # the abs in front of an mm that falls back.
+            self.assertIn("executorch_call_delegate", op_names, model)
             self.assertEqual("aten.mm.default" in op_names, falls_back, model)
-            if isinstance(model, ConstWeight):
-                # Only the mm falls back; abs stays delegated.
-                self.assertIn("executorch_call_delegate", op_names)
+            self.assertEqual(
+                "aten.mm.default" in delegated_op_names, not falls_back, model
+            )
             if _TEST_RUNTIME:
                 et_prog = edge.to_executorch()
                 program = Runtime.get().load_program(et_prog.buffer)
