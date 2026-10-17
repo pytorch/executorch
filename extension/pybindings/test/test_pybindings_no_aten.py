@@ -24,6 +24,17 @@ runtime = importlib.import_module("_C")
 TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
 
 
+class DLPackOnly:
+    def __init__(self, array: np.ndarray) -> None:
+        self.array = array
+
+    def __dlpack__(self, stream=None):
+        return self.array.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        return self.array.__dlpack_device__()
+
+
 class PybindingsNoAtenTest(unittest.TestCase):
     def _run_in_fresh_process(self, script: str) -> None:
         runtime_path = Path(runtime.__file__).resolve()
@@ -216,6 +227,71 @@ else:
 
         self.assertIsInstance(output, runtime.ExecuTorchResult)
 
+    def test_dlpack_input_and_output(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(
+                    (
+                        DLPackOnly(np.array([1.0], dtype=np.float32)),
+                        DLPackOnly(np.array([2.0], dtype=np.float32)),
+                    )
+                )[0]
+                self.assertEqual(output.__dlpack_device__(), (1, 0))
+                np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
+
+    def test_bfloat16_raw_buffer_input_and_output(self) -> None:
+        with open(
+            os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"
+        ) as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        one = bytes((0x80, 0x3F)) * 4
+
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor((one, one))[0]
+                raw = memoryview(output)
+                self.assertEqual(raw.format, "B")
+                self.assertEqual(raw.shape, (8,))
+                self.assertEqual(raw.tobytes(), bytes((0x00, 0x40)) * 4)
+                self.assertEqual(output.shape, (2, 2))
+                self.assertEqual(output.__dlpack_device__(), (1, 0))
+                for noncontiguous in (
+                    np.arange(16, dtype=np.uint8)[::2],
+                    np.arange(8, dtype=np.uint8)[::-1],
+                ):
+                    with self.assertRaisesRegex(BufferError, "contiguous byte buffers"):
+                        executor((noncontiguous, one))
+                if importlib.util.find_spec("torch") is not None:
+                    import torch
+
+                    tensor = torch.from_dlpack(output)
+                    self.assertEqual(tensor.dtype, torch.bfloat16)
+                    torch.testing.assert_close(
+                        tensor, torch.full((2, 2), 2.0, dtype=torch.bfloat16)
+                    )
+
+    def test_mixed_dlpack_and_buffer_inputs(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(
+                    (
+                        DLPackOnly(np.array([1.0], dtype=np.float32)),
+                        np.array([2.0], dtype=np.float32),
+                    )
+                )[0]
+                np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None, "torch is not installed"
     )
@@ -235,6 +311,7 @@ else:
         )
         self.assertIsInstance(output, expected_type)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+        torch.testing.assert_close(torch.from_dlpack(output), torch.tensor([3.0]))
         with self.assertRaisesRegex(ValueError, "must be resolved"):
             module((torch._neg_view(torch.tensor([1.0])), torch.tensor([2.0])))
 
