@@ -25,6 +25,7 @@ from typing import Iterable, Optional, Sequence
 import torch
 import triton
 import triton.language as tl
+import triton.testing
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import wrap_triton
@@ -341,6 +342,25 @@ def check_split_k(split_k: int, k: int, k_per_split_unit: int = Q8_TILE) -> None
         raise InvalidLaunchParam(
             f"split_k={split_k} needs K >= {split_k * k_per_split_unit}, got K={k}"
         )
+
+
+# The window triton.autotune times each config with. Triton's default (25 ms of
+# warmup and 100 ms of timing, whatever the kernel's length) runs these
+# 20-100 us kernels thousands of times per config; this still runs each a few
+# hundred times, and its picks match the default's within 2% on the models'
+# shapes.
+AUTOTUNE_WARMUP_MS = 5
+AUTOTUNE_REP_MS = 20
+
+
+def autotune_do_bench(kernel_call, quantiles):
+    """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``."""
+    return triton.testing.do_bench(
+        kernel_call,
+        warmup=AUTOTUNE_WARMUP_MS,
+        rep=AUTOTUNE_REP_MS,
+        quantiles=quantiles,
+    )
 
 
 def autotune_configs(

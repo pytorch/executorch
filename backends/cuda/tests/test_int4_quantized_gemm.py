@@ -16,6 +16,7 @@ is saturated (on CUDA; see Int4AutotunePickTest for ROCm).
     python -m pytest backends/cuda/tests/test_int4_quantized_gemm.py -v
 """
 
+import contextlib
 import statistics
 import types
 import unittest
@@ -148,13 +149,45 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             pooled, compiled = counts["pooled"], self._compiled(bucket)
             again = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE, split_k=1)
         self.assertGreater(pooled, 1)
-        # Every kernel the benchmark ran was compiled in the pool.
-        self.assertEqual(compiled - before, pooled)
+        # Every kernel the benchmark ran was compiled in the pool (which may
+        # merge identical requests): a compile outside it adds a kernel the pool
+        # was never asked for.
+        self.assertGreater(compiled, before)
+        self.assertLessEqual(compiled - before, pooled)
         # A tuned key is not compiled again.
         self.assertEqual(counts["pooled"], pooled)
         self.assertEqual(self._compiled(bucket), compiled)
         _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
         self.assertTrue(torch.equal(out, again))
+
+    def test_every_split_candidate_compiles_on_one_pool(self) -> None:
+        # A shape no other test tunes; the split is timed, not given.
+        n, k, bucket = 320, 2560, 2
+        weights = _packed(n, k, seed=11)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        compile_pool = quantized_gemm_family._compile_pool
+        compiled_at_pool_exit: list[int] = []
+
+        @contextlib.contextmanager
+        def recording_pool():
+            with compile_pool():
+                yield
+            compiled_at_pool_exit.append(self._compiled(bucket))
+
+        counts, patch = self._count_pooled()
+        before = self._compiled(bucket)
+        with patch, mock.patch.object(
+            quantized_gemm_family, "_compile_pool", recording_pool
+        ), autotune_launch_params() as stats:
+            out = int4_kernel._launch(bucket, x, *weights, GROUP_SIZE)
+        self.assertEqual(stats.measured, 1)
+        self.assertGreater(len(stats.picks[0].times_us), 1)
+        # The first pool, which holds every split candidate, compiles every
+        # kernel the timed launches then benchmark.
+        self.assertGreater(compiled_at_pool_exit[0], before)
+        self.assertEqual(self._compiled(bucket), compiled_at_pool_exit[0])
+        self.assertLessEqual(self._compiled(bucket) - before, counts["pooled"])
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
 
     def test_fake_tensors_are_not_precompiled(self) -> None:
         # A full launch of a shape no other test tunes, so only the fake-tensor
@@ -251,6 +284,14 @@ class ParallelCompileGateTest(unittest.TestCase):
         ):
             with self.subTest(version=version):
                 self.assertTrue(self._available(version=version))
+
+    def test_a_gated_off_prepass_neither_pools_nor_queues(self) -> None:
+        with mock.patch.object(
+            quantized_gemm_family, "_parallel_compile_available", return_value=False
+        ), mock.patch.object(quantized_gemm_family, "_compile_pool") as pool:
+            with quantized_gemm_family._compile_every_candidate_at_once():
+                self.assertFalse(quantized_gemm_family._QUEUING_ONLY.get())
+        pool.assert_not_called()
 
     def test_the_gate_decides_whether_an_eligible_launch_precompiles(self) -> None:
         for gate, precompiled in ((False, False), (True, True)):
