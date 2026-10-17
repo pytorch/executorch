@@ -69,7 +69,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         "quantized_decomposed::quantize_per_token.out"
     )
     gen_selected_ops(
-      LIB_NAME "quantized_ops_aot_lib" ROOT_OPS ${_quantized_aot_ops}
+      LIB_NAME "quantized_ops_aot_lib" SELECT_OPS_LIST ${_quantized_aot_ops}
     )
     # Expect gen_selected_ops output file to be
     # quantized_ops_aot_lib/selected_operators.yaml
