@@ -241,12 +241,18 @@ bool wmma_row_fits(
   if ((combo & row.storages) == 0) {
     return false;
   }
-  if (!shape.ignore_alignment &&
-      (shape.M % tile.m != 0 || shape.N % tile.n != 0 ||
-       shape.K % tile.k != 0 || shape.group_size % tile.k != 0)) {
+  WmmaShape sel = shape;
+  if (shape.op == WmmaOp::kQ4gsw && combo == kWmmaTex3dTex2d &&
+      shape.M >= kWmmaPartialTileM) {
+    sel.M = (shape.M + kWmmaPartialTileM - 1) / kWmmaPartialTileM *
+        kWmmaPartialTileM;
+  }
+  if (!sel.ignore_alignment &&
+      (sel.M % tile.m != 0 || sel.N % tile.n != 0 || sel.K % tile.k != 0 ||
+       sel.group_size % tile.k != 0)) {
     return false;
   }
-  return row.shape_ok == nullptr || row.shape_ok(shape);
+  return row.shape_ok == nullptr || row.shape_ok(sel);
 }
 
 std::optional<WmmaChoice> select_wmma_kernel(

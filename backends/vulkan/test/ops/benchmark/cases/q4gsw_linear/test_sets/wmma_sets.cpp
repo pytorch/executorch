@@ -10,8 +10,10 @@
 // group size 128) and include the shapes that select each row: the Xe2 rows
 // (any aligned shape; K * N >= 24e6 for the blocked 8da4w order) and the
 // NVIDIA rows (the validated Llama projections, K > 8192 for fp32
-// accumulation). On a device without a family the same cases exercise the
-// existing kernels.
+// accumulation). linear_q4gsw also runs at M that is not a multiple of the
+// tile: a partial last M tile on texture IO (kWmmaPartialTileM), the existing
+// kernels below it and on buffer IO. On a device without a family the same
+// cases exercise the existing kernels.
 
 #include <executorch/backends/vulkan/test/ops/benchmark/cases/q4gsw_linear/q4gsw_linear.h>
 
@@ -149,17 +151,29 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "wmma_correctness") {
       {256, 4096, 8192, 128, ""}, // K * N >= 24e6
       {256, 14336, 4096, 128, ""}, // K > 8192
   };
+  // linear_q4gsw at M not a multiple of the tile (Llama projections, so the
+  // NVIDIA rows apply).
+  const std::vector<CoopmatLinearConfig> unaligned_shapes = {
+      {511, 2048, 2048, 128, ""}, // 256-row tile (NVIDIA), 255-row last tile
+      {300, 3072, 1024, 128, ""}, // 128-row tile, 44-row last tile
+      {129, 14336, 4096, 128, ""}, // K > 8192, 1-row last tile
+      {127, 2048, 512, 128, ""}, // below kWmmaPartialTileM
+  };
   std::vector<TestCase> cases;
+  auto add = [&](const CoopmatLinearConfig& cfg) {
+    for (const auto st : {utils::kTexture3D, utils::kBuffer}) {
+      TestCase t = make_case(cfg, st);
+      set_family_data(t, cfg);
+      cases.push_back(std::move(t));
+    }
+  };
   for (const std::string op : {"linear_q4gsw", "linear_dq8ca_q4gsw"}) {
     for (const auto& shape : shapes) {
-      const CoopmatLinearConfig cfg{
-          shape.M, shape.K, shape.N, shape.group_size, op};
-      for (const auto st : {utils::kTexture3D, utils::kBuffer}) {
-        TestCase t = make_case(cfg, st);
-        set_family_data(t, cfg);
-        cases.push_back(std::move(t));
-      }
+      add({shape.M, shape.K, shape.N, shape.group_size, op});
     }
+  }
+  for (const auto& shape : unaligned_shapes) {
+    add({shape.M, shape.K, shape.N, shape.group_size, "linear_q4gsw"});
   }
   return {
       std::move(cases),
