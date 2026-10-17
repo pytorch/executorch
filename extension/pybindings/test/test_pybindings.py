@@ -113,6 +113,7 @@ class PybindingsTest(unittest.TestCase):
         for protocol, values in (
             ("torch", inputs),
             ("numpy", [value.numpy() for value in inputs]),
+            ("dlpack", [DLPackOnly(value.numpy()) for value in inputs]),
         ):
             with self.subTest(protocol=protocol):
                 module = self.load_fn(data)
@@ -409,18 +410,16 @@ print("all calls finished")
                 output = executor([DLPackOnly(value.numpy()) for value in inputs])[0]
                 torch.testing.assert_close(output, inputs[0] + inputs[1])
 
-    def test_dlpack_layout_must_match_exported_layout(self):
+    def test_dlpack_input_layout_comparison_is_deferred(self):
         if self.kernel_mode != "portable":
-            self.skipTest(
-                "only portable bindings validate the exported dimension order"
-            )
+            self.skipTest("portable input layout compatibility")
         exported_program, inputs = create_program(ModuleAddSingleInput())
         module = self.load_fn(exported_program.buffer)
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
         for executor in (module, method):
             with self.subTest(executor=type(executor)):
-                with self.assertRaisesRegex(ValueError, "stride"):
-                    executor(DLPackOnly(inputs[0].numpy().T))
+                output = executor(DLPackOnly(inputs[0].numpy().T))[0]
+                torch.testing.assert_close(output, inputs[0] + inputs[0])
 
     def test_borrowed_result_feedback_has_bounded_ownership(self):
         if self.kernel_mode != "portable":

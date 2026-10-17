@@ -2003,10 +2003,7 @@ struct PyModule final {
             i,
             at_tensor.scalar_type(),
             std::vector<int>(
-                at_tensor.sizes().begin(), at_tensor.sizes().end()),
-            std::vector<int>(
-                at_tensor.strides().begin(), at_tensor.strides().end()),
-            /*check_strides=*/false);
+                at_tensor.sizes().begin(), at_tensor.sizes().end()));
         cpp_inputs.emplace_back(at_tensor);
 #else
         dlpack_inputs.push_back(
@@ -2014,15 +2011,11 @@ struct PyModule final {
         const auto& view = dlpack_inputs.back();
         new_input_owners[i].dlpack = view;
         validate_tensor_input(
-            method_meta,
-            i,
-            view->scalar_type(),
-            view->sizes(),
-            view->strides());
+            method_meta, i, view->scalar_type(), view->sizes());
         const auto method = module_->method(method_name);
         THROW_IF_ERROR(
             method.error(),
-            "Failed to load method %s, error: 0x%" PRIx32,
+            "Failed to execute method %s, error: 0x%" PRIx32,
             method_name.c_str(),
             static_cast<uint32_t>(method.error()));
         view->validate_device(*method.get(), i);
@@ -2760,10 +2753,7 @@ struct PyMethod final {
             i,
             at_tensor.scalar_type(),
             std::vector<int>(
-                at_tensor.sizes().begin(), at_tensor.sizes().end()),
-            std::vector<int>(
-                at_tensor.strides().begin(), at_tensor.strides().end()),
-            /*check_strides=*/false);
+                at_tensor.sizes().begin(), at_tensor.sizes().end()));
         if (!storage_->method->method_meta()
                  .input_tensor_meta(i)
                  ->is_memory_planned()) {
@@ -2778,8 +2768,7 @@ struct PyMethod final {
             storage_->method->method_meta(),
             i,
             view->scalar_type(),
-            view->sizes(),
-            view->strides());
+            view->sizes());
         view->validate_device(*storage_->method, i);
         view->use_layout(
             storage_->method->method_meta().input_tensor_meta(i)->dim_order());

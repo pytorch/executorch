@@ -17,10 +17,10 @@ instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
 provide CPU or CUDA allocations directly; their device indices are preserved.
 Tensor protocols can be mixed within the same call.
 
-Tensor inputs must have dense strides compatible with the exported method's
-dimension order. This includes channels last and channels last 3D layouts when
-the model was exported with those layouts. Singleton strides are normalized to
-the exported layout without copying tensor data. CUDA inputs require a method
+Tensor inputs must have dense storage laid out for the exported method's
+dimension order. Stride compatibility checks are deferred; the bindings interpret
+Torch and DLPack tensor storage using the exported layout without copying data.
+CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 
