@@ -416,9 +416,16 @@ class MuseGlimmerWithDFlash(nn.Module):
         return self.target.embed_text(tokens)
 
     def target_forward_from_embeddings(
-        self, inputs_embeds: torch.Tensor, input_pos: torch.Tensor
+        self,
+        inputs_embeds: torch.Tensor,
+        input_pos: torch.Tensor,
+        logits_indices: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run the hidden-tapped target from precomputed text/image embeddings."""
+        if logits_indices is not None:
+            return self.target.target_forward_from_embeddings(
+                inputs_embeds, input_pos, logits_indices
+            )
         return self.target.target_forward_from_embeddings(inputs_embeds, input_pos)
 
     def target_prefill_from_embeddings(
@@ -444,9 +451,8 @@ class MuseGlimmerWithDFlash(nn.Module):
             self.target.activation_dtype
         )
 
-        # valid_ctx_len is a CUDA-graph-only signal (fixed-shape padded context +
-        # a runtime valid length); the CUDA draft forward accepts it, while the
-        # eager reference and MLX forwards keep the 3-arg signature.
+        # The fourth input is CUDA's valid context length or the off-graph MLX
+        # permutation from projected rows to contiguous owner K/V groups.
         if valid_ctx_len is None:
             h = self.draft(noise_embedding, target_hidden, input_pos)
         else:
