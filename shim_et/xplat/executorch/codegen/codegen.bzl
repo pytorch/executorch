@@ -273,6 +273,7 @@ def _prepare_genrule_and_lib(
         custom_ops_yaml_path = None,
         custom_ops_requires_runtime_registration = True,
         manual_registration = False,
+        manual_registration_lib_name = None,
         aten_mode = False,
         support_exceptions = True):
     """
@@ -302,6 +303,16 @@ def _prepare_genrule_and_lib(
         },
     }
     """
+    if manual_registration_lib_name != None and not manual_registration:
+        fail("manual_registration_lib_name requires manual_registration = True")
+    if manual_registration_lib_name != None:
+        if not manual_registration_lib_name or manual_registration_lib_name == "all":
+            fail("manual_registration_lib_name must be nonempty and cannot be the reserved name 'all'")
+        identifier_start = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+        identifier_rest = identifier_start + "0123456789"
+        if manual_registration_lib_name[0] not in identifier_start or any([c not in identifier_rest for c in manual_registration_lib_name.elems()]):
+            fail("manual_registration_lib_name must be a valid C++ identifier")
+
     aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
         "$(exe //executorch/codegen:gen)",
@@ -350,6 +361,10 @@ def _prepare_genrule_and_lib(
         genrule_cmd = genrule_cmd + [
             "--manual_registration",
         ]
+        if manual_registration_lib_name != None:
+            genrule_cmd = genrule_cmd + [
+                "--manual-registration-lib-name={}".format(manual_registration_lib_name),
+            ]
     if custom_ops_yaml_path:
         genrule_cmd = genrule_cmd + [
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
@@ -835,7 +850,8 @@ def executorch_generated_lib(
         compatible_with = None,
         expose_operator_symbols = False,
         support_exceptions = True,
-        include_all_prim_ops = True):
+        include_all_prim_ops = True,
+        manual_registration_lib_name = None):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -883,6 +899,11 @@ def executorch_generated_lib(
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library
+        manual_registration_lib_name: Optional library name to include when
+            generating a named manual registration API. The library name must be
+            a nonempty C++ identifier other than the reserved name `all`.
+            If omitted, manual registration keeps using
+            `register_all_kernels`.
         dtype_selective_build: In additional to operator selection, dtype selective build
             further selects the dtypes for each operator. Can be used with model or dict
             selective build APIs, where dtypes can be specified.
@@ -994,6 +1015,7 @@ def executorch_generated_lib(
         custom_ops_requires_runtime_registration = custom_ops_requires_runtime_registration,
         aten_mode = aten_mode,
         manual_registration = manual_registration,
+        manual_registration_lib_name = manual_registration_lib_name,
         support_exceptions = support_exceptions,
     )
 
