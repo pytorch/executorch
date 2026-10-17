@@ -17,7 +17,6 @@ from io import StringIO
 
 import numpy as np
 import torch
-
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.passes import MemoryPlanningPass
@@ -933,7 +932,7 @@ print("all calls finished")
                 gc.collect()
                 self.assertIsNone(value_ref())
 
-    def test_borrowed_external_output_does_not_retain_previous_outputs(self):
+    def test_unplanned_input_output_preserves_caller_identity(self):
         if self.kernel_mode != "portable":
             self.skipTest("only portable bindings retain Python tensor owners")
 
@@ -963,15 +962,15 @@ print("all calls finished")
                 strides = value.stride()
                 offset = value.storage_offset()
                 for _ in range(32):
-                    previous = weakref.ref(output)
+                    previous = output
                     output = method(output, clone_outputs=False)[0]
                     method.set_inputs(output)
                     gc.collect()
-                    self.assertIsNone(previous())
+                    self.assertIs(output, previous)
                     self.assertEqual(output.data_ptr(), address)
                     self.assertEqual(output.stride(), strides)
                     self.assertEqual(output.storage_offset(), offset)
-                    self.assertFalse(output.requires_grad)
+                    self.assertTrue(output.requires_grad)
                 del value, method
                 torch.testing.assert_close(output, expected)
 
