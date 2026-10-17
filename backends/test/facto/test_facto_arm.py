@@ -148,6 +148,21 @@ def _make_arm_u55_int_tester(
     )
 
 
+def _make_arm_u85_int_tester(
+    model: torch.nn.Module, example_inputs: tuple[Any, ...]
+) -> BackendTester:
+    return _ArmFactoTester(
+        model,
+        example_inputs,
+        compile_spec=arm_common.get_u85_compile_spec(
+            memory_mode="Dedicated_Sram_384KB"
+        ),
+        quantize_before_export=True,
+        qtol=1,
+        use_portable_ops=True,
+    )
+
+
 class _FactoTestsArmMixin:
     _tensor_constraints = ARM_TOSA_FP_TENSOR_CONSTRAINTS
 
@@ -233,6 +248,19 @@ class FactoTestsArmU55_INT(_FactoTestsArmSerializedRunnerMixin, FactoTestsBase):
 
     def __init__(self, *args, **kwargs):
         super().__init__(_make_arm_u55_int_tester, *args, **kwargs)
+
+
+@unittest.skipUnless(
+    arm_common.corstone320_installed()
+    and arm_common.arm_executor_runner_exists("corstone-320", use_portable_ops=True),
+    "Did not find Corstone-320 FVP or executor_runner",
+)
+class FactoTestsArmU85_INT(_FactoTestsArmSerializedRunnerMixin, FactoTestsBase):
+    __test__ = True
+    _tensor_constraints = ARM_TOSA_INT_TENSOR_CONSTRAINTS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(_make_arm_u85_int_tester, *args, **kwargs)
 
 
 class TestArmFactoTensorConstraintSelection(unittest.TestCase):
@@ -336,6 +364,7 @@ for op_name in _ARM_SELECTED_OP_NAMES:
     FactoTestsArmVGF_FP._generate_test(op_name)
     FactoTestsArmVGF_INT._generate_test(op_name)
     FactoTestsArmU55_INT._generate_test(op_name)
+    FactoTestsArmU85_INT._generate_test(op_name)
 
 if _generated_facto_tests_enabled():
     if not FACTO_AVAILABLE:
