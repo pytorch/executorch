@@ -8,12 +8,15 @@
 
 // Direct, op-level SequenceControl tests; requires Apple Silicon / Metal.
 #include "MLXCellCache.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
+#include "backend_options.h"
 #include "utils.h"
 
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <numeric>
@@ -52,7 +55,7 @@ class CellSequenceAdapter final : public cache::SequenceControl {
   int32_t id;
 };
 
-enum class Implementation { Cell, V2 };
+enum class Implementation { Cell, Sequence };
 
 class MLXSequenceControlTest : public ::testing::TestWithParam<Implementation> {
  protected:
@@ -62,7 +65,7 @@ class MLXSequenceControlTest : public ::testing::TestWithParam<Implementation> {
   cache::SequenceControl* control_ = nullptr;
   MLXCache* attention_ = nullptr;
   std::unique_ptr<CellSequenceAdapter> cell_;
-  std::unique_ptr<MLXSequenceCacheV2> v2_;
+  std::unique_ptr<MLXSequenceCache> sequence_;
   int layers_ = 0;
 
   CacheArgs config(bool mixed = false, int capacity = 16) {
@@ -81,21 +84,22 @@ class MLXSequenceControlTest : public ::testing::TestWithParam<Implementation> {
       control_ = cell_.get();
       attention_ = &cell_->cell;
     } else {
-      // V2 is itself both interfaces, not a registry Cache anchor.
-      v2_ = std::make_unique<MLXSequenceCacheV2>(args.geometry, args.config);
-      control_ = v2_.get();
-      attention_ = v2_.get();
+      // The sequence cache implements both interfaces directly.
+      sequence_ =
+          std::make_unique<MLXSequenceCache>(args.geometry, args.config);
+      control_ = sequence_.get();
+      attention_ = sequence_.get();
     }
   }
 
   int length() const {
-    return cell_ ? cell_->cell.pos(cell_->id) : v2_->length();
+    return cell_ ? cell_->cell.pos(cell_->id) : sequence_->length();
   }
 
   bool admit(int n) {
     return cell_ ? cell_->cell.declare_step(
                        std::vector<int32_t>(static_cast<size_t>(n), cell_->id))
-                 : v2_->can_admit(n);
+                 : sequence_->can_admit(n);
   }
 
   array values(const std::vector<float>& data) {
@@ -178,9 +182,157 @@ TEST_P(MLXSequenceControlTest, CapacityBoundsAdmissionEvenForRingStorage) {
   EXPECT_FALSE(control_->can_extend());
   EXPECT_FALSE(admit(1));
   EXPECT_EQ(length(), 6);
+  const auto q = ::mlx::core::zeros({1, kHeads, 1, kDim}, ::mlx::core::float32);
+  EXPECT_ANY_THROW(attention_->attend(0, {6}, q, q, values({99}), 1.0f, {}));
+  EXPECT_EQ(length(), 6);
+  EXPECT_FALSE(control_->can_extend());
   ASSERT_TRUE(control_->rewind(5));
   EXPECT_TRUE(control_->can_extend());
   ASSERT_NO_FATAL_FAILURE(forward(5, {9}, {{7}}));
+}
+
+TEST_P(MLXSequenceControlTest, InvalidQueriesLeaveCacheUsable) {
+  using namespace ::mlx::core;
+  for (const auto& shape : std::vector<Shape>{
+           {1, kHeads, 0, kDim},
+           {1, kHeads, 1, kDim},
+           {1, kHeads, 3, kDim},
+           {1, kDim}}) {
+    SCOPED_TRACE(::testing::PrintToString(shape));
+    create(config());
+    ASSERT_NO_FATAL_FAILURE(forward(0, {1, 3}, {{1, 2}}));
+    ASSERT_TRUE(admit(2));
+    const auto q = zeros(shape, float32);
+    const auto k = zeros({1, kHeads, 2, kDim}, float32);
+    EXPECT_ANY_THROW(
+        attention_->attend(0, {2, 3}, q, k, values({99, 99}), 1.0f, {}));
+    ASSERT_EQ(length(), 2);
+    EXPECT_TRUE(control_->can_extend(14));
+    ASSERT_NO_FATAL_FAILURE(forward(2, {5, 7}, {{3, 4}}));
+    EXPECT_EQ(length(), 4);
+  }
+}
+
+TEST_P(MLXSequenceControlTest, InvalidPositionsLeaveCacheUsable) {
+  using namespace ::mlx::core;
+  for (const auto& positions : std::vector<std::vector<int32_t>>{
+           {2, 3, 5}, {2, 2, 3}, {2, 3}, {2, 3, 4, 5}}) {
+    SCOPED_TRACE(::testing::PrintToString(positions));
+    create(config(true));
+    ASSERT_NO_FATAL_FAILURE(forward(0, {1, 3}, {{1, 2}, {1, 2}}));
+    ASSERT_TRUE(admit(3));
+    const auto q = zeros({1, kHeads, 3, kDim}, float32);
+    EXPECT_ANY_THROW(
+        attention_->attend(0, positions, q, q, values({99, 99, 99}), 1.0f, {}));
+    EXPECT_EQ(length(), 2);
+    EXPECT_TRUE(control_->can_extend(14));
+    ASSERT_NO_FATAL_FAILURE(forward(2, {5, 7, 9}, {{3, 4, 5}, {3, 5, 7}}));
+    EXPECT_EQ(length(), 5);
+  }
+}
+
+TEST_P(MLXSequenceControlTest, ZeroInitialCapacitySupportsPrefillAndGrowth) {
+  auto args = config(true);
+  args.config.initial_capacity = 0;
+  create(args);
+  EXPECT_EQ(length(), 0);
+  EXPECT_EQ(control_->capacity(), 16);
+  ASSERT_NO_FATAL_FAILURE(forward(0, {1, 2, 3}, {{1, 1.5f, 2}, {1, 1.5f, 2}}));
+  EXPECT_EQ(length(), 3);
+  ASSERT_NO_FATAL_FAILURE(forward(3, {4, 5, 6}, {{2.5f, 3, 3.5f}, {3, 4, 5}}));
+  EXPECT_EQ(length(), 6);
+  ASSERT_NO_FATAL_FAILURE(forward(6, {7, 8, 9}, {{4, 4.5f, 5}, {6, 7, 8}}));
+  EXPECT_EQ(length(), 9);
+  EXPECT_TRUE(control_->can_extend(7));
+  EXPECT_FALSE(control_->can_extend(8));
+}
+
+TEST_P(MLXSequenceControlTest, WeightedAttentionMatchesIndependentReference) {
+  using namespace ::mlx::core;
+  const std::vector<float> queries{
+      0.7f, -1.1f, 1.3f, -0.9f, 1.7f, 0.6f, -1.5f, 1.1f, -0.7f, 1.4f, -1.2f};
+  const std::vector<float> keys{
+      1.003f,
+      -0.731f,
+      0.219f,
+      1.337f,
+      -1.009f,
+      0.583f,
+      -0.417f,
+      1.673f,
+      0.907f,
+      -1.219f,
+      0.311f};
+  const std::vector<float> vals{
+      2.01f,
+      -3.007f,
+      5.003f,
+      0.701f,
+      -6.019f,
+      4.031f,
+      1.117f,
+      -2.009f,
+      7.013f,
+      -4.007f,
+      3.021f};
+  for (auto dtype :
+       {ScalarType::Float, ScalarType::Half, ScalarType::BFloat16}) {
+    SCOPED_TRACE(static_cast<int>(dtype));
+    auto args = config(true);
+    args.config.kv_dtype = static_cast<int>(dtype);
+    create(args);
+    const auto storage_dtype = dtype == ScalarType::Half ? float16
+        : dtype == ScalarType::BFloat16                  ? bfloat16
+                                                         : float32;
+    // Only numeric conversion is shared with MLX, not cache state or attention.
+    const auto rounded_keys = astype(
+        astype(
+            array(keys.data(), {static_cast<int>(keys.size())}), storage_dtype),
+        float32);
+    const auto rounded_vals = astype(
+        astype(
+            array(vals.data(), {static_cast<int>(vals.size())}), storage_dtype),
+        float32);
+    eval(rounded_keys, rounded_vals);
+    const float* stored_keys = rounded_keys.data<float>();
+    const float* stored_vals = rounded_vals.data<float>();
+    int position = 0;
+    // Small initial capacity and a five-slot ring exercise growth and wrapping.
+    for (int count : {3, 3, 1, 3, 1}) {
+      SCOPED_TRACE(position);
+      ASSERT_TRUE(admit(count));
+      std::vector<int32_t> positions(static_cast<size_t>(count));
+      std::iota(positions.begin(), positions.end(), position);
+      const auto chunk = [&](const std::vector<float>& data) {
+        return values(std::vector<float>(
+            data.begin() + position, data.begin() + position + count));
+      };
+      const auto q = chunk(queries), k = chunk(keys), v = chunk(vals);
+      for (int layer = 0; layer < layers_; ++layer) {
+        SCOPED_TRACE(layer);
+        std::vector<float> expected;
+        for (int p = position; p < position + count; ++p) {
+          const int begin = layer == 0 ? 0 : std::max(0, p - 2);
+          double weighted = 0, weights = 0;
+          for (int j = begin; j <= p; ++j) {
+            const double weight =
+                std::exp(static_cast<double>(queries[p]) * stored_keys[j]);
+            weighted += weight * stored_vals[j];
+            weights += weight;
+          }
+          expected.push_back(static_cast<float>(weighted / weights));
+        }
+        // Repeated head dimensions with scale 1/D give exp(query * key).
+        const auto out =
+            attention_->attend(layer, positions, q, k, v, 1.0f / kDim, {});
+        EXPECT_EQ(out.shape(), (Shape{1, kHeads, count, kDim}));
+        EXPECT_EQ(out.dtype(), float32);
+        EXPECT_TRUE(allclose(out, values(expected), 1e-5f));
+      }
+      position += count;
+      EXPECT_EQ(length(), position);
+    }
+  }
 }
 
 TEST_P(MLXSequenceControlTest, HalfAndBFloat16StorageCastsBeforeAttention) {
@@ -226,7 +378,7 @@ TEST_P(MLXSequenceControlTest, HistoricalOverwritePreservesLaterSuffix) {
   ASSERT_NO_FATAL_FAILURE(forward(3, {4, 5, 6}, {{2.5f, 3, 3.5f}, {3, 4, 5}}));
   const auto q = zeros({1, kHeads, 1, kDim}, float32);
   if (cell_) {
-    // Cell steps reject already occupied positions; overwrites are a V2 policy.
+    // Cell steps reject occupied positions; sequence policies allow overwrites.
     ASSERT_TRUE(cell_->cell.declare_step({cell_->id}));
     EXPECT_ANY_THROW(attention_->attend(0, {3}, q, q, values({20}), 1.0f, {}));
     EXPECT_EQ(length(), 6);
@@ -238,11 +390,11 @@ TEST_P(MLXSequenceControlTest, HistoricalOverwritePreservesLaterSuffix) {
   // attention must exclude the later suffix without deleting it from storage.
   ASSERT_NO_FATAL_FAILURE(forward(3, {20}, {{6.5f}, {25.0f / 3}}));
   EXPECT_EQ(length(), 6);
-  EXPECT_EQ(v2_->reserved_length(), 6);
-  EXPECT_EQ(v2_->admission_growth(1), std::optional<int>(1));
+  EXPECT_EQ(sequence_->reserved_length(), 6);
+  EXPECT_EQ(sequence_->admission_growth(1), std::optional<int>(1));
   ASSERT_NO_FATAL_FAILURE(forward(4, {50}, {{76.0f / 5}, {73.0f / 3}}));
   EXPECT_EQ(length(), 6);
-  EXPECT_EQ(v2_->reserved_length(), 6);
+  EXPECT_EQ(sequence_->reserved_length(), 6);
   // The untouched value six still participates, alongside both replacements.
   ASSERT_NO_FATAL_FAILURE(forward(6, {7}, {{89.0f / 7}, {21}}));
   EXPECT_EQ(length(), 7);
@@ -251,19 +403,19 @@ TEST_P(MLXSequenceControlTest, HistoricalOverwritePreservesLaterSuffix) {
   // both the committed frontier and the remaining K/V usable.
   EXPECT_ANY_THROW(attention_->attend(1, {1}, q, q, values({99}), 1.0f, {}));
   EXPECT_EQ(length(), 7);
-  EXPECT_EQ(v2_->reserved_length(), 7);
+  EXPECT_EQ(sequence_->reserved_length(), 7);
   ASSERT_NO_FATAL_FAILURE(forward(7, {8}, {{97.0f / 8}, {7}}));
 }
 
-TEST_P(MLXSequenceControlTest, CellsRetainHistoryThatRingV2Evicts) {
+TEST_P(MLXSequenceControlTest, CellsRetainHistoryThatRingStorageEvicts) {
   create(ring_config(16, 3, 1, kHeads, kDim, kFloat));
   for (int p = 0; p < 7; ++p) {
     const float mean =
         p < 2 ? static_cast<float>(p + 2) / 2 : static_cast<float>(p);
     ASSERT_NO_FATAL_FAILURE(forward(p, {static_cast<float>(p + 1)}, {{mean}}));
   }
-  // Cells narrow the attention mask without evicting historical K/V. V2's
-  // three-slot ring no longer has the prefix needed to resume at position 3.
+  // Cells narrow the attention mask without evicting historical K/V. The
+  // sequence's three-slot ring lacks the prefix needed to resume at position 3.
   const bool retained = GetParam() == Implementation::Cell;
   ASSERT_EQ(control_->rewind(3), retained);
   EXPECT_EQ(length(), retained ? 3 : 7);
@@ -315,7 +467,7 @@ TEST_P(MLXSequenceControlTest, DFlashRejectsCellOrPersistsOnlyContext) {
         step(2, {5, 7}, 300, block ? 716.0f / 6 : 4, block ? 178 : 6));
     EXPECT_EQ(length(), 4); // temporary tokens never consume capacity
     EXPECT_FALSE(control_->can_extend());
-    EXPECT_FALSE(v2_->can_admit(block + 1));
+    EXPECT_FALSE(sequence_->can_admit(block + 1));
     control_->clear();
     EXPECT_EQ(length(), 0);
     EXPECT_TRUE(control_->can_extend(4));
@@ -323,6 +475,47 @@ TEST_P(MLXSequenceControlTest, DFlashRejectsCellOrPersistsOnlyContext) {
         step(0, {9, 11}, 500, block ? 280 : 10, block ? 280 : 10));
     EXPECT_EQ(length(), 2);
   }
+}
+
+TEST(MLXSequenceControlFactoryTest, InvalidConstructionIsRejected) {
+  using namespace ::mlx::core;
+  const auto valid_args =
+      flat_config(8, 1, 1, 8, static_cast<int>(ScalarType::Float));
+  for (bool empty_geometry : {true, false}) {
+    SCOPED_TRACE(empty_geometry);
+    auto args = valid_args;
+    if (empty_geometry) {
+      args.geometry.layers.clear();
+    } else {
+      args.config.initial_capacity = -1;
+    }
+    EXPECT_THROW(
+        MLXSequenceCache(args.geometry, args.config), std::invalid_argument);
+    const auto built = cache::CacheFactory::global().build(
+        kMLXBackendId, cache::kind::kSingle, args.geometry, args.config);
+    ASSERT_FALSE(built.ok());
+    EXPECT_EQ(built.error(), executorch::runtime::Error::InvalidArgument);
+  }
+  auto built = cache::CacheFactory::global().build(
+      kMLXBackendId,
+      cache::kind::kSingle,
+      valid_args.geometry,
+      valid_args.config);
+  ASSERT_TRUE(built.ok());
+  auto* control = (*built)->as<cache::SequenceControl>();
+  auto* attention = (*built)->as<MLXCache>();
+  ASSERT_NE(control, nullptr);
+  ASSERT_NE(attention, nullptr);
+  EXPECT_EQ((*built)->as<cache::BatchControl>(), nullptr);
+  EXPECT_EQ(control->capacity(), 8);
+  const auto q = zeros({1, 1, 2, 8}, float32);
+  const auto v = broadcast_to(array({2.0f, 6.0f}, {1, 1, 2, 1}), {1, 1, 2, 8});
+  const auto expected =
+      broadcast_to(array({2.0f, 4.0f}, {1, 1, 2, 1}), {1, 1, 2, 8});
+  const auto out = attention->attend(0, {0, 1}, q, q, v, 1.0f, {});
+  EXPECT_TRUE(allclose(out, expected, 1e-5f));
+  EXPECT_TRUE(control->can_extend(6));
+  EXPECT_FALSE(control->can_extend(7));
 }
 
 TEST(MLXSequenceControlFactoryTest, RejectsUnequalPersistentGrowth) {
@@ -333,11 +526,11 @@ TEST(MLXSequenceControlFactoryTest, RejectsUnequalPersistentGrowth) {
   draft_geometry.dflash_block_size = 2;
   for (int first_layer : {0, 1}) {
     SCOPED_TRACE(first_layer);
-    MLXSequenceCacheV2 c(
+    MLXSequenceCache c(
         args.geometry,
         args.config,
-        {std::make_shared<sequence_v2::detail::Full>(),
-         std::make_shared<sequence_v2::detail::DFlash>(draft_geometry)});
+        {std::make_shared<sequence::detail::Full>(),
+         std::make_shared<sequence::detail::DFlash>(draft_geometry)});
     // Both factories individually admit three K/V tokens, but Full persists
     // three and DFlash persists one. Preflight must reject their disagreement.
     EXPECT_FALSE(c.admission_growth(3));
@@ -362,7 +555,7 @@ TEST(MLXSequenceControlFactoryTest, RejectsUnequalPersistentGrowth) {
       attend(1 - first_layer, 3);
       FAIL() << "Mismatched layer growth completed the forward";
     } catch (const std::invalid_argument& error) {
-      EXPECT_STREQ(error.what(), "sequence v2: unequal persistent ends");
+      EXPECT_STREQ(error.what(), "sequence: unequal persistent ends");
     }
     EXPECT_EQ(c.length(), 0);
     EXPECT_EQ(c.reserved_length(), persistent);
@@ -417,13 +610,12 @@ TEST_F(
         SCOPED_TRACE(keep);
         auto args = flat_config(32, 1, heads, 8, static_cast<int>(dtype), 4);
         args.config.max_write = 16;
-        sequence_v2::detail::Storage source(
-            args.geometry.layers[0], args.config);
+        sequence::detail::Storage source(args.geometry.layers[0], args.config);
         const auto storage_dtype = resolve_dtype(static_cast<int8_t>(dtype));
         const auto keys = astype(
             reshape(arange(heads * 11 * 8, float32), {1, heads, 11, 8}),
             storage_dtype);
-        const sequence_v2::KV original{keys, negative(keys)};
+        const sequence::KV original{keys, negative(keys)};
         source.update(0, original, {});
         ASSERT_EQ(source.buffer_slots(), 16);
         const auto source_snapshot = source.read(0, 11, {});
@@ -442,15 +634,14 @@ TEST_F(
         // The source graph and prefix views are still lazy. Mutate both owners
         // before evaluation, keeping the original allocation alive throughout.
         const auto replacement = full({1, heads, 1, 8}, 300, storage_dtype);
-        source.update(
-            0, sequence_v2::KV{replacement, negative(replacement)}, {});
+        source.update(0, sequence::KV{replacement, negative(replacement)}, {});
         const auto parent = source.read(0, 1, {});
         const auto appended = full({1, heads, 2, 8}, 400, storage_dtype);
-        clone.update(keep, sequence_v2::KV{appended, negative(appended)}, {});
+        clone.update(keep, sequence::KV{appended, negative(appended)}, {});
         const int child_slots = test.grown_slots;
         EXPECT_EQ(clone.buffer_slots(), child_slots);
 
-        const auto prefix = sequence_v2::detail::tokens(keys, 0, keep, {});
+        const auto prefix = sequence::detail::tokens(keys, 0, keep, {});
         const auto snapshot = sibling.read(0, keep, {});
         ASSERT_TRUE(snapshot);
         EXPECT_TRUE(allclose(snapshot->k, prefix, 1e-5f));
@@ -485,21 +676,21 @@ TEST_F(MLXSequenceStorageCloneTest, GrowthComparisonRespectsCapacityLimit) {
   using namespace ::mlx::core;
   auto args = flat_config(13, 1, 1, 1, static_cast<int>(ScalarType::Float), 4);
   args.config.max_write = 13;
-  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
+  sequence::detail::Storage source(args.geometry.layers[0], args.config);
   const auto values = reshape(arange(11, float32), {1, 1, 11, 1});
-  source.update(0, sequence_v2::KV{values, values}, {});
+  source.update(0, sequence::KV{values, values}, {});
   ASSERT_EQ(source.buffer_slots(), 13);
   for (int keep : {6, 7, 11}) {
     SCOPED_TRACE(keep);
     auto clone = source.clone(keep, 0);
     EXPECT_EQ(clone.buffer_slots(), keep == 6 ? 6 : 13);
     const auto appended = full({1, 1, 2, 1}, 100, float32);
-    clone.update(keep, sequence_v2::KV{appended, appended}, {});
+    clone.update(keep, sequence::KV{appended, appended}, {});
     EXPECT_EQ(clone.buffer_slots(), keep == 6 ? 12 : 13);
     const auto actual = clone.read(0, keep + 2, {});
     ASSERT_TRUE(actual);
     const auto expected = concatenate(
-        {sequence_v2::detail::tokens(values, 0, keep, {}), appended}, 2);
+        {sequence::detail::tokens(values, 0, keep, {}), appended}, 2);
     EXPECT_TRUE(allclose(actual->k, expected, 1e-5f));
     EXPECT_TRUE(allclose(actual->v, expected, 1e-5f));
     const auto bytes = values.itemsize() * (keep == 6 ? 12 : 13);
@@ -512,7 +703,7 @@ TEST_F(MLXSequenceStorageCloneTest, GrowthComparisonRespectsCapacityLimit) {
   EXPECT_TRUE(allclose(unchanged->v, values, 1e-5f));
 
   const auto tail = full({1, 1, 2, 1}, 100, float32);
-  source.update(11, sequence_v2::KV{tail, tail}, {});
+  source.update(11, sequence::KV{tail, tail}, {});
   auto full_clone = source.clone(13, 0);
   EXPECT_EQ(full_clone.length(), 13);
   EXPECT_EQ(full_clone.buffer_slots(), 13);
@@ -528,9 +719,9 @@ TEST_F(
     KeepsAllocationFloorAndDropsEmptyCloneBuffers) {
   using namespace ::mlx::core;
   auto args = flat_config(16, 1, 1, 1, static_cast<int>(ScalarType::Float), 8);
-  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
+  sequence::detail::Storage source(args.geometry.layers[0], args.config);
   const auto values = reshape(arange(4, float32), {1, 1, 4, 1});
-  source.update(0, sequence_v2::KV{values, values}, {});
+  source.update(0, sequence::KV{values, values}, {});
   auto clone = source.clone(4, 0);
   EXPECT_EQ(clone.buffer_slots(), source.buffer_slots());
   auto empty = source.clone(0, 0);
@@ -539,20 +730,20 @@ TEST_F(
   EXPECT_EQ(empty.buffer_slots(), 0);
   EXPECT_EQ(source.length(), 4);
   EXPECT_EQ(source.buffer_slots(), 8);
-  empty.update(0, sequence_v2::KV{values, values}, {});
+  empty.update(0, sequence::KV{values, values}, {});
   const auto actual = empty.read(0, 4, {});
   ASSERT_TRUE(actual);
   EXPECT_TRUE(allclose(actual->k, values, 1e-5f));
   EXPECT_TRUE(allclose(actual->v, values, 1e-5f));
 
-  source.update(4, sequence_v2::KV{values, values}, {});
-  source.update(8, sequence_v2::KV{values, values}, {});
+  source.update(4, sequence::KV{values, values}, {});
+  source.update(8, sequence::KV{values, values}, {});
   ASSERT_EQ(source.buffer_slots(), 16);
   // The next append fits within the floor, even though growth beyond that
   // floor would reach the parent's buffer size.
   auto below_floor = source.clone(4, 0);
   EXPECT_EQ(below_floor.buffer_slots(), 8);
-  below_floor.update(4, sequence_v2::KV{values, values}, {});
+  below_floor.update(4, sequence::KV{values, values}, {});
   EXPECT_EQ(below_floor.buffer_slots(), 8);
   const auto continued = below_floor.read(0, 8, {});
   ASSERT_TRUE(continued);
@@ -569,11 +760,11 @@ TEST_F(
   using namespace ::mlx::core;
   auto args = ring_config(32, 4, 1, 1, 1, static_cast<int>(ScalarType::Float));
   args.config.max_write = 3;
-  sequence_v2::detail::Storage source(args.geometry.layers[0], args.config);
-  const auto write = [](sequence_v2::detail::Storage& storage, int position) {
+  sequence::detail::Storage source(args.geometry.layers[0], args.config);
+  const auto write = [](sequence::detail::Storage& storage, int position) {
     const auto values =
         reshape(arange(position, position + 3, float32), {1, 1, 3, 1});
-    storage.update(position, sequence_v2::KV{values, negative(values)}, {});
+    storage.update(position, sequence::KV{values, negative(values)}, {});
   };
   for (int position = 0; position < 21; position += 3) {
     write(source, position);
@@ -610,9 +801,9 @@ TEST_F(
 INSTANTIATE_TEST_SUITE_P(
     Implementations,
     MLXSequenceControlTest,
-    ::testing::Values(Implementation::Cell, Implementation::V2),
+    ::testing::Values(Implementation::Cell, Implementation::Sequence),
     [](const ::testing::TestParamInfo<Implementation>& info) {
-      return info.param == Implementation::Cell ? "Cell" : "V2";
+      return info.param == Implementation::Cell ? "Cell" : "Sequence";
     });
 
 } // namespace
