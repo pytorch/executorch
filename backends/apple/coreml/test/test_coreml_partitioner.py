@@ -440,21 +440,21 @@ class TestCoreMLPartitioner(unittest.TestCase):
         Core ML's instance_norm only accepts rank 3 and 4 inputs, so
         InstanceNorm3d lowered fine but failed to load ("parameter x[0] has
         invalid rank 5").  The partitioner must not keep it whole, so it
-        decomposes into ops Core ML can run; InstanceNorm2d stays intact.
+        decomposes into ops Core ML can run and the model stays delegated;
+        rank 3 and 4 instance_norm is delegated intact.
         """
-        cases = [
-            (torch.nn.InstanceNorm3d(3), torch.randn(1, 3, 4, 4, 4)),
-            (torch.nn.InstanceNorm3d(3, affine=True), torch.randn(2, 3, 4, 5, 6)),
-        ]
-        for model, x in cases:
-            model = model.eval()
-            ep = torch.export.export(model, (x,), strict=True)
-            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
-            self.assertNotIn(torch.ops.aten.instance_norm.default, not_decomposed)
 
+        def lower(model, x):
+            ep = torch.export.export(model, (x,), strict=True)
             edge = executorch.exir.to_edge_transform_and_lower(
                 ep, partitioner=[CoreMLPartitioner()]
             )
+            op_names = [
+                n.target.__name__
+                for n in edge.exported_program().graph.nodes
+                if n.op == "call_function"
+            ]
+            delegated = format_delegated_graph(edge.exported_program().graph_module)
             if _TEST_RUNTIME:
                 et_prog = edge.to_executorch()
                 program = Runtime.get().load_program(et_prog.buffer)
@@ -463,12 +463,40 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     torch.allclose(et_outputs, model(x), atol=1e-02, rtol=1e-02),
                     model,
                 )
+            return ep, op_names, delegated
 
-        ep = torch.export.export(
-            torch.nn.InstanceNorm2d(3).eval(), (torch.randn(1, 3, 6, 6),)
-        )
-        not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
-        self.assertIn(torch.ops.aten.instance_norm.default, not_decomposed)
+        supported = [
+            (torch.nn.InstanceNorm1d(3), torch.randn(1, 3, 8)),
+            (torch.nn.InstanceNorm1d(3, affine=True), torch.randn(2, 3, 8)),
+            (torch.nn.InstanceNorm2d(3), torch.randn(1, 3, 6, 6)),
+            (torch.nn.InstanceNorm2d(3, affine=True), torch.randn(2, 3, 5, 6)),
+        ]
+        for model, x in supported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertIn(torch.ops.aten.instance_norm.default, not_decomposed)
+            # Rank 3 / 4 instance_norm is handed to Core ML whole.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", op_names, model)
+            self.assertIn("aten.instance_norm.default", delegated, model)
+
+        unsupported = [
+            (torch.nn.InstanceNorm3d(3), torch.randn(1, 3, 4, 4, 4)),
+            (torch.nn.InstanceNorm3d(3, affine=True), torch.randn(2, 3, 4, 5, 6)),
+        ]
+        for model, x in unsupported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertNotIn(torch.ops.aten.instance_norm.default, not_decomposed)
+            # Rank 5 instance_norm is decomposed instead: it is neither left
+            # in the graph nor handed to Core ML, and its decomposition is
+            # delegated.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", delegated, model)
+            self.assertIn("aten._native_batch_norm_legit", delegated, model)
 
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
