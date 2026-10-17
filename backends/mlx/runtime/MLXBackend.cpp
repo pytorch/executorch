@@ -7,7 +7,6 @@
 //
 
 #include "MLXBatchedCache.h"
-#include "MLXBatchedSequenceCache.h"
 #include "MLXCache.h"
 #include "MLXCellCache.h"
 #include "MLXExecutor.h"
@@ -654,12 +653,13 @@ const int cache_builders_registered = [] {
       "Failed to register cache builder for %s:%s",
       kMLXBackendId,
       cache::kind::kBatchedCell);
+  // Keep the legacy kind as an alias with the same total logical token budget.
   const Error batched_seq = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatchedSequence,
       [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
+            std::make_shared<MLXBatchedCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched_seq == Error::Ok,

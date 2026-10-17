@@ -112,10 +112,9 @@ endif()
 # Python bindings for MultimodalRunner
 if(EXECUTORCH_BUILD_PYBIND)
   # Create the Python extension module for LLM runners
-  pybind11_add_module(
-    _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
+  executorch_add_pybind_module(
+    _llm_runner ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
   )
-  strip_python_lib(_llm_runner)
 
   find_package_torch()
   find_library(
