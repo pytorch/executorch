@@ -138,7 +138,9 @@ bool check_nonzero_args(const Tensor& in, const Tensor& out) {
       toString(out.scalar_type()));
 
   ET_CHECK_OR_RETURN_FALSE(
-      out.dim() == 2, "Expected out to be a 2d tensor received %zd", out.dim());
+      out.dim() == 2,
+      "Expected out to be a 2d tensor received %" ET_PRI_TENSOR_DIM,
+      out.dim());
 
   return true;
 }
