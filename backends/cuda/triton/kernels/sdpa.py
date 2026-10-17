@@ -449,7 +449,11 @@ def _sdpa_fwd_kernel_non_pow2(
             + offs_packed[:, None] * stride_ol
             + offs_d[None, :] * stride_od
         )
-    tl.store(o_ptrs, out.to(tl.bfloat16), mask=row_valid[:, None] & d_mask[None, :])
+    tl.store(
+        o_ptrs,
+        out.to(o_ptr.dtype.element_ty),
+        mask=row_valid[:, None] & d_mask[None, :],
+    )
 
 
 # ==============================================================================
@@ -547,7 +551,7 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
         )
 
     q_mask = row_valid[:, None] & (offs_d[None, :] < HEAD_DIM)
-    q = tl.load(q_ptrs, mask=q_mask, other=0.0).to(tl.bfloat16)
+    q = tl.load(q_ptrs, mask=q_mask, other=0.0)
 
     m_i = tl.full([BLOCK_M], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
@@ -611,13 +615,21 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
                 + (offs_d[None, :] * stride_kd)
             )
             k_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
-            k = tl.load(k_ptrs, mask=k_mask, other=0.0).to(tl.bfloat16)
+            k = tl.load(k_ptrs, mask=k_mask, other=0.0)
 
             qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
 
             if HAS_MASK:
                 qk = tl.where(
                     mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                )
+            elif not (IS_CAUSAL or MASK_IS_CAUSAL):
+                # The K load zero-fills positions past kv_len, and only a mask or
+                # causal masking would give them -inf.
+                qk = tl.where(
+                    (offs_n < kv_len)[None, :],
+                    qk,
+                    tl.full(qk.shape, -float("inf"), dtype=tl.float32),
                 )
 
             if IS_CAUSAL:
@@ -649,10 +661,10 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
                 + (offs_d[None, :] * stride_vd)
             )
             v_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
-            v = tl.load(v_ptrs, mask=v_mask, other=0.0).to(tl.bfloat16)
+            v = tl.load(v_ptrs, mask=v_mask, other=0.0)
 
-            p_bf16 = p_f32.to(tl.bfloat16)
-            acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+            p = p_f32.to(v.dtype)
+            acc = (acc * alpha[:, None] + tl.dot(p, v)).to(tl.float32)
             l_i = (l_i * alpha + l_ij).to(tl.float32)
             m_i = m_ij
 
@@ -675,7 +687,7 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
             + offs_d[None, :] * stride_od
         )
     o_mask = row_valid[:, None] & (offs_d[None, :] < HEAD_DIM)
-    tl.store(o_ptrs, acc.to(tl.bfloat16), mask=o_mask)
+    tl.store(o_ptrs, acc.to(O_ptr.dtype.element_ty), mask=o_mask)
 
 
 # Prefill / standard-path tile configs. ONE autotuned kernel spanning BLOCK_M in
@@ -925,16 +937,17 @@ def _validate_sdpa_inputs(
     value: torch.Tensor,
     dropout_p: float,
     enable_gqa: bool,
+    dtypes: tuple[torch.dtype, ...] = (torch.bfloat16,),
 ) -> None:
     """Validate SDPA input tensors and unsupported feature flags."""
     if not (query.is_cuda and key.is_cuda and value.is_cuda):
         raise RuntimeError("Q, K, V must be CUDA tensors.")
-    if (
-        query.dtype != torch.bfloat16
-        or key.dtype != torch.bfloat16
-        or value.dtype != torch.bfloat16
-    ):
-        raise RuntimeError("Expected bfloat16 inputs")
+    if not (query.dtype in dtypes and key.dtype == value.dtype == query.dtype):
+        expected = " or ".join(str(dtype).removeprefix("torch.") for dtype in dtypes)
+        raise RuntimeError(
+            f"Expected {expected} inputs of one dtype; got {query.dtype}, "
+            f"{key.dtype}, {value.dtype}."
+        )
     if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
         raise RuntimeError(
             f"Expected 4D tensors shaped [B, H, L, D]; got "
@@ -1241,9 +1254,10 @@ def sdpa(
     share K/V loads) based on a tile-utilization heuristic from FlashAttention.
 
     Args:
-        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16
-        key: Key tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
-        value: Value tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
+        query: Query tensor [B, H_q, L_q, D], dtype torch.bfloat16, or
+            torch.float16 without ``kv_len``
+        key: Key tensor [B, H_kv, L_kv, D], query's dtype
+        value: Value tensor [B, H_kv, L_kv, D], query's dtype
         attn_mask: Optional bool mask [B, 1, L_q, L_kv] (broadcast over heads)
         dropout_p: must be 0.0
         is_causal: apply causal masking. With ``kv_len``, non-square inputs use
@@ -1260,9 +1274,13 @@ def sdpa(
             it for an L_q==1 decode with a large buffer also routes through the
             split-K flash-decoding kernel for occupancy.
     Returns:
-        Output tensor [B, H_q, L_q, D], dtype torch.bfloat16
+        Output tensor [B, H_q, L_q, D], query's dtype
     """
-    _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
+    # The split-K and TMA kernels that kv_len can select are bfloat16-only.
+    dtypes = (
+        (torch.bfloat16,) if kv_len is not None else (torch.bfloat16, torch.float16)
+    )
+    _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa, dtypes)
 
     B, H_q, H_kv, L_q, L_kv, D_q, _ = _validate_qkv_shapes(
         query, key, value, enable_gqa
