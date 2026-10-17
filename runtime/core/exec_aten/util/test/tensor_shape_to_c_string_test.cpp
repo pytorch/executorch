@@ -17,6 +17,12 @@ using executorch::runtime::Span;
 using executorch::runtime::tensor_shape_to_c_string;
 using executorch::runtime::internal::kMaximumPrintableTensorShapeElement;
 
+TEST(TensorShapeToCStringTest, ScalarShape) {
+  Span<const executorch::aten::SizesType> scalar_shape;
+  auto str = tensor_shape_to_c_string(scalar_shape);
+  EXPECT_STREQ(str.data(), "()");
+}
+
 TEST(TensorShapeToCStringTest, Basic) {
   std::array<executorch::aten::SizesType, 3> sizes = {123, 456, 789};
   auto str = tensor_shape_to_c_string(
@@ -27,6 +33,24 @@ TEST(TensorShapeToCStringTest, Basic) {
   str = tensor_shape_to_c_string(Span<const executorch::aten::SizesType>(
       one_size.data(), one_size.size()));
   EXPECT_STREQ(str.data(), "(1234567890)");
+}
+
+TEST(TensorShapeToCStringTest, RankOneShape) {
+  std::array<executorch::aten::SizesType, 1> sizes = {3};
+  auto str = tensor_shape_to_c_string(
+      Span<const executorch::aten::SizesType>(sizes.data(), sizes.size()));
+  EXPECT_STREQ(str.data(), "(3)");
+}
+
+TEST(TensorShapeToCStringTest, InvalidNegativeDimension) {
+  std::array<executorch::aten::SizesType, 1> sizes = {-3};
+  auto str = tensor_shape_to_c_string(
+      Span<const executorch::aten::SizesType>(sizes.data(), sizes.size()));
+  if constexpr (std::numeric_limits<executorch::aten::SizesType>::is_signed) {
+    EXPECT_STREQ(str.data(), "(ERR)");
+  } else {
+    EXPECT_EQ(str.data(), "(" + std::to_string(sizes[0]) + ")");
+  }
 }
 
 TEST(TensorShapeToCStringTest, NegativeItems) {
@@ -76,6 +100,23 @@ TEST(TensorShapeToCStringTest, MaximumLength) {
   auto expected_str = expected.str();
 
   EXPECT_EQ(expected_str, str.data());
+}
+
+TEST(TensorShapeToCStringTest, NearDimensionLimit) {
+  std::array<executorch::aten::SizesType, kTensorDimensionLimit - 1> sizes;
+  std::fill(sizes.begin(), sizes.end(), 3);
+
+  auto str = tensor_shape_to_c_string(
+      Span<const executorch::aten::SizesType>(sizes.data(), sizes.size()));
+
+  std::ostringstream expected;
+  expected << '(' << sizes[0];
+  for (size_t ii = 1; ii < sizes.size(); ++ii) {
+    expected << ", " << sizes[ii];
+  }
+  expected << ')';
+
+  EXPECT_EQ(expected.str(), str.data());
 }
 
 TEST(TensorShapeToCStringTest, ExceedsDimensionLimit) {
