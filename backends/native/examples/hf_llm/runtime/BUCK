@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "METAL_COMPAT")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -59,6 +60,7 @@ fbcode_target(
     ],
     external_deps = ["gflags"],
     visibility = ["PUBLIC"],
+    **CPU_COMPAT
 )
 
 fbcode_target(
@@ -79,6 +81,7 @@ fbcode_target(
         ("cuda", None, "cuda_driver_api-lazy"),
     ],
     visibility = ["PUBLIC"],
+    **CUDA_COMPAT
 )
 
 fbcode_target(
@@ -91,6 +94,7 @@ fbcode_target(
     ],
     external_deps = ["gflags"],
     visibility = ["PUBLIC"],
+    **HIP_COMPAT
 )
 
 # Apple Silicon: ggml-metal with an arm64 CPU fallback. Mac builds go through
@@ -105,4 +109,5 @@ non_fbcode_target(
     ],
     external_deps = ["gflags"],
     visibility = ["PUBLIC"],
+    **METAL_COMPAT
 )
