@@ -442,7 +442,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
         dimensions.  Handing it a wider pad lowers fine but the model fails to
         load ("Padding for more than two dimensions only supports `constant`
         mode").  The partitioner must not keep such a pad whole, so it
-        decomposes into ops Core ML can run; 2D reflect padding stays intact.
+        decomposes into ops Core ML can run (index / arange / clamp) and the
+        model stays delegated; 2D reflect / replicate padding is delegated
+        intact as ``pad``.
         """
 
         class Pad(torch.nn.Module):
@@ -454,22 +456,17 @@ class TestCoreMLPartitioner(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.pad(x, self.pad, mode=self.mode)
 
-        x5 = torch.randn(1, 3, 6, 6, 6)
-        cases = [
-            (torch.nn.ReflectionPad3d(2), x5),
-            (torch.nn.ReplicationPad3d(2), x5),
-            # Pads a single dimension, but not one of the last two.
-            (Pad((0, 0, 0, 0, 1, 1), "reflect"), x5),
-        ]
-        for model, x in cases:
-            model = model.eval()
+        def lower(model, x):
             ep = torch.export.export(model, (x,), strict=True)
-            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
-            self.assertNotIn(torch.ops.aten.pad.default, not_decomposed, model)
-
             edge = executorch.exir.to_edge_transform_and_lower(
                 ep, partitioner=[CoreMLPartitioner()]
             )
+            op_names = [
+                n.target.__name__
+                for n in edge.exported_program().graph.nodes
+                if n.op == "call_function"
+            ]
+            delegated = format_delegated_graph(edge.exported_program().graph_module)
             if _TEST_RUNTIME:
                 et_prog = edge.to_executorch()
                 program = Runtime.get().load_program(et_prog.buffer)
@@ -478,12 +475,41 @@ class TestCoreMLPartitioner(unittest.TestCase):
                     torch.allclose(et_outputs, model(x), atol=1e-02, rtol=1e-02),
                     model,
                 )
+            return ep, op_names, delegated
 
-        ep = torch.export.export(
-            Pad((1, 1, 1, 1), "reflect").eval(), (torch.randn(1, 3, 6, 6),)
-        )
-        not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
-        self.assertIn(torch.ops.aten.pad.default, not_decomposed)
+        x5 = torch.randn(1, 3, 6, 6, 6)
+        unsupported = [
+            (torch.nn.ReflectionPad3d(2), x5),
+            (torch.nn.ReplicationPad3d(2), x5),
+            # Pads a single dimension, but not one of the last two.
+            (Pad((0, 0, 0, 0, 1, 1), "reflect"), x5),
+        ]
+        for model, x in unsupported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertNotIn(torch.ops.aten.pad.default, not_decomposed, model)
+            # The pad is decomposed, not kept whole: no pad op is left in the
+            # graph or handed to Core ML, and its decomposition is delegated.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.pad.default", op_names, model)
+            self.assertNotIn("aten.pad.default", delegated, model)
+            self.assertIn("aten.index.Tensor", delegated, model)
+
+        x4 = torch.randn(1, 3, 6, 6)
+        supported = [
+            Pad((1, 1, 1, 1), "reflect"),
+            Pad((1, 1, 1, 1), "replicate"),
+        ]
+        for model in supported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x4)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertIn(torch.ops.aten.pad.default, not_decomposed, model)
+            # The pad itself is handed to Core ML.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.pad.default", op_names, model)
+            self.assertIn("aten.pad.default", delegated, model)
 
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
