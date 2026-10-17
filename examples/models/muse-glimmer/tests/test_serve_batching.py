@@ -57,7 +57,7 @@ def test_worker_forwards_mg_options(arguments):
         ]
     )
     command = serve_batching._worker_command(args)
-    flags = dict(zip(command[1::2], command[2::2]))
+    flags = dict(arg.split("=", 1) for arg in command[1:])
     assert flags["--pte"] == args.model_path
     assert flags["--tokenizer"] == args.tokenizer_path
     assert flags["--backend"] == "mlx"
@@ -71,10 +71,33 @@ def test_worker_forwards_mg_options(arguments):
     assert flags["--prefix_checkpoint_interval"] == "512"
 
 
+@pytest.mark.parametrize("options,enabled", [([], "false"), (["--dflash"], "true")])
+def test_dflash_is_opt_in(arguments, options, enabled):
+    args = serve_batching._parse_args(arguments + options)
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--dflash"] == enabled
+    assert "--draft_argmax" not in flags
+    assert flags["--dflash_n_draft"] == "0"
+
+
+@pytest.mark.parametrize("n_draft", [0, 1, 2, 3])
+def test_draft_count_forwarded(arguments, n_draft):
+    args = serve_batching._parse_args(
+        arguments + ["--dflash", "--dflash-n-draft", str(n_draft)]
+    )
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--dflash_n_draft"] == str(n_draft)
+
+
 @pytest.mark.parametrize(
     "flag,value",
     [
         ("--backend", "cuda"),
+        ("--dflash-n-draft", "-1"),
+        ("--dflash-n-draft", str((1 << 31) - 1)),
+        ("--dflash-n-draft", "2"),
         ("--max-vision-patches", "3"),
         ("--max-vision-patches", str(1 << 31)),
         ("--prefix-checkpoint-interval", "8"),
