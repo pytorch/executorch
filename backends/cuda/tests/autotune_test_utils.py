@@ -91,7 +91,9 @@ class SaturatedCpu:
                 os.kill(w.pid, signal.SIGCONT)
 
 
-def _append_pick(picks: list, kind: str, name: str, timings: dict, reference: dict, key: tuple = ()) -> None:
+def _append_pick(
+    picks: list, kind: str, name: str, timings: dict, reference: dict, key: tuple = ()
+) -> None:
     """Record a decision with its regret score."""
     valid = {c: t for c, t in reference.items() if t != float("inf")}
     used = {c: t for c, t in timings.items() if c in valid and t != float("inf")}
@@ -109,9 +111,7 @@ def _measure_kernel_reference(
     """Measure kernel reference timings with CPU paused."""
     with cpu.paused(), cgt.cuda_graph_timing():
         return {
-            launcher: min(
-                self.bench(launcher, *args, **kwargs) for _ in range(2)
-            )
+            launcher: min(self.bench(launcher, *args, **kwargs) for _ in range(2))
             for launcher in timings
         }
 
@@ -131,6 +131,7 @@ def _measure_triton_reference(
     cpu: SaturatedCpu, self, args: tuple, kwargs: dict, timings: dict
 ) -> dict:
     """Measure triton autotuner reference timings with CUDA-graph timing."""
+
     def graph_timed(kernel_call, quantiles):
         ms = cgt.time_with_cuda_graph_us(kernel_call) / 1000.0
         return [ms] * len(quantiles)
@@ -166,18 +167,26 @@ def record_autotune_picks(
         timings = orig_kernel(self, *args, **kwargs)
         reference = timings
         if measure:
-            reference = _measure_kernel_reference(cpu, orig_kernel, self, args, kwargs, timings)
+            reference = _measure_kernel_reference(
+                cpu, orig_kernel, self, args, kwargs, timings
+            )
             self.reset_to_zero_args(*args, **kwargs)
         kind = "custom" if self.custom_kernel else "inductor"
-        _append_pick(picks, kind, self.inductor_meta.get("kernel_name"), timings, reference)
+        _append_pick(
+            picks, kind, self.inductor_meta.get("kernel_name"), timings, reference
+        )
         return timings
 
     def choices_hook(cls, choices, autotune_args, *args, **kwargs):
         timings = orig_choices.__func__(cls, choices, autotune_args, *args, **kwargs)
         reference = timings
         if measure:
-            reference = _measure_choice_reference(cpu, orig_choices, cls, choices, autotune_args, timings)
-        _append_pick(picks, "template", type(next(iter(timings))).__name__, timings, reference)
+            reference = _measure_choice_reference(
+                cpu, orig_choices, cls, choices, autotune_args, timings
+            )
+        _append_pick(
+            picks, "template", type(next(iter(timings))).__name__, timings, reference
+        )
         return timings
 
     orig_triton_run = triton.runtime.Autotuner.run
