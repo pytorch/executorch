@@ -113,6 +113,29 @@ def _is_integer_tensor(node: torch.fx.Node) -> bool:
     )
 
 
+def _constant_nodes(graph: torch.fx.Graph, constant_names: frozenset) -> set:
+    """Nodes whose value only depends on parameters, buffers and constants."""
+    constant = set()
+    for node in graph.nodes:
+        if node.op == "get_attr" or (
+            node.op == "placeholder" and node.name in constant_names
+        ):
+            constant.add(node)
+        elif node.op == "call_function" and node.all_input_nodes:
+            if all(n in constant for n in node.all_input_nodes):
+                constant.add(node)
+    return constant
+
+
+def _is_integer_mm_with_constant_weight(node: torch.fx.Node, constant: set) -> bool:
+    if node.op != "call_function" or node.target not in _MM_TARGETS:
+        return False
+    if len(node.args) < 2 or not isinstance(node.args[1], torch.fx.Node):
+        return False
+    weight = node.args[1]
+    return weight in constant and _is_integer_tensor(weight)
+
+
 def _integer_mm_with_constant_weight_nodes(
     graph: torch.fx.Graph, constant_names: frozenset
 ) -> set:
@@ -130,25 +153,12 @@ def _integer_mm_with_constant_weight_nodes(
     TODO: remove once ExecuTorch consumes a coremltools release that includes
     apple/coremltools#2719, which keeps integer ``mm`` on ``matmul``.
     """
-    constant = set()
-    for node in graph.nodes:
-        if node.op == "get_attr" or (
-            node.op == "placeholder" and node.name in constant_names
-        ):
-            constant.add(node)
-        elif node.op == "call_function" and node.all_input_nodes:
-            if all(n in constant for n in node.all_input_nodes):
-                constant.add(node)
-
-    rejected = set()
-    for node in graph.nodes:
-        if node.op != "call_function" or node.target not in _MM_TARGETS:
-            continue
-        if len(node.args) < 2 or not isinstance(node.args[1], torch.fx.Node):
-            continue
-        weight = node.args[1]
-        if weight in constant and _is_integer_tensor(weight):
-            rejected.add(node)
+    constant = _constant_nodes(graph, constant_names)
+    rejected = {
+        node
+        for node in graph.nodes
+        if _is_integer_mm_with_constant_weight(node, constant)
+    }
     if not rejected:
         return rejected
 
