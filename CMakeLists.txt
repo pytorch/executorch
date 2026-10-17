@@ -1543,10 +1543,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
-if(EXECUTORCH_BUILD_WASM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
-endif()
-
 if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm/tokenizers)
 endif()
@@ -1600,6 +1596,12 @@ endif()
 
 if(EXECUTORCH_BUILD_VGF)
   list(APPEND _executorch_backends vgf_backend)
+endif()
+
+# Added after the backends so EXECUTORCH_BUILD_WASM_WEBGPU can link
+# webgpu_backend, which has to already be defined at that point.
+if(EXECUTORCH_BUILD_WASM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
 endif()
 
 # Top-level interface targets.

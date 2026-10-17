@@ -222,6 +222,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
   OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_WASM_WEBGPU
+  "Link the WebGPU backend into the ExecuTorch JavaScript API" BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -491,6 +495,11 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_TOKENIZERS_WASM REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_WASM_WEBGPU REQUIRES EXECUTORCH_BUILD_WASM
+  EXECUTORCH_BUILD_WEBGPU
 )
 
 check_required_options_on(
