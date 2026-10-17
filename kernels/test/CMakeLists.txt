@@ -201,6 +201,7 @@ set(all_test_sources
     "op_diagonal_copy_test.cpp"
     "op_div_test.cpp"
     "op_elu_test.cpp"
+    "op_embedding_bag_test.cpp"
     "op_embedding_test.cpp"
     "op_empty_test.cpp"
     "op_eq_test.cpp"
