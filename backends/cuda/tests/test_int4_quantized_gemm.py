@@ -850,7 +850,7 @@ class Int4QuantizedGemmTest(unittest.TestCase):
         stream = torch.cuda.Stream()
         with torch.cuda.stream(stream), cuda_graph_timing(), mock.patch.object(
             quantized_gemm_utils,
-            "time_with_cuda_graph_us",
+            "time_with_cuda_graph_us_counted",
             side_effect=RuntimeError("capture failed"),
         ), mock.patch.object(
             quantized_gemm_utils, "_graph_timing_fallback_warned", False
@@ -1081,7 +1081,7 @@ class AutotuneDoBenchTest(unittest.TestCase):
         with self._on_stream(1), mock.patch.object(
             quantized_gemm_utils, "graph_timing_active", return_value=True
         ), mock.patch.object(
-            quantized_gemm_utils, "time_with_cuda_graph_us", return_value=1500.0
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted", return_value=1500.0
         ) as graph, mock.patch.object(
             triton.testing, "do_bench"
         ) as bench:
@@ -1109,7 +1109,7 @@ class AutotuneDoBenchTest(unittest.TestCase):
         with self._on_stream(1), mock.patch.object(
             quantized_gemm_utils, "graph_timing_active", return_value=False
         ), mock.patch.object(
-            quantized_gemm_utils, "time_with_cuda_graph_us"
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted"
         ) as graph, mock.patch.object(
             triton.testing, "do_bench", return_value=2.0
         ) as bench:
@@ -1127,7 +1127,7 @@ class AutotuneDoBenchTest(unittest.TestCase):
         with self._on_stream(0), mock.patch.object(
             quantized_gemm_utils, "graph_timing_active", return_value=True
         ), mock.patch.object(
-            quantized_gemm_utils, "time_with_cuda_graph_us"
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted"
         ) as graph, mock.patch.object(
             triton.testing, "do_bench", return_value=2.0
         ) as bench:
