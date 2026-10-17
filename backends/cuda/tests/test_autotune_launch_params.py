@@ -170,7 +170,9 @@ class AutotuneLaunchParamTest(unittest.TestCase):
 
 # CI guard: the CUDA backend's AOTI compile traces the measured-fastest value.
 # Compute-bound (few elements, many dependent FMAs): time grows with REPS.
-_REPS = {1: 4096, 2: 1024, 4: 16, 8: 512, 16: 8192}
+# Every loser is >= 8192 FMAs (tens of us) slower: smaller gaps sit within
+# launch noise on some GPUs (seen on ROCm gfx950).
+_REPS = {1: 1 << 15, 2: 1 << 14, 4: 16, 8: 1 << 13, 16: 1 << 16}
 _TRACED: list[tuple[bool, bool, int]] = []
 
 
