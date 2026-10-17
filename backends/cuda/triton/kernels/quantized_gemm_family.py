@@ -34,6 +34,7 @@ import os
 import sys
 import threading
 import typing
+import weakref
 from typing import Callable, Optional, Sequence
 
 import torch
@@ -265,6 +266,42 @@ def _compile_every_candidate_at_once():
             _QUEUING_ONLY.reset(token)
 
 
+# kernel -> {config key: the kernel restricted to that one config}. One object
+# per (kernel, config), so every call site of a tuned shape traces the same
+# kernel and PyTorch's per-kernel caches keep working.
+_SINGLE_CONFIG_KERNELS: weakref.WeakKeyDictionary[object, dict] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _tuned_kernel(kernel, args: Sequence, kwargs: dict):
+    """``kernel`` restricted to the config its autotuner already picked for
+    this call's key, or ``kernel`` itself if it has not tuned the key.
+
+    Traced, an autotuned kernel hands Inductor every config, and AOTI then
+    compiles and benchmarks all of them again for the same shapes; restricted
+    to the pick, Inductor compiles that one config and benchmarks nothing.
+    Called eagerly it launches the same config the autotuner would.
+    """
+    if not isinstance(kernel, triton.runtime.Autotuner) or len(kernel.configs) <= 1:
+        return kernel
+    try:
+        config = kernel.cache.get(_tuning_key(kernel, args, kwargs))
+    except TypeError:
+        # A symbolic size in the key (a dynamic M the kernel tunes on): no
+        # concrete pick to restrict to.
+        return kernel
+    if config is None:
+        return kernel
+    config_key = tuple(sorted(config.all_kwargs().items()))
+    variants = _SINGLE_CONFIG_KERNELS.setdefault(kernel, {})
+    tuned = variants.get(config_key)
+    if tuned is None:
+        tuned = triton.autotune(configs=[config], key=[])(kernel.fn)
+        variants[config_key] = tuned
+    return tuned
+
+
 def launch_split_k_gemm(
     kernel,
     *,
@@ -334,7 +371,7 @@ def launch_split_k_gemm(
         # The prepass discards the result, so the output is not written.
         return out
     _precompile_untuned_configs(kernel, args, kwargs)
-    wrap_triton(kernel)[grid](*args, **kwargs)
+    wrap_triton(_tuned_kernel(kernel, args, kwargs))[grid](*args, **kwargs)
     if split_k > 1:
         splitk_reduce(partial, out, block_m, reduce_block_n)
     return out

@@ -20,12 +20,17 @@ Nothing here is tuned per architecture or per shape.
 
 from __future__ import annotations
 
+import logging
 from typing import Iterable, Optional, Sequence
 
 import torch
 import triton
 import triton.language as tl
 import triton.testing
+from executorch.backends.cuda.autotune.cuda_graph_timing import (
+    graph_timing_active,
+    time_with_cuda_graph_us_counted,
+)
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import wrap_triton
@@ -35,6 +40,8 @@ from triton.language.extra import libdevice
 # kernel compiles: Inductor compiles in forked subprocesses that cannot
 # initialize CUDA. Inductor inlines the value into the kernel source it builds.
 _IS_HIP = tl.constexpr(torch.version.hip is not None)
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 # Activation quantization granularity: one INT8 scale per K32 block, launched in
 # K256 tiles.
@@ -353,8 +360,39 @@ AUTOTUNE_WARMUP_MS = 5
 AUTOTUNE_REP_MS = 20
 
 
+_graph_timing_fallback_warned = False
+
+
+def _warn_graph_timing_fallback(error: RuntimeError) -> None:
+    global _graph_timing_fallback_warned
+    if not _graph_timing_fallback_warned:
+        _graph_timing_fallback_warned = True
+        logger.warning(
+            "CUDA-graph timing of a quantized GEMM config failed (%s); timing "
+            "configs with Triton's event-based do_bench instead, which a busy "
+            "CPU can skew. Further fallbacks are not reported.",
+            error,
+        )
+
+
 def autotune_do_bench(kernel_call, quantiles):
-    """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``."""
+    """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``.
+
+    Inside ``cuda_graph_timing()`` on a capturable stream (the launch-parameter
+    timing runs on one) each config is timed in a CUDA graph with a cold L2,
+    like the split candidates and Inductor's own candidates during an export: a
+    saturated CPU makes event-timed readings of these short kernels bimodal and
+    their picks up to several times slower (see autotune/cuda_graph_timing.py).
+    Otherwise, on the legacy default stream, or if the capture fails, it falls
+    back to Triton's timing.
+    """
+    if graph_timing_active() and torch.cuda.current_stream().cuda_stream != 0:
+        try:
+            ms = time_with_cuda_graph_us_counted(kernel_call) / 1000.0
+        except RuntimeError as error:
+            _warn_graph_timing_fallback(error)
+        else:
+            return [ms] * len(quantiles) if quantiles else ms
     return triton.testing.do_bench(
         kernel_call,
         warmup=AUTOTUNE_WARMUP_MS,
