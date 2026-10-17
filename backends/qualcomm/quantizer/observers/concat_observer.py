@@ -56,16 +56,12 @@ class ConcatObserver(UniformQuantizationObserverBase):
         self.input_observers = []
 
     def __deepcopy__(self, memo):
-        # Resolve input_observers against self (whose input_nodes still point at
-        # the correct, not-yet-copied owning_module) before copying, otherwise a
-        # copy that resolves them lazily on its own first forward() would read
-        # obs_node.graph.owning_module from the *original* graph and silently
-        # read/write the original model's observers instead of its own.
+        # input_nodes still point at the original owning_module,
+        # so a lazy resolve on the copy would bind to the original's observers.
         if len(self.input_observers) == 0:
             self._collect_input_observers()
 
-        # Share the live-graph fx.Nodes: copying them walks the whole node list
-        # (RecursionError on large graphs) and its FakeTensor metadata.
+        # Share by reference: deep-copying fx.Nodes recurses the whole graph.
         new = type(self).__new__(type(self))
         memo[id(self)] = new
         for key, value in self.__dict__.items():
@@ -96,10 +92,8 @@ class ConcatObserver(UniformQuantizationObserverBase):
             # collect observers first if they are not cached
             self._collect_input_observers()
 
-        # update min / max for all observers of input nodes. Under QAT the input
-        # is a FakeQuantize wrapping the real observer, so the range it reads
-        # back in calculate_qparams() lives on activation_post_process, not on
-        # the FakeQuantize module itself.
+        # push min/max to each input's observer. Under QAT it's wrapped in a
+        # FakeQuantize, whose range lives on activation_post_process.
         for observer in self.input_observers:
             target = (
                 observer.activation_post_process
@@ -119,10 +113,8 @@ class ConcatObserver(UniformQuantizationObserverBase):
 
 
 class ConcatFakeQuantize(FakeQuantize):
-    """FakeQuantize paired with ConcatObserver, so a cat's output is still
-    fake-quantized under QAT instead of carrying a bare (never simulated)
-    observer.
-    """
+    """FakeQuantize using ConcatObserver, so concat's output is fake-quantized
+    under QAT instead of just carrying a (never simulated) observer."""
 
     def __init__(self, node_name, graph, **kwargs):
         super().__init__(
@@ -132,10 +124,8 @@ class ConcatFakeQuantize(FakeQuantize):
 
 def concat_observer_ctr(node_name, graph, output_activation):
     """
-    Under PTQ, the concat output continues to use ConcatObserver for range collection.
-    Under QAT, it is replaced with ConcatFakeQuantize,
-    which preserves the same max-range-across-inputs behavior
-    while ensuring the output remains fake-quantized during training.
+    PTQ keeps using ConcatObserver; QAT swaps to ConcatFakeQuantize so the
+    output stays fake-quantized, but both share the same max-range behavior.
     """
     kwargs = {"node_name": node_name, "graph": graph}
     # with_args() can be chained, so unwrap until we hit the class.
