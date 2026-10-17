@@ -302,7 +302,9 @@ std::unique_ptr<ETDumpGen> make_etdump_gen(Buffer& debug_buffer, const Args& arg
         debug_buffer.resize(args.debug_buffer_size);
         ET_LOG(Info, args.dump_model_outputs ? "Logging model outputs." : "Logging intermediate outputs.");
         Span<uint8_t> debug_buffer_span(debug_buffer.data(), debug_buffer.size());
-        etdump_gen->set_debug_buffer(debug_buffer_span);
+        if (!etdump_gen->set_debug_buffer(debug_buffer_span).ok()) {
+            ET_LOG(Error, "Failed to set etdump debug buffer.");
+        }
         etdump_gen->set_event_tracer_debug_level(args.dump_model_outputs ? EventTracerDebugLogLevel::kProgramOutputs : EventTracerDebugLogLevel::kIntermediateOutputs);
     }
 
