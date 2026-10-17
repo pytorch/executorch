@@ -116,6 +116,13 @@ struct WmmaShape {
   bool ignore_alignment = false;
 };
 
+// The kQ4gsw texture-IO kernels accept a partial last M tile. Their rows take
+// an M of at least this many rows that is not a multiple of their tile, and are
+// selected as for M rounded up to a multiple of it (the smallest WG_TILE_M of
+// the family rows), so an unaligned M gets the kernel of the next aligned M.
+// Smaller M, buffer IO and kDq8caQ4gsw keep the alignment requirement.
+constexpr int64_t kWmmaPartialTileM = 128;
+
 struct WmmaTile {
   uint32_t m;
   uint32_t n;

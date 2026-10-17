@@ -99,8 +99,11 @@ uvec4 dequant_block(
 // width-packed texture3d holds elements [4x, 4x+3] of row m at texel (x, m, 0),
 // so buffer index (row * K4 + x) and texel coord (x, row, 0) are one address in
 // two notations.
-uvec4 load_a_vec4(const uint row, const uint k_hv4, const uint K4) {
+uvec4 load_a_vec4(const uint row_in, const uint k_hv4, const uint K4) {
 #ifdef IO_TEXTURE
+  // Rows of a partial last M tile read row M - 1; their results are not
+  // stored (each output row depends only on its own A row).
+  const uint row = min(row_in, uint(input_sizes.y) - 1u);
   // Narrow to f16vec4 at the fetch: a half sampler is typed to return vec4
   // (fp32); narrowing immediately lets the compiler fold the conversion into
   // a 16-bit image load. Lossless -- the source is rgba16f.
@@ -110,6 +113,8 @@ uvec4 load_a_vec4(const uint row, const uint k_hv4, const uint K4) {
       packFloat2x16(v0.xy), packFloat2x16(v0.zw),
       packFloat2x16(v1.xy), packFloat2x16(v1.zw));
 #else
+  // Buffer IO requires M to be a multiple of WG_TILE_M (CoopmatFamily.cpp).
+  const uint row = row_in;
   const f16vec4 v0 = t_input[row * K4 + k_hv4];
   const f16vec4 v1 = t_input[row * K4 + k_hv4 + 1u];
   return uvec4(
@@ -374,6 +379,11 @@ void main() {
       const uint m =
           tile_m_start + (lr / MMA_M) * SG_TILE_M + i * MMA_M + (lr % MMA_M);
       const uint base = lr * WG_TILE_N + lc4 * 4u;
+      // The last M tile may be partial: rows at or past M are computed but
+      // not stored.
+      if (m >= uint(output_sizes.y)) {
+        continue;
+      }
 #ifdef CSH_IN_ASH
       // base is a multiple of 4 halves: the texel is one half of a uvec4.
       const uvec4 q = Ash[base / FP16_PER_VEC4];

@@ -300,8 +300,9 @@ TEST(CoopmatFamilyTest, ShapesThatKeepTheExistingKernels) {
           prefill(op, 2048, 4096, 4096, WmmaStorage::kTexture3D);
       ASSERT_FALSE(selected(d, s).empty());
 
+      // Below kWmmaPartialTileM no row takes an unaligned M.
       WmmaShape unaligned = s;
-      unaligned.M = 1304;
+      unaligned.M = 120;
       WmmaShape gemv = s;
       gemv.M = 1;
       gemv.gemv = true;
@@ -331,6 +332,100 @@ TEST(CoopmatFamilyTest, ShapesThatKeepTheExistingKernels) {
             << " op=" << static_cast<int>(op);
       }
     }
+  }
+}
+
+TEST(CoopmatFamilyTest, PartialMTile) {
+  struct Case {
+    CoopmatDeviceKey device;
+    WmmaOp op;
+    int64_t M, K, N;
+    WmmaStorage io;
+    std::string want; // empty: existing kernels
+  };
+  const Case cases[] = {
+      // 4w texture IO: selected as for M rounded up to 128 rows.
+      {xe2_key(),
+       WmmaOp::kQ4gsw,
+       511,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       kQ + "t128x128k16g82s16m8flib"},
+      {xe2_key(),
+       WmmaOp::kQ4gsw,
+       129,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       kQ + "t128x128k16g82s16m8flib"},
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       511,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       kQ + "t256x128k16g42s32bt"},
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       300,
+       3072,
+       1024,
+       WmmaStorage::kTexture3D,
+       kQ + "t128x128k16g22s32"},
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       129,
+       14336,
+       4096,
+       WmmaStorage::kTexture3D,
+       kQ + "bx_t128x128k32g42s32f32c"},
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       2047,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       kQ + "t256x128k16g42s32bt"},
+      // Rounded up past the validated prefill length.
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       2049,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       ""},
+      // Below kWmmaPartialTileM.
+      {xe2_key(), WmmaOp::kQ4gsw, 127, 2048, 2048, WmmaStorage::kTexture3D, ""},
+      {nvidia_key(),
+       WmmaOp::kQ4gsw,
+       127,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       ""},
+      // Buffer IO and 8da4w keep the alignment requirement.
+      {xe2_key(), WmmaOp::kQ4gsw, 511, 2048, 2048, WmmaStorage::kBuffer, ""},
+      {xe2_key(),
+       WmmaOp::kDq8caQ4gsw,
+       511,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       ""},
+      {nvidia_key(),
+       WmmaOp::kDq8caQ4gsw,
+       511,
+       2048,
+       2048,
+       WmmaStorage::kTexture3D,
+       ""},
+  };
+  for (const Case& c : cases) {
+    EXPECT_EQ(selected(c.device, prefill(c.op, c.M, c.K, c.N, c.io)), c.want)
+        << coopmat_family_name(coopmat_family(c.device))
+        << " op=" << static_cast<int>(c.op) << " M=" << c.M << " K=" << c.K
+        << " N=" << c.N << " io=" << static_cast<int>(c.io);
   }
 }
 
