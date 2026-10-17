@@ -127,6 +127,13 @@ proposals, verifies them, and samples corrections through its two
 `dflash_*` methods, so vocabulary-wide logits and probabilities stay on the
 device; MLX DFlash samples on the host.
 
+CUDA DFlash exports support the draft model's block size up to 16 positions.
+The runtime keeps the draft hidden-state input at that exported width and copies
+only committed target hidden rows back to the host after verification. Runner
+defaults remain three proposals in a four-position block. To use all 15 proposals
+with an artifact exported for a 16-position block, pass `--n_draft=15` and
+`--block_length=16` to `dflash_runner`.
+
 ## Build the runners
 
 From the repo root, the make targets build ExecuTorch with the backend and then
