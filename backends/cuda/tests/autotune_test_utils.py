@@ -91,6 +91,63 @@ class SaturatedCpu:
                 os.kill(w.pid, signal.SIGCONT)
 
 
+def _append_pick(picks: list, kind: str, name: str, timings: dict, reference: dict, key: tuple = ()) -> None:
+    """Record a decision with its regret score."""
+    valid = {c: t for c, t in reference.items() if t != float("inf")}
+    used = {c: t for c, t in timings.items() if c in valid and t != float("inf")}
+    if len(valid) < 2 or not used:
+        return
+    pick = min(used, key=used.get)
+    best = min(valid.values())
+    regret = _regret(valid[pick], best)
+    picks.append(Pick(kind, str(name), len(valid), regret, best * 1000.0, key))
+
+
+def _measure_kernel_reference(
+    cpu: SaturatedCpu, orig_kernel, self, args: tuple, kwargs: dict, timings: dict
+) -> dict:
+    """Measure kernel reference timings with CPU paused."""
+    with cpu.paused(), cgt.cuda_graph_timing():
+        return {
+            launcher: min(
+                self.bench(launcher, *args, **kwargs) for _ in range(2)
+            )
+            for launcher in timings
+        }
+
+
+def _measure_choice_reference(
+    cpu: SaturatedCpu, orig_choices, cls, choices, autotune_args, timings: dict
+) -> dict:
+    """Measure choice reference timings with CPU paused."""
+    with cpu.paused(), cgt.cuda_graph_timing():
+        return {
+            c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
+            for c in timings
+        }
+
+
+def _measure_triton_reference(
+    cpu: SaturatedCpu, self, args: tuple, kwargs: dict, timings: dict
+) -> dict:
+    """Measure triton autotuner reference timings with CUDA-graph timing."""
+    def graph_timed(kernel_call, quantiles):
+        ms = cgt.time_with_cuda_graph_us(kernel_call) / 1000.0
+        return [ms] * len(quantiles)
+
+    self.nargs = dict(zip(self.arg_names, args))
+    self.__dict__["do_bench"] = graph_timed
+    try:
+        with cpu.paused():
+            return {
+                c: min(self._bench(*args, config=c, **kwargs)[0] for _ in range(2))
+                for c in timings
+            }
+    finally:
+        del self.__dict__["do_bench"]
+        self.nargs = None
+
+
 @contextlib.contextmanager
 def record_autotune_picks(
     cpu: SaturatedCpu, picks: list, measure: bool = True
@@ -105,55 +162,31 @@ def record_autotune_picks(
     orig_kernel = CachingAutotuner.benchmark_all_configs
     orig_choices = AlgorithmSelectorCache.benchmark_choices
 
-    def record(kind, name, timings, reference, key=()):
-        valid = {c: t for c, t in reference.items() if t != float("inf")}
-        used = {c: t for c, t in timings.items() if c in valid and t != float("inf")}
-        if len(valid) < 2 or not used:
-            return
-        pick = min(used, key=used.get)
-        best = min(valid.values())
-        regret = _regret(valid[pick], best)
-        picks.append(Pick(kind, str(name), len(valid), regret, best * 1000.0, key))
-
     def kernel_hook(self, *args, **kwargs):
         timings = orig_kernel(self, *args, **kwargs)
         reference = timings
         if measure:
-            with cpu.paused(), cgt.cuda_graph_timing():
-                reference = {
-                    launcher: min(
-                        self.bench(launcher, *args, **kwargs) for _ in range(2)
-                    )
-                    for launcher in timings
-                }
+            reference = _measure_kernel_reference(cpu, orig_kernel, self, args, kwargs, timings)
             self.reset_to_zero_args(*args, **kwargs)
         kind = "custom" if self.custom_kernel else "inductor"
-        record(kind, self.inductor_meta.get("kernel_name"), timings, reference)
+        _append_pick(picks, kind, self.inductor_meta.get("kernel_name"), timings, reference)
         return timings
 
     def choices_hook(cls, choices, autotune_args, *args, **kwargs):
         timings = orig_choices.__func__(cls, choices, autotune_args, *args, **kwargs)
         reference = timings
         if measure:
-            with cpu.paused(), cgt.cuda_graph_timing():
-                reference = {
-                    c: min(cls.benchmark_choice(c, autotune_args) for _ in range(2))
-                    for c in timings
-                }
-        record("template", type(next(iter(timings))).__name__, timings, reference)
+            reference = _measure_choice_reference(cpu, orig_choices, cls, choices, autotune_args, timings)
+        _append_pick(picks, "template", type(next(iter(timings))).__name__, timings, reference)
         return timings
 
     orig_triton_run = triton.runtime.Autotuner.run
 
     def triton_hook(self, *args, **kwargs):
-        # Our kernels' configs are picked by their own triton.autotune (during
-        # the launch-parameter timing), and AOTI traces only the pick.
         tuned = set(self.cache)
         timings_before = getattr(self, "configs_timings", None)
         result = orig_triton_run(self, *args, **kwargs)
         new_keys = set(self.cache) - tuned
-        # A single pruned config is cached without a benchmark, which leaves
-        # configs_timings as it was.
         if not new_keys or getattr(self, "configs_timings", None) is timings_before:
             return result
         pick = (id(self), next(iter(new_keys)))
@@ -162,26 +195,10 @@ def record_autotune_picks(
             for c, t in self.configs_timings.items()
         }
         if not measure:
-            record("custom", self.base_fn.__name__, timings, timings, pick)
+            _append_pick(picks, "custom", self.base_fn.__name__, timings, timings, pick)
             return result
-
-        def graph_timed(kernel_call, quantiles):
-            # The CUDA-graph timing the Inductor hook above uses for its reference.
-            ms = cgt.time_with_cuda_graph_us(kernel_call) / 1000.0
-            return [ms] * len(quantiles)
-
-        self.nargs = dict(zip(self.arg_names, args))
-        self.__dict__["do_bench"] = graph_timed
-        try:
-            with cpu.paused():
-                reference = {
-                    c: min(self._bench(*args, config=c, **kwargs)[0] for _ in range(2))
-                    for c in timings
-                }
-        finally:
-            del self.__dict__["do_bench"]
-            self.nargs = None
-        record("custom", self.base_fn.__name__, timings, reference, pick)
+        reference = _measure_triton_reference(cpu, self, args, kwargs, timings)
+        _append_pick(picks, "custom", self.base_fn.__name__, timings, reference, pick)
         return result
 
     CachingAutotuner.benchmark_all_configs = kernel_hook
