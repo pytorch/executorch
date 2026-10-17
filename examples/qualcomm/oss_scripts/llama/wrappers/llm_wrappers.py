@@ -244,7 +244,7 @@ class TextDecoder(Component):
                 )
                 self.passes_job[SplitGraph] = setting
                 self.dep_table[SplitGraph] = [FoldQDQ]
-                self.dep_table[TagQuantIO] = [SplitGraph]
+                self.dep_table.setdefault(TagQuantIO, []).append(SplitGraph)
             else:
                 logging.info(
                     f"Disabling sharding because the requested number of shards "
@@ -1334,7 +1334,7 @@ class Modality(Component):
             )
             self.passes_job[SplitGraph] = setting
             self.dep_table[SplitGraph] = [FoldQDQ]
-            self.dep_table[TagQuantIO] = [SplitGraph]
+            self.dep_table.setdefault(TagQuantIO, []).append(SplitGraph)
 
             if not request_data.skip_quantize:
                 fixed_point_type = {"io_type": torch.float32}

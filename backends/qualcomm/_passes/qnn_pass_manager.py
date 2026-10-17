@@ -402,6 +402,20 @@ class QnnPassManager(PassManager):
         for that, these in dep_table.items():
             for this in these:
                 self.add_constraint(this_before_that_pass_constraint(this, that))
+        # The terminal passes must end the schedule (_validate_edge_passes).
+        # Enforce it structurally so dynamically registered passes
+        # (e.g. SplitGraph for sharded models) cannot be scheduled after them.
+        terminal_passes = [
+            p for p in self.get_terminal_edge_passes() if p in passes_job
+        ]
+        if terminal_passes:
+            for p in passes_job:
+                if p not in terminal_passes:
+                    self.add_constraint(
+                        this_before_that_pass_constraint(p, terminal_passes[0])
+                    )
+            for first, second in zip(terminal_passes, terminal_passes[1:]):
+                self.add_constraint(this_before_that_pass_constraint(first, second))
         for p in passes_job:
             self.add_pass(p)
         self.solve_constraints()
@@ -427,6 +441,15 @@ class QnnPassManager(PassManager):
             self.add_pass(p(**kwargs))
         self._validate_edge_passes()
         return self.passes
+
+    @classmethod
+    def get_terminal_edge_passes(cls):
+        """Passes that must end the edge schedule, in their required order.
+
+        Subclasses with a different terminal suffix (e.g. LPAI) override this
+        to match their ``_validate_edge_passes``.
+        """
+        return [ResolveDebugHandle]
 
     def _validate_edge_passes(self) -> None:
         assert isinstance(
