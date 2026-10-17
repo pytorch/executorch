@@ -15,8 +15,9 @@
 // the end); differs in the A layout (row-major int8, staged as raw 16-byte
 // vectors) and in B staging (one thread per whole weight texel).
 //
-// A is read for whole WG_TILE_M row tiles, so the int8 activation buffer must
-// cover M rounded up to WG_TILE_M rows.
+// The last M tile may be partial: its rows at or past M read row M - 1 of the
+// activations and their params (each output row depends only on its own
+// activation row) and are not stored, so no buffer is read past M rows.
 
 #ifndef LINEAR_DQ8CA_Q4GSW_WMMA_ROWMAJOR_BODY_GLSLH
 #define LINEAR_DQ8CA_Q4GSW_WMMA_ROWMAJOR_BODY_GLSLH
@@ -126,6 +127,7 @@ void main() {
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
   const uint tile_n_start = WG_TILE_N * tileID.x;
+  const uint M_rows = uint(input_sizes.y);
 
   [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
@@ -191,7 +193,8 @@ void main() {
     const uint row  = (q / A_PARTS) % WG_TILE_M;
     const uint slab = q / (A_PARTS * WG_TILE_M);
     a_lds[v] = slab * A_SLAB_U32 + row * A_STRIDE_U32 + part * 4u;
-    a_gv4[v] = ((tile_m_start + row) * a_row_stride_i8 + slab * MMA_K + part * 16u) / 16u;
+    const uint m_row = min(tile_m_start + row, M_rows - 1u);
+    a_gv4[v] = (m_row * a_row_stride_i8 + slab * MMA_K + part * 16u) / 16u;
   }
   uvec4 temp_Av[A_VECS_PER_THREAD];
   ivec4 temp_B[B_SLOTS_PER_THREAD];
@@ -201,7 +204,8 @@ void main() {
   // PROLOGUE
   // =========================================================
   if (gl_LocalInvocationID.x < (WG_TILE_M >> 2u)) {
-    const uint m4 = (tile_m_start >> 2u) + gl_LocalInvocationID.x;
+    const uint m4 = min(
+        (tile_m_start >> 2u) + gl_LocalInvocationID.x, (M_rows + 3u) / 4u - 1u);
     const vec4  sc = vec4(texelFetch(t_int8_input_scales, ivec3(m4, 0, 0), 0));
     const ivec4 zp = texelFetch(t_int8_input_zps,         ivec3(m4, 0, 0), 0);
     const uint base = gl_LocalInvocationID.x * 4u;
@@ -462,6 +466,11 @@ void main() {
       const uint m =
           tile_m_start + (lr / MMA_M) * SG_TILE_M + i * MMA_M + (lr % MMA_M);
       const uint base = lr * WG_TILE_N + lc4 * 4u;
+      // The last M tile may be partial: rows at or past M are computed but
+      // not stored.
+      if (m >= uint(output_sizes.y)) {
+        continue;
+      }
       imageStore(
           t_output,
           ivec3(tile_n_start / 4u + lc4, m, 0),
