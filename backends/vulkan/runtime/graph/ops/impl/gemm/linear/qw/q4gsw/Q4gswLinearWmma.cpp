@@ -94,8 +94,9 @@ vkapi::ShaderInfo pick_q4gsw_linear_wmma_shader(
   if (choice.has_value()) {
     kernel_name = choice->kernel_base;
   } else {
-    // Shapes no family row covers after a resize (decode, unaligned M): the
-    // kernels that read this packed weight layout.
+    // Shapes no family row covers after a resize (decode, M below
+    // kWmmaPartialTileM, buffer IO at unaligned M): the kernels that read
+    // this packed weight layout.
     kernel_name =
         is_gemv(graph, fp_input) ? "linear_q4gsw_coop" : "linear_q4gsw_tiled";
   }
