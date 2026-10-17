@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "MLXCache.h"
-#include "MLXSequenceCacheV2.h"
+#include "MLXSequenceCache.h"
 
 #include <executorch/extension/llm/cache/cache.h>
 
@@ -28,7 +28,7 @@ namespace mlx {
 
 namespace cache = ::executorch::extension::llm::cache;
 
-// A private MLXSequenceCacheV2 per sequence, sharing one logical token budget.
+// A private MLXSequenceCache per sequence, sharing one logical token budget.
 // Packed spans attend over their sequence's history and rejoin in token order.
 // Interleaved spans of one owner are grouped into a single V2 call per layer.
 // IDs and positions cover K/V. Q follows the global packed order of the query
@@ -46,7 +46,7 @@ class MLXBatchedCache : public cache::Cache,
       const cache::CacheConfig& cfg)
       : geometry_(geometry), cfg_(cfg) {
     // Validate creation parameters at the sequence boundary.
-    (void)MLXSequenceCacheV2(geometry_, cfg_);
+    (void)MLXSequenceCache(geometry_, cfg_);
   }
 
   // Total persistent logical tokens across all sequences, including forks.
@@ -404,7 +404,7 @@ class MLXBatchedCache : public cache::Cache,
 
   cache::CacheGeometry geometry_;
   cache::CacheConfig cfg_;
-  std::map<int32_t, MLXSequenceCacheV2> rows_;
+  std::map<int32_t, MLXSequenceCache> rows_;
   std::vector<Span> spans_;
   std::vector<std::vector<size_t>> groups_;
   std::vector<int32_t> step_pos_;

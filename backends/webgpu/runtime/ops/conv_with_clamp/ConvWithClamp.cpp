@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/conv_with_clamp/conv_with_clamp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/Conv2d.h>
 
 #include <webgpu/webgpu.h>
 
@@ -76,7 +77,10 @@ float scalar_or(WebGPUGraph& graph, int id, float dflt) {
   throw std::runtime_error("conv_with_clamp: unexpected clamp bound type");
 }
 
-// fp32 general conv2d (groups==1) + clamp; mirrors Vulkan conv_with_clamp.
+// fp32 conv2d + clamp; mirrors Vulkan conv_with_clamp. groups==1 reuses the
+// aten.convolution kernels with the clamp fused into their output write unless
+// add_conv2d declines (GEMM tiles mostly padding, or its grid too large);
+// those and grouped convs use the direct kernel below, which folds its grid.
 void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // args mirror Vulkan convolution + clamp bounds; out=args.back().
   const int in_id = args.at(0);
@@ -127,7 +131,6 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const float kInf = std::numeric_limits<float>::infinity();
   const float output_min = scalar_or(graph, args.at(9), -kInf);
   const float output_max = scalar_or(graph, args.at(10), kInf);
-
   const uint64_t N = static_cast<uint64_t>(in_tensor.dims.at(0));
   const uint64_t IC = static_cast<uint64_t>(in_tensor.dims.at(1));
   const uint64_t H_in = static_cast<uint64_t>(in_tensor.dims.at(2));
@@ -168,6 +171,17 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const auto& b = graph.get_tensor(bias_id);
     if (b.buffer == nullptr || b.nbytes != OC * sizeof(float)) {
       throw std::runtime_error("conv_with_clamp: bias must be fp32 [OC]");
+    }
+  }
+  if (groups == 1) {
+    std::vector<int> conv_args(args.begin(), args.begin() + 9);
+    conv_args.push_back(out_id);
+    if (add_conv2d(
+            graph,
+            conv_args,
+            ConvClamp{output_min, output_max},
+            /*can_decline=*/true)) {
+      return;
     }
   }
 
