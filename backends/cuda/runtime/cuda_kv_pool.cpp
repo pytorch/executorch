@@ -199,6 +199,13 @@ Error CudaKVPool::synchronize(bool all_streams) {
   return Error::Ok;
 }
 
+void* CudaKVPool::layer_data(size_t index, bool value) const {
+  if (index >= allocations_.size()) {
+    return nullptr;
+  }
+  return value ? allocations_[index].v : allocations_[index].k;
+}
+
 void* CudaKVPool::side_buffer(size_t index) const {
   return index < side_buffers_.size() ? side_buffers_[index] : nullptr;
 }
