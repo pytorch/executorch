@@ -28,9 +28,11 @@ import concurrent.futures
 import contextlib
 import contextvars
 import functools
+import importlib
 import inspect
 import logging
 import os
+import pickle
 import sys
 import threading
 import typing
@@ -49,8 +51,9 @@ except (
 ):  # A Triton without parallel compile compiles each config on first use.
     _async_compile = None
 
-# Threads that compile one kernel's autotune configs. Compiling is mostly ptxas
-# and LLVM, which run outside the GIL.
+# Concurrent compiles of autotune configs, each in a worker process. Threads
+# alone kept about 5 of 32 busy during a bucket-64 shape; the cause was not
+# isolated, and the workers are what was measured to help.
 _MAX_COMPILE_THREADS = 32
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -176,6 +179,202 @@ def _has_untuned_configs(kernel, args: Sequence, kwargs: dict) -> bool:
     return _tuning_key(kernel, args, kwargs) not in kernel.cache
 
 
+def _compile_workers() -> int:
+    return min(_MAX_COMPILE_THREADS, os.cpu_count() or 1)
+
+
+_PROCESS_POOL_LOCK = threading.Lock()
+_process_pool = None
+_process_pool_failed = False
+
+
+def _compile_process_pool():
+    """The worker processes, started on first use and kept for later shapes;
+    None once they have failed. Inductor's ``SubprocPool``: a fresh Python
+    process that forks the workers, so they neither re-run the caller's main
+    module (as ``spawn`` would) nor inherit its CUDA state (as ``fork`` would)."""
+    global _process_pool
+    if torch.version.hip is not None:
+        return None
+    with _PROCESS_POOL_LOCK:
+        if _process_pool is None and not _process_pool_failed:
+            from torch._inductor.compile_worker.subproc_pool import (
+                SubprocKind,
+                SubprocPool,
+            )
+
+            _process_pool = SubprocPool(_compile_workers(), kind=SubprocKind.FORK)
+        return _process_pool
+
+
+def _stop_using_processes(error: BaseException) -> None:
+    global _process_pool, _process_pool_failed
+    with _PROCESS_POOL_LOCK:
+        if _process_pool_failed:
+            return
+        _process_pool_failed = True
+        pool, _process_pool = _process_pool, None
+    logger.warning(
+        "Compiling quantized GEMM configs in this process from now on: worker "
+        "processes failed (%s)",
+        error,
+    )
+    if pool is not None:
+        pool.shutdown()
+
+
+def _compile_in_process(
+    cache_dir: str,
+    module: str,
+    qualname: str,
+    source_module: str,
+    source_qualname: str,
+    signature: dict,
+    constants: dict,
+    attrs: dict,
+    target,
+    options: dict,
+    env_vars: dict,
+    triton_env: dict,
+) -> Optional[str]:
+    """Compiles one config in a worker process into the shared Triton cache.
+    Returns ``_UNIMPORTABLE`` if the worker cannot find the kernel or source
+    class, which no other config would find either."""
+    # Compiling needs no GPU; keep the worker from initializing one.
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # Triton reads its settings from the environment at compile time, so the
+    # worker takes the parent's Triton environment as of this request.
+    for name in [name for name in os.environ if name.startswith("TRITON_")]:
+        del os.environ[name]
+    os.environ.update(triton_env)
+    triton.knobs.cache.dir = cache_dir
+    try:
+        fn = importlib.import_module(module)
+        for part in qualname.split("."):
+            fn = getattr(fn, part)
+        while not isinstance(fn, triton.runtime.JITFunction):
+            fn = fn.fn
+        source = importlib.import_module(source_module)
+        for part in source_qualname.split("."):
+            source = getattr(source, part)
+    except (ImportError, AttributeError):
+        return _UNIMPORTABLE
+    triton.compile(
+        source(fn, signature, constants, attrs),
+        target=target,
+        options=options,
+        _env_vars=env_vars,
+    )
+    return None
+
+
+def _process_compile_request(compile_fn) -> Optional[tuple]:
+    """The arguments of the ``triton.compile`` call that Triton's async-compile
+    closure makes, so a worker process can make the same call. None when the
+    closure or kernel is not the expected shape (it then compiles in-process)."""
+    names = compile_fn.__code__.co_freevars
+    if set(names) != {"env_vars", "options", "self", "src", "target"}:
+        return None
+    try:
+        cells = dict(
+            zip(names, (cell.cell_contents for cell in compile_fn.__closure__))
+        )
+    except (TypeError, ValueError):
+        return None
+    src = cells["src"]
+    jit_fn = getattr(src, "fn", None)
+    module = getattr(jit_fn, "module", None)
+    qualname = getattr(getattr(jit_fn, "fn", None), "__qualname__", "")
+    if module is None or not qualname or "<locals>" in qualname:
+        return None
+    return (
+        triton.knobs.cache.dir,
+        module,
+        qualname,
+        type(src).__module__,
+        type(src).__qualname__,
+        src.signature,
+        src.constants,
+        src.attrs,
+        cells["target"],
+        cells["options"].__dict__,
+        cells["env_vars"],
+        {
+            name: value
+            for name, value in os.environ.items()
+            if name.startswith("TRITON_")
+        },
+    )
+
+
+# A string: the result is pickled back from the worker, so identity would not survive.
+_UNIMPORTABLE = "unimportable"
+
+
+def _workers_failed(result=None, error: Optional[BaseException] = None) -> bool:
+    """Whether a worker's answer means the workers themselves are unusable, as
+    opposed to one config failing to compile (which ``SubprocPool`` reports as
+    a ``SubprocException``): they cannot import the kernel, or the pool closed
+    or broke."""
+    from torch._inductor.compile_worker.subproc_pool import SubprocException
+
+    if error is not None:
+        # The request itself could not be pickled: only that config falls back.
+        return not isinstance(
+            error, (SubprocException, pickle.PicklingError, TypeError, AttributeError)
+        )
+    return result == _UNIMPORTABLE
+
+
+def _compiled_in_a_process_first(compile_fn):
+    request = _process_compile_request(compile_fn)
+    if request is None:
+        return compile_fn
+
+    def compile_then_load():
+        try:
+            pool = _compile_process_pool()
+        except Exception as error:
+            _stop_using_processes(error)
+            pool = None
+        if pool is not None:
+            try:
+                result = pool.submit(_compile_in_process, *request).result()
+            except Exception as error:
+                if _workers_failed(error=error):
+                    _stop_using_processes(error)
+                else:
+                    # This config also fails to compile in-process, where the
+                    # benchmark skips it as before.
+                    logger.warning(
+                        "Worker failed to compile %s.%s, compiling it in this process: %s",
+                        request[1],
+                        request[2],
+                        error,
+                    )
+            else:
+                if _workers_failed(result=result):
+                    _stop_using_processes(
+                        RuntimeError(f"workers cannot import {request[1]}")
+                    )
+        # Loads what the worker cached (same source, options and key), or
+        # compiles here if it did not.
+        return compile_fn()
+
+    return compile_then_load
+
+
+if _async_compile is not None:
+
+    class _ProcessCompileMode(_async_compile.AsyncCompileMode):
+        """Triton's async compile, starting each compile in a worker process."""
+
+        def submit(self, key, compile_fn, *args, **kwargs):
+            return super().submit(
+                key, _compiled_in_a_process_first(compile_fn), *args, **kwargs
+            )
+
+
 _COMPILE_THREADS_LOCK = threading.Lock()
 _compile_thread_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
@@ -186,7 +385,7 @@ def _compile_threads() -> concurrent.futures.ThreadPoolExecutor:
     with _COMPILE_THREADS_LOCK:
         if _compile_thread_pool is None:
             _compile_thread_pool = concurrent.futures.ThreadPoolExecutor(
-                min(_MAX_COMPILE_THREADS, os.cpu_count() or 1),
+                _compile_workers(),
                 thread_name_prefix="quantized_gemm_compile",
             )
         return _compile_thread_pool
@@ -203,7 +402,7 @@ def _parallel_compile_available() -> bool:
 
 @contextlib.contextmanager
 def _compile_pool():
-    with _async_compile.AsyncCompileMode(_compile_threads(), ignore_errors=True):
+    with _ProcessCompileMode(_compile_threads(), ignore_errors=True):
         yield
 
 
