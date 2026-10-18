@@ -3,8 +3,8 @@
 The batching runner and multiplexed worker support MLX autoregressive generation
 with text only or text plus one image across the submitted conversation, and
 CUDA autoregressive generation with text only. They are opt-in entry points; the
-legacy runners and export defaults remain unchanged. DFlash execution is not
-supported. CUDA specifics are in [CUDA](#cuda) below.
+legacy runners and export defaults remain unchanged. DFlash batching is MLX only.
+CUDA specifics are in [CUDA](#cuda) below.
 
 ## Export
 
@@ -37,6 +37,16 @@ an error. The three relevant limits are independent:
 - The server's `--max-context` controls the runtime context/cache budget and may be
   lower than the exported limit. Exporting the full context does not allocate that
   full KV capacity at runtime.
+
+The DFlash exporter accepts `--backend mlx --use-offgraph-kv-cache`.
+Serve that artifact with `--dflash`. Draft proposals are always greedy;
+temperature, top-p, and top-k apply only to the target distribution.
+Set `--dflash-n-draft N` at startup to propose N tokens using block size N+1.
+Omitted or zero uses the exported maximum minus one; larger values are rejected.
+Re-export older fixed-block artifacts before using this option. One updated
+artifact supports different draft counts without another export. Draft tokens
+have separate `[owners, block_size]` axes; each block ranges from 2 to the
+exported maximum. Torch infers the concatenated context-plus-block K/V length.
 
 ## Build
 
@@ -177,7 +187,7 @@ Prefix identity does not retain RGB or embedding buffers.
 
 ## CUDA
 
-The CUDA worker runs `CudaExecutor` (backends/cuda/batching) under the same
+The CUDA worker builds `CudaExecutor` through `CudaExecutorConfig` under the same
 serving runtime, prefix cache, scheduler and launcher. Export with the off-graph
 cache, which on CUDA writes the batching methods: static `forward_{N}` (each
 captured into a CUDA graph), a dynamic `forward_others` for wider steps, and
@@ -213,6 +223,7 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
 `--data-path` is required and `--pos-embed-path` is rejected; image requests
 fail preparation. Every resident session reserves `--max-context` cells of the
 pool: requests, `--prefix-cache-entries` snapshots, and one capture lane when
-snapshots are enabled, so their product must fit the exported `--max-cells`.
+snapshots are enabled. Their total reservation must leave one cell for padded
+writes within the exported `--max-cells`.
 The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
 session's cells by reference, sharing the prompt's KV rather than copying it.

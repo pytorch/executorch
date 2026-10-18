@@ -555,29 +555,13 @@ echo "::endgroup::"
 
 if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "solo-text-batching" ]; then
   echo "::group::Run $MODEL_NAME batching serving smoke"
-  # The CI-only workload tool is not part of the normal serving build.
-  bash .ci/scripts/build_muse_glimmer_batching_bench.sh
+  # The CI-only correctness tool is not part of the normal serving build.
+  bash .ci/scripts/build_muse_glimmer_batching_smoke.sh
   # Concurrent staggered requests through ServingRuntime on CudaExecutor.
-  BENCH_REPORT="${MODEL_DIR}/batching_requests.json"
-  cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_bench \
+  cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_smoke \
     --pte "${MODEL_DIR}/model.pte" --data_path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
     --tokenizer "${MODEL_DIR}/$TOKENIZER_FILE" --max_sessions 8 --max_session_tokens 2048 \
-    --mode requests --requests 5 --prompt_tokens 600 --max_new_tokens 64 --stagger_ms 200 \
-    --report_json "$BENCH_REPORT"
-  python - "$BENCH_REPORT" <<'PY'
-import json
-import sys
-
-report = json.load(open(sys.argv[1]))
-rows = report["requests"]
-assert report["max_batch_sessions"] > 1, report
-assert report["multi_session_steps"] > 0, report
-assert len(rows) == 5, rows
-assert report["failed_requests"] == 0, report
-for row in rows:
-    assert not row["failed"] and row["completion_tokens"] == 64, row
-print(f"5 staggered requests: {report['tokens_per_s']:.1f} tok/s")
-PY
+    --mode requests --requests 5 --prompt_tokens 600 --max_new_tokens 64 --stagger_ms 200
 
   pip install -r examples/llm_server/python/requirements.txt
   python -c "from huggingface_hub import hf_hub_download; [hf_hub_download('${HF_MODEL}', f, local_dir='${MODEL_DIR}') for f in ('tokenizer_config.json', 'chat_template.jinja')]"

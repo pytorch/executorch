@@ -228,6 +228,7 @@ CudaExecutor::CudaExecutor(
       kv_(cache->as<CudaKVCache>()),
       backend_id_(std::move(backend_id)),
       vocab_size_(vocab_size),
+      max_session_tokens_(max_session_tokens),
       methods_(std::move(methods)),
       calls_(methods_.size(), 0),
       min_selected_rows_(min_selected_rows),
@@ -242,6 +243,23 @@ CudaExecutor::~CudaExecutor() {
 }
 
 Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+    const CudaExecutorConfig& config) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !config.model_path.empty(),
+      InvalidArgument,
+      "CudaExecutor: no model path");
+  auto module = std::make_unique<Module>(
+      config.model_path,
+      config.data_files,
+      config.load_mode,
+      /*event_tracer=*/nullptr,
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*share_memory_arenas=*/false);
+  return create(std::move(module), config);
+}
+
+Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     std::unique_ptr<Module> module,
     int max_sessions,
     int max_session_tokens,
@@ -249,10 +267,33 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     int initial_capacity,
     CudaExecutorOptions options) {
   ET_CHECK_OR_RETURN_ERROR(
+      max_session_tokens > 0,
+      InvalidArgument,
+      "CudaExecutor: invalid token limit");
+  CudaExecutorConfig config;
+  config.max_sessions = max_sessions;
+  config.max_session_tokens = max_session_tokens;
+  config.kv_dtype = kv_dtype;
+  config.initial_capacity = initial_capacity;
+  config.options = options;
+  return create(std::move(module), config);
+}
+
+Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+    std::unique_ptr<Module> module,
+    const CudaExecutorConfig& config) {
+  const int max_sessions = config.max_sessions;
+  int max_session_tokens = config.max_session_tokens;
+  const int kv_dtype = config.kv_dtype;
+  const int initial_capacity = config.initial_capacity;
+  const auto& options = config.options;
+  ET_CHECK_OR_RETURN_ERROR(
       module != nullptr, InvalidArgument, "CudaExecutor: no program");
   ET_CHECK_OR_RETURN_ERROR(
-      max_sessions > 0 && max_session_tokens > 0 &&
-          max_sessions <= std::numeric_limits<int>::max() / max_session_tokens,
+      max_sessions > 0 && max_session_tokens >= 0 &&
+          (max_session_tokens == 0 ||
+           max_sessions <=
+               std::numeric_limits<int>::max() / max_session_tokens),
       InvalidArgument,
       "CudaExecutor: invalid session limits");
   ET_CHECK_OK_OR_RETURN_ERROR(module->load());
@@ -278,6 +319,19 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_ASSIGN_OR_RETURN(
       max_cells,
       metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      max_cells > 1 && max_cells <= std::numeric_limits<int>::max(),
+      InvalidProgram,
+      "CudaExecutor: cell count must fit an int and leave a padding row");
+  if (max_session_tokens == 0) {
+    max_session_tokens = static_cast<int>(
+        std::min(max_context_length, (max_cells - 1) / max_sessions));
+    ET_CHECK_OR_RETURN_ERROR(
+        max_session_tokens > 0,
+        InvalidArgument,
+        "CudaExecutor: no cell budget remains for each resident session");
+  }
 
   // Every forward_{N} and forward_others the program exports, narrowest first.
   ET_ASSIGN_OR_RETURN(names, module->method_names());
