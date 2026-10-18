@@ -84,7 +84,7 @@ DEFINE_int32(
     n_draft,
     3,
     "Draft positions per call (0 = block_length - 1). On CUDA this must be at "
-    "most 3.");
+    "most 15.");
 DEFINE_int32(
     block_length,
     4,
