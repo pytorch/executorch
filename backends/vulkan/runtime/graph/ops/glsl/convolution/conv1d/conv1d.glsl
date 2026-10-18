@@ -90,9 +90,9 @@ void main() {
   const int out_c_packed_lane = out_c & 0x3;
 
   for (int in_c = c_start; in_c < c_end; ++in_c) {
-    // "k" tracks the kernel's index for our input-kernel computation.
-    // It reads out-of-bound zeros, but trying to avoid them complicates
-    // for-loop conditions, which results in worse performance.
+    // "k" tracks the kernel's index for our input-kernel computation. Taps
+    // outside the input select zero below instead of narrowing the loop,
+    // which would complicate its conditions and perform worse.
 
     // The weight tensor is channel-packed. It may not be trival choice for
     // performance reason since need to have more data fetch. The reason is
@@ -110,8 +110,13 @@ void main() {
       const VEC4_T weight_texel = load_texel_lpos(kernel_in, w_lpos, kernel_axis_map);
       VEC4_T weight = VEC4_T(weight_texel[out_c_packed_lane]);
 
-      const ivec3 in_pos = lpos_to_pos(ivec3(in_l + k * dilation, in_c, N), in_axis_map);
-      sum = fma(weight, load_texel(t_in, in_pos), sum);
+      const int l = in_l + k * dilation;
+      const ivec3 in_pos = lpos_to_pos(ivec3(l, in_c, N), in_axis_map);
+      // After a resize the texture can be longer than the input, so taps past
+      // its length must read zero rather than stale texels.
+      const VEC4_T in_texel =
+          (l >= 0 && l < in_sizes.x) ? load_texel(t_in, in_pos) : VEC4_T(0);
+      sum = fma(weight, in_texel, sum);
     }
   }
 
