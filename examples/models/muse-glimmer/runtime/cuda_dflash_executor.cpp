@@ -7,6 +7,8 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 
+#include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
+
 #include <cuda_runtime.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/cuda/caller_stream.h>
@@ -65,7 +67,8 @@ float positional_uniform(
       mix(seed ^ mix(static_cast<std::uint64_t>(purpose)) ^
           mix(static_cast<std::uint64_t>(position) + 1));
   std::seed_seq words{
-      static_cast<std::uint32_t>(value), static_cast<std::uint32_t>(value >> 32)};
+      static_cast<std::uint32_t>(value),
+      static_cast<std::uint32_t>(value >> 32)};
   std::mt19937 generator(words);
   return std::uniform_real_distribution<float>(0.0f, 1.0f)(generator);
 }
@@ -452,6 +455,72 @@ MuseGlimmerCudaDFlashExecutor::~MuseGlimmerCudaDFlashExecutor() {
   }
 }
 
+Result<std::shared_ptr<const MuseGlimmerPreparationSpec>> make_cuda_preparation(
+    cb::CudaExecutor& target,
+    const MuseGlimmerBackendConfig& config,
+    std::int32_t max_context,
+    std::shared_ptr<MuseGlimmerModelEmbeddings>* embeddings) {
+  ET_ASSIGN_OR_RETURN(names, target.module().method_names());
+  const bool has_vision = names.count("vision_encoder") != 0;
+  const auto hidden =
+      static_cast<std::int32_t>(target.embeddings_hidden_size());
+  std::int64_t max_soft_tokens = 0;
+  if (has_vision) {
+    ET_CHECK_OR_RETURN_ERROR(
+        hidden > 0,
+        InvalidProgram,
+        "Muse Glimmer CUDA: vision needs %s",
+        cb::kEmbeddingsMethod);
+    ET_ASSIGN_OR_RETURN(
+        soft_tokens,
+        muse_glimmer_abi::check_vision_abi(
+            target.module(),
+            hidden,
+            aten::ScalarType::BFloat16,
+            config.max_vision_patches,
+            ::executorch::backends::cuda::kCudaBackendId));
+    max_soft_tokens = soft_tokens;
+  }
+  auto spec = std::make_shared<const MuseGlimmerPreparationSpec>(
+      MuseGlimmerPreparationSpec{
+          aten::ScalarType::BFloat16,
+          has_vision ? hidden : 0,
+          max_context,
+          static_cast<std::int32_t>(target.preferred_batch_tokens()),
+          target.vocab_size(),
+          has_vision,
+          max_soft_tokens,
+          config.image_limits,
+          config.bos_id});
+  if (!has_vision) {
+    return spec;
+  }
+  auto path = config.pos_embed_path;
+  if (path.empty()) {
+    const auto slash = config.model_path.find_last_of('/');
+    path = (slash == std::string::npos ? "."
+                                       : config.model_path.substr(0, slash)) +
+        "/pos_embed.bin";
+  }
+  auto model_embeddings =
+      std::make_shared<MuseGlimmerModelEmbeddings>(spec, std::move(path));
+  Module* module = &target.module();
+  ET_CHECK_OK_OR_RETURN_ERROR(target.set_input_embedder(
+      {[model_embeddings, module] {
+         return model_embeddings->initialize(*module);
+       },
+       [model_embeddings](const batching::PreparedInput& input) {
+         return model_embeddings->accepts(input);
+       },
+       [model_embeddings, module](const std::vector<batching::Input>& inputs) {
+         return model_embeddings->materialize(*module, inputs);
+       }}));
+  if (embeddings) {
+    *embeddings = std::move(model_embeddings);
+  }
+  return spec;
+}
+
 Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
     const MuseGlimmerBackendConfig& config) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -670,8 +739,8 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
     const auto meta = module.method_meta(name);
     const int width = n * block_;
     auto shaped = [&](std::size_t index, bool input, std::vector<int> sizes) {
-      auto tensor =
-          input ? meta->input_tensor_meta(index) : meta->output_tensor_meta(index);
+      auto tensor = input ? meta->input_tensor_meta(index)
+                          : meta->output_tensor_meta(index);
       return tensor.ok() &&
           std::equal(
                  tensor->sizes().begin(),
@@ -900,9 +969,7 @@ std::vector<float> MuseGlimmerCudaDFlashExecutor::verify_params(
   const auto& sampling = *state.sampling;
   const auto seed = state.seed.value_or(0);
   std::vector<float> params{
-      sampling.temperature,
-      static_cast<float>(sampling.top_k),
-      sampling.top_p};
+      sampling.temperature, static_cast<float>(sampling.top_k), sampling.top_p};
   for (int j = 0; j < proposals_; ++j) {
     params.push_back(df::positional_uniform(seed, first + j, 2));
   }
@@ -951,7 +1018,8 @@ bool MuseGlimmerCudaDFlashExecutor::verify(
       const auto& state = sessions_.at(owners[i]);
       greedy = greedy && state.sampling->temperature == 0.0f;
       const auto row = verify_params(
-          state, static_cast<batching::Position>(step.positions[i * width] + 1));
+          state,
+          static_cast<batching::Position>(step.positions[i * width] + 1));
       params.insert(params.end(), row.begin(), row.end());
     }
     const auto stream =
@@ -1056,10 +1124,11 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   // draft. Longer contexts drain through the dynamic one.
   const bool use_static = proposals && static_drafts_[owners.size()] &&
       std::all_of(plan->counts.begin(), plan->counts.end(), [this](int n) {
-        return n <= block_;
-      });
+                            return n <= block_;
+                          });
   if (use_static &&
-      !df::pad_to_static(*plan, static_cast<int>(owners.size()), block_, row_bytes_)) {
+      !df::pad_to_static(
+          *plan, static_cast<int>(owners.size()), block_, row_bytes_)) {
     return false;
   }
   const int padded = static_cast<int>(plan->hidden.size() / row_bytes_);
@@ -1077,8 +1146,8 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   const std::string method = use_static
       ? df::kStaticForwardPrefix + std::to_string(owners.size())
       : std::string(df::kForward);
-  auto result = target_->module().execute(
-      method, {tokens, hidden, positions, order});
+  auto result =
+      target_->module().execute(method, {tokens, hidden, positions, order});
   if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
     return false;
   }

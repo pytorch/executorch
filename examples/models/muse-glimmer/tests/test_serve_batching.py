@@ -139,22 +139,24 @@ def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
     )
 
 
-@pytest.mark.parametrize("case", ["no_weights", "pos_embed"])
-def test_cuda_launcher_rejects_missing_weights_or_vision(
-    arguments, tmp_path, case
-):
+def test_cuda_launcher_requires_the_weights_file(arguments):
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(arguments + ["--backend", "cuda"])
+    assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_vision_table(arguments, tmp_path):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
     table.touch()
-    argv = arguments + ["--backend", "cuda"]
-    if case != "no_weights":
-        argv += ["--data-path", str(data)]
-    if case == "pos_embed":
-        argv += ["--pos-embed-path", str(table)]
-    with pytest.raises(SystemExit) as error:
-        serve_batching._parse_args(argv)
-    assert error.value.code == 2
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data)]
+        + ["--pos-embed-path", str(table)]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert flags["--pos_embed_path"] == str(table)
 
 
 @pytest.mark.parametrize("shortfall", [0, 1])
