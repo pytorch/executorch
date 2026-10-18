@@ -5,8 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Quick script to trigger the CUDA workflow (accuracy + benchmark, merged
-# from the retired cuda-perf.yml) via GitHub CLI.
+# Quick script to trigger the CUDA workflow (accuracy + benchmark + perf
+# regression gate, merged from the retired cuda-perf.yml) via GitHub CLI.
 # Benchmarks reuse each accuracy cell's exported .pte/.ptd in place; the
 # models/quantizations filters below only narrow the benchmark stage.
 # Usage:
