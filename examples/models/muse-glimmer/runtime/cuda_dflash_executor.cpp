@@ -547,10 +547,9 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   ET_CHECK_OR_RETURN_ERROR(
       names.count(df::kForward) && names.count(df::kVerify) &&
           names.count(df::kVerifyArgmax) &&
-          !names.count("get_mutable_buffer_metadata") &&
-          !names.count("vision_encoder"),
+          !names.count("get_mutable_buffer_metadata"),
       InvalidProgram,
-      "CUDA DFlash requires a tapped text-only off-graph artifact with its verifiers");
+      "CUDA DFlash requires a tapped off-graph artifact with its verifiers");
   ET_ASSIGN_OR_RETURN(block, positive_int(module, df::kBlock));
   ET_ASSIGN_OR_RETURN(
       declared_block, positive_int(module, "get_draft_dflash_block_size"));
@@ -676,19 +675,11 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
           config.bos_id < static_cast<std::uint64_t>(target->vocab_size()),
       InvalidProgram,
       "Muse Glimmer DFlash vocabulary cannot hold its special tokens");
-  auto spec = std::make_shared<const MuseGlimmerPreparationSpec>(
-      MuseGlimmerPreparationSpec{
-          aten::ScalarType::BFloat16,
-          0,
-          max_context,
-          static_cast<std::int32_t>(target->preferred_batch_tokens()),
-          target->vocab_size(),
-          false,
-          0,
-          config.image_limits,
-          config.bos_id});
-  auto executor =
-      std::unique_ptr<batching::Executor>(new MuseGlimmerCudaDFlashExecutor(
+  std::shared_ptr<MuseGlimmerModelEmbeddings> embeddings;
+  ET_ASSIGN_OR_RETURN(
+      spec, make_cuda_preparation(*target, config, max_context, &embeddings));
+  auto executor = std::unique_ptr<MuseGlimmerCudaDFlashExecutor>(
+      new MuseGlimmerCudaDFlashExecutor(
           std::move(target),
           std::move(draft_cache),
           block,
@@ -699,6 +690,7 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
           config.max_sessions,
           max_context,
           hidden_width));
+  executor->embeddings_ = std::move(embeddings);
   return MuseGlimmerBackend{std::move(executor), std::move(spec)};
 }
 
@@ -1334,6 +1326,11 @@ bool MuseGlimmerCudaDFlashExecutor::fail_batch(
   return false;
 }
 
+bool MuseGlimmerCudaDFlashExecutor::accepts(
+    const batching::PreparedInput& input) const {
+  return embeddings_ && embeddings_->accepts(input);
+}
+
 bool MuseGlimmerCudaDFlashExecutor::execute(
     const batching::BatchInput& batch,
     batching::BatchOutput& out) {
@@ -1350,14 +1347,21 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
     std::unordered_map<SessionId, int> cursor;
     std::vector<std::pair<SessionId, int>> rewinds;
     bool pending_decode = !batch.inputs.empty();
+    bool prepared_step = false;
     for (const auto& input : batch.inputs) {
       const auto it = sessions_.find(input.sid);
       const auto* payload =
           std::get_if<batching::TokenInputPtr>(&input.payload);
-      if (it == sessions_.end() || it->second.poisoned || !payload ||
-          !*payload || input.size == 0 || input.offset > (*payload)->size() ||
-          input.size > (*payload)->size() - input.offset ||
-          input.position < 0 ||
+      const auto* prepared =
+          std::get_if<batching::PreparedInputPtr>(&input.payload);
+      const bool tokens = payload && *payload;
+      const bool image = prepared && *prepared && accepts(**prepared);
+      const std::size_t available = tokens ? (*payload)->size()
+          : image                          ? (*prepared)->size()
+                                           : 0;
+      if (it == sessions_.end() || it->second.poisoned || (!tokens && !image) ||
+          input.size == 0 || input.offset > available ||
+          input.size > available - input.offset || input.position < 0 ||
           input.offset > static_cast<std::size_t>(max_context_) ||
           input.size > static_cast<std::size_t>(max_context_) ||
           (input.produce_output && !it->second.sampling) ||
@@ -1386,13 +1390,16 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       // A one-token prompt/replay is not necessarily emitted decode feedback.
       // Stay on the legacy path unless every owner has an exact pending seed,
       // one input, and room for the complete trained draft block.
-      pending_decode = pending_decode && first && input.produce_output &&
-          input.size == 1 && start == it->second.frontier &&
-          start <= max_context_ - block_ && it->second.pending &&
+      pending_decode = pending_decode && tokens && first &&
+          input.produce_output && input.size == 1 &&
+          start == it->second.frontier && start <= max_context_ - block_ &&
+          it->second.pending &&
           *it->second.pending == (**payload)[input.offset];
+      prepared_step = prepared_step || image;
       at->second = static_cast<int>(end);
       for (std::size_t j = 0; j < input.size; ++j) {
-        const auto token = (**payload)[input.offset + j];
+        // Prepared rows reach the target as embeddings, not tokens.
+        const Token token = tokens ? (**payload)[input.offset + j] : 0;
         if (token >= static_cast<std::uint64_t>(target_->vocab_size())) {
           return fail_batch(batch, out);
         }
@@ -1405,6 +1412,15 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
           input.produce_output
               ? static_cast<std::int64_t>(step.tokens.size()) - 1
               : -1);
+    }
+    if (prepared_step) {
+      auto embeddings =
+          embeddings_->materialize(target_->module(), batch.inputs);
+      if (!embeddings.ok()) {
+        ET_LOG(Error, "CUDA DFlash: could not embed the prepared inputs");
+        return fail_batch(batch, out);
+      }
+      step.embeddings = std::move(*embeddings);
     }
     // All inputs are validated before either cache is truncated.
     for (const auto& item : rewinds) {
