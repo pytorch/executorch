@@ -1,0 +1,51 @@
+# Copyright 2026 Mwaniki Njagi.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+menu "ESP-NN runner"
+
+    config ESPNN_RUNNER_BUNDLE
+        string "Test bundle to embed (XTB1 int8 graphs or XTP1 .pte programs)"
+        default "bundles/op_suite.xtb"
+        help
+            Absolute, or relative to this project directory.
+
+    config ESPNN_RUNNER_BENCH_ITERATIONS
+        int "Timed iterations per model after the correctness check"
+        range 0 1000
+        default 10
+
+    config ESPNN_RUNNER_VERIFY_ANSI
+        bool "Also run each int8 graph once with the ESP-NN ANSI reference kernels"
+        default y
+
+    config ESPNN_RUNNER_DUAL_CORE
+        bool "Split ESP-NN kernels across both cores (int8 graphs)"
+        default n
+        depends on !FREERTOS_UNICORE
+
+    config ESPNN_RUNNER_CONSTANTS_TO_PSRAM
+        bool "Copy int8 graph weights from flash into PSRAM when they fit"
+        default y
+        depends on SPIRAM
+
+    config ESPNN_RUNNER_METHOD_POOL_KB
+        int "ExecuTorch method allocator pool (KB)"
+        default 1024
+        depends on ESPNN_EXECUTORCH_DELEGATE
+
+    config ESPNN_RUNNER_TEMP_POOL_KB
+        int "ExecuTorch temporary allocator pool (KB)"
+        default 512
+        depends on ESPNN_EXECUTORCH_DELEGATE
+
+    config ESPNN_RUNNER_STACK_KB
+        int "Runner task stack (KB)"
+        default 48 if ESPNN_EXECUTORCH_DELEGATE
+        default 16
+
+endmenu

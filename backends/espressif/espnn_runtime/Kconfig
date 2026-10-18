@@ -1,0 +1,39 @@
+# Copyright 2026 Mwaniki Njagi.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+menu "ExecuTorch ESP-NN backend"
+
+    config ESPNN_EXECUTORCH_DELEGATE
+        bool "Build the ExecuTorch delegate (EspNNBackend) and link the ExecuTorch runtime"
+        default n
+        help
+            Needs ExecuTorch cross-compiled for this chip, see
+            examples/espressif/scripts/build_executorch_esp.sh. Without it the
+            component still provides the standalone XTS3 int8 interpreter.
+
+    config ESPNN_PROVIDE_EXECUTORCH_PAL
+        bool "Provide the ExecuTorch platform layer (esp_timer clock, printf logs, PSRAM allocator)"
+        default y
+        depends on ESPNN_EXECUTORCH_DELEGATE
+
+    config ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
+        bool "Copy delegate weights from flash into PSRAM when they fit"
+        default y
+        depends on ESPNN_EXECUTORCH_DELEGATE && SPIRAM
+
+    config ESPNN_DELEGATE_DUAL_CORE
+        bool "Split ESP-NN kernels across both cores inside delegates"
+        default n
+        depends on ESPNN_EXECUTORCH_DELEGATE
+
+    config ESPNN_DELEGATE_PROFILE
+        bool "Print a per-operator profile after each delegate's first run"
+        default n
+        depends on ESPNN_EXECUTORCH_DELEGATE
+
+endmenu
