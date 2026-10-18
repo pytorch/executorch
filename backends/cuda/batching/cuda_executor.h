@@ -66,6 +66,19 @@ struct CudaExecutorOptions {
   bool cuda_graph_for_static_methods = true;
 };
 
+struct CudaExecutorConfig {
+  std::string model_path;
+  std::vector<std::string> data_files;
+  ::executorch::extension::Module::LoadMode load_mode =
+      ::executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors;
+  int max_sessions = 1;
+  // Zero divides the available cell pool across sessions, capped by context.
+  int max_session_tokens = 0;
+  int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
+  int initial_capacity = -1;
+  CudaExecutorOptions options;
+};
+
 // How often each method ran, for reporting.
 struct ForwardMethodCalls {
   std::string name;
@@ -75,6 +88,17 @@ struct ForwardMethodCalls {
 class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
  public:
   ~CudaExecutor() override;
+
+  static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
+      const CudaExecutorConfig& config);
+
+  int max_session_tokens() const {
+    return max_session_tokens_;
+  }
+
+  std::int32_t vocab_size() const {
+    return vocab_size_;
+  }
 
   // Builds the cell cache from the layout the program publishes and sets the
   // CUDA backend options. The methods load in initialize(); the program must
@@ -129,6 +153,10 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   }
 
  private:
+  static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
+      std::unique_ptr<::executorch::extension::Module> module,
+      const CudaExecutorConfig& config);
+
   CudaExecutor(
       std::unique_ptr<::executorch::extension::Module> module,
       std::shared_ptr<llm_cache::Cache> cache,
@@ -155,6 +183,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   const CudaKVCache* const kv_;
   std::string backend_id_;
   std::int32_t vocab_size_;
+  int max_session_tokens_;
   // Sorted by max_tokens, ascending; the dynamic method, if any, is last.
   std::vector<ForwardMethod> methods_;
   std::vector<std::uint64_t> calls_;
