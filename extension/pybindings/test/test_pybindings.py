@@ -2145,6 +2145,25 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
             executorch_module.plan_execute("forward")[0], torch.full((2, 2), 10.0)
         )
 
+    def test_module_reuses_inputs_after_a_failure_while_running(self):
+        class Take(torch.nn.Module):
+            def forward(self, x, index):
+                return x.index_select(0, index)
+
+        exported_program = to_edge(
+            export(Take(), (torch.ones(4, 2), torch.tensor([1])), strict=True)
+        ).to_executorch()
+        executorch_module = self.load_fn(exported_program.buffer)
+        values = torch.arange(8, dtype=torch.float32).reshape(4, 2)
+        # Every input installs, then the out-of-range index fails the run. The
+        # installed inputs are one call's, so reusing them is not refused.
+        with self.assertRaisesRegex(RuntimeError, "Failed to execute"):
+            executorch_module.forward([values, torch.tensor([9])])
+        with self.assertRaisesRegex(RuntimeError, "Failed to execute"):
+            executorch_module.plan_execute("forward")
+        output = executorch_module.forward([values, torch.tensor([3])])
+        torch.testing.assert_close(torch.as_tensor(np.asarray(output[0])), values[3:4])
+
     def test_module_keeps_a_temporary_program_buffer_alive(self):
         exported_program, inputs = create_program(ModuleAdd())
         data = bytes(bytearray(exported_program.buffer))

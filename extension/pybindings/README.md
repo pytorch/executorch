@@ -22,11 +22,11 @@ Tensor inputs must have dense storage. In the portable bindings, an input laid
 out in a different dimension order than the exported method, for example a
 channels-last tensor for a contiguous method or a transposed array, is copied
 into the exported layout: on the host for buffers and CPU DLPack tensors, and by
-torch on the tensor's own device for torch tensors. Like a read-only buffer,
-such an input is copied when it is passed, so later changes to the caller's
-object are not seen; pass it again after changing it. Other inputs in the
-exported layout are not copied. A non-torch CUDA DLPack input must already be
-in the exported layout. CUDA inputs require a method
+torch on the tensor's own device for torch tensors. Read-only buffers are
+copied too, in any layout. A copied input does not see later changes to the
+caller's object, so pass it again after changing it. Writable inputs already in
+the exported layout are not copied. A non-torch CUDA DLPack input must already
+be in the exported layout. CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 

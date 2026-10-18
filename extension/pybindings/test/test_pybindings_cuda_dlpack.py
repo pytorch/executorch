@@ -288,6 +288,15 @@ class CudaDLPackTest(unittest.TestCase):
         self._assert_ready_value(first, 8.0)
         self._assert_ready_value(second, 18.0)
 
+        # Once the caller drops the results, the next call reuses the memory.
+        address = self._tensor(third).data_ptr()
+        del first, second, third
+        gc.collect()
+        again = method(
+            CudaDLPackOnly(torch.ones(self.shape, device=self.device), stream)
+        )[0]
+        self.assertEqual(self._tensor(again).data_ptr(), address)
+
     def test_module_hands_device_outputs_over_without_copies(self):
         module = self.bindings._load_for_executorch(
             str(self.program_path), str(self.data_path) if self.data_path else None
@@ -382,22 +391,22 @@ class CudaDLPackTest(unittest.TestCase):
         output = method(PlainProducer(value))[0]
         torch.testing.assert_close(self._tensor(output, 1).cpu(), value.cpu())
 
-    def test_duplicated_device_output_stays_valid(self):
+    def test_several_device_outputs_stay_valid(self):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
         from executorch.exir.backend.compile_spec_schema import CompileSpec
         from executorch.exir.passes import MemoryPlanningPass
         from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
 
-        class Twice(torch.nn.Module):
+        class Outputs(torch.nn.Module):
             def forward(self, value):
                 result = (value + 1.0) * 2.0
-                return result, result
+                return result, result, value * 3.0
 
         edge = to_edge_transform_and_lower(
             {
                 "forward": torch.export.export(
-                    Twice(), (torch.ones(self.shape),), strict=True
+                    Outputs(), (torch.ones(self.shape),), strict=True
                 )
             },
             partitioner={
@@ -415,9 +424,9 @@ class CudaDLPackTest(unittest.TestCase):
                 ),
             )
         )
-        directory = Path(self.directory.name) / "twice"
+        directory = Path(self.directory.name) / "outputs"
         directory.mkdir(exist_ok=True)
-        program_path = directory / "twice.pte"
+        program_path = directory / "outputs.pte"
         with program_path.open("wb") as source:
             program.write_to_file(source)
         data_names = sorted(program._tensor_data or {})
@@ -433,7 +442,7 @@ class CudaDLPackTest(unittest.TestCase):
         for clone_outputs in (False, True):
             with self.subTest(clone_outputs=clone_outputs):
                 method = load().load_method("forward")
-                first, second = method(
+                first, second, third = method(
                     CudaDLPackOnly(value, stream), clone_outputs=clone_outputs
                 )
                 if clone_outputs:
@@ -442,6 +451,9 @@ class CudaDLPackTest(unittest.TestCase):
                         self._tensor(first).data_ptr(),
                         self._tensor(second).data_ptr(),
                     )
+                self.assertNotEqual(
+                    self._tensor(first).data_ptr(), self._tensor(third).data_ptr()
+                )
                 del second
                 gc.collect()
                 if clone_outputs:
@@ -455,6 +467,7 @@ class CudaDLPackTest(unittest.TestCase):
                     del method
                     gc.collect()
                 self._assert_ready_value(first, 8.0)
+                self._assert_ready_value(third, 9.0)
 
     def test_host_upload_and_download_without_torch_tensors(self):
         method = self._load_method()

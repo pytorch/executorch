@@ -524,7 +524,7 @@ class BufferTensor final {
     const std::string& format = info.format;
     const uint16_t one = 1;
     const bool little_endian = *reinterpret_cast<const uint8_t*>(&one) == 1;
-    size_t code = 0;
+    size_t code_offset = 0;
     if (!format.empty() &&
         std::string("@=<>!").find(format[0]) != std::string::npos) {
       const bool native = format[0] == '@' || format[0] == '=' ||
@@ -536,9 +536,9 @@ class BufferTensor final {
             "' is not in this machine's byte order. Convert the data to the "
             "native byte order before passing it.");
       }
-      code = 1;
+      code_offset = 1;
     }
-    const auto width =
+    const auto type_for_itemsize =
         [&info](std::initializer_list<std::pair<int, ScalarType>> types)
         -> std::optional<ScalarType> {
       for (const auto& [itemsize, type] : types) {
@@ -549,10 +549,10 @@ class BufferTensor final {
       return std::nullopt;
     };
     std::optional<ScalarType> type;
-    if (format.size() == code + 1) {
-      switch (format[code]) {
+    if (format.size() == code_offset + 1) {
+      switch (format[code_offset]) {
         case '?':
-          type = width({{1, ScalarType::Bool}});
+          type = type_for_itemsize({{1, ScalarType::Bool}});
           break;
         case 'b':
         case 'h':
@@ -560,7 +560,7 @@ class BufferTensor final {
         case 'l':
         case 'q':
         case 'n':
-          type = width(
+          type = type_for_itemsize(
               {{1, ScalarType::Char},
                {2, ScalarType::Short},
                {4, ScalarType::Int},
@@ -572,7 +572,7 @@ class BufferTensor final {
         case 'L':
         case 'Q':
         case 'N':
-          type = width(
+          type = type_for_itemsize(
               {{1, ScalarType::Byte},
                {2, ScalarType::UInt16},
                {4, ScalarType::UInt32},
@@ -581,15 +581,15 @@ class BufferTensor final {
         case 'e':
         case 'f':
         case 'd':
-          type = width(
+          type = type_for_itemsize(
               {{2, ScalarType::Half},
                {4, ScalarType::Float},
                {8, ScalarType::Double}});
           break;
       }
-    } else if (format.size() == code + 2 && format[code] == 'Z') {
-      if (format[code + 1] == 'f' || format[code + 1] == 'd') {
-        type = width(
+    } else if (format.size() == code_offset + 2 && format[code_offset] == 'Z') {
+      if (format[code_offset + 1] == 'f' || format[code_offset + 1] == 'd') {
+        type = type_for_itemsize(
             {{8, ScalarType::ComplexFloat}, {16, ScalarType::ComplexDouble}});
       }
     }
@@ -657,18 +657,19 @@ void validate_tensor_input(
       "Input %zu of method '%s' is not a tensor input",
       index,
       method_meta.name());
-  const std::string input = "Input " + std::to_string(index) + " of method '" +
-      method_meta.name() + "'";
+  const std::string input_name = "Input " + std::to_string(index) +
+      " of method '" + method_meta.name() + "'";
   if (input_meta->scalar_type() != scalar_type) {
     throw py::value_error(
-        input + " has dtype " + std::string(runtime::toString(scalar_type)) +
+        input_name + " has dtype " +
+        std::string(runtime::toString(scalar_type)) +
         " but the method expects " +
         std::string(runtime::toString(input_meta->scalar_type())));
   }
   const auto expected_rank = input_meta->sizes().size();
   if (expected_rank != sizes.size()) {
     throw py::value_error(
-        input + " has rank " + std::to_string(sizes.size()) +
+        input_name + " has rank " + std::to_string(sizes.size()) +
         ", but the method expects rank " + std::to_string(expected_rank));
   }
 }
@@ -1003,12 +1004,12 @@ class DLPackTensorView final {
   // in another order is copied into that order, since reading it with the
   // exported strides would permute its values. A device tensor would need a
   // device copy, so it must already be in the exported order.
-  void use_layout(Span<const uint8_t> order) {
+  void use_layout(Span<const uint8_t> dim_order) {
     std::vector<int> strides(sizes_.size());
     const auto status = runtime::dim_order_to_stride(
-        sizes_.data(), order.data(), sizes_.size(), strides.data());
+        sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
     THROW_IF_ERROR(status, "Invalid dimension order for DLPack tensor input");
-    if (nbytes_ != 0 && !has_layout(sizes_, strides_, order)) {
+    if (nbytes_ != 0 && !has_layout(sizes_, strides_, dim_order)) {
       if (!device_.is_cpu()) {
         throw py::value_error(
             "DLPack device input is laid out differently from the exported "
@@ -1026,7 +1027,7 @@ class DLPackTensorView final {
       data_ = converted_.data();
     }
     strides_ = std::move(strides);
-    dim_order_.assign(order.begin(), order.end());
+    dim_order_.assign(dim_order.begin(), dim_order.end());
   }
 
   void validate_device(const Method& method, size_t index) const {
@@ -1390,12 +1391,11 @@ std::optional<EValue> scalar_input(
     return std::nullopt;
   }
   py::object number;
+  PyObject* numpy = PyDict_GetItemString(PyImport_GetModuleDict(), "numpy");
   if (py::isinstance<py::bool_>(value) || py::isinstance<py::int_>(value) ||
       py::isinstance<py::float_>(value)) {
     number = py::reinterpret_borrow<py::object>(value);
-  } else if (
-      PyObject* numpy =
-          PyDict_GetItemString(PyImport_GetModuleDict(), "numpy")) {
+  } else if (numpy != nullptr) {
     const auto module = py::reinterpret_borrow<py::object>(numpy);
     if (py::isinstance(value, module.attr("generic")) ||
         (py::isinstance(value, module.attr("ndarray")) &&
@@ -2228,8 +2228,8 @@ struct PyModule final {
         failed_methods_.count(method_name) != 0) {
       throw std::runtime_error(
           "The last call to method '" + method_name +
-          "' failed, so the inputs it would reuse may be a mix of two calls. "
-          "Pass every input on the next call.");
+          "' failed while setting its inputs, so the inputs it would reuse "
+          "may be a mix of two calls. Pass every input on the next call.");
     }
     std::vector<InputOwner> new_input_owners(inputs_size);
     std::vector<EValue> cpp_inputs;
@@ -2406,10 +2406,9 @@ struct PyModule final {
     }
 
     // Module keeps installed inputs for calls with an omitted or partial
-    // input list, so their owners stay alive with it. Owners change only after
-    // a successful call: a failed call may have installed a prefix of its
-    // inputs, but every later call fails to run until all inputs are passed
-    // again, so nothing reads that prefix.
+    // input list, so their owners stay alive with it. A call that fails while
+    // installing keeps nothing: it may have installed a prefix, but later
+    // calls must pass every input again, so nothing reads that prefix.
     auto& retained = retained_inputs_[method_name];
     for (size_t i = inputs_size; i < retained.size(); ++i) {
       if (retained[i].validation) {
@@ -2433,25 +2432,39 @@ struct PyModule final {
           " were ever passed. Pass every input.");
     }
     allocate_output_tensors(method_name);
-    auto outputs = module_->execute(method_name, cpp_inputs);
-    // Module::execute installs inputs one at a time and does not roll back
-    // a prefix when a later one fails. Its error does not say which
-    // stage failed, so treat any failure as a possible mix.
-    if (!outputs.ok() && inputs_size > 0) {
-      failed_methods_.insert(method_name);
-    }
+    const auto load_status = module_->load_method(method_name);
     THROW_IF_ERROR(
-        outputs.error(),
+        load_status,
         "Failed to execute method %s, error: 0x%" PRIx32,
         method_name.c_str(),
-        static_cast<uint32_t>(outputs.error()));
+        static_cast<uint32_t>(load_status));
+    // Install the inputs first: only a failure there can leave a mix of two
+    // calls installed, since the runtime does not roll back a prefix. Once
+    // every input is installed, the method reads these, whatever happens next.
+    for (size_t i = 0; i < inputs_size; ++i) {
+      const auto status = module_->set_input(method_name, cpp_inputs[i], i);
+      if (status != Error::Ok) {
+        failed_methods_.insert(method_name);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set input %zu of method %s, error: 0x%" PRIx32,
+            i,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
     failed_methods_.erase(method_name);
-
     retained.resize(
         std::max(retained.size(), static_cast<size_t>(inputs_size)));
     for (size_t i = 0; i < inputs_size; ++i) {
       retained[i] = std::move(new_input_owners[i]);
     }
+    auto outputs = module_->execute(method_name);
+    THROW_IF_ERROR(
+        outputs.error(),
+        "Failed to execute method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(outputs.error()));
 #ifndef USE_ATEN_LIB
     // Include untouched inputs when execution reuses a previous call's values.
     buffer_inputs.clear();
@@ -2587,7 +2600,7 @@ struct PyModule final {
 
   std::shared_ptr<Module> module_;
   std::unordered_map<std::string, std::vector<InputOwner>> retained_inputs_;
-  // Methods whose last call failed after possibly installing some inputs.
+  // Methods whose last call failed while installing its inputs.
   std::unordered_set<std::string> failed_methods_;
   py::object native_output_owner_;
   // Need to keep-alive output tensors until they can be compared in case of
@@ -3231,13 +3244,11 @@ struct PyMethod final {
     inputs_set_ = true;
     // An output that is one of the inputs now shows the new input, which no
     // execute() produced.
-    for (size_t i = 0; outputs_valid_ && i < storage_->method->outputs_size();
-         ++i) {
+    for (size_t i = 0; i < storage_->method->outputs_size(); ++i) {
       for (size_t j = 0; j < storage_->method->inputs_size(); ++j) {
         if (&storage_->method->get_output(i) ==
             &storage_->method->get_input(j)) {
           outputs_valid_ = false;
-          break;
         }
       }
     }
@@ -3473,12 +3484,17 @@ struct PyMethod final {
     if (buffer.use_count() > 1) {
       return std::nullopt;
     }
-    const std::shared_ptr<void> memory(buffer, buffer->data());
+    // Results share the buffer through a holder of their own, so
+    // handed_buffers_ sees the last of them go even though the slot keeps
+    // the buffer.
+    const auto holder =
+        std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
+    const std::shared_ptr<void> memory(holder, buffer->data());
     auto result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
     if (portable_tensor_output() == PortableTensorOutput::Torch) {
       result = portable_tensor_result(tensor, /*clone=*/false, result);
     }
-    handed_buffers_[*slot] = memory;
+    handed_buffers_[*slot] = holder;
     handed_outputs_.resize(storage_->method->outputs_size());
     handed_outputs_[index] = result;
     return result;
@@ -3627,8 +3643,9 @@ struct PyMethod final {
     handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
   }
 
-  // Borrowed results keep their buffer alive themselves, as they always could
-  // see the next execution's values.
+  // A handed-over result still uses its buffer, so the method writes into a
+  // new one. Borrowed results keep their buffer alive themselves, as they
+  // always could see the next execution's values.
   void replace_held_device_outputs() {
 #ifndef USE_ATEN_LIB
     for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {

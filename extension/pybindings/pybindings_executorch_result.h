@@ -365,8 +365,7 @@ class PyExecuTorchResult final
     const std::string device =
         device_.is_cpu() ? "cpu" : "cuda:" + std::to_string(device_.index());
     return "ExecuTorchResult(shape=(" + shape +
-        "), dtype=" + python_dtype(scalar_type_).torch_name +
-        ", device=" + device + ")";
+        "), dtype=" + torch_dtype_name() + ", device=" + device + ")";
   }
 
  private:
