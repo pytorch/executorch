@@ -15,6 +15,18 @@
 
 namespace executorch::extension::llm {
 
+class MuseGlimmerModelEmbeddings;
+
+// The preparation spec for prompts to `target`. When the program has
+// vision_encoder, also installs an image embedder on it; `embeddings` then
+// receives it, for adapters that build their own target steps.
+runtime::Result<std::shared_ptr<const MuseGlimmerPreparationSpec>>
+make_cuda_preparation(
+    ::executorch::backends::cuda::batching::CudaExecutor& target,
+    const MuseGlimmerBackendConfig& config,
+    std::int32_t max_context,
+    std::shared_ptr<MuseGlimmerModelEmbeddings>* embeddings = nullptr);
+
 // Exact packed-export metadata contract. Geometry tensors use the ordinary
 // get_n_caches/get_kv_heads/get_head_dims/get_windows names with get_draft_.
 namespace cuda_dflash_detail {
@@ -108,7 +120,11 @@ std::optional<DraftPlan> pack_draft(
 // Widens a plan whose context fits one block per owner to the static
 // draft_forward_{N} shape: unused context rows go last, after every block, so
 // the cache writes them to its scratch cell and no query attends them.
-bool pad_to_static(DraftPlan& plan, int owners, int block, std::size_t row_bytes);
+bool pad_to_static(
+    DraftPlan& plan,
+    int owners,
+    int block,
+    std::size_t row_bytes);
 
 // Reusable device memory for small host-built inputs.
 class DeviceStaging {
@@ -220,9 +236,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
       const std::vector<batching::SessionId>& owners,
       const std::vector<std::int64_t>& candidates,
       std::vector<std::int64_t>& results);
-  std::vector<float> verify_params(
-      const State& state,
-      batching::Position first) const;
+  std::vector<float> verify_params(const State& state, batching::Position first)
+      const;
   bool drain(batching::SessionId owner);
   bool draft(
       const std::vector<batching::SessionId>& owners,
