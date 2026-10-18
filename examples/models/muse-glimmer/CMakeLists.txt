@@ -231,14 +231,12 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
   )
   if(_batching_backend STREQUAL "cuda")
     # The vision runtime copies device-resident outputs back to the host.
-    target_link_libraries(
-      muse_glimmer_batching_preparation PUBLIC CUDA::cudart
-    )
+    target_link_libraries(muse_glimmer_batching_preparation PUBLIC CUDA::cudart)
   endif()
 
   if(MUSE_GLIMMER_BUILD_BATCHING)
     if(_batching_backend STREQUAL "cuda")
-      set(_batching_executor runtime/cuda_backend_factory.cpp)
+      set(_batching_executor)
       set(_batching_backend_library cuda_batching)
     else()
       set(_batching_executor runtime/mlx_executor.cpp)

@@ -1,0 +1,302 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
+
+"""CUDA DLPack integration tests, run in both output modes by cuda.yml."""
+
+import ctypes
+import gc
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+import torch
+
+
+class CudaDLPackOnly:
+    """A generic producer whose writes belong to a particular CUDA stream."""
+
+    def __init__(self, tensor, producer_stream):
+        self.tensor = tensor
+        self.producer_stream = producer_stream
+        self.requested_streams = []
+
+    def __dlpack_device__(self):
+        return self.tensor.__dlpack_device__()
+
+    def __dlpack__(self, stream=None):
+        self.requested_streams.append(stream)
+        with torch.cuda.stream(self.producer_stream):
+            return self.tensor.__dlpack__(stream=stream)
+
+
+class CudaDLPackTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        required = os.environ.get("EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA") == "1"
+        if not torch.cuda.is_available():
+            if required:
+                raise AssertionError("CUDA DLPack CI requires a visible GPU")
+            raise unittest.SkipTest("requires a visible CUDA GPU")
+
+        from executorch.extension.pybindings import portable_lib
+
+        if portable_lib._uses_aten:
+            raise AssertionError(
+                "CUDA DLPack CI must exercise bindings without C++ ATen"
+            )
+        if "CudaBackend" not in portable_lib._get_registered_backend_names():
+            if required:
+                raise AssertionError("CUDA DLPack CI requires the CUDA backend")
+            raise unittest.SkipTest("requires the CUDA backend")
+
+        cls.bindings = portable_lib
+        cls.executorch_output = (
+            os.environ.get("EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT") == "executorch"
+        )
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.device = torch.device("cuda:0")
+        cls.consumer_streams = {0: torch.cuda.Stream(device=cls.device)}
+        cls.driver = ctypes.CDLL("libcuda.so.1")
+        cls.driver.cuPointerGetAttribute.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_uint64,
+        ]
+        cls.driver.cuPointerGetAttribute.restype = ctypes.c_int
+        cls._export_delegate()
+
+    @classmethod
+    def _export_delegate(cls):
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from executorch.exir.passes import MemoryPlanningPass
+        from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
+        from executorch.exir.schema import DeviceType
+
+        class Add(torch.nn.Module):
+            def forward(self, value):
+                return (value + 1.0) * 2.0
+
+        cls.shape = (256, 256)
+        edge = to_edge_transform_and_lower(
+            {
+                "forward": torch.export.export(
+                    Add(), (torch.ones(cls.shape),), strict=True
+                )
+            },
+            partitioner={
+                "forward": [CudaPartitioner([CompileSpec("method_name", b"forward")])]
+            },
+        )
+        program = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        plan = program.executorch_program.execution_plan[0]
+        if not any(delegate.id == "CudaBackend" for delegate in plan.delegates):
+            raise AssertionError("test model must execute a CUDA delegate")
+        for index in (*plan.inputs, *plan.outputs):
+            tensor = plan.values[index].val
+            if tensor.allocation_info is not None:
+                raise AssertionError(
+                    "test must cover borrowed inputs and unplanned outputs"
+                )
+            if tensor.extra_tensor_info.device_type != DeviceType.CUDA:
+                raise AssertionError("test must retain CUDA inputs and outputs")
+
+        cls.program_path = Path(cls.directory.name) / "cuda_dlpack.pte"
+        with cls.program_path.open("wb") as source:
+            program.write_to_file(source)
+        data_names = sorted(program._tensor_data or {})
+        program.write_tensor_data_to_file(cls.directory.name)
+        cls.data_path = (
+            Path(cls.directory.name) / (data_names[0] + ".ptd") if data_names else None
+        )
+
+    def _load_method(self):
+        from executorch.runtime import Runtime
+
+        return (
+            Runtime.get()
+            .load_program(self.program_path, data_path=self.data_path)
+            .load_method("forward")
+            ._method
+        )
+
+    def _consumer_stream(self, device_index):
+        if device_index not in self.consumer_streams:
+            self.consumer_streams[device_index] = torch.cuda.Stream(
+                device=torch.device("cuda", device_index)
+            )
+        return self.consumer_streams[device_index]
+
+    def _tensor(self, output, device_index=0):
+        if self.executorch_output:
+            self.assertIsInstance(output, self.bindings.ExecuTorchResult)
+        else:
+            self.assertIsInstance(output, torch.Tensor)
+        self.assertEqual(output.__dlpack_device__(), (2, device_index))
+        # Import on a separate stream, then ask the driver about the original
+        # allocation. A CUDA device tag alone also describes a bad host pointer.
+        with torch.cuda.stream(self._consumer_stream(device_index)):
+            tensor = torch.from_dlpack(output)
+        memory_type = ctypes.c_uint()
+        device_ordinal = ctypes.c_int()
+        for attribute, storage, expected in (
+            (2, memory_type, 2),  # CU_POINTER_ATTRIBUTE_MEMORY_TYPE: DEVICE
+            (9, device_ordinal, device_index),  # DEVICE_ORDINAL
+        ):
+            status = self.driver.cuPointerGetAttribute(
+                ctypes.byref(storage), attribute, tensor.data_ptr()
+            )
+            self.assertEqual((status, storage.value), (0, expected))
+        self.assertEqual(tensor.device, torch.device("cuda", device_index))
+        return tensor
+
+    def _assert_ready_value(self, output, expected):
+        tensor = self._tensor(output)
+        with torch.cuda.stream(self._consumer_stream(0)):
+            snapshot = tensor.clone()
+            ready = torch.cuda.Event()
+            ready.record()
+        # Only wait for the consumer. A global wait before the read would hide
+        # missing ordering between the producer, delegate, and consumer streams.
+        ready.synchronize()
+        torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, expected))
+        return tensor
+
+    def test_delegate_cross_stream_input_and_output(self):
+        method = self._load_method()
+        producer_stream = torch.cuda.Stream(device=self.device)
+        for clone_outputs, protocol in (
+            (clone, protocol)
+            for clone in (False, True)
+            for protocol in ("dlpack", "torch")
+        ):
+            with self.subTest(clone_outputs=clone_outputs, protocol=protocol):
+                # Include a nonzero storage offset. Initialize before starting
+                # the delayed producer so an unordered read is observably wrong.
+                storage = torch.zeros(
+                    torch.Size(self.shape).numel() + 7, device=self.device
+                )
+                value = storage[7:].view(self.shape)
+                torch.cuda.current_stream(self.device).synchronize()
+                with torch.cuda.stream(producer_stream):
+                    torch.cuda._sleep(50_000_000)
+                    value.fill_(41.0)
+                producer = CudaDLPackOnly(value, producer_stream)
+                if protocol == "dlpack":
+                    output = method(producer, clone_outputs=clone_outputs)[0]
+                    self.assertTrue(producer.requested_streams)
+                    self.assertNotIn(None, producer.requested_streams)
+                    self.assertNotIn(-1, producer.requested_streams)
+                else:
+                    # Torch's DLPack exporter discovers its producer through
+                    # the current stream, so keep that stream selected here.
+                    with torch.cuda.stream(producer_stream):
+                        output = method(value, clone_outputs=clone_outputs)[0]
+                tensor = self._assert_ready_value(output, 84.0)
+                self.assertNotEqual(tensor.data_ptr(), value.data_ptr())
+
+    def test_clone_roundtrip_and_borrowed_output_lifetime(self):
+        method = self._load_method()
+        stream = torch.cuda.current_stream(self.device)
+        value = torch.full(self.shape, 3.0, device=self.device)
+        borrowed = method(CudaDLPackOnly(value, stream), clone_outputs=False)[0]
+        borrowed_tensor = self._assert_ready_value(borrowed, 8.0)
+        cloned = method(CudaDLPackOnly(value, stream), clone_outputs=True)[0]
+        cloned_tensor = self._assert_ready_value(cloned, 8.0)
+        self.assertNotEqual(cloned_tensor.data_ptr(), borrowed_tensor.data_ptr())
+
+        # Feed the public result itself back in, including ExecuTorchResult in
+        # the executorch output mode. Use another method to avoid aliasing its
+        # output arena with the input under test.
+        second_method = self._load_method()
+        roundtrip = second_method(borrowed, clone_outputs=False)[0]
+        self._assert_ready_value(roundtrip, 18.0)
+        replacement = torch.full(self.shape, 10.0, device=self.device)
+        changed = method(CudaDLPackOnly(replacement, stream), clone_outputs=False)[0]
+        self._assert_ready_value(changed, 22.0)
+        self._assert_ready_value(cloned, 8.0)
+
+        del method, second_method, value, replacement
+        del borrowed, borrowed_tensor, cloned_tensor, roundtrip
+        gc.collect()
+        self._assert_ready_value(changed, 22.0)
+        self._assert_ready_value(cloned, 8.0)
+
+    def test_identity_preserves_channels_last_offset_and_device_index(self):
+        from executorch.exir import ExecutorchBackendConfig, to_edge
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.passes import MemoryPlanningPass
+        from executorch.exir.schema import DeviceType, ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, value):
+                return value
+
+        shape = (2, 3, 4, 5)
+        reference = torch.ones(shape).to(memory_format=torch.channels_last)
+        program = to_edge(torch.export.export(Identity(), (reference,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        device_index = torch.cuda.device_count() - 1
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=device_index
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+        storage = torch.arange(
+            reference.numel() + 11, device=f"cuda:{device_index}", dtype=reference.dtype
+        )
+        value = torch.as_strided(storage, shape, reference.stride(), storage_offset=11)
+        stream = torch.cuda.current_stream(device_index)
+        module = self.bindings._load_for_executorch_from_buffer(data)
+        method = self.bindings._load_program_from_buffer(data).load_method("forward")
+        for input_value in (value, CudaDLPackOnly(value, stream)):
+            for executor in (module, method):
+                for clone_outputs in (False, True):
+                    with self.subTest(
+                        protocol=type(input_value),
+                        executor=type(executor),
+                        clone_outputs=clone_outputs,
+                    ):
+                        output = executor(input_value, clone_outputs=clone_outputs)[0]
+                        tensor = self._tensor(output, device_index)
+                        self.assertEqual(tensor.stride(), value.stride())
+                        with torch.cuda.stream(self._consumer_stream(device_index)):
+                            torch.testing.assert_close(tensor.cpu(), value.cpu())
+                        if clone_outputs:
+                            self.assertNotEqual(tensor.data_ptr(), value.data_ptr())
+                        else:
+                            self.assertEqual(tensor.data_ptr(), value.data_ptr())
+                            roundtrip = executor(output, clone_outputs=False)[0]
+                            self.assertEqual(
+                                self._tensor(roundtrip, device_index).data_ptr(),
+                                value.data_ptr(),
+                            )
+
+
+if __name__ == "__main__":
+    unittest.main()
