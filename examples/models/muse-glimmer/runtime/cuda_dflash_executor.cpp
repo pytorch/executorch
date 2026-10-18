@@ -156,6 +156,122 @@ bool copy_host(
       cudaStreamSynchronize(stream) == cudaSuccess;
 }
 
+} // namespace
+
+namespace cuda_dflash_detail {
+HiddenSnapshot::~HiddenSnapshot() {
+  fence();
+  if (device_) {
+    cudaFree(device_);
+  }
+}
+
+bool HiddenSnapshot::fence() {
+  if (stream_set_ &&
+      cudaStreamSynchronize(static_cast<cudaStream_t>(stream_)) !=
+          cudaSuccess) {
+    return false;
+  }
+  stream_set_ = false;
+  return true;
+}
+
+bool HiddenSnapshot::begin(std::size_t rows, std::size_t row_bytes) {
+  if (!fence() || rows == 0 || row_bytes == 0 ||
+      rows > std::numeric_limits<std::size_t>::max() / row_bytes) {
+    return false;
+  }
+  rows_ = rows;
+  row_bytes_ = row_bytes;
+  captured_ = 0;
+  device_source_.reset();
+  stream_ = nullptr;
+  stream_set_ = false;
+  return true;
+}
+
+bool HiddenSnapshot::capture(
+    const aten::Tensor& taps,
+    std::size_t offset,
+    std::size_t rows) {
+  const bool device = taps.device_type() == aten::DeviceType::CUDA;
+  if (offset != captured_ || offset > rows_ || rows == 0 ||
+      rows > rows_ - offset || !dense(taps) ||
+      taps.nbytes() < rows * row_bytes_ ||
+      (!device && taps.device_type() != aten::DeviceType::CPU) ||
+      (device_source_ && *device_source_ != device)) {
+    return false;
+  }
+  device_source_ = device;
+  const auto bytes = rows * row_bytes_;
+  if (device) {
+    const auto stream =
+        ::executorch::extension::cuda::getCallerStream().value_or(
+            cudaStreamPerThread);
+    if (stream_set_ && stream_ != stream) {
+      return false;
+    }
+    stream_ = stream;
+    stream_set_ = true;
+    if (capacity_ < rows_ * row_bytes_) {
+      if (device_ && cudaFree(device_) != cudaSuccess) {
+        return false;
+      }
+      device_ = nullptr;
+      capacity_ = 0;
+      if (cudaMalloc(&device_, rows_ * row_bytes_) != cudaSuccess) {
+        return false;
+      }
+      capacity_ = rows_ * row_bytes_;
+    }
+    if (cudaMemcpyAsync(
+            static_cast<std::uint8_t*>(device_) + offset * row_bytes_,
+            taps.const_data_ptr(),
+            bytes,
+            cudaMemcpyDeviceToDevice,
+            stream) != cudaSuccess) {
+      return false;
+    }
+  } else {
+    host_.resize(rows_ * row_bytes_);
+    std::memcpy(
+        host_.data() + offset * row_bytes_, taps.const_data_ptr(), bytes);
+  }
+  captured_ += rows;
+  return true;
+}
+
+bool HiddenSnapshot::copy_rows(
+    std::vector<std::uint8_t>& destination,
+    std::size_t offset,
+    std::size_t rows) {
+  if (offset > captured_ || rows > captured_ - offset || row_bytes_ == 0 ||
+      destination.size() % row_bytes_ != 0 ||
+      rows > (destination.max_size() - destination.size()) / row_bytes_) {
+    return false;
+  }
+  const auto start = destination.size();
+  const auto bytes = rows * row_bytes_;
+  destination.resize(start + bytes);
+  if (bytes == 0) {
+    return true;
+  }
+  if (on_device()) {
+    stream_set_ = true;
+    return cudaMemcpyAsync(
+               destination.data() + start,
+               static_cast<std::uint8_t*>(device_) + offset * row_bytes_,
+               bytes,
+               cudaMemcpyDeviceToHost,
+               static_cast<cudaStream_t>(stream_)) == cudaSuccess;
+  }
+  std::memcpy(
+      destination.data() + start, host_.data() + offset * row_bytes_, bytes);
+  return true;
+}
+} // namespace cuda_dflash_detail
+
+namespace {
 Result<int> positive_int(Module& module, const char* name) {
   ET_ASSIGN_OR_RETURN(value, detail::read_required_positive_int(module, name));
   ET_CHECK_OR_RETURN_ERROR(
@@ -570,20 +686,48 @@ bool MuseGlimmerCudaDFlashExecutor::run_target(
     return false;
   }
   predictions.resize(step.logit_indices.size());
+  if (!drain_context &&
+      !verification_hidden_.begin(step.tokens.size(), row_bytes_)) {
+    return false;
+  }
+  if (drain_context) {
+    ++stats_.target_preamble_calls;
+  } else {
+    ++stats_.target_verify_calls;
+  }
   std::size_t predicted = 0;
   const bool ok =
       target_->execute_raw(step, [&](const cb::RawTargetOutput& output) {
-        if (!output.taps ||
+        if (drain_context) {
+          ++stats_.target_preamble_forwards;
+        } else {
+          ++stats_.target_verify_forwards;
+        }
+        if (!output.taps || output.taps->dim() != 3 ||
             output.taps->scalar_type() != aten::ScalarType::BFloat16 ||
             output.taps->size(2) != hidden_width_) {
           return false;
         }
-        std::vector<std::uint8_t> copied(
-            static_cast<std::size_t>(output.length) * row_bytes_);
-        // Copy every real tap before invoking the sampler; no borrowed GPU
-        // output survives any subsequent Module::execute call.
-        if (!copy_host(copied.data(), *output.taps, copied.size())) {
-          return false;
+        std::vector<std::uint8_t> copied;
+        // The next sampler or target slice may invalidate these borrowed taps.
+        if (drain_context) {
+          copied.resize(static_cast<std::size_t>(output.length) * row_bytes_);
+          if (!copy_host(copied.data(), *output.taps, copied.size())) {
+            return false;
+          }
+          if (output.taps->device_type() == aten::DeviceType::CUDA) {
+            stats_.hidden_rows_d2h += output.length;
+            stats_.hidden_bytes_d2h += copied.size();
+          }
+        } else {
+          if (!verification_hidden_.capture(
+                  *output.taps, output.offset, output.length)) {
+            return false;
+          }
+          if (verification_hidden_.on_device()) {
+            stats_.hidden_rows_d2d += output.length;
+            stats_.hidden_bytes_d2d += output.length * row_bytes_;
+          }
         }
         auto tokens =
             target_->argmax_rows(output.logits, output.selected_indices.size());
@@ -593,6 +737,9 @@ bool MuseGlimmerCudaDFlashExecutor::run_target(
         for (std::size_t row = 0; row < tokens->size(); ++row) {
           predictions[output.selected_indices[row]] = (*tokens)[row];
           ++predicted;
+        }
+        if (!drain_context) {
+          return true;
         }
         std::unordered_set<SessionId> touched;
         for (int row = 0; row < output.length; ++row) {
@@ -791,6 +938,7 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
     if (!run_target(verification, token_owners, predictions, false)) {
       return false;
     }
+    std::vector<df::GreedyBurst> bursts;
     for (std::size_t i = 0; i < owners.size(); ++i) {
       auto burst = df::verify_greedy(
           proposals[i],
@@ -798,22 +946,42 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
               predictions.begin() + i * width,
               predictions.begin() + (i + 1) * width));
       if (!burst ||
-          !rewind(
-              sessions_.at(owners[i]),
-              starts[i] + static_cast<int>(burst->tokens.size()))) {
+          !verification_hidden_.copy_rows(
+              sessions_.at(owners[i]).hidden, i * width, burst->accepted + 1)) {
         return false;
       }
+      if (verification_hidden_.on_device()) {
+        stats_.hidden_rows_d2h += burst->accepted + 1;
+        stats_.hidden_bytes_d2h += (burst->accepted + 1) * row_bytes_;
+      }
+      bursts.push_back(std::move(*burst));
+    }
+    // All host backing remains stable until this coalesced fence, even when
+    // verification spanned several target callbacks/static padding shapes.
+    if (!verification_hidden_.fence()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < owners.size(); ++i) {
+      auto& state = sessions_.at(owners[i]);
+      const auto& burst = bursts[i];
+      const int committed = starts[i] + static_cast<int>(burst.accepted) + 1;
+      // Rejected KV was written speculatively, but rejected hidden was never
+      // appended. Do not use the ordinary rewind/hidden trimming path here.
+      if (!target_->cache_control().rewind(state.target_id, committed)) {
+        return false;
+      }
+      state.frontier = committed;
       // The regular preamble's prediction is new output, now committed by
       // verification. Append only predictions after that anchor. The last
       // prediction remains uncommitted: frontier = input.end + out.size() - 1.
       auto& output_tokens = out.outputs[indices[i]]->tokens;
       output_tokens.insert(
-          output_tokens.end(), burst->tokens.begin(), burst->tokens.end());
+          output_tokens.end(), burst.tokens.begin(), burst.tokens.end());
       ++stats_.cycles;
       stats_.proposed += proposals_;
-      stats_.accepted += burst->accepted;
-      stats_.bonuses += burst->bonus;
-      stats_.rejected += !burst->bonus;
+      stats_.accepted += burst.accepted;
+      stats_.bonuses += burst.bonus;
+      stats_.rejected += !burst.bonus;
     }
   }
   return true;
@@ -823,6 +991,8 @@ bool MuseGlimmerCudaDFlashExecutor::fail_batch(
     const batching::BatchInput& batch,
     batching::BatchOutput& out) {
   (void)batch;
+  // A failed callback/copy may still have queued work touching host backing.
+  verification_hidden_.fence();
   if (!failed_) {
     failed_ = true;
     for (auto& item : sessions_) {
@@ -932,13 +1102,21 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
     ++stats_.executions;
     ET_LOG(
         Info,
-        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu",
+        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu target_preamble_calls_total=%llu target_verify_calls_total=%llu target_preamble_forwards_total=%llu target_verify_forwards_total=%llu hidden_rows_d2h_total=%llu hidden_bytes_d2h_total=%llu hidden_rows_d2d_total=%llu hidden_bytes_d2d_total=%llu",
         static_cast<unsigned long long>(stats_.cycles - before.cycles),
         static_cast<unsigned long long>(stats_.proposed - before.proposed),
         static_cast<unsigned long long>(stats_.accepted - before.accepted),
         static_cast<unsigned long long>(stats_.rejected - before.rejected),
         static_cast<unsigned long long>(stats_.bonuses - before.bonuses),
-        static_cast<unsigned long long>(stats_.draft_forwards));
+        static_cast<unsigned long long>(stats_.draft_forwards),
+        static_cast<unsigned long long>(stats_.target_preamble_calls),
+        static_cast<unsigned long long>(stats_.target_verify_calls),
+        static_cast<unsigned long long>(stats_.target_preamble_forwards),
+        static_cast<unsigned long long>(stats_.target_verify_forwards),
+        static_cast<unsigned long long>(stats_.hidden_rows_d2h),
+        static_cast<unsigned long long>(stats_.hidden_bytes_d2h),
+        static_cast<unsigned long long>(stats_.hidden_rows_d2d),
+        static_cast<unsigned long long>(stats_.hidden_bytes_d2d));
     return true;
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
