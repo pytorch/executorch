@@ -268,9 +268,21 @@ def step_forward(
     The whole step runs through the decoder so every token's K/V reaches the
     cache; only the rows the batch samples from go through the LM head.
     """
-    x = model._run_blocks(model.embed_text(tokens), input_pos)
+    x = model.embed_text(tokens)
+    taps = None
+    if hasattr(model, "_dflash_target_layer_ids"):
+        sliding_mask, global_mask = model._build_masks(input_pos)
+        tapped = []
+        for i, layer in enumerate(model.layers):
+            if i in model._dflash_target_layer_ids:
+                tapped.append(x)
+            x = layer(x, input_pos, sliding_mask, global_mask)
+        taps = torch.cat(tapped, dim=-1)
+    else:
+        x = model._run_blocks(x, input_pos)
     x = model.output_norm(x[:, logits_to_keep, :])
-    return model._soft_cap(model.lm_head(x))[0]
+    logits = model._soft_cap(model.lm_head(x))[0]
+    return logits if taps is None else (logits, taps)
 
 
 def cell_manifest(sequence_manifest: str, max_cells: int) -> str:
@@ -324,7 +336,8 @@ def device_residency(forward_methods, device_sampling: bool):
     return device
 
 
-def export_cuda_batching(
+# Keep target and draft assembly under one shared-weight collector.
+def export_cuda_batching(  # noqa: C901
     model: MuseGlimmerModel,
     config: MuseGlimmerConfig,
     output_dir: str,
@@ -332,6 +345,10 @@ def export_cuda_batching(
     max_cells: int,
     forward_sizes=DEFAULT_FORWARD_SIZES,
     device_sampling: bool = True,
+    *,
+    dflash_draft: nn.Module | None = None,
+    max_draft_owners: int = 4,
+    draft_max_cells: int | None = None,
 ):
     """Exports the forward methods and writes the artifact.
 
@@ -361,6 +378,20 @@ def export_cuda_batching(
         write_max_context_len,
     )
     from torch.export import Dim, export
+
+    if dflash_draft is not None:
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            prepare_cuda_packed_draft,
+        )
+
+        draft_programs, draft_manifest, draft_metadata = prepare_cuda_packed_draft(
+            model,
+            config,
+            dflash_draft,
+            max_step_tokens=max_step_tokens,
+            max_cells=max_cells if draft_max_cells is None else draft_max_cells,
+            max_owners=max_draft_owners,
+        )
 
     forward_sizes = tuple(sorted({int(n) for n in forward_sizes}))
     widest_static = forward_sizes[-1] if forward_sizes else 0
@@ -392,6 +423,9 @@ def export_cuda_batching(
     manifest = cell_manifest(
         enable_offgraph_kv_cache(model, max_step_tokens), max_cells
     )
+    if dflash_draft is not None:
+        # Deferred checkpoints still need scalar/RoPE buffers, after KV removal.
+        materialize_runtime_buffers(model, dtype=torch.bfloat16)
     geometry = offgraph_kv_cache_geometry(model)
 
     width = Dim(
@@ -399,9 +433,10 @@ def export_cuda_batching(
     )
     rows = Dim("rows", min=_CUDA_MIN_PREFILL_CHUNK, max=max_step_tokens)
     programs = {}
-    with common.BoundMethodForward(
-        model, types.MethodType(step_forward, model)
-    ), torch.no_grad():
+    with (
+        common.BoundMethodForward(model, types.MethodType(step_forward, model)),
+        torch.no_grad(),
+    ):
         for n in forward_sizes:
             print(f"Exporting forward_{n} (T={n})...")
             programs[f"forward_{n}"] = export(
@@ -431,27 +466,46 @@ def export_cuda_batching(
     gc.collect()
     torch.cuda.empty_cache()
     forward_methods = list(programs)
+    if dflash_draft is not None:
+        programs.update(draft_programs)
+        del draft_programs, dflash_draft
+    cache_methods = forward_methods + (
+        ["draft_forward"] if "draft_forward" in programs else []
+    )
     if device_sampling:
         print(f"Exporting {SAMPLE_METHOD} and {ARGMAX_METHOD}...")
         programs.update(sampler_programs(config.vocab_size))
 
     def partitioner(name: str) -> CudaPartitioner:
-        if name not in forward_methods:
+        if name not in cache_methods:
             return CudaPartitioner(
                 [
                     CudaBackend.generate_method_name_compile_spec(name),
                     CompileSpec("autotune_at_compile_time", b"OFF"),
                 ]
             )
-        return CudaPartitioner(
-            [
-                CudaBackend.generate_method_name_compile_spec(name),
-                CompileSpec("low_memory_mode", b"ON"),
-                CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, manifest.encode()),
-                CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, step_width_spec(name)),
-                CompileSpec("autotune_at_compile_time", b"OFF"),
-            ]
-        )
+        is_draft = name == "draft_forward"
+        specs = [
+            CudaBackend.generate_method_name_compile_spec(name),
+            CompileSpec("low_memory_mode", b"ON"),
+            CompileSpec(
+                OFFGRAPH_KV_COMPILE_SPEC,
+                (draft_manifest if is_draft else manifest).encode(),
+            ),
+            CompileSpec(
+                OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+                b"2:0" if is_draft else step_width_spec(name),
+            ),
+            CompileSpec("autotune_at_compile_time", b"OFF"),
+        ]
+        if "draft_forward" in cache_methods:
+            specs.append(
+                CompileSpec(
+                    "llm_cache_registry_key",
+                    b"muse_glimmer_draft" if is_draft else b"muse_glimmer_target",
+                )
+            )
+        return CudaPartitioner(specs)
 
     constant_methods = _solo_constant_methods(
         config=config,
@@ -467,6 +521,8 @@ def export_cuda_batching(
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = False
     constant_methods[MAX_CELLS_METHOD] = max_cells
+    if "draft_forward" in programs:
+        constant_methods.update(draft_metadata)
 
     print(f"Lowering {', '.join(programs)} to ExecuTorch (CUDA)...")
     edge = to_edge_transform_and_lower(
@@ -487,7 +543,7 @@ def export_cuda_batching(
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
-            propagate_device_config=device_residency(forward_methods, device_sampling),
+            propagate_device_config=device_residency(cache_methods, device_sampling),
             emit_mutable_buffer_names=True,
         ),
     )
