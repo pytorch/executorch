@@ -791,21 +791,34 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   });
 }
 
+std::optional<std::vector<Token>> CudaExecutor::sample_rows(
+    const ::executorch::aten::Tensor& logits,
+    std::size_t rows,
+    const std::vector<float>& params) {
+  if (params.size() != rows * 4) {
+    return std::nullopt;
+  }
+  bool all_greedy = true;
+  for (std::size_t row = 0; row < rows; ++row) {
+    all_greedy = all_greedy && params[row * 4] == 0.0f;
+  }
+  if (all_greedy || logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+    // Host logits are sampled greedily only; the exported sampler is on CUDA.
+    return all_greedy ? argmax_rows(logits, rows) : std::nullopt;
+  }
+  if (!initialized_ || !has_sampler_ || logits.dim() < 2 ||
+      logits.size(logits.dim() - 1) != vocab_size_ ||
+      logits.scalar_type() != ::executorch::aten::ScalarType::Float ||
+      rows == 0 ||
+      rows > static_cast<std::size_t>(logits.numel() / vocab_size_)) {
+    return std::nullopt;
+  }
+  return run_device_sampler(logits, rows, params, false);
+}
+
 std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     const ::executorch::aten::Tensor& logits,
     const std::vector<SessionId>& sessions) {
-  using ::executorch::aten::ScalarType;
-  using ::executorch::aten::SizesType;
-  const ::executorch::aten::Device cuda(
-      ::executorch::aten::DeviceType::CUDA, logits.device_index());
-  const auto rows = static_cast<SizesType>(sessions.size());
-  // The rows that sample lead the logits; the rest are padding.
-  auto row_logits = make_tensor_ptr(
-      {rows, static_cast<SizesType>(vocab_size_)},
-      logits.mutable_data_ptr(),
-      logits.scalar_type(),
-      cuda);
-
   const bool all_greedy =
       std::all_of(sessions.begin(), sessions.end(), [this](SessionId session) {
         return sessions_.greedy(session);
@@ -821,6 +834,25 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     params.insert(
         params.end(), {row->temperature, row->top_p, row->top_k, row->coin});
   }
+  return run_device_sampler(logits, sessions.size(), params, all_greedy);
+}
+
+std::optional<std::vector<Token>> CudaExecutor::run_device_sampler(
+    const ::executorch::aten::Tensor& logits,
+    std::size_t row_count,
+    const std::vector<float>& params,
+    bool all_greedy) {
+  using ::executorch::aten::ScalarType;
+  using ::executorch::aten::SizesType;
+  const ::executorch::aten::Device cuda(
+      ::executorch::aten::DeviceType::CUDA, logits.device_index());
+  const auto rows = static_cast<SizesType>(row_count);
+  // The rows that sample lead the logits; the rest are padding.
+  auto row_logits = make_tensor_ptr(
+      {rows, static_cast<SizesType>(vocab_size_)},
+      logits.mutable_data_ptr(),
+      logits.scalar_type(),
+      cuda);
 
   const cudaStream_t stream =
       ::executorch::extension::cuda::getCallerStream().value_or(
@@ -832,18 +864,18 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
           kArgmaxMethod,
           std::vector<::executorch::runtime::EValue>{row_logits});
     }
-    if (sessions.size() > device_params_rows_) {
+    if (row_count > device_params_rows_) {
       if (device_params_ != nullptr) {
         (void)cudaFree(device_params_);
         device_params_ = nullptr;
         device_params_rows_ = 0;
       }
       ET_CHECK_OR_RETURN_ERROR(
-          cudaMalloc(&device_params_, sessions.size() * 4 * sizeof(float)) ==
+          cudaMalloc(&device_params_, row_count * 4 * sizeof(float)) ==
               cudaSuccess,
           MemoryAllocationFailed,
           "CudaExecutor: could not stage the sampler's params");
-      device_params_rows_ = sessions.size();
+      device_params_rows_ = row_count;
     }
     // The backend runs every method on the caller's stream if one is set,
     // else the per-thread stream; ordering the upload there puts it ahead of
@@ -871,7 +903,7 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     ET_LOG(Error, "CudaExecutor: the device sampler returned a bad shape");
     return std::nullopt;
   }
-  std::vector<std::int64_t> host(sessions.size());
+  std::vector<std::int64_t> host(row_count);
   const auto kind = tokens.device_type() == ::executorch::aten::DeviceType::CUDA
       ? cudaMemcpyDeviceToHost
       : cudaMemcpyHostToHost;
