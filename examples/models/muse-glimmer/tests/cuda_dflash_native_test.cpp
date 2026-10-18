@@ -183,7 +183,9 @@ class FixtureModule final : public Module {
     }
     const auto stream = executorch::extension::cuda::getCallerStream().value_or(
         cudaStreamPerThread);
-    if (name == "sample_argmax") {
+    // Verification samples through the device verifier, preambles through
+    // sample_argmax; either is the target sampler.
+    if (name == "sample_argmax" || name == "dflash_verify_argmax") {
       if (taps_ && cudaMemsetAsync(taps_, 0, 32 * 256, stream) != cudaSuccess) {
         return rt::Error::Internal;
       }
@@ -193,10 +195,11 @@ class FixtureModule final : public Module {
       }
       return actual;
     }
-    if (name != "draft_forward" && name.rfind("forward_", 0) != 0) {
+    const bool draft = name.rfind("draft_forward", 0) == 0;
+    if (!draft && name.rfind("forward_", 0) != 0) {
       return actual;
     }
-    target_output_ = name != "draft_forward";
+    target_output_ = !draft;
     if (!deterministic_) {
       return actual;
     }
@@ -205,7 +208,8 @@ class FixtureModule final : public Module {
     const auto& tokens = inputs[0].toTensor();
     const int width = tokens.size(1);
     const auto& selector = inputs[target_output_ ? 2 : 0].toTensor();
-    const int rows = target_output_ ? selector.numel() : width;
+    // Draft tokens are [owners, block]; every draft query row returns logits.
+    const int rows = target_output_ ? selector.numel() : tokens.numel();
     std::vector<float> logits(rows * 256, -100.0f);
     const int context = target_output_ ? 0 : inputs[1].toTensor().size(1);
     for (int row = 0; row < rows; ++row) {
@@ -489,8 +493,8 @@ TEST_F(CudaDFlashNative, WrongFeedbackAndNonOutputSlicesKeepPreamble) {
   EXPECT_EQ(
       executor_->stats().target_preamble_calls - before.target_preamble_calls,
       3);
-  // Unsupported temperature fails before a target/draft forward.
-  executor_->set_sampling(sid, {0.5f, 1.0f, 0}, 0);
+  // An invalid temperature fails before a target/draft forward.
+  executor_->set_sampling(sid, {-0.5f, 1.0f, 0}, 0);
   const auto valid = executor_->stats();
   EXPECT_FALSE(executor_->execute({{input(sid, 10, {prediction(9)})}}, out));
   EXPECT_FALSE(out.outputs[0]);

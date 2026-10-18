@@ -444,6 +444,8 @@ class PackedDraftCudaTest(unittest.TestCase):
                 "draft_forward",
                 "sample",
                 "sample_argmax",
+                "dflash_verify",
+                "dflash_verify_argmax",
             },
         )
         from executorch.backends.cuda.cuda_weight_collector import (
