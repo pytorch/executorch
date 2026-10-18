@@ -122,6 +122,8 @@ def export_and_lower(
     forward_sizes=None,
     max_step_tokens: int = 4096,
     max_cells: int = 65536,
+    kv_layout: str = "cell",
+    max_kv_seqs: int = 4,
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
@@ -141,6 +143,8 @@ def export_and_lower(
             max_cells=max_cells,
             forward_sizes=forward_sizes or DEFAULT_FORWARD_SIZES,
             device_sampling=sample,
+            kv_layout=kv_layout,
+            max_kv_seqs=max_kv_seqs,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -239,6 +243,10 @@ def _solo_constant_methods(
 
 # Read by CudaExecutor: the cell pool's size, which fixes its step buffers.
 MAX_CELLS_METHOD = "get_offgraph_kv_max_cells"
+# Read by CudaExecutor in place of the cell count when each sequence keeps a
+# private history: the sequence columns of every layer's storage.
+MAX_KV_SEQS_METHOD = "get_offgraph_kv_max_seqs"
+KV_LAYOUTS = ("cell", "sequence")
 # Static methods by default: powers of two up to the widest GEMM bucket.
 DEFAULT_FORWARD_SIZES = (1, 2, 4, 8, 16, 32, 64)
 # The device samplers' widest call: one row per resident session, and the cell
@@ -299,6 +307,39 @@ def embeddings_step_forward(
     x = model.output_norm(x[:, logits_to_keep, :])
     logits = model._soft_cap(model.lm_head(x))[0]
     return logits if taps is None else (logits, taps)
+
+
+def add_kv_layout_arguments(parser) -> None:
+    parser.add_argument(
+        "--kv-layout",
+        choices=KV_LAYOUTS,
+        default="cell",
+        help="CUDA with --use-offgraph-kv-cache: cell shares one pool of "
+        "--max-cells among every sequence; sequence keeps --max-kv-seqs private "
+        "histories of up to --max-seq-len each, as MLX batching does.",
+    )
+    parser.add_argument(
+        "--max-kv-seqs",
+        type=int,
+        default=4,
+        help="CUDA with --kv-layout sequence: sequences resident at once.",
+    )
+
+
+def batched_sequence_manifest(
+    sequence_manifest: str, max_seqs: int, causal: bool = True
+) -> str:
+    """The batched-sequence lowering manifest: one column per sequence."""
+    from executorch.backends.cuda.passes.lower_offgraph_kv import (
+        batched_sequence_max_segments,
+    )
+
+    manifest = json.loads(sequence_manifest)
+    manifest["layout"] = "batched-sequence"
+    manifest["max_seqs"] = max_seqs
+    manifest["max_segments"] = batched_sequence_max_segments(max_seqs)
+    manifest["causal"] = causal
+    return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
 
 
 def cell_manifest(sequence_manifest: str, max_cells: int) -> str:
@@ -368,8 +409,14 @@ def export_cuda_batching(  # noqa: C901
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
+    kv_layout: str = "cell",
+    max_kv_seqs: int = 4,
 ):
     """Exports the forward methods and writes the artifact.
+
+    ``kv_layout`` picks the KV cache the program addresses: ``cell`` shares
+    one pool of ``max_cells`` cells among every sequence, ``sequence`` keeps
+    ``max_kv_seqs`` private histories of up to ``config.max_seq_len`` each.
 
     With ``vision_model`` the token forwards are unchanged, and image prompts run
     through three more methods: ``vision_encoder``, ``embed_text`` and a dynamic
@@ -402,6 +449,11 @@ def export_cuda_batching(  # noqa: C901
     )
     from torch.export import Dim, export
 
+    if kv_layout not in KV_LAYOUTS:
+        raise ValueError(f"kv_layout must be one of {KV_LAYOUTS}, got {kv_layout!r}")
+    sequence_layout = kv_layout == "sequence"
+    if sequence_layout and max_kv_seqs <= 0:
+        raise ValueError("the sequence layout needs max_kv_seqs > 0")
     if dflash_draft is not None:
         from executorch.examples.models.muse_glimmer.export.export_dflash import (
             prepare_cuda_packed_draft,
@@ -414,6 +466,8 @@ def export_cuda_batching(  # noqa: C901
             max_step_tokens=max_step_tokens,
             max_cells=max_cells if draft_max_cells is None else draft_max_cells,
             max_owners=max_draft_owners,
+            kv_layout=kv_layout,
+            max_kv_seqs=max_kv_seqs,
         )
 
     forward_sizes = tuple(sorted({int(n) for n in forward_sizes}))
@@ -427,7 +481,10 @@ def export_cuda_batching(  # noqa: C901
             f"the widest forward size must be at least {_CUDA_MIN_PREFILL_CHUNK - 1}, "
             f"got {widest_static}"
         )
-    if not widest_static < max_step_tokens < max_cells:
+    if not (
+        widest_static < max_step_tokens
+        and (sequence_layout or max_step_tokens < max_cells)
+    ):
         raise ValueError(
             f"max_step_tokens must be in ({widest_static}, max_cells), "
             f"got {max_step_tokens}"
@@ -443,8 +500,11 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
-    manifest = cell_manifest(
-        enable_offgraph_kv_cache(model, max_step_tokens), max_cells
+    single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
+    manifest = (
+        batched_sequence_manifest(single_manifest, max_kv_seqs)
+        if sequence_layout
+        else cell_manifest(single_manifest, max_cells)
     )
     if dflash_draft is not None:
         # Deferred checkpoints still need scalar/RoPE buffers, after KV removal.
@@ -502,13 +562,15 @@ def export_cuda_batching(  # noqa: C901
             programs[EMBEDDINGS_METHOD] = export(
                 model,
                 (
-                    torch.zeros(
-                        (1, max_step_tokens, config.dim), dtype=torch.bfloat16
-                    ),
+                    torch.zeros((1, max_step_tokens, config.dim), dtype=torch.bfloat16),
                     torch.arange(max_step_tokens, dtype=torch.long),
                     torch.zeros(max_step_tokens, dtype=torch.long),
                 ),
-                dynamic_shapes=({1: embeddings_width}, {0: embeddings_width}, {0: rows}),
+                dynamic_shapes=(
+                    {1: embeddings_width},
+                    {0: embeddings_width},
+                    {0: rows},
+                ),
                 strict=True,
             )
         with common.BoundMethodForward(model, model.embed_text), torch.no_grad():
@@ -516,9 +578,7 @@ def export_cuda_batching(  # noqa: C901
             programs["embed_text"] = export(
                 model,
                 (torch.zeros((1, max_step_tokens), dtype=torch.long),),
-                dynamic_shapes=(
-                    {1: Dim("embed_width", min=1, max=max_step_tokens)},
-                ),
+                dynamic_shapes=({1: Dim("embed_width", min=1, max=max_step_tokens)},),
                 strict=True,
             )
         programs["vision_encoder"] = common.export_vision_encoder(
@@ -597,7 +657,10 @@ def export_cuda_batching(  # noqa: C901
     constant_methods.update(write_logits_to_keep_mode("selected"))
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = False
-    constant_methods[MAX_CELLS_METHOD] = max_cells
+    if sequence_layout:
+        constant_methods[MAX_KV_SEQS_METHOD] = max_kv_seqs
+    else:
+        constant_methods[MAX_CELLS_METHOD] = max_cells
     if "draft_forward" in programs:
         constant_methods.update(draft_metadata)
 
@@ -1134,6 +1197,7 @@ def main() -> None:
         "the tokens every resident session together may hold. Memory grows with "
         "use, up to this.",
     )
+    add_kv_layout_arguments(parser)
     parser.add_argument(
         "--activation-dtype",
         default=None,
@@ -1272,6 +1336,8 @@ def main() -> None:
         forward_sizes=[int(n) for n in args.forward_sizes.split(",") if n],
         max_step_tokens=args.max_step_tokens,
         max_cells=args.max_cells,
+        kv_layout=args.kv_layout,
+        max_kv_seqs=args.max_kv_seqs,
     )
 
 
