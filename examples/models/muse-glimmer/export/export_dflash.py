@@ -95,6 +95,7 @@ def _export_cuda_sampler_methods(
     }
 
 
+STATIC_DRAFT_PREFIX = "draft_forward_"
 VERIFY_METHOD = "dflash_verify"
 VERIFY_ARGMAX_METHOD = "dflash_verify_argmax"
 
@@ -378,6 +379,28 @@ def prepare_cuda_packed_draft(
             strict=True,
         )
     programs = {"draft_forward": program}
+    # Static decode drafts for CUDA graphs: N owners, each with at most one
+    # block of fresh context. The runtime pads unused context rows into the
+    # cache's scratch cell, as forward_N pads unused tokens.
+    with torch.no_grad():
+        for count in range(1, max_owners + 1):
+            width = count * block
+            # Context and queries write 2 * width K/V rows into one step.
+            if 2 * width > max_write:
+                break
+            programs[f"{STATIC_DRAFT_PREFIX}{count}"] = export(
+                combined,
+                (
+                    torch.zeros((count, block), dtype=torch.long),
+                    torch.zeros(
+                        (1, width, config.n_target_layers * config.dim),
+                        dtype=torch.bfloat16,
+                    ),
+                    torch.arange(2 * width, dtype=torch.long),
+                    torch.arange(2 * width, dtype=torch.long),
+                ),
+                strict=True,
+            )
     geometry = offgraph_kv_cache_geometry(draft_model)
     metadata = {
         key.replace("get_", "get_draft_", 1): value for key, value in geometry.items()
