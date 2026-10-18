@@ -19,6 +19,7 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
+#include <random>
 #include <unordered_set>
 
 namespace executorch::extension::llm {
@@ -30,24 +31,43 @@ namespace df = cuda_dflash_detail;
 namespace cb = ::executorch::backends::cuda::batching;
 
 namespace cuda_dflash_detail {
-std::optional<GreedyBurst> verify_greedy(
+std::optional<Burst> make_burst(
     const std::vector<Token>& proposals,
-    const std::vector<Token>& predictions) {
-  if (proposals.empty() || predictions.size() != proposals.size() + 1) {
+    std::int64_t accepted,
+    std::int64_t token,
+    std::int32_t vocab_size) {
+  if (proposals.empty() || accepted < 0 ||
+      accepted > static_cast<std::int64_t>(proposals.size()) || token < 0 ||
+      token >= vocab_size) {
     return std::nullopt;
   }
-  GreedyBurst result;
-  for (std::size_t row = 0; row < predictions.size(); ++row) {
-    if (row < proposals.size() && proposals[row] == predictions[row]) {
-      result.tokens.push_back(proposals[row]);
-      ++result.accepted;
-    } else {
-      result.tokens.push_back(predictions[row]);
-      result.bonus = row == proposals.size();
-      break;
-    }
-  }
+  Burst result;
+  result.tokens.assign(proposals.begin(), proposals.begin() + accepted);
+  result.tokens.push_back(static_cast<Token>(token));
+  result.accepted = static_cast<std::size_t>(accepted);
+  result.bonus = result.accepted == proposals.size();
   return result;
+}
+
+float positional_uniform(
+    std::uint64_t seed,
+    batching::Position position,
+    int purpose) {
+  // SplitMix64 over (seed, purpose, position), as the MLX batching executor
+  // derives its per-prediction generators.
+  auto mix = [](std::uint64_t value) {
+    value += 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31);
+  };
+  const std::uint64_t value =
+      mix(seed ^ mix(static_cast<std::uint64_t>(purpose)) ^
+          mix(static_cast<std::uint64_t>(position) + 1));
+  std::seed_seq words{
+      static_cast<std::uint32_t>(value), static_cast<std::uint32_t>(value >> 32)};
+  std::mt19937 generator(words);
+  return std::uniform_real_distribution<float>(0.0f, 1.0f)(generator);
 }
 
 bool trim_hidden(
@@ -119,6 +139,49 @@ std::optional<DraftPlan> pack_draft(
     }
   }
   return plan;
+}
+
+DeviceStaging::~DeviceStaging() {
+  if (device_) {
+    cudaFree(device_);
+  }
+}
+
+std::optional<std::vector<void*>> DeviceStaging::upload(
+    const std::vector<std::pair<const void*, std::size_t>>& parts,
+    void* stream) {
+  std::vector<std::size_t> offsets;
+  std::size_t total = 0;
+  for (const auto& part : parts) {
+    total = (total + 7) & ~std::size_t{7};
+    offsets.push_back(total);
+    total += part.second;
+  }
+  if (total > capacity_) {
+    if (device_ && cudaFree(device_) != cudaSuccess) {
+      return std::nullopt;
+    }
+    device_ = nullptr;
+    capacity_ = 0;
+    if (cudaMalloc(&device_, total) != cudaSuccess) {
+      return std::nullopt;
+    }
+    capacity_ = total;
+  }
+  std::vector<void*> pointers;
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    auto* destination = static_cast<std::uint8_t*>(device_) + offsets[i];
+    if (cudaMemcpyAsync(
+            destination,
+            parts[i].first,
+            parts[i].second,
+            cudaMemcpyHostToDevice,
+            static_cast<cudaStream_t>(stream)) != cudaSuccess) {
+      return std::nullopt;
+    }
+    pointers.push_back(destination);
+  }
+  return pointers;
 }
 } // namespace cuda_dflash_detail
 
@@ -376,11 +439,12 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   auto& module = target->module();
   ET_ASSIGN_OR_RETURN(names, module.method_names());
   ET_CHECK_OR_RETURN_ERROR(
-      names.count(df::kForward) &&
+      names.count(df::kForward) && names.count(df::kVerify) &&
+          names.count(df::kVerifyArgmax) &&
           !names.count("get_mutable_buffer_metadata") &&
           !names.count("vision_encoder"),
       InvalidProgram,
-      "CUDA DFlash requires a tapped text-only off-graph artifact");
+      "CUDA DFlash requires a tapped text-only off-graph artifact with its verifiers");
   ET_ASSIGN_OR_RETURN(block, positive_int(module, df::kBlock));
   ET_ASSIGN_OR_RETURN(
       declared_block, positive_int(module, "get_draft_dflash_block_size"));
@@ -397,7 +461,7 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   ET_ASSIGN_OR_RETURN(
       draft_key, cache_key_metadata(module, "get_dflash_draft_cache_key"));
   ET_CHECK_OR_RETURN_ERROR(
-      block >= 2 && block == declared_block && max_owners <= 4 &&
+      block >= 2 && block == declared_block && max_owners <= df::kOwnerLimit &&
           block <= (std::numeric_limits<int>::max() - 1) / max_owners &&
           max_write > max_owners * block && max_cells > max_write && mask &&
           *mask >= 0 && *mask < target->vocab_size() &&
@@ -411,10 +475,11 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       "Invalid packed CUDA DFlash metadata");
   const int proposals =
       config.dflash_n_draft == 0 ? block - 1 : config.dflash_n_draft;
+  // The exported verifiers take two to block - 1 proposals.
   ET_CHECK_OR_RETURN_ERROR(
-      proposals > 0 && proposals < block,
+      proposals >= 2 && proposals < block,
       InvalidArgument,
-      "DFlash n_draft must be in [1, trained block size - 1]");
+      "DFlash n_draft must be in [2, trained block size - 1]");
   int hidden_width = 0;
   for (const auto& method : target->method_calls()) {
     ET_ASSIGN_OR_RETURN(meta, module.method_meta(method.name));
@@ -542,12 +607,15 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
   if (initialized_) {
     return true;
   }
+  auto& module = target_->module();
   if (!target_->initialize() ||
       batching::load_method_with_cache(
-          target_->module(),
+          module,
           df::kForward,
           ::executorch::backends::cuda::kCudaBackendId,
-          draft_install_) != Error::Ok) {
+          draft_install_) != Error::Ok ||
+      module.load_method(df::kVerify) != Error::Ok ||
+      module.load_method(df::kVerifyArgmax) != Error::Ok) {
     ET_LOG(
         Error,
         "CUDA DFlash: could not initialize distinct target/draft caches");
@@ -656,11 +724,6 @@ void MuseGlimmerCudaDFlashExecutor::set_sampling(
   if (it != sessions_.end()) {
     it->second.sampling = params;
     it->second.seed = seed;
-    if (!std::isfinite(params.temperature) || params.temperature != 0.0f) {
-      ET_LOG(
-          Error,
-          "CUDA DFlash supports temperature=0 only; sampled DFlash is not implemented");
-    }
   }
 }
 
@@ -682,66 +745,54 @@ bool MuseGlimmerCudaDFlashExecutor::rewind(State& state, int position) {
 bool MuseGlimmerCudaDFlashExecutor::run_target(
     const RawStep& step,
     const std::vector<SessionId>& token_owners,
-    std::vector<Token>& predictions,
-    bool drain_context) {
+    std::vector<Token>& predictions) {
   if (token_owners.size() != step.tokens.size()) {
     return false;
   }
   predictions.resize(step.logit_indices.size());
-  if (!drain_context &&
-      !verification_hidden_.begin(step.tokens.size(), row_bytes_)) {
-    return false;
-  }
-  if (drain_context) {
-    ++stats_.target_preamble_calls;
-  } else {
-    ++stats_.target_verify_calls;
-  }
+  ++stats_.target_preamble_calls;
   std::size_t predicted = 0;
   const bool ok =
       target_->execute_raw(step, [&](const cb::RawTargetOutput& output) {
-        if (drain_context) {
-          ++stats_.target_preamble_forwards;
-        } else {
-          ++stats_.target_verify_forwards;
-        }
+        ++stats_.target_preamble_forwards;
         if (!output.taps || output.taps->dim() != 3 ||
             output.taps->scalar_type() != aten::ScalarType::BFloat16 ||
             output.taps->size(2) != hidden_width_) {
           return false;
         }
-        std::vector<std::uint8_t> copied;
-        // The next sampler or target slice may invalidate these borrowed taps.
-        if (drain_context) {
-          copied.resize(static_cast<std::size_t>(output.length) * row_bytes_);
-          if (!copy_host(copied.data(), *output.taps, copied.size())) {
-            return false;
-          }
-          if (output.taps->device_type() == aten::DeviceType::CUDA) {
-            stats_.hidden_rows_d2h += output.length;
-            stats_.hidden_bytes_d2h += copied.size();
-          }
-        } else {
-          if (!verification_hidden_.capture(
-                  *output.taps, output.offset, output.length)) {
-            return false;
-          }
-          if (verification_hidden_.on_device()) {
-            stats_.hidden_rows_d2d += output.length;
-            stats_.hidden_bytes_d2d += output.length * row_bytes_;
-          }
+        // The sampler or the next target slice may invalidate these taps.
+        std::vector<std::uint8_t> copied(
+            static_cast<std::size_t>(output.length) * row_bytes_);
+        if (!copy_host(copied.data(), *output.taps, copied.size())) {
+          return false;
         }
-        auto tokens =
-            target_->argmax_rows(output.logits, output.selected_indices.size());
+        if (output.taps->device_type() == aten::DeviceType::CUDA) {
+          stats_.hidden_rows_d2h += output.length;
+          stats_.hidden_bytes_d2h += copied.size();
+        }
+        std::vector<float> params;
+        for (const auto selected : output.selected_indices) {
+          const auto index = step.logit_indices[selected];
+          const auto& state = sessions_.at(token_owners[index]);
+          const auto& sampling = *state.sampling;
+          params.insert(
+              params.end(),
+              {sampling.temperature,
+               sampling.top_p,
+               static_cast<float>(sampling.top_k),
+               df::positional_uniform(
+                   state.seed.value_or(0),
+                   static_cast<batching::Position>(step.positions[index] + 1),
+                   0)});
+        }
+        auto tokens = target_->sample_rows(
+            output.logits, output.selected_indices.size(), params);
         if (!tokens) {
           return false;
         }
         for (std::size_t row = 0; row < tokens->size(); ++row) {
           predictions[output.selected_indices[row]] = (*tokens)[row];
           ++predicted;
-        }
-        if (!drain_context) {
-          return true;
         }
         std::unordered_set<SessionId> touched;
         for (int row = 0; row < output.length; ++row) {
@@ -755,11 +806,9 @@ bool MuseGlimmerCudaDFlashExecutor::run_target(
           state.frontier = static_cast<int>(step.positions[index]) + 1;
           touched.insert(owner);
         }
-        if (drain_context) {
-          for (const auto owner : touched) {
-            if (!drain(owner)) {
-              return false;
-            }
+        for (const auto owner : touched) {
+          if (!drain(owner)) {
+            return false;
           }
         }
         return true;
@@ -770,6 +819,113 @@ bool MuseGlimmerCudaDFlashExecutor::run_target(
           step.logit_indices.begin(), step.logit_indices.end(), [](auto index) {
             return index >= 0;
           }));
+}
+
+std::vector<float> MuseGlimmerCudaDFlashExecutor::verify_params(
+    const State& state,
+    batching::Position first) const {
+  const auto& sampling = *state.sampling;
+  const auto seed = state.seed.value_or(0);
+  std::vector<float> params{
+      sampling.temperature,
+      static_cast<float>(sampling.top_k),
+      sampling.top_p};
+  for (int j = 0; j < proposals_; ++j) {
+    params.push_back(df::positional_uniform(seed, first + j, 2));
+  }
+  params.push_back(df::positional_uniform(seed, first, 3));
+  return params;
+}
+
+bool MuseGlimmerCudaDFlashExecutor::verify(
+    const RawStep& step,
+    const std::vector<SessionId>& owners,
+    const std::vector<std::int64_t>& candidates,
+    std::vector<std::int64_t>& results) {
+  const int width = proposals_ + 1;
+  if (!verification_hidden_.begin(step.tokens.size(), row_bytes_) ||
+      candidates.size() != owners.size() * width) {
+    return false;
+  }
+  results.assign(owners.size() * 2, -1);
+  ++stats_.target_verify_calls;
+  return target_->execute_raw(step, [&](const cb::RawTargetOutput& output) {
+    ++stats_.target_verify_forwards;
+    if (!output.taps || output.taps->dim() != 3 ||
+        output.taps->scalar_type() != aten::ScalarType::BFloat16 ||
+        output.taps->size(2) != hidden_width_ ||
+        !verification_hidden_.capture(
+            *output.taps, output.offset, output.length)) {
+      return false;
+    }
+    if (verification_hidden_.on_device()) {
+      stats_.hidden_rows_d2d += output.length;
+      stats_.hidden_bytes_d2d += output.length * row_bytes_;
+    }
+    // Every verification row samples, so a slice holds whole owner blocks.
+    if (output.offset % width != 0 || output.length % width != 0 ||
+        output.selected_indices.size() !=
+            static_cast<std::size_t>(output.length) ||
+        output.logits.device_type() != aten::DeviceType::CUDA ||
+        output.logits.scalar_type() != aten::ScalarType::Float) {
+      return false;
+    }
+    const int first = output.offset / width;
+    const int count = output.length / width;
+    bool greedy = true;
+    std::vector<float> params;
+    for (int i = first; i < first + count; ++i) {
+      const auto& state = sessions_.at(owners[i]);
+      greedy = greedy && state.sampling->temperature == 0.0f;
+      const auto row = verify_params(
+          state, static_cast<batching::Position>(step.positions[i * width] + 1));
+      params.insert(params.end(), row.begin(), row.end());
+    }
+    const auto stream =
+        ::executorch::extension::cuda::getCallerStream().value_or(
+            cudaStreamPerThread);
+    std::vector<std::pair<const void*, std::size_t>> parts{
+        {candidates.data() + first * width,
+         static_cast<std::size_t>(count * width) * sizeof(std::int64_t)}};
+    if (!greedy) {
+      parts.emplace_back(params.data(), params.size() * sizeof(float));
+    }
+    auto staged = verify_inputs_.upload(parts, stream);
+    if (!staged) {
+      return false;
+    }
+    const aten::Device cuda(
+        aten::DeviceType::CUDA, output.logits.device_index());
+    auto logits = make_tensor_ptr(
+        {count, width, target_->vocab_size()},
+        output.logits.mutable_data_ptr(),
+        aten::ScalarType::Float,
+        cuda);
+    auto tokens = make_tensor_ptr(
+        {count, width}, (*staged)[0], aten::ScalarType::Long, cuda);
+    auto result = greedy
+        ? target_->module().execute(
+              df::kVerifyArgmax, std::vector<runtime::EValue>{logits, tokens})
+        : target_->module().execute(
+              df::kVerify,
+              {logits,
+               tokens,
+               make_tensor_ptr(
+                   {count, width + 3},
+                   (*staged)[1],
+                   aten::ScalarType::Float,
+                   cuda)});
+    if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
+      return false;
+    }
+    const auto& verdict = result->at(0).toTensor();
+    if (verdict.scalar_type() != aten::ScalarType::Long ||
+        verdict.numel() != 2 * count) {
+      return false;
+    }
+    return copy_host(
+        results.data() + 2 * first, verdict, 2 * count * sizeof(std::int64_t));
+  });
 }
 
 bool MuseGlimmerCudaDFlashExecutor::drain(SessionId owner) {
@@ -926,7 +1082,7 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
       return false;
     }
     RawStep verification;
-    std::vector<SessionId> token_owners;
+    std::vector<std::int64_t> candidates;
     std::vector<int> starts;
     const int width = proposals_ + 1;
     for (std::size_t i = 0; i < owners.size(); ++i) {
@@ -938,20 +1094,20 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
         verification.positions.push_back(state.frontier + j);
         verification.seq_ids.push_back(state.target_id);
         verification.logit_indices.push_back(verification.tokens.size() - 1);
-        token_owners.push_back(owners[i]);
+        candidates.push_back(verification.tokens.back());
       }
     }
-    std::vector<Token> predictions;
-    if (!run_target(verification, token_owners, predictions, false)) {
+    std::vector<std::int64_t> verdicts;
+    if (!verify(verification, owners, candidates, verdicts)) {
       return false;
     }
-    std::vector<df::GreedyBurst> bursts;
+    std::vector<df::Burst> bursts;
     for (std::size_t i = 0; i < owners.size(); ++i) {
-      auto burst = df::verify_greedy(
+      auto burst = df::make_burst(
           proposals[i],
-          std::vector<Token>(
-              predictions.begin() + i * width,
-              predictions.begin() + (i + 1) * width));
+          verdicts[2 * i],
+          verdicts[2 * i + 1],
+          target_->vocab_size());
       if (!burst ||
           !verification_hidden_.copy_rows(
               sessions_.at(owners[i]).hidden, i * width, burst->accepted + 1)) {
@@ -1050,10 +1206,8 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
           (input.produce_output && !it->second.sampling) ||
           (it->second.sampling &&
            (!std::isfinite(it->second.sampling->temperature) ||
-            it->second.sampling->temperature != 0.0f))) {
-        ET_LOG(
-            Error,
-            "CUDA DFlash: invalid input or unsupported sampled configuration (temperature=0 required)");
+            it->second.sampling->temperature < 0.0f))) {
+        ET_LOG(Error, "CUDA DFlash: invalid input or sampling configuration");
         return fail_batch(batch, out);
       }
       const auto start =
@@ -1110,7 +1264,7 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       }
     } else {
       std::vector<Token> predictions;
-      if (!run_target(step, token_owners, predictions, true)) {
+      if (!run_target(step, token_owners, predictions)) {
         return fail_batch(batch, out);
       }
       for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
