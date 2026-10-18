@@ -134,6 +134,25 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest_remote_gpu(
+        name = "test_sdpa_varlen",
+        srcs = [
+            "test_sdpa_varlen.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
+        ),
+    )
+
+    python_unittest_remote_gpu(
         name = "test_int4_large_quantized_gemm",
         srcs = [
             "test_int4_large_quantized_gemm.py",
