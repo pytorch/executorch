@@ -396,7 +396,7 @@ canvas { width:100%; height:60px; display:block; }
 <main>
   <section class="panel">
     <h2>Camera preview</h2>
-    <div class="viewport" id="viewport"><img id="cam" src="/stream.mjpg" alt="camera stream"><div id="cropbox"></div></div>
+    <div class="viewport" id="viewport"><img id="cam" src="stream.mjpg" alt="camera stream"><div id="cropbox"></div></div>
     <div id="prediction">waiting for first result</div>
     <div id="prediction-sub"></div>
     <div class="metrics" style="margin-top:14px">
@@ -470,7 +470,7 @@ function render(s) {
   const live = st.result_age_ms !== null && st.result_age_ms < 5000;
   $("dot").style.background = live ? "var(--good)" : "var(--warn)";
   $("status-text").textContent = st.link && st.link !== "connected" ? st.link : (live ? "streaming" : (r ? "stalled" : "waiting for board"));
-  if (live && camStale) { camStale = false; $("cam").src = "/stream.mjpg?t=" + Date.now(); }
+  if (live && camStale) { camStale = false; $("cam").src = "stream.mjpg?t=" + Date.now(); }
   if (r) {
     $("m-infer").textContent = fmt(r.infer_ms, 0);
     $("m-pre").textContent = fmt(r.pre_ms, 0);
