@@ -10,10 +10,13 @@
 // under $ET_CUDA_BATCHING_TOY_DIR, and checks every generation against the
 // eager greedy continuation it recorded. Runs once per artifact: forward_{1,2,
 // 4,8} + forward_others, and the sparser forward_{1,4} + forward_others with a
-// five-row selector minimum, where steps pad across a gap.
+// five-row selector minimum, where steps pad across a gap. mg_widths carries
+// Muse Glimmer's forward_{1,...,64} + forward_others and drives steps of every
+// width up to 65.
 
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/runner.h>
 
 #include <cuda_runtime.h>
@@ -22,8 +25,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -167,6 +173,34 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
       out.push_back(c.prompt);
     }
     return out;
+  }
+
+  // Generates `new_tokens` greedily from `delta` on `session`, which may hold
+  // a reused prefix. A capture, if given, wraps the callback.
+  static std::vector<batching::Token> continue_on(
+      const batching::Session& session,
+      std::vector<batching::Token> delta,
+      int new_tokens,
+      batching::PrefixCache::PromptCapture* capture = nullptr) {
+    std::vector<batching::Token> tokens;
+    std::mutex mutex;
+    batching::GenConfig config;
+    config.max_new_tokens = new_tokens;
+    config.seed = 0;
+    batching::GenerationCallback on_update =
+        [&](const batching::GenerationUpdate& update) {
+          std::lock_guard<std::mutex> guard(mutex);
+          tokens.insert(
+              tokens.end(), update.tokens.begin(), update.tokens.end());
+        };
+    if (capture != nullptr) {
+      on_update = capture->wrap(std::move(on_update));
+    }
+    auto handle =
+        session.generate_async(std::move(delta), config, std::move(on_update));
+    handle.wait();
+    EXPECT_EQ(handle.finish_reason(), batching::FinishReason::NewTokenLimit);
+    return tokens;
   }
 
   static std::unique_ptr<batching::Scheduler> scheduler() {
@@ -407,6 +441,55 @@ TEST_P(
   }
 }
 
+TEST_P(CudaExecutorTest, PrefixCacheResumesFromACapturedPrompt) {
+  // Each prompt's cold generation leaves a snapshot cloned at its prompt
+  // boundary. That snapshot then serves the same prompt again and a prompt
+  // extending it; both resume on the eager greedy path, so the clone carried
+  // the prompt's exact KV and later writes did not disturb it.
+  auto exec = executor();
+  ASSERT_NE(exec, nullptr);
+  batching::Runner runner(*exec, scheduler());
+  batching::PrefixCache prefixes(2);
+  constexpr int kKnown = 2;
+  for (const Case& c : cases_) {
+    if (c.prompt.size() < 2) {
+      continue;
+    }
+    {
+      auto cold = runner.open_session_async().get();
+      ASSERT_TRUE(cold.has_value());
+      auto capture = prefixes.capture_prompt(*cold, c.prompt);
+      EXPECT_EQ(continue_on(*cold, c.prompt, kNewTokens, &capture), c.expected);
+      EXPECT_TRUE(capture.collect());
+    }
+
+    auto same = prefixes.lookup(c.prompt);
+    ASSERT_TRUE(same.has_value());
+    EXPECT_EQ(same->matched_tokens, c.prompt.size() - 1);
+    EXPECT_EQ(
+        same->session.position(),
+        static_cast<batching::Position>(c.prompt.size() - 1));
+    EXPECT_EQ(
+        continue_on(same->session, {c.prompt.back()}, kNewTokens), c.expected);
+
+    std::vector<batching::Token> extended = c.prompt;
+    extended.insert(
+        extended.end(), c.expected.begin(), c.expected.begin() + kKnown);
+    auto longer = prefixes.lookup(extended);
+    ASSERT_TRUE(longer.has_value());
+    EXPECT_EQ(longer->matched_tokens, c.prompt.size());
+    const std::vector<batching::Token> suffix(
+        extended.begin() + longer->matched_tokens, extended.end());
+    EXPECT_EQ(
+        continue_on(longer->session, suffix, kNewTokens - kKnown),
+        std::vector<batching::Token>(
+            c.expected.begin() + kKnown, c.expected.end()));
+  }
+  prefixes.clear();
+  runner.shutdown();
+  EXPECT_EQ(runner.metrics().steps_failed, 0u);
+}
+
 TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
   // 8 sessions of the full 64-token context need 512 cells; the program has
   // 256.
@@ -421,6 +504,95 @@ TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
       Error::InvalidArgument);
 }
 
+TEST(CudaExecutorConfigTest, InvalidConfigIsRejectedBeforeLoading) {
+  cb::CudaExecutorConfig config;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  // A missing program must not mask invalid session limits, even without CUDA.
+  config.model_path = "/nonexistent/cuda_executor_test/model.pte";
+  config.load_mode = Module::LoadMode::File;
+  config.max_sessions = 0;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  config.max_sessions = 1;
+  config.max_session_tokens = -1;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+}
+
+TEST_P(CudaExecutorTest, ConfigAutoBudgetRespectsContextAndPaddingCell) {
+  const std::vector<std::pair<int, int>> limits = {
+      {1, kMaxContext}, {4, 63}, {8, 31}};
+  for (const auto& [sessions, expected_budget] : limits) {
+    SCOPED_TRACE(sessions);
+    cb::CudaExecutorConfig config;
+    config.model_path = dir_ + "/model.pte";
+    config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+    config.load_mode = Module::LoadMode::File;
+    config.max_sessions = sessions;
+    config.initial_capacity = 16;
+    config.options.cuda_graph_for_static_methods = false;
+    auto created = cb::CudaExecutor::create(config);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto exec = std::move(created.get());
+    ASSERT_NE(exec, nullptr);
+    EXPECT_EQ(exec->max_session_tokens(), expected_budget);
+    EXPECT_LT(exec->max_session_tokens() * sessions, kMaxCells);
+    // The toy export publishes a 32-entry vocabulary.
+    EXPECT_EQ(exec->vocab_size(), 32);
+  }
+}
+
+TEST_P(CudaExecutorTest, ConfiguredBudgetsMatchEagerGreedy) {
+  ASSERT_EQ(cases_.size(), 4u);
+  for (const int token_budget : {0, 32}) {
+    SCOPED_TRACE(token_budget);
+    cb::CudaExecutorConfig config;
+    config.model_path = dir_ + "/model.pte";
+    config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+    config.load_mode = Module::LoadMode::File;
+    config.max_sessions = 4;
+    config.max_session_tokens = token_budget;
+    config.kv_dtype = kBFloat16;
+    config.initial_capacity = 16;
+    config.options.cuda_graph_for_static_methods = false;
+    auto created = cb::CudaExecutor::create(config);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto exec = std::move(created.get());
+    ASSERT_NE(exec, nullptr);
+    EXPECT_EQ(exec->max_session_tokens(), token_budget == 0 ? 63 : 32);
+    batching::Runner runner(*exec, scheduler());
+    const auto generations = generate(runner, prompts());
+    runner.shutdown();
+    ASSERT_EQ(generations.size(), cases_.size());
+    for (size_t i = 0; i < cases_.size(); ++i) {
+      EXPECT_EQ(generations[i].reason, batching::FinishReason::NewTokenLimit)
+          << "prompt " << i;
+      EXPECT_EQ(generations[i].tokens, cases_[i].expected) << "prompt " << i;
+    }
+    EXPECT_EQ(runner.metrics().steps_failed, 0u);
+  }
+}
+
+TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
+  cb::CudaExecutorConfig config;
+  config.model_path = dir_ + "/model.pte";
+  config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.max_sessions = 8;
+  config.max_session_tokens = kMaxContext;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  // Reserving the padding row leaves no token per session at 256 sessions.
+  config.max_sessions = kMaxCells;
+  config.max_session_tokens = 0;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  EXPECT_EQ(
+      cb::CudaExecutor::create(module(), 4, 0, kBFloat16, 16, {}).error(),
+      Error::InvalidArgument);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorTest,
@@ -430,3 +602,186 @@ INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorDeviceSamplingTest,
     ::testing::Values("device_sampling"));
+
+namespace {
+
+// Must match export_toy_decoder.py's mg_widths artifact.
+constexpr int kWidthsMaxStep = 96;
+constexpr int kWidthsMaxCells = 1024;
+
+int next_pow2(int n) {
+  int p = 1;
+  while (p < n) {
+    p *= 2;
+  }
+  return p;
+}
+
+// Muse Glimmer's method set: forward_{1,2,...,64} and forward_others from 64.
+class CudaExecutorWidthsTest : public CudaExecutorTest {};
+
+} // namespace
+
+// Steps of every width 1..65 (and 96, 97), each a random mix of sequences and
+// chunk lengths: a static method's step pads up to the next power of two and
+// drops the padding's rows, 65..96 runs forward_others unpadded, and 97 slices.
+// Every output a step asks for is the eager greedy successor, so padding
+// neither reaches a real row nor disturbs a later step through the cache.
+TEST_P(CudaExecutorWidthsTest, EveryStepWidthUpTo65MatchesEagerGreedy) {
+  const int sessions = static_cast<int>(cases_.size());
+  ASSERT_LT(sessions * kMaxContext, kWidthsMaxCells);
+  for (const bool graphs : {true, false}) {
+    SCOPED_TRACE(graphs ? "cuda graphs" : "eager");
+    cb::CudaExecutorOptions options;
+    options.cuda_graph_for_static_methods = graphs;
+    auto created = cb::CudaExecutor::create(
+        module(),
+        sessions,
+        kMaxContext,
+        kBFloat16,
+        /*initial_capacity=*/16,
+        options);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto& exec = *created.get();
+    ASSERT_TRUE(exec.initialize());
+    ASSERT_EQ(
+        exec.preferred_batch_tokens(), static_cast<size_t>(kWidthsMaxStep));
+
+    // Teacher forcing: each sequence is its prompt and eager continuation, so
+    // a step may end any chunk at a position whose successor is known.
+    std::vector<std::shared_ptr<const std::vector<batching::Token>>> seqs;
+    for (const Case& c : cases_) {
+      auto full = c.prompt;
+      full.insert(full.end(), c.expected.begin(), c.expected.end());
+      ASSERT_LE(full.size(), static_cast<size_t>(kMaxContext));
+      seqs.push_back(std::make_shared<const std::vector<batching::Token>>(
+          std::move(full)));
+    }
+    std::vector<batching::SessionId> sids(sessions, -1);
+    std::vector<size_t> fed(sessions, 0);
+    auto reset = [&] {
+      for (int i = 0; i < sessions; ++i) {
+        if (sids[i] >= 0) {
+          exec.close_session(sids[i]);
+        }
+        auto sid = exec.open_session();
+        ASSERT_TRUE(sid.has_value());
+        sids[i] = *sid;
+        exec.set_sampling(sids[i], {}, 0);
+        fed[i] = 0;
+      }
+    };
+    // Each sequence's last token has no known successor, so it is never fed.
+    auto remaining = [&](int i) { return seqs[i]->size() - 1 - fed[i]; };
+    reset();
+
+    std::vector<int> widths;
+    for (int round = 0; round < 6; ++round) {
+      for (int n = 1; n <= 65; ++n) {
+        widths.push_back(n);
+      }
+      widths.push_back(kWidthsMaxStep);
+      widths.push_back(kWidthsMaxStep + 1);
+    }
+    std::mt19937 rng(1234);
+    std::shuffle(widths.begin(), widths.end(), rng);
+
+    size_t checked = 0;
+    for (const int n : widths) {
+      SCOPED_TRACE("step of " + std::to_string(n));
+      size_t total = 0;
+      for (int i = 0; i < sessions; ++i) {
+        total += remaining(i);
+      }
+      if (total < static_cast<size_t>(n)) {
+        reset();
+      }
+      // A random subset and split of the sequences that sums to n, each
+      // sequence at most once.
+      std::vector<int> order(sessions);
+      std::iota(order.begin(), order.end(), 0);
+      std::shuffle(order.begin(), order.end(), rng);
+      size_t after = 0;
+      for (const int i : order) {
+        after += remaining(i);
+      }
+      batching::BatchInput batch;
+      std::vector<int> owner;
+      size_t left = static_cast<size_t>(n);
+      for (const int i : order) {
+        after -= remaining(i);
+        if (left == 0 || remaining(i) == 0) {
+          continue;
+        }
+        const size_t most = std::min(remaining(i), left);
+        // Enough that the sequences after this one can cover the rest.
+        const size_t least = left > after ? left - after : 0;
+        if (most < least || (least == 0 && rng() % 3 == 0)) {
+          continue;
+        }
+        const size_t take = std::uniform_int_distribution<size_t>(
+            std::max<size_t>(least, 1), most)(rng);
+        const size_t end = fed[i] + take;
+        // Ask for the chunk's last row whenever its successor is known, but
+        // not always, so some steps want none.
+        const bool known = end >= cases_[i].prompt.size();
+        batch.inputs.push_back(batching::Input{
+            sids[i], known && rng() % 4 != 0, fed[i], take, seqs[i], 0});
+        owner.push_back(i);
+        left -= take;
+      }
+      ASSERT_EQ(left, 0u);
+      ASSERT_EQ(batch.size(), static_cast<size_t>(n));
+
+      const auto before = exec.method_calls();
+      batching::BatchOutput out;
+      ASSERT_TRUE(exec.execute(batch, out));
+      const auto calls = exec.method_calls();
+
+      // The method(s) the width runs through.
+      std::map<std::string, std::uint64_t> ran;
+      for (size_t m = 0; m < calls.size(); ++m) {
+        if (calls[m].calls != before[m].calls) {
+          ran[calls[m].name] = calls[m].calls - before[m].calls;
+        }
+      }
+      std::map<std::string, std::uint64_t> want;
+      if (n <= 64) {
+        want["forward_" + std::to_string(next_pow2(n))] = 1;
+      } else if (n <= kWidthsMaxStep) {
+        want["forward_others"] = 1;
+      } else {
+        want["forward_others"] = 1;
+        want["forward_" + std::to_string(next_pow2(n - kWidthsMaxStep))] = 1;
+      }
+      EXPECT_EQ(ran, want);
+
+      ASSERT_EQ(out.outputs.size(), batch.inputs.size());
+      for (size_t j = 0; j < batch.inputs.size(); ++j) {
+        const int i = owner[j];
+        const auto& input = batch.inputs[j];
+        const size_t end = input.offset + input.size;
+        if (input.produce_output) {
+          ASSERT_TRUE(out.outputs[j].has_value()) << "sequence " << i;
+          EXPECT_EQ(out.outputs[j]->sid, sids[i]);
+          ASSERT_EQ(out.outputs[j]->tokens.size(), 1u);
+          EXPECT_EQ(out.outputs[j]->tokens[0], (*seqs[i])[end])
+              << "sequence " << i << " after " << end << " tokens";
+          ++checked;
+        } else {
+          EXPECT_FALSE(out.outputs[j].has_value()) << "sequence " << i;
+        }
+        fed[i] = end;
+      }
+    }
+    EXPECT_GT(checked, widths.size());
+    for (const batching::SessionId sid : sids) {
+      exec.close_session(sid);
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Toy,
+    CudaExecutorWidthsTest,
+    ::testing::Values("mg_widths"));
