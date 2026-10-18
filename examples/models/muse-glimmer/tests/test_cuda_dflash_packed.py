@@ -442,6 +442,9 @@ class PackedDraftCudaTest(unittest.TestCase):
                 "forward_8",
                 "forward_others",
                 "draft_forward",
+                # Two static owners fit max_write = 16 + 4 * 16 (2 * N * 16 rows).
+                "draft_forward_1",
+                "draft_forward_2",
                 "sample",
                 "sample_argmax",
                 "dflash_verify",

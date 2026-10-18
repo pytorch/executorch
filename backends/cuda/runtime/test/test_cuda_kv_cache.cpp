@@ -1927,7 +1927,7 @@ TEST_F(CudaCellCacheTest, DFlashUploadsKVWideCellsAndQueryWideOwnerMasks) {
 
 TEST_F(
     CudaCellCacheTest,
-    DFlashRejectsGroupingAndPaddedTokenCountsBeforeAllocation) {
+    DFlashRejectsGroupingAndNarrowProgramsBeforeAllocation) {
   auto cache_ptr = make(4, 2);
   auto* control = cache_ptr->as<cache::BatchControl>();
   auto* kv = cache_ptr->as<cu::CudaKVCache>();
@@ -1938,7 +1938,6 @@ TEST_F(
   EXPECT_FALSE(control->declare_step({a, a, b, b, a, a}));
   EXPECT_FALSE(control->declare_step({a, a, b}));
   ASSERT_TRUE(control->declare_step({b, b, a, a}));
-  EXPECT_EQ(kv->prepare_step(5, cudaStreamPerThread), Error::InvalidState);
   EXPECT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::InvalidState);
   EXPECT_EQ(kv->metrics().allocated_bytes, 0);
   EXPECT_EQ(control->pos(a), 0);
@@ -1974,6 +1973,41 @@ TEST_F(
   const int32_t reused = *control->seq_new();
   ASSERT_EQ(step(*cache_ptr, handle, {reused, reused, reused}), Error::Ok);
   EXPECT_EQ(control->pos(reused), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, DFlashStaticProgramPadsTailIntoScratch) {
+  auto cache_ptr = make(4, 2);
+  ASSERT_NE(cache_ptr, nullptr);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new(), b = *control->seq_new();
+  // One context row for a, none for b, padded to an eight-row program.
+  ASSERT_TRUE(control->declare_step({a, a, a, b, b}));
+  ASSERT_EQ(kv->prepare_step(8, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  const auto cells = read_longs(fake.bound["cells"].data, 8);
+  EXPECT_EQ(
+      std::vector<int64_t>(cells.begin(), cells.begin() + 5),
+      std::vector<int64_t>({0, 1, 2, 3, 4}));
+  for (int row = 5; row < 8; ++row) {
+    EXPECT_EQ(cells[row], cells[7]) << row;
+    EXPECT_GE(cells[row], 5) << row;
+  }
+  using Mask = std::vector<std::vector<int>>;
+  EXPECT_EQ(
+      read_mask(fake.bound["mask0"].data, 4, 5),
+      Mask(
+          {{1, 1, 1, 0, 0},
+           {1, 1, 1, 0, 0},
+           {0, 0, 0, 1, 1},
+           {0, 0, 0, 1, 1}}));
+  ASSERT_EQ(kv->commit_step(8), Error::Ok);
+  EXPECT_EQ(control->pos(a), 1);
+  EXPECT_EQ(control->pos(b), 0);
   kv->forget_handle(&handle);
 }
 
