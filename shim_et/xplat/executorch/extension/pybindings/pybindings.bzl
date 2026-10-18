@@ -55,7 +55,8 @@ def executorch_pybindings(
         visibility = ["//executorch/..."],
         types = [],
         compiler_flags = [],
-        use_aten = False):
+        use_aten = False,
+        use_cuda = False):
     runtime.cxx_python_extension(
         # @autodeps-skip
         name = python_module_name,
@@ -63,6 +64,7 @@ def executorch_pybindings(
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
         headers = [
+            "//executorch/extension/pybindings:pybindings_cuda.h",
             "//executorch/extension/pybindings:pybindings_dlpack.h",
             "//executorch/extension/pybindings:pybindings_executorch_result.h",
         ],
@@ -71,13 +73,13 @@ def executorch_pybindings(
         compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
-        ] + (["-DUSE_ATEN_LIB"] if use_aten else []),
+        ] + (["-DUSE_ATEN_LIB"] if use_aten else []) + (["-DEXECUTORCH_PYBINDINGS_CUDA"] if use_cuda else []),
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/extension/pybindings:data_loader_types",
             "//executorch/extension/pybindings:data_loader",
-        ] + cppdeps,
+        ] + cppdeps + (["//executorch/extension/cuda:caller_stream"] if use_cuda else []),
         external_deps = [
             "pybind11",
         ] + (["libtorch_python"] if use_aten else []),
