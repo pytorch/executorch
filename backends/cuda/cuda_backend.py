@@ -33,6 +33,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    PACKED_LAYOUTS,
     parse_offgraph_kv_manifest,
 )
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
@@ -261,6 +262,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         return orig_determine_aoti_mmap_flags(consts_size)
 
     orig_autotuner_run = _Autotuner.run
+    orig_jit_autotune = _GL._run_jit_variant_for_autotune
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -305,6 +307,21 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         with _rehydrate_emptied_tensors(tensors):
             return orig_autotuner_run(self, *args, **kwargs)
 
+    def _jit_autotune_with_rehydrated_constants(
+        self, wrapper_code, kernel_code, extract_real_inputs, kernel_names
+    ):
+        # The OFF path launches C++ kernels directly, bypassing Autotuner.run.
+        # Restore backing before pointer extraction and keep it through completion.
+        backing = (
+            _rehydrate_emptied_tensors(self.constants.values())
+            if _is_cpu_clone_active()
+            else contextlib.nullcontext()
+        )
+        with backing:
+            return orig_jit_autotune(
+                self, wrapper_code, kernel_code, extract_real_inputs, kernel_names
+            )
+
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
         # _to_bytes. For KV buffers we freed with resize_(0) this would otherwise
@@ -338,6 +355,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     )
     _codecache.determine_aoti_mmap_flags = _force_external_weights_for_fqn_binding
     _Autotuner.run = _autotuner_run_with_rehydrated_emptied_args
+    _GL._run_jit_variant_for_autotune = _jit_autotune_with_rehydrated_constants
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -351,6 +369,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         _codecache.TensorProperties = orig_tensor_properties
         _codecache.determine_aoti_mmap_flags = orig_determine_aoti_mmap_flags
         _Autotuner.run = orig_autotuner_run
+        _GL._run_jit_variant_for_autotune = orig_jit_autotune
 
 
 def _is_kv_buffer(name, v) -> bool:
@@ -802,9 +821,17 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
+        layout = next(
+            (
+                parse_offgraph_kv_manifest(spec.value)["layout"]
+                for spec in compile_specs
+                if spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            ),
+            "sequence",
+        )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC:
-                passes.append(CheckOffGraphKVStepWidthPass(spec.value))
+                passes.append(CheckOffGraphKVStepWidthPass(spec.value, layout=layout))
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
                 passes.append(
@@ -945,9 +972,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC:
                 cuda_graph_autotune_timing = _on_off_compile_spec_value(spec)
-        cell_layout = any(
+        packed_layout = any(
             spec.key == OFFGRAPH_KV_COMPILE_SPEC
-            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            and parse_offgraph_kv_manifest(spec.value)["layout"] in PACKED_LAYOUTS
             for spec in compile_specs or []
         )
 
@@ -997,8 +1024,8 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         cuda_graph_timing(offload=_moved_program_tensors)
                     )
-                if cell_layout:
-                    # The cell layout's step buffers are constants the graph
+                if packed_layout:
+                    # A packed layout's step buffers are constants the graph
                     # only reads, while the runtime rewrites them before every
                     # forward. Folding them, or inlining a small one as a
                     # literal, would evaluate them at compile time -- on
