@@ -32,6 +32,7 @@ def define_common_targets(is_fbcode = False):
             ":step_plan",
             "//executorch/backends/cuda/runtime:cuda_backend",
             "//executorch/extension/llm/batching:batching",
+            "//executorch/extension/llm/batching:executor_utils",
             "//executorch/extension/llm/batching:session_table",
             "//executorch/extension/llm/cache:kv_cache",
             "//executorch/extension/module:module",
