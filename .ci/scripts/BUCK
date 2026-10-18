@@ -1,0 +1,13 @@
+load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
+
+oncall("executorch")
+
+# CMake builds this CI-only tool; group its sources without a product target.
+fb_native.filegroup(
+    name = "muse_glimmer_batching_smoke_sources",
+    srcs = [
+        "muse_glimmer_batching_smoke.cpp",
+        "muse_glimmer_batching_workload.h",
+        "tests/muse_glimmer_batching_workload_test.cpp",
+    ],
+)
