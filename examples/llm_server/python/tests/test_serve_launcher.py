@@ -136,6 +136,28 @@ def native_launch(launch):
     return launch
 
 
+@pytest.mark.parametrize("entries,interval", [(0, 8), (2, -1), (2, 1 << 31)])
+def test_invalid_checkpoint_options(argv, entries, interval):
+    with pytest.raises(SystemExit):
+        serve._parse_args(
+            argv
+            + [
+                "--prefix-cache-entries",
+                str(entries),
+                "--prefix-checkpoint-interval",
+                str(interval),
+            ]
+        )
+
+
+def test_checkpoint_options_reach_worker(argv, launch):
+    serve.main(
+        argv + ["--prefix-cache-entries", "3", "--prefix-checkpoint-interval", "512"]
+    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
+
+
 def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
     args = serve._parse_args(argv)
     serve.main(argv)
