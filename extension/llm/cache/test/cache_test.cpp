@@ -80,6 +80,28 @@ class CacheTest : public ::testing::Test {
   }
 };
 
+TEST_F(CacheTest, GeometryDefaultsToNonDFlash) {
+  const CacheGeometry geometry{{flat_layer()}};
+  EXPECT_FALSE(geometry.dflash_block_size.has_value());
+  EXPECT_TRUE(valid(geometry));
+}
+
+TEST_F(CacheTest, GeometryAcceptsNonnegativeDFlashBlockSize) {
+  for (int block_size : {0, 1, 4}) {
+    const CacheGeometry geometry{{flat_layer(), ring_layer(4)}, block_size};
+    ASSERT_TRUE(geometry.dflash_block_size.has_value());
+    EXPECT_EQ(*geometry.dflash_block_size, block_size);
+    EXPECT_TRUE(valid(geometry));
+    EXPECT_TRUE(valid(geometry, config(8)));
+  }
+}
+
+TEST_F(CacheTest, GeometryRejectsNegativeDFlashBlockSize) {
+  const CacheGeometry geometry{{flat_layer()}, -1};
+  EXPECT_FALSE(valid(geometry));
+  EXPECT_FALSE(valid(geometry, config(8)));
+}
+
 // ---- Flat policy -----------------------------------------------------------
 
 TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {
