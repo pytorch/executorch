@@ -236,15 +236,13 @@ class CudaExecutorTest : public ::testing::TestWithParam<const char*> {
       for (const auto& [i, count] : step) {
         const size_t take = static_cast<size_t>(count);
         EXPECT_LE(fed[i] + take, history[i].size()) << i;
-        batch.inputs.push_back(
-            batching::Input{
-                sids[i],
-                /*produce_output=*/fed[i] + take == history[i].size(),
-                fed[i],
-                take,
-                std::make_shared<const std::vector<batching::Token>>(
-                    history[i]),
-                /*position=*/0});
+        batch.inputs.push_back(batching::Input{
+            sids[i],
+            /*produce_output=*/fed[i] + take == history[i].size(),
+            fed[i],
+            take,
+            std::make_shared<const std::vector<batching::Token>>(history[i]),
+            /*position=*/0});
       }
       batching::BatchOutput out;
       EXPECT_TRUE(exec.execute(batch, out));
@@ -506,6 +504,95 @@ TEST_P(CudaExecutorTest, RefusesLimitsThePoolCannotHold) {
       Error::InvalidArgument);
 }
 
+TEST(CudaExecutorConfigTest, InvalidConfigIsRejectedBeforeLoading) {
+  cb::CudaExecutorConfig config;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  // A missing program must not mask invalid session limits, even without CUDA.
+  config.model_path = "/nonexistent/cuda_executor_test/model.pte";
+  config.load_mode = Module::LoadMode::File;
+  config.max_sessions = 0;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  config.max_sessions = 1;
+  config.max_session_tokens = -1;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+}
+
+TEST_P(CudaExecutorTest, ConfigAutoBudgetRespectsContextAndPaddingCell) {
+  const std::vector<std::pair<int, int>> limits = {
+      {1, kMaxContext}, {4, 63}, {8, 31}};
+  for (const auto& [sessions, expected_budget] : limits) {
+    SCOPED_TRACE(sessions);
+    cb::CudaExecutorConfig config;
+    config.model_path = dir_ + "/model.pte";
+    config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+    config.load_mode = Module::LoadMode::File;
+    config.max_sessions = sessions;
+    config.initial_capacity = 16;
+    config.options.cuda_graph_for_static_methods = false;
+    auto created = cb::CudaExecutor::create(config);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto exec = std::move(created.get());
+    ASSERT_NE(exec, nullptr);
+    EXPECT_EQ(exec->max_session_tokens(), expected_budget);
+    EXPECT_LT(exec->max_session_tokens() * sessions, kMaxCells);
+    // The toy export publishes a 32-entry vocabulary.
+    EXPECT_EQ(exec->vocab_size(), 32);
+  }
+}
+
+TEST_P(CudaExecutorTest, ConfiguredBudgetsMatchEagerGreedy) {
+  ASSERT_EQ(cases_.size(), 4u);
+  for (const int token_budget : {0, 32}) {
+    SCOPED_TRACE(token_budget);
+    cb::CudaExecutorConfig config;
+    config.model_path = dir_ + "/model.pte";
+    config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+    config.load_mode = Module::LoadMode::File;
+    config.max_sessions = 4;
+    config.max_session_tokens = token_budget;
+    config.kv_dtype = kBFloat16;
+    config.initial_capacity = 16;
+    config.options.cuda_graph_for_static_methods = false;
+    auto created = cb::CudaExecutor::create(config);
+    ASSERT_EQ(created.error(), Error::Ok);
+    auto exec = std::move(created.get());
+    ASSERT_NE(exec, nullptr);
+    EXPECT_EQ(exec->max_session_tokens(), token_budget == 0 ? 63 : 32);
+    batching::Runner runner(*exec, scheduler());
+    const auto generations = generate(runner, prompts());
+    runner.shutdown();
+    ASSERT_EQ(generations.size(), cases_.size());
+    for (size_t i = 0; i < cases_.size(); ++i) {
+      EXPECT_EQ(generations[i].reason, batching::FinishReason::NewTokenLimit)
+          << "prompt " << i;
+      EXPECT_EQ(generations[i].tokens, cases_[i].expected) << "prompt " << i;
+    }
+    EXPECT_EQ(runner.metrics().steps_failed, 0u);
+  }
+}
+
+TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
+  cb::CudaExecutorConfig config;
+  config.model_path = dir_ + "/model.pte";
+  config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.max_sessions = 8;
+  config.max_session_tokens = kMaxContext;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+
+  // Reserving the padding row leaves no token per session at 256 sessions.
+  config.max_sessions = kMaxCells;
+  config.max_session_tokens = 0;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  EXPECT_EQ(
+      cb::CudaExecutor::create(module(), 4, 0, kBFloat16, 16, {}).error(),
+      Error::InvalidArgument);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorTest,
@@ -567,9 +654,8 @@ TEST_P(CudaExecutorWidthsTest, EveryStepWidthUpTo65MatchesEagerGreedy) {
       auto full = c.prompt;
       full.insert(full.end(), c.expected.begin(), c.expected.end());
       ASSERT_LE(full.size(), static_cast<size_t>(kMaxContext));
-      seqs.push_back(
-          std::make_shared<const std::vector<batching::Token>>(
-              std::move(full)));
+      seqs.push_back(std::make_shared<const std::vector<batching::Token>>(
+          std::move(full)));
     }
     std::vector<batching::SessionId> sids(sessions, -1);
     std::vector<size_t> fed(sessions, 0);
@@ -639,9 +725,8 @@ TEST_P(CudaExecutorWidthsTest, EveryStepWidthUpTo65MatchesEagerGreedy) {
         // Ask for the chunk's last row whenever its successor is known, but
         // not always, so some steps want none.
         const bool known = end >= cases_[i].prompt.size();
-        batch.inputs.push_back(
-            batching::Input{
-                sids[i], known && rng() % 4 != 0, fed[i], take, seqs[i], 0});
+        batch.inputs.push_back(batching::Input{
+            sids[i], known && rng() % 4 != 0, fed[i], take, seqs[i], 0});
         owner.push_back(i);
         left -= take;
       }

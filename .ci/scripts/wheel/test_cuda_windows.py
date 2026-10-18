@@ -10,11 +10,11 @@
 The Windows CUDA wheel ships the CUDA delegate for C++ applications only. A CUDA program
 cannot be lowered on Windows, since lowering compiles the model with a toolchain that only
 the Linux side has, so a Windows user exports on Linux (or WSL) and runs the program with
-this wheel. The Python extension therefore carries no CUDA dependency at all, and the
+this wheel. The Python extension uses the shipped CUDA helper for tensor interchange, and the
 checks here hold both halves of that:
 
   the CUDA DLLs ship, with import libraries a C++ consumer links
-  the Python extension depends on no CUDA DLL, so importing the package needs no CUDA
+  the Python extension needs no CUDA runtime DLL, so importing the package needs no CUDA
   the delegate registers in a C++ application linking executorch::backend_cuda
   the device code covers the GPUs the row claims
   a program exported on Linux for a Windows target runs through the C++ SDK and matches eager
@@ -209,30 +209,28 @@ def test_cuda_libraries_are_shipped() -> None:
     print(f"✓ the CUDA DLLs and their import libraries ship ({len(expected)} files)")
 
 
-def test_python_extension_carries_no_cuda() -> None:
-    """The Python extension must depend on no CUDA DLL.
-
-    CUDA programs are lowered on Linux, so the Windows extension has nothing to do with the
-    delegate, and depending on it would make importing the package fail on a machine
-    without the CUDA runtime.
-    """
+def test_python_extension_requires_no_cuda_runtime() -> None:
+    """The bindings and their shipped helper must import without a CUDA toolkit."""
     import test_shared_libraries
 
     package = _package_dir()
     extensions = sorted((package / "extension" / "pybindings").glob("_C.*.pyd"))
     assert len(extensions) == 1, f"expected one _C extension, found {extensions}"
-    dependents = {
-        name.lower() for name in test_shared_libraries._pe_dependents(extensions[0])
-    }
-    cuda = sorted(
-        name
-        for name in dependents
-        if "cuda" in name or name.startswith(("cudart", "cublas", "nvrtc"))
-    )
-    assert not cuda, (
-        f"{extensions[0].name} depends on {cuda}, so the Python side of the Windows wheel "
-        "carries CUDA it cannot use and fails to import without the CUDA runtime"
-    )
+    helper = package / "lib" / "executorch_extension_cuda.dll"
+    for library in (extensions[0], helper):
+        dependents = {
+            name.lower() for name in test_shared_libraries._pe_dependents(library)
+        }
+        cuda = sorted(
+            name
+            for name in dependents
+            if ("cuda" in name or name.startswith(("cudart", "cublas", "nvrtc")))
+            and name != helper.name.lower()
+        )
+        assert not cuda, (
+            f"{library.name} imports {cuda}, so importing the bindings would "
+            "require CUDA libraries outside the wheel"
+        )
     from executorch.extension.pybindings.portable_lib import (
         _get_registered_backend_names,
     )
@@ -243,7 +241,7 @@ def test_python_extension_carries_no_cuda() -> None:
         "Windows wheel does not ship it for"
     )
     print(
-        f"✓ {extensions[0].name} depends on no CUDA DLL and registers no CUDA backend"
+        f"✓ {extensions[0].name} requires no CUDA runtime DLL and registers no CUDA backend"
     )
 
 
@@ -628,7 +626,7 @@ if __name__ == "__main__":
         test_clean_install.run_tests(Path(work_dir))
 
     test_cuda_libraries_are_shipped()
-    test_python_extension_carries_no_cuda()
+    test_python_extension_requires_no_cuda_runtime()
     test_cuda_runtime_is_linked_statically()
     test_device_code_covers_the_row()
     with tempfile.TemporaryDirectory() as work_dir:
