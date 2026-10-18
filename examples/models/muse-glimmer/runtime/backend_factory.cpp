@@ -10,8 +10,11 @@
 #include <executorch/examples/models/muse-glimmer/runtime/mlx_executor.h>
 #endif
 #if defined(EXECUTORCH_BUILD_CUDA)
-#include <executorch/examples/models/muse-glimmer/runtime/cuda_backend_factory.h>
+#include <executorch/backends/cuda/batching/cuda_executor.h>
 #endif
+
+#include <memory>
+#include <utility>
 
 namespace executorch::extension::llm {
 runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
@@ -23,7 +26,46 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
 #endif
 #if defined(EXECUTORCH_BUILD_CUDA)
   if (config.backend == "cuda") {
-    return create_muse_glimmer_cuda_backend(config);
+    namespace cb = ::executorch::backends::cuda::batching;
+    ET_CHECK_OR_RETURN_ERROR(
+        config.max_session_tokens != 1,
+        InvalidArgument,
+        "Muse Glimmer CUDA: a session needs room for a prompt and prediction");
+    ET_CHECK_OR_RETURN_ERROR(
+        !config.use_dflash && config.dflash_n_draft == 0,
+        NotSupported,
+        "Muse Glimmer CUDA: DFlash batching is not supported");
+    cb::CudaExecutorConfig executor_config;
+    executor_config.model_path = config.model_path;
+    if (!config.data_path.empty()) {
+      executor_config.data_files.push_back(config.data_path);
+    }
+    executor_config.max_sessions = config.max_sessions;
+    executor_config.max_session_tokens = config.max_session_tokens;
+    ET_ASSIGN_OR_RETURN(executor, cb::CudaExecutor::create(executor_config));
+    const auto vocab = executor->vocab_size();
+    const auto session_tokens = executor->max_session_tokens();
+    ET_CHECK_OR_RETURN_ERROR(
+        vocab > 200092 && config.bos_id < static_cast<uint64_t>(vocab),
+        InvalidProgram,
+        "Muse Glimmer CUDA: vocabulary %d cannot hold its special tokens",
+        vocab);
+    ET_CHECK_OR_RETURN_ERROR(
+        session_tokens > 1,
+        InvalidArgument,
+        "Muse Glimmer CUDA: sessions need room for a prompt and prediction");
+    auto spec = std::make_shared<const MuseGlimmerPreparationSpec>(
+        MuseGlimmerPreparationSpec{
+            aten::ScalarType::BFloat16,
+            /*hidden_dim=*/0,
+            session_tokens,
+            static_cast<int32_t>(executor->preferred_batch_tokens()),
+            vocab,
+            /*has_vision=*/false,
+            /*max_soft_tokens=*/0,
+            config.image_limits,
+            config.bos_id});
+    return MuseGlimmerBackend{std::move(executor), std::move(spec)};
   }
 #endif
   return runtime::Error::NotSupported;

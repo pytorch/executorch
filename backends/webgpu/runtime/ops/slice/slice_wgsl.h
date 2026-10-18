@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from slice.wgsl - DO NOT EDIT.
-// wgsl-sha256: 6a895a8c321cd3ddaffc468d7843c9dea3eaeb9d3de0088a1a09419b3ccfd10b
+// wgsl-sha256: eb05f6d85e338fa3bb3dcf485e75a7fde71171fdb98098b08b235ed2bf009113
 inline constexpr const char* kSliceWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -37,8 +37,11 @@ struct Params {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let out_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-folded flat index (lifts the 65535 1D-dispatch cap for large tensors).
+    let out_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (out_bufi >= out_meta.numel) {
         return;
     }
