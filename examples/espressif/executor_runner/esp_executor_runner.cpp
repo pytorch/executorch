@@ -30,10 +30,9 @@
  * Devtools ETDump: Speed and dumping output
  *
  * ET_EVENT_TRACER_ENABLED       - Build in Devtools ETDump event trace code
- *                                 to generate cycle data.
- * ET_DUMP_OUTPUTS               - Collect and print outputs as a base64
- *                                 buffer in the log.
- * ET_DUMP_INTERMEDIATE_OUTPUTS  - Collect and print intermediate outputs.
+ *                                 to generate timing data.
+ * ET_DUMP_OUTPUTS               - Capture the latest inference's outputs.
+ * ET_DUMP_INTERMEDIATE_OUTPUTS  - Capture its intermediate outputs.
  * ET_DEBUG_BUFFER_SIZE          - Override size of memory area used by
  *                                 ET_DUMP_OUTPUTS /
  * ET_DUMP_INTERMEDIATE_OUTPUTS.
@@ -303,24 +302,10 @@ template <typename ValueType>
   std::fill(data_ptr, data_ptr + tensor.numel(), fill_value);
 }
 
-Error prepare_input_tensors(Method& method, MemoryAllocator& allocator) {
-  MethodMeta method_meta = method.method_meta();
-  size_t num_inputs = method_meta.num_inputs();
-
-  EValue* input_evalues = allocator.allocateList<EValue>(num_inputs);
-  ET_CHECK_OR_RETURN_ERROR(
-      input_evalues != nullptr,
-      MemoryAllocationFailed,
-      "Could not allocate memory for input evalues.");
-
-  Error err = method.get_inputs(input_evalues, num_inputs);
-  ET_CHECK_OK_OR_RETURN_ERROR(err);
-
-  for (size_t i = 0; i < num_inputs; i++) {
-    auto tag = method_meta.input_tag(i);
-    ET_CHECK_OK_OR_RETURN_ERROR(tag.error());
-
-    if (tag.get() != Tag::Tensor) {
+Error prepare_input_tensors(Method& method) {
+  for (size_t i = 0; i < method.inputs_size(); i++) {
+    const EValue& input = method.get_input(i);
+    if (!input.isTensor()) {
       ET_LOG(
           Debug,
           "Skipping non-tensor input %lu",
@@ -328,28 +313,22 @@ Error prepare_input_tensors(Method& method, MemoryAllocator& allocator) {
       continue;
     }
 
-    // Fill tensors with default values (1) when no input data is provided
-    if (input_evalues[i].isTensor()) {
-      Tensor& tensor = input_evalues[i].toTensor();
-      switch (tensor.scalar_type()) {
+    Tensor tensor = input.toTensor();
+    switch (tensor.scalar_type()) {
 #define HANDLE_SCALAR_TYPE(cpp_type, scalar_name)     \
   case ScalarType::scalar_name:                       \
     fill_tensor_with_default_value<cpp_type>(tensor); \
     break;
-        ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
+      ET_FORALL_SCALAR_TYPES(HANDLE_SCALAR_TYPE)
 #undef HANDLE_SCALAR_TYPE
-        default:
-          ET_LOG(
-              Error, "Unhandled ScalarType %s", toString(tensor.scalar_type()));
-          err = Error::InvalidArgument;
-          break;
-      }
-    } else {
-      printf("Input[%lu]: Not Tensor\n", static_cast<unsigned long>(i));
+      default:
+        ET_LOG(
+            Error, "Unhandled ScalarType %s", toString(tensor.scalar_type()));
+        return Error::InvalidArgument;
     }
   }
 
-  return err;
+  return Error::Ok;
 }
 
 #if defined(FILESYSTEM_LOAD)
@@ -488,7 +467,19 @@ struct RunnerContext {
 #endif
 };
 
-void runner_init(RunnerContext& ctx, size_t pte_size) {
+Error prepare_inputs(RunnerContext& ctx) {
+#if defined(ET_BUNDLE_IO)
+  if (ctx.bundle_io) {
+    return executorch::bundled_program::load_bundled_input(
+        *ctx.method.value(), model_pte, testset_idx);
+  }
+#endif
+  return prepare_input_tensors(*ctx.method.value());
+}
+
+bool runner_init(RunnerContext& ctx, size_t pte_size) {
+  ET_CHECK_OR_RETURN_FALSE(
+      pte_size >= Program::kMinHeadBytes, "Model data is too small");
   const void* program_data = model_pte;
   ctx.program_data_len = pte_size;
   ctx.pte_size = pte_size;
@@ -502,7 +493,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
         ctx.pte_size,
         &program_data,
         &ctx.program_data_len);
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         status == Error::Ok,
         "get_program_data() from bundle PTE failed: 0x%x",
         (unsigned int)status);
@@ -518,7 +509,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   // Parse the program file
   Result<Program> program_result = Program::load(&loader);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_FALSE(
       program_result.ok(),
       "Program loading failed @ %p: 0x%" PRIx32,
       program_data,
@@ -533,25 +524,45 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   {
     const auto method_name_result = program.get_method_name(0);
-    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
+    ET_CHECK_OR_RETURN_FALSE(method_name_result.ok(), "Program has no methods");
     ctx.method_name = *method_name_result;
   }
   ET_LOG(Info, "Running method %s", ctx.method_name);
 
   Result<MethodMeta> method_meta = program.method_meta(ctx.method_name);
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_FALSE(
       method_meta.ok(),
       "Failed to get method_meta for %s: 0x%x",
       ctx.method_name,
       (unsigned int)method_meta.error());
 
+  for (size_t i = 0; i < method_meta->num_inputs(); ++i) {
+    auto tag = method_meta->input_tag(i);
+    ET_CHECK_OR_RETURN_FALSE(tag.ok(), "Could not read input %zu", i);
+    if (*tag == Tag::Tensor) {
+      auto tensor = method_meta->input_tensor_meta(i);
+      ET_CHECK_OR_RETURN_FALSE(
+          tensor.ok() && tensor->is_memory_planned(),
+          "Input %zu requires memory-planned storage",
+          i);
+    }
+  }
+  for (size_t i = 0; i < method_meta->num_outputs(); ++i) {
+    auto tag = method_meta->output_tag(i);
+    ET_CHECK_OR_RETURN_FALSE(tag.ok(), "Could not read output %zu", i);
+    if (*tag == Tag::Tensor) {
+      auto tensor = method_meta->output_tensor_meta(i);
+      ET_CHECK_OR_RETURN_FALSE(
+          tensor.ok() && tensor->is_memory_planned(),
+          "Output %zu requires memory-planned storage",
+          i);
+    }
+  }
+
   ET_LOG(
       Info,
       "Setup Method allocator pool. Size: %lu bytes.",
       static_cast<unsigned long>(method_allocation_pool_size));
-
-  ctx.method_allocator.reset(
-      method_allocation_pool_size, method_allocation_pool);
 
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
@@ -559,8 +570,10 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   size_t planned_buffer_membase = ctx.method_allocator->used_size();
 
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
-    size_t buffer_size =
-        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    auto buffer_size_result = method_meta->memory_planned_buffer_size(id);
+    ET_CHECK_OR_RETURN_FALSE(
+        buffer_size_result.ok(), "Could not read planned buffer %zu", id);
+    size_t buffer_size = static_cast<size_t>(*buffer_size_result);
     ET_LOG(
         Info,
         "Setting up planned buffer %lu, size %lu.",
@@ -569,7 +582,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
     uint8_t* buffer = reinterpret_cast<uint8_t*>(
         ctx.method_allocator->allocate(buffer_size, 16UL));
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_FALSE(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %lu",
         static_cast<unsigned long>(buffer_size));
@@ -650,10 +663,11 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
 
   if (!ctx.method->ok()) {
     ET_LOG(
-        Info,
+        Error,
         "Loading of method %s failed with status 0x%" PRIx32,
         ctx.method_name,
-        static_cast<unsigned long>(ctx.method->error()));
+        static_cast<uint32_t>(ctx.method->error()));
+    return false;
   }
   ctx.method_loaded_memsize =
       ctx.method_allocator->used_size() - method_loaded_membase;
@@ -662,32 +676,19 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   ET_LOG(Info, "Preparing inputs...");
   size_t input_membase = ctx.method_allocator->used_size();
 
-#if defined(ET_BUNDLE_IO)
-  if (ctx.bundle_io) {
-    ET_LOG(Info, "Input testset[%d] from bundled bpte", testset_idx);
-    Error status = executorch::bundled_program::load_bundled_input(
-        *ctx.method.value(), model_pte, testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-  } else
-#endif
-  {
-    Error status = ::prepare_input_tensors(
-        *ctx.method.value(), ctx.method_allocator.value());
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Failed to prepare inputs 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-  }
+  Error status = prepare_inputs(ctx);
+  ET_CHECK_OR_RETURN_FALSE(
+      status == Error::Ok,
+      "Failed to prepare inputs 0x%" PRIx32,
+      static_cast<uint32_t>(status));
 
 #if defined(ET_LOG_DUMP_INPUT)
   {
     std::vector<EValue> inputs(ctx.method.value()->inputs_size());
     ET_LOG(Info, "%lu inputs: ", static_cast<unsigned long>(inputs.size()));
     Error status = ctx.method.value()->get_inputs(inputs.data(), inputs.size());
-    ET_CHECK(status == Error::Ok);
+    ET_CHECK_OR_RETURN_FALSE(
+        status == Error::Ok, "Failed to read inputs for logging");
 
     for (int i = 0; i < inputs.size(); ++i) {
       if (inputs[i].isTensor()) {
@@ -731,6 +732,7 @@ void runner_init(RunnerContext& ctx, size_t pte_size) {
   ctx.executor_membase = ctx.method_allocator->used_size();
 
   ET_LOG(Info, "Input prepared.");
+  return true;
 }
 
 void log_mem_status(RunnerContext& ctx) {
@@ -894,6 +896,7 @@ void write_etdump(RunnerContext& ctx) {
     }
 #endif
   }
+  free(result.buf);
 #endif
 }
 
@@ -946,6 +949,22 @@ bool verify_result(RunnerContext& ctx, const void* model_pte) {
   return model_ok;
 }
 
+Error execute_method(RunnerContext& ctx) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+#if defined(ET_DUMP_INTERMEDIATE_OUTPUTS) || defined(ET_DUMP_OUTPUTS)
+  if (ctx.debug_buffer != nullptr) {
+    ctx.etdump_gen->reset();
+    auto result = ctx.etdump_gen->set_debug_buffer(
+        {static_cast<uint8_t*>(ctx.debug_buffer), ET_DEBUG_BUFFER_SIZE});
+    ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+  }
+#endif
+#endif
+  Error status = ctx.method.value()->execute();
+  ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+  return status;
+}
+
 bool run_model(RunnerContext& ctx, const void* model_pte) {
   Error status = Error::Ok;
   if (num_inferences <= 0) {
@@ -961,12 +980,14 @@ bool run_model(RunnerContext& ctx, const void* model_pte) {
   StartMeasurements();
   for (int n = 0; n < num_inferences; n++) {
     ET_LOG(Debug, "Running inference number %d", n);
-    status = ctx.method.value()->execute();
+    status = prepare_inputs(ctx);
     if (status != Error::Ok) {
       break;
     }
-    // Reset the temporary allocator between inferences
-    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+    status = execute_method(ctx);
+    if (status != Error::Ok) {
+      break;
+    }
     successful_inferences++;
   }
   if (successful_inferences > 0) {
@@ -1007,6 +1028,8 @@ static const size_t kMaxInputOutputs = 16;
 bool et_runner_init(void) {
   executorch::runtime::runtime_init();
 
+  g_runner_ctx.method_allocator.reset(
+      method_allocation_pool_size, method_allocation_pool);
   size_t pte_size;
 
 #if defined(FILESYSTEM_LOAD)
@@ -1016,10 +1039,8 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  MemoryAllocator file_allocator(
-      method_allocation_pool_size, method_allocation_pool);
-  auto [buffer, buffer_size] =
-      load_file_from_fs("/spiffs/model.pte", file_allocator);
+  auto [buffer, buffer_size] = load_file_from_fs(
+      "/spiffs/model.pte", g_runner_ctx.method_allocator.value());
   if (buffer == nullptr) {
     ET_LOG(Fatal, "Failed to load model from filesystem.");
     return false;
@@ -1031,8 +1052,7 @@ bool et_runner_init(void) {
   pte_size = sizeof(model_pte);
 #endif
 
-  runner_init(g_runner_ctx, pte_size);
-  g_runner_initialized = g_runner_ctx.method->ok();
+  g_runner_initialized = runner_init(g_runner_ctx, pte_size);
   return g_runner_initialized;
 }
 
@@ -1084,13 +1104,13 @@ bool et_runner_set_input(size_t input_idx, const void* data, size_t num_bytes) {
 
   Tensor& tensor = input_evalues[input_idx].toTensor();
   const size_t tensor_bytes = tensor.nbytes();
-  if (num_bytes > tensor_bytes) {
+  if (num_bytes != tensor_bytes) {
     ET_LOG(
         Error,
-        "Input %lu: provided %lu bytes exceeds tensor capacity %lu bytes.",
+        "Input %lu: expected %lu bytes, got %lu bytes.",
         static_cast<unsigned long>(input_idx),
-        static_cast<unsigned long>(num_bytes),
-        static_cast<unsigned long>(tensor_bytes));
+        static_cast<unsigned long>(tensor_bytes),
+        static_cast<unsigned long>(num_bytes));
     return false;
   }
   // Treat zero-length input as a no-op.
@@ -1117,11 +1137,7 @@ bool et_runner_execute(void) {
     return false;
   }
 
-  Method& method = *g_runner_ctx.method.value();
-  Error status = method.execute();
-  // Reset the temporary allocator so it is ready for the next inference.
-  g_runner_ctx.temp_allocator.reset(
-      temp_allocation_pool_size, temp_allocation_pool);
+  Error status = execute_method(g_runner_ctx);
   if (status != Error::Ok) {
     ET_LOG(
         Error,
