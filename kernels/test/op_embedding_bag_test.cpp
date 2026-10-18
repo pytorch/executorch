@@ -54,6 +54,121 @@ class OpEmbeddingBagOutTest : public OperatorTest {
         max_indices);
   }
 
+  template <ScalarType Weight, ScalarType Index, ScalarType Offset>
+  void test_dtypes() {
+    TensorFactory<Weight> tf;
+    TensorFactory<Index> ti;
+    TensorFactory<Offset> to;
+    constexpr auto OutputIndex =
+        Index == ScalarType::Long || Offset == ScalarType::Long
+        ? ScalarType::Long
+        : ScalarType::Int;
+    TensorFactory<OutputIndex> tout;
+    const auto weight = tf.make({2, 2}, {1, 2, 3, 4});
+    const auto indices = ti.make({3}, {0, 1, 1});
+    const auto offsets = to.make({2}, {0, 1});
+    for (int64_t mode = 0; mode < 3; ++mode) {
+      auto out = tf.zeros({2, 2});
+      auto offset2bag = tout.zeros({mode == 0 ? 0 : 3});
+      auto bag_size = tout.zeros({2});
+      auto max_indices = mode == 2 ? tout.zeros({2, 2}) : tout.zeros({2});
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          mode,
+          {},
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices);
+      EXPECT_TENSOR_EQ(
+          out,
+          mode == 0 ? tf.make({2, 2}, {1, 2, 6, 8})
+                    : tf.make({2, 2}, {1, 2, 3, 4}));
+      EXPECT_TENSOR_EQ(
+          bag_size,
+          mode == 0 ? tout.make({2}, {0, 0}) : tout.make({2}, {1, 2}));
+      if (mode != 0) {
+        EXPECT_TENSOR_EQ(offset2bag, tout.make({3}, {0, 1, 1}));
+      }
+      if (mode == 2) {
+        EXPECT_TENSOR_EQ(max_indices, tout.make({2, 2}, {0, 0, 1, 1}));
+      }
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_large_bag() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Long> ti;
+    auto weight = tf.ones({1, 1});
+    auto indices = ti.make({4096}, std::vector<int64_t>(4096, 0));
+    auto offsets = ti.make({1}, {0});
+    auto scales = tf.ones({4096});
+    for (int64_t mode = 0; mode < 2; ++mode) {
+      auto out = tf.zeros({1, 1});
+      auto offset2bag = ti.zeros({mode == 0 ? 0 : 4096});
+      auto bag_size = ti.zeros({1});
+      auto max_indices = ti.zeros({1});
+      optional<Tensor> psw =
+          mode == 0 ? optional<Tensor>(scales) : std::nullopt;
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          mode,
+          psw,
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices);
+      EXPECT_TENSOR_EQ(out, tf.full({1, 1}, mode == 0 ? 4096 : 1));
+    }
+  }
+
+  void expect_invalid(
+      const std::vector<int64_t>& index_values,
+      const std::vector<int64_t>& offset_values,
+      int64_t mode = 0,
+      int64_t dim = 1,
+      bool include_last = false,
+      const optional<Tensor>& psw = std::nullopt) {
+    TensorFactory<ScalarType::Float> tf;
+    TensorFactory<ScalarType::Long> ti;
+    auto weight = tf.ones({2, static_cast<int32_t>(dim)});
+    auto indices =
+        ti.make({static_cast<int32_t>(index_values.size())}, index_values);
+    auto offsets =
+        ti.make({static_cast<int32_t>(offset_values.size())}, offset_values);
+    int32_t bags =
+        static_cast<int32_t>(offset_values.size()) - (include_last ? 1 : 0);
+    auto out = tf.zeros({bags, static_cast<int32_t>(dim)});
+    auto offset2bag =
+        ti.zeros({mode == 0 ? 0 : static_cast<int32_t>(index_values.size())});
+    auto bag_size = ti.zeros({bags});
+    auto max_indices = mode == 2 ? ti.zeros({bags, static_cast<int32_t>(dim)})
+                                 : ti.zeros({bags});
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        op_embedding_bag_out(
+            weight,
+            indices,
+            offsets,
+            mode,
+            psw,
+            include_last,
+            -1,
+            out,
+            offset2bag,
+            bag_size,
+            max_indices));
+  }
+
   // weight[r][c] = r * 3 + c, so a row is identifiable from its values.
   static Tensor ramp_weight(TensorFactory<ScalarType::Float>& tf) {
     std::vector<float> values(15);
@@ -78,7 +193,16 @@ TEST_F(OpEmbeddingBagOutTest, Sum) {
   Tensor max_indices = tf_long.zeros({2});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 0, {}, false, -1, out, offset2bag, bag_size,
+      weight,
+      indices,
+      offsets,
+      0,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
       max_indices);
 
   EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {12, 13, 14, 9, 12, 15}));
@@ -102,7 +226,16 @@ TEST_F(OpEmbeddingBagOutTest, Mean) {
   Tensor max_indices = tf_long.zeros({2});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 1, {}, false, -1, out, offset2bag, bag_size,
+      weight,
+      indices,
+      offsets,
+      1,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
       max_indices);
 
   EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {12, 13, 14, 3, 4, 5}));
@@ -125,7 +258,16 @@ TEST_F(OpEmbeddingBagOutTest, Max) {
   Tensor max_indices = tf_long.zeros({2, 3});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 2, {}, false, -1, out, offset2bag, bag_size,
+      weight,
+      indices,
+      offsets,
+      2,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
       max_indices);
 
   EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {12, 13, 14, 6, 7, 8}));
@@ -150,8 +292,17 @@ TEST_F(OpEmbeddingBagOutTest, SumWithPerSampleWeights) {
   Tensor max_indices = tf_long.zeros({2});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 0, per_sample_weights, false, -1, out,
-      offset2bag, bag_size, max_indices);
+      weight,
+      indices,
+      offsets,
+      0,
+      per_sample_weights,
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
 
   EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {24, 26, 28, -4.5, -4, -3.5}));
 }
@@ -170,8 +321,17 @@ TEST_F(OpEmbeddingBagOutTest, PaddingIdxIsSkippedAndNotCounted) {
   Tensor max_indices = tf_long.zeros({2});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 1, {}, false, /*padding_idx=*/0, out,
-      offset2bag, bag_size, max_indices);
+      weight,
+      indices,
+      offsets,
+      1,
+      {},
+      false,
+      /*padding_idx=*/0,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
 
   // Row 0 drops out of the second bag, so it averages rows 1 and 2.
   EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {12, 13, 14, 4.5, 5.5, 6.5}));
@@ -192,8 +352,17 @@ TEST_F(OpEmbeddingBagOutTest, IncludeLastOffset) {
   Tensor max_indices = tf_long.zeros({2});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 0, {}, /*include_last_offset=*/true, -1, out,
-      offset2bag, bag_size, max_indices);
+      weight,
+      indices,
+      offsets,
+      0,
+      {},
+      /*include_last_offset=*/true,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
 
   EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {12, 13, 14, 9, 12, 15}));
 }
@@ -212,7 +381,16 @@ TEST_F(OpEmbeddingBagOutTest, EmptyBag) {
   Tensor max_indices = tf_long.zeros({3});
 
   op_embedding_bag_out(
-      weight, indices, offsets, 1, {}, false, -1, out, offset2bag, bag_size,
+      weight,
+      indices,
+      offsets,
+      1,
+      {},
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
       max_indices);
 
   EXPECT_TENSOR_CLOSE(
@@ -223,8 +401,17 @@ TEST_F(OpEmbeddingBagOutTest, EmptyBag) {
   Tensor max_out = tf.zeros({3, 3});
   Tensor max_indices_2d = tf_long.zeros({3, 3});
   op_embedding_bag_out(
-      weight, indices, offsets, 2, {}, false, -1, max_out, offset2bag,
-      bag_size, max_indices_2d);
+      weight,
+      indices,
+      offsets,
+      2,
+      {},
+      false,
+      -1,
+      max_out,
+      offset2bag,
+      bag_size,
+      max_indices_2d);
 
   EXPECT_TENSOR_EQ(max_out, tf.make({3, 3}, {3, 4, 5, 0, 0, 0, 12, 13, 14}));
   EXPECT_TENSOR_EQ(
@@ -248,6 +435,200 @@ TEST_F(OpEmbeddingBagOutTest, PerSampleWeightsRejectedForMean) {
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_embedding_bag_out(
-          weight, indices, offsets, 1, per_sample_weights, false, -1, out,
-          offset2bag, bag_size, max_indices));
+          weight,
+          indices,
+          offsets,
+          1,
+          per_sample_weights,
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices));
+}
+
+TEST_F(OpEmbeddingBagOutTest, NegativeIndexWithoutPaddingRejected) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.ones({2, 1});
+  auto indices = ti.make({1}, {-1});
+  auto offsets = ti.make({1}, {0});
+  auto out = tf.zeros({1, 1});
+  auto offset2bag = ti.zeros({0});
+  auto bag_size = ti.zeros({1});
+  auto max_indices = ti.zeros({1});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          0,
+          {},
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices));
+}
+
+TEST_F(OpEmbeddingBagOutTest, NonzeroFirstOffsetRejected) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.ones({2, 1});
+  auto indices = ti.make({1}, {0});
+  auto offsets = ti.make({1}, {1});
+  auto out = tf.zeros({1, 1});
+  auto offset2bag = ti.zeros({0});
+  auto bag_size = ti.zeros({1});
+  auto max_indices = ti.zeros({1});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_embedding_bag_out(
+          weight,
+          indices,
+          offsets,
+          0,
+          {},
+          false,
+          -1,
+          out,
+          offset2bag,
+          bag_size,
+          max_indices));
+}
+
+TEST_F(OpEmbeddingBagOutTest, SupportedDtypes) {
+#define TEST_ENTRY(CTYPE, DTYPE)                                        \
+  test_dtypes<ScalarType::DTYPE, ScalarType::Int, ScalarType::Int>();   \
+  test_dtypes<ScalarType::DTYPE, ScalarType::Long, ScalarType::Long>(); \
+  test_dtypes<ScalarType::DTYPE, ScalarType::Int, ScalarType::Long>();  \
+  test_dtypes<ScalarType::DTYPE, ScalarType::Long, ScalarType::Int>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpEmbeddingBagOutTest, LargeHalfBagPrecision) {
+  test_large_bag<ScalarType::Half>();
+}
+TEST_F(OpEmbeddingBagOutTest, LargeBFloat16BagPrecision) {
+  test_large_bag<ScalarType::BFloat16>();
+}
+TEST_F(OpEmbeddingBagOutTest, IndexAtRowCountRejected) {
+  expect_invalid({2}, {0});
+}
+TEST_F(OpEmbeddingBagOutTest, NegativeIndexRejectedForMax) {
+  expect_invalid({-2}, {0}, 2);
+}
+TEST_F(OpEmbeddingBagOutTest, InvalidIndexWithZeroWidthRejected) {
+  expect_invalid({2}, {0}, 0, 0);
+}
+TEST_F(OpEmbeddingBagOutTest, NegativeOffsetRejected) {
+  expect_invalid({0, 1}, {-1});
+}
+TEST_F(OpEmbeddingBagOutTest, DecreasingOffsetsRejected) {
+  expect_invalid({0, 1}, {0, 2, 1});
+}
+TEST_F(OpEmbeddingBagOutTest, OffsetPastEndRejected) {
+  expect_invalid({0, 1}, {0, 3});
+}
+TEST_F(OpEmbeddingBagOutTest, InvalidFinalOffsetRejected) {
+  expect_invalid({0, 1}, {0, 3}, 0, 1, true);
+}
+TEST_F(OpEmbeddingBagOutTest, InvalidModeRejected) {
+  expect_invalid({0}, {0}, 3);
+}
+TEST_F(OpEmbeddingBagOutTest, WrongPerSampleWeightsLengthRejected) {
+  TensorFactory<ScalarType::Float> tf;
+  expect_invalid({0, 1}, {0}, 0, 1, false, tf.ones({1}));
+}
+TEST_F(OpEmbeddingBagOutTest, EmptyPerSampleWeightsRejectedForNonemptyIndices) {
+  TensorFactory<ScalarType::Float> tf;
+  expect_invalid({0}, {0}, 0, 1, false, tf.zeros({0}));
+}
+TEST_F(OpEmbeddingBagOutTest, WrongPerSampleWeightsRankRejected) {
+  TensorFactory<ScalarType::Float> tf;
+  expect_invalid({0, 1}, {0}, 0, 1, false, tf.ones({1, 2}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, WrongAuxiliaryDtypeRejected) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.ones({2, 1});
+  auto indices = ti.make({1}, {0});
+  auto offsets = ti.make({1}, {0});
+  for (int which = 0; which < 3; ++which) {
+    context_.fail(torch::executor::Error::Ok);
+    auto out = tf.zeros({1, 1});
+    auto offset2bag = which == 0 ? tf.zeros({0}) : ti.zeros({0});
+    auto bag_size = which == 1 ? tf.zeros({1}) : ti.zeros({1});
+    auto max_indices = which == 2 ? tf.zeros({1}) : ti.zeros({1});
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        op_embedding_bag_out(
+            weight,
+            indices,
+            offsets,
+            0,
+            {},
+            false,
+            -1,
+            out,
+            offset2bag,
+            bag_size,
+            max_indices));
+  }
+}
+
+TEST_F(OpEmbeddingBagOutTest, PartialFinalOffsetIsValid) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.make({2, 1}, {2, 7});
+  auto indices = ti.make({2}, {0, 1});
+  auto offsets = ti.make({2}, {0, 1});
+  auto out = tf.zeros({1, 1});
+  auto offset2bag = ti.zeros({0});
+  auto bag_size = ti.zeros({1});
+  auto max_indices = ti.zeros({1});
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      0,
+      {},
+      true,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  EXPECT_TENSOR_EQ(out, tf.make({1, 1}, {2}));
+}
+
+TEST_F(OpEmbeddingBagOutTest, EmptyInputsWithPerSampleWeights) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> ti;
+  auto weight = tf.ones({2, 1});
+  auto indices = ti.zeros({0});
+  auto offsets = ti.make({1}, {0});
+  auto psw = tf.zeros({0});
+  auto out = tf.ones({1, 1});
+  auto offset2bag = ti.zeros({0});
+  auto bag_size = ti.zeros({1});
+  auto max_indices = ti.zeros({1});
+  op_embedding_bag_out(
+      weight,
+      indices,
+      offsets,
+      0,
+      psw,
+      false,
+      -1,
+      out,
+      offset2bag,
+      bag_size,
+      max_indices);
+  EXPECT_TENSOR_EQ(out, tf.zeros({1, 1}));
 }
