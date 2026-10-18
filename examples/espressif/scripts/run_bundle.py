@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,12 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("--port", default="/dev/ttyACM0")
+    parser.add_argument(
+        "--port",
+        default=os.environ.get("ESPPORT"),
+        required="ESPPORT" not in os.environ,
+        help="serial port of the board (default: $ESPPORT)",
+    )
     parser.add_argument("--target", help="override the detected chip")
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=600)

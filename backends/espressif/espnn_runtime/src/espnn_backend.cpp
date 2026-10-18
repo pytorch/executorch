@@ -20,6 +20,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
@@ -65,8 +66,16 @@ int8_t quantize(float value, float inverse_scale, int32_t zero_point) {
   return static_cast<int8_t>(q);
 }
 
-bool same_elements(const Tensor& tensor, const Int8TensorInfo& info) {
-  return static_cast<size_t>(tensor.numel()) == info.bytes;
+bool same_layout(const Tensor& tensor, const Int8TensorInfo& info) {
+  if (tensor.dim() != info.rank ||
+      static_cast<size_t>(tensor.numel()) != info.bytes)
+    return false;
+  for (uint8_t d = 0; d < info.rank; ++d) {
+    if (tensor.size(d) != info.shape[d])
+      return false;
+  }
+  return executorch::runtime::is_contiguous_dim_order(
+      tensor.dim_order().data(), tensor.dim_order().size());
 }
 
 bool load_input(
@@ -74,7 +83,7 @@ bool load_input(
     size_t index,
     const Tensor& tensor) {
   Int8TensorInfo info{};
-  if (!interpreter.input_info(index, info) || !same_elements(tensor, info))
+  if (!interpreter.input_info(index, info) || !same_layout(tensor, info))
     return false;
   int8_t* destination = interpreter.input_data(index);
   const size_t plane = static_cast<size_t>(info.height) * info.width;
@@ -117,7 +126,7 @@ bool store_output(
     size_t index,
     Tensor& tensor) {
   Int8TensorInfo info{};
-  if (!interpreter.output_info(index, info) || !same_elements(tensor, info))
+  if (!interpreter.output_info(index, info) || !same_layout(tensor, info))
     return false;
   const int8_t* source = interpreter.output_data(index);
   const size_t plane = static_cast<size_t>(info.height) * info.width;
@@ -190,6 +199,8 @@ class EspNNBackendInterface final : public BackendInterface {
       state->~DelegateState();
       return Error::DelegateInvalidCompatibility;
     }
+    if (state->interpreter.constants_copied())
+      processed->Free();
     ++g_stats.delegates;
     g_stats.arena_bytes += state->interpreter.arena_bytes();
     return state;
@@ -215,7 +226,7 @@ class EspNNBackendInterface final : public BackendInterface {
       if (!args[i]->isTensor() ||
           !load_input(interpreter, i, args[i]->toTensor())) {
         std::printf(
-            "EspNN delegate: input %u has an unsupported dtype or size\n",
+            "EspNN delegate: input %u has an unsupported dtype, shape or dim order\n",
             static_cast<unsigned>(i));
         return Error::InvalidArgument;
       }
@@ -228,7 +239,7 @@ class EspNNBackendInterface final : public BackendInterface {
       Tensor tensor = args[inputs + o]->toTensor();
       if (!store_output(interpreter, o, tensor)) {
         std::printf(
-            "EspNN delegate: output %u has an unsupported dtype or size\n",
+            "EspNN delegate: output %u has an unsupported dtype, shape or dim order\n",
             static_cast<unsigned>(o));
         return Error::InvalidArgument;
       }

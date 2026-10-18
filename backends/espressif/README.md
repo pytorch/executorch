@@ -171,11 +171,15 @@ menuconfig: *ExecuTorch ESP-NN backend*. The component links
 `cmake-out-esp-${IDF_TARGET}`. It also registers `EspNNBackend` with the
 runtime at startup.
 
+The component does not define the ExecuTorch platform layer (`et_pal_*`).
+Applications either compile the shared
+[`examples/espressif/executor_runner/esp_pal.cpp`](../../examples/espressif/executor_runner/esp_pal.cpp),
+as `espnn_runner` does, or provide their own.
+
 Other options:
 
 | Kconfig | Default | Effect |
 |---|---|---|
-| `ESPNN_PROVIDE_EXECUTORCH_PAL` | y | ExecuTorch platform layer: `esp_timer` clock, `printf` logs, PSRAM-aware allocator |
 | `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` | y | Copies weights from memory-mapped flash into PSRAM when they fit (faster than flash cache misses on large models) |
 | `ESPNN_DELEGATE_DUAL_CORE` | n | Splits large convolutions across both cores |
 | `ESPNN_DELEGATE_PROFILE` | n | Prints a per-operator time table after a delegate's first run |

@@ -172,18 +172,23 @@ bool copy_extent_valid(
     const int32_t* strides,
     int32_t offset,
     size_t limit) {
+  if (limit == 0 || limit > static_cast<size_t>(INT32_MAX))
+    return false;
+  const int64_t bound = static_cast<int64_t>(limit);
   int64_t low = offset;
   int64_t high = offset;
   for (int32_t d = 0; d < rank; ++d) {
     if (dims[d] <= 0)
       return false;
     const int64_t span = static_cast<int64_t>(dims[d] - 1) * strides[d];
+    if (span <= -bound || span >= bound)
+      return false;
     if (span < 0)
       low += span;
     else
       high += span;
   }
-  return low >= 0 && high < static_cast<int64_t>(limit);
+  return low >= 0 && high < bound;
 }
 
 bool validate_copy(const GraphView& graph, const OperationRecord& op) {
@@ -198,6 +203,8 @@ bool validate_copy(const GraphView& graph, const OperationRecord& op) {
   const int32_t fill = read_i32(p + 8);
   if (segments <= 0 || (flags & ~COPY_FLAG_FILL) != 0 || fill < -128 ||
       fill > 127 ||
+      static_cast<size_t>(segments) >
+          (op.parameter_size - COPY_HEADER_SIZE) / COPY_SEGMENT_SIZE ||
       op.parameter_size !=
           COPY_HEADER_SIZE +
               static_cast<size_t>(segments) * COPY_SEGMENT_SIZE) {
@@ -266,9 +273,11 @@ bool validate_upsample(const GraphView& graph, const OperationRecord& op) {
   const int32_t out_w = read_i32(p + 16);
   if ((mode != UPSAMPLE_MODE_NEAREST && mode != UPSAMPLE_MODE_BILINEAR) ||
       in_h != a.shape[2] || in_w != a.shape[3] || out_h != out.shape[2] ||
-      out_w != out.shape[3] ||
-      op.parameter_size !=
-          UPSAMPLE_HEADER_SIZE + 12U * static_cast<size_t>(out_h + out_w)) {
+      out_w != out.shape[3] || out_h <= 0 || out_w <= 0 ||
+      out_h > UPSAMPLE_MAX_EXTENT || out_w > UPSAMPLE_MAX_EXTENT ||
+      static_cast<uint64_t>(op.parameter_size) !=
+          UPSAMPLE_HEADER_SIZE +
+              12ULL * (static_cast<uint64_t>(out_h) + out_w)) {
     return false;
   }
   const int32_t one = 1 << UPSAMPLE_WEIGHT_BITS;
@@ -944,7 +953,12 @@ bool parse_graph(const uint8_t* data, size_t size, GraphView& graph) {
       return false;
     }
     const size_t data_size = tensor_data_size(tensor);
+    const bool misaligned_int32 = is_constant &&
+        tensor.dtype == static_cast<uint8_t>(DataType::INT32) &&
+        (tensor.constant_offset % sizeof(int32_t)) != 0;
     if (data_size == 0 ||
+        tensor_element_count(tensor) > static_cast<size_t>(INT32_MAX) ||
+        misaligned_int32 ||
         (is_constant &&
          !range_valid(
              tensor.constant_offset, data_size, graph.header.constant_size)) ||

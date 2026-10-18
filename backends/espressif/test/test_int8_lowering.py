@@ -9,8 +9,7 @@
 """
 Host tests for the ESP32 int8 quantize-and-lower pipeline.
 
-    PYTHONPATH=/home/mwaniki/Documents/torchenv/lib/python3.12/site-packages \
-        /usr/bin/python3.12 -s -m pytest -q tools/tests/test_esp32_int8.py
+    pytest backends/espressif/test/test_int8_lowering.py
 """
 
 from __future__ import annotations
@@ -18,8 +17,11 @@ from __future__ import annotations
 import random
 import struct
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy")
+pytest.importorskip("torchao")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

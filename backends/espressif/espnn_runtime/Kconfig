@@ -16,11 +16,6 @@ menu "ExecuTorch ESP-NN backend"
             examples/espressif/scripts/build_executorch_esp.sh. Without it the
             component still provides the standalone XTS3 int8 interpreter.
 
-    config ESPNN_PROVIDE_EXECUTORCH_PAL
-        bool "Provide the ExecuTorch platform layer (esp_timer clock, printf logs, PSRAM allocator)"
-        default y
-        depends on ESPNN_EXECUTORCH_DELEGATE
-
     config ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
         bool "Copy delegate weights from flash into PSRAM when they fit"
         default y

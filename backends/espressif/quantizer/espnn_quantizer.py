@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional, Union
 
 import torch
 
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    _get_module_type_filter,
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
@@ -24,6 +25,7 @@ from torchao.quantization.pt2e.quantizer import (
     FixedQParamsQuantizationSpec,
     get_bias_qspec,
     get_input_act_qspec,
+    get_module_name_filter,
     get_output_act_qspec,
     get_weight_qspec,
     QuantizationAnnotation,
@@ -69,8 +71,12 @@ def fused_activation_kind(node: Node) -> Optional[str]:
     if node.target in RELU6_TARGETS:
         return "relu6"
     if node.target in HARDTANH_TARGETS:
-        minimum = float(node.args[1]) if len(node.args) > 1 else -1.0
-        maximum = float(node.args[2]) if len(node.args) > 2 else 1.0
+        minimum = float(
+            node.args[1] if len(node.args) > 1 else node.kwargs.get("min_val", -1.0)
+        )
+        maximum = float(
+            node.args[2] if len(node.args) > 2 else node.kwargs.get("max_val", 1.0)
+        )
         if minimum == 0.0 and maximum == 6.0:
             return "relu6"
     return None
@@ -150,10 +156,29 @@ def _annotate_add_activation(
     return True
 
 
+ConfigSource = Union[
+    QuantizationConfig, Callable[[Node], Optional[QuantizationConfig]], None
+]
+
+
+def _config_lookup(
+    config: ConfigSource,
+) -> Callable[[Node], Optional[QuantizationConfig]]:
+    if callable(config) and not isinstance(config, QuantizationConfig):
+        return config
+    return lambda node: config
+
+
 def annotate_fused_activations(
     model: torch.fx.GraphModule,
-    config: QuantizationConfig,
+    config: ConfigSource,
 ) -> int:
+    """
+    Annotate conv/linear/add followed by ReLU or ReLU6 as one fused unit.
+    `config` is a QuantizationConfig or a per-node lookup returning one, or
+    None for nodes that must stay in float.
+    """
+    config_for = _config_lookup(config)
     fused = 0
     for node in model.graph.nodes:
         if fused_activation_kind(node) is None:
@@ -162,6 +187,9 @@ def annotate_fused_activations(
         if not isinstance(producer, Node) or producer.op != "call_function":
             continue
         if len(producer.users) != 1:
+            continue
+        config = config_for(node)
+        if config is None or config_for(producer) is not config:
             continue
         if producer.target in CONV_TARGETS or producer.target in LINEAR_TARGETS:
             fused += int(_annotate_weighted_activation(producer, node, config))
@@ -189,6 +217,21 @@ class EspNNQuantizer(XNNPACKQuantizer):
             get_symmetric_quantization_config(is_per_channel=per_channel, is_qat=is_qat)
         )
         self.fused_activation_count = 0
+        self.rewritten_split_count = 0
+
+    def node_config(self, node: Node) -> Optional[QuantizationConfig]:
+        """
+        The config that governs `node`, with the same precedence as
+        XNNPACKQuantizer: module name, then module type, then global.
+        None means the node stays in float.
+        """
+        for name, config in self.module_name_config.items():
+            if get_module_name_filter(name)(node):
+                return config
+        for module_type, config in self.module_type_config.items():
+            if _get_module_type_filter(module_type)(node):
+                return config
+        return self.global_config
 
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
@@ -198,20 +241,19 @@ class EspNNQuantizer(XNNPACKQuantizer):
         return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        if self.global_config is not None:
-            self.fused_activation_count = annotate_fused_activations(
-                model, self.global_config
-            )
+        self.fused_activation_count = annotate_fused_activations(
+            model, self.node_config
+        )
         model = self._annotate_for_quantization_config(model)
-        if self.global_config is not None:
-            annotate_unary_and_softmax(model, self.global_config)
-        propagate_shared_quantization(model)
+        annotate_unary_and_softmax(model, self.node_config)
+        propagate_shared_quantization(model, self.node_config)
         return model
 
 
 def annotate_unary_and_softmax(
-    model: torch.fx.GraphModule, config: QuantizationConfig
+    model: torch.fx.GraphModule, config: ConfigSource
 ) -> None:
+    config_for = _config_lookup(config)
     softmax_output = FixedQParamsQuantizationSpec(
         dtype=torch.int8,
         scale=SOFTMAX_OUTPUT_SCALE,
@@ -226,7 +268,8 @@ def annotate_unary_and_softmax(
         if node.target not in LUT_TARGETS and node.target not in SOFTMAX_TARGETS:
             continue
         source = node.args[0]
-        if not isinstance(source, Node):
+        config = config_for(node)
+        if not isinstance(source, Node) or config is None:
             continue
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={source: get_input_act_qspec(config)},
@@ -333,6 +376,9 @@ def rewrite_splits_as_slices(model: torch.fx.GraphModule) -> int:
     return rewritten
 
 
+_ALWAYS = object()
+
+
 def _shares_qparams(node: Node) -> bool:
     return node.op == "call_function" and (
         _is_share_obs_or_fq_op(node.target)
@@ -340,11 +386,18 @@ def _shares_qparams(node: Node) -> bool:
     )
 
 
-def propagate_shared_quantization(model: torch.fx.GraphModule) -> None:
+def propagate_shared_quantization(
+    model: torch.fx.GraphModule, config: ConfigSource = _ALWAYS
+) -> None:
+    """
+    Give shape and movement ops their input's quantization. With a per-node
+    `config` lookup, nodes whose config is None are left in float.
+    """
+    config_for = _config_lookup(config)
     for node in model.graph.nodes:
         if not _shares_qparams(node):
             continue
-        if _is_annotated(node):
+        if _is_annotated(node) or config_for(node) is None:
             continue
         source = node.args[0]
         if not isinstance(source, Node):

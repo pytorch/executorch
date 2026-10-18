@@ -10,7 +10,7 @@
 # Build and flash the camera example from an activated ESP-IDF shell. A running
 # viewer.py releases the serial port while this script flashes.
 set -euo pipefail
-PORT=${1:-${ESPPORT:-/dev/ttyACM0}}
+PORT=${1:-${ESPPORT:?usage: flash.sh PORT (or set ESPPORT)}}
 cd "$(dirname "$0")"
 mkdir -p build
 idf.py build

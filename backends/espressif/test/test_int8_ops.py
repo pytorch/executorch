@@ -11,14 +11,16 @@ Host tests for the XTS3 v6 additions: data movement (COPY), upsampling,
 transposed and dilated convolution, broadcasting, padding, any-axis concat,
 split, and multiple graph inputs and outputs.
 
-    PYTHONPATH=/home/mwaniki/Documents/torchenv/lib/python3.12/site-packages \
-        /usr/bin/python3.12 -s -m pytest -q tools/tests/test_esp32_ops_v6.py
+    pytest backends/espressif/test/test_int8_ops.py
 """
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy")
+pytest.importorskip("torchao")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -221,7 +223,25 @@ class TransposeSelect(nn.Module):
 
 
 torch.manual_seed(20261014)
+
+
+class GroupedConvs(nn.Module):
+    """Grouped (not depthwise) convolutions: plain, strided and dilated."""
+
+    def __init__(self):
+        super().__init__()
+        self.plain = nn.Conv2d(16, 16, 3, padding=1, groups=4)
+        self.strided = nn.Conv2d(16, 24, 3, stride=2, padding=1, groups=8)
+        self.dilated = nn.Conv2d(24, 24, 3, padding=2, dilation=2, groups=3)
+
+    def forward(self, x):
+        x = F.relu(self.plain(x))
+        x = F.relu(self.strided(x))
+        return self.dilated(x)
+
+
 CASES = [
+    ("grouped-conv", GroupedConvs(), [(1, 16, 12, 12)], 2),
     ("detection-head-multi-output", DetectionHead(), [(1, 3, 16, 16)], 2),
     ("segmentation-dilated-transposed", SegmentationDecoder(), [(1, 3, 16, 16)], 3),
     ("upsample-nearest-x2", UpsampleModel("nearest"), [(1, 3, 16, 16)], 2),

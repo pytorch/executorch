@@ -8,7 +8,9 @@
 
 set(runner_sources "main.cpp" "int8_suite.cpp" "bundle_data.S")
 if(CONFIG_ESPNN_EXECUTORCH_DELEGATE)
-  list(APPEND runner_sources "pte_suite.cpp")
+  list(APPEND runner_sources "pte_suite.cpp"
+       "${CMAKE_CURRENT_LIST_DIR}/../../executor_runner/esp_pal.cpp"
+  )
 endif()
 
 idf_component_register(

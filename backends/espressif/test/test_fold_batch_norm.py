@@ -6,6 +6,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -13,7 +14,8 @@ from executorch.backends.espressif._passes.fold_batch_norm import (
     count_conv_bn,
     fold_batch_norm,
 )
-from torchvision import models
+
+models = pytest.importorskip("torchvision.models")
 
 
 torch.set_grad_enabled(False)

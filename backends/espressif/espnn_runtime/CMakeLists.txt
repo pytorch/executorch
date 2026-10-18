@@ -9,9 +9,6 @@
 set(espnn_sources "src/xts3_graph.cpp" "src/int8_interpreter.cpp")
 if(CONFIG_ESPNN_EXECUTORCH_DELEGATE)
   list(APPEND espnn_sources "src/espnn_backend.cpp")
-  if(CONFIG_ESPNN_PROVIDE_EXECUTORCH_PAL)
-    list(APPEND espnn_sources "src/espnn_pal.cpp")
-  endif()
 endif()
 
 idf_component_register(

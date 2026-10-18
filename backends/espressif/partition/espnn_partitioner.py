@@ -44,6 +44,7 @@ from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.utils.fuser_utils import validate_partition
 
 
 SUPPORTED_KINDS = {
@@ -276,7 +277,9 @@ def _attach_outputs_to_producers(partitions: list[set]) -> None:
     """
     A quantize node (and an activation fused into its producer) must live in
     the producer's partition so the partition exports int8 or dequantized
-    values only, never a raw accumulator.
+    values only, never a raw accumulator. A move that would make either
+    partition non-convex is skipped; the affected partition then fails
+    _boundary_is_valid and stays on the CPU instead of breaking fusion.
     """
     owner = {}
     for index, nodes in enumerate(partitions):
@@ -297,7 +300,12 @@ def _attach_outputs_to_producers(partitions: list[set]) -> None:
                     )
                     if not attach or owner.get(user) == index or user not in owner:
                         continue
-                    partitions[owner[user]].discard(user)
+                    donor = partitions[owner[user]]
+                    if not validate_partition(
+                        list(nodes | {user})
+                    ) or not validate_partition(list(donor - {user})):
+                        continue
+                    donor.discard(user)
                     nodes.add(user)
                     owner[user] = index
                     changed = True
@@ -314,8 +322,9 @@ class EspNNPartitioner(Partitioner):
     With allow_cpu_fallback (the default) operators the int8 backend cannot
     lower stay in the ExecuTorch program and run on the CPU through the
     portable kernels; partition boundaries carry float or int8 tensors.
-    With allow_cpu_fallback=False any unsupported operator is an error, which
-    is what the standalone XTS3 firmware path requires.
+    With allow_cpu_fallback=False any operator left outside a delegate is an
+    error, whether it is unsupported or its region could not be delegated;
+    the standalone XTS3 firmware path requires this.
     """
 
     def __init__(
@@ -378,10 +387,6 @@ class EspNNPartitioner(Partitioner):
             for node in nodes:
                 node.meta["delegation_tag"] = tag
             tags[tag] = self.delegation_spec
-        if not tags and not self.allow_cpu_fallback:
-            raise RuntimeError("No ESP32 int8 partition could be formed")
-        tag_constant_data(exported_program)
-
         delegated = {
             node
             for node in graph_module.graph.nodes
@@ -394,6 +399,20 @@ class EspNNPartitioner(Partitioner):
             and node not in delegated
             and not _is_passthrough(node)
         ]
+        leftover = [node for node in cpu_ops if "getitem" not in str(node.target)]
+        if leftover and not self.allow_cpu_fallback:
+            raise RuntimeError(
+                f"{len(leftover)} operator(s) would run on the CPU "
+                f"({rejected} region(s) could not be delegated): "
+                + ", ".join(
+                    f"{node.name} ({_operator_name(node.target)}): "
+                    f"{reasons.get(node, 'outside the delegated regions')}"
+                    for node in leftover[:20]
+                )
+            )
+        if not tags and not self.allow_cpu_fallback:
+            raise RuntimeError("No ESP32 int8 partition could be formed")
+        tag_constant_data(exported_program)
         self.report = {
             "partitions": len(tags),
             "rejected_partitions": rejected,
@@ -404,8 +423,7 @@ class EspNNPartitioner(Partitioner):
                     "target": _operator_name(node.target),
                     "reason": reasons.get(node, "outside the delegated regions"),
                 }
-                for node in cpu_ops
-                if "getitem" not in str(node.target)
+                for node in leftover
             ],
         }
         return PartitionResult(

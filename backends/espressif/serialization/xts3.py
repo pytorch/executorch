@@ -52,6 +52,10 @@ UPSAMPLE_MODE_BILINEAR = 1
 UPSAMPLE_WEIGHT_BITS = 10
 UPSAMPLE_WEIGHT_ONE = 1 << UPSAMPLE_WEIGHT_BITS
 TRANSPOSE_CONV_PARAMS = "<13i"
+UPSAMPLE_MAX_EXTENT = 65535
+MAX_GRAPH_IO = 16
+MAX_GRAPH_TENSORS = 1024
+MAX_GRAPH_OPERATIONS = 1024
 TRANSPOSE_CONV_PARAMS_SIZE = struct.calcsize(TRANSPOSE_CONV_PARAMS)
 
 HEADER_FORMAT = "<4sHIIII"
@@ -1866,10 +1870,56 @@ def _serialize_operation(operation: XTS3Operation, params_offset: int) -> bytes:
     )
 
 
-def serialize_graph(graph: XTS3Graph) -> bytes:
-    """Serialize to the XTS3 wire format; constants start 16-byte aligned."""
+def check_runtime_limits(graph: XTS3Graph) -> None:
+    """
+    Raise ValueError for graphs the device runtime would reject at init():
+    the same limits espnn_runtime/src/xts3_graph.cpp enforces.
+    """
     if graph.version not in XTS3_VERSIONS:
         raise ValueError(f"Cannot serialize XTS3 version {graph.version}")
+    if len(graph.inputs) > MAX_GRAPH_IO or len(graph.outputs) > MAX_GRAPH_IO:
+        raise ValueError(
+            f"Partition has {len(graph.inputs)} inputs and {len(graph.outputs)} "
+            f"outputs; the ESP-NN runtime supports at most {MAX_GRAPH_IO} of each"
+        )
+    if len(graph.tensors) > MAX_GRAPH_TENSORS:
+        raise ValueError(
+            f"Partition has {len(graph.tensors)} tensors; the ESP-NN runtime "
+            f"supports at most {MAX_GRAPH_TENSORS}"
+        )
+    if len(graph.operations) > MAX_GRAPH_OPERATIONS:
+        raise ValueError(
+            f"Partition has {len(graph.operations)} operations; the ESP-NN "
+            f"runtime supports at most {MAX_GRAPH_OPERATIONS}"
+        )
+    newest = XTS3OpCode.SOFTMAX if graph.version == 5 else max(XTS3OpCode)
+    for operation in graph.operations:
+        if int(operation.opcode) > int(newest):
+            raise ValueError(
+                f"{XTS3OpCode(operation.opcode).name} needs XTS3 version 6, "
+                f"the graph is version {graph.version}"
+            )
+        if operation.opcode == XTS3OpCode.UPSAMPLE:
+            _, _, _, out_h, out_w = struct.unpack_from(
+                UPSAMPLE_HEADER, operation.params
+            )
+            if max(out_h, out_w) > UPSAMPLE_MAX_EXTENT:
+                raise ValueError(
+                    f"Upsample output {out_h}x{out_w} exceeds "
+                    f"{UPSAMPLE_MAX_EXTENT} in one dimension"
+                )
+    for tensor in graph.tensors:
+        if (
+            tensor.flags & TENSOR_FLAG_CONSTANT
+            and tensor.dtype == XTS3DType.INT32
+            and tensor.data_offset % 4
+        ):
+            raise ValueError(f"int32 constant {tensor.tensor_id} is not 4-byte aligned")
+
+
+def serialize_graph(graph: XTS3Graph) -> bytes:
+    """Serialize to the XTS3 wire format; constants start 16-byte aligned."""
+    check_runtime_limits(graph)
     tensor_data = b"".join(_serialize_tensor(tensor) for tensor in graph.tensors)
     parameter_data = bytearray()
     operation_data = bytearray()
@@ -2034,6 +2084,7 @@ def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
 
 __all__ = [
     "MAGIC",
+    "check_runtime_limits",
     "XTS3_VERSION",
     "XTS3_VERSIONS",
     "XTS3DType",

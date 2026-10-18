@@ -151,12 +151,21 @@ def main() -> int:
         default=Path(__file__).resolve().parents[1] / "espnn_runner" / "bundles",
     )
     parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument(
+        "--suites",
+        default="op,pte",
+        help="comma separated: op (standalone op_suite.xtb), pte (pte_suite.xtp)",
+    )
     args = parser.parse_args()
+    suites = set(args.suites.split(","))
     torch.set_grad_enabled(False)
-    for filename, magic, builder in (
-        ("op_suite.xtb", b"XTB1", build_op_suite),
-        ("pte_suite.xtp", b"XTP1", build_pte_suite),
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    for suite, filename, magic, builder in (
+        ("op", "op_suite.xtb", b"XTB1", build_op_suite),
+        ("pte", "pte_suite.xtp", b"XTP1", build_pte_suite),
     ):
+        if suite not in suites:
+            continue
         entries, reports = builder(args.samples)
         path = args.output_dir / filename
         size = write_bundle(path, magic, entries)

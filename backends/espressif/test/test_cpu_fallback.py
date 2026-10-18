@@ -10,8 +10,7 @@
 Host tests for partial delegation: int8 regions run on the ESP-NN delegate,
 unsupported operators stay on the ExecuTorch CPU (portable) kernels.
 
-    PYTHONPATH=/home/mwaniki/Documents/torchenv/lib/python3.12/site-packages \
-        /usr/bin/python3.12 -s -m pytest -q tools/tests/test_esp32_fallback.py
+    pytest backends/espressif/test/test_cpu_fallback.py
 """
 
 from __future__ import annotations

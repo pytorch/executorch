@@ -9,8 +9,6 @@
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 from typing import List
 
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
@@ -22,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 BACKEND_ID = "EspNNBackend"
 INT8_FORMAT_SPEC = CompileSpec("espnn_format", b"int8")
-DUMP_ENV = "ESPNN_DELEGATE_OUTPUT"
 
 
 class EspNNBackend(BackendDetails):
@@ -32,14 +29,23 @@ class EspNNBackend(BackendDetails):
     Each partition produced by EspNNPartitioner is lowered to an XTS3 int8
     graph: ESP-NN operator records, per-channel requantization parameters,
     16-byte aligned int8/int32 constants and an input/output table. The
-    on-device EspNNBackend (backends/espressif/runtime) parses the blob and
-    executes it with ESP-NN kernels.
+    on-device EspNNBackend (backends/espressif/espnn_runtime) parses the blob
+    and executes it with ESP-NN kernels.
 
-    Set ESPNN_DELEGATE_OUTPUT=<path> to also write the last blob to a file.
+    Compile specs: `espnn_format` selects the payload format; only `int8` is
+    defined, and any other value is rejected.
     """
 
     @staticmethod
     def preprocess(edge_program, compile_specs: List[CompileSpec]) -> PreprocessResult:
+        for spec in compile_specs:
+            if (
+                spec.key == INT8_FORMAT_SPEC.key
+                and spec.value != INT8_FORMAT_SPEC.value
+            ):
+                raise ValueError(
+                    f"Unsupported espnn_format {spec.value!r}; only b'int8' is defined"
+                )
         graph = build_graph(edge_program)
         blob = serialize_graph(graph)
         logger.info(
@@ -49,9 +55,6 @@ class EspNNBackend(BackendDetails):
             len(graph.constant_data),
             len(blob),
         )
-        output_path = os.environ.get(DUMP_ENV)
-        if output_path:
-            Path(output_path).write_bytes(blob)
         return PreprocessResult(processed_bytes=blob, debug_handle_map={})
 
 

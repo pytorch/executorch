@@ -35,7 +35,9 @@ struct Int8RuntimeOptions {
   bool copy_constants_to_psram = false;
   /// Place the activation arena in internal RAM when it fits, else PSRAM.
   bool prefer_internal_arena = true;
-  /// Split large convolutions across both cores.
+  /// Split large convolutions across both cores. ESP-NN's worker task is
+  /// process-wide, so once any interpreter enables it every interpreter's
+  /// kernels may use it; results are bit-identical either way.
   bool dual_core = false;
   /// Internal RAM left free when deciding whether the arena fits there.
   size_t internal_reserve_bytes = 48 * 1024;
@@ -92,6 +94,10 @@ class Int8Interpreter {
 
   /**
    * Runs every operation once on the current input data.
+   *
+   * ESP-NN keeps its scratch buffers in global state, so invoke() calls from
+   * all interpreters are serialized by one process-wide mutex. Concurrent
+   * callers on other tasks or cores wait rather than share buffers.
    *
    * @retval false The graph is not loaded or an operation failed.
    */

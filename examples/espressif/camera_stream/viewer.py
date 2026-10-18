@@ -16,13 +16,13 @@ The board prints text lines on its USB-Serial-JTAG port:
     #JPG kind=cam|input seq= res= w= h= enc_us= len= crc= b64=...
 
 Terminal dashboard (stdlib only; --preview draws the frame with Pillow):
-    python3 tools/camera_viewer.py --port /dev/ttyACM0 [--preview]
+    python examples/espressif/camera_stream/viewer.py --port /dev/ttyACM0 [--preview]
 
 Chrome dashboard on http://127.0.0.1:8765 (stdlib only):
-    python3 tools/camera_viewer.py --web
+    python examples/espressif/camera_stream/viewer.py --web
 
 Automated check that prints a JSON summary and exits:
-    python3 tools/camera_viewer.py --duration 30 --summary-json out.json
+    python examples/espressif/camera_stream/viewer.py --duration 30 --summary-json out.json
 """
 
 from __future__ import annotations
@@ -724,7 +724,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--port", default=os.environ.get("ESP_PORT", "/dev/ttyACM0"))
+    parser.add_argument(
+        "--port",
+        default=os.environ.get("ESPPORT"),
+        required="ESPPORT" not in os.environ,
+        help="serial port of the board (default: $ESPPORT)",
+    )
     parser.add_argument(
         "--labels", type=Path, default=TOOLS_DIR / "imagenet_classes.txt"
     )

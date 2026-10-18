@@ -17,7 +17,7 @@ timed iterations). Results go to <output>/<target>.json and <target>.md.
 
 Run inside an activated ESP-IDF shell with a Python that has executorch:
     python examples/espressif/scripts/benchmark.py --port /dev/ttyACM0 \
-        --images ~/data/imagenette2-160 --dashboard
+        --images path/to/imagenette2-160 --dashboard
 
 Models that need more RAM than the board has are reported as "did not fit".
 ExecuTorch-mode models need ExecuTorch cross-compiled for the target
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -339,7 +340,12 @@ def main() -> int:  # noqa: C901
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--port", default="/dev/ttyACM0")
+    parser.add_argument(
+        "--port",
+        default=os.environ.get("ESPPORT"),
+        required="ESPPORT" not in os.environ,
+        help="serial port of the board (default: $ESPPORT)",
+    )
     parser.add_argument(
         "--target", help="override the detected chip (esp32s3, esp32, ...)"
     )

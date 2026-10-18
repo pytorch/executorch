@@ -20,6 +20,7 @@
 #include <esp_nn_multicore.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 
 namespace executorch {
@@ -29,6 +30,27 @@ namespace {
 
 constexpr size_t ARENA_ALIGNMENT = 16;
 constexpr int64_t YIELD_INTERVAL_US = 1000000;
+
+SemaphoreHandle_t invoke_mutex() {
+  static StaticSemaphore_t storage;
+  static SemaphoreHandle_t handle = xSemaphoreCreateMutexStatic(&storage);
+  return handle;
+}
+
+class InvokeLock {
+ public:
+  InvokeLock() : handle_(invoke_mutex()) {
+    xSemaphoreTake(handle_, portMAX_DELAY);
+  }
+  ~InvokeLock() {
+    xSemaphoreGive(handle_);
+  }
+  InvokeLock(const InvokeLock&) = delete;
+  InvokeLock& operator=(const InvokeLock&) = delete;
+
+ private:
+  SemaphoreHandle_t handle_;
+};
 
 size_t align_up(size_t value, size_t alignment) {
   return (value + alignment - 1) & ~(alignment - 1);
@@ -1652,6 +1674,7 @@ void Int8Interpreter::run_transposed_conv(
 bool Int8Interpreter::invoke() {
   if (!loaded_)
     return false;
+  InvokeLock lock;
   if (scratch_ != nullptr) {
     esp_nn_set_conv_scratch_buf(scratch_);
     esp_nn_set_depthwise_conv_scratch_buf(scratch_);

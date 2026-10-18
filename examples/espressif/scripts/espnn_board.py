@@ -294,4 +294,7 @@ def run_bundle(
 
 
 if __name__ == "__main__":
-    print(detect_chip(sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyACM0"))
+    port = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ESPPORT")
+    if not port:
+        sys.exit("usage: espnn_board.py PORT (or set ESPPORT)")
+    print(detect_chip(port))

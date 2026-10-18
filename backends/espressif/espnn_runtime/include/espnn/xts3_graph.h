@@ -64,6 +64,8 @@ static constexpr size_t UPSAMPLE_HEADER_SIZE = 20;
 static constexpr int32_t UPSAMPLE_MODE_NEAREST = 0;
 static constexpr int32_t UPSAMPLE_MODE_BILINEAR = 1;
 static constexpr int32_t UPSAMPLE_WEIGHT_BITS = 10;
+/// Largest output height or width an UPSAMPLE operation may declare.
+static constexpr int32_t UPSAMPLE_MAX_EXTENT = 65535;
 static constexpr size_t TRANSPOSE_CONV_PARAMS_SIZE = 52;
 
 /// Operation types; values are part of the file format.
