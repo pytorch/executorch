@@ -757,13 +757,23 @@ class TestGgufBitWidthTest(unittest.TestCase):
 
         # v_proj / ffn_down honor per-layer bit-width.
         for i in range(GGUF_CONFIG.n_layers):
-            v = model.layers[i].self_attn.v_proj.weight.data
             want_v6 = i in _GGUF_Q6_LAYERS["attn_v"]
-            self.assertIsInstance(
-                v,
-                CudaDp4aPlanarInt6Tensor if want_v6 else CudaCoalescedInt4Tensor,
-                f"layer {i} v_proj bit-width mismatch",
-            )
+            attn = model.layers[i].self_attn
+            if want_v6:
+                self.assertIsInstance(
+                    attn.qko_proj.weight.data, CudaCoalescedInt4Tensor
+                )
+                self.assertIsInstance(
+                    attn.v_proj.weight.data,
+                    CudaDp4aPlanarInt6Tensor,
+                    f"layer {i} v_proj bit-width mismatch",
+                )
+            else:
+                self.assertIsInstance(
+                    attn.qkv_proj.weight.data,
+                    CudaCoalescedInt4Tensor,
+                    f"layer {i} qkv_proj bit-width mismatch",
+                )
             d = model.layers[i].mlp.down_proj.weight.data
             want_d6 = i in _GGUF_Q6_LAYERS["ffn_down"]
             self.assertIsInstance(
@@ -772,10 +782,7 @@ class TestGgufBitWidthTest(unittest.TestCase):
                 f"layer {i} down_proj bit-width mismatch",
             )
 
-        # Fused qko_proj / gate_up_proj (all-Q4_K shards) -> INT4.
-        self.assertIsInstance(
-            model.layers[0].self_attn.qko_proj.weight.data, CudaCoalescedInt4Tensor
-        )
+        # Fused gate_up_proj (all-Q4_K shards) -> INT4.
         self.assertIsInstance(
             model.layers[0].mlp.gate_up_proj.weight.data, CudaCoalescedInt4Tensor
         )
@@ -787,18 +794,28 @@ class TestGgufBitWidthTest(unittest.TestCase):
         self.assertIsInstance(model.lm_head.weight.data, CudaDp4aPlanarInt6Tensor)
         self.assertIsInstance(model.embed_tokens.weight.data, IntxUnpackedToInt8Tensor)
 
-    def test_fused_qko_shape(self):
-        """qko_proj fuses [Q|K|OG]; v_proj is separate with [V] rows."""
+    def test_mixed_qkv_fusion_shapes(self):
+        """Q4 V layers fuse QKV; Q6 V layers retain QKO + standalone V."""
         model, _ = self._load()
         q_dim = GGUF_CONFIG.n_heads * GGUF_CONFIG.head_dim
         kv_dim = GGUF_CONFIG.n_kv_heads * GGUF_CONFIG.head_dim
         og_dim = q_dim  # use_attn_o_gate
+
+        q4_layer = next(
+            i for i in range(GGUF_CONFIG.n_layers) if i not in _GGUF_Q6_LAYERS["attn_v"]
+        )
         self.assertEqual(
-            model.layers[0].self_attn.qko_proj.weight.shape,
+            model.layers[q4_layer].self_attn.qkv_proj.weight.shape,
+            (q_dim + 2 * kv_dim + og_dim, GGUF_CONFIG.dim),
+        )
+
+        q6_layer = next(iter(_GGUF_Q6_LAYERS["attn_v"]))
+        self.assertEqual(
+            model.layers[q6_layer].self_attn.qko_proj.weight.shape,
             (q_dim + kv_dim + og_dim, GGUF_CONFIG.dim),
         )
         self.assertEqual(
-            model.layers[0].self_attn.v_proj.weight.shape,
+            model.layers[q6_layer].self_attn.v_proj.weight.shape,
             (kv_dim, GGUF_CONFIG.dim),
         )
 
@@ -1167,7 +1184,7 @@ def build_muse_glimmer_gguf_bf16(
 class TestGgufBf16Test(unittest.TestCase):
     """A MOSTLY_BF16 GGUF loads as plain bf16 (no int4 packing).
 
-    The fused ``qko_proj`` / ``gate_up_proj`` groups arrive as plain bf16
+    The fused ``qkv_proj`` / ``gate_up_proj`` groups arrive as plain bf16
     shards (``iter_gguf`` does not wrap bf16), so ``_flush_fused_group`` must
     row-concatenate them as bf16 rather than raising or int4-packing. Packing
     is CPU-safe; only kernel execution needs CUDA.
@@ -1196,12 +1213,12 @@ class TestGgufBf16Test(unittest.TestCase):
         kv_dim = GGUF_CONFIG.n_kv_heads * GGUF_CONFIG.head_dim
         og_dim = q_dim  # use_attn_o_gate
 
-        # Fused groups: plain bf16, concatenated to the model's [Q|K|OG] /
+        # Fused groups: plain bf16, concatenated to the model's [Q|K|V|OG] /
         # [gate|up] row layout.
-        qko = model.layers[0].self_attn.qko_proj.weight.data
-        self.assertIs(type(qko), torch.Tensor)
-        self.assertEqual(qko.dtype, torch.bfloat16)
-        self.assertEqual(qko.shape, (q_dim + kv_dim + og_dim, GGUF_CONFIG.dim))
+        qkv = model.layers[0].self_attn.qkv_proj.weight.data
+        self.assertIs(type(qkv), torch.Tensor)
+        self.assertEqual(qkv.dtype, torch.bfloat16)
+        self.assertEqual(qkv.shape, (q_dim + 2 * kv_dim + og_dim, GGUF_CONFIG.dim))
 
         gate_up = model.layers[0].mlp.gate_up_proj.weight.data
         self.assertIs(type(gate_up), torch.Tensor)
@@ -1210,7 +1227,6 @@ class TestGgufBf16Test(unittest.TestCase):
 
         # Standalone + top-level weights: plain bf16, no subclass.
         for w in (
-            model.layers[0].self_attn.v_proj.weight.data,
             model.layers[0].self_attn.o_proj.weight.data,
             model.layers[0].mlp.down_proj.weight.data,
             model.lm_head.weight.data,
