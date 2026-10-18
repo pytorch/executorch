@@ -22,6 +22,8 @@ struct MuseGlimmerBackendConfig {
   int max_vision_patches = 4096;
   MuseGlimmerImageLimits image_limits;
   batching::Token bos_id = 200000;
+  bool use_dflash = false;
+  int dflash_n_draft = 0; // zero uses the exported maximum minus one
 };
 
 struct MuseGlimmerBackend {

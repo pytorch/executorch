@@ -221,6 +221,18 @@ TEST_F(HiFiQuantizedFullyConnectedPackedTest, ScalarUnpack) {
   }
 }
 
+// in_dim = 36: rows of the input alternate between 8-byte aligned and 4 bytes
+// off, and each leaves a 4-value tail, so the input sum's scalar head and tail
+// both run alongside its vector loop.
+TEST_F(HiFiQuantizedFullyConnectedPackedTest, InputSumHeadAndTail) {
+  for (int64_t bits : {4, 6}) {
+    SCOPED_TRACE(bits);
+    MemoryAllocator allocator(sizeof(scratch_), scratch_);
+    KernelRuntimeContext ctx(nullptr, &allocator);
+    run_and_check(ctx, Case{bits, 36, 8});
+  }
+}
+
 // Length-1 qparams must be broadcast to every output channel.
 TEST_F(HiFiQuantizedFullyConnectedPackedTest, ScalarQParams) {
   for (int64_t bits : {4, 6}) {

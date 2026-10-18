@@ -2297,6 +2297,28 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
 
+    def test_deep_elementwise_region_does_not_recurse(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 2, 3))
+        node = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        for _ in range(1100):
+            node = builder.call_operator(
+                op=exir_ops.edge.aten.hardtanh.default, args=(node,)
+            )
+        node = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(node, [0, 2, 1])
+        )
+        builder.output([node])
+
+        result = RemovePermutesAroundElementwiseOps().call(builder.get_graph_module())
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
     def test_region_ending_in_permute_then_view(self) -> None:
         """permute -> mul -> permute -> view(squeeze).
 
