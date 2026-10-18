@@ -568,7 +568,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       ;;
     solo-text-batching)
       # The off-graph cache exports the batching methods CudaExecutor drives:
-      # forward_{1..64}, forward_others and the device samplers.
+      # Static forward_{N}, dynamic forward_others and the device samplers.
       EXPORT_START_SECONDS=$SECONDS
       TMPDIR="$INDUCTOR_TMPDIR" \
       TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \

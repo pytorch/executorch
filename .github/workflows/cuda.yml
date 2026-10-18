@@ -34,8 +34,12 @@ on:
       - .ci/scripts/cuda_benchmark.py
       - .ci/scripts/cuda_benchmark_from_e2e.sh
       - .ci/scripts/cuda_perf_prompts/**
-      - .ci/scripts/*muse_glimmer_batching*
-      - .ci/scripts/tests/*muse_glimmer_batching*
+      - .ci/scripts/build_muse_glimmer_batching_smoke.sh
+      - .ci/scripts/muse_glimmer_batching_smoke.cpp
+      - .ci/scripts/muse_glimmer_batching_workload.h
+      - .ci/scripts/tests/test_muse_glimmer_batching_ci.py
+      - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
+      - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
@@ -122,6 +126,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -147,10 +152,10 @@ jobs:
       script: |
         set -eux
 
-        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
-          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
-          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
-        fi
+        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
+        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -166,6 +171,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -565,10 +571,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
@@ -589,21 +597,22 @@ jobs:
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
-        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_*.py' -v
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_ci.py' -v
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_workload.py' -v
 
-        # The normal serving binaries and the opt-in CI workload tool share
+        # The normal serving binaries and the opt-in correctness tool share
         # CudaExecutor; MG preparation tests also run on Linux.
         make muse-glimmer-batching-cuda
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
         cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
-        bash .ci/scripts/build_muse_glimmer_batching_bench.sh "${BATCHING_BIN_DIR}"
+        bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
         cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
-        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_bench"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_smoke"
 
         # The batching export on a tiny model, and the CLI's backend dispatch.
         pip install gguf
@@ -1099,10 +1108,12 @@ jobs:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
     if: |
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
