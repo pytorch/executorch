@@ -25,6 +25,7 @@ from unittest import mock
 import torch
 import torch.nn.functional as F
 import triton
+from executorch.backends.cuda.autotune.cuda_graph_timing import cuda_graph_timing
 from executorch.backends.cuda.autotune.launch_params import (
     autotune_launch_params,
     clear_launch_param_cache,
@@ -41,6 +42,7 @@ from executorch.backends.cuda.tests.autotune_test_utils import (
 from executorch.backends.cuda.triton.kernels import (
     int4_quantized_gemm as int4_kernel,
     quantized_gemm_family,
+    quantized_gemm_utils,
 )
 from executorch.backends.cuda.triton.kernels.int4_quantized_gemm import (
     int4_autotune_configs,
@@ -48,6 +50,7 @@ from executorch.backends.cuda.triton.kernels.int4_quantized_gemm import (
     SUPPORTED_BUCKETS,
 )
 from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
+    autotune_do_bench,
     check_split_k,
     SPLIT_K_CANDIDATES,
 )
@@ -667,6 +670,105 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             with self.subTest(bucket=bucket):
                 _check_close(self, actual, expected)
 
+    def test_a_failing_cuda_graph_timing_falls_back_and_says_so_once(self) -> None:
+        from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
+
+        x = torch.randn(1 << 16, device="cuda")
+
+        def kernel_call():
+            x.mul_(1.0)
+
+        stream = torch.cuda.Stream()
+        with torch.cuda.stream(stream), cuda_graph_timing(), mock.patch.object(
+            quantized_gemm_utils,
+            "time_with_cuda_graph_us_counted",
+            side_effect=RuntimeError("capture failed"),
+        ), mock.patch.object(
+            quantized_gemm_utils, "_graph_timing_fallback_warned", False
+        ), self.assertLogs(
+            quantized_gemm_utils.logger, "WARNING"
+        ) as logs:
+            for _ in range(2):
+                # The quantiles triton.autotune asks for.
+                ms = quantized_gemm_utils.autotune_do_bench(
+                    kernel_call, (0.5, 0.2, 0.8)
+                )
+                self.assertGreater(ms[0], 0)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("capture failed", logs.output[0])
+
+    def test_a_tuned_shape_traces_only_its_picked_config(self) -> None:
+        """Once the autotuner has picked a config for a shape, tracing hands
+        Inductor that config alone, so AOTI does not tune it again."""
+        torch._dynamo.reset()
+        n, k, bucket = 832, 1536, 16
+        weights = _packed(n, k, seed=41)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        autotuner = int4_kernel._W4A16_DIRECT_KERNELS[bucket]
+        self.assertGreater(len(autotuner.configs), 1)
+
+        def linear(x):
+            return INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
+
+        with torch.no_grad():
+            eager = linear(x)  # tunes this shape
+            compiled, code = torch._inductor.utils.run_and_get_code(
+                torch.compile(linear, fullgraph=True), x
+            )
+        source = "\n".join(code)
+        name = autotuner.fn.fn.__name__
+        self.assertIn(f"def {name}(", source)
+        block = source[
+            source.rindex("user_autotune(", 0, source.index(f"def {name}(")) :
+        ]
+        configs = block[: block.index("],")]
+        self.assertEqual(configs.count("'num_warps'"), 1)
+        _check_close(self, compiled, eager)
+
+    def test_an_untuned_shape_traces_every_config(self) -> None:
+        mode = FakeTensorMode()
+        traced = []
+        wrap = quantized_gemm_family.wrap_triton
+
+        def recording(kernel):
+            traced.append(kernel)
+            return wrap(kernel)
+
+        with mode:
+            weights = tuple(
+                torch.empty_like(t, device="cuda") for t in _packed(704, 1280, seed=43)
+            )
+            x = torch.empty(16, 1280, dtype=torch.bfloat16, device="cuda")
+        with mock.patch.object(quantized_gemm_family, "wrap_triton", recording):
+            with mode:
+                int4_kernel._launch(16, x, *weights, GROUP_SIZE, split_k=1)
+        self.assertIs(traced[0], int4_kernel._W4A16_DIRECT_KERNELS[16])
+
+    def test_the_picked_config_kernel_is_one_object_per_config(self) -> None:
+        n, k, bucket = 832, 1536, 16
+        weights = _packed(n, k, seed=41)
+        x = torch.randn(bucket, k, dtype=torch.bfloat16, device="cuda")
+        traced = []
+        wrap = quantized_gemm_family.wrap_triton
+
+        def recording(kernel):
+            traced.append(kernel)
+            return wrap(kernel)
+
+        # Through the op, whose eager path runs the autotuner itself, so the
+        # first call tunes and caches its pick (wrap_triton's eager path tunes a
+        # fresh copy on every call and would never reuse it).
+        with mock.patch.object(quantized_gemm_family, "wrap_triton", recording):
+            for _ in range(3):
+                out = INT4_QUANTIZED_GEMM.op(bucket)(x, *weights, GROUP_SIZE)
+        autotuner = int4_kernel._W4A16_DIRECT_KERNELS[bucket]
+        tuned = [kernel for kernel in traced if kernel is not autotuner]
+        self.assertGreaterEqual(len(tuned), 2)
+        self.assertTrue(all(kernel is tuned[0] for kernel in tuned))
+        self.assertEqual(len(tuned[0].configs), 1)
+        self.assertIn(tuned[0].configs[0], autotuner.cache.values())
+        _check_close(self, out, _dequant_matmul(x, *weights, GROUP_SIZE))
+
     def test_dynamic_m_compiled_bucket_serves_fewer_rows(self) -> None:
         """A bucket compiled for a dynamic M <= its size masks the extra rows."""
         torch._dynamo.reset()
@@ -797,10 +899,79 @@ class _Int4Decode(torch.nn.Module):
         return tuple(outs)
 
 
+class AutotuneDoBenchTest(unittest.TestCase):
+    def _on_stream(self, cuda_stream: int):
+        return mock.patch.object(
+            torch.cuda,
+            "current_stream",
+            return_value=types.SimpleNamespace(cuda_stream=cuda_stream),
+        )
+
+    def test_inside_graph_timing_on_a_side_stream_times_in_a_graph(self) -> None:
+        kernel_call = mock.Mock()
+        with self._on_stream(1), mock.patch.object(
+            quantized_gemm_utils, "graph_timing_active", return_value=True
+        ), mock.patch.object(
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted", return_value=1500.0
+        ) as graph, mock.patch.object(
+            triton.testing, "do_bench"
+        ) as bench:
+            self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
+        graph.assert_called_once_with(kernel_call)
+        bench.assert_not_called()
+
+    def test_out_of_memory_while_capturing_is_retried_and_counted(self) -> None:
+        from executorch.backends.cuda.autotune import cuda_graph_timing as cgt_module
+
+        kernel_call = mock.Mock()
+        stream = torch.cuda.Stream()
+        with torch.cuda.stream(stream), cuda_graph_timing() as stats, mock.patch.object(
+            cgt_module,
+            "time_with_cuda_graph_us",
+            side_effect=[torch.OutOfMemoryError("capture"), 1500.0],
+        ):
+            self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
+        self.assertEqual(
+            (stats.oom_retries, stats.captured, stats.fallbacks), (1, 1, 0)
+        )
+
+    def test_outside_graph_timing_uses_triton(self) -> None:
+        kernel_call = mock.Mock()
+        with self._on_stream(1), mock.patch.object(
+            quantized_gemm_utils, "graph_timing_active", return_value=False
+        ), mock.patch.object(
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted"
+        ) as graph, mock.patch.object(
+            triton.testing, "do_bench", return_value=2.0
+        ) as bench:
+            self.assertEqual(autotune_do_bench(kernel_call, None), 2.0)
+        graph.assert_not_called()
+        bench.assert_called_once_with(
+            kernel_call,
+            warmup=quantized_gemm_utils.AUTOTUNE_WARMUP_MS,
+            rep=quantized_gemm_utils.AUTOTUNE_REP_MS,
+            quantiles=None,
+        )
+
+    def test_the_legacy_default_stream_uses_triton(self) -> None:
+        kernel_call = mock.Mock()
+        with self._on_stream(0), mock.patch.object(
+            quantized_gemm_utils, "graph_timing_active", return_value=True
+        ), mock.patch.object(
+            quantized_gemm_utils, "time_with_cuda_graph_us_counted"
+        ) as graph, mock.patch.object(
+            triton.testing, "do_bench", return_value=2.0
+        ) as bench:
+            autotune_do_bench(kernel_call, None)
+        graph.assert_not_called()
+        bench.assert_called_once()
+
+
 class Int4AutotunePickTest(unittest.TestCase):
-    """The config AOTInductor picks for each INT4 kernel while compiling is the
+    """The config picked for each INT4 kernel while AOTInductor compiles is the
     fastest one, measured afterwards with the CPU idle, even though the compile
-    ran with every core busy.
+    ran with every core busy. Our triton.autotune picks it during the
+    launch-parameter timing, and AOTInductor traces only that pick.
 
     On ROCm the CUDA backend times Triton configs without CUDA graphs (see
     cuda_graph_autotune_timing in cuda_backend.py), so their ranking under a
@@ -815,6 +986,29 @@ class Int4AutotunePickTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         if not torch.cuda.is_available():
             raise unittest.SkipTest("CUDA required")
+
+    def setUp(self) -> None:
+        # Start from untuned kernels, so the compile picks every config itself
+        # rather than reusing the picks other tests made.
+        autotuners = [
+            kernel
+            for table in (
+                int4_kernel._BUCKET_KERNELS,
+                int4_kernel._W4A16_DIRECT_KERNELS,
+                int4_kernel._W4A16_SPLIT_KERNELS,
+            )
+            for kernel in table.values()
+        ]
+        saved = [(kernel, dict(kernel.cache)) for kernel in autotuners]
+        for kernel in autotuners:
+            kernel.cache.clear()
+
+        def restore() -> None:
+            for kernel, cache in saved:
+                kernel.cache.clear()
+                kernel.cache.update(cache)
+
+        self.addCleanup(restore)
 
     def test_compile_time_picks_are_the_fastest_under_cpu_load(self) -> None:
         from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -832,18 +1026,45 @@ class Int4AutotunePickTest(unittest.TestCase):
             program = torch.export.export(module, inputs, strict=True)
         picks = []
         measure_picks = torch.version.hip is None
+        # The keys whose picked config AOTI traces: the configs it compiles in.
+        traced = set()
+        tuned_kernel = quantized_gemm_family._tuned_kernel
+
+        def recording_tuned_kernel(kernel, args, kwargs):
+            chosen = tuned_kernel(kernel, args, kwargs)
+            # Traced calls pass fake or functional tensors; the timing's eager
+            # calls (plain tensors) launch every split's pick and compile nothing in.
+            tracing = any(
+                isinstance(a, torch.Tensor) and type(a) is not torch.Tensor
+                for a in args
+            )
+            if tracing and chosen is not kernel:
+                traced.add(
+                    (
+                        id(kernel),
+                        quantized_gemm_family._tuning_key(kernel, args, kwargs),
+                    )
+                )
+            return chosen
+
         specs = [CudaBackend.generate_method_name_compile_spec("forward")]
         with torch.compiler.config.patch(
             force_disable_caches=True
-        ), SaturatedCpu() as cpu:
+        ), SaturatedCpu() as cpu, mock.patch.object(
+            quantized_gemm_family, "_tuned_kernel", recording_tuned_kernel
+        ):
             with record_autotune_picks(cpu, picks, measure=measure_picks):
                 to_edge_transform_and_lower(
                     program,
                     partitioner=[CudaPartitioner(specs)],
                     compile_config=EdgeCompileConfig(_check_ir_validity=False),
                 )
-        int4 = [p for p in picks if p.kind == "custom" and "int4" in p.name]
-        print("INT4 picks:", summarize(int4))
+        tuned = [p for p in picks if p.kind == "custom" and "int4" in p.name]
+        print("INT4 picks, every split timed:", summarize(tuned))
+        # The decisions whose config was compiled in: one per (shape, bucket),
+        # for the split the launch-parameter timing chose.
+        int4 = [p for p in tuned if p.key in traced]
+        print("INT4 picks compiled in:", summarize(int4))
         self.assertEqual(len(int4), len(_GUARD_SHAPES) * len(_GUARD_BUCKETS), picks)
         # prune_configs_by is applied under AOTI: each kernel was tuned over the
         # configs whose pipeline stages fit its main loop.
