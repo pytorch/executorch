@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -85,6 +86,26 @@ struct ForwardMethodCalls {
   std::uint64_t calls;
 };
 
+// A raw packed target step. The caller owns the cache sequence IDs and performs
+// any rewind before calling. Do not mix caller-owned IDs with session APIs.
+struct RawTargetStep {
+  std::vector<std::int64_t> tokens;
+  std::vector<std::int64_t> positions;
+  std::vector<std::int32_t> seq_ids;
+  // Global token-row indices; -1 discards a result. Repeats and reordering are
+  // allowed. Callback selected_indices maps rows back into this vector.
+  std::vector<std::int64_t> logit_indices;
+};
+
+struct RawTargetOutput {
+  int offset;
+  int length;
+  const ::executorch::aten::Tensor& logits;
+  // All exported token rows, including static padding. Only [0, length) count.
+  const ::executorch::aten::Tensor* taps;
+  const std::vector<std::size_t>& selected_indices;
+};
+
 class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
  public:
   ~CudaExecutor() override;
@@ -139,6 +160,26 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   bool execute(
       const llm_batching::BatchInput& batch,
       llm_batching::BatchOutput& out) override;
+
+  // Engine-thread-only raw access for model adapters. Output storage is
+  // borrowed until the callback returns: copy/consume every needed output
+  // before running another method. The callback must not recursively call
+  // execute_raw(). A failed step/callback may have written KV; its owners must
+  // not continue.
+  bool execute_raw(
+      const RawTargetStep& step,
+      const std::function<bool(const RawTargetOutput&)>& consume);
+  // Samples no policy and advances no per-session RNG. Device logits require
+  // the exported sample_argmax method; only the selected token IDs return home.
+  std::optional<std::vector<llm_batching::Token>> argmax_rows(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows);
+  ::executorch::extension::Module& module() {
+    return *module_;
+  }
+  llm_cache::BatchControl& cache_control() {
+    return *ctl_;
+  }
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
@@ -197,6 +238,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // Where the first forward's logits lived. Host and device sampling advance
   // separate generators, so every forward must agree.
   std::optional<bool> device_logits_;
+  bool initialized_ = false;
+  bool raw_executing_ = false;
 };
 
 } // namespace executorch::backends::cuda::batching
