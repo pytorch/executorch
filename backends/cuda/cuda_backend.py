@@ -42,6 +42,7 @@ from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
 from executorch.backends.cuda.target_smem import target_smem_context
+from executorch.backends.cuda.triton.kernels import triton_mutation_cache
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -958,6 +959,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # them. SDPA ops already replaced by Triton kernels via
                 # `ReplaceEdgeOpWithTritonOpPass` are unaffected.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
+                stack.enter_context(triton_mutation_cache.enabled())
                 stack.enter_context(target_smem_context())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
