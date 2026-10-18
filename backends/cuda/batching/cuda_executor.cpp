@@ -22,7 +22,9 @@
 
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
+#include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
@@ -196,6 +198,9 @@ Error set_backend_options(
       }
     }
   }
+  for (const std::string& name : options.additional_cuda_graph_methods) {
+    graph_methods += (graph_methods.empty() ? "" : ",") + name;
+  }
   ET_CHECK_OR_RETURN_ERROR(
       graph_methods.size() < ::executorch::runtime::kMaxOptionValueLength,
       InvalidArgument,
@@ -228,6 +233,7 @@ CudaExecutor::CudaExecutor(
       kv_(cache->as<CudaKVCache>()),
       backend_id_(std::move(backend_id)),
       vocab_size_(vocab_size),
+      max_session_tokens_(max_session_tokens),
       methods_(std::move(methods)),
       calls_(methods_.size(), 0),
       min_selected_rows_(min_selected_rows),
@@ -242,6 +248,23 @@ CudaExecutor::~CudaExecutor() {
 }
 
 Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+    const CudaExecutorConfig& config) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !config.model_path.empty(),
+      InvalidArgument,
+      "CudaExecutor: no model path");
+  auto module = std::make_unique<Module>(
+      config.model_path,
+      config.data_files,
+      config.load_mode,
+      /*event_tracer=*/nullptr,
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*share_memory_arenas=*/false);
+  return create(std::move(module), config);
+}
+
+Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     std::unique_ptr<Module> module,
     int max_sessions,
     int max_session_tokens,
@@ -249,10 +272,33 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     int initial_capacity,
     CudaExecutorOptions options) {
   ET_CHECK_OR_RETURN_ERROR(
+      max_session_tokens > 0,
+      InvalidArgument,
+      "CudaExecutor: invalid token limit");
+  CudaExecutorConfig config;
+  config.max_sessions = max_sessions;
+  config.max_session_tokens = max_session_tokens;
+  config.kv_dtype = kv_dtype;
+  config.initial_capacity = initial_capacity;
+  config.options = options;
+  return create(std::move(module), config);
+}
+
+Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+    std::unique_ptr<Module> module,
+    const CudaExecutorConfig& config) {
+  const int max_sessions = config.max_sessions;
+  int max_session_tokens = config.max_session_tokens;
+  const int kv_dtype = config.kv_dtype;
+  const int initial_capacity = config.initial_capacity;
+  const auto& options = config.options;
+  ET_CHECK_OR_RETURN_ERROR(
       module != nullptr, InvalidArgument, "CudaExecutor: no program");
   ET_CHECK_OR_RETURN_ERROR(
-      max_sessions > 0 && max_session_tokens > 0 &&
-          max_sessions <= std::numeric_limits<int>::max() / max_session_tokens,
+      max_sessions > 0 && max_session_tokens >= 0 &&
+          (max_session_tokens == 0 ||
+           max_sessions <=
+               std::numeric_limits<int>::max() / max_session_tokens),
       InvalidArgument,
       "CudaExecutor: invalid session limits");
   ET_CHECK_OK_OR_RETURN_ERROR(module->load());
@@ -278,6 +324,19 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_ASSIGN_OR_RETURN(
       max_cells,
       metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      max_cells > 1 && max_cells <= std::numeric_limits<int>::max(),
+      InvalidProgram,
+      "CudaExecutor: cell count must fit an int and leave a padding row");
+  if (max_session_tokens == 0) {
+    max_session_tokens = static_cast<int>(
+        std::min(max_context_length, (max_cells - 1) / max_sessions));
+    ET_CHECK_OR_RETURN_ERROR(
+        max_session_tokens > 0,
+        InvalidArgument,
+        "CudaExecutor: no cell budget remains for each resident session");
+  }
 
   // Every forward_{N} and forward_others the program exports, narrowest first.
   ET_ASSIGN_OR_RETURN(names, module->method_names());
@@ -462,6 +521,7 @@ bool CudaExecutor::initialize() {
       return false;
     }
   }
+  initialized_ = true;
   return true;
 }
 
@@ -484,6 +544,189 @@ void CudaExecutor::set_sampling(
   sessions_.set_sampling(session, params, seed);
 }
 
+bool CudaExecutor::execute_raw(
+    const RawTargetStep& step,
+    const std::function<bool(const RawTargetOutput&)>& consume) {
+  if (!initialized_ || raw_executing_ || !consume ||
+      step.tokens.size() >
+          static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      step.positions.size() != step.tokens.size() ||
+      step.seq_ids.size() != step.tokens.size()) {
+    return false;
+  }
+  const int total = static_cast<int>(step.tokens.size());
+  for (int i = 0; i < total; ++i) {
+    if (step.tokens[i] < 0 || step.tokens[i] >= vocab_size_ ||
+        step.positions[i] < 0 || step.positions[i] >= max_session_tokens_) {
+      return false;
+    }
+  }
+  for (const auto index : step.logit_indices) {
+    if (index < -1 || index >= total) {
+      return false;
+    }
+  }
+  struct Reset {
+    bool& flag;
+    ~Reset() {
+      flag = false;
+    }
+  } reset{raw_executing_};
+  raw_executing_ = true;
+  for (const auto& slice : plan_slices(total, methods_)) {
+    const int off = slice.offset;
+    const int n = slice.length;
+    const auto& method = methods_[slice.method];
+    std::vector<std::int64_t> selected;
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0; i < step.logit_indices.size(); ++i) {
+      const auto index = step.logit_indices[i];
+      if (index >= off && index < off + n) {
+        selected.push_back(index - off);
+        indices.push_back(i);
+      }
+    }
+    // Static selector widths are fixed; dynamic selectors have an independent
+    // axis but are still bounded by the exported maximum step.
+    const auto row_limit = static_cast<std::size_t>(
+        method.is_static ? slice.width : method.max_tokens);
+    if (selected.size() > row_limit) {
+      ET_LOG(
+          Error,
+          "CudaExecutor: too many raw selectors for %s",
+          method.name.c_str());
+      return false;
+    }
+    const std::size_t rows = method.is_static
+        ? slice.width
+        : std::max<std::size_t>(selected.size(), min_selected_rows_);
+    selected.resize(rows, selected.empty() ? 0 : selected.back());
+    if (!ctl_->declare_step(std::vector<std::int32_t>(
+            step.seq_ids.begin() + off, step.seq_ids.begin() + off + n))) {
+      return false;
+    }
+    std::vector<std::int64_t> token_values(
+        step.tokens.begin() + off, step.tokens.begin() + off + n);
+    std::vector<std::int64_t> position_values(
+        step.positions.begin() + off, step.positions.begin() + off + n);
+    token_values.resize(slice.width, 0);
+    position_values.resize(slice.width, 0);
+    auto tokens = make_tensor_ptr({1, slice.width}, std::move(token_values));
+    auto positions = make_tensor_ptr({slice.width}, std::move(position_values));
+    auto selector = make_tensor_ptr(
+        {static_cast<::executorch::aten::SizesType>(rows)},
+        std::move(selected));
+    auto result = module_->execute(method.name, {tokens, positions, selector});
+    if (!result.ok() || result->empty() || !result->at(0).isTensor()) {
+      ET_LOG(Error, "CudaExecutor: raw %s failed", method.name.c_str());
+      return false;
+    }
+    ++calls_[slice.method];
+    const auto logits = result->at(0).toTensor();
+    auto dense = [](const ::executorch::aten::Tensor& tensor) {
+      std::int64_t stride = 1;
+      for (int d = tensor.dim() - 1; d >= 0; --d) {
+        if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
+          return false;
+        }
+        stride *= tensor.size(d);
+      }
+      return true;
+    };
+    if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
+        logits.numel() != static_cast<std::int64_t>(rows) * vocab_size_ ||
+        !is_supported_logits_type(logits.scalar_type()) || !dense(logits)) {
+      return false;
+    }
+    std::optional<::executorch::aten::Tensor> taps;
+    if (result->size() > 1) {
+      if (!result->at(1).isTensor()) {
+        return false;
+      }
+      taps = result->at(1).toTensor();
+      if (taps->dim() != 3 || taps->size(0) != 1 ||
+          taps->size(1) != slice.width || taps->size(2) <= 0 ||
+          !is_supported_logits_type(taps->scalar_type()) || !dense(*taps)) {
+        return false;
+      }
+    }
+    if (!consume({off, n, logits, taps ? &*taps : nullptr, indices})) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::optional<std::vector<Token>> CudaExecutor::argmax_rows(
+    const ::executorch::aten::Tensor& logits,
+    std::size_t rows) {
+  using ::executorch::aten::ScalarType;
+  using ::executorch::aten::SizesType;
+  if (!initialized_ || logits.dim() < 2 ||
+      logits.size(logits.dim() - 1) != vocab_size_ ||
+      rows > static_cast<std::size_t>(std::numeric_limits<SizesType>::max()) ||
+      rows > static_cast<std::size_t>(logits.numel() / vocab_size_)) {
+    return std::nullopt;
+  }
+  if (rows == 0) {
+    return std::vector<Token>{};
+  }
+  if (logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+    std::vector<Token> result;
+    metadata::Sampler sampler(vocab_size_, 0.0f, 1.0f, 1);
+    for (std::size_t row = 0; row < rows; ++row) {
+      auto token =
+          llm_batching::sample_from_row(logits, static_cast<int>(row), sampler);
+      if (!token) {
+        return std::nullopt;
+      }
+      result.push_back(*token);
+    }
+    return result;
+  }
+  if (!has_argmax_ || logits.scalar_type() != ScalarType::Float) {
+    ET_LOG(Error, "CudaExecutor: device raw logits require %s", kArgmaxMethod);
+    return std::nullopt;
+  }
+  auto view = make_tensor_ptr(
+      {static_cast<SizesType>(rows), static_cast<SizesType>(vocab_size_)},
+      logits.mutable_data_ptr(),
+      logits.scalar_type(),
+      ::executorch::aten::Device(
+          ::executorch::aten::DeviceType::CUDA, logits.device_index()));
+  auto result =
+      module_->execute(kArgmaxMethod, std::vector<runtime::EValue>{view});
+  if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
+    return std::nullopt;
+  }
+  const auto tokens = result->at(0).toTensor();
+  if (tokens.scalar_type() != ScalarType::Long ||
+      tokens.numel() != static_cast<std::int64_t>(rows)) {
+    return std::nullopt;
+  }
+  std::vector<std::int64_t> host(rows);
+  const auto stream = ::executorch::extension::cuda::getCallerStream().value_or(
+      cudaStreamPerThread);
+  const auto kind = tokens.device_type() == ::executorch::aten::DeviceType::CUDA
+      ? cudaMemcpyDeviceToHost
+      : cudaMemcpyHostToHost;
+  if (cudaMemcpyAsync(
+          host.data(),
+          tokens.const_data_ptr(),
+          rows * sizeof(std::int64_t),
+          kind,
+          stream) != cudaSuccess ||
+      cudaStreamSynchronize(stream) != cudaSuccess) {
+    return std::nullopt;
+  }
+  if (std::any_of(host.begin(), host.end(), [this](auto token) {
+        return token < 0 || token >= vocab_size_;
+      })) {
+    return std::nullopt;
+  }
+  return std::vector<Token>(host.begin(), host.end());
+}
+
 bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
@@ -493,77 +736,21 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     return false;
   }
 
-  // In order, so a slice attends the cells its predecessors wrote. Each
-  // input's logits row falls in exactly one slice.
-  const int total = static_cast<int>(step->tokens.size());
-  for (const StepSlice& slice : plan_slices(total, methods_)) {
-    const int off = slice.offset;
-    const int n = slice.length;
-    const ForwardMethod& method = methods_[slice.method];
-    // Only the real tokens are declared; the cache sends a static method's
-    // padding rows to its scratch row.
-    if (!ctl_->declare_step(std::vector<std::int32_t>(
-            step->seq_ids.begin() + off, step->seq_ids.begin() + off + n))) {
-      ET_LOG(Error, "CudaExecutor: the cache refused a slice of %d", n);
-      return false;
-    }
-    // Padding tokens are token 0 at position 0: valid inputs whose rows
-    // nothing reads.
-    std::vector<std::int64_t> token_values(
-        step->tokens.begin() + off, step->tokens.begin() + off + n);
-    std::vector<std::int64_t> position_values(
-        step->positions.begin() + off, step->positions.begin() + off + n);
-    token_values.resize(slice.width, 0);
-    position_values.resize(slice.width, 0);
-    auto tokens = make_tensor_ptr({1, slice.width}, std::move(token_values));
-    auto positions = make_tensor_ptr({slice.width}, std::move(position_values));
-
-    // A static method selects exactly its width in rows, and the dynamic one
-    // at least its exported minimum. Extra rows repeat the last real one (or
-    // row 0 when the slice finishes no input); nothing reads them.
-    auto selected = llm_batching::util::select_rows(*step, off, n);
-    const std::size_t rows_needed = method.is_static
-        ? static_cast<std::size_t>(slice.width)
-        : std::max<std::size_t>(
-              selected.selector.size(),
-              static_cast<std::size_t>(min_selected_rows_));
-    const std::int64_t fill =
-        selected.selector.empty() ? 0 : selected.selector.back();
-    selected.selector.resize(rows_needed, fill);
-    const int rows = static_cast<int>(selected.selector.size());
-    auto selector = make_tensor_ptr({rows}, std::move(selected.selector));
-
-    auto result = module_->execute(method.name, {tokens, positions, selector});
-    if (!result.ok()) {
-      ET_LOG(
-          Error,
-          "CudaExecutor: %s failed with 0x%x",
-          method.name.c_str(),
-          static_cast<unsigned>(result.error()));
-      return false;
-    }
-    ++calls_[slice.method];
-    if (result->empty() || !result->at(0).isTensor()) {
-      ET_LOG(Error, "CudaExecutor: %s returned no logits", method.name.c_str());
-      return false;
-    }
-    auto logits = result->at(0).toTensor();
-    if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
-        logits.numel() != static_cast<std::int64_t>(rows) * vocab_size_) {
-      ET_LOG(
-          Error,
-          "CudaExecutor: %s returned logits that are not [%d, %d]",
-          method.name.c_str(),
-          rows,
-          vocab_size_);
-      return false;
-    }
-    if (selected.inputs.empty()) {
-      continue;
+  RawTargetStep raw;
+  raw.tokens = step->tokens;
+  raw.positions = step->positions;
+  raw.seq_ids = step->seq_ids;
+  raw.logit_indices.assign(
+      step->logit_indices.begin(), step->logit_indices.end());
+  return execute_raw(raw, [&](const RawTargetOutput& result) {
+    auto logits = result.logits;
+    const auto& inputs = result.selected_indices;
+    if (inputs.empty()) {
+      return true;
     }
     std::vector<SessionId> row_sessions;
-    row_sessions.reserve(selected.inputs.size());
-    for (const std::size_t input_index : selected.inputs) {
+    row_sessions.reserve(inputs.size());
+    for (const std::size_t input_index : inputs) {
       row_sessions.push_back(batch.inputs[input_index].sid);
     }
     std::vector<Token> tokens_out;
@@ -572,8 +759,7 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     if (device_logits_.value_or(device_logits) != device_logits) {
       ET_LOG(
           Error,
-          "CudaExecutor: %s returns %s logits, unlike the forwards before it",
-          method.name.c_str(),
+          "CudaExecutor: target returns %s logits, unlike the forwards before it",
           device_logits ? "device" : "host");
       return false;
     }
@@ -582,8 +768,7 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
       if (!has_sampler_) {
         ET_LOG(
             Error,
-            "CudaExecutor: %s returns device logits but the program has no %s",
-            method.name.c_str(),
+            "CudaExecutor: target returns device logits but the program has no %s",
             kSampleMethod);
         return false;
       }
@@ -602,29 +787,41 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         tokens_out.push_back(*token);
       }
     }
-    for (std::size_t row = 0; row < selected.inputs.size(); ++row) {
-      out.outputs[selected.inputs[row]] =
-          Output{row_sessions[row], {tokens_out[row]}};
+    for (std::size_t row = 0; row < inputs.size(); ++row) {
+      out.outputs[inputs[row]] = Output{row_sessions[row], {tokens_out[row]}};
     }
+    return true;
+  });
+}
+
+std::optional<std::vector<Token>> CudaExecutor::sample_rows(
+    const ::executorch::aten::Tensor& logits,
+    std::size_t rows,
+    const std::vector<float>& params) {
+  if (params.size() != rows * 4) {
+    return std::nullopt;
   }
-  return true;
+  bool all_greedy = true;
+  for (std::size_t row = 0; row < rows; ++row) {
+    all_greedy = all_greedy && params[row * 4] == 0.0f;
+  }
+  if (all_greedy || logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+    // Host logits are sampled greedily only; the exported sampler is on CUDA.
+    return all_greedy ? argmax_rows(logits, rows) : std::nullopt;
+  }
+  if (!initialized_ || !has_sampler_ || logits.dim() < 2 ||
+      logits.size(logits.dim() - 1) != vocab_size_ ||
+      logits.scalar_type() != ::executorch::aten::ScalarType::Float ||
+      rows == 0 ||
+      rows > static_cast<std::size_t>(logits.numel() / vocab_size_)) {
+    return std::nullopt;
+  }
+  return run_device_sampler(logits, rows, params, false);
 }
 
 std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     const ::executorch::aten::Tensor& logits,
     const std::vector<SessionId>& sessions) {
-  using ::executorch::aten::ScalarType;
-  using ::executorch::aten::SizesType;
-  const ::executorch::aten::Device cuda(
-      ::executorch::aten::DeviceType::CUDA, logits.device_index());
-  const auto rows = static_cast<SizesType>(sessions.size());
-  // The rows that sample lead the logits; the rest are padding.
-  auto row_logits = make_tensor_ptr(
-      {rows, static_cast<SizesType>(vocab_size_)},
-      logits.mutable_data_ptr(),
-      logits.scalar_type(),
-      cuda);
-
   const bool all_greedy =
       std::all_of(sessions.begin(), sessions.end(), [this](SessionId session) {
         return sessions_.greedy(session);
@@ -640,6 +837,25 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     params.insert(
         params.end(), {row->temperature, row->top_p, row->top_k, row->coin});
   }
+  return run_device_sampler(logits, sessions.size(), params, all_greedy);
+}
+
+std::optional<std::vector<Token>> CudaExecutor::run_device_sampler(
+    const ::executorch::aten::Tensor& logits,
+    std::size_t row_count,
+    const std::vector<float>& params,
+    bool all_greedy) {
+  using ::executorch::aten::ScalarType;
+  using ::executorch::aten::SizesType;
+  const ::executorch::aten::Device cuda(
+      ::executorch::aten::DeviceType::CUDA, logits.device_index());
+  const auto rows = static_cast<SizesType>(row_count);
+  // The rows that sample lead the logits; the rest are padding.
+  auto row_logits = make_tensor_ptr(
+      {rows, static_cast<SizesType>(vocab_size_)},
+      logits.mutable_data_ptr(),
+      logits.scalar_type(),
+      cuda);
 
   const cudaStream_t stream =
       ::executorch::extension::cuda::getCallerStream().value_or(
@@ -651,18 +867,18 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
           kArgmaxMethod,
           std::vector<::executorch::runtime::EValue>{row_logits});
     }
-    if (sessions.size() > device_params_rows_) {
+    if (row_count > device_params_rows_) {
       if (device_params_ != nullptr) {
         (void)cudaFree(device_params_);
         device_params_ = nullptr;
         device_params_rows_ = 0;
       }
       ET_CHECK_OR_RETURN_ERROR(
-          cudaMalloc(&device_params_, sessions.size() * 4 * sizeof(float)) ==
+          cudaMalloc(&device_params_, row_count * 4 * sizeof(float)) ==
               cudaSuccess,
           MemoryAllocationFailed,
           "CudaExecutor: could not stage the sampler's params");
-      device_params_rows_ = sessions.size();
+      device_params_rows_ = row_count;
     }
     // The backend runs every method on the caller's stream if one is set,
     // else the per-thread stream; ordering the upload there puts it ahead of
@@ -690,7 +906,7 @@ std::optional<std::vector<Token>> CudaExecutor::sample_on_device(
     ET_LOG(Error, "CudaExecutor: the device sampler returned a bad shape");
     return std::nullopt;
   }
-  std::vector<std::int64_t> host(sessions.size());
+  std::vector<std::int64_t> host(row_count);
   const auto kind = tokens.device_type() == ::executorch::aten::DeviceType::CUDA
       ? cudaMemcpyDeviceToHost
       : cudaMemcpyHostToHost;
