@@ -11,16 +11,22 @@ pip install . --no-build-isolation
 ## Portable tensor mode
 
 Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
-arrays or other dense objects implementing Python's buffer protocol. CPU and
+arrays or other dense objects implementing Python's buffer protocol, including
+`ctypes` arrays, `array.array`, and complex NumPy arrays. CPU and
 CUDA `torch.Tensor` inputs are inspected through their public Python attributes
 instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
 provide CPU or CUDA allocations directly; their device indices are preserved.
 Tensor protocols can be mixed within the same call.
 
-Tensor inputs must have dense storage laid out for the exported method's
-dimension order. Stride compatibility checks are deferred; the bindings interpret
-Torch and DLPack tensor storage using the exported layout without copying data.
-CUDA inputs require a method
+Tensor inputs must have dense storage. In the portable bindings, an input laid
+out in a different dimension order than the exported method, for example a
+channels-last tensor for a contiguous method or a transposed array, is copied
+into the exported layout: on the host for buffers and CPU DLPack tensors, and by
+torch on the tensor's own device for torch tensors. Like a read-only buffer,
+such an input is copied when it is passed, so later changes to the caller's
+object are not seen; pass it again after changing it. Other inputs in the
+exported layout are not copied. A non-torch CUDA DLPack input must already be
+in the exported layout. CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 
@@ -31,6 +37,14 @@ DLPack; the extension does not link against PyTorch.
 `clone_outputs=True` returns independent storage on the output's original
 device. With `clone_outputs=False`, results share runtime or input storage and
 later execution may overwrite that storage.
+
+A CUDA output that fills memory the bindings allocated for it is returned
+without a copy when `clone_outputs=True`. The result keeps that memory, and the
+next execution writes into new memory while the result is alive. Reading the
+outputs again before then returns the same object.
+
+`dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
+`"bfloat16"`.
 
 Calls on a shared method or module are serialized. A sequence of separate
 `set_inputs`, `execute`, and `get_outputs` calls requires caller synchronization
@@ -62,6 +76,18 @@ result = np.asarray(output)
 CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA results
 remain on CUDA and can be passed to another DLPack consumer or back into
 ExecuTorch without moving the data to the CPU.
+
+Without torch or another DLPack library, `to_host()` copies a result to CPU
+memory, and `ExecuTorchResult.from_host()` copies a CPU buffer to a CUDA device
+for a method whose inputs live there:
+
+```python
+from executorch.extension.pybindings.portable_lib import ExecuTorchResult
+
+device_input = ExecuTorchResult.from_host(numpy_input, device_index=0)
+output = method([device_input])[0]
+result = np.asarray(output.to_host())
+```
 
 CUDA DLPack inputs and `ExecuTorchResult` outputs require CUDA-enabled bindings.
 Torch CUDA inputs and outputs synchronize through Python Torch, including in

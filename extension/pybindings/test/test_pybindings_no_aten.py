@@ -191,6 +191,40 @@ else:
         with self.assertRaisesRegex(ValueError, "requires a copy"):
             output.__array__(dtype=np.float64, copy=False)
 
+    def test_executorch_result_to_host_and_repr(self) -> None:
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        output = module(
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
+        )[0]
+
+        copy = output.to_host()
+
+        self.assertEqual(output.dtype_name, "float32")
+        self.assertEqual(output.dtype, np.dtype(np.float32))
+        self.assertEqual(
+            repr(copy), "ExecuTorchResult(shape=(1,), dtype=float32, device=cpu)"
+        )
+        self.assertFalse(np.shares_memory(np.asarray(copy), np.asarray(output)))
+        np.testing.assert_array_equal(np.asarray(copy), np.array([3.0]))
+
+    def test_executorch_result_from_host_requires_cuda(self) -> None:
+        # A build with CUDA support uploads instead; the CUDA suite covers it.
+        try:
+            runtime.ExecuTorchResult.from_host(np.ones((0,), dtype=np.float32))
+        except RuntimeError as error:
+            if "CUDA support" not in str(error):
+                self.skipTest("bindings are built with CUDA support")
+        else:
+            self.skipTest("bindings are built with CUDA support")
+        for shape in ((4,), (0,)):
+            with self.subTest(shape=shape):
+                with self.assertRaisesRegex(RuntimeError, "CUDA support"):
+                    runtime.ExecuTorchResult.from_host(np.ones(shape, dtype=np.float32))
+
     def test_borrowed_result_does_not_create_method_cycle(self) -> None:
         if runtime._tensor_output != "executorch":
             self.skipTest("ExecuTorchResult output was not selected")
@@ -261,6 +295,12 @@ else:
                 self.assertEqual(raw.tobytes(), bytes((0x00, 0x40)) * 4)
                 self.assertEqual(output.shape, (2, 2))
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
+                if isinstance(output, runtime.ExecuTorchResult):
+                    # NumPy has no bfloat16, so only the name says how to read
+                    # these bytes.
+                    self.assertEqual(output.dtype_name, "bfloat16")
+                    with self.assertRaisesRegex(RuntimeError, "dtype_name"):
+                        output.dtype
                 for noncontiguous in (
                     np.arange(16, dtype=np.uint8)[::2],
                     np.arange(8, dtype=np.uint8)[::-1],
