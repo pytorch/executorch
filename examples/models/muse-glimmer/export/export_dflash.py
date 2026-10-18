@@ -23,7 +23,9 @@ if TYPE_CHECKING:
     from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
 
 
-def validate_dflash_export_options(backend: str) -> None:
+def validate_dflash_export_options(backend: str, use_offgraph_kv_cache=False) -> None:
+    if use_offgraph_kv_cache and backend != "mlx":
+        raise ValueError("Off-graph DFlash requires MLX")
     if backend not in {"cuda", "mlx"}:
         raise ValueError(f"Unsupported DFlash backend: {backend}")
 
@@ -126,6 +128,7 @@ def export_dflash(
     backend: str = "mlx",
     mmproj: str | None = None,
     max_vision_patches: int = 16384,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Export DFlash target + draft to one CUDA or MLX .pte.
 
@@ -136,7 +139,7 @@ def export_dflash(
     both must already be quantized. Supplying ``mmproj`` reuses the ordinary Muse Glimmer
     mmproj loader and vision export contract to add ``vision_encoder``.
     """
-    validate_dflash_export_options(backend)
+    validate_dflash_export_options(backend, use_offgraph_kv_cache)
 
     import executorch.extension.llm.export.gguf  # noqa: F401
     import executorch.extension.llm.export.int4  # noqa: F401
@@ -157,19 +160,23 @@ def export_dflash(
         target_model, target_config = load_mlx_model(
             target_mlx,
             backend=backend,
-            max_seq_len=max_seq_len,
+            max_seq_len=None if use_offgraph_kv_cache else max_seq_len,
             activation_dtype=activation_dtype,
+            **({"defer_runtime_buffers": True} if use_offgraph_kv_cache else {}),
         )
     else:
         target_model, target_config = load_gguf_model(
             target_gguf,
-            max_seq_len=max_seq_len,
+            max_seq_len=None if use_offgraph_kv_cache else max_seq_len,
             backend=backend,
             activation_dtype=activation_dtype,
+            **({"defer_runtime_buffers": True} if use_offgraph_kv_cache else {}),
         )
 
     # All transformed target entry points cast through this shared contract.
     target_model.activation_dtype = activation_dtype
+    if use_offgraph_kv_cache:
+        max_seq_len = target_config.max_seq_len
 
     # -- Load draft model --
     print("=" * 60)
@@ -218,6 +225,7 @@ def export_dflash(
         max_seq_len,
         activation_dtype,
         max_vision_patches,
+        **({"use_offgraph_kv_cache": True} if use_offgraph_kv_cache else {}),
     )
 
 
@@ -275,6 +283,7 @@ def _export_dflash_mlx(
     max_seq_len: int,
     activation_dtype: torch.dtype,
     max_vision_patches: int,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Export the MLX DFlash contract.
 
@@ -308,7 +317,7 @@ def _export_dflash_mlx(
     from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
-    max_prefill = 512
+    max_prefill = min(512, target_config.max_seq_len) if use_offgraph_kv_cache else 512
 
     print("Applying target MLX source transforms (with hidden tapping)...")
     mlx_source_transformations_dflash_target(
@@ -316,6 +325,7 @@ def _export_dflash_mlx(
         target_layer_ids=draft_config.target_layers,
         dtype=activation_dtype,
         max_write_len=max_prefill,
+        use_offgraph_kv_cache=use_offgraph_kv_cache,
     )
     materialize_runtime_buffers(target_model, dtype=activation_dtype)
 
@@ -327,6 +337,7 @@ def _export_dflash_mlx(
         sliding_window=draft_config.sliding_window,
         sliding_window_pattern=draft_config.sliding_window_pattern,
         max_write_len=max_prefill,
+        use_offgraph_kv_cache=use_offgraph_kv_cache,
     )
 
     combined = MuseGlimmerWithDFlash(
@@ -361,8 +372,14 @@ def _export_dflash_mlx(
                     dtype=target_model.activation_dtype,
                 ),
                 target_input_pos,
+            )
+            + ((target_input_pos.clone(),) if use_offgraph_kv_cache else ()),
+            dynamic_shapes=({1: target_seq_dim}, {0: target_seq_dim})
+            + (
+                ({0: Dim("selected_rows", min=1, max=max_prefill)},)
+                if use_offgraph_kv_cache
+                else ()
             ),
-            dynamic_shapes=({1: target_seq_dim}, {0: target_seq_dim}),
             strict=True,
         )
 
@@ -403,16 +420,36 @@ def _export_dflash_mlx(
 
     # input_pos for draft: [ctx_start_pos] — cache write offset
     draft_input_pos = torch.tensor([0], dtype=torch.long)
+    draft_extra, draft_shapes = (), None
+    sample_queries = exported_block_size
+    sample_owners, owner_dim = 1, Dim.STATIC
+    if use_offgraph_kv_cache:
+        if not 2 <= exported_block_size <= max_prefill:
+            raise ValueError("DFlash block must fit the target forward bound")
+        max_owners = max_prefill // exported_block_size
+        owner_dim = Dim("draft_owners", min=1, max=max_owners) if max_owners > 1 else 1
+        sample_owners = min(2, max_owners)
+        sample_queries *= sample_owners
+        new_ctx_dim = Dim("new_ctx_len", min=0, max=max_prefill)
+        draft_input_pos = torch.arange(2 + sample_queries, dtype=torch.long)
+        draft_extra = (torch.arange(2 + sample_queries, dtype=torch.long),)
+        draft_shapes = {0: Dim.AUTO}
 
     with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
         draft_ep = export(
             combined,
             (
-                torch.tensor([[0] * exported_block_size], dtype=torch.long),
+                torch.zeros((sample_owners, exported_block_size), dtype=torch.long),
                 torch.randn(1, 2, n_target * dim, dtype=activation_dtype),
                 draft_input_pos,
-            ),
-            dynamic_shapes=({1: block_dim}, {1: new_ctx_dim}, None),
+            )
+            + draft_extra,
+            dynamic_shapes=(
+                {0: owner_dim, 1: block_dim},
+                {1: new_ctx_dim},
+                draft_shapes,
+            )
+            + ((draft_shapes,) if use_offgraph_kv_cache else ()),
             strict=True,
         )
 
@@ -427,7 +464,11 @@ def _export_dflash_mlx(
     print("Lowering to ExecuTorch with MLX backend...")
     print("=" * 60)
     methods = {
-        "target_forward_from_embeddings": target_from_embeddings_ep,
+        (
+            "forward_from_embeddings"
+            if use_offgraph_kv_cache
+            else "target_forward_from_embeddings"
+        ): target_from_embeddings_ep,
         "embed_text": embed_text_ep,
         "draft_forward": draft_ep,
     }
@@ -445,6 +486,42 @@ def _export_dflash_mlx(
         has_vision=vision_ep is not None,
         max_vision_patches=max_vision_patches,
     )
+
+    if use_offgraph_kv_cache:
+        from executorch.examples.models.muse_glimmer.export.export_solo import (
+            _solo_constant_methods,
+        )
+        from executorch.extension.llm.export.model_metadata import write_cache_geometry
+
+        constant_methods.pop("get_mutable_buffer_metadata")
+        constant_methods.update(
+            _solo_constant_methods(
+                config=target_config,
+                max_prefill=max_prefill,
+                activation_dtype=activation_dtype,
+                mutable_buffer_metadata=None,
+                has_vision=vision_ep is not None,
+                max_vision_patches=max_vision_patches,
+                use_offgraph_kv_cache=True,
+            )
+        )
+        draft_geometry = write_cache_geometry(
+            [draft_config.n_kv_heads] * draft_config.n_layers,
+            [draft_config.head_dim] * draft_config.n_layers,
+            [
+                draft_config.sliding_window if sliding else 0
+                for sliding in (
+                    draft_config.sliding_window_pattern
+                    or [False] * draft_config.n_layers
+                )
+            ],
+        )
+        constant_methods.update(
+            {
+                key.replace("get_", "get_draft_", 1): value
+                for key, value in draft_geometry.items()
+            }
+        )
 
     et_prog = to_edge_transform_and_lower(
         methods,
@@ -549,7 +626,8 @@ def _export_dflash_cuda(
     combined.to(activation_dtype)
 
     # -- Export the target contract --
-    target_max_len = 4
+    exported_block_size = min(draft_config.block_size, 16)
+    target_max_len = exported_block_size
     target_seq_dim = Dim("target_seq_len", min=1, max=target_max_len)
     target_tokens = torch.arange(target_max_len, dtype=torch.long).unsqueeze(0)
     target_input_pos = torch.arange(target_tokens.size(1), dtype=torch.long)
@@ -598,10 +676,13 @@ def _export_dflash_cuda(
         print("=" * 60)
 
     # -- Export the prefill contract --
-    target_prefill_dim = Dim("target_prefill_seq_len", min=5, max=max_target_prefill)
+    min_prefill = exported_block_size + 1
+    target_prefill_dim = Dim(
+        "target_prefill_seq_len", min=min_prefill, max=max_target_prefill
+    )
     print("=" * 60)
     print(
-        f"Exporting target_prefill_from_embeddings (T in [5, {max_target_prefill}])..."
+        f"Exporting target_prefill_from_embeddings (T in [{min_prefill}, {max_target_prefill}])..."
     )
     print("=" * 60)
     with (
@@ -625,10 +706,9 @@ def _export_dflash_cuda(
     print("=" * 60)
     print("Exporting draft_forward...")
     print("=" * 60)
-    exported_block_size = min(draft_config.block_size, 4)
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
-    new_ctx_max = 4
+    new_ctx_max = exported_block_size
 
     block_dim = Dim("block_len", min=2, max=exported_block_size)
     draft_input_pos = torch.tensor([0], dtype=torch.long)
@@ -636,7 +716,7 @@ def _export_dflash_cuda(
     with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
         # Keep every input byte size fixed for CUDA Graph replay. The
         # valid-length scalar preserves cache/attention semantics when the
-        # previous speculative step committed fewer than four positions.
+        # previous speculative step committed fewer positions than the input width.
         draft_ep = export(
             combined,
             (
@@ -650,9 +730,11 @@ def _export_dflash_cuda(
         )
 
     max_draft_prefill = _max_draft_prefill_len(draft_config, max_target_prefill)
-    draft_prefill_dim = Dim("draft_prefill_seq_len", min=5, max=max_draft_prefill)
+    draft_prefill_dim = Dim(
+        "draft_prefill_seq_len", min=min_prefill, max=max_draft_prefill
+    )
     print("=" * 60)
-    print(f"Exporting draft_prefill (T in [5, {max_draft_prefill}])...")
+    print(f"Exporting draft_prefill (T in [{min_prefill}, {max_draft_prefill}])...")
     print("=" * 60)
     with common.BoundMethodForward(combined, combined.draft_prefill), torch.no_grad():
         draft_prefill_ep = export(
@@ -731,9 +813,9 @@ def _export_dflash_cuda(
     )
     constant_methods.update(
         {
-            "get_min_target_prefill_chunk": 5,
+            "get_min_target_prefill_chunk": min_prefill,
             "get_max_target_prefill_chunk": max_target_prefill,
-            "get_min_draft_prefill_chunk": 5,
+            "get_min_draft_prefill_chunk": min_prefill,
             "get_max_draft_prefill_chunk": max_draft_prefill,
         }
     )
@@ -843,10 +925,11 @@ def main() -> None:
         help="Activation / KV-cache / unquantized-weight dtype. Defaults to "
         "float16 for MLX and bfloat16 for CUDA.",
     )
+    parser.add_argument("--use-offgraph-kv-cache", action="store_true")
     args = parser.parse_args()
 
     try:
-        validate_dflash_export_options(args.backend)
+        validate_dflash_export_options(args.backend, args.use_offgraph_kv_cache)
     except ValueError as error:
         parser.error(str(error))
     if args.backend == "cuda" and not torch.cuda.is_available():
@@ -871,6 +954,7 @@ def main() -> None:
         backend=args.backend,
         mmproj=args.mmproj,
         max_vision_patches=args.max_vision_patches,
+        use_offgraph_kv_cache=args.use_offgraph_kv_cache,
     )
 
 

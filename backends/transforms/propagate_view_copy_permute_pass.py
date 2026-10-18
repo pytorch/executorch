@@ -224,9 +224,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         frontier: torch.fx.Node,
         next_node: torch.fx.Node,
     ) -> bool:
-        if self._can_move_through_elementwise(node, frontier, next_node):
-            return True
-
         if not self.is_swappable(next_node):
             return False
 
@@ -386,6 +383,26 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 f"Unexpected node target {node.target} in {self.__class__.__name__}"
             )
 
+    def _remap_permute_for_broadcast_rank(
+        self, node: torch.fx.Node, new_rank: int
+    ) -> tuple[Any, ...] | None:
+        """Adjust a permutation for leading axes added or removed by broadcasting."""
+        permute_map = PermuteMap(node)
+        old_rank = len(permute_map.permute_dims)
+        if old_rank == new_rank:
+            return node.args
+
+        retained_axes = range(abs(new_rank - old_rank), max(old_rank, new_rank))
+        if old_rank < new_rank:
+            dims = permute_map.lift_to_rank(retained_axes, new_rank)
+        else:
+            dims = permute_map.project_to_axes(
+                retained_axes, require_other_axes_preserved=True
+            )
+        if dims is None:
+            return None
+        return (node.args[0], dims, *node.args[2:])
+
     def _move_node(
         self,
         node: torch.fx.Node,
@@ -453,24 +470,14 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         return False
 
     def is_swappable(self, next_node: torch.fx.Node) -> bool:
-        if next_node.target not in self._ARG_UPDATE_TARGETS:
-            return False
-        if next_node.target in self._REDUCTION_TARGETS:
-            keep_dim = (
-                next_node.args[2]
-                if len(next_node.args) > 2
-                else next_node.kwargs.get("keepdim")
-            )
-            if keep_dim is not True:
-                # A reduction that drops the dimension changes rank, so the
-                # permutation cannot simply be remapped across it.
-                return False
-        return True
+        return (
+            self.is_elementwise(next_node)
+            or next_node.target in self._ARG_UPDATE_TARGETS
+        )
 
     def _can_move_through_elementwise(
         self,
         moving_node: torch.fx.Node,
-        frontier: torch.fx.Node,
         next_node: torch.fx.Node,
     ) -> bool:
         """Return whether ``moving_node`` can cross an elementwise operation.
@@ -532,6 +539,24 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         val = moving_node.meta.get("val")
         return getattr(val, "shape", None)
 
+    def _propagation_input(self, node: torch.fx.Node) -> torch.fx.Node | None:
+        inputs = list(node.all_input_nodes)
+        if len(inputs) > 1 and not self.is_multi_input_elementwise(node):
+            value = node.meta.get("val")
+            if not isinstance(value, torch.Tensor):
+                return None
+            rank = len(value.shape)
+            inputs = [
+                input_node
+                for input_node in inputs
+                if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                    input_node, rank
+                )
+            ]
+        if inputs and (len(inputs) == 1 or self.is_multi_input_elementwise(node)):
+            return inputs[0]
+        return None
+
     def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
         # After moving up, dependencies run from the transform through the
         # crossed nodes in reverse propagation order.
@@ -569,20 +594,19 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _can_move_through_elementwise(
         self,
         moving_node: torch.fx.Node,
-        frontier: torch.fx.Node,
         next_node: torch.fx.Node,
     ) -> bool:
-        if super()._can_move_through_elementwise(moving_node, frontier, next_node):
+        if super()._can_move_through_elementwise(moving_node, next_node):
             return True
         if moving_node.target not in self._permute_targets or not self.is_elementwise(
             next_node
         ):
             return False
 
-        frontier_val = frontier.meta.get("val")
-        if not isinstance(frontier_val, torch.Tensor):
+        next_val = next_node.meta.get("val")
+        if not isinstance(next_val, torch.Tensor):
             return False
-        rank = len(frontier_val.shape)
+        rank = len(next_val.shape)
         layout_dependent_inputs = [
             input_node
             for input_node in next_node.all_input_nodes
@@ -595,10 +619,57 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
+        if self.is_elementwise(next_node):
+            if not self._can_move_through_elementwise(node, next_node):
+                return None
+            next_val = next_node.meta.get("val")
+            if not isinstance(next_val, torch.Tensor):
+                return None
+            producer = self._propagation_input(next_node)
+            if producer is None:
+                return None
+            producer_val = producer.meta.get("val")
+            if not isinstance(producer_val, torch.Tensor):
+                return None
+            node_args = self._remap_permute_for_broadcast_rank(
+                node, len(producer_val.shape)
+            )
+            return None if node_args is None else (node_args, next_node.args)
+
         permute_map = PermuteMap(node)
         args = self._dim_arg(next_node.args[1])
         if args is None:
             return None
+        keep_dim = (
+            next_node.args[2]
+            if len(next_node.args) > 2
+            else next_node.kwargs.get("keepdim")
+        )
+        if next_node.target in self._REDUCTION_TARGETS and keep_dim is not True:
+            input_val = next_node.all_input_nodes[0].meta.get("val")
+            if not isinstance(input_val, torch.Tensor):
+                return None
+            input_rank = len(input_val.shape)
+            if input_rank == 0:
+                return None
+            reduction_dims = [args] if isinstance(args, int) else list(args)
+            if not reduction_dims:
+                reduction_dims = list(range(input_rank))
+            reduction_dims = [dim % input_rank for dim in reduction_dims]
+            retained_axes = [
+                dim for dim in range(input_rank) if dim not in reduction_dims
+            ]
+            dims = permute_map.lift_to_rank(retained_axes, input_rank)
+            if dims is None:
+                return None
+            mapped_args = [dims.index(dim) for dim in reduction_dims]
+            new_args: int | list[int] = (
+                mapped_args[0] if isinstance(args, int) else mapped_args
+            )
+            return (
+                (node.args[0], dims, *node.args[2:]),
+                (*next_node.args[:1], new_args, *next_node.args[2:]),
+            )
         mapped_args = permute_map.map_dims(args)
         new_args: int | list[int] = (
             mapped_args[0] if isinstance(args, int) else mapped_args
@@ -608,6 +679,11 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _maybe_swap_view_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
+        if self.is_elementwise(next_node):
+            if not self._can_move_through_elementwise(node, next_node):
+                return None
+            return node.args, next_node.args
+
         view_map = ViewMap(node)
         if not view_map.is_valid_map or len(next_node.all_input_nodes) != 1:
             return None
@@ -730,25 +806,10 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
             producer = frontier
             frontier_user = previous_frontier
         else:
-            inputs = list(frontier.all_input_nodes)
-            if len(inputs) > 1 and not self.is_multi_input_elementwise(frontier):
-                # The earlier propagation check accepted exactly one layout-dependent
-                # input. Select it because a broadcast scalar may appear first.
-                rank = len(node.args[1])
-                layout_dependent_inputs = [
-                    input_node
-                    for input_node in inputs
-                    if not FuseIdenticalInputTransformsPass.is_layout_invariant(
-                        input_node, rank
-                    )
-                ]
-                assert len(layout_dependent_inputs) == 1, (
-                    f"Expected exactly one layout-dependent input for {frontier.target}, "
-                    f"got {len(layout_dependent_inputs)}"
-                )
-                producer = layout_dependent_inputs[0]
-            else:
-                producer = inputs[0]
+            producer = self._propagation_input(frontier)
+            assert (
+                producer is not None
+            ), f"Expected one propagation input for {frontier.target}"
             frontier_user = frontier
 
         node.replace_input_with(original_input, producer)
@@ -875,17 +936,57 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
+        if self.is_elementwise(next_node):
+            if not self._can_move_through_elementwise(node, next_node):
+                return None
+            next_val = next_node.meta.get("val")
+            if not isinstance(next_val, torch.Tensor):
+                return None
+            node_args = self._remap_permute_for_broadcast_rank(
+                node, len(next_val.shape)
+            )
+            return None if node_args is None else (node_args, next_node.args)
+
         permute_map = PermuteMap(node)
         args = self._dim_arg(next_node.args[1])
         if args is None:
             return None
-        mapped_args = permute_map.map_dims_inverse(args)
+        keep_dim = (
+            next_node.args[2]
+            if len(next_node.args) > 2
+            else next_node.kwargs.get("keepdim")
+        )
+        reduction_dims = [args] if isinstance(args, int) else list(args)
+        if (
+            next_node.target in self._REDUCTION_TARGETS
+            and keep_dim is not True
+            and not reduction_dims
+        ):
+            reduction_dims = list(range(len(permute_map.permute_dims)))
+        mapped_args = permute_map.map_dims_inverse(reduction_dims)
         new_args: int | list[int] = (
             mapped_args[0] if isinstance(args, int) else mapped_args
         )
-        return (node.args, (*next_node.args[:1], new_args, *next_node.args[2:]))
+        node_args = node.args
+        if next_node.target in self._REDUCTION_TARGETS and keep_dim is not True:
+            reduced_dims = set(mapped_args)
+            retained_axes = [
+                dim
+                for dim in range(len(permute_map.permute_dims))
+                if dim not in reduced_dims
+            ]
+            dims = permute_map.project_to_axes(retained_axes)
+            if dims is None:
+                return None
+            node_args = (node.args[0], dims, *node.args[2:])
+        return (node_args, (*next_node.args[:1], new_args, *next_node.args[2:]))
 
     def _maybe_swap_view_args(self, node, next_node):
+        if self.is_elementwise(next_node):
+            if not self._can_move_through_elementwise(node, next_node):
+                return None
+            return node.args, next_node.args
+
         view_map = ViewMap(node)
         if not view_map.is_valid_map:
             return None
@@ -1195,7 +1296,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         branch_splits = []
         for next_node in next_nodes:
             if self._can_move_through_elementwise(
-                node, frontier, next_node
+                node, next_node
             ) or self._can_split_through_elementwise(node, frontier, next_node):
                 arg_update = None
             elif self.is_swappable(next_node):
