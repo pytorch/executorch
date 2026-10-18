@@ -94,7 +94,7 @@ def test_draft_count_forwarded(arguments, n_draft):
 @pytest.mark.parametrize(
     "flag,value",
     [
-        ("--backend", "cuda"),
+        ("--backend", "vulkan"),
         ("--dflash-n-draft", "-1"),
         ("--dflash-n-draft", str((1 << 31) - 1)),
         ("--dflash-n-draft", "2"),
@@ -108,6 +108,55 @@ def test_launcher_rejects_invalid_options(arguments, flag, value):
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(arguments + [flag, value])
     assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments + ["--backend", "cuda", "--data-path", str(data)]
+    )
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--backend"] == "cuda"
+    assert flags["--data_path"] == str(data)
+    assert "--pos_embed_path" not in flags
+
+
+def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data), "--dflash"]
+        + ["--dflash-n-draft", "15"]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert (flags["--backend"], flags["--dflash"], flags["--dflash_n_draft"]) == (
+        "cuda",
+        "true",
+        "15",
+    )
+
+
+def test_cuda_launcher_requires_the_weights_file(arguments):
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(arguments + ["--backend", "cuda"])
+    assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_vision_table(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    table = tmp_path / "pos_embed.bin"
+    data.touch()
+    table.touch()
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data)]
+        + ["--pos-embed-path", str(table)]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert flags["--pos_embed_path"] == str(table)
 
 
 @pytest.mark.parametrize("shortfall", [0, 1])

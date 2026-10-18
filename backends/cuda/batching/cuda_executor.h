@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +33,7 @@
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
@@ -55,6 +57,10 @@ inline constexpr char kMinSelectedRowsMethod[] = "get_min_prefill_chunk";
 // both returning Long [R], and only the tokens come back to the host.
 inline constexpr char kSampleMethod[] = "sample";
 inline constexpr char kArgmaxMethod[] = "sample_argmax";
+// Optional dynamic forward over the same cache that takes decoder inputs
+// rather than tokens: (embeddings [1, T, hidden], Long[T] positions, Long[R]
+// selector). It runs only the steps carrying prepared inputs, e.g. images.
+inline constexpr char kEmbeddingsMethod[] = "forward_from_embeddings";
 
 // Process-wide CUDA backend options create() sets before the methods load.
 struct CudaExecutorOptions {
@@ -64,6 +70,21 @@ struct CudaExecutorOptions {
   // Capture every static method into a CUDA graph. forward_others stays
   // eager: its width varies.
   bool cuda_graph_for_static_methods = true;
+  // Other static methods of the program to capture, e.g. a model adapter's.
+  std::vector<std::string> additional_cuda_graph_methods;
+};
+
+struct CudaExecutorConfig {
+  std::string model_path;
+  std::vector<std::string> data_files;
+  ::executorch::extension::Module::LoadMode load_mode =
+      ::executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors;
+  int max_sessions = 1;
+  // Zero divides the available cell pool across sessions, capped by context.
+  int max_session_tokens = 0;
+  int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
+  int initial_capacity = -1;
+  CudaExecutorOptions options;
 };
 
 // How often each method ran, for reporting.
@@ -72,9 +93,56 @@ struct ForwardMethodCalls {
   std::uint64_t calls;
 };
 
+// A raw packed target step. The caller owns the cache sequence IDs and performs
+// any rewind before calling. Do not mix caller-owned IDs with session APIs.
+struct RawTargetStep {
+  std::vector<std::int64_t> tokens;
+  std::vector<std::int64_t> positions;
+  std::vector<std::int32_t> seq_ids;
+  // Global token-row indices; -1 discards a result. Repeats and reordering are
+  // allowed. Callback selected_indices maps rows back into this vector.
+  std::vector<std::int64_t> logit_indices;
+  // Host [1, tokens, hidden] decoder inputs. When set, the step runs through
+  // kEmbeddingsMethod and `tokens` is not read.
+  ::executorch::extension::TensorPtr embeddings;
+};
+
+// Turns a batch holding prepared inputs into its decoder inputs, for a model
+// whose prompts carry more than tokens. Runs on the engine thread.
+struct InputEmbedder {
+  // Loads what materialize needs; called from initialize().
+  std::function<::executorch::runtime::Error()> initialize;
+  std::function<bool(const llm_batching::PreparedInput&)> accepts;
+  // Host [1, rows, hidden] embeddings for every row of `inputs`, in order.
+  std::function<
+      ::executorch::runtime::Result<::executorch::extension::TensorPtr>(
+          const std::vector<llm_batching::Input>&)>
+      materialize;
+};
+
+struct RawTargetOutput {
+  int offset;
+  int length;
+  const ::executorch::aten::Tensor& logits;
+  // All exported token rows, including static padding. Only [0, length) count.
+  const ::executorch::aten::Tensor* taps;
+  const std::vector<std::size_t>& selected_indices;
+};
+
 class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
  public:
   ~CudaExecutor() override;
+
+  static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
+      const CudaExecutorConfig& config);
+
+  int max_session_tokens() const {
+    return max_session_tokens_;
+  }
+
+  std::int32_t vocab_size() const {
+    return vocab_size_;
+  }
 
   // Builds the cell cache from the layout the program publishes and sets the
   // CUDA backend options. The methods load in initialize(); the program must
@@ -115,6 +183,44 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   bool execute(
       const llm_batching::BatchInput& batch,
       llm_batching::BatchOutput& out) override;
+  // Whether the installed embedder takes `input`; false without one.
+  bool accepts(const llm_batching::PreparedInput& input) const override;
+
+  // Installs the embedder for prepared inputs, before initialize(). The program
+  // must export kEmbeddingsMethod.
+  ::executorch::runtime::Error set_input_embedder(InputEmbedder embedder);
+  // The decoder input width kEmbeddingsMethod takes, or 0 without it.
+  std::int64_t embeddings_hidden_size() const {
+    return embeddings_method_ ? embeddings_method_->hidden : 0;
+  }
+
+  // Engine-thread-only raw access for model adapters. Output storage is
+  // borrowed until the callback returns: copy/consume every needed output
+  // before running another method. The callback must not recursively call
+  // execute_raw(). A failed step/callback may have written KV; its owners must
+  // not continue.
+  bool execute_raw(
+      const RawTargetStep& step,
+      const std::function<bool(const RawTargetOutput&)>& consume);
+  // Samples no policy and advances no per-session RNG. Device logits require
+  // the exported sample_argmax method; only the selected token IDs return home.
+  std::optional<std::vector<llm_batching::Token>> argmax_rows(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows);
+  // Samples device logits with the exported sampler. params is row-major
+  // [rows, 4] float32: temperature, top_p, top_k and a uniform coin, as
+  // extension/llm/batching/sampler.py consumes them. All-greedy rows take
+  // sample_argmax.
+  std::optional<std::vector<llm_batching::Token>> sample_rows(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows,
+      const std::vector<float>& params);
+  ::executorch::extension::Module& module() {
+    return *module_;
+  }
+  llm_cache::BatchControl& cache_control() {
+    return *ctl_;
+  }
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
@@ -129,6 +235,10 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   }
 
  private:
+  static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
+      std::unique_ptr<::executorch::extension::Module> module,
+      const CudaExecutorConfig& config);
+
   CudaExecutor(
       std::unique_ptr<::executorch::extension::Module> module,
       std::shared_ptr<llm_cache::Cache> cache,
@@ -143,9 +253,17 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
+  std::optional<std::vector<llm_batching::Token>> run_device_sampler(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows,
+      const std::vector<float>& params,
+      bool all_greedy);
   std::optional<std::vector<llm_batching::Token>> sample_on_device(
       const ::executorch::aten::Tensor& logits,
       const std::vector<llm_batching::SessionId>& sessions);
+  bool execute_embeddings(
+      const RawTargetStep& step,
+      const std::function<bool(const RawTargetOutput&)>& consume);
 
   // Ordered so the module dies first, releasing the delegates that resolved
   // the cache before the registry entry naming it goes.
@@ -155,9 +273,19 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   const CudaKVCache* const kv_;
   std::string backend_id_;
   std::int32_t vocab_size_;
+  int max_session_tokens_;
   // Sorted by max_tokens, ascending; the dynamic method, if any, is last.
   std::vector<ForwardMethod> methods_;
   std::vector<std::uint64_t> calls_;
+  struct EmbeddingsMethod {
+    int max_tokens;
+    int min_tokens;
+    std::int64_t hidden;
+    ::executorch::aten::ScalarType dtype;
+    std::uint64_t calls = 0;
+  };
+  std::optional<EmbeddingsMethod> embeddings_method_;
+  std::optional<InputEmbedder> embedder_;
   int min_selected_rows_;
   llm_batching::util::SessionTable sessions_;
   bool has_sampler_;
@@ -168,6 +296,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // Where the first forward's logits lived. Host and device sampling advance
   // separate generators, so every forward must agree.
   std::optional<bool> device_logits_;
+  bool initialized_ = false;
+  bool raw_executing_ = false;
 };
 
 } // namespace executorch::backends::cuda::batching
