@@ -101,16 +101,18 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
-    name = "delegate_scratch_pass",
+    name = "delegate_buffer_pass",
     srcs = [
-        "delegate_scratch_pass.py",
+        "delegate_buffer_pass.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
+        "//executorch/exir:schema",
         "//executorch/exir:tensor",
+        "//executorch/exir/backend:backend_details",
     ],
 )
 

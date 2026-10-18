@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
@@ -55,7 +55,7 @@ class PlannedScratch:
 def delegate_scratch(node: torch.fx.Node) -> List[PlannedScratch]:
     """Returns the scratch buffers a delegate call needs while it executes.
 
-    ``DelegateScratchSpecPass`` puts them here, the memory planner places them,
+    ``DelegateBufferSpecPass`` puts them here, the memory planner places them,
     and the emitter serializes the result onto the delegate call. They are not
     values the node produces, so they are kept out of ``meta["spec"]``.
 
@@ -72,6 +72,38 @@ def delegate_scratch(node: torch.fx.Node) -> List[PlannedScratch]:
 def delegate_scratch_specs(node: torch.fx.Node) -> List[TensorSpec]:
     """The specs alone, for everything that places rather than identifies."""
     return [scratch.spec for scratch in delegate_scratch(node)]
+
+
+DELEGATE_STATE_META_KEY = "delegate_state"
+
+
+@dataclass
+class PlannedState:
+    """A state buffer a delegate declared, and the spec the planner places.
+
+    ``initial_data`` is what the runtime installs once at load time, or None
+    for a buffer that starts zero-filled.
+    """
+
+    label: str
+    initial_data: Optional[bytes]
+    spec: TensorSpec
+
+
+def delegate_state(node: torch.fx.Node) -> List[PlannedState]:
+    """Returns the state buffers a delegate call keeps across executions.
+
+    Kept apart from its scratch so that nothing can mistake one for the other:
+    the planner gives state the whole graph's lifetime and the runtime hands it
+    to the backend through its own list.
+    """
+    if node.target is not executorch_call_delegate:
+        return []
+    return node.meta.get(DELEGATE_STATE_META_KEY, [])
+
+
+def delegate_state_specs(node: torch.fx.Node) -> List[TensorSpec]:
+    return [state.spec for state in delegate_state(node)]
 
 
 def free(spec: TensorSpec) -> None:

@@ -30,6 +30,7 @@
 // include the generated flatbuffer header.
 namespace executorch_flatbuffer {
 struct Chain;
+struct DelegateCall;
 struct ExecutionPlan;
 struct EValue;
 } // namespace executorch_flatbuffer
@@ -445,6 +446,13 @@ class Method final {
       size_t kernel_index,
       InstructionArgs args,
       size_t n_args);
+
+  /**
+   * Resolves the scratch and state buffers a delegate call declared onto its
+   * BackendDelegate, and installs each state buffer's initial contents.
+   */
+  ET_NODISCARD Error init_delegate_buffers(
+      const executorch_flatbuffer::DelegateCall* delegate_call);
 
   void log_outputs();
 };

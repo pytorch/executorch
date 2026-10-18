@@ -261,6 +261,21 @@ table DelegateScratch {
   size: uint64;
 }
 
+// A memory-planned buffer a delegate keeps across executions for the lifetime
+// of the Method. The runtime installs its initial contents once at load time.
+table DelegateState {
+  // Where the memory planner placed this buffer.
+  allocation: AllocationDetails;
+
+  // Size in bytes.
+  size: uint64;
+
+  // Index into the offsets of mutable_data_segments[0] holding the initial
+  // contents, following Tensor.data_buffer_idx. 0 means the runtime
+  // zero-fills the buffer instead.
+  initial_data_idx: uint;
+}
+
 table DelegateCall {
   // Index to the delegates table in the program.
   delegate_index: int;
@@ -273,6 +288,11 @@ table DelegateCall {
   // byte ranges through BackendExecutionContext, so they are never delegate
   // inputs or outputs. Absent in programs exported before this field existed.
   scratch: [DelegateScratch];
+
+  // State buffers the delegate declared at AOT time, in declaration order.
+  // Delivered separately from scratch so that a backend cannot mistake one
+  // for the other. Absent in programs exported before this field existed.
+  state: [DelegateState];
 }
 
 table MoveCall {

@@ -24,11 +24,13 @@ class BackendExecutionContext final {
       EventTracer* event_tracer = nullptr,
       MemoryAllocator* temp_allocator = nullptr,
       const char* method_name = nullptr,
-      Span<const Span<uint8_t>> scratch_buffers = {})
+      Span<const Span<uint8_t>> scratch_buffers = {},
+      Span<const Span<uint8_t>> state_buffers = {})
       : event_tracer_(event_tracer),
         temp_allocator_(temp_allocator),
         method_name_(method_name),
-        scratch_buffers_(scratch_buffers) {}
+        scratch_buffers_(scratch_buffers),
+        state_buffers_(state_buffers) {}
 
   /**
    * Returns a pointer to an instance of EventTracer to do profiling/debugging
@@ -88,11 +90,31 @@ class BackendExecutionContext final {
     return scratch_buffers_;
   }
 
+  /**
+   * The memory-planned buffers this delegate declared as state when it was
+   * lowered, in declaration order. Their contents persist across execute()
+   * calls for the lifetime of the Method, starting from the initial image the
+   * delegate supplied at lowering or from zero.
+   *
+   * Unlike scratch there is no fallback: state cannot be conjured. A backend
+   * that declared state must check these against what its own blob expects
+   * and fail if they are missing or too small, which is what a program
+   * exported or loaded without them looks like.
+   *
+   * Alignment is the plan's, like every tensor in the pool. The initial image
+   * starts at the beginning of each buffer, so a backend cannot shift the
+   * pointer to align it further.
+   */
+  Span<const Span<uint8_t>> state_buffers() const {
+    return state_buffers_;
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
   const char* method_name_ = nullptr;
   Span<const Span<uint8_t>> scratch_buffers_;
+  Span<const Span<uint8_t>> state_buffers_;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

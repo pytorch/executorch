@@ -55,6 +55,7 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-scratch.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-state.pte"
   COMMAND ${_export_program_cmd}
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
@@ -66,6 +67,10 @@ add_custom_command(
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
     "ModuleAddMul" --backend_id "StubBackend" --scratch_bytes 1024 --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
+  COMMAND
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
+    "ModuleAddMul" --backend_id "StubBackend" --state_bytes 64 --outdir
     "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
@@ -111,6 +116,7 @@ set(test_env
     "ET_MODULE_ADD_MUL_DELEGATED_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
     "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
     "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-scratch.pte"
+    "ET_MODULE_ADD_MUL_DELEGATED_STATE_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-state.pte"
 )
 
 et_cxx_test(

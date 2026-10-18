@@ -41,7 +41,7 @@ from executorch.exir.memory_planning import (
     update_all_tensors_lifetime,
 )
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
+from executorch.exir.passes.delegate_buffer_pass import DelegateBufferSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import print_program
@@ -507,7 +507,7 @@ class TestDelegateScratch(unittest.TestCase):
         program = _transform(
             edge.exported_program(),
             SpecPropPass(),
-            DelegateScratchSpecPass(),
+            DelegateBufferSpecPass(),
             ExportPass(),
         )
 
@@ -556,8 +556,8 @@ class TestDelegateScratch(unittest.TestCase):
         program = _transform(
             edge.exported_program(),
             SpecPropPass(),
-            DelegateScratchSpecPass(),
-            DelegateScratchSpecPass(),
+            DelegateBufferSpecPass(),
+            DelegateBufferSpecPass(),
         )
 
         (call,) = [
@@ -618,7 +618,7 @@ class TestDelegateScratch(unittest.TestCase):
             edge.exported_program(), SpecPropPass(), MemoryPlanningPass()
         )
 
-        with self.assertRaisesRegex(InternalError, "DelegateScratchSpecPass"):
+        with self.assertRaisesRegex(InternalError, "DelegateBufferSpecPass"):
             emit_program(program)
 
     def test_two_buffers_keep_declaration_order(self):
@@ -781,7 +781,7 @@ class TestDelegateScratch(unittest.TestCase):
         program = _transform(
             edge.exported_program(),
             SpecPropPass(),
-            DelegateScratchSpecPass(),
+            DelegateBufferSpecPass(),
             MemoryPlanningPass(),
         )
         (call,) = [
@@ -864,7 +864,7 @@ class TestDelegateScratch(unittest.TestCase):
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         program = _transform(
-            edge.exported_program(), SpecPropPass(), DelegateScratchSpecPass()
+            edge.exported_program(), SpecPropPass(), DelegateBufferSpecPass()
         )
         nodes = list(program.graph.nodes)
         first, second = [

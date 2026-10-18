@@ -430,6 +430,41 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                 node.meta["delegation_tag"] = min(user_tags)
 
 
+def tag_owned_mutated_buffers(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners whose delegate keeps mutated buffers as its
+    own state. Tags a mutated buffer into a partition only when that partition
+    owns it outright: every reader of the buffer and the node producing its new
+    value carry the partition's tag. Call it after tagging all other nodes.
+
+    The writer matters as much as the readers. Lowering moves a buffer mutation
+    into the delegate only when a delegate output produces the new value, so a
+    buffer whose readers are delegated but whose update runs on the CPU would be
+    consumed by the delegate while the outer program still writes to it, and
+    the lowered program fails verification.
+
+    A buffer that is not owned outright is left untagged, so it stays a mutable
+    buffer of the outer program and each delegate reads and writes it through
+    its arguments. Unlike tag_mutated_buffer, this never assigns a buffer that
+    spans partitions to one of them.
+    """
+    sig = edge_program.graph_signature
+    writer_names = {target: name for name, target in sig.buffers_to_mutate.items()}
+    nodes_by_name = {node.name: node for node in edge_program.graph.nodes}
+
+    for node in edge_program.graph.nodes:
+        if node.op != "placeholder":
+            continue
+        target = sig.inputs_to_buffers.get(node.name)
+        if target not in writer_names:
+            continue
+        writer = nodes_by_name[writer_names[target]]
+        tags = {user.meta.get("delegation_tag") for user in node.users}
+        tags.add(writer.meta.get("delegation_tag"))
+        if len(tags) == 1 and None not in tags:
+            node.meta["delegation_tag"] = tags.pop()
+
+
 def is_shape_dynamic(node: torch.fx.Node) -> bool:
     """
     Check if the node shape is dynamic.

@@ -207,12 +207,15 @@ def define_common_targets():
             # the data to accidentally be aligned to it in the default case.
               " && $(exe :export_delegated_program) --modules ModuleAddMul --backend_id " + BACKEND_ID + " --inline_delegate_segments --delegate_alignment 1024 --outdir $OUT" +
             # A program whose delegate declares memory-planned scratch.
-              " && $(exe :export_delegated_program) --modules ModuleAddMul --backend_id " + BACKEND_ID + " --scratch_bytes 1024 --outdir $OUT",
+              " && $(exe :export_delegated_program) --modules ModuleAddMul --backend_id " + BACKEND_ID + " --scratch_bytes 1024 --outdir $OUT" +
+            # A program whose delegate declares memory-planned state.
+              " && $(exe :export_delegated_program) --modules ModuleAddMul --backend_id " + BACKEND_ID + " --state_bytes 64 --outdir $OUT",
         outs = {
             "ModuleAddMul.pte": ["ModuleAddMul.pte"],
             "ModuleAddMul-nosegments.pte": ["ModuleAddMul-nosegments.pte"],
             "ModuleAddMul-nosegments-da1024.pte": ["ModuleAddMul-nosegments-da1024.pte"],
             "ModuleAddMul-scratch.pte": ["ModuleAddMul-scratch.pte"],
+            "ModuleAddMul-state.pte": ["ModuleAddMul-state.pte"],
         },
         default_outs = ["."],
         visibility = [

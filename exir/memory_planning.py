@@ -583,6 +583,11 @@ def update_all_tensors_lifetime(
             scratch_lifetimes[spec] = (min(start, node_idx), max(end, node_idx))
     for spec, (start, end) in scratch_lifetimes.items():
         spec.lifetime = [start, end]
+    # State outlives every execution, so nothing else in the plan may share its
+    # bytes. Planned mutable buffers persist across calls the same way.
+    for node in graph_module.graph.nodes:
+        for spec in memory.delegate_state_specs(node):
+            spec.lifetime = [0, max_node_idx]
     _extend_storage_base_lifetimes(specs)
     return specs
 
@@ -781,9 +786,9 @@ def get_node_tensor_specs(
     Return the list of the tensor specs for the node or empty list if the node
     has no tensor specs.
 
-    A delegate call's scratch buffers are included. They are not values the
-    node produces, but every caller that walks specs to place, verify or
-    attribute memory needs them.
+    A delegate call's scratch and state buffers are included. They are not
+    values the node produces, but every caller that walks specs to place,
+    verify or attribute memory needs them.
     """
     # get tensor specs
     if node.target == memory.view:
@@ -804,8 +809,11 @@ def get_node_tensor_specs(
             if not isinstance(spec, (int, float, bool, str, type(None)))
         ]
 
-    if scratch := memory.delegate_scratch_specs(node):
-        return list(specs) + scratch
+    delegate_buffers = memory.delegate_scratch_specs(
+        node
+    ) + memory.delegate_state_specs(node)
+    if delegate_buffers:
+        return list(specs) + delegate_buffers
     return specs
 
 
