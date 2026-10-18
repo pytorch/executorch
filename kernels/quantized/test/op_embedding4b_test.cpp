@@ -242,3 +242,41 @@ TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbeddingDeath2) {
           out),
       "");
 }
+
+TEST(OpQuantizedEmbedding4bTest, TestOutOfBoundsIndex) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  int64_t quant_min = -8;
+  int64_t quant_max = 7;
+
+  Tensor weight_scales = tf.make({3}, {0.5, 1.0, 1.5});
+  Tensor qweight = tfb.make({3, 2}, {89, 239, 163, 72, 11, 126});
+  Tensor out = tf.zeros({2, 4});
+
+  Tensor indices = tfl.make({2}, {1, 3});
+  ET_EXPECT_DEATH(
+      quantized_embedding_4bit_out(
+          qweight,
+          weight_scales,
+          std::nullopt,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "Index out of bounds");
+
+  indices = tfl.make({2}, {1, -1});
+  ET_EXPECT_DEATH(
+      quantized_embedding_4bit_out(
+          qweight,
+          weight_scales,
+          std::nullopt,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "Index out of bounds");
+}

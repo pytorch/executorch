@@ -1126,16 +1126,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fp16a8w_conv2d(self):
-        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1]
+        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1],
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(
@@ -1146,15 +1147,16 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # QAT in float32
