@@ -95,6 +95,8 @@ struct CudaDFlashStats {
   std::uint64_t draft_forwards = 0;
   std::uint64_t warmed_context_tokens = 0;
   // Calls are packed execute_raw attempts; forwards count slice callbacks.
+  std::uint64_t pending_decode_batches = 0;
+  std::uint64_t pending_decode_owners = 0;
   std::uint64_t target_preamble_calls = 0;
   std::uint64_t target_verify_calls = 0;
   std::uint64_t target_preamble_forwards = 0;
@@ -137,12 +139,15 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   }
 
  private:
+  friend struct CudaDFlashTestPeer;
   using Target = ::executorch::backends::cuda::batching::CudaExecutor;
   using RawStep = ::executorch::backends::cuda::batching::RawTargetStep;
   struct State {
     std::int32_t target_id;
     std::int32_t draft_id;
     int frontier = 0;
+    // Last emitted correction/bonus, not yet consumed by the target cache.
+    std::optional<batching::Token> pending;
     // Host-owned committed BF16 rows [draft frontier, target frontier).
     // Verification appends only the consumed anchor and accepted proposals.
     std::vector<std::uint8_t> hidden;
@@ -173,7 +178,10 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
       const std::vector<batching::Token>& anchors,
       int context_limit,
       std::vector<std::vector<batching::Token>>* proposals);
-  bool speculate(const batching::BatchInput& batch, batching::BatchOutput& out);
+  bool speculate(
+      const batching::BatchInput& batch,
+      batching::BatchOutput& out,
+      bool pending_decode);
   bool fail_batch(
       const batching::BatchInput& batch,
       batching::BatchOutput& out);
