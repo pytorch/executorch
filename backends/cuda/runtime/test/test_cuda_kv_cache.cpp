@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -1410,9 +1411,13 @@ class CudaCellCacheTest : public CudaKVCacheTest {
   static constexpr int kMaxWrite = 8;
   static constexpr int kWindow = 2;
 
-  static std::shared_ptr<cache::Cache> make(int initial = 4) {
+  static std::shared_ptr<cache::Cache> make(
+      int initial = 4,
+      std::optional<int> block_size = std::nullopt) {
+    auto geometry = flat_and_ring(kWindow);
+    geometry.dflash_block_size = block_size;
     return cu::make_cuda_cell_kv_cache(
-        flat_and_ring(kWindow), config(kCells, initial, kMaxWrite));
+        geometry, config(kCells, initial, kMaxWrite));
   }
 
   // What a program lowered in the cell layout for make() declares: every
@@ -1866,6 +1871,207 @@ TEST_F(CudaCellCacheTest, GrowthGivesAHandleAboutToCaptureOneEagerRunFirst) {
   EXPECT_EQ(early.cuda_graph_state.warmup_remaining, 3);
   kv->forget_handle(&due);
   kv->forget_handle(&early);
+}
+
+TEST_F(CudaCellCacheTest, DFlashUploadsKVWideCellsAndQueryWideOwnerMasks) {
+  auto cache_ptr = make(4, 2);
+  ASSERT_NE(cache_ptr, nullptr);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new(), b = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {b, b, b, b, b, a, a, a}), Error::Ok);
+  EXPECT_EQ(
+      read_longs(fake.bound["cells"].data, 8),
+      std::vector<int64_t>({0, 1, 2, 3, 4, 5, 6, 7}));
+  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1)[0], 8);
+  using Mask = std::vector<std::vector<int>>;
+  EXPECT_EQ(
+      read_mask(fake.bound["mask0"].data, 4, 8),
+      Mask(
+          {{1, 1, 1, 1, 1, 0, 0, 0},
+           {1, 1, 1, 1, 1, 0, 0, 0},
+           {0, 0, 0, 0, 0, 1, 1, 1},
+           {0, 0, 0, 0, 0, 1, 1, 1}}));
+  EXPECT_EQ(
+      read_mask(fake.bound["mask2"].data, 4, 8),
+      Mask(
+          {{0, 1, 1, 1, 1, 0, 0, 0},
+           {0, 1, 1, 1, 1, 0, 0, 0},
+           {0, 0, 0, 0, 0, 1, 1, 1},
+           {0, 0, 0, 0, 0, 1, 1, 1}}));
+  EXPECT_EQ(control->pos(b), 3);
+  EXPECT_EQ(control->pos(a), 1);
+  // Block removal leaves holes; the next owner order is reversed.
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  void* cells = fake.bound["cells"].data;
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, b, b}), Error::Ok);
+  EXPECT_EQ(
+      read_longs(fake.bound["cells"].data, 4),
+      std::vector<int64_t>({3, 4, 6, 7}));
+  EXPECT_EQ(
+      read_mask(fake.bound["mask0"].data, 4, 8),
+      Mask(
+          {{0, 0, 0, 1, 1, 1, 0, 0},
+           {0, 0, 0, 1, 1, 1, 0, 0},
+           {1, 1, 1, 0, 0, 0, 1, 1},
+           {1, 1, 1, 0, 0, 0, 1, 1}}));
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+  EXPECT_EQ(fake.bound["cells"].data, cells);
+  EXPECT_EQ(control->pos(b), 3);
+  EXPECT_EQ(control->pos(a), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaCellCacheTest,
+    DFlashRejectsGroupingAndPaddedTokenCountsBeforeAllocation) {
+  auto cache_ptr = make(4, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new(), b = *control->seq_new();
+  EXPECT_FALSE(control->declare_step({a, a, b, b, a, a}));
+  EXPECT_FALSE(control->declare_step({a, a, b}));
+  ASSERT_TRUE(control->declare_step({b, b, a, a}));
+  EXPECT_EQ(kv->prepare_step(5, cudaStreamPerThread), Error::InvalidState);
+  EXPECT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::InvalidState);
+  EXPECT_EQ(kv->metrics().allocated_bytes, 0);
+  EXPECT_EQ(control->pos(a), 0);
+  EXPECT_EQ(control->pos(b), 0);
+  ASSERT_EQ(kv->prepare_step(4, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->commit_step(4), Error::Ok);
+  EXPECT_EQ(control->pos(a), 0);
+  EXPECT_EQ(control->pos(b), 0);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaCellCacheTest,
+    DFlashAbandonedCoBatchCannotContinueUntilWholeCacheCleared) {
+  auto cache_ptr = make(4, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new(), b = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a, b, b, b}));
+  ASSERT_EQ(kv->prepare_step(6, cudaStreamPerThread), Error::Ok);
+  // A failed forward does not commit: neither owner may continue or fork.
+  EXPECT_FALSE(control->declare_step({a, a}));
+  EXPECT_FALSE(control->rewind(a, 0));
+  EXPECT_FALSE(control->seq_clone(b, std::nullopt));
+  EXPECT_EQ(kv->prepare_step(6, cudaStreamPerThread), Error::InvalidState);
+  EXPECT_EQ(kv->commit_step(5), Error::InvalidState);
+  EXPECT_EQ(kv->commit_step(6), Error::InvalidState);
+  control->clear();
+  EXPECT_EQ(kv->metrics().logical_length, 0);
+  const int32_t reused = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {reused, reused, reused}), Error::Ok);
+  EXPECT_EQ(control->pos(reused), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, DFlashWarmupCommitsAllContextWithOneQueryPerOwner) {
+  auto cache_ptr = make(4, 0);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new(), b = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {b, b, b, a}), Error::Ok);
+  EXPECT_EQ(
+      read_mask(fake.bound["mask2"].data, 2, 4),
+      std::vector<std::vector<int>>({{0, 1, 1, 0}, {0, 0, 0, 1}}));
+  EXPECT_EQ(control->pos(b), 3);
+  EXPECT_EQ(control->pos(a), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaCellCacheTest,
+    DFlashCommitFencesGPUWorkBeforeDroppingTemporaryCells) {
+  auto cache_ptr = make(4, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a}));
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  std::atomic<bool> finished{false};
+  ASSERT_EQ(
+      cudaLaunchHostFunc(
+          cudaStreamPerThread,
+          [](void* state) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            static_cast<std::atomic<bool>*>(state)->store(true);
+          },
+          &finished),
+      cudaSuccess);
+  ASSERT_EQ(kv->commit_step(3), Error::Ok);
+  EXPECT_TRUE(finished.load());
+  EXPECT_EQ(control->pos(a), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, DFlashClearFromAnotherThreadFencesAbandonedForward) {
+  auto cache_ptr = make(4, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a}));
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  std::atomic<bool> finished{false};
+  ASSERT_EQ(
+      cudaLaunchHostFunc(
+          cudaStreamPerThread,
+          [](void* state) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            static_cast<std::atomic<bool>*>(state)->store(true);
+          },
+          &finished),
+      cudaSuccess);
+  bool finished_when_cleared = false;
+  std::thread cleanup([&] {
+    control->clear();
+    finished_when_cleared = finished.load();
+  });
+  cleanup.join();
+  EXPECT_TRUE(finished_when_cleared);
+  EXPECT_EQ(kv->metrics().logical_length, 0);
+  const int32_t reused = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {reused, reused, reused}), Error::Ok);
+  EXPECT_EQ(control->pos(reused), 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, DFlashBuilderRejectsUnsupportedSequenceLayout) {
+  auto geometry = flat_and_ring(kWindow);
+  for (const int block : {0, 2}) {
+    geometry.dflash_block_size = block;
+    EXPECT_EQ(make_cache(geometry, config(kCells, 4, kMaxWrite)), nullptr);
+  }
+  geometry.dflash_block_size = -1;
+  EXPECT_EQ(
+      cu::make_cuda_cell_kv_cache(geometry, config(kCells, 4, kMaxWrite)),
+      nullptr);
+  geometry.dflash_block_size = kMaxWrite + 1;
+  EXPECT_EQ(
+      cu::make_cuda_cell_kv_cache(geometry, config(kCells, 4, kMaxWrite)),
+      nullptr);
 }
 
 TEST_F(CudaCellCacheTest, BuilderValidatesAndIsRegisteredForBatchedKinds) {
