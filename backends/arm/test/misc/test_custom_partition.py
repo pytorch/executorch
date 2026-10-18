@@ -5,6 +5,7 @@
 
 import logging
 from typing import Tuple
+from unittest.mock import patch
 
 import torch
 from executorch.backends.arm.test import common
@@ -12,7 +13,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
 )
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.test.harness.stages import StageType
+from executorch.exir import to_edge
 from executorch.exir.backend.operator_support import (
     DontPartition,
     DontPartitionModule,
@@ -50,6 +54,14 @@ class NestedModule(torch.nn.Module):
         return self.nested(a, b)
 
 
+class ManyPartitions(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for _ in range(12):
+            x = x + 1
+            x = torch.sigmoid(x)
+        return x
+
+
 # Reproduce the shared partition boundary used by YOLO. One split output stays
 # in portable code while the other can enter another delegate. This exposes a
 # bug where the first delegate claims its shared output is FP32 but writes
@@ -67,6 +79,19 @@ class ConvSplitBMM(torch.nn.Module):
         lhs, other = self.conv(x).split([2, 2], dim=1)
         lhs = lhs.reshape(1, 2, 4)
         return torch.bmm(lhs, y), torch.relu(other)
+
+
+def test_partition_tags_are_sorted():
+    exported_program = torch.export.export(ManyPartitions(), (torch.randn(4),))
+    edge_program = to_edge(exported_program).exported_program()
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    unsorted_tags = [f"tag{i}" for i in reversed(range(12))]
+
+    with patch.object(partitioner, "_tag_module", return_value=unsorted_tags):
+        partition_result = partitioner.partition(edge_program)
+    partition_tags = list(partition_result.partition_tags)
+
+    assert partition_tags == sorted(unsorted_tags)
 
 
 @common.XfailIfNoCorstone300
