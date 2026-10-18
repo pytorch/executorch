@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from conv2d_gemm.wgsl - DO NOT EDIT.
-// wgsl-sha256: 0cd4ee9c946a7d7029062fcd6cb137fe32db886ce7f07c3514ec58ede0fa695e
+// wgsl-sha256: b893e280f7c01485abb0f0c2b1f1c15a63a1deb0859a96d59ec723aab805e5b4
 inline constexpr const char* kConv2dGemmWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> out: array<f32>;
 @group(0) @binding(1) var<storage, read> input: array<f32>;
@@ -24,14 +24,15 @@ struct Params {
   B: u32, IC: u32, IH: u32, IW: u32,
   OC: u32, OH: u32, OW: u32, KH: u32, KW: u32,
   sH: u32, sW: u32, pH: u32, pW: u32, dH: u32, dW: u32,
-  groups: u32, has_bias: u32, _p0: u32, _p1: u32, _p2: u32,
+  groups: u32, has_bias: u32, has_clamp: u32, out_min: f32, out_max: f32,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
 // Standard (groups==1) conv2d as an implicit-im2col tiled GEMM, reusing the
 // linear_fp32_tiled skeleton (TILE=32, RPT=4, shared-mem tiles). M=OC, N=B*OH*OW,
 // K=IC*KH*KW. A=weight [OC,K] (contiguous OIHW); B=input sampled on the fly (im2col),
-// out-of-range -> 0.0 implements padding. bias is per-ROW (OC). Output written NCHW.
+// out-of-range -> 0.0 implements padding. bias is per-ROW (OC). Output written NCHW,
+// optionally clamped (et_vk.conv_with_clamp).
 const TILE: u32 = 32u;
 const RPT: u32 = 4u;
 
@@ -120,6 +121,9 @@ fn main(
         var val = acc[ir][ic];
         if (params.has_bias != 0u) {
           val = val + bias[m];
+        }
+        if (params.has_clamp != 0u) {
+          val = clamp(val, params.out_min, params.out_max);
         }
         let ohw = params.OH * params.OW;
         let b = n / ohw;

@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from where.wgsl - DO NOT EDIT.
-// wgsl-sha256: 2c5c6491e95822f767920ad82b81b005808ad5550567b85fa98c1521f188dbfc
+// wgsl-sha256: f254e27661bfaa523237e63f9ccd90665daa436e45f769903ee581b006b06576
 inline constexpr const char* kWhereWGSL = R"(
 @group(0) @binding(0) var<storage, read> cond: array<u32>;
 @group(0) @binding(1) var<storage, read> input_a: array<f32>;
@@ -40,8 +40,10 @@ fn cond_is_true(i: u32) -> bool {
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= out_meta.numel) {
         return;
     }
