@@ -555,7 +555,13 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       declared_block, positive_int(module, "get_draft_dflash_block_size"));
   ET_ASSIGN_OR_RETURN(max_owners, positive_int(module, df::kMaxOwners));
   ET_ASSIGN_OR_RETURN(max_write, positive_int(module, df::kMaxWrite));
-  ET_ASSIGN_OR_RETURN(max_cells, positive_int(module, df::kMaxCells));
+  ET_ASSIGN_OR_RETURN(
+      draft_seqs, detail::read_int_method(module, df::kMaxSeqs));
+  const bool sequence_layout = draft_seqs.has_value();
+  // A sequence layout sizes each draft history; a cell layout one shared pool.
+  ET_ASSIGN_OR_RETURN(
+      max_cells,
+      positive_int(module, sequence_layout ? df::kSeqCapacity : df::kMaxCells));
   ET_ASSIGN_OR_RETURN(tap_layers, positive_int(module, df::kTargetLayers));
   ET_ASSIGN_OR_RETURN(
       layer_ids,
@@ -643,7 +649,10 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       "DFlash draft packed tensor ABI mismatch");
   ET_ASSIGN_OR_RETURN(geometry, draft_geometry(module, block));
   const int temporary = max_owners * block;
-  const int draft_budget = (max_cells - 1 - temporary) / config.max_sessions;
+  // A history column holds its context and, while drafting, its own block.
+  const int draft_budget = sequence_layout
+      ? max_cells - block
+      : (max_cells - 1 - temporary) / config.max_sessions;
   const int max_context = std::min(target->max_session_tokens(), draft_budget);
   ET_CHECK_OR_RETURN_ERROR(
       max_context > block && draft_tokens.sizes()[0] == max_owners &&
@@ -657,11 +666,19 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   cache_config.capacity = max_cells;
   cache_config.kv_dtype = static_cast<int>(aten::ScalarType::BFloat16);
   cache_config.max_write = max_write;
+  if (sequence_layout) {
+    ET_CHECK_OR_RETURN_ERROR(
+        *draft_seqs > 0 && *draft_seqs <= std::numeric_limits<int>::max(),
+        InvalidProgram,
+        "Invalid DFlash draft sequence count");
+    cache_config.max_seqs = static_cast<int>(*draft_seqs);
+  }
   ET_ASSIGN_OR_RETURN(
       draft_cache,
       cache::CacheFactory::global().build(
           ::executorch::backends::cuda::kCudaBackendId,
-          cache::kind::kBatchedCell,
+          sequence_layout ? cache::kind::kBatchedSequence
+                          : cache::kind::kBatchedCell,
           geometry,
           cache_config));
   const auto* control = draft_cache->as<cache::BatchControl>();
