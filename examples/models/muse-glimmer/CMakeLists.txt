@@ -242,7 +242,7 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
 
   if(MUSE_GLIMMER_BUILD_BATCHING)
     if(_batching_backend STREQUAL "cuda")
-      set(_batching_executor)
+      set(_batching_executor runtime/cuda_dflash_executor.cpp)
       set(_batching_backend_library cuda_batching)
     else()
       set(_batching_executor runtime/mlx_executor.cpp)
@@ -356,5 +356,24 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
                                          extension_llm_serving Threads::Threads
     )
     add_test(NAME muse_glimmer_batching COMMAND muse_glimmer_batching_test)
+    if(MUSE_GLIMMER_BUILD_BATCHING AND _batching_backend STREQUAL "cuda")
+      # Tokenizer include paths contain regex.h; keep GoogleTest and its users
+      # on the same simple-regex ABI instead of the shadowed POSIX header.
+      add_subdirectory(
+        ${EXECUTORCH_ROOT}/third-party/googletest
+        ${CMAKE_CURRENT_BINARY_DIR}/dflash_googletest EXCLUDE_FROM_ALL
+      )
+      target_compile_definitions(gtest PUBLIC GTEST_HAS_POSIX_RE=0)
+      add_executable(
+        muse_glimmer_cuda_dflash_test tests/cuda_dflash_executor_test.cpp
+      )
+      target_link_libraries(
+        muse_glimmer_cuda_dflash_test PRIVATE muse_glimmer_batching_runtime
+                                              GTest::gtest_main
+      )
+      add_test(NAME muse_glimmer_cuda_dflash
+               COMMAND muse_glimmer_cuda_dflash_test
+      )
+    endif()
   endif()
 endif()

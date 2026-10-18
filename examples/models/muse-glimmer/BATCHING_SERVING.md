@@ -3,7 +3,8 @@
 The batching runner and multiplexed worker support MLX autoregressive generation
 with text only or text plus one image across the submitted conversation, and
 CUDA autoregressive generation with text only. They are opt-in entry points; the
-legacy runners and export defaults remain unchanged. DFlash batching is MLX only.
+legacy runners and export defaults remain unchanged. DFlash batching runs on MLX
+and CUDA (text only).
 CUDA specifics are in [CUDA](#cuda) below.
 
 ## Export
@@ -227,3 +228,10 @@ snapshots are enabled. Their total reservation must leave one cell for padded
 writes within the exported `--max-cells`.
 The cell pool tracks at most 64 resident sessions. Prefix snapshots clone a
 session's cells by reference, sharing the prompt's KV rather than copying it.
+
+For DFlash, export the tapped target and packed draft with
+`export_dflash --backend cuda --use-offgraph-kv-cache` (add `--draft-max-cells`
+and `--max-draft-owners`), then add `--dflash` to the serve command above. The
+draft ABI and `--dflash-n-draft` behave as on MLX. Drafts are greedy; the target
+accepts or resamples them on the device under each request's sampling. Decode
+drafts of up to four owners run in CUDA graphs.
