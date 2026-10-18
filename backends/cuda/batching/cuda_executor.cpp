@@ -90,6 +90,48 @@ Result<int> step_width(const MethodMeta& meta, const char* method) {
   return static_cast<int>(token_sizes[1]);
 }
 
+// kEmbeddingsMethod's decoder input: [1, T, hidden] in a float dtype, with
+// Long[T] positions and a rank-one Long selector. Returns T's upper bound.
+Result<std::pair<int, std::int64_t>> embeddings_width(
+    const MethodMeta& meta,
+    ::executorch::aten::ScalarType* dtype) {
+  const auto embeddings = meta.input_tensor_meta(0);
+  const auto positions = meta.input_tensor_meta(1);
+  const auto selector = meta.input_tensor_meta(2);
+  ET_CHECK_OR_RETURN_ERROR(
+      meta.num_inputs() == 3 && embeddings.ok() && positions.ok() &&
+          selector.ok(),
+      InvalidProgram,
+      "CudaExecutor: %s must take embeddings, positions and a logits selector",
+      kEmbeddingsMethod);
+  const auto sizes = embeddings->sizes();
+  const auto position_sizes = positions->sizes();
+  ET_CHECK_OR_RETURN_ERROR(
+      is_supported_logits_type(embeddings->scalar_type()) &&
+          sizes.size() == 3 && sizes[0] == 1 && sizes[1] > 0 && sizes[2] > 0 &&
+          positions->scalar_type() == ::executorch::aten::ScalarType::Long &&
+          position_sizes.size() == 1 && position_sizes[0] == sizes[1] &&
+          selector->scalar_type() == ::executorch::aten::ScalarType::Long &&
+          selector->sizes().size() == 1,
+      InvalidProgram,
+      "CudaExecutor: %s must take [1, T, hidden] embeddings, Long[T] positions "
+      "and a rank-one Long selector",
+      kEmbeddingsMethod);
+  *dtype = embeddings->scalar_type();
+  return std::pair<int, std::int64_t>{static_cast<int>(sizes[1]), sizes[2]};
+}
+
+bool dense(const ::executorch::aten::Tensor& tensor) {
+  std::int64_t stride = 1;
+  for (int d = tensor.dim() - 1; d >= 0; --d) {
+    if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
+      return false;
+    }
+    stride *= tensor.size(d);
+  }
+  return true;
+}
+
 // The logits width `method` produces.
 Result<std::int64_t> logits_width(const MethodMeta& meta, const char* method) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -479,8 +521,27 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_sessions,
       seq_limit.value_or(0));
 
+  std::optional<EmbeddingsMethod> embeddings_method;
+  if (names.count(kEmbeddingsMethod) != 0) {
+    ET_ASSIGN_OR_RETURN(meta, module->method_meta(kEmbeddingsMethod));
+    ::executorch::aten::ScalarType dtype{};
+    ET_ASSIGN_OR_RETURN(width, embeddings_width(meta, &dtype));
+    ET_ASSIGN_OR_RETURN(vocab, logits_width(meta, kEmbeddingsMethod));
+    ET_CHECK_OK_OR_RETURN_ERROR(backend_of(meta, kEmbeddingsMethod).error());
+    ET_CHECK_OR_RETURN_ERROR(
+        vocab == method_vocab && width.first <= max_step_tokens &&
+            min_selected_rows <= width.first,
+        InvalidProgram,
+        "CudaExecutor: %s disagrees with the token forwards",
+        kEmbeddingsMethod);
+    // Exported, like forward_others, from min_selected_rows tokens; narrower
+    // steps pad up to it.
+    embeddings_method =
+        EmbeddingsMethod{width.first, min_selected_rows, width.second, dtype};
+  }
+
   ET_CHECK_OK_OR_RETURN_ERROR(set_backend_options(options, methods));
-  return std::unique_ptr<CudaExecutor>(new CudaExecutor(
+  auto executor = std::unique_ptr<CudaExecutor>(new CudaExecutor(
       std::move(module),
       std::move(cache),
       max_sessions,
@@ -491,6 +552,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       min_selected_rows,
       has_sampler,
       has_argmax));
+  executor->embeddings_method_ = embeddings_method;
+  return executor;
 }
 
 bool CudaExecutor::initialize() {
@@ -513,6 +576,15 @@ bool CudaExecutor::initialize() {
       return false;
     }
   }
+  if (embeddings_method_ &&
+      module_->load_method(
+          kEmbeddingsMethod,
+          /*planned_memory=*/nullptr,
+          /*event_tracer=*/nullptr,
+          &options_map) != Error::Ok) {
+    ET_LOG(Error, "CudaExecutor: could not load %s", kEmbeddingsMethod);
+    return false;
+  }
   for (const auto& [present, name] :
        {std::pair{has_sampler_, kSampleMethod},
         std::pair{has_argmax_, kArgmaxMethod}}) {
@@ -520,6 +592,11 @@ bool CudaExecutor::initialize() {
       ET_LOG(Error, "CudaExecutor: could not load %s", name);
       return false;
     }
+  }
+  if (embedder_ && embedder_->initialize &&
+      embedder_->initialize() != Error::Ok) {
+    ET_LOG(Error, "CudaExecutor: the input embedder failed to initialize");
+    return false;
   }
   initialized_ = true;
   return true;
@@ -542,6 +619,25 @@ void CudaExecutor::set_sampling(
     const SamplingParams& params,
     std::optional<std::uint64_t> seed) {
   sessions_.set_sampling(session, params, seed);
+}
+
+bool CudaExecutor::accepts(const llm_batching::PreparedInput& input) const {
+  return embedder_ && embedder_->accepts && embedder_->accepts(input);
+}
+
+Error CudaExecutor::set_input_embedder(InputEmbedder embedder) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !initialized_ && embedder.accepts && embedder.materialize,
+      InvalidArgument,
+      "CudaExecutor: an embedder needs accepts and materialize, before "
+      "initialize()");
+  ET_CHECK_OR_RETURN_ERROR(
+      embeddings_method_.has_value(),
+      NotSupported,
+      "CudaExecutor: the program exports no %s",
+      kEmbeddingsMethod);
+  embedder_ = std::move(embedder);
+  return Error::Ok;
 }
 
 bool CudaExecutor::execute_raw(
@@ -573,6 +669,9 @@ bool CudaExecutor::execute_raw(
     }
   } reset{raw_executing_};
   raw_executing_ = true;
+  if (step.embeddings) {
+    return execute_embeddings(step, consume);
+  }
   for (const auto& slice : plan_slices(total, methods_)) {
     const int off = slice.offset;
     const int n = slice.length;
@@ -601,8 +700,9 @@ bool CudaExecutor::execute_raw(
         ? slice.width
         : std::max<std::size_t>(selected.size(), min_selected_rows_);
     selected.resize(rows, selected.empty() ? 0 : selected.back());
-    if (!ctl_->declare_step(std::vector<std::int32_t>(
-            step.seq_ids.begin() + off, step.seq_ids.begin() + off + n))) {
+    if (!ctl_->declare_step(
+            std::vector<std::int32_t>(
+                step.seq_ids.begin() + off, step.seq_ids.begin() + off + n))) {
       return false;
     }
     std::vector<std::int64_t> token_values(
@@ -623,16 +723,6 @@ bool CudaExecutor::execute_raw(
     }
     ++calls_[slice.method];
     const auto logits = result->at(0).toTensor();
-    auto dense = [](const ::executorch::aten::Tensor& tensor) {
-      std::int64_t stride = 1;
-      for (int d = tensor.dim() - 1; d >= 0; --d) {
-        if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
-          return false;
-        }
-        stride *= tensor.size(d);
-      }
-      return true;
-    };
     if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
         logits.numel() != static_cast<std::int64_t>(rows) * vocab_size_ ||
         !is_supported_logits_type(logits.scalar_type()) || !dense(logits)) {
@@ -737,6 +827,18 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   }
 
   RawTargetStep raw;
+  if (step->prepared) {
+    if (!embedder_) {
+      ET_LOG(Error, "CudaExecutor: a prepared input needs an input embedder");
+      return false;
+    }
+    auto embeddings = embedder_->materialize(batch.inputs);
+    if (!embeddings.ok()) {
+      ET_LOG(Error, "CudaExecutor: could not materialize the batch's inputs");
+      return false;
+    }
+    raw.embeddings = std::move(*embeddings);
+  }
   raw.tokens = step->tokens;
   raw.positions = step->positions;
   raw.seq_ids = step->seq_ids;
@@ -805,7 +907,8 @@ std::optional<std::vector<Token>> CudaExecutor::sample_rows(
   for (std::size_t row = 0; row < rows; ++row) {
     all_greedy = all_greedy && params[row * 4] == 0.0f;
   }
-  if (all_greedy || logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+  if (all_greedy ||
+      logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
     // Host logits are sampled greedily only; the exported sampler is on CUDA.
     return all_greedy ? argmax_rows(logits, rows) : std::nullopt;
   }
@@ -929,11 +1032,112 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
 
 std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {
   std::vector<ForwardMethodCalls> calls;
-  calls.reserve(methods_.size());
+  calls.reserve(methods_.size() + 1);
   for (std::size_t i = 0; i < methods_.size(); ++i) {
     calls.push_back({methods_[i].name, calls_[i]});
   }
+  if (embeddings_method_) {
+    calls.push_back({kEmbeddingsMethod, embeddings_method_->calls});
+  }
   return calls;
+}
+
+bool CudaExecutor::execute_embeddings(
+    const RawTargetStep& step,
+    const std::function<bool(const RawTargetOutput&)>& consume) {
+  using ::executorch::aten::SizesType;
+  const auto& embeddings = *step.embeddings;
+  const int total = static_cast<int>(step.positions.size());
+  if (!embeddings_method_ || embeddings.dim() != 3 || embeddings.size(0) != 1 ||
+      embeddings.size(1) != total ||
+      embeddings.size(2) != embeddings_method_->hidden ||
+      embeddings.scalar_type() != embeddings_method_->dtype ||
+      !embeddings.device().is_cpu() || !dense(embeddings)) {
+    ET_LOG(
+        Error,
+        "CudaExecutor: embeddings must be host [1, %d, %" PRId64 "] tensors",
+        total,
+        embeddings_method_ ? embeddings_method_->hidden : 0);
+    return false;
+  }
+  const auto& method = *embeddings_method_;
+  const std::size_t row_bytes = static_cast<std::size_t>(method.hidden) *
+      ::executorch::runtime::elementSize(method.dtype);
+  const auto* data =
+      static_cast<const std::uint8_t*>(embeddings.const_data_ptr());
+  for (int off = 0; off < total; off += method.max_tokens) {
+    const int n = std::min(method.max_tokens, total - off);
+    const int width = std::max(n, method.min_tokens);
+    std::vector<std::int64_t> selected;
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0; i < step.logit_indices.size(); ++i) {
+      const auto index = step.logit_indices[i];
+      if (index >= off && index < off + n) {
+        selected.push_back(index - off);
+        indices.push_back(i);
+      }
+    }
+    if (selected.size() > static_cast<std::size_t>(method.max_tokens)) {
+      return false;
+    }
+    const std::size_t rows =
+        std::max<std::size_t>(selected.size(), min_selected_rows_);
+    selected.resize(rows, selected.empty() ? 0 : selected.back());
+    if (!ctl_->declare_step(
+            std::vector<std::int32_t>(
+                step.seq_ids.begin() + off, step.seq_ids.begin() + off + n))) {
+      return false;
+    }
+    // Rows past n are padding the cache writes to its scratch cell.
+    std::vector<std::uint8_t> rows_bytes(
+        static_cast<std::size_t>(width) * row_bytes, 0);
+    std::copy(
+        data + static_cast<std::size_t>(off) * row_bytes,
+        data + static_cast<std::size_t>(off + n) * row_bytes,
+        rows_bytes.begin());
+    auto input = make_tensor_ptr(
+        {1,
+         static_cast<SizesType>(width),
+         static_cast<SizesType>(method.hidden)},
+        std::move(rows_bytes),
+        method.dtype);
+    std::vector<std::int64_t> position_values(
+        step.positions.begin() + off, step.positions.begin() + off + n);
+    position_values.resize(width, 0);
+    auto positions = make_tensor_ptr(
+        {static_cast<SizesType>(width)}, std::move(position_values));
+    auto selector =
+        make_tensor_ptr({static_cast<SizesType>(rows)}, std::move(selected));
+    auto result =
+        module_->execute(kEmbeddingsMethod, {input, positions, selector});
+    if (!result.ok() || result->empty() || !result->at(0).isTensor()) {
+      ET_LOG(Error, "CudaExecutor: %s failed", kEmbeddingsMethod);
+      return false;
+    }
+    ++embeddings_method_->calls;
+    const auto logits = result->at(0).toTensor();
+    if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
+        logits.numel() != static_cast<std::int64_t>(rows) * vocab_size_ ||
+        !is_supported_logits_type(logits.scalar_type()) || !dense(logits)) {
+      return false;
+    }
+    std::optional<::executorch::aten::Tensor> taps;
+    if (result->size() > 1) {
+      if (!result->at(1).isTensor()) {
+        return false;
+      }
+      taps = result->at(1).toTensor();
+      if (taps->dim() != 3 || taps->size(0) != 1 || taps->size(1) != width ||
+          taps->size(2) <= 0 ||
+          !is_supported_logits_type(taps->scalar_type()) || !dense(*taps)) {
+        return false;
+      }
+    }
+    if (!consume({off, n, logits, taps ? &*taps : nullptr, indices})) {
+      return false;
+    }
+  }
+  return true;
 }
 
 } // namespace executorch::backends::cuda::batching
