@@ -99,6 +99,9 @@ class CudaKVPool final {
   // allocated().
   void* side_buffer(size_t index) const;
   size_t side_buffer_bytes(size_t index) const;
+  // Device pointer of layer `index`'s K or V storage, which moves when a
+  // growable layer grows. Precondition: allocated().
+  void* layer_data(size_t index, bool value) const;
   // The stream of the latest step, on which side-buffer writes must be issued.
   cudaStream_t stream() const {
     return stream_;
