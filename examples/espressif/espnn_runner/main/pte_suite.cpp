@@ -45,8 +45,8 @@ namespace executorch {
 namespace examples {
 namespace espressif {
 
-using ::executorch::backends::espressif::DelegateStats;
 using ::executorch::backends::espressif::delegate_stats;
+using ::executorch::backends::espressif::DelegateStats;
 using ::executorch::backends::espressif::read_le_u32;
 using ::executorch::backends::espressif::register_espnn_backend;
 using ::executorch::backends::espressif::reset_delegate_stats;
