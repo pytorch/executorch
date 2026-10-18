@@ -198,6 +198,9 @@ Error set_backend_options(
       }
     }
   }
+  for (const std::string& name : options.additional_cuda_graph_methods) {
+    graph_methods += (graph_methods.empty() ? "" : ",") + name;
+  }
   ET_CHECK_OR_RETURN_ERROR(
       graph_methods.size() < ::executorch::runtime::kMaxOptionValueLength,
       InvalidArgument,

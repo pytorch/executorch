@@ -141,6 +141,39 @@ std::optional<DraftPlan> pack_draft(
   return plan;
 }
 
+bool pad_to_static(
+    DraftPlan& plan,
+    int owners,
+    int block,
+    std::size_t row_bytes) {
+  const int width = owners * block;
+  const int queries = width;
+  const int context = static_cast<int>(plan.hidden.size() / row_bytes);
+  if (row_bytes == 0 || plan.hidden.size() % row_bytes != 0 ||
+      context > width ||
+      plan.positions.size() != static_cast<std::size_t>(context + queries) ||
+      plan.kv_order.size() != plan.positions.size()) {
+    return false;
+  }
+  for (const int count : plan.counts) {
+    if (count > block) {
+      return false;
+    }
+  }
+  const int pad = width - context;
+  plan.hidden.resize(static_cast<std::size_t>(width) * row_bytes, 0);
+  plan.positions.insert(plan.positions.begin() + context, pad, 0);
+  for (auto& index : plan.kv_order) {
+    if (index >= context) {
+      index += pad;
+    }
+  }
+  for (int row = context; row < width; ++row) {
+    plan.kv_order.push_back(row);
+  }
+  return true;
+}
+
 DeviceStaging::~DeviceStaging() {
   if (device_) {
     cudaFree(device_);
@@ -435,6 +468,10 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   }
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
+  for (int n = 1; n <= df::kOwnerLimit; ++n) {
+    target_config.options.additional_cuda_graph_methods.push_back(
+        df::kStaticForwardPrefix + std::to_string(n));
+  }
   ET_ASSIGN_OR_RETURN(target, Target::create(target_config));
   auto& module = target->module();
   ET_ASSIGN_OR_RETURN(names, module.method_names());
@@ -620,6 +657,42 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
         Error,
         "CUDA DFlash: could not initialize distinct target/draft caches");
     return false;
+  }
+  const auto names = module.method_names();
+  if (!names.ok()) {
+    return false;
+  }
+  for (int n = 1; n <= max_owners_; ++n) {
+    const auto name = df::kStaticForwardPrefix + std::to_string(n);
+    if (!names->count(name)) {
+      continue;
+    }
+    const auto meta = module.method_meta(name);
+    const int width = n * block_;
+    auto shaped = [&](std::size_t index, bool input, std::vector<int> sizes) {
+      auto tensor =
+          input ? meta->input_tensor_meta(index) : meta->output_tensor_meta(index);
+      return tensor.ok() &&
+          std::equal(
+                 tensor->sizes().begin(),
+                 tensor->sizes().end(),
+                 sizes.begin(),
+                 sizes.end());
+    };
+    if (!meta.ok() || meta->num_inputs() != 4 || meta->num_outputs() != 1 ||
+        !shaped(0, true, {n, block_}) ||
+        !shaped(1, true, {1, width, hidden_width_}) ||
+        !shaped(2, true, {2 * width}) || !shaped(3, true, {2 * width}) ||
+        !shaped(0, false, {1, width, target_->vocab_size()}) ||
+        batching::load_method_with_cache(
+            module,
+            name,
+            ::executorch::backends::cuda::kCudaBackendId,
+            draft_install_) != Error::Ok) {
+      ET_LOG(Error, "CUDA DFlash: invalid static draft %s", name.c_str());
+      return false;
+    }
+    static_drafts_[n] = true;
   }
   initialized_ = true;
   return true;
@@ -979,23 +1052,38 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   }
   const int q = static_cast<int>(owners.size()) * block_;
   const int c = static_cast<int>(plan->hidden.size() / row_bytes_);
-  const int k = c + q;
+  // Decode contexts fit one block per owner; take the static, graph-captured
+  // draft. Longer contexts drain through the dynamic one.
+  const bool use_static = proposals && static_drafts_[owners.size()] &&
+      std::all_of(plan->counts.begin(), plan->counts.end(), [this](int n) {
+        return n <= block_;
+      });
+  if (use_static &&
+      !df::pad_to_static(*plan, static_cast<int>(owners.size()), block_, row_bytes_)) {
+    return false;
+  }
+  const int padded = static_cast<int>(plan->hidden.size() / row_bytes_);
+  const int k = padded + q;
   // Host-owned inputs are staged by the export's normal H2D boundary. Keep
   // their backing alive through the forward and its stream-fenced argmax.
   auto tokens = make_tensor_ptr(
       {static_cast<int>(owners.size()), block_}, std::move(plan->tokens));
   auto hidden = make_tensor_ptr(
-      {1, c, hidden_width_},
+      {1, padded, hidden_width_},
       std::move(plan->hidden),
       aten::ScalarType::BFloat16);
   auto positions = make_tensor_ptr({k}, std::move(plan->positions));
   auto order = make_tensor_ptr({k}, std::move(plan->kv_order));
+  const std::string method = use_static
+      ? df::kStaticForwardPrefix + std::to_string(owners.size())
+      : std::string(df::kForward);
   auto result = target_->module().execute(
-      df::kForward, {tokens, hidden, positions, order});
+      method, {tokens, hidden, positions, order});
   if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
     return false;
   }
   ++stats_.draft_forwards;
+  stats_.static_draft_forwards += use_static;
   const auto logits = result->at(0).toTensor();
   if (logits.dim() < 2 || logits.scalar_type() != aten::ScalarType::Float ||
       !dense(logits) ||
