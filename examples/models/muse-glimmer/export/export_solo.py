@@ -8,10 +8,28 @@
 
 Supports GGUF, consolidated BF16, prequantized, and MLX-affine inputs. Vision
 exports add ``vision_encoder`` and write ``pos_embed.bin``.
+
+``--use-offgraph-kv-cache`` keeps the KV cache out of the program and exports
+the batching runtime's contract. On MLX that is the selected-logits decoder. On
+CUDA it is the text-only artifact CudaExecutor (backends/cuda/batching) drives;
+without the flag CUDA keeps its in-graph prefill and decode methods:
+
+- ``forward_{N}`` for each N in ``--forward-sizes`` (default 1, 2, 4, ..., 64):
+  T = K = N, static, each captured into a CUDA graph at runtime, its quantized
+  linears traced through the smallest QuantizedGemmFamily bucket holding N.
+- ``forward_others``: T in [max N, ``--max-step-tokens``], dynamic.
+- ``sample`` / ``sample_argmax`` (extension/llm/batching/sampler.py), so logits
+  stay on the device; ``--logits`` returns them to the host instead.
+
+Every sequence of a batch shares one pool of ``--max-cells`` per-token cells.
+The sizes stop at 64, the widest quantized GEMM bucket: above it the quantized
+linears take dequant + matmul, which ``forward_others`` runs unpadded.
 """
 
 import argparse
 import gc
+import json
+import types
 import warnings
 
 import torch
@@ -101,6 +119,9 @@ def export_and_lower(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    forward_sizes=None,
+    max_step_tokens: int = 4096,
+    max_cells: int = 65536,
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
@@ -111,14 +132,25 @@ def export_and_lower(
             )
         if not 1 <= max_prefill_chunk <= config.max_seq_len:
             raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
-    if backend == "cuda":
+    if backend == "cuda" and use_offgraph_kv_cache:
+        if vision_model is not None:
+            raise ValueError("the CUDA batching export is text-only")
+        export_cuda_batching(
+            model,
+            config,
+            output_dir,
+            max_step_tokens=max_step_tokens,
+            max_cells=max_cells,
+            forward_sizes=forward_sizes or DEFAULT_FORWARD_SIZES,
+            device_sampling=sample,
+        )
+    elif backend == "cuda":
         _export_cuda(
             model,
             config,
             output_dir,
             sample=sample,
             use_turboquant=use_turboquant,
-            use_offgraph_kv_cache=use_offgraph_kv_cache,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -202,13 +234,336 @@ def _solo_constant_methods(
     return constant_methods
 
 
+# CUDA batching export (--use-offgraph-kv-cache), over a cell-layout KV cache.
+
+# Read by CudaExecutor: the cell pool's size, which fixes its step buffers.
+MAX_CELLS_METHOD = "get_offgraph_kv_max_cells"
+# Static methods by default: powers of two up to the widest GEMM bucket.
+DEFAULT_FORWARD_SIZES = (1, 2, 4, 8, 16, 32, 64)
+# The device samplers' widest call: one row per resident session, and the cell
+# cache holds at most 64 sequences.
+MAX_SAMPLE_ROWS = 64
+SAMPLE_METHOD = "sample"
+ARGMAX_METHOD = "sample_argmax"
+
+
+def step_width_spec(method: str) -> bytes:
+    """``delegate_input:dim`` of input_pos[T], the step's token count.
+
+    Every forward method's delegate keeps the exported (tokens, input_pos,
+    logits_to_keep) input order. The CUDA backend's CheckOffGraphKVStepWidthPass
+    fails the export if this is wrong.
+    """
+    return b"1:0"
+
+
+def step_forward(
+    model: MuseGlimmerModel,
+    tokens: torch.Tensor,
+    input_pos: torch.Tensor,
+    logits_to_keep: torch.Tensor,
+) -> torch.Tensor:
+    """Logits for the selected tokens of one packed step: [K, vocab] float32.
+
+    The whole step runs through the decoder so every token's K/V reaches the
+    cache; only the rows the batch samples from go through the LM head.
+    """
+    x = model.embed_text(tokens)
+    taps = None
+    if hasattr(model, "_dflash_target_layer_ids"):
+        sliding_mask, global_mask = model._build_masks(input_pos)
+        tapped = []
+        for i, layer in enumerate(model.layers):
+            if i in model._dflash_target_layer_ids:
+                tapped.append(x)
+            x = layer(x, input_pos, sliding_mask, global_mask)
+        taps = torch.cat(tapped, dim=-1)
+    else:
+        x = model._run_blocks(x, input_pos)
+    x = model.output_norm(x[:, logits_to_keep, :])
+    logits = model._soft_cap(model.lm_head(x))[0]
+    return logits if taps is None else (logits, taps)
+
+
+def cell_manifest(sequence_manifest: str, max_cells: int) -> str:
+    """The cell-layout lowering manifest for the model's off-graph layers."""
+    manifest = json.loads(sequence_manifest)
+    manifest["layout"] = "cell"
+    manifest["max_cells"] = max_cells
+    return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+
+
+def sampler_programs(vocab_size: int, max_rows: int = MAX_SAMPLE_ROWS):
+    """The device samplers, over up to ``max_rows`` float32 logits rows."""
+    from executorch.extension.llm.batching.sampler import (
+        BatchArgmax,
+        BatchSampler,
+        NUM_PARAMS,
+    )
+    from torch.export import Dim, export
+
+    rows = Dim("sample_rows", min=1, max=max_rows)
+    logits = torch.zeros(max_rows, vocab_size)
+    params = torch.zeros(max_rows, NUM_PARAMS)
+    return {
+        SAMPLE_METHOD: export(
+            BatchSampler(),
+            (logits, params),
+            dynamic_shapes=({0: rows}, {0: rows}),
+            strict=True,
+        ),
+        ARGMAX_METHOD: export(
+            BatchArgmax(), (logits,), dynamic_shapes=({0: rows},), strict=True
+        ),
+    }
+
+
+def device_residency(forward_methods, device_sampling: bool):
+    """Per-method ``PropagateDeviceConfig`` for ``to_executorch``.
+
+    With device sampling the forwards keep their logits in device memory, and
+    the samplers consume them there without a host round trip.
+    """
+    from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
+
+    device = {
+        name: PropagateDeviceConfig(skip_d2h_for_method_outputs=device_sampling)
+        for name in forward_methods
+    }
+    if device_sampling:
+        for name in (SAMPLE_METHOD, ARGMAX_METHOD):
+            device[name] = PropagateDeviceConfig(skip_h2d_for_method_inputs=True)
+    return device
+
+
+# Keep target and draft assembly under one shared-weight collector.
+def export_cuda_batching(  # noqa: C901
+    model: MuseGlimmerModel,
+    config: MuseGlimmerConfig,
+    output_dir: str,
+    max_step_tokens: int,
+    max_cells: int,
+    forward_sizes=DEFAULT_FORWARD_SIZES,
+    device_sampling: bool = True,
+    *,
+    dflash_draft: nn.Module | None = None,
+    max_draft_owners: int = 4,
+    draft_max_cells: int | None = None,
+):
+    """Exports the forward methods and writes the artifact.
+
+    Returns the ExecutorchProgramManager so callers can inspect it.
+    """
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+    import torch._inductor.config as inductor_config
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.backends.cuda.passes.lower_offgraph_kv import (
+        OFFGRAPH_KV_COMPILE_SPEC,
+        OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    )
+    from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
+        enable_offgraph_kv_cache,
+        offgraph_kv_cache_geometry,
+    )
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from executorch.exir.passes import MemoryPlanningPass
+    from executorch.extension.llm.export.model_metadata import (
+        write_logits_to_keep_mode,
+        write_max_context_len,
+    )
+    from torch.export import Dim, export
+
+    if dflash_draft is not None:
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            prepare_cuda_packed_draft,
+        )
+
+        draft_programs, draft_manifest, draft_metadata = prepare_cuda_packed_draft(
+            model,
+            config,
+            dflash_draft,
+            max_step_tokens=max_step_tokens,
+            max_cells=max_cells if draft_max_cells is None else draft_max_cells,
+            max_owners=max_draft_owners,
+        )
+
+    forward_sizes = tuple(sorted({int(n) for n in forward_sizes}))
+    widest_static = forward_sizes[-1] if forward_sizes else 0
+    if not forward_sizes or forward_sizes[0] != 1:
+        raise ValueError(f"forward_sizes must include 1, got {forward_sizes}")
+    # forward_others is dynamic from the widest static size, and its linears
+    # trace from five tokens.
+    if widest_static < _CUDA_MIN_PREFILL_CHUNK - 1:
+        raise ValueError(
+            f"the widest forward size must be at least {_CUDA_MIN_PREFILL_CHUNK - 1}, "
+            f"got {widest_static}"
+        )
+    if not widest_static < max_step_tokens < max_cells:
+        raise ValueError(
+            f"max_step_tokens must be in ({widest_static}, max_cells), "
+            f"got {max_step_tokens}"
+        )
+    if max_step_tokens >= config.max_seq_len:
+        raise ValueError("max_step_tokens must be below the model's context")
+
+    inductor_config.coordinate_descent_tuning = False
+    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
+    # The PCH path shells out to `openssl sha512` and is flaky; it is only a
+    # compile-time optimization.
+    inductor_config.aot_inductor.precompile_headers = False
+    if hasattr(inductor_config, "cpp_cache_precompile_headers"):
+        inductor_config.cpp_cache_precompile_headers = False
+
+    manifest = cell_manifest(
+        enable_offgraph_kv_cache(model, max_step_tokens), max_cells
+    )
+    if dflash_draft is not None:
+        # Deferred checkpoints still need scalar/RoPE buffers, after KV removal.
+        materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    geometry = offgraph_kv_cache_geometry(model)
+
+    width = Dim(
+        "width", min=max(widest_static, _CUDA_MIN_PREFILL_CHUNK), max=max_step_tokens
+    )
+    rows = Dim("rows", min=_CUDA_MIN_PREFILL_CHUNK, max=max_step_tokens)
+    programs = {}
+    with (
+        common.BoundMethodForward(model, types.MethodType(step_forward, model)),
+        torch.no_grad(),
+    ):
+        for n in forward_sizes:
+            print(f"Exporting forward_{n} (T={n})...")
+            programs[f"forward_{n}"] = export(
+                model,
+                (
+                    torch.zeros((1, n), dtype=torch.long),
+                    torch.arange(n, dtype=torch.long),
+                    torch.zeros(n, dtype=torch.long),
+                ),
+                strict=True,
+            )
+        print(
+            f"Exporting forward_others (T in [{max(widest_static, _CUDA_MIN_PREFILL_CHUNK)}, "
+            f"{max_step_tokens}])..."
+        )
+        programs["forward_others"] = export(
+            model,
+            (
+                torch.zeros((1, max_step_tokens), dtype=torch.long),
+                torch.arange(max_step_tokens, dtype=torch.long),
+                torch.zeros(max_step_tokens, dtype=torch.long),
+            ),
+            dynamic_shapes=({1: width}, {0: width}, {0: rows}),
+            strict=True,
+        )
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+    forward_methods = list(programs)
+    if dflash_draft is not None:
+        programs.update(draft_programs)
+        del draft_programs, dflash_draft
+    cache_methods = forward_methods + (
+        ["draft_forward"] if "draft_forward" in programs else []
+    )
+    if device_sampling:
+        print(f"Exporting {SAMPLE_METHOD} and {ARGMAX_METHOD}...")
+        programs.update(sampler_programs(config.vocab_size))
+
+    def partitioner(name: str) -> CudaPartitioner:
+        if name not in cache_methods:
+            return CudaPartitioner(
+                [
+                    CudaBackend.generate_method_name_compile_spec(name),
+                    CompileSpec("autotune_at_compile_time", b"OFF"),
+                ]
+            )
+        is_draft = name == "draft_forward"
+        specs = [
+            CudaBackend.generate_method_name_compile_spec(name),
+            CompileSpec("low_memory_mode", b"ON"),
+            CompileSpec(
+                OFFGRAPH_KV_COMPILE_SPEC,
+                (draft_manifest if is_draft else manifest).encode(),
+            ),
+            CompileSpec(
+                OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+                b"2:0" if is_draft else step_width_spec(name),
+            ),
+            CompileSpec("autotune_at_compile_time", b"OFF"),
+        ]
+        if "draft_forward" in cache_methods:
+            specs.append(
+                CompileSpec(
+                    "llm_cache_registry_key",
+                    b"muse_glimmer_draft" if is_draft else b"muse_glimmer_target",
+                )
+            )
+        return CudaPartitioner(specs)
+
+    constant_methods = _solo_constant_methods(
+        config=config,
+        max_prefill=max_step_tokens,
+        activation_dtype=torch.bfloat16,
+        mutable_buffer_metadata=None,
+        has_vision=False,
+        max_vision_patches=0,
+    )
+    constant_methods.update(geometry)
+    constant_methods.update(write_max_context_len(config.max_seq_len))
+    constant_methods.update(write_logits_to_keep_mode("selected"))
+    constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
+    constant_methods["use_sampling"] = False
+    constant_methods[MAX_CELLS_METHOD] = max_cells
+    if "draft_forward" in programs:
+        constant_methods.update(draft_metadata)
+
+    print(f"Lowering {', '.join(programs)} to ExecuTorch (CUDA)...")
+    edge = to_edge_transform_and_lower(
+        programs,
+        partitioner={name: [partitioner(name)] for name in programs},
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods=constant_methods,
+    )
+    del programs
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    et_program = edge.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            propagate_device_config=device_residency(cache_methods, device_sampling),
+            emit_mutable_buffer_names=True,
+        ),
+    )
+    del edge
+    gc.collect()
+
+    common.save_pte(et_program, output_dir, None)
+    if torch.cuda.is_available():
+        peak_mb = torch.cuda.max_memory_allocated() / (1024**2)
+        print(f"EXPORT_GPU_PEAK_MEMORY_MB: {peak_mb:.1f}")
+    print("Done.")
+    return et_program
+
+
 def _export_cuda(
     model: MuseGlimmerModel,
     config: MuseGlimmerConfig,
     output_dir: str,
     sample: bool = True,
     use_turboquant: bool = False,
-    use_offgraph_kv_cache: bool = False,
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
@@ -217,9 +572,6 @@ def _export_cuda(
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-    from executorch.backends.cuda.passes.lower_offgraph_kv import (
-        OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
-    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -249,8 +601,6 @@ def _export_cuda(
     from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
         add_on_device_sampler,
         cuda_source_transformations,
-        enable_offgraph_kv_cache,
-        offgraph_kv_cache_geometry,
         vision_cuda_source_transformations,
     )
 
@@ -258,19 +608,8 @@ def _export_cuda(
     # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
     # the global KV caches for TurboQuant TQ4.
 
-    # A prefill chunk is one write step, so the ring must hold the union of the
-    # step's per-query windows. enable_offgraph_kv_cache sizes it from this.
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
-
-    offgraph_manifest = None
-    offgraph_geometry = {}
-    if use_offgraph_kv_cache:
-        offgraph_manifest = enable_offgraph_kv_cache(model, max_prefill)
-        # Read the geometry while the model is alive; it is freed before the
-        # constant methods are assembled.
-        offgraph_geometry = offgraph_kv_cache_geometry(model)
-    else:
-        cuda_source_transformations(model, use_turboquant=use_turboquant)
+    cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     has_vision = vision_model is not None
     programs: dict[str, "torch.export.ExportedProgram"] = {}
@@ -337,30 +676,18 @@ def _export_cuda(
             vision_model, pos_embed_table, max_vision_patches
         )
 
-    mutable_buffer_metadata = (
-        None if offgraph_manifest else common.mutable_buffer_metadata(model)
-    )
+    mutable_buffer_metadata = common.mutable_buffer_metadata(model)
     del model, vision_model
     gc.collect()
     torch.cuda.empty_cache()
 
     def _partitioner_for(name: str) -> "CudaPartitioner":
-        compile_specs = [
-            CudaBackend.generate_method_name_compile_spec(name),
-            CompileSpec("low_memory_mode", b"ON"),
-        ]
-        if offgraph_manifest is not None:
-            compile_specs.extend(
-                (
-                    CompileSpec("offgraph_kv_manifest", offgraph_manifest.encode()),
-                    # Where the delegate reads this step's token count, as
-                    # "input_index:dim". Lowering compiles the cache op away, so
-                    # the runtime cannot recover the width from the graph; every
-                    # method here takes input_pos second, shaped [T].
-                    CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"1:0"),
-                )
-            )
-        return CudaPartitioner(compile_specs)
+        return CudaPartitioner(
+            [
+                CudaBackend.generate_method_name_compile_spec(name),
+                CompileSpec("low_memory_mode", b"ON"),
+            ]
+        )
 
     constant_methods = _solo_constant_methods(
         config=config,
@@ -372,13 +699,6 @@ def _export_cuda(
     )
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = sample
-    if offgraph_manifest is not None:
-        # The manifest is a compile spec (the lowering pass needs geometry at
-        # partition time). The runtime instead reads the neutral cache-geometry
-        # constant methods, the same ones the MLX off-graph path publishes.
-        # Sizing already travels as get_max_seq_len (context) and
-        # get_max_prefill_chunk (largest step); only the geometry is new.
-        constant_methods.update(offgraph_geometry)
 
     print(
         f"Lowering {len(programs)} methods to ExecuTorch (CUDA): "
@@ -709,8 +1029,31 @@ def main() -> None:
     parser.add_argument(
         "--use-offgraph-kv-cache",
         action="store_true",
-        help="CUDA and MLX: allocate KV cache at runtime instead of storing it in "
-        "the PTE/PTD. MLX also exports the batching selected-logits decoder contract.",
+        help="Allocate the KV cache at runtime and export the batching runtime's "
+        "contract: MLX's selected-logits decoder, or CUDA's text-only "
+        "forward_{N} + forward_others over a cell-layout cache. Without it CUDA "
+        "exports its in-graph prefill and decode methods.",
+    )
+    parser.add_argument(
+        "--forward-sizes",
+        default=",".join(map(str, DEFAULT_FORWARD_SIZES)),
+        help="CUDA with --use-offgraph-kv-cache: comma-separated token counts "
+        "of the static forward_{N} methods.",
+    )
+    parser.add_argument(
+        "--max-step-tokens",
+        type=int,
+        default=4096,
+        help="CUDA with --use-offgraph-kv-cache: forward_others' widest step, "
+        "the most tokens one forward carries.",
+    )
+    parser.add_argument(
+        "--max-cells",
+        type=int,
+        default=65536,
+        help="CUDA with --use-offgraph-kv-cache: cells in the shared KV pool, "
+        "the tokens every resident session together may hold. Memory grows with "
+        "use, up to this.",
     )
     parser.add_argument(
         "--activation-dtype",
@@ -756,6 +1099,10 @@ def main() -> None:
     args = parser.parse_args()
 
     _validate_offgraph_prefill(parser, args)
+    if args.backend == "cuda" and args.use_offgraph_kv_cache and args.mmproj:
+        parser.error(
+            "--use-offgraph-kv-cache on CUDA exports a text-only model; omit --mmproj."
+        )
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
@@ -847,6 +1194,9 @@ def main() -> None:
         pos_embed_table=pos_embed_table,
         max_vision_patches=args.max_vision_patches,
         vision_fp32_mm=args.vision_fp32_mm,
+        forward_sizes=[int(n) for n in args.forward_sizes.split(",") if n],
+        max_step_tokens=args.max_step_tokens,
+        max_cells=args.max_cells,
     )
 
 
