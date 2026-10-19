@@ -106,13 +106,18 @@ def _parse_args(argv=None):
         parser.error("BOS and EOS IDs must be uint64 values")
     if 4 * ((args.max_image_bytes + 2) // 3) + 1024 > args.max_request_bytes:
         parser.error("--max-request-bytes must fit the base64 image plus JSON framing")
-    if args.backend == "cuda":
-        if args.data_path is None:
-            parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
-        if args.pos_embed_path is not None:
-            parser.error("--backend cuda serves text only; omit --pos-embed-path")
+    _validate_backend(parser, args)
     _validate_paths(parser, args)
     return args
+
+
+def _validate_backend(parser, args):
+    if args.backend != "cuda":
+        return
+    if args.data_path is None:
+        parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
+    if args.pos_embed_path is not None:
+        parser.error("--backend cuda serves text only; omit --pos-embed-path")
 
 
 def _validate_paths(parser, args):
