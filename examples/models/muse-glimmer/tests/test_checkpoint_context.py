@@ -129,9 +129,10 @@ class CheckpointContextTest(unittest.TestCase):
                 if value_type is None
                 else [("muse-glimmer.context_length", value, value_type)]
             )
-            with self.subTest(value=value), patch.object(
-                loaders, "_atomic_sd_from_gguf"
-            ) as weights:
+            with (
+                self.subTest(value=value),
+                patch.object(loaders, "_atomic_sd_from_gguf") as weights,
+            ):
                 with self.assertRaisesRegex(ValueError, "Native context"):
                     loaders.load_gguf_model(self.write_gguf(fields), max_seq_len=None)
                 weights.assert_not_called()
@@ -233,9 +234,10 @@ class BatchingExportContextTest(unittest.TestCase):
 
     def test_offgraph_default_context_is_silent(self):
         for limit in (None, 131072):
-            with self.subTest(limit=limit), patch.object(
-                export_solo.warnings, "warn"
-            ) as warn:
+            with (
+                self.subTest(limit=limit),
+                patch.object(export_solo.warnings, "warn") as warn,
+            ):
                 self.run_cli("--gguf", max_seq_len=limit)
                 warn.assert_not_called()
                 self.assertIsNone(
