@@ -197,6 +197,12 @@ option(MUSE_GLIMMER_BUILD_BATCHING_TESTS
        "Build preparation/materialization tests without the batching executor"
        OFF
 )
+option(MUSE_GLIMMER_BUILD_CI_SMOKE
+       "Build the CI-only batching correctness workload" OFF
+)
+if(MUSE_GLIMMER_BUILD_CI_SMOKE AND NOT MUSE_GLIMMER_BUILD_BATCHING)
+  message(FATAL_ERROR "CI smoke requires MUSE_GLIMMER_BUILD_BATCHING=ON")
+endif()
 if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
   if(EXECUTORCH_BUILD_CUDA)
     set(_batching_backend cuda)
@@ -318,6 +324,24 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
     else()
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_runner)
       executorch_target_copy_mlx_metallib(muse_glimmer_batching_worker)
+    endif()
+    if(MUSE_GLIMMER_BUILD_CI_SMOKE)
+      add_executable(
+        muse_glimmer_batching_smoke
+        ${EXECUTORCH_ROOT}/.ci/scripts/muse_glimmer_batching_smoke.cpp
+      )
+      target_link_libraries(
+        muse_glimmer_batching_smoke PRIVATE muse_glimmer_batching_runtime
+      )
+      if(_batching_backend STREQUAL "cuda")
+        if(NOT APPLE AND NOT MSVC)
+          target_link_options(
+            muse_glimmer_batching_smoke PRIVATE "LINKER:--export-dynamic"
+          )
+        endif()
+      else()
+        executorch_target_copy_mlx_metallib(muse_glimmer_batching_smoke)
+      endif()
     endif()
   endif()
 
