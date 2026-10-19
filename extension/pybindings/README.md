@@ -23,11 +23,15 @@ out in a different dimension order than the exported method, for example a
 channels-last tensor for a contiguous method or a transposed array, is copied
 into the exported layout: on the host for buffers and CPU DLPack tensors, and by
 torch on the tensor's own device for torch tensors. Read-only buffers are
-copied too, in any layout. A copied input does not see later changes to the
-caller's object, so pass it again after changing it. Writable inputs already in
-the exported layout are not copied. A non-torch CUDA DLPack input must already
-be in the exported layout. The ATen bindings do not convert inputs, so pass them
-contiguous there. CUDA inputs require a method
+copied too, in any layout. A non-torch CUDA DLPack input must already be in the
+exported layout. The ATen bindings do not convert inputs, so pass them in the
+exported layout there.
+
+Pass an input again after changing it. A method exported with the default
+memory planning copies every input into its own memory, and a converted input
+is a copy too. Only a method exported with
+`MemoryPlanningPass(alloc_graph_input=False)` reads an unconverted, writable
+input in place. CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 
@@ -114,7 +118,10 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure.
+GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
+need the OpenMP runtime (`libgomp.so.1`). PyTorch ships one; without PyTorch,
+install it from the system, or the two tests that run without PyTorch fail
+under this setting.
 
 # Link Backends
 

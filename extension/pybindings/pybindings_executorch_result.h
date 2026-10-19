@@ -346,6 +346,8 @@ class PyExecuTorchResult final
     return result;
   }
 
+  // `storage` must own the memory `tensor` points at; the result reads that
+  // memory and keeps `storage` alive.
   static std::shared_ptr<PyExecuTorchResult> hand_over(
       const executorch::aten::Tensor& tensor,
       std::shared_ptr<void> storage) {
@@ -378,19 +380,13 @@ class PyExecuTorchResult final
       : sizes_(std::move(sizes)),
         strides_(std::move(strides)),
         scalar_type_(scalar_type),
-        nbytes_(dense_nbytes(sizes_, scalar_type)),
+        nbytes_(
+            static_cast<size_t>(executorch::aten::compute_numel(
+                sizes_.data(),
+                static_cast<ssize_t>(sizes_.size()))) *
+            executorch::runtime::elementSize(scalar_type)),
         device_(device),
         owner_(py::none()) {}
-
-  static size_t dense_nbytes(
-      const std::vector<executorch::aten::SizesType>& sizes,
-      executorch::aten::ScalarType scalar_type) {
-    size_t count = 1;
-    for (const auto size : sizes) {
-      count *= static_cast<size_t>(size);
-    }
-    return count * executorch::runtime::elementSize(scalar_type);
-  }
 
   struct DLPackHolder final {
     explicit DLPackHolder(std::shared_ptr<PyExecuTorchResult> value)

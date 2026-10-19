@@ -295,6 +295,7 @@ else:
             self.skipTest("only portable bindings use the Python torch adapter")
 
         script = """
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import torch
@@ -313,13 +314,19 @@ data = program.buffer
 loaded = portable_lib._load_program_from_buffer(data)
 
 
+locks = {}
+
+
 def run(executor, separate_calls):
     for _ in range(300):
         inputs = [torch.ones(2, 2), torch.ones(2, 2)]
         if separate_calls:
-            executor.set_inputs(inputs)
-            executor.execute()
-            outputs = executor.get_outputs()
+            # Separate calls on a shared method need the caller's lock, or
+            # another thread's set_inputs() lands between them.
+            with locks.setdefault(id(executor), threading.Lock()):
+                executor.set_inputs(inputs)
+                executor.execute()
+                outputs = executor.get_outputs()
         else:
             outputs = executor(inputs)
         output = outputs[0]
@@ -792,6 +799,27 @@ print("CUDA DLPack roundtrip preserved device storage")
 
         output = executorch_module(values.numpy())[0]
         torch.testing.assert_close(output, model(values))
+
+    def test_transposed_inputs_of_every_item_size_are_converted(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("portable input layout compatibility")
+
+        class Double(torch.nn.Module):
+            def forward(self, x):
+                return x + x
+
+        for dtype in (np.int8, np.int16, np.float32, np.int64, np.float64):
+            with self.subTest(dtype=np.dtype(dtype).name):
+                example = torch.from_numpy(np.ones((2, 3), dtype=dtype))
+                exported_program = to_edge(
+                    export(Double(), (example,), strict=True)
+                ).to_executorch()
+                method = self.load_prog_fn(exported_program.buffer).load_method(
+                    "forward"
+                )
+                values = np.arange(6, dtype=dtype).reshape(3, 2).T
+                output = method([values])[0]
+                np.testing.assert_array_equal(np.asarray(output), values + values)
 
     def test_tensor_subclass_without_storage_is_rejected(self):
         class Wrapper(torch.Tensor):
@@ -2243,6 +2271,9 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
             torch.testing.assert_close(
                 executorch_module.forward(inputs)[0], model(*inputs)
             )
+            # Windows cannot delete the data file while the module maps it.
+            del executorch_module
+            gc.collect()
 
     def test_numbers_for_number_inputs(self):
         class AddInt(torch.nn.Module):
@@ -2259,17 +2290,25 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
             def item(self):
                 return 1.0
 
+        # Each case: model, example, accepted values, expected, wrong kinds.
         cases = (
             (
                 ModuleAddScalar(),
                 1.0,
                 (1, np.int64(1), np.float32(1.0), np.array(1.0)),
                 2.0,
+                (True, np.bool_(True)),
             ),
-            (AddInt(), 1, (np.int64(1), np.array(1)), 2.0),
-            (Choose(), True, (np.bool_(True), np.array(True)), 2.0),
+            (
+                AddInt(),
+                1,
+                (np.int64(1), np.array(1)),
+                2.0,
+                (True, np.bool_(True), 1.5, np.float32(1.0)),
+            ),
+            (Choose(), True, (np.bool_(True), np.array(True)), 2.0, (1, 1.0)),
         )
-        for model, example, values, expected in cases:
+        for model, example, values, expected, wrong_kinds in cases:
             exported_program = to_edge(
                 export(model, (torch.ones(2), example), strict=True)
             ).to_executorch()
@@ -2287,11 +2326,16 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
                             torch.as_tensor(np.asarray(output)),
                             torch.full((2,), expected),
                         )
-                for wrong in (np.array([1.0, 2.0]), NotNumpy(), torch.tensor(1.0)):
+                for wrong in (
+                    np.array([1.0, 2.0]),
+                    NotNumpy(),
+                    torch.tensor(1.0),
+                    *wrong_kinds,
+                ):
                     with self.subTest(
                         model=type(model).__name__,
                         executor=type(executor).__name__,
-                        wrong=type(wrong).__name__,
+                        wrong=repr(wrong),
                     ):
                         with self.assertRaisesRegex(
                             RuntimeError, "of method 'forward'"

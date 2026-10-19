@@ -26,7 +26,13 @@ class Verification(Enum):
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchResult:
-    """Read-only tensor result storage used when ATen is not linked."""
+    """A tensor result of an ExecuTorch method, returned when PyTorch is not used.
+
+    Read a CPU result through the buffer protocol, NumPy, or DLPack, and a CUDA
+    result through DLPack or ``to_host()``.
+
+    This API is experimental and subject to change without notice.
+    """
 
     @property
     def shape(self) -> Tuple[int, ...]: ...

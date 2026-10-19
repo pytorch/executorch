@@ -422,6 +422,18 @@ class BufferTensor final {
           sizes_,
           static_cast<size_t>(info_.itemsize));
       owned_data_ = std::move(converted);
+      std::vector<py::ssize_t> byte_strides(strides.begin(), strides.end());
+      for (auto& stride : byte_strides) {
+        stride *= info_.itemsize;
+      }
+      // Drop the export too, so the caller's object is released.
+      info_ = py::buffer_info(
+          owned_data_.data(),
+          info_.itemsize,
+          info_.format,
+          info_.ndim,
+          info_.shape,
+          byte_strides);
       buffer_ = py::buffer();
     }
     strides_ = std::move(strides);
@@ -852,6 +864,10 @@ class TorchTensorView final {
             "ExecuTorch inputs must have a dense, non-overlapping layout");
       }
       expected_stride *= std::max(size, 1);
+      // Strides in another dimension order are computed as int too.
+      if (expected_stride > std::numeric_limits<int>::max()) {
+        throw py::value_error("Torch tensor is too large for ExecuTorch");
+      }
     }
   }
 
@@ -1736,9 +1752,9 @@ inline py::list get_outputs_as_py_list(
         list[i] = py::cast(v.toTensor());
       }
 #else
-      const bool hand_over =
-          clone_outputs && i < handed_over.size() && handed_over[i];
-      list[i] = hand_over
+      const bool returns_without_copy =
+          i < handed_over.size() && handed_over[i];
+      list[i] = returns_without_copy
           ? portable_tensor_result(
                 v.toTensor(), /*clone=*/false, handed_over[i])
           : portable_tensor_result(
@@ -2439,8 +2455,7 @@ struct PyModule final {
         method_name.c_str(),
         static_cast<uint32_t>(load_status));
     // Install the inputs first: only a failure there can leave a mix of two
-    // calls installed, since the runtime does not roll back a prefix. Once
-    // every input is installed, the method reads these, whatever happens next.
+    // calls installed, since the runtime does not roll back a prefix.
     for (size_t i = 0; i < inputs_size; ++i) {
       const auto status = module_->set_input(method_name, cpp_inputs[i], i);
       if (status != Error::Ok) {
@@ -2505,7 +2520,8 @@ struct PyModule final {
         clone_outputs,
         std::move(output_owner),
         output_owners,
-        handed_over_device_outputs(outputs.get()));
+        clone_outputs ? handed_over_device_outputs(outputs.get())
+                      : std::vector<py::object>());
 #ifndef USE_ATEN_LIB
     if (!clone_outputs) {
       for (size_t i = 0; i < outputs->size(); ++i) {
@@ -3242,16 +3258,9 @@ struct PyMethod final {
     }
     inputs_failed_ = false;
     inputs_set_ = true;
-    // An output that is one of the inputs now shows the new input, which no
-    // execute() produced.
-    for (size_t i = 0; i < storage_->method->outputs_size(); ++i) {
-      for (size_t j = 0; j < storage_->method->inputs_size(); ++j) {
-        if (&storage_->method->get_output(i) ==
-            &storage_->method->get_input(j)) {
-          outputs_valid_ = false;
-        }
-      }
-    }
+    // An output can share memory with an input, by value or through memory
+    // planning, so it would now show data no execute() produced.
+    outputs_valid_ = false;
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
     borrowed_inputs_ = std::move(borrowed_inputs);
@@ -3349,6 +3358,15 @@ struct PyMethod final {
 
   py::object get_attribute(const std::string& name) {
     ObjectLock lock(mutex_);
+    // An attribute can be an input, and the inputs a failed set_inputs()
+    // installed are no longer kept alive.
+    if (inputs_failed_) {
+      throw std::runtime_error(
+          "The last set_inputs() for method '" +
+          std::string(storage_->method->method_meta().name()) +
+          "' failed partway. Call set_inputs() again with every input before "
+          "reading attributes.");
+    }
     Result<executorch::aten::Tensor> attr =
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
@@ -3414,6 +3432,9 @@ struct PyMethod final {
   std::vector<py::object> handed_outputs_;
   // Per device output buffer, alive while such a result still uses it.
   std::vector<std::weak_ptr<void>> handed_buffers_;
+  // Per device output buffer, whether a result was handed it since the last
+  // execution.
+  std::vector<bool> handed_slots_;
 #ifndef USE_ATEN_LIB
 
   struct BorrowedOutputOwner final {
@@ -3490,11 +3511,20 @@ struct PyMethod final {
     const auto holder =
         std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
     const std::shared_ptr<void> memory(holder, buffer->data());
-    auto result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
+    py::object result;
     if (portable_tensor_output() == PortableTensorOutput::Torch) {
-      result = portable_tensor_result(tensor, /*clone=*/false, result);
+      auto* retained = new std::shared_ptr<void>(memory);
+      result = portable_tensor_result(
+          tensor,
+          /*clone=*/false,
+          py::capsule(retained, [](void* pointer) {
+            delete static_cast<std::shared_ptr<void>*>(pointer);
+          }));
+    } else {
+      result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
     }
     handed_buffers_[*slot] = holder;
+    handed_slots_[*slot] = true;
     handed_outputs_.resize(storage_->method->outputs_size());
     handed_outputs_[index] = result;
     return result;
@@ -3641,6 +3671,7 @@ struct PyMethod final {
     storage_->output_storages = std::move(output_storages);
     storage_->device_output_storages = std::move(device_output_storages);
     handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
+    handed_slots_.assign(num_outputs, false);
   }
 
   // A handed-over result still uses its buffer, so the method writes into a
@@ -3650,13 +3681,21 @@ struct PyMethod final {
 #ifndef USE_ATEN_LIB
     for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
       auto& buffer = storage_->device_output_storages[i];
-      if (buffer && !handed_buffers_[i].expired()) {
-        buffer = allocate_device_output(
-            i,
-            buffer->size(),
-            storage_->method->get_output(i).toTensor().device());
-        handed_buffers_[i].reset();
+      if (!buffer || !handed_slots_[i]) {
+        continue;
       }
+      const auto device = storage_->method->get_output(i).toTensor().device();
+      if (!handed_buffers_[i].expired()) {
+        buffer = allocate_device_output(i, buffer->size(), device);
+      } else if (portable_tensor_output() == PortableTensorOutput::Torch) {
+        // The dropped result's readers may still have work queued on other
+        // streams. Freeing it would have waited for them, so reuse waits too.
+        synchronize_torch_cuda_device(device.index());
+      } else {
+        synchronize_cuda_device(device.index());
+      }
+      handed_buffers_[i].reset();
+      handed_slots_[i] = false;
     }
 #endif
   }
@@ -4027,7 +4066,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::module_local(),
       "A tensor result of an ExecuTorch method, returned when PyTorch is not "
       "used. Read a CPU result through the buffer protocol, NumPy, or DLPack, "
-      "and a CUDA result through DLPack or to_host().")
+      "and a CUDA result through DLPack or to_host().\n\n"
+      "This API is experimental and subject to change without notice.")
       .def_property_readonly(
           "shape", &PyExecuTorchResult::shape, "Size of each dimension.")
       .def_property_readonly(

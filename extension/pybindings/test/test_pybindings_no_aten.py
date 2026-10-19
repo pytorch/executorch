@@ -213,12 +213,7 @@ else:
 
     def test_executorch_result_from_host_requires_cuda(self) -> None:
         # A build with CUDA support uploads instead; the CUDA suite covers it.
-        try:
-            runtime.ExecuTorchResult.from_host(np.ones((0,), dtype=np.float32))
-        except RuntimeError as error:
-            if "CUDA support" not in str(error):
-                self.skipTest("bindings are built with CUDA support")
-        else:
+        if "CudaBackend" in runtime._get_registered_backend_names():
             self.skipTest("bindings are built with CUDA support")
         for shape in ((4,), (0,)):
             with self.subTest(shape=shape):

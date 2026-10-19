@@ -32,7 +32,7 @@ inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
   auto allocation = allocator->allocate(nbytes, index);
   if (!allocation.ok()) {
     throw std::runtime_error(
-        "Failed to allocate a CUDA ExecuTorchResult clone");
+        "Failed to allocate CUDA memory for an ExecuTorchResult");
   }
   return std::shared_ptr<void>(
       allocation.get(),
@@ -99,8 +99,8 @@ enum class CudaCopy {
 };
 
 // Runs `function` with CUDA device `index` current, then restores the previous
-// device. Producers such as torch only export a CUDA tensor through DLPack
-// while its device is the current one.
+// device. Some DLPack producers export a CUDA tensor only while its device is
+// the current one.
 template <typename Function>
 auto with_cuda_device(int index, Function&& function) {
 #ifdef EXECUTORCH_PYBINDINGS_CUDA
@@ -112,8 +112,7 @@ auto with_cuda_device(int index, Function&& function) {
   }
   return function();
 #else
-  // Without CUDA support the producer is asked as it is; it reports a device
-  // it cannot serve itself.
+  // Without CUDA support, using the capsule fails later with a clear error.
   (void)index;
   return function();
 #endif

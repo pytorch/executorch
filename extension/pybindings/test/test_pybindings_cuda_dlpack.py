@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import weakref
 from pathlib import Path
 
 import torch
@@ -303,16 +302,16 @@ class CudaDLPackTest(unittest.TestCase):
         self.assertEqual(self._tensor(again).data_ptr(), address)
 
     def test_module_hands_device_outputs_over_without_copies(self):
-        module = self.bindings._load_for_executorch(
-            str(self.program_path), str(self.data_path) if self.data_path else None
-        )
+        program = self.program_path.read_bytes()
+        data = self.data_path.read_bytes() if self.data_path else None
+        module = self.bindings._load_for_executorch_from_buffer(program, data)
         stream = torch.cuda.current_stream(self.device)
         inputs = [
             [CudaDLPackOnly(torch.full(self.shape, value, device=self.device), stream)]
             for value in (1.0, 1.0, 3.0)
         ]
         module.forward(inputs[0])
-        _, borrowed_copies = self._device_copies(
+        borrowed, borrowed_copies = self._device_copies(
             functools.partial(module.forward, inputs[1], clone_outputs=False)
         )
         outputs, handed_copies = self._device_copies(
@@ -324,11 +323,12 @@ class CudaDLPackTest(unittest.TestCase):
         self._assert_ready_value(first, 8.0)
         self._assert_ready_value(second, 18.0)
 
-        # The result keeps only its own memory, not the whole module.
-        module_ref = weakref.ref(module)
-        del module, outputs
+        # The native module owns the program bytes, so their count shows
+        # whether a result still keeps the module alive.
+        references = sys.getrefcount(program)
+        del module, outputs, borrowed, first
         gc.collect()
-        self.assertIsNone(module_ref())
+        self.assertLess(sys.getrefcount(program), references)
         self._assert_ready_value(second, 18.0)
 
     def _device_identity(self, device_index, example):
@@ -474,6 +474,24 @@ class CudaDLPackTest(unittest.TestCase):
                 self._assert_ready_value(first, 8.0)
                 self._assert_ready_value(third, 9.0)
 
+    def test_reused_output_memory_waits_for_pending_readers(self):
+        method = self._load_method()
+        value = torch.full(self.shape, 1.0, device=self.device)
+        stream = torch.cuda.current_stream(self.device)
+        reader = torch.cuda.Stream(self.device)
+        method(CudaDLPackOnly(value, stream))
+        result = method.get_outputs()[0]
+        # Queue a slow read of the result, then drop it before the read runs.
+        with torch.cuda.stream(reader):
+            torch.cuda._sleep(50_000_000)
+            snapshot = self._tensor(result).clone()
+        del result
+        gc.collect()
+        value.fill_(5.0)
+        method(CudaDLPackOnly(value, stream))
+        reader.synchronize()
+        torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+
     def test_host_upload_and_download_without_torch_tensors(self):
         method = self._load_method()
         count = torch.Size(self.shape).numel()
@@ -510,6 +528,9 @@ class CudaDLPackTest(unittest.TestCase):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
     def _require_libgomp_without_torch(self):
+        # The torch-free chain checks loaded libraries through /proc.
+        if not sys.platform.startswith("linux"):
+            self.skipTest("needs Linux")
         # The CUDA delegate's compiled kernels link libgomp, which a host may
         # provide only inside the torch package.
         probe = subprocess.run(
