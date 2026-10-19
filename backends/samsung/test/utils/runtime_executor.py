@@ -1,6 +1,9 @@
 import logging
 import os
+import shlex
+import signal
 import subprocess
+import tarfile
 import tempfile
 import time
 
@@ -30,6 +33,8 @@ def get_runner_path() -> Path:
 
 
 class EDBTestManager:
+    COMMAND_TIMEOUT_SECONDS = 300
+
     def __init__(
         self,
         pte_file,
@@ -43,25 +48,38 @@ class EDBTestManager:
         self.output_folder = f"{self.work_directory}/output"
         self.runner = str(get_runner_path())
         self.devicefarm = "devicefarm-cli"
+        self.bundle_path = self.artifacts_dir / "inputs.tar"
 
     def _edb(self, cmd):
-        cmds = [self.devicefarm]
+        command = [self.devicefarm, *cmd]
+        logging.info(f"[EDB] Run: {shlex.join(command)}")
 
-        cmds.extend(cmd)
-        command = " ".join(cmds)
-
-        logging.info(f"[EDB] Run: {command}")
-
-        result = subprocess.run(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=self.COMMAND_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            # The packaged CLI spawns children that inherit its output pipes.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+            raise RuntimeError(
+                f"EDB command timed out after {self.COMMAND_TIMEOUT_SECONDS}s: "
+                f"{shlex.join(command)}"
+            ) from error
 
-        stdout_msg = result.stdout.decode("utf-8").strip()
+        stdout_msg = stdout.decode("utf-8").strip()
         if stdout_msg:
             logging.info(f"[EDB] stdout: {stdout_msg}")
 
-        if result.returncode != 0:
-            stderr_msg = result.stderr.decode("utf-8").strip()
+        if process.returncode != 0:
+            stderr_msg = stderr.decode("utf-8").strip()
             if stderr_msg:
                 logging.error(f"[EDB] stderr: {stderr_msg}")
             raise RuntimeError("edb(Exynos device bridge) command execute failed")
@@ -69,47 +87,44 @@ class EDBTestManager:
             logging.info("[EDB] Command succeeded")
 
     def push(self):
-        self._edb(["-E", f"'rm -rf {self.work_directory}'"])
-        self._edb(["-E", f"'mkdir -p {self.work_directory}'"])
-        self._edb(["-U", self.pte_file, self.work_directory])
-        self._edb(["-U", self.runner, self.work_directory])
-        self._edb(["-E", f"'ls -al {self.work_directory}'"])  # temp
-
+        files = [Path(self.pte_file), Path(self.runner)]
         for input_file in self.input_files:
-            input_file_path = os.path.join(self.artifacts_dir, input_file)
-            if Path(input_file).name == input_file and os.path.isfile(input_file_path):
-                # default search the same level directory with pte
-                self._edb(["-U", input_file_path, self.work_directory])
-            elif os.path.isfile(input_file):
-                self._edb(["-U", input_file, self.work_directory])
-            else:
+            path = Path(input_file)
+            if path.name == input_file and (self.artifacts_dir / path).is_file():
+                path = self.artifacts_dir / path
+            if not path.is_file():
                 raise FileNotFoundError(f"Invalid input file path: {input_file}")
+            files.append(path)
+        with tarfile.open(self.bundle_path, "w") as bundle:
+            for path in files:
+                bundle.add(path, arcname=path.name, recursive=False)
+        directory = shlex.quote(self.work_directory)
+        self._edb(["-E", f"rm -rf {directory} && mkdir -p {directory}"])
+        self._edb(["-U", str(self.bundle_path), self.work_directory])
 
     def execute(self):
-        self._edb(["-E", f"'rm -rf {self.output_folder}'"])
-        self._edb(["-E", f"'mkdir -p {self.output_folder}'"])
-        self._edb(["-E", f"'chmod 777 {self.output_folder}'"])
-        # run the delegation
         input_files_list = " ".join([os.path.basename(x) for x in self.input_files])
         enn_executor_runner_args = " ".join(
             [
-                f"--model {os.path.basename(self.pte_file)}",
+                f"--model {shlex.quote(os.path.basename(self.pte_file))}",
                 f'--input "{input_files_list}"',
-                f"--output_path {self.output_folder}",
+                f"--output_path {shlex.quote(self.output_folder)}",
             ]
         )
         enn_executor_runner_cmd = " ".join(
             [
-                f"'cd {self.work_directory} &&",
+                f"cd {shlex.quote(self.work_directory)} &&",
+                f"tar -xf {shlex.quote(self.bundle_path.name)} &&",
+                f"mkdir -p {shlex.quote(self.output_folder)} &&",
+                f"chmod 777 {shlex.quote(self.output_folder)} &&",
                 "chmod +x ./enn_executor_runner &&",
-                f"./enn_executor_runner {enn_executor_runner_args}'",
+                f"./enn_executor_runner {enn_executor_runner_args}",
             ]
         )
 
         self._edb(["-E", f"{enn_executor_runner_cmd}"])
 
     def pull(self, output_path):
-        self._edb(["-E", f"'ls -al {self.output_folder}'"])
         self._edb(["-D", self.output_folder, output_path])
 
 

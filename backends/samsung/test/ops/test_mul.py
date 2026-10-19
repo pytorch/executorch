@@ -76,6 +76,10 @@ class TestMul(unittest.TestCase):
         inputs = (torch.randn(1, 3, 8, 8),)
         self._test(MulConstant(torch.randn(1, 3, 8, 8)), inputs)
 
+    def test_fp32_attention_scale(self):
+        inputs = (torch.randn(1, 2, 100, 100),)
+        self._test(MulConstant(32**-0.5), inputs)
+
     def test_fp32_mul_broadcast(self):
         inputs = (torch.randn(1, 1, 8, 8), torch.randn(1, 3, 8, 8))
         self._test(Mul(), inputs)

@@ -6,6 +6,7 @@
 
 from typing import Callable, Sequence
 
+import executorch.kernels.quantized  # noqa: F401
 import torch
 from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from torch.fx import GraphModule
