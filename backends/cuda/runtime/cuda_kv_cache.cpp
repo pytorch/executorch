@@ -449,10 +449,11 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         "offgraph_kv: a %lld-token step is outside [1, %d]",
         static_cast<long long>(write_length),
         max_write_);
+    // A static draft program pads its tail with scratch rows, as a static
+    // target forward does; every query row stays a declared block row.
     const int tokens = static_cast<int>(step_seq_ids_.size());
     ET_CHECK_OR_RETURN_ERROR(
-        tokens > 0 && tokens <= width &&
-            (!dflash_block_size_ || tokens == width),
+        tokens > 0 && tokens <= width,
         InvalidState,
         "offgraph_kv: a %d-token program cannot run %d declared tokens",
         width,
