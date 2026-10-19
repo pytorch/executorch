@@ -10,7 +10,8 @@
 Direct native lowering.
 
 Where the ExecuTorch flow is export -> [quantize] -> to_edge -> to_backend -> to_executorch, this
-is export -> [quantize] -> to_native, and yields a NativeProgramManager to save as a .ptn. See README.md.
+is export -> [quantize] -> to_native, and yields a NativeProgramManager to save as a .ptn.
+See backends/native/README.md.
 
 Lowering runs the same to_edge_transform_and_lower pipeline as the ExecuTorch path
 (the default native passes plus NativePartitioner), but opts the partitioner into
@@ -425,8 +426,7 @@ def to_native(
                 f"wholly supported by the native backend: an identity method "
                 f"produces none, and disconnected supported regions produce "
                 "several. Residual operator targets: "
-                f"{residual_targets}. See the README for this limitation of "
-                "the current implementation."
+                f"{residual_targets}."
             )
         module = lowered[0][1]
         _check_delegate_contract(

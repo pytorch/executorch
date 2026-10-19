@@ -118,39 +118,51 @@ def validate_input_shape(height: int, width: int) -> None:
         )
 
 
-def load_rife_model(model_root: Path, checkpoint: Path | None) -> torch.nn.Module:
+def load_rife_model(
+    model_root: Path,
+    checkpoint: Path | None = None,
+    model_class: str = "IFNet",
+) -> torch.nn.Module:
+    """Load a selected RIFE class with an optional checkpoint.
+
+    Args:
+        model_root (Path): Practical-RIFE source directory.
+        checkpoint (Path | None): Weights to load, or None to keep the model's
+            initial weights.
+        model_class (str): Class name in train_log.IFNet_HDv3.
+
+    Returns:
+        torch.nn.Module: Evaluation wrapper accepting two input frames.
+
+    """
     if not model_root.exists():
         raise FileNotFoundError(f"Practical-RIFE repo not found: {model_root}")
-    checkpoint = checkpoint or model_root / "train_log" / "flownet.pkl"
     sys.path.insert(0, str(model_root))
     ifnet_module = importlib.import_module("train_log.IFNet_HDv3")
     ifnet = cast(Any, ifnet_module)
-
-    if not checkpoint.exists():
-        raise FileNotFoundError(
-            "RIFE checkpoint was not found. Pass --checkpoint or place "
-            f"flownet.pkl at {checkpoint}."
-        )
-
-    checkpoint_data = torch.load(
-        checkpoint,
-        map_location=torch.device("cpu"),
-        weights_only=True,
-    )
-    if not isinstance(checkpoint_data, dict):
-        raise TypeError(f"Unexpected RIFE checkpoint type: {type(checkpoint_data)}")
-
-    state_dict = {
-        key.removeprefix("module."): value for key, value in checkpoint_data.items()
-    }
     if hasattr(ifnet, "backwarp_tenGrid"):
         ifnet.backwarp_tenGrid.clear()
-    flownet = ifnet.IFNet()
-    incompatible_keys = flownet.load_state_dict(state_dict, strict=False)
-    if incompatible_keys.missing_keys:
-        raise RuntimeError(
-            f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
+    try:
+        model_type = getattr(ifnet, model_class)
+    except AttributeError as error:
+        raise ValueError(f"Unknown RIFE model class {model_class!r}") from error
+    flownet = model_type()
+    if checkpoint is not None:
+        checkpoint_data = torch.load(
+            checkpoint,
+            map_location=torch.device("cpu"),
+            weights_only=True,
         )
+        if not isinstance(checkpoint_data, dict):
+            raise TypeError(f"Unexpected RIFE checkpoint type: {type(checkpoint_data)}")
+        state_dict = {
+            key.removeprefix("module."): value for key, value in checkpoint_data.items()
+        }
+        incompatible_keys = flownet.load_state_dict(state_dict, strict=False)
+        if incompatible_keys.missing_keys:
+            raise RuntimeError(
+                f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
+            )
     return RIFEWrapper(flownet).eval()
 
 
@@ -1018,18 +1030,15 @@ def parse_args() -> argparse.Namespace:
         "--model-root",
         type=Path,
         required=True,
-        help=(
-            "Path to a standard Practical-RIFE repo containing train_log/ "
-            "and train_log/flownet.pkl."
-        ),
+        help="Path to a Practical-RIFE repo containing train_log/IFNet_HDv3.py.",
     )
     parser.add_argument(
         "--checkpoint",
         type=Path,
         default=None,
         help=(
-            "Path to the Practical-RIFE flownet.pkl checkpoint. Defaults "
-            "to <model-root>/train_log/flownet.pkl."
+            "Path to a Practical-RIFE checkpoint. Omit to use the model's "
+            "initial weights."
         ),
     )
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
@@ -1074,6 +1083,11 @@ def parse_args() -> argparse.Namespace:
             "eager=FP32 only, ptq=PTQ only, both=eager+PTQ, "
             "qat=eager+QAT, all=eager+PTQ+QAT."
         ),
+    )
+    parser.add_argument(
+        "--model-class",
+        default="IFNet",
+        help="Class in practical-rife train_log.IFNet_HDv3 (for example IFNetTwoBlock).",
     )
     parser.add_argument(
         "--io-quantization",
@@ -1796,7 +1810,7 @@ def main() -> int:
     print(f"IO quantization: {args.io_quantization}")
     print(f"Data source: {source}")
 
-    model = load_rife_model(args.model_root, args.checkpoint)
+    model = load_rife_model(args.model_root, args.checkpoint, args.model_class)
     configure_rife_vgf()
     eager_channels_last_model = clone_model(model, channels_last=True)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
