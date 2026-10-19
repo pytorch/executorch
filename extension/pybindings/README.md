@@ -26,7 +26,8 @@ torch on the tensor's own device for torch tensors. Read-only buffers are
 copied too, in any layout. A copied input does not see later changes to the
 caller's object, so pass it again after changing it. Writable inputs already in
 the exported layout are not copied. A non-torch CUDA DLPack input must already
-be in the exported layout. CUDA inputs require a method
+be in the exported layout. The ATen bindings do not convert inputs, so pass them
+contiguous there. CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 

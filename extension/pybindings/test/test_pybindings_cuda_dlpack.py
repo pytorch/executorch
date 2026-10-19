@@ -248,13 +248,18 @@ class CudaDLPackTest(unittest.TestCase):
     def _device_copies(self, call):
         from torch.profiler import profile, ProfilerActivity
 
+        source = torch.ones(16, device=self.device)
+        target = torch.empty_like(source)
         with profile(activities=[ProfilerActivity.CUDA]) as trace:
             output = call()
+            # One known copy, so a profiler that records nothing cannot pass.
+            target.copy_(source)
             torch.cuda.synchronize(self.device)
         copies = sum(
             event.count for event in trace.key_averages() if "Memcpy DtoD" in event.key
         )
-        return output, copies
+        self.assertGreaterEqual(copies, 1)
+        return output, copies - 1
 
     def test_device_outputs_are_handed_over_without_a_copy(self):
         method = self._load_method()
