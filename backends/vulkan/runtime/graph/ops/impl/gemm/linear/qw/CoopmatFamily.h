@@ -70,8 +70,9 @@ enum class CoopmatFamily {
   // subgroup size 16 available.
   kXe2,
   // NVIDIA proprietary driver: fp16 16x16x16 (fp16 and fp32 result), int8
-  // 16x16x32, subgroup size 32. The key does not separate Ampere and Ada from
-  // other NVIDIA generations with the same shapes.
+  // 16x16x32, subgroup size 32. Measured on Ampere (Jetson Orin) and Ada; the
+  // key does not separate them from other NVIDIA generations with the same
+  // shapes.
   kNvidia,
 };
 

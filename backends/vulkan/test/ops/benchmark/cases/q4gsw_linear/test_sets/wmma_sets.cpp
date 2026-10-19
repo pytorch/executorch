@@ -7,13 +7,13 @@
 // Correctness cases for the cooperative-matrix family kernels of linear_q4gsw
 // and linear_dq8ca_q4gsw (impl/gemm/linear/qw/CoopmatFamily.cpp). The shapes
 // are aligned to every family tile (M a multiple of 256, N of 128, K of 64,
-// group size 128) and include the shapes that select each row: the Xe2 rows
-// (any aligned shape; K * N >= 24e6 for the blocked 8da4w order) and the
-// NVIDIA rows (the validated Llama projections, K > 8192 for fp32
-// accumulation). linear_q4gsw also runs at M that is not a multiple of the
-// tile: a partial last M tile on texture IO (kWmmaPartialTileM), the existing
-// kernels below it and on buffer IO. On a device without a family the same
-// cases exercise the existing kernels.
+// group size 64 or 128) and include the shapes that select each row (K * N
+// >= 20e6 for the blocked Xe2 8da4w order, K > 8192 for the NVIDIA fp32
+// accumulation): Llama projections and some of Qwen2.5 0.5B and Gemma 2 2B.
+// linear_q4gsw also runs at M that is not a multiple of the tile: a partial
+// last M tile on texture IO (kWmmaPartialTileM), the existing kernels below it
+// and on buffer IO. On a device without a family the same cases exercise the
+// existing kernels.
 
 #include <executorch/backends/vulkan/test/ops/benchmark/cases/q4gsw_linear/q4gsw_linear.h>
 
@@ -148,11 +148,13 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "wmma_correctness") {
       {2048, 2048, 512, 128, ""}, // long M
       {256, 3072, 1024, 128, ""}, // M = 256 with N % 2048 != 0
       {256, 2048, 8192, 128, ""}, // M = 256 with N % 2048 == 0
-      {256, 4096, 8192, 128, ""}, // K * N >= 24e6
+      {256, 4096, 8192, 128, ""}, // K * N >= 20e6
       {256, 14336, 4096, 128, ""}, // K > 8192
+      {256, 896, 4864, 128, ""}, // Qwen2.5 0.5B MLP
+      {256, 9216, 2304, 128, ""}, // Gemma 2 2B down projection, K > 8192
+      {256, 2048, 2048, 64, ""}, // group size 64
   };
-  // linear_q4gsw at M not a multiple of the tile (Llama projections, so the
-  // NVIDIA rows apply).
+  // linear_q4gsw at M not a multiple of the tile.
   const std::vector<CoopmatLinearConfig> unaligned_shapes = {
       {511, 2048, 2048, 128, ""}, // 256-row tile (NVIDIA), 255-row last tile
       {300, 3072, 1024, 128, ""}, // 128-row tile, 44-row last tile
