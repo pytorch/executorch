@@ -618,6 +618,7 @@ jobs:
         pip install gguf
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
+          examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py
 
   unittest-cuda-quantized-gemm:
