@@ -1457,6 +1457,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     target_compile_options(portable_lib PRIVATE -fvisibility-inlines-hidden)
   endif()
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
+  if(TARGET extension_cuda)
+    target_link_libraries(portable_lib PRIVATE extension_cuda)
+    target_compile_definitions(portable_lib PRIVATE EXECUTORCH_PYBINDINGS_CUDA)
+  endif()
   executorch_target_link_shared_runtime(portable_lib)
   # These libraries register their operators or their backend from a static
   # initializer, so nothing here references a symbol from them and some linkers
