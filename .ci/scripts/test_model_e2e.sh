@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA/Metal/XNNPACK models end-to-end, optionally exporting artifacts first.
+# Test CUDA/Metal/XNNPACK/Vulkan models end-to-end, optionally exporting artifacts first.
 
 show_help() {
   cat << EOF
 Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir] [mode]
 
-Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
+Build and run end-to-end tests for CUDA/Metal/XNNPACK/Vulkan models.
 
 Arguments:
-  device      cuda, metal, or xnnpack (required)
+  device      cuda, metal, xnnpack, or vulkan (required)
 
   hf_model    HuggingFace model ID (required)
               Supported models:
@@ -27,13 +27,18 @@ Arguments:
                 - facebook/dinov2-small-imagenet1k-1-layer
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
                 - meta-models/Muse-Glimmer-30B-GGUF
+                - unsloth/Llama-3.2-1B-Instruct (Vulkan only)
+                - microsoft/Phi-4-mini-instruct (Vulkan only)
 
   quant_name  Quantization type (required)
               Options:
                 - non-quantized
                 - quantized-int4-tile-packed
                 - quantized-int4-weight-only
-                - quantized-8da4w (XNNPACK only)
+                - quantized-8da4w (XNNPACK/Vulkan)
+                - quantized-8da4w-fp16 (Vulkan only)
+                - quantized-8da4w-embedding (Vulkan only)
+                - quantized-8da4w-fp16-embedding (Vulkan only)
                 - kquant-17gb (Muse Glimmer only)
                 - kquant-dynamic (Muse Glimmer only)
 
@@ -51,6 +56,7 @@ Arguments:
 
 Environment:
   RUN_EXPORT  Set to 1 to export artifacts with export_model_artifact.sh before testing
+  EXECUTORCH_E2E_RUNNER  Executable runner override; skips requirement setup and build
 
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
@@ -94,6 +100,14 @@ MODE="${5:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUN_EXPORT="${RUN_EXPORT:-0}"
+PREBUILT_RUNNER="${EXECUTORCH_E2E_RUNNER:-}"
+if [ -n "$PREBUILT_RUNNER" ]; then
+  if [ ! -x "$PREBUILT_RUNNER" ]; then
+    echo "Error: EXECUTORCH_E2E_RUNNER is not executable: $PREBUILT_RUNNER"
+    exit 1
+  fi
+  PREBUILT_RUNNER="$(cd "$(dirname "$PREBUILT_RUNNER")" && pwd)/$(basename "$PREBUILT_RUNNER")"
+fi
 if [ "$RUN_EXPORT" = "1" ]; then
   mkdir -p "$MODEL_DIR"
 fi
@@ -191,17 +205,33 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
     ;;
-  Qwen/Qwen3-0.6B)
+  Qwen/Qwen3-0.6B|unsloth/Llama-3.2-1B-Instruct|microsoft/Phi-4-mini-instruct)
     MODEL_NAME="qwen3"
     RUNNER_TARGET="llama_main"
     RUNNER_PATH="llama"
     EXPECTED_OUTPUT="Paris"
     PREPROCESSOR=""
-    TOKENIZER_URL="https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main" # @lint-ignore
+    TOKENIZER_URL="https://huggingface.co/${HF_MODEL}/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE=""
     IMAGE_PATH=""
+    if [ "$DEVICE" = "vulkan" ]; then
+      MODEL_NAME="vulkan_llm"
+      TOKENIZER_FILE="tokenizer.json"
+      RUNNER_VARIANTS=""
+      IMAGE_URL=""
+      EXPECTED_OUTPUT="$(cat "$MODEL_DIR/expected_output.txt")"
+      if ! grep -q '[^[:space:]]' "$MODEL_DIR/expected_output.txt"; then
+        echo "Error: expected_output.txt must contain an expected answer"
+        exit 1
+      fi
+      test -f "$MODEL_DIR/prompt.txt"
+      test -f "$MODEL_DIR/tokenizer.json"
+    elif [ "$HF_MODEL" != "Qwen/Qwen3-0.6B" ]; then
+      echo "Error: $HF_MODEL is only supported with Vulkan"
+      exit 1
+    fi
     ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
@@ -309,16 +339,23 @@ case "$HF_MODEL" in
     ;;
 esac
 
-echo "::group::Setup ExecuTorch Requirements"
-./install_requirements.sh
-pip list
-echo "::endgroup::"
+if [ "$DEVICE" = "vulkan" ] && [ "$MODEL_NAME" != "vulkan_llm" ]; then
+  echo "Error: Unsupported Vulkan model: $HF_MODEL"
+  exit 1
+fi
+
+if [ -z "$PREBUILT_RUNNER" ]; then
+  echo "::group::Setup ExecuTorch Requirements"
+  ./install_requirements.sh
+  pip list
+  echo "::endgroup::"
+fi
 
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
+if [ "$MODEL_NAME" != "vulkan_llm" ] && [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -360,8 +397,8 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ]; then
-  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', or 'xnnpack'."
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ] && [ "$DEVICE" != "vulkan" ]; then
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', 'xnnpack', or 'vulkan'."
   exit 1
 fi
 
@@ -371,7 +408,9 @@ if [ "$DEVICE" = "xnnpack" ]; then
 else
   MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
 fi
-make "${MAKE_TARGET}"
+if [ -z "$PREBUILT_RUNNER" ]; then
+  make "${MAKE_TARGET}"
+fi
 echo "::endgroup::"
 
 echo "::group::Run $MODEL_NAME Runner"
@@ -381,7 +420,7 @@ if [ "$DEVICE" = "cuda" ]; then
 fi
 
 # Build runner command with common arguments
-RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
+RUNNER_BIN="${PREBUILT_RUNNER:-cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET}"
 RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
 # Patch absolute libomp install name from some torch nightlies to rpath-based
 # lookup so the runner works on macOS images without /opt/llvm-openmp.
@@ -489,6 +528,21 @@ run_and_validate() {
   VARIANT_ARGS="$1"
   if [ -n "$VARIANT_ARGS" ]; then
     echo "--- Runner pass: $VARIANT_ARGS ---"
+  fi
+
+  if [ "$MODEL_NAME" = "vulkan_llm" ]; then
+    "$RUNNER_BIN" --model_path "$MODEL_DIR/model.pte" \
+      --tokenizer_path "$MODEL_DIR/tokenizer.json" --prompt_file "$MODEL_DIR/prompt.txt" \
+      --temperature 0 --max_new_tokens 50 \
+      > "$MODEL_DIR/runner.stdout" 2> "$MODEL_DIR/runner.stderr" || exit $?
+    set -e
+    cat "$MODEL_DIR/runner.stdout"
+    if ! grep -Fiw -- "$EXPECTED_OUTPUT" "$MODEL_DIR/runner.stdout" > /dev/null; then
+      echo "Expected output '$EXPECTED_OUTPUT' not found in output"
+      exit 1
+    fi
+    cp "$MODEL_DIR/runner.stdout" "$MODEL_DIR/response.txt"
+    return
   fi
 
   set +e
