@@ -146,7 +146,7 @@ std::string xe2_rule(const WmmaShape& s) {
                                              : "t128x128k16g44s16m8fli");
   }
   return kD +
-      (s.K * s.N >= 24000000 ? "t128x128k64g84s16m8n13"
+      (s.K * s.N >= 20000000 ? "t128x128k64g84s16m8n13"
                              : "t128x128k64g84s16m8i");
 }
 
@@ -241,18 +241,18 @@ TEST(CoopmatFamilyTest, UnmatchedKeysSelectNothing) {
 
 TEST(CoopmatFamilyTest, Xe2Rows) {
   check_llama_shapes("xe2", xe2_key(), xe2_rule);
-  // The weight-heavy rule: K * N >= 24e6.
+  // The weight-heavy rule: K * N >= 20e6.
   const CoopmatDeviceKey d = xe2_key();
   EXPECT_EQ(
       selected(
           d,
-          prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 11776, WmmaStorage::kBuffer)),
-      kD + "t128x128k64g84s16m8n13"); // 24.1e6
+          prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 9856, WmmaStorage::kBuffer)),
+      kD + "t128x128k64g84s16m8n13"); // 20.2e6
   EXPECT_EQ(
       selected(
           d,
-          prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 11648, WmmaStorage::kBuffer)),
-      kD + "t128x128k64g84s16m8i"); // 23.9e6
+          prefill(WmmaOp::kDq8caQ4gsw, 256, 2048, 9728, WmmaStorage::kBuffer)),
+      kD + "t128x128k64g84s16m8i"); // 19.9e6
   // Any aligned shape, not only the Llama projections.
   EXPECT_EQ(
       selected(d, prefill(WmmaOp::kQ4gsw, 128, 256, 384, WmmaStorage::kBuffer)),
@@ -274,11 +274,13 @@ TEST(CoopmatFamilyTest, NvidiaRows) {
       {256, 2048, 8192, "t256x128k16g42s32bt"},
       // K > 8192 with M not a multiple of 256: fp32 accumulation.
       {384, 14336, 4096, "bx_t128x128k32g42s32f32c"},
-      // Shapes outside the validated projections.
-      {2048, 2048, 128256, nullptr},
-      {2048, 2048, 4096, nullptr},
-      // M beyond the validated prefill length.
-      {4096, 2048, 2048, nullptr},
+      // Any aligned shape, not only the Llama projections (Qwen2.5 0.5B,
+      // Gemma 2 2B), and M beyond 2048.
+      {512, 896, 4864, "t256x128k16g42s32bt"},
+      {512, 9216, 2304, "bx_t128x128k32g42s32f32c"},
+      {4096, 2048, 2048, "t256x128k16g42s32bt"},
+      // N not a multiple of the 128-column tile.
+      {2048, 2048, 4160, nullptr},
   };
   for (const Edge& e : edges) {
     const WmmaShape s =
@@ -286,11 +288,16 @@ TEST(CoopmatFamilyTest, NvidiaRows) {
     EXPECT_EQ(selected(d, s), e.want == nullptr ? "" : kQ + e.want)
         << "M=" << e.M << " K=" << e.K << " N=" << e.N;
   }
-  // Group size other than 128.
-  WmmaShape g64 =
-      prefill(WmmaOp::kQ4gsw, 2048, 2048, 2048, WmmaStorage::kTexture3D);
-  g64.group_size = 64;
-  EXPECT_EQ(selected(d, g64), "");
+  // Group sizes other than 128, down to the K tile of the row.
+  for (const WmmaOp op : {WmmaOp::kQ4gsw, WmmaOp::kDq8caQ4gsw}) {
+    WmmaShape g64 = prefill(op, 2048, 2048, 2048, WmmaStorage::kTexture3D);
+    g64.group_size = 64;
+    EXPECT_EQ(selected(d, g64), nvidia_rule(g64));
+  }
+  WmmaShape g32 =
+      prefill(WmmaOp::kDq8caQ4gsw, 2048, 2048, 2048, WmmaStorage::kTexture3D);
+  g32.group_size = 32;
+  EXPECT_EQ(selected(d, g32), "");
 }
 
 TEST(CoopmatFamilyTest, ShapesThatKeepTheExistingKernels) {
@@ -387,14 +394,13 @@ TEST(CoopmatFamilyTest, PartialMTile) {
        2048,
        WmmaStorage::kTexture3D,
        kQ + "t256x128k16g42s32bt"},
-      // Rounded up past the validated prefill length.
       {nvidia_key(),
        WmmaOp::kQ4gsw,
        2049,
        2048,
        2048,
        WmmaStorage::kTexture3D,
-       ""},
+       kQ + "t128x128k16g22s32"},
       // Below kWmmaPartialTileM.
       {xe2_key(), WmmaOp::kQ4gsw, 127, 2048, 2048, WmmaStorage::kTexture3D, ""},
       {nvidia_key(),

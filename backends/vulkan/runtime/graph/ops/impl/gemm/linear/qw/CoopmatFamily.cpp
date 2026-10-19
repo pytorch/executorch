@@ -40,9 +40,12 @@ bool subgroup_size_available(
 // matrix shapes Xe2 exposes), subgroup 16.
 //
 
-// Weight-heavy projections run their workgroups in blocks of N tiles.
+// Weight-heavy projections run their workgroups in blocks of N tiles. The
+// threshold lies between the largest shape where the blocked order is slower
+// (K * N = 16.8e6) and the smallest where it is faster (21.2e6) on both the
+// Arc B580 and the Arc Pro B70.
 bool xe2_weight_heavy(const WmmaShape& s) {
-  return s.K * s.N >= 24000000;
+  return s.K * s.N >= 20000000;
 }
 
 const std::vector<WmmaRow>& xe2_rows() {
@@ -80,27 +83,15 @@ const std::vector<WmmaRow>& xe2_rows() {
 // texture3d IO only.
 //
 
-// Only the prefill projections of Llama 3.2 1B / 3B and Llama 3.1 8B at group
-// size 128 and M <= 2048 were validated on the family's members; every other
-// shape keeps the existing kernels.
-bool nv_measured(const WmmaShape& s) {
-  const int64_t K = s.K;
-  const int64_t N = s.N;
-  const bool projection = (K == 2048 && (N == 512 || N == 2048 || N == 8192)) ||
-      (K == 3072 && (N == 1024 || N == 3072 || N == 8192)) ||
-      (K == 4096 && (N == 1024 || N == 4096 || N == 14336)) ||
-      (K == 8192 && (N == 2048 || N == 3072)) || (K == 14336 && N == 4096);
-  return projection && s.group_size == 128 && s.M <= 2048;
-}
 // fp16 accumulation loses accuracy beyond K = 8192: fp32 accumulation there.
 bool nv_large_k(const WmmaShape& s) {
-  return nv_measured(s) && s.K > 8192;
+  return s.K > 8192;
 }
 bool nv_256(const WmmaShape& s) {
-  return nv_measured(s) && s.K <= 8192 && (s.M != 256 || s.N % 2048 == 0);
+  return s.K <= 8192 && (s.M != 256 || s.N % 2048 == 0);
 }
 bool nv_default(const WmmaShape& s) {
-  return nv_measured(s) && s.K <= 8192;
+  return s.K <= 8192;
 }
 
 const std::vector<WmmaRow>& nvidia_rows() {
@@ -118,7 +109,7 @@ const std::vector<WmmaRow>& nvidia_rows() {
        {256, 128, 16, 4, 2, 32, 16, false},
        kWmmaTex3dTex2d,
        nv_256},
-      // 4w, the remaining validated shapes (M not a multiple of 256, and
+      // 4w, K <= 8192, the remaining shapes (M not a multiple of 256, and
       // M = 256 at N % 2048 != 0).
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t128x128k16g22s32",
@@ -130,7 +121,7 @@ const std::vector<WmmaRow>& nvidia_rows() {
        "linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32",
        {128, 128, 64, 2, 4, 32, 16, true},
        kWmmaTex3dTex2d,
-       nv_measured,
+       nullptr,
        /*rowmajor_a=*/true},
   };
   return rows;
