@@ -31,7 +31,9 @@ class ExecuTorchResult:
     Read a CPU result through the buffer protocol, NumPy, or DLPack, and a CUDA
     result through DLPack or ``to_host()``.
 
-    This API is experimental and subject to change without notice.
+    .. warning::
+
+        This API is experimental and subject to change without notice.
     """
 
     @property

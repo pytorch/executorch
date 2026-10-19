@@ -658,22 +658,34 @@ bool is_torch_tensor(const py::handle& value) {
   return result == 1;
 }
 
-// Runs `read`, which builds one input from a Python object, and names that
-// input and its method in any error, which the readers cannot see.
+// Runs `read`, which builds one input from a Python object, and starts the
+// message of any error it raises with the input and its method, which the
+// readers cannot see. The error keeps its Python type.
 template <typename Read>
 auto read_input(const MethodMeta& method_meta, size_t index, Read&& read) {
   const auto named = [&](const char* message) {
-    const std::string prefix = "Input " + std::to_string(index) +
-        " of method '" + method_meta.name() + "'";
-    const std::string text(message);
-    return text.rfind(prefix, 0) == 0 ? text : prefix + ": " + text;
+    return "Input " + std::to_string(index) + " of method '" +
+        method_meta.name() + "': " + message;
   };
   try {
     return read();
+  } catch (py::error_already_set& error) {
+    // Chained to the original, so its traceback stays available.
+    const auto type = error.type();
+    const auto message =
+        named(py::str(error.value()).cast<std::string>().c_str());
+    py::raise_from(error, type.ptr(), message.c_str());
+    throw py::error_already_set();
   } catch (const py::buffer_error& error) {
     throw py::buffer_error(named(error.what()));
   } catch (const py::value_error& error) {
     throw py::value_error(named(error.what()));
+  } catch (const py::type_error& error) {
+    throw py::type_error(named(error.what()));
+  } catch (const std::invalid_argument& error) {
+    throw py::value_error(named(error.what()));
+  } catch (const std::exception& error) {
+    throw std::runtime_error(named(error.what()));
   }
 }
 
@@ -724,7 +736,8 @@ void synchronize_torch_cuda_device(int index) {
       .attr("synchronize")(index);
 }
 
-/** A zero-copy view built only from torch.Tensor's public Python API. */
+/** A torch.Tensor input read through its public Python API, copied only to
+ * change its layout. */
 class TorchTensorView final {
  public:
   explicit TorchTensorView(const py::handle& value)
@@ -814,11 +827,26 @@ class TorchTensorView final {
   // since reading it with the exported strides would permute its values.
   // owner() is then the copy.
   void use_layout(Span<const uint8_t> dim_order) {
+    // The exported strides are computed as int. The input's own strides fit
+    // in int already, so only a conversion can need a larger one.
+    int64_t outer_stride = 1;
+    for (size_t i = 1; i < dim_order.size(); ++i) {
+      outer_stride *= std::max(sizes_[dim_order[i]], 1);
+    }
+    if (outer_stride > std::numeric_limits<int>::max()) {
+      throw py::value_error(
+          "Torch tensor is too large to convert to the exported layout");
+    }
     std::vector<int> strides(sizes_.size());
     const auto status = runtime::dim_order_to_stride(
         sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
     THROW_IF_ERROR(status, "Invalid dimension order for torch tensor input");
     if (nbytes_ != 0 && !has_layout(sizes_, strides_, dim_order)) {
+      // torch copies on its current stream, which may run before a write the
+      // producer queued on another stream, so wait for the device first.
+      if (device_.type() == executorch::aten::DeviceType::CUDA) {
+        synchronize_torch_cuda_device(device_.index());
+      }
       owner_ = py::reinterpret_borrow<py::object>(loaded_torch_module())
                    .attr("empty_strided")(
                        sizes_,
@@ -876,10 +904,6 @@ class TorchTensorView final {
             "ExecuTorch inputs must have a dense, non-overlapping layout");
       }
       expected_stride *= std::max(size, 1);
-      // Strides in another dimension order are computed as int too.
-      if (expected_stride > std::numeric_limits<int>::max()) {
-        throw py::value_error("Torch tensor is too large for ExecuTorch");
-      }
     }
   }
 
@@ -971,9 +995,11 @@ class DLPackTensorView final {
         advertised_device_(
             owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>()) {
     validate_advertised_device();
-    // An ExecuTorchResult these bindings returned comes from a finished call,
-    // so it is read directly. Anything else may still be written on its
-    // producer's streams until the call waits for it.
+    // A result of these bindings is written either by an execution, which
+    // finished before it returned, or by a copy on the legacy default stream,
+    // which the delegates' streams wait for. So it needs no wait unless it
+    // was handed to another library. Anything else may still be written on
+    // its producer's streams until the call waits for it.
     if (py::isinstance<PyExecuTorchResult>(owner_)) {
       own_result_ = owner_.cast<std::shared_ptr<PyExecuTorchResult>>();
     }
@@ -2554,8 +2580,9 @@ struct PyModule final {
         "Failed to execute method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(load_status));
-    // Reading outputs below marks every input as set, which hides the
-    // runtime's own check for inputs that were never passed.
+    // allocate_output_tensors() reads inputs through Method::get_input(),
+    // which marks every input as set and hides the runtime's own check for
+    // inputs that were never passed.
     const auto passed_inputs =
         std::max(retained.size(), static_cast<size_t>(inputs_size));
     if (passed_inputs < method_meta.num_inputs()) {
@@ -2586,6 +2613,22 @@ struct PyModule final {
       retained[i] = std::move(new_input_owners[i]);
     }
 #ifndef USE_ATEN_LIB
+    // The run reads inputs kept from earlier calls too, so the wait and the
+    // output owners below cover every installed input, not only this call's.
+    buffer_inputs.clear();
+    torch_inputs.clear();
+    dlpack_inputs.clear();
+    for (const auto& owner : retained) {
+      if (owner.buffer) {
+        buffer_inputs.push_back(owner.buffer);
+      }
+      if (owner.torch) {
+        torch_inputs.push_back(owner.torch);
+      }
+      if (owner.dlpack) {
+        dlpack_inputs.push_back(owner.dlpack);
+      }
+    }
     synchronize_device_inputs(dlpack_inputs, torch_inputs);
 #endif
     auto outputs = module_->execute(method_name);
@@ -2603,23 +2646,6 @@ struct PyModule final {
           method_name.c_str(),
           static_cast<uint32_t>(method.error()));
       synchronize_device_outputs(*method.get());
-    }
-#endif
-#ifndef USE_ATEN_LIB
-    // Include untouched inputs when execution reuses a previous call's values.
-    buffer_inputs.clear();
-    torch_inputs.clear();
-    dlpack_inputs.clear();
-    for (const auto& owner : retained) {
-      if (owner.buffer) {
-        buffer_inputs.push_back(owner.buffer);
-      }
-      if (owner.torch) {
-        torch_inputs.push_back(owner.torch);
-      }
-      if (owner.dlpack) {
-        dlpack_inputs.push_back(owner.dlpack);
-      }
     }
 #endif
     // DLPack producers may supply storage returned directly by the graph.
@@ -3503,15 +3529,6 @@ struct PyMethod final {
 
   py::object get_attribute(const std::string& name) {
     ObjectLock lock(mutex_);
-    // An attribute can be an input, and the inputs a failed set_inputs()
-    // installed are no longer kept alive.
-    if (inputs_failed_) {
-      throw std::runtime_error(
-          "The last set_inputs() for method '" +
-          std::string(storage_->method->method_meta().name()) +
-          "' failed partway. Call set_inputs() again with every input before "
-          "reading attributes.");
-    }
     Result<executorch::aten::Tensor> attr =
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
@@ -3523,8 +3540,7 @@ struct PyMethod final {
 #ifdef USE_ATEN_LIB
     return py::cast(attr.get());
 #else
-    // An attribute can be read with no execute() in this call to have waited
-    // for the device work that last wrote it.
+    // No execute() in this call has waited for the work that last wrote it.
     if (!attr->device().is_cpu() && attr->nbytes() != 0) {
       synchronize_device(attr->device().index());
     }
@@ -3842,9 +3858,10 @@ struct PyMethod final {
     handed_out_.assign(num_outputs, nullptr);
   }
 
-  // A handed-over result still uses its buffer, so the method writes into a
-  // new one. Borrowed results keep their buffer alive themselves, as they
-  // always could see the next execution's values.
+  // A handed-over result still uses its buffer, so the method writes into
+  // its spare instead, and the two take turns. Borrowed results keep their
+  // buffer alive themselves, as they always could see the next execution's
+  // values.
   void replace_held_device_outputs() {
 #ifndef USE_ATEN_LIB
     for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
@@ -4253,7 +4270,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       "A tensor result of an ExecuTorch method, returned when PyTorch is not "
       "used. Read a CPU result through the buffer protocol, NumPy, or DLPack, "
       "and a CUDA result through DLPack or to_host().\n\n"
-      "This API is experimental and subject to change without notice.")
+      ".. warning::\n\n"
+      "    This API is experimental and subject to change without notice.")
       .def_property_readonly(
           "shape", &PyExecuTorchResult::shape, "Size of each dimension.")
       .def_property_readonly(

@@ -521,21 +521,115 @@ print("Input on a non-current device was read")
 
     def test_reused_output_memory_waits_for_pending_readers(self):
         method = self._load_method()
-        value = torch.full(self.shape, 1.0, device=self.device)
-        stream = torch.cuda.current_stream(self.device)
+        count = torch.Size(self.shape).numel()
+        host = memoryview(array.array("f", [1.0]) * count).cast("B")
+        # Inputs from these bindings need no wait of their own, so only the
+        # reuse wait can keep the next run from overwriting a pending read.
+        first = self.bindings.ExecuTorchResult.from_host(
+            host.cast("f", self.shape), self.device.index
+        )
+        second = self.bindings.ExecuTorchResult.from_host(
+            memoryview(array.array("f", [5.0]) * count).cast("B").cast("f", self.shape),
+            self.device.index,
+        )
+        torch.cuda.synchronize(self.device)
+        result = method(first)[0]
         reader = torch.cuda.Stream(self.device)
-        method(CudaDLPackOnly(value, stream))
-        result = method.get_outputs()[0]
-        # Queue a slow read of the result, then drop it before the read runs.
         with torch.cuda.stream(reader):
-            torch.cuda._sleep(50_000_000)
+            torch.cuda._sleep(1_000_000_000)
             snapshot = self._tensor(result).clone()
         del result
         gc.collect()
-        value.fill_(5.0)
-        method(CudaDLPackOnly(value, stream))
+        method(second)
         reader.synchronize()
         torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+
+    def test_method_outputs_take_turns_between_two_buffers(self):
+        method = self._load_method()
+        value = torch.full(self.shape, 1.0, device=self.device)
+        addresses = []
+        out = None
+        for _ in range(6):
+            out = method(value)[0]
+            addresses.append(self._tensor(out).data_ptr())
+        self.assertEqual(len(set(addresses)), 2, addresses)
+        self.assertEqual(addresses[0::2], [addresses[0]] * 3)
+        self.assertEqual(addresses[1::2], [addresses[1]] * 3)
+        self._assert_ready_value(out, 4.0)
+
+    def test_converted_torch_input_waits_for_pending_writes(self):
+        method = self._load_method()
+        value = torch.zeros(self.shape, device=self.device)
+        # Make the same copy once first. The first one loads its kernel and
+        # allocates new memory, and both wait for the whole device, which
+        # would hide a missing wait.
+        value.t().contiguous()
+        torch.cuda.synchronize(self.device)
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            torch.cuda._sleep(1_000_000_000)
+            value.fill_(1.0)
+        # The transposed view is copied into the exported layout first, and
+        # that copy must see the write still queued on the writer stream.
+        output = method(value.t())[0]
+        writer.synchronize()
+        self._assert_ready_value(output, 4.0)
+
+    def test_cloned_output_is_not_changed_by_later_writes(self):
+        # Torch output mode clones through torch, which waits; this covers the
+        # bindings' own copy.
+        if not self.executorch_output:
+            self.skipTest("clones through the bindings' own copy")
+        data = self._device_identity(0, torch.ones(self.shape))
+        method = self.bindings._load_program_from_buffer(data).load_method("forward")
+        value = torch.full(self.shape, 3.0, device=self.device)
+        method.set_inputs([value])
+        method.execute()
+        # Work queued ahead of the clone delays it, so a clone that returns
+        # before it has finished would copy the write below.
+        torch.cuda._sleep(1_000_000_000)
+        output = method.get_outputs()[0]
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            value.fill_(99.0)
+        writer.synchronize()
+        torch.cuda.synchronize(self.device)
+        torch.testing.assert_close(
+            self._tensor(output).cpu(), torch.full(self.shape, 3.0)
+        )
+
+    def test_to_host_waits_for_writes_by_another_library(self):
+        if not self.executorch_output:
+            self.skipTest("to_host() is an ExecuTorchResult method")
+        method = self._load_method()
+        result = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        shared = torch.from_dlpack(result)
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            torch.cuda._sleep(1_000_000_000)
+            shared.fill_(42.0)
+        host = result.to_host()
+        writer.synchronize()
+        torch.testing.assert_close(
+            torch.from_dlpack(host), torch.full(self.shape, 42.0)
+        )
+
+    def test_module_waits_for_inputs_kept_from_earlier_calls(self):
+        program = self.program_path.read_bytes()
+        data = self.data_path.read_bytes() if self.data_path else None
+        module = self.bindings._load_for_executorch_from_buffer(program, data)
+        value = torch.zeros(self.shape, device=self.device)
+        stream = torch.cuda.current_stream(self.device)
+        kept = module.forward([CudaDLPackOnly(value, stream)])
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            torch.cuda._sleep(1_000_000_000)
+            value.fill_(1.0)
+        # plan_execute() reads the input kept from the call above.
+        output = module.plan_execute("forward")[0]
+        writer.synchronize()
+        self._assert_ready_value(output, 4.0)
+        del kept
 
     def test_host_upload_and_download_without_torch_tensors(self):
         method = self._load_method()
@@ -606,8 +700,9 @@ print("Input on a non-current device was read")
                 self.bindings.ExecuTorchResult.from_host(host, self.device.index)
                 value = method(value, clone_outputs=True)[0]
 
-        # The profiler waits for the device itself when it stops.
-        self.assertLessEqual(waits(chain) - waits(lambda: None), calls)
+        # The profiler waits for the device itself when it stops. Each call
+        # waits exactly once: none would return outputs still being written.
+        self.assertEqual(waits(chain) - waits(lambda: None), calls)
         expected = 8.0
         for _ in range(calls):
             expected = (expected + 1.0) * 2.0

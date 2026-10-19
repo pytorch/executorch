@@ -317,16 +317,26 @@ loaded = portable_lib._load_program_from_buffer(data)
 locks = {}
 
 
-def run(executor, separate_calls):
+def run(executor, separate_calls, locked=True):
     for _ in range(300):
         inputs = [torch.ones(2, 2), torch.ones(2, 2)]
-        if separate_calls:
+        if separate_calls and locked:
             # Separate calls on a shared method need the caller's lock, or
             # another thread's set_inputs() lands between them.
             with locks.setdefault(id(executor), threading.Lock()):
                 executor.set_inputs(inputs)
                 executor.execute()
                 outputs = executor.get_outputs()
+        elif separate_calls:
+            # Without the lock, another thread's set_inputs() may hide the
+            # outputs, which must raise rather than crash or return garbage.
+            try:
+                executor.set_inputs(inputs)
+                executor.execute()
+                outputs = executor.get_outputs()
+            except RuntimeError as error:
+                assert "no outputs" in str(error), error
+                continue
         else:
             outputs = executor(inputs)
         output = outputs[0]
@@ -337,14 +347,18 @@ def run(executor, separate_calls):
 
 shared_method = loaded.load_method("forward")
 shared_module = portable_lib._load_for_executorch_from_buffer(data)
-for executors, separate_calls in (
-    ([loaded.load_method("forward") for _ in range(8)], True),
-    ([shared_method] * 8, True),
-    ([shared_method] * 8, False),
-    ([shared_module] * 8, False),
+for executors, separate_calls, locked in (
+    ([loaded.load_method("forward") for _ in range(8)], True, True),
+    ([shared_method] * 8, True, True),
+    ([shared_method] * 8, True, False),
+    ([shared_method] * 8, False, True),
+    ([shared_module] * 8, False, True),
 ):
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(run, executor, separate_calls) for executor in executors]
+        futures = [
+            pool.submit(run, executor, separate_calls, locked)
+            for executor in executors
+        ]
         for future in futures:
             future.result()
 print("all calls finished")
@@ -831,8 +845,6 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertTrue(torch.equal(method.get_outputs()[0], torch.full((2, 2), 2.0)))
 
     def test_numpy_input_in_another_layout_is_converted(self):
-        if self.kernel_mode != "portable":
-            self.skipTest("portable input layout compatibility")
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
         executorch_module = self.load_fn(exported_program.buffer)

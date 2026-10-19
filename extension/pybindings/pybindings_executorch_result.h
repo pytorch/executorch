@@ -128,8 +128,11 @@ class PyExecuTorchResult final
             tensor.const_data_ptr(),
             nbytes_,
             device_.index());
+        // The source can be memory the caller owns, such as an input the
+        // method returns, and the caller may write it on another stream as
+        // soon as this call returns. A clone must not see that write.
+        synchronize_cuda_device(device_.index());
         data_ = device_storage_.get();
-        copy_in_flight_ = true;
       }
       owner_ = py::none();
     } else {
@@ -248,18 +251,23 @@ class PyExecuTorchResult final
   }
 
   py::capsule to_dlpack(const py::object& stream = py::none()) {
-    // A result is ready on any stream once its copy, if any, has finished and
-    // nothing else can be writing it. Memory handed out earlier may since have
-    // been written by whoever holds it, on a stream these bindings do not
-    // know, so wait in either case.
-    if ((*handed_out_ || copy_in_flight_) && !device_.is_cpu() &&
-        nbytes_ != 0) {
+    // A result is ready on any stream once its upload, if any, has finished.
+    if (copy_in_flight_ && !device_.is_cpu() && nbytes_ != 0) {
       synchronize_cuda_device(device_.index());
     }
+    wait_for_other_writers();
     (void)stream;
     copy_in_flight_ = false;
     *handed_out_ = true;
     return capsule();
+  }
+
+  // Memory handed to another library may since have been written by it, on a
+  // stream these bindings do not know, so every read of it waits first.
+  void wait_for_other_writers() const {
+    if (*handed_out_ && !device_.is_cpu() && nbytes_ != 0) {
+      synchronize_cuda_device(device_.index());
+    }
   }
 
   // Whether another library has held this result's memory and so may have
@@ -268,9 +276,9 @@ class PyExecuTorchResult final
     return *handed_out_;
   }
 
-  // A capsule for these bindings to read the result as a method input. These
-  // bindings write a result only by executing, which finishes before
-  // returning, so reading it this way does not count as handing it out.
+  // A capsule for these bindings to read the result as a method input, which
+  // does not count as handing it out: see DLPackTensorView for why such an
+  // input needs no wait.
   py::capsule capsule() {
     auto holder = std::make_unique<DLPackHolder>(shared_from_this());
     py::capsule capsule(&holder->managed, "dltensor", [](PyObject* capsule) {
@@ -296,6 +304,7 @@ class PyExecuTorchResult final
       if (device_.is_cpu()) {
         std::memcpy(storage.data(), data_, nbytes_);
       } else {
+        wait_for_other_writers();
         copy_cuda_storage(
             storage.data(),
             data_,

@@ -24,14 +24,15 @@ channels-last tensor for a contiguous method or a transposed array, is copied
 into the exported layout: on the host for buffers and CPU DLPack tensors, and by
 torch on the tensor's own device for torch tensors. Read-only buffers are
 copied too, in any layout. A non-torch CUDA DLPack input must already be in the
-exported layout. The ATen bindings do not convert inputs, so pass them in the
-exported layout there.
+exported layout. The ATen bindings do not convert inputs, and their runtime
+reads every input as contiguous, so pass contiguous inputs there.
 
 Pass an input again after changing it. A method exported with the default
 memory planning copies every input into its own memory, and a converted input
 is a copy too. Only a method exported with
 `MemoryPlanningPass(alloc_graph_input=False)` reads an unconverted, writable
-input in place. CUDA inputs require a method
+input in place, and only such an input sees the method's own in-place updates.
+CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
 
@@ -39,21 +40,25 @@ When PyTorch is available, importing `portable_lib` imports it and portable
 bindings return `torch.Tensor` outputs. When it cannot be imported, the default
 output type is `ExecuTorchResult`. Output conversion uses Python APIs and
 DLPack; the extension does not link against PyTorch.
-`clone_outputs=True` returns independent storage on the output's original
-device. With `clone_outputs=False`, results share runtime or input storage and
-later execution may overwrite that storage.
+`clone_outputs=True` returns storage that later executions do not overwrite,
+on the output's original device. With `clone_outputs=False`, results share
+runtime or input storage and later execution may overwrite that storage.
 
 A CUDA output that fills memory the bindings allocated for it is returned
-without a copy when `clone_outputs=True`. The result keeps that memory, and the
-next execution writes into new memory while the result is alive. Reading the
-outputs again before then returns the same object.
+without a copy when `clone_outputs=True`. The result keeps that memory, so a
+method writes its next execution into a second buffer, and the two take turns;
+a module allocates new memory each call. Reading the outputs again before the
+next execution returns the same object, so an in-place change to one read
+shows in the other. In torch output mode such a result is a view of memory
+torch does not own, so it cannot grow with `resize_()`.
 
 `dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
 `"bfloat16"`.
 
 Calls on a shared method or module are serialized. A sequence of separate
-`set_inputs`, `execute`, and `get_outputs` calls requires caller synchronization
-when each thread needs its own inputs and outputs.
+`set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
+held by the caller around the whole sequence: `set_inputs` hides the outputs
+until the next `execute`, so another thread's call can land in between.
 
 To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
 environment variable before importing the bindings. The setting is fixed when
@@ -122,7 +127,7 @@ modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
 GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
-need the OpenMP runtime (`libgomp.so.1`). PyTorch ships one; without PyTorch,
+need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
 install it from the system, or the two tests that run without PyTorch fail
 under this setting.
 
