@@ -35,7 +35,9 @@ def export_sampler(directory: Path, vocab: int):
     edge = to_edge_transform_and_lower(
         {"sample": program},
         partitioner={"sample": [CudaPartitioner(specs)]},
-        compile_config=EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True),
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False, _skip_dim_order=True
+        ),
     )
     result = edge.to_executorch(
         config=ExecutorchBackendConfig(
