@@ -233,9 +233,7 @@ class DFlashOwnerVerifierTest(unittest.TestCase):
             strict=True,
         )
         small = (logits[:2, :4], candidates[:2, :4], params[:2, :7])
-        torch.testing.assert_close(
-            sampled.module()(*small), verify_owners(*small)
-        )
+        torch.testing.assert_close(sampled.module()(*small), verify_owners(*small))
         torch.testing.assert_close(
             greedy.module()(*small[:2]), verify_owners_greedy(*small[:2])
         )

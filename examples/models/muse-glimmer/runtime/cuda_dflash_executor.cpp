@@ -65,7 +65,8 @@ float positional_uniform(
       mix(seed ^ mix(static_cast<std::uint64_t>(purpose)) ^
           mix(static_cast<std::uint64_t>(position) + 1));
   std::seed_seq words{
-      static_cast<std::uint32_t>(value), static_cast<std::uint32_t>(value >> 32)};
+      static_cast<std::uint32_t>(value),
+      static_cast<std::uint32_t>(value >> 32)};
   std::mt19937 generator(words);
   return std::uniform_real_distribution<float>(0.0f, 1.0f)(generator);
 }
@@ -827,9 +828,7 @@ std::vector<float> MuseGlimmerCudaDFlashExecutor::verify_params(
   const auto& sampling = *state.sampling;
   const auto seed = state.seed.value_or(0);
   std::vector<float> params{
-      sampling.temperature,
-      static_cast<float>(sampling.top_k),
-      sampling.top_p};
+      sampling.temperature, static_cast<float>(sampling.top_k), sampling.top_p};
   for (int j = 0; j < proposals_; ++j) {
     params.push_back(df::positional_uniform(seed, first + j, 2));
   }
@@ -878,7 +877,8 @@ bool MuseGlimmerCudaDFlashExecutor::verify(
       const auto& state = sessions_.at(owners[i]);
       greedy = greedy && state.sampling->temperature == 0.0f;
       const auto row = verify_params(
-          state, static_cast<batching::Position>(step.positions[i * width] + 1));
+          state,
+          static_cast<batching::Position>(step.positions[i * width] + 1));
       params.insert(params.end(), row.begin(), row.end());
     }
     const auto stream =

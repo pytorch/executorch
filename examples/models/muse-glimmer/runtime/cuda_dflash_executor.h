@@ -210,9 +210,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
       const std::vector<batching::SessionId>& owners,
       const std::vector<std::int64_t>& candidates,
       std::vector<std::int64_t>& results);
-  std::vector<float> verify_params(
-      const State& state,
-      batching::Position first) const;
+  std::vector<float> verify_params(const State& state, batching::Position first)
+      const;
   bool drain(batching::SessionId owner);
   bool draft(
       const std::vector<batching::SessionId>& owners,

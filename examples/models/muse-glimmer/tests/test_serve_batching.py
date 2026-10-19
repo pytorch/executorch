@@ -140,9 +140,7 @@ def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
 
 
 @pytest.mark.parametrize("case", ["no_weights", "pos_embed"])
-def test_cuda_launcher_rejects_missing_weights_or_vision(
-    arguments, tmp_path, case
-):
+def test_cuda_launcher_rejects_missing_weights_or_vision(arguments, tmp_path, case):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
