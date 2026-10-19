@@ -26,7 +26,15 @@ class Verification(Enum):
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchResult:
-    """Read-only tensor result storage used when ATen is not linked."""
+    """A tensor result of an ExecuTorch method, returned when PyTorch is not used.
+
+    Read a CPU result through the buffer protocol, NumPy, or DLPack, and a CUDA
+    result through DLPack or ``to_host()``.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
 
     @property
     def shape(self) -> Tuple[int, ...]: ...
@@ -35,10 +43,29 @@ class ExecuTorchResult:
     @property
     def dtype(self) -> Any: ...
     @property
+    def dtype_name(self) -> str:
+        """The dtype's name, such as ``"bfloat16"``, including dtypes NumPy lacks."""
+        ...
+
+    @property
     def nbytes(self) -> int: ...
     def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
     def __dlpack__(self, stream: Optional[int] = None) -> Any: ...
     def __dlpack_device__(self) -> Tuple[int, int]: ...
+    def to_host(self) -> ExecuTorchResult:
+        """Return a copy of this result in CPU memory."""
+        ...
+
+    @staticmethod
+    def from_host(source: Any, device_index: int = 0) -> ExecuTorchResult:
+        """Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA device,
+        for use as a method input.
+
+        Requires bindings built with CUDA support.
+        """
+        ...
+
+    def __repr__(self) -> str: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
