@@ -252,14 +252,18 @@ inline void check_requests_complete(
       result.terminals.size() != result.accepted) {
     throw std::runtime_error("not all workload requests were accepted");
   }
-  for (const auto& terminal : result.terminals) {
-    if (!terminal || terminal->finish_reason != serving::FinishReason::Length ||
-        terminal->stats.prompt_tokens !=
+  const auto incomplete =
+      [&](const std::optional<serving::TerminalEvent>& terminal) {
+        return !terminal ||
+            terminal->finish_reason != serving::FinishReason::Length ||
+            terminal->stats.prompt_tokens !=
             static_cast<std::size_t>(options.prompt_tokens) ||
-        terminal->stats.completion_tokens !=
-            static_cast<std::size_t>(options.max_new_tokens)) {
-      throw std::runtime_error("request failed or token budget incomplete");
-    }
+            terminal->stats.completion_tokens !=
+            static_cast<std::size_t>(options.max_new_tokens);
+      };
+  if (std::any_of(
+          result.terminals.begin(), result.terminals.end(), incomplete)) {
+    throw std::runtime_error("request failed or token budget incomplete");
   }
 }
 
