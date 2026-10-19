@@ -731,7 +731,7 @@ def build_executorch_binary(
 def make_quantizer(
     quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
     custom_annotations=(),
-    per_channel_conv=True,
+    per_channel_conv: Optional[bool] = None,
     per_channel_linear=False,
     per_channel_embedding=False,
     act_observer=MovingAverageMinMaxObserver,
@@ -744,6 +744,11 @@ def make_quantizer(
 ):
     def to_chipset(model: Union[str, QcomChipset]) -> QcomChipset:
         return model if isinstance(model, QcomChipset) else getattr(QcomChipset, model)
+
+    if per_channel_conv is None:
+        # Per-channel int16 conv weights make the derived int32 bias inaccurate
+        # (pytorch/executorch#23108), so 16a16w defaults to per-tensor.
+        per_channel_conv = quant_dtype != QuantDtype.use_16a16w
 
     soc_models = (
         [to_chipset(model) for model in soc_model]

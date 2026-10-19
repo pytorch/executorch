@@ -813,8 +813,15 @@ class QnnQuantizer(Quantizer):
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
             is_embedding_per_channel (bool, optional): Enables per-channel quantization for embedding operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
-
         """
+        if quant_dtype == QuantDtype.use_16a16w and is_conv_per_channel:
+            # Per-channel int16 conv weight scales are small enough that the
+            # derived int32 bias loses accuracy (pytorch/executorch#23108).
+            logging.warning(
+                "use_16a16w with per-channel conv weights can be much less "
+                "accurate than per-tensor; consider is_conv_per_channel=False "
+                "(per_channel_conv=False in make_quantizer)."
+            )
         self.default_quant_config = ModuleQConfig(
             quant_dtype,
             is_qat=is_qat,
