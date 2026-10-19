@@ -65,7 +65,8 @@ float positional_uniform(
       mix(seed ^ mix(static_cast<std::uint64_t>(purpose)) ^
           mix(static_cast<std::uint64_t>(position) + 1));
   std::seed_seq words{
-      static_cast<std::uint32_t>(value), static_cast<std::uint32_t>(value >> 32)};
+      static_cast<std::uint32_t>(value),
+      static_cast<std::uint32_t>(value >> 32)};
   std::mt19937 generator(words);
   return std::uniform_real_distribution<float>(0.0f, 1.0f)(generator);
 }
@@ -670,8 +671,8 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
     const auto meta = module.method_meta(name);
     const int width = n * block_;
     auto shaped = [&](std::size_t index, bool input, std::vector<int> sizes) {
-      auto tensor =
-          input ? meta->input_tensor_meta(index) : meta->output_tensor_meta(index);
+      auto tensor = input ? meta->input_tensor_meta(index)
+                          : meta->output_tensor_meta(index);
       return tensor.ok() &&
           std::equal(
                  tensor->sizes().begin(),
@@ -900,9 +901,7 @@ std::vector<float> MuseGlimmerCudaDFlashExecutor::verify_params(
   const auto& sampling = *state.sampling;
   const auto seed = state.seed.value_or(0);
   std::vector<float> params{
-      sampling.temperature,
-      static_cast<float>(sampling.top_k),
-      sampling.top_p};
+      sampling.temperature, static_cast<float>(sampling.top_k), sampling.top_p};
   for (int j = 0; j < proposals_; ++j) {
     params.push_back(df::positional_uniform(seed, first + j, 2));
   }
@@ -951,7 +950,8 @@ bool MuseGlimmerCudaDFlashExecutor::verify(
       const auto& state = sessions_.at(owners[i]);
       greedy = greedy && state.sampling->temperature == 0.0f;
       const auto row = verify_params(
-          state, static_cast<batching::Position>(step.positions[i * width] + 1));
+          state,
+          static_cast<batching::Position>(step.positions[i * width] + 1));
       params.insert(params.end(), row.begin(), row.end());
     }
     const auto stream =
@@ -1056,10 +1056,11 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   // draft. Longer contexts drain through the dynamic one.
   const bool use_static = proposals && static_drafts_[owners.size()] &&
       std::all_of(plan->counts.begin(), plan->counts.end(), [this](int n) {
-        return n <= block_;
-      });
+                            return n <= block_;
+                          });
   if (use_static &&
-      !df::pad_to_static(*plan, static_cast<int>(owners.size()), block_, row_bytes_)) {
+      !df::pad_to_static(
+          *plan, static_cast<int>(owners.size()), block_, row_bytes_)) {
     return false;
   }
   const int padded = static_cast<int>(plan->hidden.size() / row_bytes_);
@@ -1077,8 +1078,8 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   const std::string method = use_static
       ? df::kStaticForwardPrefix + std::to_string(owners.size())
       : std::string(df::kForward);
-  auto result = target_->module().execute(
-      method, {tokens, hidden, positions, order});
+  auto result =
+      target_->module().execute(method, {tokens, hidden, positions, order});
   if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
     return false;
   }

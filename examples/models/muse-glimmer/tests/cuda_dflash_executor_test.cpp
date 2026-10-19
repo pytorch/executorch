@@ -69,8 +69,10 @@ TEST(CudaDFlash, StaticPaddingPutsUnusedContextAfterEveryBlock) {
   const auto ids = plan->ids;
   ASSERT_TRUE(df::pad_to_static(*plan, 2, 4, 2));
   EXPECT_EQ(plan->ids, ids);
-  EXPECT_EQ(plan->hidden, std::vector<std::uint8_t>({1, 1, 2, 2, 3, 3, 0, 0, 0, 0,
-                                                     0, 0, 0, 0, 0, 0}));
+  EXPECT_EQ(
+      plan->hidden,
+      std::vector<std::uint8_t>(
+          {1, 1, 2, 2, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
   // Context rows 0..2, padding 3..7, queries 8..15.
   EXPECT_EQ(
       plan->positions,
@@ -95,8 +97,10 @@ TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
   for (const auto& predictions : std::vector<std::vector<Token>>{
            {21, 12, 13, 14}, {11, 22, 13, 14}, {11, 12, 13, 14}}) {
     const auto accepted = static_cast<std::int64_t>(
-        std::mismatch(predictions.begin(), predictions.begin() + 3,
-                      std::vector<Token>({11, 12, 13}).begin())
+        std::mismatch(
+            predictions.begin(),
+            predictions.begin() + 3,
+            std::vector<Token>({11, 12, 13}).begin())
             .first -
         predictions.begin());
     auto burst =

@@ -108,7 +108,11 @@ std::optional<DraftPlan> pack_draft(
 // Widens a plan whose context fits one block per owner to the static
 // draft_forward_{N} shape: unused context rows go last, after every block, so
 // the cache writes them to its scratch cell and no query attends them.
-bool pad_to_static(DraftPlan& plan, int owners, int block, std::size_t row_bytes);
+bool pad_to_static(
+    DraftPlan& plan,
+    int owners,
+    int block,
+    std::size_t row_bytes);
 
 // Reusable device memory for small host-built inputs.
 class DeviceStaging {
@@ -220,9 +224,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
       const std::vector<batching::SessionId>& owners,
       const std::vector<std::int64_t>& candidates,
       std::vector<std::int64_t>& results);
-  std::vector<float> verify_params(
-      const State& state,
-      batching::Position first) const;
+  std::vector<float> verify_params(const State& state, batching::Position first)
+      const;
   bool drain(batching::SessionId owner);
   bool draft(
       const std::vector<batching::SessionId>& owners,

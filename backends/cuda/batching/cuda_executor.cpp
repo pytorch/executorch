@@ -805,7 +805,8 @@ std::optional<std::vector<Token>> CudaExecutor::sample_rows(
   for (std::size_t row = 0; row < rows; ++row) {
     all_greedy = all_greedy && params[row * 4] == 0.0f;
   }
-  if (all_greedy || logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+  if (all_greedy ||
+      logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
     // Host logits are sampled greedily only; the exported sampler is on CUDA.
     return all_greedy ? argmax_rows(logits, rows) : std::nullopt;
   }
