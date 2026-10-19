@@ -1141,6 +1141,70 @@ print("CUDA DLPack roundtrip preserved device storage")
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
 
+        # Re-execute without set_inputs should reuse the last successful inputs.
+        executorch_method.execute()
+        self.assertTrue(
+            torch.equal(executorch_method.get_outputs()[0], inputs[0] + inputs[1])
+        )
+
+    def test_refused_set_inputs_blocks_execute(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        ones = torch.ones(2, 2)
+        method.set_inputs([ones, ones])
+
+        with self.assertRaises((RuntimeError, ValueError)):
+            method.set_inputs([torch.full((2, 2), 5.0), torch.ones(3, 3)])
+
+        with self.assertRaisesRegex(RuntimeError, "Inputs are incomplete"):
+            method.execute()
+
+    def test_successful_set_inputs_after_refusal_restores_execute(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        method.set_inputs([torch.ones(2, 2), torch.ones(2, 2)])
+
+        with self.assertRaises((RuntimeError, ValueError)):
+            method.set_inputs([torch.full((2, 2), 5.0), torch.ones(3, 3)])
+
+        fives = torch.full((2, 2), 5.0)
+        method.set_inputs([fives, fives])
+        method.execute()
+        self.assertTrue(torch.equal(method.get_outputs()[0], fives + fives))
+
+    def test_get_outputs_requires_successful_execute(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        with self.assertRaisesRegex(RuntimeError, "No valid outputs"):
+            method.get_outputs()
+
+        method.set_inputs(inputs)
+        method.execute()
+        self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
+
+    def test_get_outputs_raises_after_failed_execute(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        values = [value.clone() for value in inputs]
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        method.set_inputs(values)
+        method.execute()
+        self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
+
+        values[0].resize_(64, 64)
+        with self.assertRaisesRegex(
+            ValueError, "Input 0 storage changed.*call set_inputs"
+        ):
+            method.execute()
+
+        with self.assertRaisesRegex(RuntimeError, "No valid outputs"):
+            method.get_outputs()
+
     def test_program_keeps_buffer_alive(self):
         exported_program, inputs = create_program(ModuleAdd())
         program_data = bytes(exported_program.buffer)
@@ -1400,6 +1464,11 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         with self.assertRaises(ValueError):
             method.set_inputs([inputs[0].numpy(), inputs[1].to(torch.int32).numpy()])
 
+        with self.assertRaisesRegex(RuntimeError, "Inputs are incomplete"):
+            method.execute()
+
+        # A later successful set_inputs must replace the incomplete state.
+        method.set_inputs([value.numpy() for value in inputs])
         method.execute()
         output = method.get_outputs()[0]
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))

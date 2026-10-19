@@ -2661,6 +2661,7 @@ struct PyMethod final {
 
   void set_inputs(const py::object& python_inputs) {
     ObjectLock lock(mutex_);
+    inputs_ready_ = false;
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
@@ -2875,10 +2876,16 @@ struct PyMethod final {
     torch_inputs_ = std::move(torch_inputs);
     torch_tensor_ptrs_ = std::move(input_tensors);
 #endif
+    inputs_ready_ = true;
   }
 
   void execute() {
     ObjectLock lock(mutex_);
+    if (!inputs_ready_ && storage_->method->inputs_size() > 0) {
+      throw std::runtime_error(
+          "Inputs are incomplete; set_inputs() must succeed before execute()");
+    }
+    outputs_ready_ = false;
     for (const auto& input : borrowed_inputs_) {
       input.validate();
     }
@@ -2912,10 +2919,15 @@ struct PyMethod final {
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
         static_cast<uint32_t>(execute_status));
+    outputs_ready_ = true;
   }
 
   py::list get_outputs(bool clone_outputs = true) {
     ObjectLock lock(mutex_);
+    if (!outputs_ready_) {
+      throw std::runtime_error(
+          "No valid outputs; execute() must succeed before get_outputs()");
+    }
     std::vector<EValue> result(storage_->method->outputs_size());
 
     Error get_outputs_status = storage_->method->get_outputs(
@@ -2988,6 +3000,8 @@ struct PyMethod final {
   std::vector<TensorPtr> buffer_tensor_ptrs_;
   std::vector<const void*> input_data_ptrs_;
   std::vector<BorrowedInput> borrowed_inputs_;
+  bool inputs_ready_ = false;
+  bool outputs_ready_ = false;
 #ifndef USE_ATEN_LIB
   std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs_;
   std::vector<TensorPtr> dlpack_tensor_ptrs_;
