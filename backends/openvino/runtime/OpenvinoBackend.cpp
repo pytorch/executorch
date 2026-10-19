@@ -521,8 +521,12 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   }
   // shape is zero-initialized; shape_free is only needed after a successful
   // shape_create (the zero state is safe to skip).
+  // ov_shape_create rejects rank 0, so 0-d tensors use the zero shape as-is.
   ov_shape_t shape = {};
-  ov_status_e status = ov_.shape_create(rank, dims, &shape);
+  ov_status_e status = OV_STATUS_OK;
+  if (rank > 0) {
+    status = ov_.shape_create(rank, dims, &shape);
+  }
   dims_heap.reset(); // Release heap dims (no-op if stack was used).
   if (status != OV_STATUS_OK) {
     return exr::Error::Internal;
@@ -531,7 +535,9 @@ exr::Result<ov_tensor_t*> OpenvinoBackend::create_ov_tensor(
   ov_tensor_t* ov_tensor = nullptr;
   status = ov_.tensor_create_from_host_ptr(
       ov_type, shape, tensor.mutable_data_ptr(), &ov_tensor);
-  ov_.shape_free(&shape);
+  if (rank > 0) {
+    ov_.shape_free(&shape);
+  }
   if (status != OV_STATUS_OK || !ov_tensor) {
     return exr::Error::Internal;
   }
