@@ -113,9 +113,13 @@ class NeutronRecipeConfig:
                        ETRecord is produced without any extra configuration.
         train_fn: Training function for QAT recipe types (INT8_QAT_NEUTRON and
                   INT8_QAT_NO_DELEGATE). Receives the prepared GraphModule and must
-                  perform the training loop. When train_fn is None, a train_fn that runs one
-                  forward pass with data created by `calibration_inputs_fn` is synthesized
-                  automatically. Ignored for PTQ recipe types.
+                  perform the training loop. When train_fn is None and
+                  `calibration_inputs_fn` is provided, a minimal train_fn is synthesized
+                  for test-parity purposes only: it runs a single eval-mode forward pass
+                  over the calibration data, mirroring what the imperative lowering path
+                  does, so both paths produce identical quantization ranges. For production
+                  QAT use cases, callers should supply an explicit `train_fn` with a proper
+                  training loop. Ignored for PTQ recipe types.
         calibration_inputs_fn: Optional callable that takes a tuple of ModelInputSpec and
                                returns an iterable of input tuples used for PTQ calibration.
                                When None, the example inputs are used for calibration.
@@ -201,9 +205,10 @@ class NXPRecipeProvider(BackendRecipeProvider):
                     f"NXP backend: QAT recipe `{recipe_type}` requires either `train_fn` or "
                     f"`calibration_inputs_fn` in NeutronRecipeConfig."
                 )
-            # Synthesize a train_fn from calibration_inputs_fn so the QAT pipeline uses the same data as the
-            # imperative-path calibration and runs in eval mode, avoiding divergent quantization parameters between
-            # the imperative and recipe-based lowering.
+            # Test-parity fallback: synthesize a minimal train_fn from calibration_inputs_fn so that the
+            # recipe path and the imperative path observe exactly the same data and produce identical
+            # quantization ranges. This is not a substitute for a real training loop. For production QAT,
+            # callers should provide an explicit train_fn.
             _input_spec = rc.input_spec
             _calib_fn = rc.calibration_inputs_fn
 
