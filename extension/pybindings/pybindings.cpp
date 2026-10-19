@@ -756,9 +756,6 @@ class TorchTensorView final {
       throw py::value_error("Torch tensor data is not allocated");
     }
     data_ = reinterpret_cast<void*>(address);
-    if (device_.type() == executorch::aten::DeviceType::CUDA && nbytes_ != 0) {
-      synchronize_torch_cuda_device(device_.index());
-    }
   }
 
   void* data() const {
@@ -812,9 +809,6 @@ class TorchTensorView final {
                    .attr("copy_")(owner_);
       data_ =
           reinterpret_cast<void*>(owner_.attr("data_ptr")().cast<uintptr_t>());
-      if (device_.type() == executorch::aten::DeviceType::CUDA) {
-        synchronize_torch_cuda_device(device_.index());
-      }
     }
     strides_ = std::move(strides);
     dim_order_.assign(dim_order.begin(), dim_order.end());
@@ -959,9 +953,19 @@ class DLPackTensorView final {
         advertised_device_(
             owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>()) {
     validate_advertised_device();
-    capsule_ = advertised_device_.first == dlpack::CUDA
-        ? cuda_dlpack_capsule(owner_, advertised_device_.second)
-        : owner_.attr("__dlpack__")();
+    // An ExecuTorchResult these bindings returned comes from a finished call,
+    // so it is read directly. Anything else may still be written on its
+    // producer's streams until the call waits for it.
+    if (py::isinstance<PyExecuTorchResult>(owner_)) {
+      own_result_ = owner_.cast<std::shared_ptr<PyExecuTorchResult>>();
+    }
+    if (own_result_) {
+      capsule_ = own_result_->capsule();
+    } else {
+      capsule_ = advertised_device_.first == dlpack::CUDA
+          ? cuda_dlpack_capsule(owner_, advertised_device_.second)
+          : owner_.attr("__dlpack__")();
+    }
     if (!PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
       throw py::value_error("__dlpack__() did not return a dltensor capsule");
     }
@@ -971,9 +975,6 @@ class DLPackTensorView final {
       throw py::error_already_set();
     }
     initialize(managed_->dl_tensor);
-    if (advertised_device_.first == dlpack::CUDA && nbytes_ != 0) {
-      synchronize_cuda_device(advertised_device_.second);
-    }
     if (PyCapsule_SetName(capsule_.ptr(), "used_dltensor") != 0) {
       throw py::error_already_set();
     }
@@ -1014,6 +1015,14 @@ class DLPackTensorView final {
 
   size_t nbytes() const {
     return nbytes_;
+  }
+
+  // Whether the producer may still be writing the tensor on its own streams.
+  // Asked when the call runs, since a result set as an input can be handed to
+  // another library before that.
+  bool may_have_pending_writes() const {
+    return advertised_device_.first == dlpack::CUDA &&
+        !(own_result_ && !own_result_->handed_out());
   }
 
   // Describes the tensor in the exported dimension order. A CPU tensor dense
@@ -1245,6 +1254,7 @@ class DLPackTensorView final {
 
   py::object owner_;
   std::pair<int, int> advertised_device_;
+  std::shared_ptr<PyExecuTorchResult> own_result_;
   size_t nbytes_ = 0;
   py::object capsule_;
   dlpack::ManagedTensor* managed_ = nullptr;
@@ -1378,9 +1388,6 @@ py::object module_aliased_torch_output(
     }
     const auto offset = source.attr("storage_offset")().cast<int64_t>() +
         static_cast<int64_t>((address - start) / itemsize);
-    if (!tensor.device().is_cpu()) {
-      synchronize_torch_cuda_device(tensor.device().index());
-    }
     return source.attr("as_strided")(
         std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
         std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end()),
@@ -1479,6 +1486,71 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
+// Waits for every queued operation on a device. Bindings built without CUDA
+// support have no CUDA runtime of their own, so they wait through torch's,
+// which is loaded whenever such bindings return CUDA tensors.
+void synchronize_device(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (loaded_torch_module() != nullptr) {
+    synchronize_torch_cuda_device(index);
+    return;
+  }
+#endif
+  synchronize_cuda_device(index);
+}
+
+// The Python boundary is synchronous: an execution returns only after its
+// device work has finished, so its outputs are ready wherever they are read.
+// One wait per execution covers every output, instead of one per output.
+void synchronize_device_outputs(const Method& method) {
+  std::vector<int> devices;
+  for (size_t i = 0; i < method.outputs_size(); ++i) {
+    const auto& output = method.get_output(i);
+    if (!output.isTensor() || output.toTensor().nbytes() == 0) {
+      continue;
+    }
+    const auto device = output.toTensor().device();
+    if (!device.is_cpu() &&
+        std::find(devices.begin(), devices.end(), device.index()) ==
+            devices.end()) {
+      devices.push_back(device.index());
+    }
+  }
+  for (const auto index : devices) {
+    synchronize_device(index);
+  }
+}
+
+// Device inputs from another library may still be written on that library's
+// streams, torch tensors included. One wait per call covers every such input,
+// instead of one per input. An ExecuTorchResult these bindings returned needs
+// no wait unless its memory was handed to another library since.
+void synchronize_device_inputs(
+    const std::vector<std::shared_ptr<DLPackTensorView>>& dlpack_inputs,
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs) {
+  std::vector<int> devices;
+  const auto add = [&devices](executorch::aten::Device device) {
+    if (!device.is_cpu() &&
+        std::find(devices.begin(), devices.end(), device.index()) ==
+            devices.end()) {
+      devices.push_back(device.index());
+    }
+  };
+  for (const auto& input : dlpack_inputs) {
+    if (input->nbytes() != 0 && input->may_have_pending_writes()) {
+      add(input->device());
+    }
+  }
+  for (const auto& input : torch_inputs) {
+    if (input->nbytes() != 0) {
+      add(input->device());
+    }
+  }
+  for (const auto index : devices) {
+    synchronize_device(index);
+  }
+}
+
 py::object portable_tensor_result(
     const executorch::aten::Tensor& tensor,
     bool clone = true,
@@ -1516,7 +1588,6 @@ py::object portable_tensor_result(
     if (tensor.const_data_ptr() == nullptr) {
       throw py::value_error("CUDA output tensor data is not allocated");
     }
-    synchronize_torch_cuda_device(tensor.device().index());
     // A byte capsule supports Torch dtypes that older DLPack dtype tables
     // cannot express. Torch reinterprets the same device storage afterward.
     auto output = torch_module
@@ -1525,6 +1596,8 @@ py::object portable_tensor_result(
                       .attr("view")(dtype)
                       .attr("as_strided")(shape, strides);
     if (clone) {
+      // Torch copies on its current stream; the copy must finish before the
+      // method's next execution writes the memory it reads.
       output = output.attr("clone")();
       synchronize_torch_cuda_device(tensor.device().index());
     }
@@ -1822,6 +1895,16 @@ struct PyBundledModule : public BundledModule {
           "Method execution failed with status 0x%" PRIx32,
           static_cast<uint32_t>(result.error()));
     }
+#ifndef USE_ATEN_LIB
+    {
+      const auto method = this->method(method_name);
+      THROW_IF_ERROR(
+          method.error(),
+          "Method execution failed with status 0x%" PRIx32,
+          static_cast<uint32_t>(method.error()));
+      synchronize_device_outputs(*method.get());
+    }
+#endif
 
     // Convert outputs to py::list
     const auto& outputs = result.get();
@@ -2474,12 +2557,26 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       retained[i] = std::move(new_input_owners[i]);
     }
+#ifndef USE_ATEN_LIB
+    synchronize_device_inputs(dlpack_inputs, torch_inputs);
+#endif
     auto outputs = module_->execute(method_name);
     THROW_IF_ERROR(
         outputs.error(),
         "Failed to execute method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(outputs.error()));
+#ifndef USE_ATEN_LIB
+    {
+      const auto method = module_->method(method_name);
+      THROW_IF_ERROR(
+          method.error(),
+          "Failed to execute method %s, error: 0x%" PRIx32,
+          method_name.c_str(),
+          static_cast<uint32_t>(method.error()));
+      synchronize_device_outputs(*method.get());
+    }
+#endif
 #ifndef USE_ATEN_LIB
     // Include untouched inputs when execution reuses a previous call's values.
     buffer_inputs.clear();
@@ -3319,11 +3416,17 @@ struct PyMethod final {
         c10::autograd_dispatch_keyset);
 #endif
     setup_output_storage(*storage_->method, output_storage_spans);
+#ifndef USE_ATEN_LIB
+    synchronize_device_inputs(dlpack_inputs_, torch_inputs_);
+#endif
     Error execute_status = storage_->method->execute();
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
         static_cast<uint32_t>(execute_status));
+#ifndef USE_ATEN_LIB
+    synchronize_device_outputs(*storage_->method);
+#endif
     outputs_valid_ = true;
   }
 
@@ -3378,6 +3481,11 @@ struct PyMethod final {
 #ifdef USE_ATEN_LIB
     return py::cast(attr.get());
 #else
+    // An attribute can be read with no execute() in this call to have waited
+    // for the device work that last wrote it.
+    if (!attr->device().is_cpu() && attr->nbytes() != 0) {
+      synchronize_device(attr->device().index());
+    }
     return portable_tensor_result(
         attr.get(),
         /*clone=*/false,
@@ -3740,9 +3848,6 @@ struct PyMethod final {
         if (!clone_outputs) {
           auto alias = aliased_torch_output(v.toTensor());
           if (!alias.is_none()) {
-            if (!v.toTensor().device().is_cpu() && v.toTensor().nbytes() != 0) {
-              synchronize_torch_cuda_device(v.toTensor().device().index());
-            }
             list[i] = std::move(alias);
             continue;
           }

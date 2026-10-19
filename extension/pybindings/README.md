@@ -96,10 +96,13 @@ result = np.asarray(output.to_host())
 
 CUDA DLPack inputs and `ExecuTorchResult` outputs require CUDA-enabled bindings.
 Torch CUDA inputs and outputs synchronize through Python Torch, including in
-CPU builds of the bindings. The Python CUDA execution boundary waits for device
-work because the device allocator does not expose readiness events.
-Execution is synchronous at this boundary, including producer and consumer
-stream readiness. The synchronization has no C++ ATen dependency.
+CPU builds of the bindings. Execution is synchronous at the Python boundary:
+a call returns after its device work has finished, so its outputs are ready on
+any stream. Each call waits for the device once, rather than once per tensor.
+Before running, it also waits once if an input may still be written on another
+library's stream: a torch CUDA tensor, a DLPack input from another library, or
+an `ExecuTorchResult` whose memory was handed out through `__dlpack__`. The
+synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
 method. Bfloat16 results expose flat bytes through the buffer protocol because

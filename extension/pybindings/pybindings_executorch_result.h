@@ -113,9 +113,6 @@ class PyExecuTorchResult final
     if (nbytes_ != 0 && tensor.const_data_ptr() == nullptr) {
       throw py::value_error("ExecuTorch result data is not allocated");
     }
-    if (!device_.is_cpu() && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
-    }
     if (clone && device_.is_cpu()) {
       storage_.resize(nbytes_);
       if (!storage_.empty()) {
@@ -132,6 +129,7 @@ class PyExecuTorchResult final
             nbytes_,
             device_.index());
         data_ = device_storage_.get();
+        copy_in_flight_ = true;
       }
       owner_ = py::none();
     } else {
@@ -250,11 +248,29 @@ class PyExecuTorchResult final
   }
 
   py::capsule to_dlpack(const py::object& stream = py::none()) {
-    if (!device_.is_cpu() && nbytes_ != 0) {
+    // A result is ready on any stream once its copy, if any, has finished and
+    // nothing else can be writing it. Memory handed out earlier may since have
+    // been written by whoever holds it, on a stream these bindings do not
+    // know, so wait in either case.
+    if ((handed_out_ || copy_in_flight_) && !device_.is_cpu() && nbytes_ != 0) {
       synchronize_cuda_device(device_.index());
     }
-    // The producer storage is ready for consumption on any requested stream.
     (void)stream;
+    copy_in_flight_ = false;
+    handed_out_ = true;
+    return capsule();
+  }
+
+  // Whether another library has held this result's memory and so may have
+  // written to it on its own streams.
+  bool handed_out() const {
+    return handed_out_;
+  }
+
+  // A capsule for these bindings to read the result as a method input. These
+  // bindings write a result only by executing, which finishes before
+  // returning, so reading it this way does not count as handing it out.
+  py::capsule capsule() {
     auto holder = std::make_unique<DLPackHolder>(shared_from_this());
     py::capsule capsule(&holder->managed, "dltensor", [](PyObject* capsule) {
       if (PyCapsule_IsValid(capsule, "dltensor")) {
@@ -342,6 +358,7 @@ class PyExecuTorchResult final
           device_index,
           CudaCopy::HostToDevice);
       result->data_ = result->device_storage_.get();
+      result->copy_in_flight_ = true;
     }
     return result;
   }
@@ -492,6 +509,9 @@ class PyExecuTorchResult final
   size_t nbytes_;
   executorch::aten::Device device_;
   py::object owner_;
+  bool handed_out_ = false;
+  // A copy into this result's device memory may still be in flight.
+  bool copy_in_flight_ = false;
 };
 
 /** Contiguous buffer facade used to construct a strided torch.Tensor result. */

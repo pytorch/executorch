@@ -118,6 +118,11 @@ auto with_cuda_device(int index, Function&& function) {
 #endif
 }
 
+// Copies on the legacy default stream. A copy to the host returns once it has
+// finished. A copy to the device may still be in flight when this returns, but
+// it runs before anything queued afterwards on a blocking stream, including the
+// delegates' cudaStreamPerThread; a result holding such memory waits for it
+// only when it hands the memory to another library.
 inline void copy_cuda_storage(
     void* destination,
     const void* source,
@@ -130,11 +135,8 @@ inline void copy_cuda_storage(
     throw std::runtime_error(
         "Failed to select CUDA device " + std::to_string(index));
   }
-  auto status = cudaMemcpy(
+  const auto status = cudaMemcpy(
       destination, source, nbytes, static_cast<cudaMemcpyKind>(direction));
-  if (status == cudaSuccess) {
-    status = cudaDeviceSynchronize();
-  }
   if (status != cudaSuccess) {
     throw std::runtime_error(
         std::string("Failed to copy CUDA tensor storage: ") +

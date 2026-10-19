@@ -217,6 +217,26 @@ class CudaDLPackTest(unittest.TestCase):
                 tensor = self._assert_ready_value(output, 84.0)
                 self.assertNotEqual(tensor.data_ptr(), value.data_ptr())
 
+    def test_result_handed_out_after_set_inputs_is_waited_for(self):
+        # A result set as an input can still be handed to another library
+        # before execute(). The library may then write it on its own stream, so
+        # execute() must wait for that write.
+        method = self._load_method()
+        first = method(
+            CudaDLPackOnly(
+                torch.full(self.shape, 1.0, device=self.device),
+                torch.cuda.current_stream(self.device),
+            )
+        )[0]
+        method.set_inputs([first])
+        producer_stream = torch.cuda.Stream(device=self.device)
+        with torch.cuda.stream(producer_stream):
+            shared = torch.from_dlpack(first)
+            torch.cuda._sleep(50_000_000)
+            shared.fill_(41.0)
+        method.execute()
+        self._assert_ready_value(method.get_outputs()[0], 84.0)
+
     def test_clone_roundtrip_and_borrowed_output_lifetime(self):
         method = self._load_method()
         stream = torch.cuda.current_stream(self.device)
@@ -527,6 +547,49 @@ class CudaDLPackTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def test_device_chain_waits_for_the_device_once_per_call(self):
+        # Feeding each output into the next call, with a host upload per call,
+        # needs one device wait per call. Waiting per tensor made a chain of
+        # small programs measurably slower.
+        if not self.executorch_output:
+            self.skipTest("chains ExecuTorchResult outputs")
+        from torch.profiler import profile, ProfilerActivity
+
+        method = self._load_method()
+        count = torch.Size(self.shape).numel()
+        host = (
+            memoryview(array.array("f", [3.0]) * count).cast("B").cast("f", self.shape)
+        )
+        calls = 8
+        value = self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+        value = method(value, clone_outputs=True)[0]
+
+        def waits(body):
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            ) as trace:
+                body()
+            return sum(
+                event.count
+                for event in trace.key_averages()
+                if event.key == "cudaDeviceSynchronize"
+            )
+
+        def chain():
+            nonlocal value
+            for _ in range(calls):
+                self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+                value = method(value, clone_outputs=True)[0]
+
+        # The profiler waits for the device itself when it stops.
+        self.assertLessEqual(waits(chain) - waits(lambda: None), calls)
+        expected = 8.0
+        for _ in range(calls):
+            expected = (expected + 1.0) * 2.0
+        torch.testing.assert_close(
+            torch.from_dlpack(value.to_host()), torch.full(self.shape, expected)
+        )
+
     def _require_libgomp_without_torch(self):
         # The torch-free chain checks loaded libraries through /proc.
         if not sys.platform.startswith("linux"):
@@ -637,8 +700,21 @@ from executorch.extension.pybindings import portable_lib as runtime
 program_path, data_path, rows, columns = sys.argv[1:5]
 shape = (int(rows), int(columns))
 module = runtime._load_for_executorch(program_path, data_path or None)
+class OtherProducer:
+    # Results of these bindings are read without asking a producer, so wrap one
+    # to reach the path that asks.
+    def __init__(self, source):
+        self.source = source
+
+    def __dlpack_device__(self):
+        return self.source.__dlpack_device__()
+
+    def __dlpack__(self, stream=None):
+        return self.source.__dlpack__(stream=stream)
+
 uploaded = runtime.ExecuTorchResult.from_host(np.full(shape, 3.0, np.float32), 0)
-second = module.forward([module.forward([uploaded])[0]])[0]
+first = module.forward([OtherProducer(uploaded)])[0]
+second = module.forward([OtherProducer(first)])[0]
 np.testing.assert_array_equal(
     np.asarray(second.to_host()), np.full(shape, 18.0, dtype=np.float32)
 )
