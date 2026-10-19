@@ -41,7 +41,9 @@ struct RequestOptions {
   std::int32_t timeout_s = 600;
 };
 
-inline void check_session_capacity(std::size_t required, std::size_t available) {
+inline void check_session_capacity(
+    std::size_t required,
+    std::size_t available) {
   if (available == 0 || required == 0 || required > available) {
     throw std::invalid_argument("workload exceeds --max_sessions");
   }
@@ -220,7 +222,8 @@ inline std::optional<serving::RequestHandle> submit_request(
             text && !text->text.empty() && on_text) {
           on_text();
         }
-        if (const auto* terminal = std::get_if<serving::TerminalEvent>(&event)) {
+        if (const auto* terminal =
+                std::get_if<serving::TerminalEvent>(&event)) {
           if (on_terminal) {
             on_terminal(*terminal);
           }
@@ -277,8 +280,8 @@ inline RequestResult run_requests(
     const RequestCallbacks& callbacks = {}) {
   validate_requests(options, config.max_sessions, config.max_context_length);
   check_session_capacity(options.requests, config.max_requests);
-  const auto decodes = static_cast<std::size_t>(
-      std::min(options.max_decode, options.requests));
+  const auto decodes =
+      static_cast<std::size_t>(std::min(options.max_decode, options.requests));
   const auto budget = std::max(executor.preferred_batch_tokens(), decodes + 1);
   auto scheduler =
       batching::DecodeFirstScheduler::create(budget, decodes, budget - decodes);
@@ -296,7 +299,8 @@ inline RequestResult run_requests(
   for (std::size_t i = 0; i < result.terminals.size(); ++i) {
     if (i > 0 && options.stagger_ms > 0) {
       std::this_thread::sleep_until(std::min(
-          deadline, Clock::now() + std::chrono::milliseconds(options.stagger_ms)));
+          deadline,
+          Clock::now() + std::chrono::milliseconds(options.stagger_ms)));
     }
     if (Clock::now() >= deadline) {
       timed_out = true;

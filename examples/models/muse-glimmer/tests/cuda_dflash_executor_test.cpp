@@ -67,8 +67,10 @@ TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
   for (const auto& predictions : std::vector<std::vector<Token>>{
            {21, 12, 13, 14}, {11, 22, 13, 14}, {11, 12, 13, 14}}) {
     const auto accepted = static_cast<std::int64_t>(
-        std::mismatch(predictions.begin(), predictions.begin() + 3,
-                      std::vector<Token>({11, 12, 13}).begin())
+        std::mismatch(
+            predictions.begin(),
+            predictions.begin() + 3,
+            std::vector<Token>({11, 12, 13}).begin())
             .first -
         predictions.begin());
     auto burst =
