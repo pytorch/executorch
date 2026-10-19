@@ -19,16 +19,16 @@ namespace aten = executorch::aten;
 namespace df = executorch::extension::llm::cuda_dflash_detail;
 using executorch::extension::llm::batching::Token;
 
-TEST(CudaDFlash, FirstMismatchReturnsOnlyCorrection) {
-  const auto burst = df::verify_greedy({11, 12, 13}, {21, 12, 13, 14});
+TEST(CudaDFlash, FirstRejectionReturnsOnlyCorrection) {
+  const auto burst = df::make_burst({11, 12, 13}, 0, 21, 64);
   ASSERT_TRUE(burst);
   EXPECT_EQ(burst->tokens, std::vector<Token>({21}));
   EXPECT_EQ(burst->accepted, 0);
   EXPECT_FALSE(burst->bonus);
 }
 
-TEST(CudaDFlash, PartialAcceptanceStopsAtFirstMismatch) {
-  const auto burst = df::verify_greedy({11, 12, 13}, {11, 22, 13, 14});
+TEST(CudaDFlash, PartialAcceptanceEndsWithCorrection) {
+  const auto burst = df::make_burst({11, 12, 13}, 1, 22, 64);
   ASSERT_TRUE(burst);
   EXPECT_EQ(burst->tokens, std::vector<Token>({11, 22}));
   EXPECT_EQ(burst->accepted, 1);
@@ -36,18 +36,29 @@ TEST(CudaDFlash, PartialAcceptanceStopsAtFirstMismatch) {
 }
 
 TEST(CudaDFlash, FullAcceptanceAddsOneBonus) {
-  const auto burst = df::verify_greedy({11, 12, 13}, {11, 12, 13, 14});
+  const auto burst = df::make_burst({11, 12, 13}, 3, 14, 64);
   ASSERT_TRUE(burst);
   EXPECT_EQ(burst->tokens, std::vector<Token>({11, 12, 13, 14}));
   EXPECT_EQ(burst->accepted, 3);
   EXPECT_TRUE(burst->bonus);
 }
 
-TEST(CudaDFlash, InvalidVerificationShapeRejected) {
-  EXPECT_FALSE(df::verify_greedy({}, {1}));
-  EXPECT_FALSE(df::verify_greedy({1}, {}));
-  EXPECT_FALSE(df::verify_greedy({1, 2}, {1, 2}));
-  EXPECT_FALSE(df::verify_greedy({1}, {1, 2, 3}));
+TEST(CudaDFlash, InvalidVerificationRejected) {
+  EXPECT_FALSE(df::make_burst({}, 0, 1, 64));
+  EXPECT_FALSE(df::make_burst({1, 2}, -1, 1, 64));
+  EXPECT_FALSE(df::make_burst({1, 2}, 3, 1, 64));
+  EXPECT_FALSE(df::make_burst({1, 2}, 1, 64, 64));
+  EXPECT_FALSE(df::make_burst({1, 2}, 1, -1, 64));
+}
+
+TEST(CudaDFlash, PositionalUniformsAreSeededAndIndependentOfBatching) {
+  const float u = df::positional_uniform(7, 100, 2);
+  EXPECT_EQ(u, df::positional_uniform(7, 100, 2));
+  EXPECT_GE(u, 0.0f);
+  EXPECT_LT(u, 1.0f);
+  EXPECT_NE(u, df::positional_uniform(8, 100, 2));
+  EXPECT_NE(u, df::positional_uniform(7, 101, 2));
+  EXPECT_NE(u, df::positional_uniform(7, 100, 3));
 }
 
 TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
@@ -55,7 +66,13 @@ TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
   // 10, then verification consumes 10 and predicts the accepted/corrected tail.
   for (const auto& predictions : std::vector<std::vector<Token>>{
            {21, 12, 13, 14}, {11, 22, 13, 14}, {11, 12, 13, 14}}) {
-    auto burst = df::verify_greedy({11, 12, 13}, predictions);
+    const auto accepted = static_cast<std::int64_t>(
+        std::mismatch(predictions.begin(), predictions.begin() + 3,
+                      std::vector<Token>({11, 12, 13}).begin())
+            .first -
+        predictions.begin());
+    auto burst =
+        df::make_burst({11, 12, 13}, accepted, predictions[accepted], 64);
     ASSERT_TRUE(burst);
     std::vector<Token> output{10};
     output.insert(output.end(), burst->tokens.begin(), burst->tokens.end());
@@ -69,7 +86,7 @@ TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
 }
 
 TEST(CudaDFlash, BudgetRewindTrimsOnlyCommittedRows) {
-  const auto burst = df::verify_greedy({11, 12, 13}, {11, 12, 13, 14});
+  const auto burst = df::make_burst({11, 12, 13}, 3, 14, 64);
   ASSERT_TRUE(burst);
   // Draft has warmed through input.end=100; target verified four rows.
   for (int kept = 1; kept <= 4; ++kept) {
@@ -139,12 +156,11 @@ TEST(CudaDFlash, NearContextLimitRequiresWholeTrainedBlock) {
 TEST(CudaDFlash, EveryProposalMismatchKeepsOnlyConsumedPrefix) {
   const std::vector<Token> proposals{11, 12, 13, 14};
   for (std::size_t rejected = 0; rejected <= proposals.size(); ++rejected) {
-    auto predictions = proposals;
-    predictions.push_back(90);
-    if (rejected < proposals.size()) {
-      predictions[rejected] = 80;
-    }
-    const auto burst = df::verify_greedy(proposals, predictions);
+    const auto burst = df::make_burst(
+        proposals,
+        static_cast<std::int64_t>(rejected),
+        rejected == proposals.size() ? 90 : 80,
+        128);
     ASSERT_TRUE(burst);
     std::vector<Token> expected(
         proposals.begin(), proposals.begin() + rejected);
