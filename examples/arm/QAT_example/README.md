@@ -85,8 +85,17 @@ make the following convolution ignore those channels.
 The pass checks shader identities, descriptors, matching sampling qparams,
 private warp consumers, and symmetric convolution weights before rewriting.
 Unsupported graphs are left unchanged. Image padding and the first block's
-C15 input are unchanged. State resizing, block tails and final blending stay
-in TOSA. `glslc` must be available when exporting a matching graph.
+C15 input are unchanged. When the original block0 tail matches,
+PixelShuffle, slicing, state resizing and rescaling run inside the packed shader.
+The shader writes only C32, including the original INT8 previous-flow codes in
+channels 24–27. Block1 extracts those channels and transposes them to NCHW before
+the existing TOSA RESCALE and flow-update ADD. No separate flow output is written.
+The final block0 transpose-convolution weights, bias and per-channel rescale
+parameters are reordered during export from channel-major to phase-major order,
+so each PixelShuffle lookup reads 13 contiguous channels from C52. No runtime weight
+reorder is added. Resize bounds come from the tensor dimensions; C32 stores
+remain loop-based.
+`glslc` must be available when exporting a matching graph.
 
 ## Reference Samples
 
