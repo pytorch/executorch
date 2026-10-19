@@ -104,6 +104,7 @@ void successful_batch_owners() {
   require(!executor.execute({{input(1), input(2)}}, out));
   require(executor.evidence().multi_session_steps == 0);
   rejected([&] { ci::check_batching(executor.evidence()); });
+  // cppcheck-suppress redundantAssignment
   inner.succeeds = true;
   require(executor.execute({{input(1), input(2)}}, out));
   ci::check_batching(executor.evidence());
