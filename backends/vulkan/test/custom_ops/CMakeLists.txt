@@ -6,9 +6,11 @@
 
 # Host-only tests that need neither a GPU nor the Vulkan backend library.
 #
+# ~~~
 # cmake backends/vulkan/test/custom_ops -Bcmake-out/backends/vulkan/test/custom_ops
 # cmake --build cmake-out/backends/vulkan/test/custom_ops
 # ctest --test-dir cmake-out/backends/vulkan/test/custom_ops
+# ~~~
 
 cmake_minimum_required(VERSION 3.19)
 project(vulkan_custom_ops_tests CXX)
