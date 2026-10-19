@@ -7,8 +7,9 @@
 
 This is a static declaration lint, not a replacement for Meta's packaged tests.
 It models literal Python library declarations and internal (is_oss=False) branches.
-Unsupported newly relevant declarations fail as 'cannot validate'. Existing
-violations are compared by identity, not line number, against an explicit base.
+Unsupported declarations under backends/arm fail as 'cannot validate'; limitations
+elsewhere are warnings. Existing findings are compared by identity and severity,
+not line number, against an explicit base.
 """
 from __future__ import annotations
 
@@ -124,9 +125,18 @@ class Issue:
     detail: str = field(compare=False)
     subject: str = ""
     category: str = "declaration"
+    severity: str = "error"
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.owner}: {self.source}: {self.detail}"
+
+
+def validation_severity(source: str) -> str:
+    return (
+        "error"
+        if source == "backends/arm" or source.startswith("backends/arm/")
+        else "warning"
+    )
 
 
 @dataclass
@@ -494,8 +504,8 @@ class Declarations:
                 }
         return set()
 
-    def reachable(self, start: Rule) -> tuple[set[str], list[str]]:
-        visited, pending, errors = set(), [start.label], []
+    def reachable(self, start: Rule) -> tuple[set[str], set[Issue]]:
+        visited, pending, errors = set(), [start.label], set()
         while pending:
             label = pending.pop()
             if label in visited:
@@ -503,13 +513,38 @@ class Declarations:
             visited.add(label)
             rule = self.get(label)
             if rule is None:
-                errors.append(label + " (no supported declaration)")
+                package = label.removeprefix("//executorch/").split(":", 1)[0]
+                source = package + "/BUCK"
+                errors.add(
+                    Issue(
+                        "cannot validate",
+                        label,
+                        source,
+                        (
+                            "unresolved scoped dependency: " + label
+                            if is_scoped_label(label)
+                            else "no supported declaration for " + label
+                        ),
+                        label,
+                        severity=validation_severity(source),
+                    )
+                )
                 continue
             if rule.kind != "python_library":
                 continue
-            errors.extend(label + " (" + error + ")" for error in rule.errors)
+            errors.update(
+                Issue(
+                    "cannot validate",
+                    label,
+                    rule.declaration_file,
+                    error,
+                    error.split(":", 1)[0],
+                    severity=validation_severity(rule.declaration_file),
+                )
+                for error in rule.errors
+            )
             pending.extend(rule.deps)
-        return visited, sorted(set(errors))
+        return visited, errors
 
 
 def python_imports(  # noqa: C901
@@ -663,41 +698,15 @@ def registered_tests(  # noqa: C901
 def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
     declarations = Declarations(snapshot)
     declarations.load_scope()
-    issues: set[Issue] = {
-        Issue("cannot validate", package, filename, error, error)
-        for package, errors in declarations.package_errors.items()
-        for filename, error in errors
-    }
+    issues: set[Issue] = set()
     libraries = [
         rule
         for rule in declarations.rules.values()
         if rule.kind == "python_library" and is_scoped_label(rule.label)
     ]
     for library in libraries:
-        for error in library.errors:
-            issues.add(
-                Issue(
-                    "cannot validate",
-                    library.label,
-                    library.declaration_file,
-                    error,
-                    error.split(":", 1)[0],
-                )
-            )
         reachable, incomplete = declarations.reachable(library)
-        for error in incomplete:
-            dependency = error.split(" ", 1)[0]
-            if is_scoped_label(dependency):
-                issues.add(
-                    Issue(
-                        "cannot validate",
-                        library.label,
-                        library.declaration_file,
-                        "unresolved scoped dependency: " + error,
-                        dependency,
-                        "declaration",
-                    )
-                )
+        issues.update(incomplete)
         for filename in sorted(library.sources):
             try:
                 imports = python_imports(snapshot.read(filename), filename, snapshot)
@@ -718,6 +727,9 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                             "no in-repo source for " + module,
                             module,
                             "dependency",
+                            validation_severity(
+                                module.removeprefix("executorch.").replace(".", "/")
+                            ),
                         )
                     )
                     continue
@@ -733,19 +745,32 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                             "no supported python_library provider for " + module,
                             module,
                             "dependency",
+                            validation_severity(imported_file),
                         )
                     )
                     continue
                 detail = module + " requires " + " or ".join(sorted(owners))
+                severity = "error"
                 if incomplete:
                     detail += "; unresolved dependency declarations: " + ", ".join(
-                        incomplete
+                        f"{issue.owner} ({issue.source}: {issue.detail})"
+                        for issue in sorted(incomplete)
                     )
                     kind = "cannot validate"
+                    if all(issue.severity == "warning" for issue in incomplete):
+                        severity = "warning"
                 else:
                     kind = "missing dependency"
                 issues.add(
-                    Issue(kind, library.label, filename, detail, module, "dependency")
+                    Issue(
+                        kind,
+                        library.label,
+                        filename,
+                        detail,
+                        module,
+                        "dependency",
+                        severity,
+                    )
                 )
     registrations, errors = registered_tests(declarations)
     for error in errors:
@@ -789,6 +814,32 @@ def analyze(snapshot: Snapshot) -> set[Issue]:  # noqa: C901
                             "registration",
                         )
                     )
+    # Dependency traversal and owner discovery load packages lazily.
+    issues.update(
+        Issue(
+            "cannot validate",
+            package,
+            filename,
+            error,
+            error,
+            severity=validation_severity(filename),
+        )
+        for package, errors in declarations.package_errors.items()
+        for filename, error in errors
+    )
+    issues.update(
+        Issue(
+            "cannot validate",
+            rule.label,
+            rule.declaration_file,
+            error,
+            error.split(":", 1)[0],
+            severity=validation_severity(rule.declaration_file),
+        )
+        for rule in declarations.rules.values()
+        if rule.kind == "python_library"
+        for error in rule.errors
+    )
     return issues
 
 
@@ -823,15 +874,19 @@ def compare(base: Snapshot, head: Snapshot) -> tuple[set[Issue], int]:
 
 
 def print_report(regressions: set[Issue], unchanged: int) -> None:
-    status = "FAIL" if regressions else "PASS"
+    errors = sum(issue.severity == "error" for issue in regressions)
+    status = "FAIL" if errors else "PASS"
     print(f"Arm Python Buck declaration check: {status}")
-    print(f"  New issues: {len(regressions)}")
+    print(f"  New errors: {errors}")
+    print(f"  New warnings: {len(regressions) - errors}")
     print(f"  Existing issues unchanged: {unchanged}")
     wrapper = textwrap.TextWrapper(
         width=100, break_long_words=False, break_on_hyphens=False
     )
     for index, issue in enumerate(sorted(regressions), start=1):
-        print(f"\n[{index}/{len(regressions)}] {issue.kind.capitalize()}")
+        print(
+            f"\n[{index}/{len(regressions)}] {issue.severity.upper()}: {issue.kind.capitalize()}"
+        )
         print(f"  File: {issue.source}")
         owner_label = "Target" if issue.owner.startswith("//") else "Scope"
         print(f"  {owner_label}: {issue.owner}")
@@ -865,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Cannot validate Arm Python Buck declarations: {error}", file=sys.stderr)
         return 2
     print_report(regressions, unchanged)
-    return 1 if regressions else 0
+    return 1 if any(issue.severity == "error" for issue in regressions) else 0
 
 
 if __name__ == "__main__":

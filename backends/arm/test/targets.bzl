@@ -196,6 +196,8 @@ def define_arm_tests():
             ] if test_file == "misc/test_diff_pte.py" else []),
         )
 
+    # Preserve the label used by internal CI to select individual Vela cases.
+    # OSS CI uses the separate vela package to avoid internal-only Python loads.
     runtime.cxx_test(
         name = "vela_external_blocks_test",
         srcs = ["//executorch/backends/arm/test/vela:vela_external_blocks_test.cpp"],

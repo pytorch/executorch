@@ -495,10 +495,19 @@ change-specific baseline.
 
 This static check follows supported in-repository Python library declarations,
 including transitive dependencies, and compares findings against the base revision.
-Existing findings do not fail the job; newly relevant unsupported declarations
-fail with a `cannot validate` diagnostic. It does not run Meta's internal Python
-Buck tests or validate third-party dependencies. Those internal tests remain
-necessary for full packaged-test coverage.
+Existing findings do not fail the job. New confirmed missing dependencies,
+unregistered Arm tests, and unsupported declarations under `backends/arm/` fail
+the check. Unsupported declarations outside Arm are reported as warnings with
+their declaration file and unsupported construct; dependency gaps that cannot be
+proven because of those declarations are also warnings. A warning becoming an
+error is treated as a new regression.
+
+Arm backend contributors maintain this checker alongside the Arm Buck declarations
+and its regression tests in `.ci/scripts/tests/test_arm_buck_declarations.py`.
+Moving the Arm Python tests onto the public runtime wrapper would allow Buck2
+queries to replace this limited static analysis. The checker does not run Meta's
+internal Python Buck tests or validate third-party dependencies. Those internal
+tests remain necessary for full packaged-test coverage.
 
 ## Using git hooks
 

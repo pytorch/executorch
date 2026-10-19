@@ -3,10 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
 import importlib.util
+import io
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_checker():
@@ -657,7 +660,7 @@ class DeclarationTests(unittest.TestCase):
         )
         self.assertEqual(set(), regressions(before, after))
 
-    def test_diagnostic_category_change_is_not_new_violation(self):
+    def test_diagnostic_category_change_only_adds_external_warnings(self):
         before = fixture()
         before[BUCK] = library("arm_tester_lib", 'glob(["tester/*.py"])')
         after = dict(before)
@@ -666,7 +669,202 @@ class DeclarationTests(unittest.TestCase):
             'glob(["tester/*.py"])',
             '["//executorch/internal:unavailable"]',
         )
-        self.assertEqual(set(), regressions(before, after))
+        issues = regressions(before, after)
+        self.assertTrue(issues)
+        self.assertTrue(all(i.severity == "warning" for i in issues))
+
+    def test_lazy_external_package_errors_keep_the_original_cause(self):
+        declarations = (
+            (
+                'for name in ["schema"]:\n'
+                '    runtime.python_library(name=name, srcs=["schema.py"])\n',
+                "unsupported declaration loop",
+            ),
+            (
+                "def declare(name):\n"
+                '    runtime.python_library(name=name, srcs=["schema.py"])\n'
+                'declare("schema")\n',
+                "parameterized",
+            ),
+            (
+                "if configured():\n"
+                '    runtime.python_library(name="schema", srcs=["schema.py"])\n',
+                "conditional",
+            ),
+        )
+        for declaration, cause in declarations:
+            for through_dependency in (False, True):
+                with self.subTest(cause=cause, through_dependency=through_dependency):
+                    files = fixture()
+                    files["exir/BUCK"] = declaration
+                    files[BUCK] = library(
+                        "arm_tester_lib",
+                        '["tester/runner.py"]',
+                        '["//executorch/exir:schema"]' if through_dependency else "[]",
+                    )
+                    issues = analyze(Snapshot(files))
+                    self.assertTrue(all(i.severity == "warning" for i in issues))
+                    self.assertTrue(
+                        any(
+                            i.source == "exir/BUCK" and cause in i.detail
+                            for i in issues
+                        ),
+                        issues,
+                    )
+
+    def test_lazy_external_helper_error_names_helper_file(self):
+        files = fixture()
+        files["exir/BUCK"] = 'load(":rules.bzl", "declare")\ndeclare()\n'
+        files["exir/rules.bzl"] = (
+            "def declare():\n"
+            "    if configured():\n"
+            '        runtime.python_library(name="schema", srcs=["schema.py"])\n'
+        )
+        issues = analyze(Snapshot(files))
+        self.assertTrue(
+            any(
+                i.source == "exir/rules.bzl"
+                and "conditional" in i.detail
+                and i.severity == "warning"
+                for i in issues
+            ),
+            issues,
+        )
+        self.assertTrue(all(i.severity == "warning" for i in issues))
+
+    def test_computed_external_sources_report_the_original_expression(self):
+        for through_dependency in (False, True):
+            with self.subTest(through_dependency=through_dependency):
+                files = fixture()
+                files["exir/BUCK"] = library("schema", "choose_sources()")
+                files[BUCK] = library(
+                    "arm_tester_lib",
+                    '["tester/runner.py"]',
+                    '["//executorch/exir:schema"]' if through_dependency else "[]",
+                )
+                issues = analyze(Snapshot(files))
+                self.assertTrue(all(i.severity == "warning" for i in issues))
+                self.assertTrue(
+                    any(
+                        i.source == "exir/BUCK" and "choose_sources()" in i.detail
+                        for i in issues
+                    ),
+                    issues,
+                )
+
+    def test_computed_external_dependencies_do_not_cascade_to_errors(self):
+        before = fixture()
+        after = dict(before)
+        after["exir/BUCK"] = library("umbrella", "[]", "choose_deps()") + library(
+            "schema", '["schema.py"]'
+        )
+        issues = regressions(before, after)
+        self.assertTrue(issues)
+        self.assertTrue(all(i.severity == "warning" for i in issues))
+        self.assertTrue(
+            any(i.source == "exir/BUCK" and "choose_deps()" in i.detail for i in issues)
+        )
+        self.assertTrue(
+            any(
+                i.source == TESTER and "exir/BUCK: deps: choose_deps()" in i.detail
+                for i in issues
+            )
+        )
+
+    def test_known_missing_dependency_still_fails_with_external_package_warning(self):
+        files = fixture()
+        files[BUCK] = library("arm_tester_lib", '["tester/runner.py"]')
+        files["exir/BUCK"] += (
+            'for name in ["other"]:\n'
+            "    runtime.python_library(name=name, srcs=[])\n"
+        )
+        issues = analyze(Snapshot(files))
+        self.assertTrue(
+            any(
+                i.kind == "missing dependency" and i.severity == "error" for i in issues
+            )
+        )
+        self.assertTrue(
+            any(i.source == "exir/BUCK" and i.severity == "warning" for i in issues)
+        )
+
+    def test_unsupported_arm_provider_outside_test_scope_still_fails(self):
+        files = fixture()
+        files[TESTER] = "from executorch.backends.arm.provider import value\n"
+        files["backends/arm/BUCK"] = library("provider", "choose_sources()")
+        files["backends/arm/provider.py"] = "value = 1\n"
+        issues = analyze(Snapshot(files))
+        self.assertTrue(
+            any(
+                i.source == "backends/arm/BUCK"
+                and "choose_sources()" in i.detail
+                and i.severity == "error"
+                for i in issues
+            )
+        )
+
+    def test_unrelated_external_packages_are_not_reported(self):
+        files = fixture()
+        files["unrelated/BUCK"] = (
+            'for name in ["other"]:\n'
+            "    runtime.python_library(name=name, srcs=[])\n"
+        )
+        self.assertEqual(set(), analyze(Snapshot(files)))
+
+    def test_unchanged_external_warnings_are_baselined(self):
+        files = fixture()
+        files["exir/BUCK"] = library("umbrella", "[]", "choose_deps()") + library(
+            "schema", '["schema.py"]'
+        )
+        new, unchanged = compare(Snapshot(files), Snapshot(files))
+        self.assertEqual(set(), new)
+        self.assertGreater(unchanged, 0)
+
+    def test_warning_becoming_proven_missing_dependency_is_new_error(self):
+        before = fixture()
+        before["exir/BUCK"] = library("umbrella", "[]", "choose_deps()") + library(
+            "schema", '["schema.py"]'
+        )
+        after = dict(before)
+        after["exir/BUCK"] = library("umbrella", "[]") + library(
+            "schema", '["schema.py"]'
+        )
+        issues = regressions(before, after)
+        self.assertEqual(1, len(issues))
+        issue = next(iter(issues))
+        self.assertEqual("missing dependency", issue.kind)
+        self.assertEqual("error", issue.severity)
+        self.assertEqual("executorch.exir.schema", issue.subject)
+
+    def test_cli_reports_warnings_without_failing_and_still_fails_errors(self):
+        before = fixture()
+        for add_arm_error in (False, True):
+            with self.subTest(add_arm_error=add_arm_error):
+                after = dict(before)
+                after["exir/BUCK"] = library(
+                    "umbrella", "[]", "choose_deps()"
+                ) + library("schema", '["schema.py"]')
+                if add_arm_error:
+                    after[SCOPE + "/misc/test_new.py"] = "def test_new(): pass\n"
+                output = io.StringIO()
+                with mock.patch.object(
+                    checker,
+                    "GitSnapshot",
+                    side_effect=[Snapshot(before), Snapshot(after)],
+                ), contextlib.redirect_stdout(output):
+                    status = checker.main(["--repo", ".", "--base", "base"])
+                self.assertEqual(1 if add_arm_error else 0, status)
+                report = output.getvalue()
+                self.assertIn("FAIL" if add_arm_error else "PASS", report)
+                self.assertIn(
+                    "New errors: 1" if add_arm_error else "New errors: 0", report
+                )
+                self.assertIn("New warnings: 2", report)
+                self.assertIn("WARNING: Cannot validate", report)
+                self.assertIn("File: exir/BUCK", report)
+                self.assertIn("choose_deps()", report)
+                if add_arm_error:
+                    self.assertIn("ERROR: Unregistered test", report)
 
     def test_nested_explicit_python_test_registration_is_valid(self):
         for kind in ("python_test", "python_pytest", "python_unittest"):

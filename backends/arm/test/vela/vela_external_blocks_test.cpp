@@ -319,10 +319,11 @@ TEST_F(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
       Error::InvalidProgram);
 }
 
-// Keep initialization in the fixture: the default OSS Buck test main
-// initializes the runtime globally, which can hide failures when cases run
-// independently.
+#ifdef EXECUTORCH_ARM_VELA_TEST_NO_GLOBAL_INIT
+// Only the OSS isolation target overrides the test main. Leave runtime
+// initialization to the fixture so each case proves it initializes the PAL.
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+#endif

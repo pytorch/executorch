@@ -15,6 +15,7 @@ def define_vela_tests():
         runtime.cxx_test(
             name = "vela_external_blocks_test",
             srcs = ["vela_external_blocks_test.cpp"],
+            compiler_flags = ["-DEXECUTORCH_ARM_VELA_TEST_NO_GLOBAL_INIT"],
             deps = [
                 "//executorch/backends/arm/runtime:vela_bin_stream",
                 "//executorch/runtime/core:core",
