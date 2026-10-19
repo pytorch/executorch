@@ -3864,7 +3864,7 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
-  if (Py_IsInitialized()) {
+  if (Py_IsInitialized() && PyGILState_Check()) {
     try {
       py::gil_scoped_acquire gil;
       py::module_::import("sys").attr("stderr").attr("write")(
