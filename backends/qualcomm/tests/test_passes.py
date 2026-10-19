@@ -1457,11 +1457,23 @@ class TestActivationSpecSharing(unittest.TestCase):
 class TestDeadChannelWeightScale(unittest.TestCase):
     """Near-dead weight channels get a live per-channel scale and keep their bias."""
 
-    BIAS = 0.9
+    BIAS = 0.5
+    CONFIGS = (
+        (QuantDtype.use_8a8w, False),
+        (QuantDtype.use_8a8w, True),
+        (QuantDtype.use_16a8w, False),
+        (QuantDtype.use_16a8w, True),
+        (QuantDtype.use_16a16w, False),
+        (QuantDtype.use_16a4w, False),
+        (QuantDtype.use_16a4w, True),
+        (QuantDtype.use_fp16a8w, False),
+        (QuantDtype.use_fp16a8w, True),
+    )
 
-    def _quantize(self, quant_dtype, is_qat):
+    def _quantize(self, quant_dtype, is_qat, weight_gains):
         from executorch.backends.qualcomm.export_utils import make_quantizer
         from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+            MovingAveragePerChannelLiveScaleObserver,
             PerChannelParamObserver,
         )
         from torchao.quantization.pt2e.quantize_pt2e import (
@@ -1473,10 +1485,8 @@ class TestDeadChannelWeightScale(unittest.TestCase):
         torch.manual_seed(0)
         conv = torch.nn.Conv2d(8, 4, 3)
         with torch.no_grad():
-            conv.weight[0] *= 1e-8  # dead
+            conv.weight *= torch.tensor(weight_gains).view(-1, 1, 1, 1)
             conv.bias[0] = self.BIAS
-            # near-dead: its scale sits above the 16-bit eps, below the 8-bit one
-            conv.weight[1] *= 1e-4
         x = torch.randn(1, 8, 8, 8)
         prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
         prepared = prepare(
@@ -1484,25 +1494,42 @@ class TestDeadChannelWeightScale(unittest.TestCase):
             make_quantizer(quant_dtype=quant_dtype, is_qat=is_qat),
         )
         prepared(x)
-        (observer,) = [
-            m for m in prepared.modules() if isinstance(m, PerChannelParamObserver)
-        ]
+        observer_types = (
+            PerChannelParamObserver,
+            MovingAveragePerChannelLiveScaleObserver,
+        )
+        (observer,) = [m for m in prepared.modules() if isinstance(m, observer_types)]
         scale, _ = observer.calculate_qparams()
+        raw_scale, _ = super(type(observer), observer).calculate_qparams()
         with torch.no_grad():
             out = convert_pt2e(prepared)(x)
-        return scale, out
+        return scale, raw_scale, observer.eps, out
 
     def test_near_dead_channels_get_a_live_scale(self):
-        for quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
-            for is_qat in (False, True):
-                with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
-                    scale, out = self._quantize(quant_dtype, is_qat)
-                    self.assertAlmostEqual(
-                        float(out[0, 0].mean()), self.BIAS, delta=0.01
+        # channel 0 is dead; channel 1's int8 scale sits between the 16-bit
+        # and 8-bit eps
+        gains = [1e-8, 1e-4, 1.0, 1.0]
+        for quant_dtype, is_qat in self.CONFIGS:
+            with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
+                scale, raw_scale, eps, out = self._quantize(quant_dtype, is_qat, gains)
+                self.assertAlmostEqual(float(out[0, 0].mean()), self.BIAS, delta=0.01)
+                floored = raw_scale <= eps
+                self.assertTrue(floored[0])
+                if quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
+                    self.assertTrue(floored[1])
+                live = raw_scale[~floored]
+                self.assertTrue(
+                    torch.equal(
+                        scale[floored], live.median().expand(int(floored.sum()))
                     )
-                    live = float(scale[2:].median())
-                    self.assertEqual(float(scale[0]), live)
-                    self.assertEqual(float(scale[1]), live)
+                )
+                self.assertTrue(torch.equal(scale[~floored], live))
+
+    def test_all_floored_channels_keep_the_floor(self):
+        for quant_dtype, is_qat in self.CONFIGS:
+            with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
+                scale, _, eps, _ = self._quantize(quant_dtype, is_qat, [1e-8] * 4)
+                self.assertTrue(torch.equal(scale, eps.expand_as(scale)))
 
 
 class TestIoBindingCheck(unittest.TestCase):
