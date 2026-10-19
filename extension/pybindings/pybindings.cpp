@@ -3543,6 +3543,13 @@ struct PyMethod final {
   // Per device output buffer, whether a result was handed it since the last
   // execution.
   std::vector<bool> handed_slots_;
+  // Per device output, the buffer a still-alive earlier result uses, kept so
+  // it can be reused once that result is dropped.
+  struct SpareDeviceOutput final {
+    std::shared_ptr<DeviceMemoryBuffer> buffer;
+    std::weak_ptr<void> handed;
+  };
+  std::vector<SpareDeviceOutput> spare_device_outputs_;
 #ifndef USE_ATEN_LIB
 
   struct BorrowedOutputOwner final {
@@ -3780,6 +3787,7 @@ struct PyMethod final {
     storage_->device_output_storages = std::move(device_output_storages);
     handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
     handed_slots_.assign(num_outputs, false);
+    spare_device_outputs_.assign(num_outputs, SpareDeviceOutput());
   }
 
   // A handed-over result still uses its buffer, so the method writes into a
@@ -3794,13 +3802,23 @@ struct PyMethod final {
       }
       const auto device = storage_->method->get_output(i).toTensor().device();
       if (!handed_buffers_[i].expired()) {
-        buffer = allocate_device_output(i, buffer->size(), device);
-      } else if (portable_tensor_output() == PortableTensorOutput::Torch) {
-        // The dropped result's readers may still have work queued on other
-        // streams. Freeing it would have waited for them, so reuse waits too.
-        synchronize_torch_cuda_device(device.index());
+        // In a loop such as `out = method(x)[0]` the previous result is still
+        // alive here, so its buffer and this one take turns instead of a new
+        // allocation each call.
+        auto& spare = spare_device_outputs_[i];
+        if (spare.buffer && spare.handed.expired()) {
+          std::swap(buffer, spare.buffer);
+          std::swap(handed_buffers_[i], spare.handed);
+          synchronize_device(device.index());
+        } else {
+          spare = {buffer, handed_buffers_[i]};
+          buffer = allocate_device_output(i, buffer->size(), device);
+        }
       } else {
-        synchronize_cuda_device(device.index());
+        // A dropped result's readers may still have work queued on other
+        // streams. Freeing its buffer would have waited for them, so reusing
+        // it waits too.
+        synchronize_device(device.index());
       }
       handed_buffers_[i].reset();
       handed_slots_[i] = false;
