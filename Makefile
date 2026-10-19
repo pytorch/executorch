@@ -140,6 +140,7 @@ help:
 	@echo "  muse-glimmer-cuda   - Build Muse Glimmer runners and worker with CUDA backend"
 	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
 	@echo "  muse-glimmer-batching-mlx - Build batching Muse Glimmer runner and worker with MLX"
+	@echo "  muse-glimmer-batching-cuda - Build batching Muse Glimmer runner and worker with CUDA"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
@@ -527,6 +528,23 @@ muse-glimmer-batching-mlx:
 	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
 		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
 		--parallel "$$(sysctl -n hw.ncpu)"
+	@echo ""
+	@echo "Build complete!"
+	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
+	@echo "  Worker:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker"
+
+.PHONY: muse-glimmer-batching-cuda
+muse-glimmer-batching-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Configuring batching Muse Glimmer runners with CUDA..."
+	cd examples/models/muse-glimmer && cmake --preset muse-glimmer-cuda \
+		-B "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		-DMUSE_GLIMMER_BUILD_BATCHING=ON \
+		-DMUSE_GLIMMER_BUILD_BATCHING_TESTS=OFF
+	cmake --build "$(CURDIR)/cmake-out/examples/models/muse-glimmer-batching" \
+		--target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+		--parallel "$(nproc)"
 	@echo ""
 	@echo "Build complete!"
 	@echo "  Runner:        $(CURDIR)/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_runner"
