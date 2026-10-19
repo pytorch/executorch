@@ -252,19 +252,20 @@ class PyExecuTorchResult final
     // nothing else can be writing it. Memory handed out earlier may since have
     // been written by whoever holds it, on a stream these bindings do not
     // know, so wait in either case.
-    if ((handed_out_ || copy_in_flight_) && !device_.is_cpu() && nbytes_ != 0) {
+    if ((*handed_out_ || copy_in_flight_) && !device_.is_cpu() &&
+        nbytes_ != 0) {
       synchronize_cuda_device(device_.index());
     }
     (void)stream;
     copy_in_flight_ = false;
-    handed_out_ = true;
+    *handed_out_ = true;
     return capsule();
   }
 
   // Whether another library has held this result's memory and so may have
   // written to it on its own streams.
   bool handed_out() const {
-    return handed_out_;
+    return *handed_out_;
   }
 
   // A capsule for these bindings to read the result as a method input. These
@@ -364,12 +365,15 @@ class PyExecuTorchResult final
   }
 
   // `storage` must own the memory `tensor` points at; the result reads that
-  // memory and keeps `storage` alive.
+  // memory and keeps `storage` alive. `handed_out` lets the caller see, after
+  // the result is gone, whether its memory was handed to another library.
   static std::shared_ptr<PyExecuTorchResult> hand_over(
       const executorch::aten::Tensor& tensor,
-      std::shared_ptr<void> storage) {
+      std::shared_ptr<void> storage,
+      std::shared_ptr<bool> handed_out) {
     auto result = std::make_shared<PyExecuTorchResult>(tensor, /*clone=*/false);
     result->device_storage_ = std::move(storage);
+    result->handed_out_ = std::move(handed_out);
     return result;
   }
 
@@ -509,7 +513,7 @@ class PyExecuTorchResult final
   size_t nbytes_;
   executorch::aten::Device device_;
   py::object owner_;
-  bool handed_out_ = false;
+  std::shared_ptr<bool> handed_out_ = std::make_shared<bool>(false);
   // A copy into this result's device memory may still be in flight.
   bool copy_in_flight_ = false;
 };

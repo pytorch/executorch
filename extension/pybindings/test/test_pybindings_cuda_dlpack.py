@@ -390,31 +390,56 @@ class CudaDLPackTest(unittest.TestCase):
         torch.testing.assert_close(output, value.contiguous())
         # Other producers have no way to convert device memory here.
         stream = torch.cuda.current_stream(self.device)
-        with self.assertRaisesRegex(ValueError, "laid out differently"):
+        with self.assertRaisesRegex(
+            ValueError, "Input 0 of method 'forward': .*laid out differently"
+        ):
             method(CudaDLPackOnly(value, stream))
 
     def test_dlpack_input_on_a_non_current_device(self):
         if torch.cuda.device_count() < 2:
             self.skipTest("needs two CUDA devices")
+        # A fresh process, so no earlier CUDA work has made cuda:1 usable from
+        # cuda:0. torch exports a CUDA tensor only while its device is current,
+        # so this fails unless the bindings switch to the input's device.
+        script = """
+import sys
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
 
-        class PlainProducer:
-            def __init__(self, tensor):
-                self.tensor = tensor
+class PlainProducer:
+    def __init__(self, tensor):
+        self.tensor = tensor
+    def __dlpack_device__(self):
+        return self.tensor.__dlpack_device__()
+    def __dlpack__(self, stream=None):
+        return self.tensor.__dlpack__(stream=stream)
 
-            def __dlpack_device__(self):
-                return self.tensor.__dlpack_device__()
-
-            def __dlpack__(self, stream=None):
-                return self.tensor.__dlpack__(stream=stream)
-
-        data = self._device_identity(1, torch.ones(2, 3, 4, 5))
-        method = self.bindings._load_program_from_buffer(data).load_method("forward")
-        value = torch.arange(120, dtype=torch.float32, device="cuda:1").reshape(
-            2, 3, 4, 5
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+method = runtime._load_program_from_buffer(data).load_method("forward")
+value = torch.arange(120, dtype=torch.float32, device="cuda:1").reshape(2, 3, 4, 5)
+assert torch.cuda.current_device() == 0
+output = method(PlainProducer(value))[0]
+with torch.cuda.device(1):
+    torch.testing.assert_close(torch.from_dlpack(output).cpu(), value.cpu())
+print("Input on a non-current device was read")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "identity.pte")
+            with open(path, "wb") as program:
+                program.write(self._device_identity(1, torch.ones(2, 3, 4, 5)))
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
-        self.assertEqual(torch.cuda.current_device(), 0)
-        output = method(PlainProducer(value))[0]
-        torch.testing.assert_close(self._tensor(output, 1).cpu(), value.cpu())
+        self.assertIn("Input on a non-current device was read", completed.stdout)
 
     def test_several_device_outputs_stay_valid(self):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner

@@ -440,13 +440,24 @@ print("all calls finished")
             def forward(self, value):
                 return value
 
-        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
-            ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    alloc_graph_input=False, alloc_graph_output=False
-                )
+        class ToChannelsLast(torch.nn.Module):
+            def forward(self, value):
+                return value.to(memory_format=torch.channels_last)
+
+        config = ExecutorchBackendConfig(
+            memory_planning_pass=MemoryPlanningPass(
+                alloc_graph_input=False, alloc_graph_output=False
             )
         )
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(config)
+        # A channels-last result, read by a contiguous identity method, is
+        # copied into the contiguous layout first.
+        channels_last_program = to_edge(
+            export(ToChannelsLast(), (torch.ones(1, 2, 2, 2),))
+        ).to_executorch(config)
+        contiguous_program = to_edge(
+            export(Identity(), (torch.ones(1, 2, 2, 2),))
+        ).to_executorch(config)
         script = """
 import gc
 import importlib
@@ -471,6 +482,10 @@ assert not runtime._uses_aten
 assert native._tensor_output == "executorch"
 with open(sys.argv[1], "rb") as source:
     data = source.read()
+with open(sys.argv[5], "rb") as source:
+    channels_last_data = source.read()
+with open(sys.argv[6], "rb") as source:
+    contiguous_data = source.read()
 
 def live_lists():
     gc.collect()
@@ -509,12 +524,35 @@ def check_feedback(executor):
 
 check_feedback(runtime._load_for_executorch_from_buffer(data))
 check_feedback(runtime._load_program_from_buffer(data).load_method("forward"))
+
+# A result in another layout is copied into the exported one, and a borrowed
+# result over it reads that copy. It must keep the copy alive, not the
+# producer's result, whose memory holds the other layout.
+method = runtime._load_program_from_buffer(contiguous_data).load_method("forward")
+converter = runtime._load_program_from_buffer(channels_last_data).load_method(
+    "forward"
+)
+values = np.arange(8, dtype=np.float32).reshape(1, 2, 2, 2)
+source = converter(values)[0]
+assert np.from_dlpack(source).strides != values.strides
+method.set_inputs([DLPackOnly(source)])
+method.execute()
+borrowed = method.get_outputs(clone_outputs=False)[0]
+method.set_inputs([np.full((1, 2, 2, 2), -7.0, dtype=np.float32)])
+gc.collect()
+np.testing.assert_array_equal(np.from_dlpack(borrowed), values)
 print("Borrowed result feedback retained bounded ownership")
 """
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "identity.pte")
             with open(path, "wb") as source:
                 source.write(program.buffer)
+            channels_last_path = os.path.join(directory, "channels_last.pte")
+            with open(channels_last_path, "wb") as source:
+                source.write(channels_last_program.buffer)
+            contiguous_path = os.path.join(directory, "contiguous.pte")
+            with open(contiguous_path, "wb") as source:
+                source.write(contiguous_program.buffer)
             environment = os.environ.copy()
             environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
             native_name = self.runtime.ExecuTorchResult.__module__
@@ -527,6 +565,8 @@ print("Borrowed result feedback retained bounded ownership")
                     sys.modules[native_name].__spec__.origin,
                     native_name,
                     self.runtime.__name__,
+                    channels_last_path,
+                    contiguous_path,
                 ],
                 env=environment,
                 capture_output=True,
@@ -767,7 +807,10 @@ print("CUDA DLPack roundtrip preserved device storage")
             memoryview(b"\x00" * 4).cast("c"),
         ):
             with self.subTest(format=memoryview(value).format):
-                with self.assertRaisesRegex(BufferError, "Unsupported buffer format"):
+                with self.assertRaisesRegex(
+                    BufferError,
+                    "Input 0 of method 'forward': Unsupported buffer format",
+                ):
                     executorch_module(value)
 
     def test_readonly_buffer_input_is_copied(self):
@@ -907,12 +950,14 @@ print("CUDA DLPack roundtrip preserved device storage")
         with RedirectedStderr() as out:
             try:
                 exported_program, inputs = create_program(ModuleAdd())
-                executorch_module = self.load_fn(exported_program.buffer)
-                inputs = (*inputs, 1)
-                executorch_output = executorch_module(inputs)[0]  # noqa
+                method = self.load_prog_fn(exported_program.buffer).load_method(
+                    "forward"
+                )
+                method.set_inputs((*inputs, 1))
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertIn("must be less than the number of inputs", str(out))
+                # The runtime's own log, routed to Python's stderr.
+                self.assertIn("Invalid number of inputs provided", str(out))
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -2158,6 +2203,24 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         with self.assertRaisesRegex(RuntimeError, "no outputs"):
             method.get_outputs()
 
+    def test_new_inputs_hide_outputs_planned_over_an_input(self):
+        class ReluTwice(torch.nn.Module):
+            def forward(self, x):
+                return x.relu() * 2
+
+        # Default memory planning puts this output in the input's bytes.
+        exported_program = to_edge(
+            export(ReluTwice(), (torch.ones(4),), strict=True)
+        ).to_executorch()
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        method.set_inputs([torch.ones(4)])
+        method.execute()
+        torch.testing.assert_close(method.get_outputs()[0], torch.full((4,), 2.0))
+
+        method.set_inputs([torch.full((4,), 5.0)])
+        with self.assertRaisesRegex(RuntimeError, "no outputs"):
+            method.get_outputs()
+
     def test_module_refuses_inputs_left_by_a_failed_call(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -2171,6 +2234,19 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         executorch_module.forward([torch.full((2, 2), 5.0), torch.full((2, 2), 5.0)])
         torch.testing.assert_close(
             executorch_module.plan_execute("forward")[0], torch.full((2, 2), 10.0)
+        )
+
+    def test_module_refuses_extra_inputs_before_installing_any(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+        executorch_module.forward(inputs)
+        fives = torch.full((2, 2), 5.0)
+        with self.assertRaisesRegex(RuntimeError, "takes 2 inputs, but got 3"):
+            executorch_module.forward([fives, fives, 1.0])
+
+        # Nothing was installed, so the previous inputs are still whole.
+        torch.testing.assert_close(
+            executorch_module.plan_execute("forward")[0], inputs[0] + inputs[1]
         )
 
     def test_module_reuses_inputs_after_a_failure_while_running(self):
@@ -2360,7 +2436,9 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
                     np.asarray(output).reshape(-1), values * 2
                 )
 
-        with self.assertRaisesRegex(BufferError, "byte order"):
+        with self.assertRaisesRegex(
+            BufferError, "Input 0 of method 'forward': .*byte order"
+        ):
             executorch_module(np.ones((2, 2), dtype=f"{foreign}f4"))
 
     def test_ctypes_integer_buffers(self):

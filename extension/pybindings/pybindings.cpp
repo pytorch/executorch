@@ -658,6 +658,25 @@ bool is_torch_tensor(const py::handle& value) {
   return result == 1;
 }
 
+// Runs `read`, which builds one input from a Python object, and names that
+// input and its method in any error, which the readers cannot see.
+template <typename Read>
+auto read_input(const MethodMeta& method_meta, size_t index, Read&& read) {
+  const auto named = [&](const char* message) {
+    const std::string prefix = "Input " + std::to_string(index) +
+        " of method '" + method_meta.name() + "'";
+    const std::string text(message);
+    return text.rfind(prefix, 0) == 0 ? text : prefix + ": " + text;
+  };
+  try {
+    return read();
+  } catch (const py::buffer_error& error) {
+    throw py::buffer_error(named(error.what()));
+  } catch (const py::value_error& error) {
+    throw py::value_error(named(error.what()));
+  }
+}
+
 void validate_tensor_input(
     const MethodMeta& method_meta,
     size_t index,
@@ -793,8 +812,8 @@ class TorchTensorView final {
   // Describes the tensor in the exported dimension order. A tensor dense in
   // another order is first copied by torch into that order on its own device,
   // since reading it with the exported strides would permute its values.
-  // Returns the tensor the method reads, the copy if there is one.
-  const py::object& use_layout(Span<const uint8_t> dim_order) {
+  // owner() is then the copy.
+  void use_layout(Span<const uint8_t> dim_order) {
     std::vector<int> strides(sizes_.size());
     const auto status = runtime::dim_order_to_stride(
         sizes_.data(), dim_order.data(), sizes_.size(), strides.data());
@@ -812,7 +831,6 @@ class TorchTensorView final {
     }
     strides_ = std::move(strides);
     dim_order_.assign(dim_order.begin(), dim_order.end());
-    return owner_;
   }
 
   void validate_device(const Method& method, size_t index) const {
@@ -2323,6 +2341,14 @@ struct PyModule final {
         "Failed to get metadata for method %s",
         method_name.c_str());
     const auto method_meta = method_meta_result.get();
+    // Checked before anything is installed: an extra input would otherwise
+    // install every real one and then fail, blocking later partial calls.
+    if (inputs_size > method_meta.num_inputs()) {
+      throw std::runtime_error(
+          "Method '" + method_name + "' takes " +
+          std::to_string(method_meta.num_inputs()) + " inputs, but got " +
+          std::to_string(inputs_size));
+    }
     if (inputs_size < method_meta.num_inputs() &&
         failed_methods_.count(method_name) != 0) {
       throw std::runtime_error(
@@ -2381,7 +2407,9 @@ struct PyModule final {
           new_input_owners[i].validation.emplace(i, python_input);
         }
 #else
-        torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
+        torch_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<TorchTensorView>(python_input);
+        }));
         const auto& tensor = torch_inputs.back();
         new_input_owners[i].torch = tensor;
         validate_tensor_input(
@@ -2393,8 +2421,9 @@ struct PyModule final {
             method_name.c_str(),
             static_cast<uint32_t>(method.error()));
         tensor->validate_device(*method.get(), i);
-        const auto& read_tensor =
-            tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        read_input(method_meta, i, [&] {
+          tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        });
         input_sizes.emplace_back(
             tensor->sizes().begin(), tensor->sizes().end());
         input_strides.emplace_back(
@@ -2413,7 +2442,7 @@ struct PyModule final {
             tensor->device().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
         if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
-          new_input_owners[i].validation.emplace(i, read_tensor);
+          new_input_owners[i].validation.emplace(i, tensor->owner());
         }
 #endif
       } else if (py::isinstance<py::none>(python_input)) {
@@ -2438,8 +2467,9 @@ struct PyModule final {
                 at_tensor.sizes().begin(), at_tensor.sizes().end()));
         cpp_inputs.emplace_back(at_tensor);
 #else
-        dlpack_inputs.push_back(
-            std::make_shared<DLPackTensorView>(python_input));
+        dlpack_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<DLPackTensorView>(python_input);
+        }));
         const auto& view = dlpack_inputs.back();
         new_input_owners[i].dlpack = view;
         validate_tensor_input(
@@ -2451,7 +2481,9 @@ struct PyModule final {
             method_name.c_str(),
             static_cast<uint32_t>(method.error()));
         view->validate_device(*method.get(), i);
-        view->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        read_input(method_meta, i, [&] {
+          view->use_layout(method_meta.input_tensor_meta(i)->dim_order());
+        });
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -2462,8 +2494,9 @@ struct PyModule final {
         cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
 #endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        buffer_inputs.push_back(
-            std::make_shared<BufferTensor>(python_input, method_meta, i));
+        buffer_inputs.push_back(read_input(method_meta, i, [&] {
+          return std::make_shared<BufferTensor>(python_input, method_meta, i);
+        }));
         const auto& buffer = buffer_inputs.back();
         new_input_owners[i].buffer = buffer;
         validate_buffer_input(method_meta, i, *buffer);
@@ -2514,29 +2547,25 @@ struct PyModule final {
         retained[i].validation->validate();
       }
     }
-    // Same reason as the check in PyMethod::execute().
-    if (std::max(retained.size(), static_cast<size_t>(inputs_size)) <
-        method_meta.num_inputs()) {
-      const auto method = module_->method(method_name);
-      THROW_IF_ERROR(
-          method.error(),
-          "Failed to execute method %s, error: 0x%" PRIx32,
-          method_name.c_str(),
-          static_cast<uint32_t>(method.error()));
-      throw std::runtime_error(
-          "Method '" + method_name + "' takes " +
-          std::to_string(method_meta.num_inputs()) + " inputs, but only " +
-          std::to_string(
-              std::max(retained.size(), static_cast<size_t>(inputs_size))) +
-          " were ever passed. Pass every input.");
-    }
-    allocate_output_tensors(method_name);
+    // A load error is the real cause, so it wins over the checks below.
     const auto load_status = module_->load_method(method_name);
     THROW_IF_ERROR(
         load_status,
         "Failed to execute method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(load_status));
+    // Reading outputs below marks every input as set, which hides the
+    // runtime's own check for inputs that were never passed.
+    const auto passed_inputs =
+        std::max(retained.size(), static_cast<size_t>(inputs_size));
+    if (passed_inputs < method_meta.num_inputs()) {
+      throw std::runtime_error(
+          "Method '" + method_name + "' takes " +
+          std::to_string(method_meta.num_inputs()) + " inputs, but only " +
+          std::to_string(passed_inputs) +
+          " were ever passed. Pass every input.");
+    }
+    allocate_output_tensors(method_name);
     // Install the inputs first: only a failure there can leave a mix of two
     // calls installed, since the runtime does not roll back a prefix.
     for (size_t i = 0; i < inputs_size; ++i) {
@@ -2552,8 +2581,7 @@ struct PyModule final {
       }
     }
     failed_methods_.erase(method_name);
-    retained.resize(
-        std::max(retained.size(), static_cast<size_t>(inputs_size)));
+    retained.resize(passed_inputs);
     for (size_t i = 0; i < inputs_size; ++i) {
       retained[i] = std::move(new_input_owners[i]);
     }
@@ -3216,7 +3244,10 @@ struct PyMethod final {
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
-        torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
+        torch_inputs.push_back(
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<TorchTensorView>(python_input);
+            }));
         const auto& view = torch_inputs.back();
         validate_tensor_input(
             storage_->method->method_meta(),
@@ -3224,14 +3255,17 @@ struct PyMethod final {
             view->scalar_type(),
             view->sizes());
         view->validate_device(*storage_->method, i);
-        const auto& read_tensor = view->use_layout(
-            storage_->method->method_meta().input_tensor_meta(i)->dim_order());
+        read_input(storage_->method->method_meta(), i, [&] {
+          view->use_layout(storage_->method->method_meta()
+                               .input_tensor_meta(i)
+                               ->dim_order());
+        });
         const auto input_meta =
             storage_->method->method_meta().input_tensor_meta(i).get();
         if (!input_meta.is_memory_planned()) {
           // Watch the tensor the method reads: after a layout conversion that
           // is the copy, which an output aliasing the input can expose.
-          borrowed_inputs.emplace_back(i, read_tensor);
+          borrowed_inputs.emplace_back(i, view->owner());
         }
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
@@ -3269,7 +3303,9 @@ struct PyMethod final {
         cpp_inputs.emplace_back(at_tensor);
 #else
         dlpack_inputs.push_back(
-            std::make_shared<DLPackTensorView>(python_input));
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<DLPackTensorView>(python_input);
+            }));
         const auto& view = dlpack_inputs.back();
         validate_tensor_input(
             storage_->method->method_meta(),
@@ -3277,8 +3313,11 @@ struct PyMethod final {
             view->scalar_type(),
             view->sizes());
         view->validate_device(*storage_->method, i);
-        view->use_layout(
-            storage_->method->method_meta().input_tensor_meta(i)->dim_order());
+        read_input(storage_->method->method_meta(), i, [&] {
+          view->use_layout(storage_->method->method_meta()
+                               .input_tensor_meta(i)
+                               ->dim_order());
+        });
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -3289,8 +3328,11 @@ struct PyMethod final {
         cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
 #endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(
-            python_input, storage_->method->method_meta(), i));
+        buffer_inputs.push_back(
+            read_input(storage_->method->method_meta(), i, [&] {
+              return std::make_shared<BufferTensor>(
+                  python_input, storage_->method->method_meta(), i);
+            }));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
         const auto input_meta =
@@ -3548,8 +3590,13 @@ struct PyMethod final {
   struct SpareDeviceOutput final {
     std::shared_ptr<DeviceMemoryBuffer> buffer;
     std::weak_ptr<void> handed;
+    std::shared_ptr<bool> handed_out;
   };
   std::vector<SpareDeviceOutput> spare_device_outputs_;
+  // Per device output buffer, whether another library may have read it, so
+  // reusing it must wait for that library's queued work. Torch outputs always
+  // may; an ExecuTorchResult only once exported through DLPack.
+  std::vector<std::shared_ptr<bool>> handed_out_;
 #ifndef USE_ATEN_LIB
 
   struct BorrowedOutputOwner final {
@@ -3627,7 +3674,10 @@ struct PyMethod final {
         std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
     const std::shared_ptr<void> memory(holder, buffer->data());
     py::object result;
-    if (portable_tensor_output() == PortableTensorOutput::Torch) {
+    const auto torch_output =
+        portable_tensor_output() == PortableTensorOutput::Torch;
+    handed_out_[*slot] = std::make_shared<bool>(torch_output);
+    if (torch_output) {
       auto* retained = new std::shared_ptr<void>(memory);
       result = portable_tensor_result(
           tensor,
@@ -3636,7 +3686,8 @@ struct PyMethod final {
             delete static_cast<std::shared_ptr<void>*>(pointer);
           }));
     } else {
-      result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
+      result = py::cast(
+          PyExecuTorchResult::hand_over(tensor, memory, handed_out_[*slot]));
     }
     handed_buffers_[*slot] = holder;
     handed_slots_[*slot] = true;
@@ -3788,6 +3839,7 @@ struct PyMethod final {
     handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
     handed_slots_.assign(num_outputs, false);
     spare_device_outputs_.assign(num_outputs, SpareDeviceOutput());
+    handed_out_.assign(num_outputs, nullptr);
   }
 
   // A handed-over result still uses its buffer, so the method writes into a
@@ -3809,22 +3861,33 @@ struct PyMethod final {
         if (spare.buffer && spare.handed.expired()) {
           std::swap(buffer, spare.buffer);
           std::swap(handed_buffers_[i], spare.handed);
-          synchronize_device(device.index());
+          std::swap(handed_out_[i], spare.handed_out);
+          wait_for_other_readers(i, device);
         } else {
-          spare = {buffer, handed_buffers_[i]};
+          spare = {buffer, handed_buffers_[i], handed_out_[i]};
           buffer = allocate_device_output(i, buffer->size(), device);
         }
       } else {
-        // A dropped result's readers may still have work queued on other
-        // streams. Freeing its buffer would have waited for them, so reusing
-        // it waits too.
-        synchronize_device(device.index());
+        wait_for_other_readers(i, device);
       }
       handed_buffers_[i].reset();
+      handed_out_[i].reset();
       handed_slots_[i] = false;
     }
 #endif
   }
+
+#ifndef USE_ATEN_LIB
+  // A dropped result's memory may still be read by work another library
+  // queued on its own streams. Freeing it would have waited for that work, so
+  // reusing it waits too. Work these bindings queued has already finished,
+  // since every execution waits for its device before it returns.
+  void wait_for_other_readers(size_t index, executorch::aten::Device device) {
+    if (handed_out_[index] && *handed_out_[index]) {
+      synchronize_device(device.index());
+    }
+  }
+#endif
 
   py::list get_outputs_as_py_list(
       const std::vector<EValue>& outputs,
