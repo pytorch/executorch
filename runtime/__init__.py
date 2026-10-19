@@ -114,9 +114,10 @@ from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
-    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]  # noqa: F401
         ExecuTorchMethod,
         ExecuTorchProgram,
+        ExecuTorchResult,
         MethodMeta,
         Verification,
     )

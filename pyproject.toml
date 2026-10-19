@@ -50,14 +50,14 @@ classifiers = [
     "Programming Language :: C++",
     "Programming Language :: Python :: 3",
     # Update this as we support more versions of python.
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
 
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<3.16"
 
 # Runtime dependencies are declared dynamically (see `dynamic` above) and
 # computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
@@ -72,7 +72,7 @@ vgf = [
   # Python 3.12 is the reference/recommended minimum for the VGF
   # flow. ExecuTorch supports a broader Python range, so older versions are
   # surfaced as a VGF preflight warning instead of a package-level restriction.
-  "ai_ml_emulation_layer_for_vulkan==0.10.0",
+  "ai_ml_emulation_layer_for_vulkan==0.11.0",
   "ai_ml_sdk_model_converter==0.11.0",
   "ml_dtypes==0.5.1",
   "tosa-tools==2026.5.0",
