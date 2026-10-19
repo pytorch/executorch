@@ -13,6 +13,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
     - [Implementation](#implementation)
     - [Quantizer Annotation](#quantizer-annotation)
   - [Operator Support Status](#operator-support-status)
+  - [Additional PyTorch Operators Supported via Composite QNN Lowering](#additional-pytorch-operators-supported-via-composite-qnn-lowering)
   - [Issues](#issues)
   - [Pull Requests](#pull-requests)
 
@@ -538,6 +539,19 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
 | `aten.var.correction`, `aten.var.dim` | `DecomposeVar` |
+
+## Additional PyTorch Operators Supported via Composite QNN Lowering
+
+The following PyTorch operators are lowered by a node visitor into multiple QNN operations.
+
+ConvBackward uses this path to reuse the forward Conv2d's QNN weight wrapper and derive HWOI at runtime; an ATen decomposition would otherwise require another static weight or changes to the forward Conv2d visitor. It currently supports floating-point inputs and weights only; quantized ConvBackward support is planned for a future change.
+
+| PyTorch Op | Builder | QNN Lowering |
+|---|---|---|
+| `aten.convolution_backward.default` | `ConvBackward` | `Transpose` → `TransposeConv2d` |
+| `aten.copy.default` | `Copy` | `Reshape` → `Tile` |
+| `aten.embedding.default` | `Embedding` | `Convert` → `Gather` or `Gather` → `Convert` |
+| `aten.index_put.default` | `IndexPutVisitor` | tensor preparation → `ScatterNd` |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.
