@@ -42,7 +42,6 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.fx.passes.utils.fuser_utils import validate_partition
 
@@ -138,44 +137,6 @@ def _is_passthrough(node) -> bool:
     return node.op == "call_function" and any(
         marker in str(node.target) for marker in INT8_PASSTHROUGH_MARKERS
     )
-
-
-def duplicate_quantization_fanout(graph_module: torch.fx.GraphModule) -> int:
-    """
-    Give every consumer its own quantize -> dequantize chain so that a
-    partition boundary can fall between any quantize and dequantize pair.
-    """
-    graph = graph_module.graph
-    copies = 0
-    for node in list(graph.nodes):
-        if not is_dequantize(node) or len(node.users) < 2:
-            continue
-        for user in list(node.users)[1:]:
-            with graph.inserting_after(node):
-                duplicate = graph.node_copy(node)
-            duplicate.meta = dict(node.meta)
-            user.replace_input_with(node, duplicate)
-            copies += 1
-    for node in list(graph.nodes):
-        if not is_quantize(node) or len(node.users) < 2:
-            continue
-        for user in list(node.users)[1:]:
-            with graph.inserting_after(node):
-                duplicate = graph.node_copy(node)
-            duplicate.meta = dict(node.meta)
-            user.replace_input_with(node, duplicate)
-            copies += 1
-    if copies:
-        graph.lint()
-        graph_module.recompile()
-    return copies
-
-
-class DuplicateQuantizationFanoutPass(PassBase):
-    """Run before partitioning (to_edge_transform_and_lower transform_passes)."""
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        return PassResult(graph_module, duplicate_quantization_fanout(graph_module) > 0)
 
 
 class StructuralResolver(ExportedTensorResolver):
@@ -432,10 +393,8 @@ class EspNNPartitioner(Partitioner):
 
 
 __all__ = [
-    "DuplicateQuantizationFanoutPass",
     "StructuralResolver",
     "EspNNPartitioner",
-    "duplicate_quantization_fanout",
     "find_supported_nodes",
     "is_supported_int8_node",
 ]

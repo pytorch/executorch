@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import executorch.kernels.quantized  # noqa: F401  registers quantize/dequantize out variants
 
-from executorch.backends.espressif.partition.espnn_partitioner import (
-    DuplicateQuantizationFanoutPass,
-    EspNNPartitioner,
-)
+from executorch.backends.espressif.partition.espnn_partitioner import EspNNPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
+    DuplicateDequantNodePass,
+)
 
 
 def to_espnn_edge(program, allow_cpu_fallback: bool = True):
@@ -26,7 +26,7 @@ def to_espnn_edge(program, allow_cpu_fallback: bool = True):
     partitioner = EspNNPartitioner(allow_cpu_fallback=allow_cpu_fallback)
     edge = to_edge_transform_and_lower(
         program,
-        transform_passes=[DuplicateQuantizationFanoutPass()],
+        transform_passes=[DuplicateDequantNodePass()],
         partitioner=[partitioner],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )

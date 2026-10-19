@@ -27,7 +27,6 @@ backends/espressif/
   lowering.py                to_espnn_edge(): export -> edge -> lowered program + report
   serialization/             XTS3 format writer and parser, op lowering rules
   reference/                 bit-exact host model of the ESP-NN kernels and the CPU fallback
-  _passes/                   batch-norm folding, dropout removal
   espnn_runtime/             ESP-IDF component: XTS3 interpreter + ExecuTorch BackendInterface
   test/                      pytest suite (lowering, operators, CPU fallback)
 examples/espressif/
@@ -53,7 +52,9 @@ symmetric weights, as annotated by `EspNNQuantizer`.
 | Resize | `upsample_nearest2d`, `upsample_bilinear2d` (`align_corners` either way) |
 | Data movement | `reshape`, `view`, `flatten`, `unflatten`, `permute`, `transpose`, `squeeze`, `unsqueeze`, `slice`, `select`, `expand`, `pad`, `cat`, `stack`, `split`, `chunk`, `unbind` |
 
-Batch norm is folded into the preceding convolution before quantization.
+Batch norm that follows a convolution is folded into it by PT2E
+(`prepare_pt2e` / `prepare_qat_pt2e`); dropout in an exported eval-mode
+model is a no-op.
 Partitions can have several inputs and outputs. Anything else stays in the
 program and runs on the CPU, including float ops, LSTM, layer norm and
 attention matmuls. The partitioner reports what it delegated and what it left

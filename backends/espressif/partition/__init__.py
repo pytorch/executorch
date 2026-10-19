@@ -6,6 +6,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from .espnn_partitioner import DuplicateQuantizationFanoutPass, EspNNPartitioner
+from .espnn_partitioner import EspNNPartitioner
 
-__all__ = ["DuplicateQuantizationFanoutPass", "EspNNPartitioner"]
+__all__ = ["EspNNPartitioner"]

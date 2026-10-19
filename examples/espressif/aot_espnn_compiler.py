@@ -44,7 +44,6 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from executorch.backends.espressif._passes import fold_batch_norm, remove_dropout
 from executorch.backends.espressif.quantizer import EspNNQuantizer
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -472,9 +471,7 @@ def main() -> int:
         for s in (args.input_shape or ["1,3,224,224"])
     ]
     print(f"[1/5] Loading {args.model}")
-    model = remove_dropout(
-        fold_batch_norm(load_model(args.model, args.weights).eval())[0]
-    ).eval()
+    model = load_model(args.model, args.weights).eval()
     calibration, evaluation = make_data(args, shapes)
     quantized, program = quantize(model, calibration, args)
     compile_fn = compile_standalone if args.mode == "standalone" else compile_executorch
