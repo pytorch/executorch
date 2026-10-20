@@ -121,8 +121,8 @@ auto with_cuda_device(int index, Function&& function) {
 // Copies on the legacy default stream. A copy to the host returns once it has
 // finished. A copy to the device may still be in flight when this returns, but
 // it runs before anything queued afterwards on a blocking stream, including the
-// delegates' cudaStreamPerThread; a result holding such memory waits for it
-// only when it hands the memory to another library.
+// delegates' cudaStreamPerThread; a result holding such memory still waits for
+// the device before another library or a call reads it.
 inline void copy_cuda_storage(
     void* destination,
     const void* source,
