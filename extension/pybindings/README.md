@@ -47,10 +47,12 @@ runtime or input storage and later execution may overwrite that storage.
 A CUDA output that fills memory the bindings allocated for it is returned
 without a copy when `clone_outputs=True`. The result keeps that memory, so a
 method writes its next execution into a second buffer, and the two take turns;
-a module allocates new memory each call. Reading the outputs again before the
-next execution returns the same object, so an in-place change to one read
-shows in the other. In torch output mode such a result is a view of memory
-torch does not own, so it cannot grow with `resize_()`.
+a module allocates new memory each call. Within one execution, reading the
+outputs again with `clone_outputs=True` returns the same object, so an in-place
+change to one read shows in the other; a `clone_outputs=False` read is a
+separate borrowed view. In torch output mode such a result is a view of memory
+torch does not own, so it cannot grow with `resize_()` and cannot be shared
+through `torch.multiprocessing`. Call `.clone()` for a normal torch tensor.
 
 `dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
 `"bfloat16"`.
@@ -99,20 +101,29 @@ output = method([device_input])[0]
 result = np.asarray(output.to_host())
 ```
 
-CUDA DLPack inputs and `ExecuTorchResult` outputs require CUDA-enabled bindings.
-Torch CUDA inputs and outputs synchronize through Python Torch, including in
-CPU builds of the bindings. Execution is synchronous at the Python boundary:
-a call returns after its device work has finished, so its outputs are ready on
-any stream. Each call waits for the device once, rather than once per tensor.
-Before running, it also waits once if an input may still be written on another
-library's stream: a torch CUDA tensor, a DLPack input from another library, or
-an `ExecuTorchResult` whose memory was handed out through `__dlpack__`. The
-synchronization has no C++ ATen dependency.
+Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
+of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
+Bindings built without CUDA support synchronize through Python Torch instead,
+so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
+and return borrowed CUDA results. Execution is synchronous at the Python
+boundary: a call returns after its device work has finished, so its outputs are
+ready on any stream. Each call waits once per device after it runs, rather than
+once per output. Before running, it waits once per device for any CUDA input
+that another library may still be writing: a torch CUDA tensor, a CUDA DLPack
+input, or a result of these bindings passed back in, since that result can share
+memory a caller handed to another library. The same wait covers the memory of a
+CUDA output that a method returned without a copy: once that result is dropped,
+the method writes the memory again, and another library may still be reading
+it. A torch CUDA input in another layout also waits before torch copies it into
+the exported layout. Reading a CUDA result through `__dlpack__` or `to_host()`
+waits once as well. The synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
 method. Bfloat16 results expose flat bytes through the buffer protocol because
 NumPy and PEP 3118 do not define that numeric dtype. DLPack consumers receive the
-original bfloat16 dtype and tensor shape.
+original bfloat16 dtype and tensor shape. A bfloat16 result passed back in is
+read through DLPack too, so it keeps its own shape and dim order instead of
+taking the method's.
 
 ```python
 import cupy as cp
