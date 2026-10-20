@@ -74,10 +74,13 @@ class CudaDLPackTest(unittest.TestCase):
             ctypes.c_uint64,
         ]
         cls.driver.cuPointerGetAttribute.restype = ctypes.c_int
-        cls._export_delegate()
+        cls.program_path, cls.data_path = cls._export_delegate("cuda_dlpack")
+        cls.host_input_program = cls._export_delegate(
+            "host_inputs", inputs_on_device=False
+        )
 
     @classmethod
-    def _export_delegate(cls):
+    def _export_delegate(cls, name, inputs_on_device=True):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
         from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -103,7 +106,8 @@ class CudaDLPackTest(unittest.TestCase):
         program = edge.to_executorch(
             config=ExecutorchBackendConfig(
                 propagate_device_config=PropagateDeviceConfig(
-                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                    skip_h2d_for_method_inputs=inputs_on_device,
+                    skip_d2h_for_method_outputs=True,
                 ),
                 enable_non_cpu_memory_planning=True,
                 memory_planning_pass=MemoryPlanningPass(
@@ -120,24 +124,33 @@ class CudaDLPackTest(unittest.TestCase):
                 raise AssertionError(
                     "test must cover borrowed inputs and unplanned outputs"
                 )
-            if tensor.extra_tensor_info.device_type != DeviceType.CUDA:
+            if (inputs_on_device or index in plan.outputs) and (
+                tensor.extra_tensor_info.device_type != DeviceType.CUDA
+            ):
                 raise AssertionError("test must retain CUDA inputs and outputs")
 
-        cls.program_path = Path(cls.directory.name) / "cuda_dlpack.pte"
-        with cls.program_path.open("wb") as source:
+        directory = Path(cls.directory.name) / name
+        directory.mkdir()
+        program_path = directory / f"{name}.pte"
+        with program_path.open("wb") as source:
             program.write_to_file(source)
         data_names = sorted(program._tensor_data or {})
-        program.write_tensor_data_to_file(cls.directory.name)
-        cls.data_path = (
-            Path(cls.directory.name) / (data_names[0] + ".ptd") if data_names else None
+        program.write_tensor_data_to_file(str(directory))
+        return program_path, (
+            directory / (data_names[0] + ".ptd") if data_names else None
         )
 
-    def _load_method(self):
+    def _load_method(self, host_inputs=False):
         from executorch.runtime import Runtime
 
+        program_path, data_path = (
+            self.host_input_program
+            if host_inputs
+            else (self.program_path, self.data_path)
+        )
         return (
             Runtime.get()
-            .load_program(self.program_path, data_path=self.data_path)
+            .load_program(program_path, data_path=data_path)
             .load_method("forward")
             ._method
         )
@@ -180,6 +193,8 @@ class CudaDLPackTest(unittest.TestCase):
             ready.record()
         # Only wait for the consumer. A global wait before the read would hide
         # missing ordering between the producer, delegate, and consumer streams.
+        # An ExecuTorchResult waits for the device in __dlpack__ already, so in
+        # that output mode this catches a wrong value, not a missing wait.
         ready.synchronize()
         torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, expected))
         return tensor
@@ -236,6 +251,33 @@ class CudaDLPackTest(unittest.TestCase):
             shared.fill_(41.0)
         method.execute()
         self._assert_ready_value(method.get_outputs()[0], 84.0)
+
+    def test_borrowed_result_written_by_another_library_is_waited_for(self):
+        # Two clone_outputs=False reads share the same memory. Another library
+        # writes it through one of them, so passing the other back in must
+        # wait for that write.
+        method = self._load_method()
+        stream = torch.cuda.current_stream(self.device)
+        # A module reads it back: it writes each call into new memory, so only
+        # the wait for its input can order the read. Its first run sets it up
+        # and waits for the whole device, so it runs once before the write. Its
+        # output stays alive, since freeing it in the next call waits as well.
+        program = self.program_path.read_bytes()
+        data = self.data_path.read_bytes() if self.data_path else None
+        module = self.bindings._load_for_executorch_from_buffer(program, data)
+        kept = module.forward(
+            [CudaDLPackOnly(torch.zeros(self.shape, device=self.device), stream)]
+        )
+        value = torch.full(self.shape, 1.0, device=self.device)
+        written = method(CudaDLPackOnly(value, stream), clone_outputs=False)[0]
+        passed = method.get_outputs(clone_outputs=False)[0]
+        writer = torch.cuda.Stream(self.device)
+        with torch.cuda.stream(writer):
+            shared = torch.from_dlpack(written)
+            torch.cuda._sleep(50_000_000)
+            shared.fill_(41.0)
+        self._assert_ready_value(module.forward([passed])[0], 84.0)
+        del kept
 
     def test_clone_roundtrip_and_borrowed_output_lifetime(self):
         method = self._load_method()
@@ -301,7 +343,7 @@ class CudaDLPackTest(unittest.TestCase):
         self.assertEqual(handed_copies, borrowed_copies)
         self._assert_ready_value(first, 8.0)
         self.assertIs(method.get_outputs()[0], first)
-        self.assertIs(method.get_outputs(clone_outputs=False)[0], first)
+        self.assertIsNot(method.get_outputs(clone_outputs=False)[0], first)
 
         # Feeding the result back must not write the next output into it.
         second = method(first)[0]
@@ -520,29 +562,38 @@ print("Input on a non-current device was read")
                 self._assert_ready_value(third, 9.0)
 
     def test_reused_output_memory_waits_for_pending_readers(self):
-        method = self._load_method()
+        # Once the result is dropped, the next run writes into its memory, so it
+        # must wait for a read another library still has queued there, whether
+        # its own input is on the device or on the host.
         count = torch.Size(self.shape).numel()
-        host = memoryview(array.array("f", [1.0]) * count).cast("B")
-        # Inputs from these bindings need no wait of their own, so only the
-        # reuse wait can keep the next run from overwriting a pending read.
-        first = self.bindings.ExecuTorchResult.from_host(
-            host.cast("f", self.shape), self.device.index
-        )
-        second = self.bindings.ExecuTorchResult.from_host(
-            memoryview(array.array("f", [5.0]) * count).cast("B").cast("f", self.shape),
-            self.device.index,
-        )
-        torch.cuda.synchronize(self.device)
-        result = method(first)[0]
-        reader = torch.cuda.Stream(self.device)
-        with torch.cuda.stream(reader):
-            torch.cuda._sleep(1_000_000_000)
-            snapshot = self._tensor(result).clone()
-        del result
-        gc.collect()
-        method(second)
-        reader.synchronize()
-        torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+
+        def on_device(value):
+            host = memoryview(array.array("f", [value]) * count).cast("B")
+            return self.bindings.ExecuTorchResult.from_host(
+                host.cast("f", self.shape), self.device.index
+            )
+
+        def on_host(value):
+            return torch.full(self.shape, value)
+
+        for host_inputs, make_input in ((False, on_device), (True, on_host)):
+            with self.subTest(host_inputs=host_inputs):
+                method = self._load_method(host_inputs=host_inputs)
+                first, second = make_input(1.0), make_input(5.0)
+                torch.cuda.synchronize(self.device)
+                result = method(first)[0]
+                # Imported before the read is queued: an ExecuTorchResult waits
+                # for the device in __dlpack__, which would finish the read.
+                view = self._tensor(result)
+                reader = torch.cuda.Stream(self.device)
+                with torch.cuda.stream(reader):
+                    torch.cuda._sleep(1_000_000_000)
+                    snapshot = view.clone()
+                del result, view
+                gc.collect()
+                method(second)
+                reader.synchronize()
+                torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
 
     def test_method_outputs_take_turns_between_two_buffers(self):
         method = self._load_method()
@@ -666,12 +717,12 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
-    def test_device_chain_waits_for_the_device_once_per_call(self):
-        # Feeding each output into the next call, with a host upload per call,
-        # needs one device wait per call. Waiting per tensor made a chain of
-        # small programs measurably slower.
-        if not self.executorch_output:
-            self.skipTest("chains ExecuTorchResult outputs")
+    def test_device_chain_waits_for_the_device_twice_per_call(self):
+        # Feeding each output into the next call, with a host upload per call.
+        # Each call waits for the device twice: once before it runs, in case
+        # another library still uses its input or output memory, and once after,
+        # so its output is ready on any stream. The count is fixed per call, not
+        # per tensor.
         from torch.profiler import profile, ProfilerActivity
 
         method = self._load_method()
@@ -700,14 +751,14 @@ print("Input on a non-current device was read")
                 self.bindings.ExecuTorchResult.from_host(host, self.device.index)
                 value = method(value, clone_outputs=True)[0]
 
-        # The profiler waits for the device itself when it stops. Each call
-        # waits exactly once: none would return outputs still being written.
-        self.assertEqual(waits(chain) - waits(lambda: None), calls)
+        # The profiler waits for the device itself when it stops.
+        self.assertEqual(waits(chain) - waits(lambda: None), 2 * calls)
         expected = 8.0
         for _ in range(calls):
             expected = (expected + 1.0) * 2.0
+        final = value.to_host() if self.executorch_output else value.cpu()
         torch.testing.assert_close(
-            torch.from_dlpack(value.to_host()), torch.full(self.shape, expected)
+            torch.from_dlpack(final), torch.full(self.shape, expected)
         )
 
     def _require_libgomp_without_torch(self):
