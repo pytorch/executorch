@@ -2347,6 +2347,12 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "lib/cmake/executorch/executorch-config.cmake",
                 ),
+                # Type checkers find a stub only under the module's own name, so
+                # the extension's stub ships as _C.pyi, as the Buck build names it.
+                (
+                    "extension/pybindings/pybindings.pyi",
+                    "extension/pybindings/_C.pyi",
+                ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator
             # build, which needs the kernel and tensor helpers, and a C++ application

@@ -136,16 +136,20 @@ class Method:
     def __init__(self, method: ExecuTorchMethod) -> None:
         self._method = method
 
-    def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
+    def execute(
+        self, inputs: Sequence[Any], clone_outputs: bool = True
+    ) -> Sequence[Any]:
         """Executes the method with the given inputs.
 
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
+            clone_outputs: If False, the outputs share the method's memory and
+                a later execution may overwrite them, which avoids a copy.
 
         Returns:
             A list of output values, typically torch.Tensor objects.
         """
-        return self._method(inputs)
+        return self._method(inputs, clone_outputs=clone_outputs)
 
     @property
     def metadata(self) -> MethodMeta:
@@ -188,9 +192,11 @@ class Program:
         program placed them. A method whose buffers are all on the host shares
         one set of arenas with every other host-only method of this program,
         sized to the largest of them, so two such methods overwrite each
-        other's intermediate values. Outputs are copied out on every call, so
-        that sharing does not change what execute returns. A method with any
-        buffer placed on an accelerator gets its own arenas instead, claimed
+        other's intermediate values. By default execute copies its outputs out,
+        so that sharing does not change what it returns. With
+        ``clone_outputs=False`` the outputs share that memory, so the next
+        execution of any method of this program may overwrite them. A method
+        with any buffer placed on an accelerator gets its own arenas instead, claimed
         when that method is first loaded and owned by that method until the
         method itself is released. This program caches every method it loads,
         so in normal use those arenas live as long as the program does. A
