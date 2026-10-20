@@ -7,10 +7,11 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Enum, List, Optional, Tuple, TypeVar, Union
 
-from executorch.exir._warnings import experimental
+_T = TypeVar("_T")
 
+def experimental(message: str) -> Callable[[_T], _T]: ...
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
     """Verification maps C++ Program::Verification to Python.
@@ -22,6 +23,49 @@ class Verification(Enum):
 
     Minimal: ...
     InternalConsistency: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchResult:
+    """A tensor result of an ExecuTorch method, returned when PyTorch is not used.
+
+    Read a CPU result through the buffer protocol, NumPy, or DLPack, and a CUDA
+    result through DLPack or ``to_host()``.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    @property
+    def shape(self) -> Tuple[int, ...]: ...
+    @property
+    def strides(self) -> Tuple[int, ...]: ...
+    @property
+    def dtype(self) -> Any: ...
+    @property
+    def dtype_name(self) -> str:
+        """The dtype's name, such as ``"bfloat16"``, including dtypes NumPy lacks."""
+        ...
+
+    @property
+    def nbytes(self) -> int: ...
+    def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
+    def __dlpack__(self, stream: Optional[int] = None) -> Any: ...
+    def __dlpack_device__(self) -> Tuple[int, int]: ...
+    def to_host(self) -> ExecuTorchResult:
+        """Return a copy of this result in CPU memory."""
+        ...
+
+    @staticmethod
+    def from_host(source: Any, device_index: int = 0) -> ExecuTorchResult:
+        """Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA device,
+        for use as a method input.
+
+        Requires bindings built with CUDA support.
+        """
+        ...
+
+    def __repr__(self) -> str: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:

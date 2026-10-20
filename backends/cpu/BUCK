@@ -44,3 +44,16 @@ fbcode_target(
         "//executorch/export:lib",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "tester",
+    srcs = ["test/tester.py"],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":lib",
+        "//executorch/backends/test/harness:tester",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib", # @manual
+    ],
+)
