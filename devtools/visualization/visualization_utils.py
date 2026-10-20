@@ -21,9 +21,16 @@ from torch.fx import GraphModule, Node  # type: ignore
 try:
     from model_explorer import config, consts, visualize_from_config  # type: ignore
     from model_explorer.config import ModelExplorerConfig  # type: ignore
-    from model_explorer.pytorch_exported_program_adater_impl import (  # type: ignore
-        PytorchExportedProgramAdapterImpl,
-    )
+
+    try:
+        from model_explorer.pytorch_exported_program_adapter_impl import (  # type: ignore
+            PytorchExportedProgramAdapterImpl,
+        )
+    except ModuleNotFoundError:
+        # Releases before 0.1.34 misspell the module name, and Arm pins one of them.
+        from model_explorer.pytorch_exported_program_adater_impl import (  # type: ignore
+            PytorchExportedProgramAdapterImpl,
+        )
 except ImportError:
     print(
         "Error: 'model_explorer' is not installed. Install using devtools/install_requirements.sh"
