@@ -26,6 +26,7 @@ from torchao.quantization.pt2e.quantizer import (
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .passes import (
+    FuseRifeFinalWarpsPass,
     GroupWarpSamplerInputsPass,
     PackRifeWarpsAndConcatPass,
     PadRifeBlock0ConcatPass,
@@ -187,6 +188,7 @@ def configure_rife_vgf(partitioner: VgfPartitioner | None = None) -> None:
 
     _register_pass_before(RewriteConvPass, RewriteWarpDownsampleToTosaCustomPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, PackRifeWarpsAndConcatPass())
+    _register_pass_before(EnsureUniqueOutputNodesPass, FuseRifeFinalWarpsPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, PadRifeBlock0ConcatPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, GroupWarpSamplerInputsPass())
 
