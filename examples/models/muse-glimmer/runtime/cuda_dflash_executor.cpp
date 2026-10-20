@@ -12,7 +12,7 @@
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
-#include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 
 #include <algorithm>
 #include <cmath>
@@ -125,7 +125,7 @@ std::optional<DraftPlan> pack_draft(
 namespace {
 bool dense(const aten::Tensor& tensor) {
   std::int64_t stride = 1;
-  for (int d = tensor.dim() - 1; d >= 0; --d) {
+  for (auto d = tensor.dim() - 1; d >= 0; --d) {
     if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
       return false;
     }
@@ -203,6 +203,12 @@ Result<std::string> cache_key_metadata(Module& module, const char* name) {
       "DFlash %s must be a nonempty string",
       name);
   return std::string(outputs[0].toString());
+}
+
+// Nothing is mutated yet, so the batch is refused without poisoning the model.
+bool reject_batch() {
+  ET_LOG(Error, "CUDA DFlash rejected an invalid batch");
+  return false;
 }
 } // namespace
 
@@ -653,10 +659,13 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   int remaining = context_limit;
   for (std::size_t i = 0; i < owners.size(); ++i) {
     auto& state = sessions_.at(owners[i]);
+    if (remaining < 0) {
+      return false;
+    }
     const auto rows = state.hidden.size() / row_bytes_;
-    const int count = static_cast<int>(std::min<std::size_t>(remaining, rows));
-    if (remaining < 0 ||
-        (proposals && rows != static_cast<std::size_t>(count))) {
+    const int count =
+        static_cast<int>(std::min(static_cast<std::size_t>(remaining), rows));
+    if (proposals && rows != static_cast<std::size_t>(count)) {
       return false;
     }
     contexts.push_back(
@@ -851,7 +860,10 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
 #endif
     out.outputs.clear();
     out.outputs.resize(batch.inputs.size());
-    if (!initialized_ || failed_) {
+    if (!initialized_) {
+      return reject_batch();
+    }
+    if (failed_) {
       return fail_batch(batch, out);
     }
     RawStep step;
@@ -875,20 +887,22 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
         ET_LOG(
             Error,
             "CUDA DFlash: invalid input or unsupported sampled configuration (temperature=0 required)");
-        return fail_batch(batch, out);
+        return reject_batch();
       }
       const auto start =
           static_cast<std::int64_t>(input.position) + input.offset;
       const auto end = start + input.size;
       auto [at, first] = cursor.emplace(input.sid, it->second.frontier);
+      if (target_->cache_control().pos(it->second.target_id) !=
+          it->second.frontier) {
+        return fail_batch(batch, out);
+      }
       if (start > at->second || (start < at->second && !first) ||
           end > max_context_ ||
-          target_->cache_control().pos(it->second.target_id) !=
-              it->second.frontier ||
           step.tokens.size() >
               static_cast<std::size_t>(std::numeric_limits<int>::max()) -
                   input.size) {
-        return fail_batch(batch, out);
+        return reject_batch();
       }
       if (start < at->second) {
         rewinds.emplace_back(input.sid, static_cast<int>(start));
@@ -897,7 +911,7 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       for (std::size_t j = 0; j < input.size; ++j) {
         const auto token = (**payload)[input.offset + j];
         if (token >= static_cast<std::uint64_t>(target_->vocab_size())) {
-          return fail_batch(batch, out);
+          return reject_batch();
         }
         step.tokens.push_back(token);
         step.positions.push_back(start + j);
@@ -925,20 +939,10 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
             batching::Output{batch.inputs[i].sid, {predictions[i]}};
       }
     }
-    const auto before = stats_;
     if (!speculate(batch, out)) {
       return fail_batch(batch, out);
     }
     ++stats_.executions;
-    ET_LOG(
-        Info,
-        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu",
-        static_cast<unsigned long long>(stats_.cycles - before.cycles),
-        static_cast<unsigned long long>(stats_.proposed - before.proposed),
-        static_cast<unsigned long long>(stats_.accepted - before.accepted),
-        static_cast<unsigned long long>(stats_.rejected - before.rejected),
-        static_cast<unsigned long long>(stats_.bonuses - before.bonuses),
-        static_cast<unsigned long long>(stats_.draft_forwards));
     return true;
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
