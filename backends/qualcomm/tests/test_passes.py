@@ -842,6 +842,65 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(list(dequant.users), convs)
         edge.to_executorch()
 
+    def test_fp16a8w_conv_on_cpu_stays_fp16(self):
+        """fp16a8w runs conv in fp16, but the HTP only takes it for 1x1 kernels, so a
+        3x3 conv falls back to CPU. Its bias data and weight dequantize must be fp16
+        as well, or to_executorch fails on a bias buffer that does not match its spec.
+        """
+
+        class ConvConvConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.pw1 = torch.nn.Conv2d(8, 16, 1)
+                self.k3 = torch.nn.Conv2d(16, 16, 3, padding=1)
+                self.pw2 = torch.nn.Conv2d(16, 8, 1)
+
+            def forward(self, x):
+                return self.pw2(torch.relu(self.k3(torch.relu(self.pw1(x)))))
+
+        sample_input = (torch.randn(1, 8, 16, 16),)
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(
+            quant_dtype=QuantDtype.use_fp16a8w, is_conv_per_channel=True
+        )
+        prepared = prepare_pt2e(
+            torch.export.export(ConvConvConv().eval(), sample_input).module(),
+            quantizer,
+        )
+        prepared(*sample_input)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=False),
+        )
+        quantized = convert_pt2e(prepared)
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                quantized, sample_input, compiler_specs
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        program = edge.exported_program()
+        convs = [
+            node
+            for node in program.graph.nodes
+            if node.op == "call_function"
+            and getattr(node.target, "__name__", "") == "aten.convolution.default"
+        ]
+        self.assertEqual([conv.name for conv in convs], ["aten_convolution_default_1"])
+        weight, bias = convs[0].args[1], convs[0].args[2]
+        self.assertEqual(weight.kwargs.get("out_dtype"), torch.float16)
+        bias_name = program.graph_signature.inputs_to_parameters[bias.name]
+        self.assertEqual(program.state_dict[bias_name].dtype, torch.float16)
+        # the cast must not reach back into the caller's module
+        self.assertEqual(
+            {t.dtype for t in quantized.state_dict().values() if t.is_floating_point()},
+            {torch.float32},
+        )
+        edge.to_executorch()
+
     def test_lowering_accepts_exported_program_without_reexport(self):
         """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
         ExportedProgram as captured, never re-exporting it.

@@ -532,7 +532,7 @@ def to_edge_transform_and_lower_to_qnn(
             convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
     with QnnManagerContext(compiler_specs):
-        return to_edge_transform_and_lower(
+        edge_manager = to_edge_transform_and_lower(
             aten_programs,
             transform_passes=transform_passes,
             partitioner=qnn_partitioners,
@@ -540,6 +540,38 @@ def to_edge_transform_and_lower_to_qnn(
             compile_config=qnn_edge_config(),
             generate_etrecord=generate_etrecord,
         )
+    for graph_name in edge_manager.methods:
+        _cast_cpu_parameters_to_meta_dtype(edge_manager.exported_program(graph_name))
+    return edge_manager
+
+
+def _cast_cpu_parameters_to_meta_dtype(program: ExportedProgram) -> None:
+    """
+    QNN passes may retype a parameter in meta only and leave its data to the QNN
+    builder, e.g. InsertCastForFpActQuantizedWeight moves an fp16a8w bias to fp16.
+    A parameter whose consumer was not delegated is serialized from its data, so
+    cast that data too, into a new tensor rather than the caller's.
+    """
+    signature = program.graph_signature
+    for node in program.graph.nodes:
+        if node.op != "placeholder":
+            continue
+        name = signature.inputs_to_parameters.get(
+            node.name, signature.inputs_to_buffers.get(node.name)
+        )
+        if name is None or name not in program.state_dict:
+            continue
+        tensor, dtype = program.state_dict[name], node.meta["val"].dtype
+        if (
+            tensor.dtype == dtype
+            or not tensor.is_floating_point()
+            or not dtype.is_floating_point
+        ):
+            continue
+        cast = tensor.detach().to(dtype)
+        if isinstance(tensor, torch.nn.Parameter):
+            cast = torch.nn.Parameter(cast, requires_grad=tensor.requires_grad)
+        program.state_dict[name] = cast
 
 
 def capture_program(
