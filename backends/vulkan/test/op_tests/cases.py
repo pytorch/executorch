@@ -733,6 +733,82 @@ def get_conv_inputs():
             output_padding=[0, 0],
             groups=4,
         ),
+        # Kernels other than 3x3 / 5x5 have no tiled shader and run on the
+        # generic conv2d_dw shader, which has no stride != dilation variant
+        # and must handle padded windows along the right / bottom edge itself.
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 4, 4),
+            bias=None,
+            stride=[2, 2],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        # stride == dilation on the generic shader, with padding: the output
+        # windows along the right / bottom edge extend past the input.
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[3, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[2, 2],
+            padding=[3, 3],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        # dilation > 1 on the generic shader: the tap positions are
+        # ipos + k * dilation, both with stride != dilation (7x7 s1 d2) and
+        # with stride == dilation (6x6 s3 d3).
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 7, 7),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[6, 6],
+            dilation=[2, 2],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 32, 32),
+            weight=(8, 1, 6, 6),
+            bias=None,
+            stride=[3, 3],
+            padding=[2, 2],
+            dilation=[3, 3],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        # Non-square kernel, stride, padding and input, so that any x/y swap
+        # in kernel_size / stride / padding / in_sizes changes the result.
+        Test(
+            self=(1, 8, 31, 37),
+            weight=(8, 1, 3, 5),
+            bias=(8,),
+            stride=[2, 1],
+            padding=[1, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
     ]
 
     test_suite = VkTestSuite(test_cases)
@@ -2271,8 +2347,8 @@ def get_index_tensor_inputs():
     return test_suite
 
 
-@register_test_suite("aten.pow.Tensor_Scalar")
-def get_pow_tensor_scalar_inputs():
+@register_test_suite(["aten.pow.Tensor_Scalar", "aten.mul.Scalar"])
+def get_binary_scalar_inputs():
     test_suite = VkTestSuite(
         [
             ((M1,), 2.0),

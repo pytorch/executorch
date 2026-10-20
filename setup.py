@@ -338,6 +338,7 @@ def _top_level_package_dirs() -> FrozenSet[str]:
 # rather than scanned from .github, which a source distribution does not carry; a test re-derives
 # the list so it cannot drift.
 _CI_ENTRY_POINTS = (
+    "executorch.backends.cuda.batching.test.export_toy_decoder",
     "executorch.backends.mlx.test.run_all_tests",
     "executorch.backends.mlx.test.test_sample",
     "executorch.backends.mlx.test.test_slot_recycling",
@@ -1409,6 +1410,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_extension_cuda",
             None,
             ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "backends/openvino/",
+            "executorch_backend_openvino",
+            None,
+            ["EXECUTORCH_BUILD_OPENVINO"],
         ),
     ]
     return [
@@ -2813,11 +2820,12 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
-        # Enable OpenVINO backend on Linux. The backend uses dlopen at
-        # runtime so it has no build-time SDK dependency.
+        # Enable the OpenVINO backend on Linux and Windows. The backend loads
+        # the OpenVINO runtime at run time, so it has no build-time SDK
+        # dependency.
         if (
             not minimal_build
-            and sys.platform == "linux"
+            and sys.platform in ("linux", "win32")
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
                 "EXECUTORCH_BUILD_OPENVINO",

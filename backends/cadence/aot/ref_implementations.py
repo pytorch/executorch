@@ -309,7 +309,7 @@ def quantized_add_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -435,7 +435,7 @@ def quantized_mul_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -1623,9 +1623,15 @@ def quantized_w8a32_gru(
     assert new_hidden.shape == original_hidden_shape
 
     batch_size = inputs.shape[0]
-    input_dim = inputs.shape[1]
     hidden_dim = hidden.shape[-1]
+    if inputs.dim() == 3:
+        # [batch, seq_len, input] with one step: [2, batch, 1, hidden], as the
+        # fake kernel and the HiFi kernel produce. Batch > 1 is rejected
+        # above (the hidden state has one row).
+        step = new_hidden.reshape(batch_size, 1, hidden_dim)
+        return torch.stack([step, step], dim=0)
 
+    input_dim = inputs.shape[1]
     new_hidden_expanded = new_hidden.unsqueeze(1).expand(
         batch_size, input_dim, hidden_dim
     )

@@ -53,12 +53,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   # is resolved from it rather than from the whole-archive-forcing static
   # `executorch` target, so this module shares the one backend registry.
   if(EXECUTORCH_BUILD_SHARED)
-    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump util torch
-                                  extension_training
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump aten_bridge
+                                  torch extension_training
     )
   else()
     set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch
-                                  util torch extension_training
+                                  aten_bridge torch extension_training
     )
   endif()
 
@@ -76,11 +76,9 @@ if(EXECUTORCH_BUILD_PYBIND)
     endif()
   endif()
 
-  pybind11_add_module(
-    _training_lib SHARED
-    ${CMAKE_CURRENT_SOURCE_DIR}/pybindings/_training_lib.cpp
+  executorch_add_pybind_module(
+    _training_lib ${CMAKE_CURRENT_SOURCE_DIR}/pybindings/_training_lib.cpp
   )
-  strip_python_lib(_training_lib)
   set_target_properties(_training_lib PROPERTIES CXX_STANDARD 20)
 
   target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})

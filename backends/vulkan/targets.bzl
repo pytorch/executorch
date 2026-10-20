@@ -184,7 +184,7 @@ def define_common_targets(is_fbcode = False):
     runtime.filegroup(
         name = "vulkan_graph_runtime_shaders",
         srcs = native.glob([
-            "runtime/graph/ops/glsl/*",
+            "runtime/graph/ops/glsl/**/*",
         ]),
     )
 

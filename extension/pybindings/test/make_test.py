@@ -30,6 +30,25 @@ class ModuleAdd(torch.nn.Module):
         return (torch.ones(2, 2), torch.ones(2, 2))
 
 
+class ModuleAddBFloat16(ModuleAdd):
+    def get_inputs(self):
+        return (
+            torch.ones(2, 2, dtype=torch.bfloat16),
+            torch.ones(2, 2, dtype=torch.bfloat16),
+        )
+
+
+class ModuleAddBFloat16ToChannelsLast(ModuleAdd):
+    def forward(self, x, y):
+        return (x + y).to(memory_format=torch.channels_last)
+
+    def get_inputs(self):
+        return (
+            torch.ones(1, 2, 2, 2, dtype=torch.bfloat16),
+            torch.ones(1, 2, 2, 2, dtype=torch.bfloat16),
+        )
+
+
 class ModuleChannelsLast(torch.nn.Module):
     """The module to serialize and execute."""
 

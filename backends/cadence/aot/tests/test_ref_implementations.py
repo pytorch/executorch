@@ -101,9 +101,8 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
-            # Only these types need to be tested as per ET_FORALL_JARVIS_QUANTIZED_TYPES in
-            # on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/operators.h
             ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
+            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int16),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.uint8),
         ]
     )
@@ -125,11 +124,16 @@ class TestRefImplementations(unittest.TestCase):
         Y_tensor = torch.tensor([Y], dtype=dtype)
         expected_output = torch.tensor([expected_value], dtype=dtype)
 
-        quantized_add_per_tensor = (
-            torch.ops.cadence.quantized_add_asym8sxasym8s_asym8s.per_tensor
-            if dtype == torch.int8
-            else torch.ops.cadence.quantized_add_asym8uxasym8u_asym8u.per_tensor
-        )
+        if dtype == torch.int8:
+            quantized_add_per_tensor = (
+                torch.ops.cadence.quantized_add_asym8sxasym8s_asym8s.per_tensor
+            )
+        elif dtype == torch.uint8:
+            quantized_add_per_tensor = (
+                torch.ops.cadence.quantized_add_asym8uxasym8u_asym8u.per_tensor
+            )
+        else:
+            quantized_add_per_tensor = torch.ops.cadence.quantized_add.per_tensor
         output = quantized_add_per_tensor(
             X_tensor,
             X_scale,
@@ -3286,6 +3290,7 @@ class TestRefImplementations(unittest.TestCase):
             # X=5, zp=4 → dequant=0.8*(5-4)=0.8; Y=5, zp=4 → dequant=0.8
             # mul=0.64; quantize: round(0.64/0.8)+4=1+4=5
             ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int8),
+            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int16),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.uint8),
         ]
     )
@@ -3600,6 +3605,54 @@ class TestRefImplementations(unittest.TestCase):
             torch.all(output >= -1.0) and torch.all(output <= 1.0),
             f"Output values should be in [-1.1, 1.1] in {name}. Got min={output.min():.4f}, max={output.max():.4f}",
         )
+
+    def test_quantized_w8a32_gru_single_step_matches_float_gru(self) -> None:
+        # One [batch, seq_len=1, input] step with a [1, 1, hidden] hidden, the
+        # layout the fake kernel and the HiFi kernel use, against nn.GRU on the
+        # dequantized weights.
+        torch.manual_seed(0)
+        input_size, hidden_size = 6, 8
+        w_ih = torch.randint(-127, 128, (3 * hidden_size, input_size), dtype=torch.int8)
+        w_hh = torch.randint(
+            -127, 128, (3 * hidden_size, hidden_size), dtype=torch.int8
+        )
+        b_ih = torch.randint(-127, 128, (3 * hidden_size,), dtype=torch.int8)
+        b_hh = torch.randint(-127, 128, (3 * hidden_size,), dtype=torch.int8)
+        w_scale, h_scale, b_scale = 0.01, 0.02, 0.005
+        x = torch.randn(1, 1, input_size)
+        h = torch.randn(1, 1, hidden_size) * 0.5
+
+        output = torch.ops.cadence.quantized_w8a32_gru(
+            x, h, w_ih, w_scale, w_hh, h_scale, b_ih, b_scale, b_hh
+        )
+
+        gru = torch.nn.GRU(input_size, hidden_size, batch_first=True)
+        with torch.no_grad():
+            gru.weight_ih_l0.copy_(w_ih.float() * w_scale)
+            gru.weight_hh_l0.copy_(w_hh.float() * h_scale)
+            gru.bias_ih_l0.copy_(b_ih.float() * b_scale)
+            gru.bias_hh_l0.copy_(b_hh.float() * b_scale)
+            _, expected = gru(x, h)
+        self.assertEqual(tuple(output.shape), (2, 1, 1, hidden_size))
+        torch.testing.assert_close(output[0], expected, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(output[1], expected, rtol=1e-5, atol=1e-6)
+
+    def test_quantized_w8a32_gru_single_step_rejects_batch_2(self) -> None:
+        w_ih = torch.ones((12, 2), dtype=torch.int8)
+        w_hh = torch.ones((12, 4), dtype=torch.int8)
+        bias = torch.zeros(12, dtype=torch.int8)
+        with self.assertRaisesRegex(ValueError, "Leading dimension of hidden"):
+            torch.ops.cadence.quantized_w8a32_gru(
+                torch.ones(2, 1, 2),
+                torch.zeros(1, 1, 4),
+                w_ih,
+                0.1,
+                w_hh,
+                0.1,
+                bias,
+                0.1,
+                bias,
+            )
 
     def test_quantized_w8a32_gru_invalid_hidden_dim(self) -> None:
         # Test that non-multiple of 4 hidden dimension raises error
