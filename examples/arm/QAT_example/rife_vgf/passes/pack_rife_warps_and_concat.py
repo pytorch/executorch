@@ -303,37 +303,40 @@ def _match_block0_tail(concat, customs):
 
 
 def _phase_major_parameters(program, phase):
+    channels = _tensor_shape(phase)[-1]
+    if channels not in (20, 52):
+        raise ValueError("Expected a C20 or C52 PixelShuffle input.")
     if not _is_op(phase, TOSA.RESCALE.default, 5) or len(phase.users) != 1:
-        raise ValueError("Expected a private C52 output rescale.")
+        raise ValueError("Expected a private PixelShuffle output rescale.")
     producer = phase.args[0]
     if (
         not _is_op(producer, TOSA.TRANSPOSE_CONV2D.default, 5)
         or set(producer.users) != {phase}
         or producer.meta["val"].dtype != torch.int32
         or phase.args[1] != torch.int8
-        or len(phase.args[2]) not in (1, 52)
+        or len(phase.args[2]) not in (1, channels)
     ):
-        raise ValueError("Expected a private C52 transpose convolution.")
+        raise ValueError("Expected a private PixelShuffle transpose convolution.")
     _symmetric_weight(producer)
     weight = _constant_tensor(program, producer.args[1])
     bias = _constant_tensor(program, producer.args[2])
     if (
         weight.ndim != 4
-        or weight.shape[0] != 52
+        or weight.shape[0] != channels
         or weight.dtype != torch.int8
-        or bias.shape != (52,)
+        or bias.shape != (channels,)
         or bias.dtype != torch.int32
     ):
-        raise ValueError("Expected native C52 convolution weights and bias.")
-    # Convert channel*4+phase into phase*13+channel at the producer.
-    order = torch.arange(52).reshape(13, 4).t().reshape(-1)
+        raise ValueError("Expected native PixelShuffle convolution weights and bias.")
+    # Make each PixelShuffle phase contiguous at the producer.
+    order = torch.arange(channels).reshape(channels // 4, 4).t().reshape(-1)
     scales = phase.args[2]
-    if len(scales) == 52:
+    if len(scales) == channels:
         scales = [scales[i] for i in order.tolist()]
     return producer, weight[order], bias[order], scales
 
 
-def _reorder_block0_output(program, phase, parameters):
+def _reorder_pixel_shuffle_output(program, phase, parameters):
     producer, weight, bias, scales = parameters
     graph = phase.graph
     constants = []
@@ -489,7 +492,7 @@ class PackRifeWarpsAndConcatPass(ArmPass):
                 payloads, timestep, fuse_block0_tail=True
             )
             shader_inputs = [*images, tail[0]]
-            _reorder_block0_output(exported_program, tail[0], phase_parameters)
+            _reorder_pixel_shuffle_output(exported_program, tail[0], phase_parameters)
         graph = graph_module.graph
         extended = torch.zeros((*weight.shape[:-1], 32), dtype=torch.int8)
         extended[..., :28] = weight

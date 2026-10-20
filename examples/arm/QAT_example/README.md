@@ -87,13 +87,22 @@ private warp consumers, and symmetric convolution weights before rewriting.
 Unsupported graphs are left unchanged. When the original block0 tail matches,
 PixelShuffle, slicing, state resizing and rescaling run inside the packed shader.
 The shader writes only C32, including the original INT8 previous-flow codes in
-channels 24–27. Block1 extracts those channels and transposes them to NCHW before
-the existing TOSA RESCALE and flow-update ADD. No separate flow output is written.
+channels 24–27. The final warp shader reads those channels directly for block1's
+flow update. No separate flow output is written.
 The final block0 transpose-convolution weights, bias and per-channel rescale
 parameters are reordered during export from channel-major to phase-major order,
 so each PixelShuffle lookup reads 13 contiguous channels from C52. No runtime weight
 reorder is added. Resize bounds come from the tensor dimensions; C32 stores
 remain loop-based.
+
+`FuseRifeFinalWarpsPass` fuses block1's PixelShuffle, flow update, sigmoid mask
+lookup and both final image warps into one shader. It reorders block1's final
+transpose-convolution weights, bias and rescale parameters at export time so
+each PixelShuffle phase reads five contiguous channels from C20. Integer flow
+rescales preserve TOSA's single-round behavior, and each warp retains its own
+sampling quantization parameters. The shader outputs two warped RGBA images
+and the quantized NCHW mask; final image blending remains in TOSA. Unsupported
+patterns and tails with additional consumers are left unchanged.
 
 `PadRifeBlock0ConcatPass` pads the two RGB image branches to C4 before their
 half-resolution RESIZE operations. Image0 carries the constant timestep in
