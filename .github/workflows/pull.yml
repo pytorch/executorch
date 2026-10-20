@@ -182,10 +182,15 @@ jobs:
         from executorch.extension.pybindings.test.make_test import (
             create_program,
             ModuleAddBFloat16,
+            ModuleAddBFloat16ToChannelsLast,
         )
 
         program, _ = create_program(ModuleAddBFloat16())
         Path("cmake-out-no-aten/add_bfloat16.pte").write_bytes(bytes(program.buffer))
+        program, _ = create_program(ModuleAddBFloat16ToChannelsLast())
+        Path("cmake-out-no-aten/add_bfloat16_channels_last.pte").write_bytes(
+            bytes(program.buffer)
+        )
         PY
         EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
@@ -205,6 +210,7 @@ jobs:
         EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
           EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE=cmake-out-no-aten/add_bfloat16.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
         if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then
