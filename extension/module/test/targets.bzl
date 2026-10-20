@@ -57,6 +57,7 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/kernels/portable:generated_lib" + aten_suffix,
                     "//executorch/extension/module:bundled_module" + aten_suffix,
                     "//executorch/extension/tensor:tensor" + aten_suffix,
+                    "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 ],
                 env = {
                     "RESOURCES_PATH": "$(location :resources)/resources",
