@@ -9,6 +9,8 @@
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 //
@@ -138,8 +140,49 @@ LocalWorkGroup pick_required_lwg(
 // shaders have no shared memory and no barriers and their invocations are
 // independent, so the result cannot legitimately depend on the group shape.
 // A 2:1 x:y ratio, which yields 16x4x1 at the default 64 threads, is correct
-// across every run measured and is the cheapest correct shape. See #22327.
+// across every run measured and is the cheapest correct shape; 2x32x1 is also
+// correct. Only measured on Adreno 840. See #22327.
 const LwgShape kWideXLwg{2u, 1u, 0u};
+
+namespace {
+
+bool is_adreno_bad_lwg(const LocalWorkGroup& lwg) {
+  return lwg.z() == 1u &&
+      ((lwg.x() == 8u && lwg.y() == 8u) || (lwg.x() == 4u && lwg.y() == 16u));
+}
+
+uint64_t dispatched_invocations(
+    const LocalWorkGroup& lwg,
+    const GlobalWorkGrid& gwg) {
+  uint64_t total = 1u;
+  for (int axis = 0; axis < 3; ++axis) {
+    const uint64_t local = lwg[axis];
+    total *= utils::div_up(std::max<uint64_t>(gwg[axis], 1u), local) * local;
+  }
+  return total;
+}
+
+} // namespace
+
+LocalWorkGroup pick_adreno_xy_lwg(
+    const GlobalWorkGrid& gwg,
+    const uint32_t nthreads) {
+  LocalWorkGroup lwg(kWideXLwg, nthreads);
+  lwg.fit_to_global(gwg);
+  if (!is_adreno_bad_lwg(lwg)) {
+    return lwg;
+  }
+  // Fitting caps X when the grid is narrower than the group and hands the
+  // spare threads to Y, which turns 16x4x1 back into 8x8x1 (X < 14) or 4x16x1
+  // (X < 6). Use whichever correct shape dispatches fewer invocations: the
+  // unfitted 2:1 group, or 2x32x1, which only idles when Y is short too.
+  const LocalWorkGroup wide_x(kWideXLwg, nthreads);
+  const LocalWorkGroup narrow_x(2u, 32u, 1u, nthreads);
+  return dispatched_invocations(narrow_x, gwg) <
+          dispatched_invocations(wide_x, gwg)
+      ? narrow_x
+      : wide_x;
+}
 
 LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
@@ -150,9 +193,12 @@ LocalWorkGroup pick_xy_square_lwg(
   (void)shader;
   (void)args;
   (void)resize_args;
-  LocalWorkGroup lwg(
-      graph->device_is_adreno() ? kWideXLwg : kSquareLwg,
-      graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  const uint32_t nthreads =
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads();
+  if (graph->device_is_adreno()) {
+    return pick_adreno_xy_lwg(gwg, nthreads);
+  }
+  LocalWorkGroup lwg(kSquareLwg, nthreads);
   lwg.fit_to_global(gwg);
   return lwg;
 }

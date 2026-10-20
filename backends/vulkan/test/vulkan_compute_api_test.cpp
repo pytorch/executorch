@@ -3647,6 +3647,42 @@ TEST(VulkanWorkGroupSizeTest, fit_to_global) {
       static_cast<utils::uvec3>(explicit_linear), utils::uvec3({64u, 1u, 1u}));
 }
 
+TEST(VulkanWorkGroupSizeTest, adreno_xy_lwg) {
+  const auto pick = [](const utils::uvec3& extents) {
+    return static_cast<utils::uvec3>(
+        pick_adreno_xy_lwg(GlobalWorkGrid(extents, kTiledWorkGrid), 64u));
+  };
+
+  // Fitting the 2:1 shape alone recreates the shapes Adreno miscomputes.
+  for (const auto& [extents, bad] :
+       {std::pair{utils::uvec3{8u, 1024u, 1u}, utils::uvec3{8u, 8u, 1u}},
+        std::pair{utils::uvec3{4u, 1024u, 1u}, utils::uvec3{4u, 16u, 1u}}}) {
+    LocalWorkGroup fitted(LwgShape{2u, 1u, 0u}, 64u);
+    fitted.fit_to_global(GlobalWorkGrid(extents, kTiledWorkGrid));
+    EXPECT_EQ(static_cast<utils::uvec3>(fitted), bad);
+  }
+
+  EXPECT_EQ(pick({96u, 375u, 1u}), utils::uvec3({16u, 4u, 1u}));
+  EXPECT_EQ(pick({14u, 375u, 1u}), utils::uvec3({16u, 4u, 1u}));
+  // Narrow X, tall Y.
+  EXPECT_EQ(pick({13u, 375u, 1u}), utils::uvec3({2u, 32u, 1u}));
+  EXPECT_EQ(pick({8u, 1024u, 1u}), utils::uvec3({2u, 32u, 1u}));
+  EXPECT_EQ(pick({4u, 1024u, 1u}), utils::uvec3({2u, 32u, 1u}));
+  // Narrow X and short Y: 2x32x1 would idle more than 16x4x1.
+  EXPECT_EQ(pick({8u, 8u, 4u}), utils::uvec3({16u, 4u, 1u}));
+  EXPECT_EQ(pick({8u, 16u, 1u}), utils::uvec3({16u, 4u, 1u}));
+
+  for (uint32_t x = 1u; x <= 64u; ++x) {
+    for (uint32_t y = 1u; y <= 128u; ++y) {
+      for (uint32_t z = 1u; z <= 2u; ++z) {
+        const utils::uvec3 lwg = pick({x, y, z});
+        EXPECT_NE(lwg, utils::uvec3({8u, 8u, 1u}));
+        EXPECT_NE(lwg, utils::uvec3({4u, 16u, 1u}));
+      }
+    }
+  }
+}
+
 TEST(VulkanWorkGroupSizeTest, linear_gwg_at_x_limit) {
   const LocalWorkGroup lwg(64u, 1u, 1u);
   const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
