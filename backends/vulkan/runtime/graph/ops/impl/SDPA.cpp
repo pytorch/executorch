@@ -768,11 +768,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         graph.val_is_none(is_causal) || !graph.extract_scalar<bool>(is_causal),
         "attn_mask and is_causal cannot both be set");
     VK_CHECK_COND(graph.dim_of(attn_mask) == 2, "attn_mask must be 2D");
-    VK_CHECK_COND(
-        graph.dtype_of(attn_mask) == graph.dtype_of(q_projected),
-        "attn_mask must have the same dtype as q");
     // A constant mask arrives as a TensorRef, since the fused op handles its
-    // own prepacking.
+    // own prepacking. Its dtype is compared after prepacking, which applies
+    // the same Half -> Float fallback as q on devices without fp16 buffers.
     mask = graph.val_is_tref(attn_mask)
         ? prepack_standard(
               graph,
@@ -780,6 +778,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
               graph.storage_type_of(q_projected),
               utils::kWidthPacked)
         : attn_mask;
+    VK_CHECK_COND(
+        graph.dtype_of(mask) == graph.dtype_of(q_projected),
+        "attn_mask must have the same dtype as q");
     check_attn_mask_sizes(graph, mask, q_projected, k_cache);
     VK_CHECK_COND(
         graph.storage_type_of(mask) == graph.storage_type_of(q_projected),

@@ -937,16 +937,30 @@ void test_vulkan_llm_sdpa(
     const std::optional<double> scale,
     vkcompute::utils::StorageType storage_type,
     at::ScalarType dtype = at::kFloat,
-    const bool use_custom_sdpa = false) {
+    const bool use_custom_sdpa = false,
+    const bool constant_mask = false) {
   using namespace vkcompute;
 
   const bool has_mask = mask_kind != LLMSDPAMask::CAUSAL;
+  // A constant mask is a TensorRef that the op prepacks. It cannot be resized,
+  // so every step must use the full seq_len.
+  const bool has_input_mask = has_mask && !constant_mask;
 
   int max_seq_len = 0;
   for (const LLMSDPAStep& step : steps) {
     ASSERT_LE(step.input_pos + step.seq_len, max_context_len);
     max_seq_len = std::max(max_seq_len, step.seq_len);
   }
+  if (constant_mask) {
+    ASSERT_EQ(mask_kind, LLMSDPAMask::RANDOM);
+    for (const LLMSDPAStep& step : steps) {
+      ASSERT_EQ(step.seq_len, max_seq_len);
+    }
+  }
+  // Kept alive until prepack, which reads the TensorRef's data
+  const at::Tensor constant_mask_data = constant_mask
+      ? (at::randn({max_seq_len, max_context_len}) * 2).to(dtype).contiguous()
+      : at::Tensor();
 
   // Reference caches are kept in fp32
   at::Tensor k_cache = at::zeros(
@@ -972,7 +986,12 @@ void test_vulkan_llm_sdpa(
       from_at_scalartype(dtype),
       storage_type);
   IOValueRef r_mask = {kDummyValueRef, kDummyValueRef};
-  if (has_mask) {
+  if (constant_mask) {
+    r_mask.value = graph.add_tensorref(
+        constant_mask_data.sizes().vec(),
+        from_at_scalartype(dtype),
+        constant_mask_data.const_data_ptr());
+  } else if (has_mask) {
     r_mask = graph.add_input_tensor(
         {max_seq_len, max_context_len},
         from_at_scalartype(dtype),
@@ -1068,7 +1087,8 @@ void test_vulkan_llm_sdpa(
     if (mask_kind == LLMSDPAMask::SLIDING_WINDOW) {
       visible = at::logical_and(visible, k_pos > q_pos - sliding_window);
     }
-    at::Tensor mask = mask_kind == LLMSDPAMask::RANDOM
+    at::Tensor mask = constant_mask ? constant_mask_data
+        : mask_kind == LLMSDPAMask::RANDOM
         ? at::randn({seq_len, max_context_len}) * 2
         : at::zeros({seq_len, max_context_len})
               .masked_fill(at::logical_not(visible), -INFINITY);
@@ -1092,7 +1112,7 @@ void test_vulkan_llm_sdpa(
     graph.resize_input(0, q.sizes().vec());
     graph.resize_input(1, k.sizes().vec());
     graph.resize_input(2, v.sizes().vec());
-    if (has_mask) {
+    if (has_input_mask) {
       graph.resize_input(3, mask.sizes().vec());
     }
     graph.propagate_resize();
@@ -1103,7 +1123,7 @@ void test_vulkan_llm_sdpa(
         r_k.staging, k.const_data_ptr(), k.numel(), from_at_scalartype(dtype));
     graph.maybe_cast_and_copy_into_staging(
         r_v.staging, v.const_data_ptr(), v.numel(), from_at_scalartype(dtype));
-    if (has_mask) {
+    if (has_input_mask) {
       graph.maybe_cast_and_copy_into_staging(
           r_mask.staging,
           mask.const_data_ptr(),
@@ -1256,6 +1276,32 @@ TEST(VulkanSDPATest, test_sdpa_op_custom_sdpa_random_mask) {
         storage_type,
         at::kFloat,
         /*use_custom_sdpa=*/true);
+  }
+}
+
+// A constant mask arrives as a TensorRef that the op prepacks with q's storage
+// type. In fp16 on a device without full fp16 buffer support, q falls back to
+// fp32 and so does the prepacked mask.
+TEST(VulkanSDPATest, test_sdpa_op_constant_mask) {
+  const std::vector<LLMSDPAStep> steps = {{0, 4}, {2, 4}, {4, 4}};
+  for (const auto storage_type : kLLMSDPAStorageTypes) {
+    for (const auto dtype : {at::kFloat, at::kHalf}) {
+      for (const bool use_custom_sdpa : {false, true}) {
+        test_vulkan_llm_sdpa(
+            steps,
+            8,
+            2,
+            1,
+            8,
+            LLMSDPAMask::RANDOM,
+            0,
+            std::nullopt,
+            storage_type,
+            dtype,
+            use_custom_sdpa,
+            /*constant_mask=*/true);
+      }
+    }
   }
 }
 
