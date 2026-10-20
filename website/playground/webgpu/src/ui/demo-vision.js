@@ -16,6 +16,7 @@ import { appIcon } from './app-icons.js';
 import { hfBadge } from './hf-badge.js';
 import { icon } from './icons.js';
 import { onDeviceNote } from './on-device.js';
+import { confirmModelMemory } from './memory-guard.js';
 
 const TASKS = { depth: createDepthTask, detect: createDetectTask, bgremove: createMattingTask, superres: createSuperresTask };
 const COPY = {
@@ -137,6 +138,7 @@ export function mountVision(root, demo) {
 
   async function load() {
     if (gpuState.get().status !== 'ready' || state.phase === 'loading') return;
+    if (!(await confirmModelMemory(model))) return;
     const controller = new AbortController();
     Object.assign(state, { phase: 'loading', loadError: null, loadAbort: controller, load: { stage: 'runtime', fractions: {}, detail: '' } });
     renderAll();

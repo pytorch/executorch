@@ -14,6 +14,7 @@ import { icon } from './icons.js';
 import { onDeviceNote } from './on-device.js';
 import { metricTile } from './metric.js';
 import { attachVoiceInput } from './voice-input.js';
+import { confirmModelMemory } from './memory-guard.js';
 
 const SUGGESTED_PROMPTS = [
   'Explain WebGPU to a 10-year-old',
@@ -168,6 +169,7 @@ export function mountChat(root, demo) {
   async function load() {
     if (gpuState.get().status !== 'ready' || state.phase === 'loading' || !state.source || state.source.kind === 'unavailable') return;
     const model = state.model;
+    if (!(await confirmModelMemory(model)) || model !== state.model) return;
     const controller = new AbortController();
     Object.assign(state, { phase: 'loading', loadError: null, loadAbort: controller, load: { stage: 'runtime', fractions: {}, bytes: null } });
     renderAll();
