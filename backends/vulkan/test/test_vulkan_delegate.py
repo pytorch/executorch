@@ -2521,6 +2521,29 @@ class TestVulkanBackend(unittest.TestCase):
                 )
                 self.lower_module_and_test_output(model, sample_inputs)
 
+    def test_vulkan_backend_instance_norm_large_offset(self):
+        # A mean far from zero relative to the standard deviation. Computing the
+        # variance as E[x^2] - E[x]^2 in fp32 rounds it to zero or below here.
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self, channels):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(channels, affine=True)
+
+            def forward(self, x):
+                return self.norm(x)
+
+        cases = [
+            # Unit weight and zero bias: [8192, 8193] has a variance of 0.25, so it
+            # normalizes to about +-1.
+            ("two_values", InstanceNormModule(1), torch.tensor([[[[8192.0, 8193.0]]]])),
+            ("offset_1000", InstanceNormModule(8), 1000 + torch.rand(1, 8, 16, 16)),
+        ]
+        for name, model, x in cases:
+            with self.subTest(name):
+                self.lower_module_and_test_output(
+                    model.eval(), (x,), atol=2e-3, rtol=1e-3
+                )
+
     def test_vulkan_backend_instance_norm_not_rewritable(self):
         # Group norm prepacks its affine args, so an instance norm whose affine
         # args are not constants by the time group norm sees them must stay on
