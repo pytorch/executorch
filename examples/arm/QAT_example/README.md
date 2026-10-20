@@ -84,8 +84,7 @@ make the following convolution ignore those channels.
 
 The pass checks shader identities, descriptors, matching sampling qparams,
 private warp consumers, and symmetric convolution weights before rewriting.
-Unsupported graphs are left unchanged. Image padding and the first block's
-C15 input are unchanged. When the original block0 tail matches,
+Unsupported graphs are left unchanged. When the original block0 tail matches,
 PixelShuffle, slicing, state resizing and rescaling run inside the packed shader.
 The shader writes only C32, including the original INT8 previous-flow codes in
 channels 24–27. Block1 extracts those channels and transposes them to NCHW before
@@ -95,6 +94,16 @@ parameters are reordered during export from channel-major to phase-major order,
 so each PixelShuffle lookup reads 13 contiguous channels from C52. No runtime weight
 reorder is added. Resize bounds come from the tensor dimensions; C32 stores
 remain loop-based.
+
+`PadRifeBlock0ConcatPass` pads the two RGB image branches to C4 before their
+half-resolution RESIZE operations. Image0 carries the constant timestep in
+its fourth channel; image1 carries a dummy channel. The CONCAT joins four C4
+branches without separate constant inputs. The pass reorders the convolution's
+input weight columns and adds a zero column for the dummy channel, preserving
+the convolution result. Existing image PADs are shared with the warp shaders
+when their fourth channel is unused. Unsupported resize or quantization patterns
+are skipped.
+
 `glslc` must be available when exporting a matching graph.
 
 ## Reference Samples

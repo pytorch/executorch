@@ -5,6 +5,7 @@
 
 from .group_warp_sampler_inputs import GroupWarpSamplerInputsPass  # noqa: F401
 from .pack_rife_warps_and_concat import PackRifeWarpsAndConcatPass  # noqa: F401
+from .pad_rife_block0_concat import PadRifeBlock0ConcatPass  # noqa: F401
 from .rewrite_warp_downsample_to_tosa_custom import (  # noqa: F401
     RewriteWarpDownsampleToTosaCustomPass,
 )
