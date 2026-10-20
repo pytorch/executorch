@@ -132,6 +132,10 @@ license-files = ["LICENSE"]
   "*.glsl",
   "*.spirv.b64",
 ]
+# Marks the Python bindings as typed, so type checkers read their stubs.
+"executorch.extension.pybindings" = [
+  "py.typed",
+]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
