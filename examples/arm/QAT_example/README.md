@@ -156,9 +156,9 @@ under `eager_pruned` metrics whenever pruning is requested. Both copies use
 the same input frames. Comparing them measures the effect of pruning alone.
 
 PTQ calibrates the pruned weights. QAT selects masks once before preparation
-and restores masked zeros after every optimizer update. Reports also compare
-quantized outputs against the initial pruned FP32 copy using
-`ptq_vs_eager_pruned` and `qat_vs_eager_pruned` metrics.
+and restores masked zeros after every optimizer update. Both support `--cache`.
+Reports also compare quantized outputs against the initial pruned FP32 copy
+using `ptq_vs_eager_pruned` and `qat_vs_eager_pruned` metrics.
 The QAT comparison includes training-induced weight changes. Differences
 against the dense eager reference include both pruning and quantization.
 The run report records the requested patterns, and the console lists the
@@ -196,3 +196,76 @@ When sharing accuracy or performance data, include:
 
 This keeps accuracy numbers comparable with board performance results and
 avoids mixing smoke-test numbers with real-data validation.
+
+## Export with a Feature Cache
+
+Use a Practical-RIFE checkout whose selected model provides `encode` and
+`forward_cached` methods.
+
+Add `--cache` to the existing export flow to produce one model with an
+additional feature input and output:
+
+```sh
+python examples/arm/QAT_example/qat_loop.py \
+  --triples-list <path-to-real-triples.csv> \
+  --model-root <path-to-Practical-RIFE> \
+  --checkpoint <path-to-Practical-RIFE>/train_log/flownet.pkl \
+  --model-class IFNetTwoBlock \
+  --height 192 \
+  --width 384 \
+  --mode ptq \
+  --export-vgf ptq \
+  --cache \
+  --calibration-samples 8 \
+  --io-quantization int8 \
+  --output-dir out/rife_cached
+```
+
+Use `--mode qat --export-vgf qat` with `--qat-samples`, `--qat-steps`, and
+`--qat-lr` for QAT. Use `--mode all --export-vgf all` to export both PTQ and QAT.
+Calibration and training use both frame encodings with shared weights; gradients
+flow through both encoder calls during QAT. CPU accuracy evaluation derives the
+first frame's features from the same quantized encoder. The deployed artifact
+contains one encoder call and reuses the first frame's features from the previous
+inference.
+
+Find the TOSA, VGF, IO qparams, and optional PTE in `vgf_ptq_cached/` or
+`vgf_qat_cached/` under the output directory. Frame and image IO follow
+`--io-quantization`; the feature cache uses INT8 with matching input and output
+qparams. Cached export supports `int8` and `uint8` image IO.
+Evaluate accuracy with your dataset and trained weights.
+
+### Initialize and reuse the cache
+
+The logical argument and return order is:
+
+```text
+image, current_features = cached(previous_frame, current_frame, previous_features)
+```
+
+Initialize a stream with a zero-valued feature tensor and discard the first
+image. The feature output depends only on the current frame:
+
+```text
+_, cache = cached(frame0, frame0, zero_cache)
+image01, cache = cached(frame0, frame1, cache)
+image12, cache = cached(frame1, frame2, cache)
+```
+
+Prime the cache again after seeking, starting another stream, or changing model
+weights, preprocessing, or input shape. The first call performs a full inference;
+subsequent calls avoid encoding the first frame again. No separate initializer
+model is deployed.
+
+The export generates an IO qparams JSON file alongside each VGF, using the
+same mechanism as uncached export. For the PTQ command above, it is
+`out/rife_cached/vgf_ptq_cached/rife_ptq_cached_vgf_io_qparams.json`.
+Its entries follow the logical order above: inputs are previous frame, current
+frame, previous features; outputs are image, current features. Fill the seed
+buffer with the cache input's zero point. Quantize each frame with its
+corresponding input qparams.
+
+Preserve the returned cache's dtype, dimensions, layout, and quantization when
+passing it to the next call. Alternate two feature buffers so the output does
+not overwrite features still being read. The application's runtime owns those
+buffers and synchronizes their use between calls.

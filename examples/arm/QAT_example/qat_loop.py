@@ -37,6 +37,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image  # type: ignore[import-untyped]
 from torch.export import export
+from torch.fx import Graph, GraphModule, Node
 from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
     move_exported_model_to_train,
@@ -103,7 +104,14 @@ class RIFEWrapper(torch.nn.Module):
         super().__init__()
         self.flownet = flownet
 
-    def forward(self, img0: torch.Tensor, img1: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        img0: torch.Tensor,
+        img1: torch.Tensor,
+        previous_features: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        if previous_features is not None:
+            return cast(Any, self.flownet).forward_cached(img0, img1, previous_features)
         imgs = torch.cat((img0, img1), dim=1)
         _, _, merged = self.flownet(imgs, 0.5, [16, 8, 4, 2, 1])
         return merged[-1]
@@ -543,12 +551,19 @@ def format_metric(value: Any) -> str:
 def run_model(
     model: torch.nn.Module,
     inputs: tuple[torch.Tensor, torch.Tensor],
+    *,
+    cache: bool = False,
 ) -> torch.Tensor:
+    inputs = (
+        inputs[0].contiguous(memory_format=torch.channels_last),
+        inputs[1].contiguous(memory_format=torch.channels_last),
+    )
     with torch.no_grad():
-        output = model(
-            inputs[0].contiguous(memory_format=torch.channels_last),
-            inputs[1].contiguous(memory_format=torch.channels_last),
-        )
+        if cache:
+            features = extract_encoder(cast(GraphModule, model))(inputs[0])
+            output, _features = model(*inputs, features)
+        else:
+            output = model(*inputs)
     if not isinstance(output, torch.Tensor):
         raise TypeError(f"Expected tensor output, got {type(output)}")
     return output.contiguous(memory_format=torch.channels_last)
@@ -714,6 +729,167 @@ def quant_args_to_dict(quant_args: Sequence[Any]) -> dict[str, Any]:
     }
 
 
+def extract_encoder(cached: GraphModule) -> GraphModule:
+    """Extract the encoder producing the cached model's second output.
+
+    The cached graph accepts previous-frame features instead of computing them.
+    Calibration, QAT, and CPU accuracy evaluation still need to generate those
+    features with the same quantization behavior as the current-frame encoder.
+    Calling the original floating-point encoder would bypass the observers or
+    fake quantization added during preparation.
+
+    Walk backward from the current-feature output to build a single-frame graph
+    that references the cached model's parameters and prepared or converted
+    quantization modules. Sharing these modules also lets QAT gradients from
+    the previous-frame path update the same encoder weights. This helper does
+    not export a separate encoder artifact.
+
+    Args:
+        cached (GraphModule): Prepared or converted interpolation graph with
+            inputs (previous frame, current frame, previous features) and
+            outputs (image, current features).
+
+    Returns:
+        GraphModule: Single-frame encoder sharing the cached model's parameters
+        and quantization modules.
+
+    Raises:
+        ValueError: If features depend on inputs other than the current frame.
+
+    """
+    placeholders = list(cached.graph.find_nodes(op="placeholder"))
+    output = next(iter(cached.graph.find_nodes(op="output"))).args[0][1]
+    needed: set[Node] = set()
+    pending = [output]
+    while pending:
+        node = pending.pop()
+        if node in needed:
+            continue
+        needed.add(node)
+        pending.extend(node.all_input_nodes)
+    if {node for node in needed if node.op == "placeholder"} != {placeholders[1]}:
+        raise ValueError("Current features must depend only on the current frame.")
+    graph = Graph()
+    mapping: dict[Node, Node] = {}
+    for node in cached.graph.nodes:
+        if node in needed:
+            mapping[node] = graph.node_copy(node, lambda value: mapping[value])
+    graph.output(mapping[output])
+    return GraphModule(cached, graph)
+
+
+def prepare_cached_model(
+    model: torch.nn.Module,
+    samples: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
+    *,
+    is_qat: bool,
+    io_quantization: str,
+    steps: int,
+    lr: float,
+    prune_layers: Sequence[str] = (),
+) -> GraphModule:
+    """Calibrate or train a cached model with a matching cache IO format.
+
+    Prepare a cloned model accepting two frames and previous-frame features,
+    returning an interpolated image and current-frame features. Share one INT8
+    observer or fake-quantization module between the feature input and output
+    so their quantization parameters match and returned features can be reused
+    directly in the next inference.
+
+    Generate previous-frame features with the prepared encoder extracted by
+    extract_encoder(). PTQ observes both frame encodings without gradients.
+    QAT keeps the previous-frame features attached to autograd so the image
+    loss trains both encoder calls through shared weights and quantization
+    modules. The converted model contains only the current-frame encoder call;
+    the application supplies the previous features during deployment.
+
+    Args:
+        model (torch.nn.Module): Wrapper exposing the cached forward method and
+            the selected model as flownet, including its encode method.
+        samples (list): Non-empty list of frame pairs and target images.
+        is_qat (bool): Whether to train using fake quantization.
+        io_quantization (str): Image IO mode; the feature cache uses INT8.
+        steps (int): Number of QAT epochs. Ignored for PTQ.
+        lr (float): QAT learning rate. Ignored for PTQ.
+        prune_layers (Sequence[str]): Module-name patterns for fixed 2:4 masks.
+
+    Returns:
+        GraphModule: Converted interpolation model accepting two frames and
+        previous features, and returning the image and current features.
+
+    """
+    cached = clone_model(model, channels_last=True)
+    pruner = TwoOfFourPruner(cached, prune_layers)
+    flownet = cast(Any, cached.flownet)
+    samples = [
+        (
+            tuple(
+                frame.contiguous(memory_format=torch.channels_last) for frame in frames
+            ),
+            target.contiguous(memory_format=torch.channels_last),
+        )
+        for frames, target in samples
+    ]
+    frames = samples[0][0]
+    with torch.no_grad():
+        initial_features = flownet.encode(frames[0])
+    graph = export(cached, (*frames, initial_features), strict=True).module(
+        check_guards=False
+    )
+    quantizer = make_quantizer(is_qat=is_qat, io_quantization=io_quantization)
+    prepared = (
+        prepare_qat_pt2e(graph, quantizer) if is_qat else prepare_pt2e(graph, quantizer)
+    )
+    cache_input = list(prepared.graph.find_nodes(op="placeholder"))[2]
+    cache_output = next(iter(prepared.graph.find_nodes(op="output"))).args[0][1]
+    cache_qspec = get_vgf_snorm_quantization_config(
+        is_qat=is_qat
+    ).get_output_act_qspec()
+    prepared.set_submodule(
+        cache_output.target,
+        cache_qspec.observer_or_fake_quant_ctr(
+            dtype=cache_qspec.dtype,
+            quant_min=cache_qspec.quant_min,
+            quant_max=cache_qspec.quant_max,
+            qscheme=cache_qspec.qscheme,
+        ),
+    )
+    users = list(cache_input.users)
+    with prepared.graph.inserting_after(cache_input):
+        observed_cache = prepared.graph.call_module(cache_output.target, (cache_input,))
+    for user in users:
+        user.replace_input_with(cache_input, observed_cache)
+    prepared.recompile()
+    prepared = (
+        move_exported_model_to_train(prepared)
+        if is_qat
+        else move_exported_model_to_eval(prepared)
+    )
+    pruner.apply_(prepared)
+    encoder = extract_encoder(prepared)
+    optimizer = (
+        torch.optim.SGD(prepared.parameters(), lr=lr, momentum=0.9) if is_qat else None
+    )
+    for step in range(steps if is_qat else 1):
+        total_loss = 0.0
+        for frames, target in samples:
+            with torch.set_grad_enabled(is_qat):
+                previous_features = encoder(frames[0])
+                image, _features = prepared(*frames, previous_features)
+                if optimizer is not None:
+                    loss = torch.nn.functional.mse_loss(image, target)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    pruner.apply_(prepared)
+                    total_loss += float(loss.detach())
+        if is_qat:
+            print(f"qat_step={step + 1}/{steps} loss={total_loss / len(samples):.6f}")
+    prepared = move_exported_model_to_eval(prepared)
+    converted = convert_pt2e(prepared)
+    return converted
+
+
 def build_ptq_model(
     model: torch.nn.Module,
     calibration_inputs: list[tuple[torch.Tensor, torch.Tensor]],
@@ -815,7 +991,7 @@ def build_qat_model(
 
 def export_vgf_artifact(
     model: torch.nn.Module,
-    inputs: tuple[torch.Tensor, torch.Tensor],
+    inputs: tuple[torch.Tensor, ...],
     *,
     output_dir: Path,
     name: str,
@@ -828,9 +1004,8 @@ def export_vgf_artifact(
     partitioner = VgfPartitioner(compile_spec)
     configure_rife_vgf(partitioner)
     cast(Any, model).to(memory_format=torch.channels_last)
-    inputs = (
-        inputs[0].contiguous(memory_format=torch.channels_last),
-        inputs[1].contiguous(memory_format=torch.channels_last),
+    inputs = tuple(
+        tensor.contiguous(memory_format=torch.channels_last) for tensor in inputs
     )
     pte_path = artifact_dir / f"rife_{name}_vgf.pte" if save_pte else None
     io_qparams_path = (
@@ -853,7 +1028,10 @@ def export_vgf_artifact(
             quantize_input(edge_program, input_index)
             for input_index in range(len(inputs))
         ]
-        output_qparams = [quantize_output(edge_program, 0)]
+        output_qparams = [
+            quantize_output(edge_program, index)
+            for index in range(len(edge_program.graph_signature.user_outputs))
+        ]
         edge_program.graph_module.graph.eliminate_dead_code()
         edge_program.graph_module.recompile()
         io_qparams_payload = {
@@ -913,6 +1091,7 @@ def write_markdown_report(
         f"- Triples: {aggregate['triple_count']}",
         f"- Input shape: `1x3x{aggregate['height']}x{aggregate['width']}`",
         f"- Mode: `{aggregate['mode']}`",
+        f"- Feature cache: `{aggregate['cache']}`",
         f"- 2:4 pruning patterns: `{aggregate['prune_2_4']}`",
         f"- IO quantization: `{aggregate['io_quantization']}`",
         f"- Data source: `{aggregate['data_source']}`",
@@ -1107,6 +1286,11 @@ def parse_args() -> argparse.Namespace:
         help="Class in practical-rife train_log.IFNet_HDv3 (for example IFNetTwoBlock).",
     )
     parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Reuse previous-frame features through an extra model input and output.",
+    )
+    parser.add_argument(
         "--prune-2-4",
         action="append",
         default=[],
@@ -1201,6 +1385,8 @@ def data_source(triples: list[FrameTriple]) -> str:
 
 def validate_args(args: argparse.Namespace) -> None:
     validate_input_shape(args.height, args.width)
+    if args.cache and args.io_quantization == "none":
+        raise ValueError("--cache requires --io-quantization int8 or uint8.")
     if args.max_triples <= 0:
         raise ValueError("--max-triples must be positive.")
     if args.calibration_samples <= 0:
@@ -1226,35 +1412,15 @@ def build_requested_quantized_models(
     model: torch.nn.Module,
     triples: list[FrameTriple],
 ) -> tuple[torch.nn.Module | None, torch.nn.Module | None, dict[str, dict[str, Any]]]:
-    run_ptq = args.mode in ("ptq", "both", "all")
-    run_qat = args.mode in ("qat", "all")
-    ptq_model = None
+    models: dict[str, torch.nn.Module] = {}
     quantization_reports: dict[str, dict[str, Any]] = {}
-
-    if run_ptq:
-        calibration_inputs = [
-            load_triple_tensors(
-                triple,
-                height=args.height,
-                width=args.width,
-                preprocess=args.preprocess,
-                random_seed=args.random_seed,
-            )[0]
-            for triple in triples[: args.calibration_samples]
-        ]
-        print(f"Building PTQ model with {len(calibration_inputs)} samples.")
-        ptq = build_ptq_model(
-            model,
-            calibration_inputs,
-            io_quantization=args.io_quantization,
-            prune_layers=args.prune_2_4,
-        )
-        ptq_model = ptq.model
-        quantization_reports["ptq"] = ptq.coverage
-
-    qat_model = None
-    if run_qat:
-        training_samples = [
+    for name, requested, count in (
+        ("ptq", args.mode in ("ptq", "both", "all"), args.calibration_samples),
+        ("qat", args.mode in ("qat", "all"), args.qat_samples),
+    ):
+        if not requested:
+            continue
+        samples = [
             load_triple_tensors(
                 triple,
                 height=args.height,
@@ -1262,24 +1428,43 @@ def build_requested_quantized_models(
                 preprocess=args.preprocess,
                 random_seed=args.random_seed,
             )
-            for triple in triples[: args.qat_samples]
+            for triple in triples[:count]
         ]
-        print(
-            "Building QAT model with "
-            f"{len(training_samples)} samples and {args.qat_steps} steps."
-        )
-        qat = build_qat_model(
-            model,
-            training_samples,
-            steps=args.qat_steps,
-            lr=args.qat_lr,
-            io_quantization=args.io_quantization,
-            prune_layers=args.prune_2_4,
-        )
-        qat_model = qat.model
-        quantization_reports["qat"] = qat.coverage
+        print(f"Building {name.upper()} model with {len(samples)} samples.")
+        if args.cache:
+            converted = prepare_cached_model(
+                model,
+                samples,
+                is_qat=name == "qat",
+                io_quantization=args.io_quantization,
+                steps=args.qat_steps,
+                lr=args.qat_lr,
+                prune_layers=args.prune_2_4,
+            )
+            quantized = QuantizedModel(
+                model=converted,
+                coverage=quantization_coverage(converted),
+            )
+        elif name == "ptq":
+            quantized = build_ptq_model(
+                model,
+                [inputs for inputs, _target in samples],
+                io_quantization=args.io_quantization,
+                prune_layers=args.prune_2_4,
+            )
+        else:
+            quantized = build_qat_model(
+                model,
+                samples,
+                steps=args.qat_steps,
+                lr=args.qat_lr,
+                io_quantization=args.io_quantization,
+                prune_layers=args.prune_2_4,
+            )
+        models[name] = quantized.model
+        quantization_reports[name] = quantized.coverage
 
-    return ptq_model, qat_model, quantization_reports
+    return models.get("ptq"), models.get("qat"), quantization_reports
 
 
 def export_requested_vgf_artifacts(
@@ -1299,28 +1484,34 @@ def export_requested_vgf_artifacts(
         preprocess=args.preprocess,
         random_seed=args.random_seed,
     )
-    if args.export_vgf in ("ptq", "all"):
-        if ptq_model is None:
-            raise RuntimeError("PTQ VGF export requested, but PTQ was not built.")
-        artifacts["ptq"] = export_vgf_artifact(
-            ptq_model,
-            inputs,
+    for name, model in (("ptq", ptq_model), ("qat", qat_model)):
+        if args.export_vgf not in (name, "all"):
+            continue
+        if model is None:
+            raise RuntimeError(
+                f"{name.upper()} VGF export requested, but it was not built."
+            )
+        export_inputs: tuple[torch.Tensor, ...] = inputs
+        if args.cache:
+            with torch.no_grad():
+                features = extract_encoder(cast(GraphModule, model))(inputs[0])
+            export_inputs = (*inputs, features)
+        artifact = export_vgf_artifact(
+            model,
+            export_inputs,
             output_dir=args.output_dir,
-            name="ptq",
+            name=f"{name}_cached" if args.cache else name,
             io_quantization=args.io_quantization,
             save_pte=args.save_pte,
         )
-    if args.export_vgf in ("qat", "all"):
-        if qat_model is None:
-            raise RuntimeError("QAT VGF export requested, but QAT was not built.")
-        artifacts["qat"] = export_vgf_artifact(
-            qat_model,
-            inputs,
-            output_dir=args.output_dir,
-            name="qat",
-            io_quantization=args.io_quantization,
-            save_pte=args.save_pte,
-        )
+        if args.cache:
+            qparams = artifact.io_qparams_payload
+            if (
+                qparams is None
+                or qparams["input_qparams"][2] != qparams["output_qparams"][1]
+            ):
+                raise RuntimeError("Cache input and output quantization must match.")
+        artifacts[name] = artifact
     return artifacts
 
 
@@ -1412,15 +1603,30 @@ def execute_runtime_artifact(
     input_qparams: list[dict[str, Any]] | None,
     output_qparams: list[dict[str, Any]] | None,
     inputs: tuple[torch.Tensor, torch.Tensor],
-) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-    runtime_inputs: tuple[torch.Tensor, torch.Tensor]
-    if input_qparams is None:
-        runtime_inputs = inputs
-    else:
-        runtime_inputs = (
-            quantize_tensor_for_runtime(inputs[0], input_qparams[0]),
-            quantize_tensor_for_runtime(inputs[1], input_qparams[1]),
+    *,
+    cache: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, tuple[torch.Tensor, ...]]:
+    runtime_inputs: tuple[torch.Tensor, ...] = (
+        inputs if cache is None else (*inputs, cache)
+    )
+    if input_qparams is not None:
+        runtime_inputs = tuple(
+            quantize_tensor_for_runtime(tensor, qparams)
+            for tensor, qparams in zip(runtime_inputs, input_qparams, strict=True)
         )
+    if cache is not None:
+        prime_current = (
+            inputs[0]
+            if input_qparams is None
+            else quantize_tensor_for_runtime(inputs[0], input_qparams[1])
+        )
+        prime_outputs = method.execute(
+            (runtime_inputs[0], prime_current, runtime_inputs[2])
+        )
+        features = prime_outputs[1]
+        if not isinstance(features, torch.Tensor):
+            features = torch.as_tensor(features)
+        runtime_inputs = (*runtime_inputs[:2], features.clone())
     outputs = method.execute(runtime_inputs)
     if not outputs:
         raise RuntimeError("Runtime returned no outputs")
@@ -1438,7 +1644,7 @@ def dump_runtime_comparison_outputs(
     row_name: str,
     reference_output: torch.Tensor,
     runtime_output: torch.Tensor,
-    runtime_inputs: tuple[torch.Tensor, torch.Tensor],
+    runtime_inputs: tuple[torch.Tensor, ...],
 ) -> None:
     safe_row_name = row_name.replace("..", "__").replace("/", "_").replace("\\", "_")
     dump_dir = output_dir / "runtime_debug" / mode_name / safe_row_name
@@ -1511,11 +1717,19 @@ def evaluate_runtime_artifact_rows(
             random_seed=args.random_seed,
         )
         try:
+            cache = None
+            if args.cache:
+                with torch.no_grad():
+                    features = extract_encoder(cast(GraphModule, reference_model))(
+                        inputs[0]
+                    )
+                cache = torch.zeros_like(features)
             runtime_output, quantized_runtime_inputs = execute_runtime_artifact(
                 method,
                 input_qparams,
                 output_qparams,
                 inputs,
+                cache=cache,
             )
         except Exception as error:
             for processed_row in rows[:index]:
@@ -1534,7 +1748,7 @@ def evaluate_runtime_artifact_rows(
             target=target,
         )
         if reference_model is not None:
-            reference_output = run_model(reference_model, inputs)
+            reference_output = run_model(reference_model, inputs, cache=args.cache)
             update_row_with_delta_metrics(
                 rows[index],
                 prefix=f"{prefix}_vs_{mode_name}",
@@ -1690,7 +1904,7 @@ def evaluate_triples(
             )
 
         if ptq_model is not None:
-            ptq_output = run_model(ptq_model, inputs)
+            ptq_output = run_model(ptq_model, inputs, cache=args.cache)
             update_row_with_prediction_metrics(
                 row,
                 prefix="ptq",
@@ -1714,7 +1928,7 @@ def evaluate_triples(
                 )
 
         if qat_model is not None:
-            qat_output = run_model(qat_model, inputs)
+            qat_output = run_model(qat_model, inputs, cache=args.cache)
             update_row_with_prediction_metrics(
                 row,
                 prefix="qat",
@@ -1754,6 +1968,7 @@ def build_aggregate(
         "width": args.width,
         "preprocess": args.preprocess,
         "mode": args.mode,
+        "cache": args.cache,
         "prune_2_4": args.prune_2_4,
         "io_quantization": args.io_quantization,
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
@@ -1924,7 +2139,6 @@ def main() -> int:
         quantization_reports,
     )
     print_summary(aggregate)
-    export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
     return 0
 
 
