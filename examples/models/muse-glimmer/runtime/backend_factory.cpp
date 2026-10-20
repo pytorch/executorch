@@ -32,6 +32,10 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
         config.max_session_tokens != 1,
         InvalidArgument,
         "Muse Glimmer CUDA: a session needs room for a prompt and prediction");
+    ET_CHECK_OR_RETURN_ERROR(
+        config.use_dflash || config.dflash_n_draft == 0,
+        InvalidArgument,
+        "Muse Glimmer CUDA: dflash_n_draft requires DFlash");
     if (config.use_dflash) {
       return MuseGlimmerCudaDFlashExecutor::create(config);
     }
