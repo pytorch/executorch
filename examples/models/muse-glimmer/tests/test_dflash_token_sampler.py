@@ -18,13 +18,17 @@ from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
     sample_tokens,
     verify_owners,
     verify_owners_greedy,
-    verify_speculative,
 )
 
 
 def _reference_row(
-    logits: list[float], temperature: float, top_k: int, top_p: float, uniform: float,
-    *, batching_policy: bool = False,
+    logits: list[float],
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    uniform: float,
+    *,
+    batching_policy: bool = False,
 ) -> tuple[int, list[float]]:
     vocab_size = len(logits)
     if temperature <= 0.0:
@@ -43,7 +47,11 @@ def _reference_row(
     if 0.0 < top_p < 1.0 and not (batching_policy and use_top_k):
         nucleus, nucleus_sum = [], 0.0
         for index in ranked:
-            if (nucleus_sum > top_p * total if batching_policy else nucleus_sum >= top_p * total):
+            if (
+                nucleus_sum > top_p * total
+                if batching_policy
+                else nucleus_sum >= top_p * total
+            ):
                 break
             nucleus.append(index)
             nucleus_sum += weights[index]
@@ -158,8 +166,12 @@ class DFlashOwnerVerifierTest(unittest.TestCase):
             row = params[owner]
             distributions = [
                 _reference_row(
-                    values.tolist(), float(row[0]), int(row[1]), float(row[2]),
-                    0.5, batching_policy=True,
+                    values.tolist(),
+                    float(row[0]),
+                    int(row[1]),
+                    float(row[2]),
+                    0.5,
+                    batching_policy=True,
                 )[1]
                 for values in logits[owner]
             ]
@@ -170,7 +182,8 @@ class DFlashOwnerVerifierTest(unittest.TestCase):
                 keep = (
                     float(row[3 + index]) < distribution[proposal]
                     if row[0] > 0
-                    else proposal == max(range(len(distribution)), key=distribution.__getitem__)
+                    else proposal
+                    == max(range(len(distribution)), key=distribution.__getitem__)
                 )
                 if not keep:
                     break

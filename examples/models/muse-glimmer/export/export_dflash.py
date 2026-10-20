@@ -109,10 +109,10 @@ def cuda_owner_verifier_programs(
     )
     from torch.export import Dim, export
 
+    if block < 3:
+        raise ValueError("CUDA DFlash verifiers need a block of at least 3")
     owners = (
-        Dim("verify_owners", min=1, max=max_owners)
-        if max_owners > 1
-        else Dim.STATIC
+        Dim("verify_owners", min=1, max=max_owners) if max_owners > 1 else Dim.STATIC
     )
     # A one-proposal width would specialize its size-1 proposal axis.
     width = Dim("verify_width", min=3, max=block)

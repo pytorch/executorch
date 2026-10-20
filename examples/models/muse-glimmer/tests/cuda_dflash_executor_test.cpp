@@ -204,7 +204,7 @@ TEST(CudaDFlashCuda, SnapshotSurvivesOverwritesSlicesAndFourUnequalPrefixes) {
       {1, 5, 4},
       aten::ScalarType::Byte,
       aten::Device(aten::DeviceType::CUDA, 0),
-      [](void* data) { cudaFree(data); });
+      [](void* data) { (void)cudaFree(data); });
   cudaStream_t stream;
   ASSERT_EQ(
       cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
