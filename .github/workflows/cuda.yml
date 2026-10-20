@@ -1154,8 +1154,6 @@ jobs:
             mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
-          - variant: kquant-17gb
-            mode: dflash-text-batching
           - variant: kquant-dynamic
             mode: solo-text
           - variant: kquant-dynamic

@@ -53,7 +53,6 @@ Arguments:
                 - solo-text: Muse Glimmer solo text mode
                 - solo-text-batching: Muse Glimmer text on the CUDA batching runtime
                 - dflash-image: Muse Glimmer DFlash vision mode
-                - dflash-text-batching: Muse Glimmer DFlash text on the CUDA batching runtime
 
 Environment:
   RUN_EXPORT  Set to 1 to export artifacts with export_model_artifact.sh before testing
@@ -127,7 +126,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-batching|dflash-image|dflash-text-batching)
+    solo-text|solo-text-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -136,7 +135,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image, dflash-text-batching"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -322,7 +321,7 @@ case "$HF_MODEL" in
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
         ;;
-      solo-text-batching|dflash-text-batching)
+      solo-text-batching)
         # Built by `make muse-glimmer-batching-cuda` into its own directory.
         RUNNER_PATH="muse-glimmer-batching"
         RUNNER_TARGET="muse_glimmer_batching_runner"
@@ -335,7 +334,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching', 'dflash-image' or 'dflash-text-batching'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -501,15 +500,10 @@ EOF
     fi
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
     RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
-    if [ "$MODE" = "solo-text-batching" ] || [ "$MODE" = "dflash-text-batching" ]; then
+    if [ "$MODE" = "solo-text-batching" ]; then
       # The batching runner goes through ServingRuntime and takes its own flags.
       printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
       RUNNER_ARGS="--pte ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd --tokenizer ${MODEL_DIR}/$TOKENIZER_FILE --prompt \"\$(cat $PROMPT_FILE)\" --max_new_tokens 128 --temperature 0 --max_session_tokens 4096"
-    fi
-    if [ "$MODE" = "dflash-text-batching" ]; then
-      # CudaDFlashExecutor; its target forward_{N} and draft draft_forward_{N}
-      # run as CUDA graphs.
-      RUNNER_ARGS="$RUNNER_ARGS --dflash"
     fi
     if [ "$MODE" = "dflash-image" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"

@@ -311,6 +311,56 @@ else:
                         tensor, torch.full((2, 2), 2.0, dtype=torch.bfloat16)
                     )
 
+    def test_bfloat16_result_in_another_layout_feeds_back_correctly(self) -> None:
+        # The method takes contiguous inputs and returns a channels-last result.
+        # A bfloat16 result exports flat bytes through the buffer protocol, so
+        # read that way it would take the method's dim order and come out
+        # permuted, with no error.
+        if runtime._tensor_output != "executorch":
+            self.skipTest("ExecuTorchResult output was not selected")
+        with open(
+            os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE"], "rb"
+        ) as program_file:
+            program_data = program_file.read()
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        # bfloat16 is the upper half of float32, so these are exactly 0 to 7.
+        values = (np.arange(8, dtype=np.float32).view(np.uint32) >> 16).astype(
+            np.uint16
+        )
+        zeros = bytes(values.nbytes)
+        channels_last = values.reshape(1, 2, 2, 2).transpose(0, 2, 3, 1).tobytes()
+
+        result = method((values.tobytes(), zeros))[0]
+        self.assertEqual(result.strides, (16, 2, 8, 4))
+        fed_back = method((result, zeros))[0]
+        self.assertEqual(memoryview(fed_back).tobytes(), channels_last)
+
+    def test_input_errors_name_the_input(self) -> None:
+        class FailingProducer:
+            def __dlpack_device__(self):
+                return (1, 0)
+
+            def __dlpack__(self, stream=None):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        value = np.array([1.0], dtype=np.float32)
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                # A Python error keeps its type, even one whose constructor takes
+                # more than a message, and carries the name as a note.
+                with self.assertRaises(UnicodeDecodeError) as caught:
+                    executor((FailingProducer(), value))
+                self.assertIn("Input 0 of method 'forward'", caught.exception.__notes__)
+        # A method reads every input before it checks their count.
+        with self.assertRaisesRegex(
+            RuntimeError, "Input 2 of method 'forward': not a tensor input"
+        ):
+            method((value, value, value))
+
     def test_mixed_dlpack_and_buffer_inputs(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
             program_data = program_file.read()

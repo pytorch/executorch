@@ -52,7 +52,6 @@ Arguments:
                  - solo-text: Muse Glimmer solo text mode
                  - solo-text-batching: Muse Glimmer text on the CUDA batching runtime
                  - dflash-image: Muse Glimmer DFlash vision mode
-                 - dflash-text-batching: Muse Glimmer DFlash text on the CUDA batching runtime
 
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
@@ -106,7 +105,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-batching|dflash-image|dflash-text-batching)
+    solo-text|solo-text-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -115,7 +114,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image, dflash-text-batching"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -355,8 +354,8 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
     echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
     exit 1
   fi
-  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "solo-text-batching" ] && [ "$MODE" != "dflash-image" ] && [ "$MODE" != "dflash-text-batching" ]; then
-    echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching', 'dflash-image' or 'dflash-text-batching'"
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "solo-text-batching" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
     exit 1
   fi
 fi
@@ -735,23 +734,8 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --backend cuda \
           --output-dir "${OUTPUT_DIR}"
       ;;
-    dflash-text-batching)
-      # Target + packed DFlash draft on the off-graph cache, text only: the
-      # batching forward_{N} plus draft_forward{,_N} and the device verifier.
-      DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
-      python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${DRAFT_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
-      EXPORT_START_SECONDS=$SECONDS
-      TMPDIR="$INDUCTOR_TMPDIR" \
-      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
-      python -m executorch.examples.models.muse_glimmer.export.export_dflash \
-          --target-gguf "$TARGET_GGUF_PATH" \
-          --draft-gguf "${LOCAL_MODEL_DIR}/${DRAFT_GGUF_FILE}" \
-          --backend cuda \
-          --use-offgraph-kv-cache \
-          --output-dir "${OUTPUT_DIR}"
-      ;;
     *)
-      echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching', 'dflash-image' or 'dflash-text-batching'"
+      echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
       exit 1
       ;;
   esac

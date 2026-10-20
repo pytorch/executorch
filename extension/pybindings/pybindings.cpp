@@ -126,21 +126,6 @@ namespace pybindings {
 
 namespace {
 
-PyObject* loaded_torch_module() {
-  // Retain the module for the interpreter's lifetime. This avoids repeated
-  // sys.modules lookups without creating a static py::object whose destructor
-  // could run after Python has finalized.
-  static PyObject* torch_module = nullptr;
-  if (torch_module == nullptr) {
-    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
-    }
-  }
-  return torch_module;
-}
-
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
     "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
@@ -313,11 +298,7 @@ class BufferTensor final {
         info_(buffer_.request()) {
     check_rank();
     const auto input_meta = method_meta.input_tensor_meta(input_index);
-    THROW_IF_ERROR(
-        input_meta.error(),
-        "Input %zu of method '%s' is not a tensor input",
-        input_index,
-        method_meta.name());
+    THROW_IF_ERROR(input_meta.error(), "not a tensor input");
     const bool raw_bfloat16 =
         input_meta->scalar_type() == executorch::aten::ScalarType::BFloat16 &&
         info_.ndim == 1 &&
@@ -329,8 +310,8 @@ class BufferTensor final {
       }
       if (static_cast<size_t>(info_.size) != input_meta->nbytes()) {
         throw py::value_error(
-            "Raw bfloat16 input " + std::to_string(input_index) + " has " +
-            std::to_string(info_.size) + " bytes, but the method expects " +
+            "raw bfloat16 input has " + std::to_string(info_.size) +
+            " bytes, but the method expects " +
             std::to_string(input_meta->nbytes()));
       }
       scalar_type_ = executorch::aten::ScalarType::BFloat16;
@@ -658,24 +639,33 @@ bool is_torch_tensor(const py::handle& value) {
   return result == 1;
 }
 
-// Runs `read`, which builds one input from a Python object, and starts the
-// message of any error it raises with the input and its method, which the
-// readers cannot see. The error keeps its Python type.
+// Runs `read`, which builds one input from a Python object, and names the
+// input and its method in its errors, which the readers cannot see. A Python
+// error keeps its exact type and gets the name as a note; the C++ errors
+// caught below get it in their message. Others, such as std::bad_alloc, pass
+// through unnamed, so pybind11 maps them to their own Python type.
 template <typename Read>
 auto read_input(const MethodMeta& method_meta, size_t index, Read&& read) {
-  const auto named = [&](const char* message) {
+  const auto name = [&] {
     return "Input " + std::to_string(index) + " of method '" +
-        method_meta.name() + "': " + message;
+        method_meta.name() + "'";
+  };
+  const auto named = [&name](const char* message) {
+    return name() + ": " + message;
   };
   try {
     return read();
   } catch (py::error_already_set& error) {
-    // Chained to the original, so its traceback stays available.
-    const auto type = error.type();
-    const auto message =
-        named(py::str(error.value()).cast<std::string>().c_str());
-    py::raise_from(error, type.ptr(), message.c_str());
-    throw py::error_already_set();
+    // Rebuilding the exception as type(message) would fail for any exception
+    // whose constructor is not a single string.
+    if (error.value()) {
+      try {
+        error.value().attr("add_note")(name());
+      } catch (...) {
+        // add_note is best effort; never hide the original error.
+      }
+    }
+    throw;
   } catch (const py::buffer_error& error) {
     throw py::buffer_error(named(error.what()));
   } catch (const py::value_error& error) {
@@ -684,7 +674,7 @@ auto read_input(const MethodMeta& method_meta, size_t index, Read&& read) {
     throw py::type_error(named(error.what()));
   } catch (const std::invalid_argument& error) {
     throw py::value_error(named(error.what()));
-  } catch (const std::exception& error) {
+  } catch (const std::runtime_error& error) {
     throw std::runtime_error(named(error.what()));
   }
 }
@@ -730,12 +720,6 @@ void validate_buffer_input(
 }
 
 #ifndef USE_ATEN_LIB
-void synchronize_torch_cuda_device(int index) {
-  py::reinterpret_borrow<py::object>(loaded_torch_module())
-      .attr("cuda")
-      .attr("synchronize")(index);
-}
-
 /** A torch.Tensor input read through its public Python API, copied only to
  * change its layout. */
 class TorchTensorView final {
@@ -872,7 +856,8 @@ class TorchTensorView final {
                                : "cuda:" + std::to_string(device.index());
       };
       throw py::value_error(
-          "Input " + std::to_string(index) + " is on device " + name(device_) +
+          "Input " + std::to_string(index) + " of method '" +
+          method.method_meta().name() + "' is on device " + name(device_) +
           ", but the method expects " + name(expected));
     }
   }
@@ -995,16 +980,10 @@ class DLPackTensorView final {
         advertised_device_(
             owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>()) {
     validate_advertised_device();
-    // A result of these bindings is written either by an execution, which
-    // finished before it returned, or by a copy on the legacy default stream,
-    // which the delegates' streams wait for. So it needs no wait unless it
-    // was handed to another library. Anything else may still be written on
-    // its producer's streams until the call waits for it.
+    // A result of these bindings gives its capsule without the wait in
+    // __dlpack__, since the call waits for every CUDA input before it runs.
     if (py::isinstance<PyExecuTorchResult>(owner_)) {
-      own_result_ = owner_.cast<std::shared_ptr<PyExecuTorchResult>>();
-    }
-    if (own_result_) {
-      capsule_ = own_result_->capsule();
+      capsule_ = owner_.cast<std::shared_ptr<PyExecuTorchResult>>()->capsule();
     } else {
       capsule_ = advertised_device_.first == dlpack::CUDA
           ? cuda_dlpack_capsule(owner_, advertised_device_.second)
@@ -1061,14 +1040,6 @@ class DLPackTensorView final {
     return nbytes_;
   }
 
-  // Whether the producer may still be writing the tensor on its own streams.
-  // Asked when the call runs, since a result set as an input can be handed to
-  // another library before that.
-  bool may_have_pending_writes() const {
-    return advertised_device_.first == dlpack::CUDA &&
-        !(own_result_ && !own_result_->handed_out());
-  }
-
   // Describes the tensor in the exported dimension order. A CPU tensor dense
   // in another order is copied into that order, since reading it with the
   // exported strides would permute its values. A device tensor would need a
@@ -1103,8 +1074,9 @@ class DLPackTensorView final {
     if (nbytes_ != 0 &&
         device_ != method.get_input(index).toTensor().device()) {
       throw py::value_error(
-          "DLPack input " + std::to_string(index) +
-          " device does not match the method input device");
+          "Input " + std::to_string(index) + " of method '" +
+          method.method_meta().name() +
+          "': DLPack input device does not match the method input device");
     }
   }
 
@@ -1298,7 +1270,6 @@ class DLPackTensorView final {
 
   py::object owner_;
   std::pair<int, int> advertised_device_;
-  std::shared_ptr<PyExecuTorchResult> own_result_;
   size_t nbytes_ = 0;
   py::object capsule_;
   dlpack::ManagedTensor* managed_ = nullptr;
@@ -1496,6 +1467,12 @@ bool prefer_dlpack_input(const py::handle& value) {
   if (!PyObject_CheckBuffer(value.ptr())) {
     return true;
   }
+  // A result of these bindings always takes the DLPack path, which keeps its
+  // real dtype, shape, and strides. A bfloat16 result exports flat bytes
+  // instead, which the buffer path would read in the method's layout.
+  if (py::isinstance<PyExecuTorchResult>(value)) {
+    return true;
+  }
   // NumPy and other host buffers keep the buffer path, including its
   // read-only copy behavior. CUDA results expose only their DLPack storage.
   if (py::hasattr(value, "__dlpack_device__")) {
@@ -1530,19 +1507,6 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
-// Waits for every queued operation on a device. Bindings built without CUDA
-// support have no CUDA runtime of their own, so they wait through torch's,
-// which is loaded whenever such bindings return CUDA tensors.
-void synchronize_device(int index) {
-#ifndef EXECUTORCH_PYBINDINGS_CUDA
-  if (loaded_torch_module() != nullptr) {
-    synchronize_torch_cuda_device(index);
-    return;
-  }
-#endif
-  synchronize_cuda_device(index);
-}
-
 // The Python boundary is synchronous: an execution returns only after its
 // device work has finished, so its outputs are ready wherever they are read.
 // One wait per execution covers every output, instead of one per output.
@@ -1565,13 +1529,15 @@ void synchronize_device_outputs(const Method& method) {
   }
 }
 
-// Device inputs from another library may still be written on that library's
-// streams, torch tensors included. One wait per call covers every such input,
-// instead of one per input. An ExecuTorchResult these bindings returned needs
-// no wait unless its memory was handed to another library since.
-void synchronize_device_inputs(
+// Another library may still be writing a CUDA input on its own streams: a
+// torch tensor, a DLPack tensor, or a result of these bindings, which can share
+// memory a caller gave to that library. It may also still be reading an output
+// buffer that a dropped result used, which the run writes again. One wait per
+// device covers all of them.
+void synchronize_devices_before_run(
     const std::vector<std::shared_ptr<DLPackTensorView>>& dlpack_inputs,
-    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs) {
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
+    const std::vector<executorch::aten::Device>& output_devices = {}) {
   std::vector<int> devices;
   const auto add = [&devices](executorch::aten::Device device) {
     if (!device.is_cpu() &&
@@ -1581,7 +1547,7 @@ void synchronize_device_inputs(
     }
   };
   for (const auto& input : dlpack_inputs) {
-    if (input->nbytes() != 0 && input->may_have_pending_writes()) {
+    if (input->nbytes() != 0) {
       add(input->device());
     }
   }
@@ -1589,6 +1555,9 @@ void synchronize_device_inputs(
     if (input->nbytes() != 0) {
       add(input->device());
     }
+  }
+  for (const auto device : output_devices) {
+    add(device);
   }
   for (const auto index : devices) {
     synchronize_device(index);
@@ -2558,7 +2527,8 @@ struct PyModule final {
 #endif
       } else {
         throw std::runtime_error(
-            "Unsupported python type " + type_str +
+            "Input " + std::to_string(i) + " of method '" + method_meta.name() +
+            "': unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
@@ -2629,7 +2599,7 @@ struct PyModule final {
         dlpack_inputs.push_back(owner.dlpack);
       }
     }
-    synchronize_device_inputs(dlpack_inputs, torch_inputs);
+    synchronize_devices_before_run(dlpack_inputs, torch_inputs);
 #endif
     auto outputs = module_->execute(method_name);
     THROW_IF_ERROR(
@@ -3388,7 +3358,9 @@ struct PyMethod final {
 #endif
       } else {
         throw std::runtime_error(
-            "Unsupported python type " + type_str +
+            "Input " + std::to_string(i) + " of method '" +
+            storage_->method->method_meta().name() +
+            "': unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
@@ -3485,7 +3457,15 @@ struct PyMethod final {
 #endif
     setup_output_storage(*storage_->method, output_storage_spans);
 #ifndef USE_ATEN_LIB
-    synchronize_device_inputs(dlpack_inputs_, torch_inputs_);
+    std::vector<executorch::aten::Device> output_devices;
+    for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
+      if (storage_->device_output_storages[i]) {
+        output_devices.push_back(
+            storage_->method->get_output(i).toTensor().device());
+      }
+    }
+    synchronize_devices_before_run(
+        dlpack_inputs_, torch_inputs_, output_devices);
 #endif
     Error execute_status = storage_->method->execute();
     THROW_IF_ERROR(
@@ -3598,21 +3578,13 @@ struct PyMethod final {
   std::vector<py::object> handed_outputs_;
   // Per device output buffer, alive while such a result still uses it.
   std::vector<std::weak_ptr<void>> handed_buffers_;
-  // Per device output buffer, whether a result was handed it since the last
-  // execution.
-  std::vector<bool> handed_slots_;
   // Per device output, the buffer a still-alive earlier result uses, kept so
   // it can be reused once that result is dropped.
   struct SpareDeviceOutput final {
     std::shared_ptr<DeviceMemoryBuffer> buffer;
     std::weak_ptr<void> handed;
-    std::shared_ptr<bool> handed_out;
   };
   std::vector<SpareDeviceOutput> spare_device_outputs_;
-  // Per device output buffer, whether another library may have read it, so
-  // reusing it must wait for that library's queued work. Torch outputs always
-  // may; an ExecuTorchResult only once exported through DLPack.
-  std::vector<std::shared_ptr<bool>> handed_out_;
 #ifndef USE_ATEN_LIB
 
   struct BorrowedOutputOwner final {
@@ -3690,10 +3662,7 @@ struct PyMethod final {
         std::make_shared<std::shared_ptr<DeviceMemoryBuffer>>(buffer);
     const std::shared_ptr<void> memory(holder, buffer->data());
     py::object result;
-    const auto torch_output =
-        portable_tensor_output() == PortableTensorOutput::Torch;
-    handed_out_[*slot] = std::make_shared<bool>(torch_output);
-    if (torch_output) {
+    if (portable_tensor_output() == PortableTensorOutput::Torch) {
       auto* retained = new std::shared_ptr<void>(memory);
       result = portable_tensor_result(
           tensor,
@@ -3702,11 +3671,9 @@ struct PyMethod final {
             delete static_cast<std::shared_ptr<void>*>(pointer);
           }));
     } else {
-      result = py::cast(
-          PyExecuTorchResult::hand_over(tensor, memory, handed_out_[*slot]));
+      result = py::cast(PyExecuTorchResult::hand_over(tensor, memory));
     }
     handed_buffers_[*slot] = holder;
-    handed_slots_[*slot] = true;
     handed_outputs_.resize(storage_->method->outputs_size());
     handed_outputs_[index] = result;
     return result;
@@ -3853,9 +3820,7 @@ struct PyMethod final {
     storage_->output_storages = std::move(output_storages);
     storage_->device_output_storages = std::move(device_output_storages);
     handed_buffers_.assign(num_outputs, std::weak_ptr<void>());
-    handed_slots_.assign(num_outputs, false);
     spare_device_outputs_.assign(num_outputs, SpareDeviceOutput());
-    handed_out_.assign(num_outputs, nullptr);
   }
 
   // A handed-over result still uses its buffer, so the method writes into
@@ -3866,45 +3831,25 @@ struct PyMethod final {
 #ifndef USE_ATEN_LIB
     for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
       auto& buffer = storage_->device_output_storages[i];
-      if (!buffer || !handed_slots_[i]) {
+      if (!buffer || handed_buffers_[i].expired()) {
         continue;
       }
       const auto device = storage_->method->get_output(i).toTensor().device();
-      if (!handed_buffers_[i].expired()) {
-        // In a loop such as `out = method(x)[0]` the previous result is still
-        // alive here, so its buffer and this one take turns instead of a new
-        // allocation each call.
-        auto& spare = spare_device_outputs_[i];
-        if (spare.buffer && spare.handed.expired()) {
-          std::swap(buffer, spare.buffer);
-          std::swap(handed_buffers_[i], spare.handed);
-          std::swap(handed_out_[i], spare.handed_out);
-          wait_for_other_readers(i, device);
-        } else {
-          spare = {buffer, handed_buffers_[i], handed_out_[i]};
-          buffer = allocate_device_output(i, buffer->size(), device);
-        }
+      auto& spare = spare_device_outputs_[i];
+      if (spare.buffer && spare.handed.expired()) {
+        std::swap(buffer, spare.buffer);
+        std::swap(handed_buffers_[i], spare.handed);
       } else {
-        wait_for_other_readers(i, device);
+        // Allocated into a local first, so a failed allocation leaves the slot
+        // and the spare untouched.
+        auto fresh = allocate_device_output(i, buffer->size(), device);
+        spare = {std::move(buffer), handed_buffers_[i]};
+        buffer = std::move(fresh);
+        handed_buffers_[i].reset();
       }
-      handed_buffers_[i].reset();
-      handed_out_[i].reset();
-      handed_slots_[i] = false;
     }
 #endif
   }
-
-#ifndef USE_ATEN_LIB
-  // A dropped result's memory may still be read by work another library
-  // queued on its own streams. Freeing it would have waited for that work, so
-  // reusing it waits too. Work these bindings queued has already finished,
-  // since every execution waits for its device before it returns.
-  void wait_for_other_readers(size_t index, executorch::aten::Device device) {
-    if (handed_out_[index] && *handed_out_[index]) {
-      synchronize_device(device.index());
-    }
-  }
-#endif
 
   py::list get_outputs_as_py_list(
       const std::vector<EValue>& outputs,
@@ -3933,7 +3878,11 @@ struct PyMethod final {
           list[i] = py::cast(v.toTensor());
         }
 #else
-        if (i < handed_outputs_.size() && handed_outputs_[i]) {
+        // Within one execution, repeated default reads return the same handed
+        // over object, so a caller sees stable identity and the buffer is not
+        // handed over twice. A clone_outputs=False read is a separate borrowed
+        // view and never returns that cached object.
+        if (clone_outputs && i < handed_outputs_.size() && handed_outputs_[i]) {
           list[i] = handed_outputs_[i];
           continue;
         }
