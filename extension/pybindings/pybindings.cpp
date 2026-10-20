@@ -2100,6 +2100,19 @@ struct PyTensorInfo final {
     return info_.nbytes();
   }
 
+  std::string device() const {
+    const auto device = info_.device();
+    switch (device.type()) {
+      case runtime::etensor::DeviceType::CPU:
+        return "cpu";
+      case runtime::etensor::DeviceType::CUDA:
+        return "cuda:" + std::to_string(device.index());
+    }
+    throw std::runtime_error(
+        "Unknown device type " +
+        std::to_string(static_cast<int>(device.type())));
+  }
+
   std::string repr() const {
     std::string size_str = "[";
     for (const auto& d : info_.sizes()) {
@@ -2116,7 +2129,8 @@ struct PyTensorInfo final {
         std::string(executorch::runtime::toString(info_.scalar_type())) +
         ", is_memory_planned=" +
         (info_.is_memory_planned() ? "True" : "False") +
-        ", nbytes=" + std::to_string(info_.nbytes()) + ")";
+        ", nbytes=" + std::to_string(info_.nbytes()) + ", device=" + device() +
+        ")";
   }
 
  private:
@@ -4343,6 +4357,10 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           "lacks.")
       .def_property_readonly(
           "nbytes", &PyExecuTorchResult::nbytes, "Size of the data in bytes.")
+      .def_property_readonly(
+          "device",
+          &PyExecuTorchResult::device_name,
+          "Where the data lives: \"cpu\" or \"cuda:N\".")
       .def(
           "__array__",
           [](const std::shared_ptr<PyExecuTorchResult>& result,
@@ -4598,6 +4616,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def("dtype", &PyTensorInfo::dtype, call_guard)
       .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
       .def("nbytes", &PyTensorInfo::nbytes, call_guard)
+      .def("device", &PyTensorInfo::device, call_guard)
       .def("__repr__", &PyTensorInfo::repr, call_guard);
   py::class_<PyMethodMeta>(m, "MethodMeta", py::module_local())
       .def("name", &PyMethodMeta::name, call_guard)

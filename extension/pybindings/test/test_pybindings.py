@@ -1253,9 +1253,7 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1885,9 +1883,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_outputs(), 1)
         self.assertEqual(meta.num_attributes(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
 
         float_dtype = 6
         self.assertEqual(
@@ -1939,9 +1935,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -2867,6 +2861,62 @@ print("ran after its program was dropped")
                                     self.assertNotEqual(
                                         cloned.data_ptr(), value.data_ptr()
                                     )
+
+    def test_method_meta_reports_tensor_devices(self):
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        host_meta = self.load_prog_fn(program.buffer).method_meta("forward")
+        self.assertEqual(host_meta.input_tensor_meta(0).device(), "cpu")
+        self.assertEqual(host_meta.output_tensor_meta(0).device(), "cpu")
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=3
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+        for meta in (
+            self.load_prog_fn(data).method_meta("forward"),
+            self.load_fn(data).method_meta("forward"),
+        ):
+            self.assertEqual(meta.input_tensor_meta(0).device(), "cuda:3")
+            self.assertEqual(meta.output_tensor_meta(0).device(), "cuda:3")
+            self.assertIn("device=cuda:3", repr(meta.input_tensor_meta(0)))
+
+        # A named buffer reports its device too.
+        eager_module = ModuleAddWithAttributes()
+        program = to_edge(
+            export(eager_module, eager_module.get_inputs(), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(emit_mutable_buffer_names=True))
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA,
+                    device_index=3,
+                    fully_qualified_name=(
+                        entry.val.extra_tensor_info.fully_qualified_name
+                        if entry.val.extra_tensor_info
+                        else None
+                    ),
+                )
+        meta = self.load_prog_fn(
+            bytes(serialize_pte_binary(PTEFile(schema)))
+        ).method_meta("forward")
+        self.assertEqual(meta.num_attributes(), 1)
+        self.assertEqual(meta.attribute_tensor_meta(0).device(), "cuda:3")
 
     def test_input_device_must_match_method(self):
         if self.kernel_mode != "portable":

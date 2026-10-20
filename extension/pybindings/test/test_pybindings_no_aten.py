@@ -281,6 +281,7 @@ else:
         if not isinstance(result, runtime.ExecuTorchResult):
             self.skipTest("torch output mode returns torch tensors")
 
+        self.assertEqual(result.device, "cpu")
         shared = np.from_dlpack(result, copy=False)
         self.assertTrue(np.shares_memory(shared, np.from_dlpack(result)))
         copied = np.from_dlpack(result, copy=True)

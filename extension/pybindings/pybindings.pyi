@@ -49,6 +49,11 @@ class ExecuTorchResult:
 
     @property
     def nbytes(self) -> int: ...
+    @property
+    def device(self) -> str:
+        """Where the data lives: ``"cpu"`` or ``"cuda:N"``."""
+        ...
+
     def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
     def __dlpack__(
         self,
@@ -202,6 +207,10 @@ class TensorInfo:
     def is_memory_planned(self) -> bool:
         """True if the tensor is already memory planned, meaning no allocation
         needs to be provided. False otherwise"""
+        ...
+
+    def device(self) -> str:
+        """Where the program places the tensor: ``"cpu"`` or ``"cuda:N"``."""
         ...
 
     def nbytes(self) -> int:

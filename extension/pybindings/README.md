@@ -37,6 +37,9 @@ input in place, and only such an input sees the method's own in-place updates.
 CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
+`method_meta().input_tensor_meta(i).device()` tells where the method expects
+input `i`, as `"cpu"` or `"cuda:N"`, and `output_tensor_meta(i).device()` does
+the same for its outputs.
 
 When PyTorch is available, importing `portable_lib` imports it and portable
 bindings return `torch.Tensor` outputs. When it cannot be imported, the default

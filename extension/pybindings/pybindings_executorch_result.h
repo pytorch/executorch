@@ -502,10 +502,12 @@ class PyExecuTorchResult final
     if (sizes_.size() == 1) {
       shape += ",";
     }
-    const std::string device =
-        device_.is_cpu() ? "cpu" : "cuda:" + std::to_string(device_.index());
     return "ExecuTorchResult(shape=(" + shape +
-        "), dtype=" + torch_dtype_name() + ", device=" + device + ")";
+        "), dtype=" + torch_dtype_name() + ", device=" + device_name() + ")";
+  }
+
+  std::string device_name() const {
+    return device_.is_cpu() ? "cpu" : "cuda:" + std::to_string(device_.index());
   }
 
  private:
