@@ -640,6 +640,15 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as work_dir:
         test_cpp_sdk.run_tests(Path(work_dir))
     import test_base
+    from executorch.extension.pybindings.portable_lib import (
+        _get_registered_backend_names,
+    )
+
+    registered = _get_registered_backend_names()
+    assert (
+        "OpenvinoBackend" in registered
+    ), f"OpenvinoBackend not found in registered backends: {registered}"
+    print("✓ OpenvinoBackend is registered")
 
     test_base.test_cmsis_nn_install()
     # The same model run the CPU row ends with, through the Python bindings.
@@ -650,3 +659,6 @@ if __name__ == "__main__":
     test_windows.run_tests(
         model_tests=[ModelTest(model=Model.Mv3, backend=Backend.Xnnpack)]
     )
+
+    # Last, because it installs packages the wheel does not declare.
+    test_windows.test_the_openvino_delegate_runs()

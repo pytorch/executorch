@@ -117,6 +117,56 @@ export const MODELS = [
     },
   },
   {
+    id: 'gemma-3-1b-it',
+    name: 'Gemma 3 1B Instruct',
+    shortName: 'Gemma 3 1B',
+    task: 'text-generation',
+    tagline: 'Larger · by Google DeepMind',
+    approxBytes: 675e6,
+    approxBytesIsEstimate: false,
+    arch: { layers: 26, dModel: 1152, ffn: 6912, heads: 4, kvHeads: 1, vocab: 262144 },
+    assets: {
+      "baseUrl": "https://huggingface.co/executorch-community/Gemma-3-1B-IT-ExecuTorch-WebGPU/resolve/91864e518e371b57a6433c180490ce5ab31639ec/", // @lint-ignore (base URL, files resolve under it)
+      "files": [
+        "gemma3_1b_it_q4gsw.pte",
+        "tokenizer/config.json",
+        "tokenizer/generation_config.json",
+        "tokenizer/special_tokens_map.json",
+        "tokenizer/tokenizer.json",
+        "tokenizer/tokenizer_config.json"
+      ],
+      "sha256": {
+        "gemma3_1b_it_q4gsw.pte": "6056492708430182103f2b28cac2cc5d4d43a66a95236f070de3312542f11c25",
+        "tokenizer/config.json": "19cb5d28c97778271ba2b3c3df47bf76bdd6706724777a2318b3522230afe91e",
+        "tokenizer/generation_config.json": "fd9324becc53c4be610db39e13a613006f09fd6ef71a95fb6320dc33157490a3",
+        "tokenizer/special_tokens_map.json": "2f7b0adf4fb469770bb1490e3e35df87b1dc578246c5e7e6fc76ecf33213a397",
+        "tokenizer/tokenizer.json": "4667f2089529e8e7657cfb6d1c19910ae71ff5f28aa7ab2ff2763330affad795",
+        "tokenizer/tokenizer_config.json": "bfe25c2735e395407beb78456ea9a6984a1f00d8c16fa04a8b75f2a614cf53e1"
+      },
+      "spec": {
+        "pte": "gemma3_1b_it_q4gsw.pte",
+        "pteBytes": 640305924,
+        "tokenizer": "tokenizer",
+        "chat": "template",
+        "prefillMax": 512,
+        "maxCtx": 8960,
+        "eos": [
+          1,
+          106
+        ]
+      }
+    },
+    credit: { by: 'Google DeepMind', url: 'https://huggingface.co/google/gemma-3-1b-it', paper: 'https://arxiv.org/abs/2503.19786' },
+    attribution: 'Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms',
+    license: {
+      status: LICENSE_STATUS.CLEARED,
+      reviewNote: "Approved for public redistribution (legal/OSS approval confirmed by the project owner, 2026-10-16).",
+      upstream: 'Gemma Terms of Use + Gemma Prohibited Use Policy',
+      provenance:
+        'Upstream: google/gemma-3-1b-it (gated on Hugging Face). Use is subject to the Gemma Terms of Use, including the use restrictions in its Section 3.2. ',
+    },
+  },
+  {
     id: 'sam2-hiera-tiny',
     name: 'SAM 2.1 Hiera Tiny',
     shortName: 'SAM 2.1',
