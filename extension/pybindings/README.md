@@ -45,7 +45,13 @@ on the output's original device. With `clone_outputs=False`, results share
 runtime or input storage and later execution may overwrite that storage.
 
 A CUDA output that fills memory the bindings allocated for it is returned
-without a copy when `clone_outputs=True`. The result keeps that memory, so a
+without a copy when `clone_outputs=True`. That needs a method exported with
+`MemoryPlanningPass(alloc_graph_output=False)`, so the method does not plan its
+outputs into its own memory;
+`method_meta().output_tensor_meta(i).is_memory_planned()` tells whether output
+`i` is planned. A planned CUDA output read with
+`clone_outputs=True` costs a new allocation, a device-to-device copy, and a
+wait for the device. The result keeps that memory, so a
 method writes its next execution into a second buffer, and the two take turns;
 a module allocates new memory each call. Within one execution, reading the
 outputs again with `clone_outputs=True` returns the same object, so an in-place
@@ -105,18 +111,28 @@ Copying CUDA memory requires CUDA-enabled bindings: `from_host()`, `to_host()`
 of a CUDA result, and a CUDA `ExecuTorchResult` with `clone_outputs=True`.
 Bindings built without CUDA support synchronize through Python Torch instead,
 so while torch is loaded they still read CUDA inputs, torch tensors or DLPack,
-and return borrowed CUDA results. Execution is synchronous at the Python
-boundary: a call returns after its device work has finished, so its outputs are
-ready on any stream. Each call waits once per device after it runs, rather than
-once per output. Before running, it waits once per device for any CUDA input
-that another library may still be writing: a torch CUDA tensor, a CUDA DLPack
-input, or a result of these bindings passed back in, since that result can share
-memory a caller handed to another library. The same wait covers the memory of a
-CUDA output that a method returned without a copy: once that result is dropped,
-the method writes the memory again, and another library may still be reading
-it. A torch CUDA input in another layout also waits before torch copies it into
-the exported layout. Reading a CUDA result through `__dlpack__` or `to_host()`
-waits once as well. The synchronization has no C++ ATen dependency.
+and return borrowed CUDA results.
+
+Execution is synchronous at the Python boundary: a call returns after its device
+work has finished, so its outputs are ready on any stream. Every wait is for the
+whole device (`cudaDeviceSynchronize`), not for one stream, so it also waits for
+unrelated work queued on that device, for example by torch. Before it runs, a
+call waits once for each device that holds a non-empty CUDA input or output.
+Another library may still be writing such an input: a torch CUDA tensor, a CUDA
+DLPack input, or a result of these bindings passed back in, which can share
+memory a caller handed to that library. It may also still be reading the memory
+of an output from an earlier call, which this call writes again. After it runs,
+a call waits once for each device that holds a CUDA input or output, since the
+method may have updated an input in place. Each cloned CUDA
+output waits once more for its copy. A torch CUDA input in another layout also
+waits before torch copies it into the exported layout. Reading a CUDA result
+through `__dlpack__` or `to_host()` waits once as well. In CUDA-enabled
+bindings a wait holds the GIL, so other Python threads pause until it ends, and
+a queued CUDA host callback that needs the GIL makes the wait hang. Bindings
+built without CUDA wait through `torch.cuda.synchronize`, which releases the
+GIL. On an idle device a wait is short:
+`cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
+synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
 method. Bfloat16 results expose flat bytes through the buffer protocol because

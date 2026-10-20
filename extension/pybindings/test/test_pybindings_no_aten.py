@@ -343,23 +343,38 @@ else:
             def __dlpack__(self, stream=None):
                 raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
 
+        class FailingDevice(np.ndarray):
+            def __dlpack_device__(self):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
             program_data = program_file.read()
         module = runtime._load_for_executorch_from_buffer(program_data)
         method = runtime._load_program_from_buffer(program_data).load_method("forward")
         value = np.array([1.0], dtype=np.float32)
         for executor in (module, method):
+            # A Python error keeps its type, even one whose constructor takes
+            # more than a message, and carries the name as a note. Choosing how
+            # to read an input can raise too.
+            for failing in (FailingProducer(), value.view(FailingDevice)):
+                with self.subTest(executor=type(executor), input=type(failing)):
+                    with self.assertRaises(UnicodeDecodeError) as caught:
+                        executor((failing, value))
+                    self.assertIn(
+                        "Input 0 of method 'forward'",
+                        getattr(caught.exception, "__notes__", []),
+                    )
             with self.subTest(executor=type(executor)):
-                # A Python error keeps its type, even one whose constructor takes
-                # more than a message, and carries the name as a note.
-                with self.assertRaises(UnicodeDecodeError) as caught:
-                    executor((FailingProducer(), value))
-                self.assertIn("Input 0 of method 'forward'", caught.exception.__notes__)
-        # A method reads every input before it checks their count.
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^Input 0 of method 'forward': unsupported python type",
+                ):
+                    executor((object(), value))
+        # The count is checked before any input is read.
         with self.assertRaisesRegex(
-            RuntimeError, "Input 2 of method 'forward': not a tensor input"
+            RuntimeError, r"^Method 'forward' takes 2 inputs, but got 3$"
         ):
-            method((value, value, value))
+            method((value, value, object()))
 
     def test_mixed_dlpack_and_buffer_inputs(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:

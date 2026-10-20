@@ -720,12 +720,38 @@ void validate_buffer_input(
 }
 
 #ifndef USE_ATEN_LIB
+void validate_input_device(
+    const Method& method,
+    size_t index,
+    executorch::aten::Device device,
+    size_t nbytes) {
+  if (nbytes == 0) {
+    return;
+  }
+  const auto expected = method.get_input(index).toTensor().device();
+  if (device != expected) {
+    const auto name = [](executorch::aten::Device value) {
+      return value.is_cpu() ? std::string("cpu")
+                            : "cuda:" + std::to_string(value.index());
+    };
+    std::string message = "Input " + std::to_string(index) + " of method '" +
+        method.method_meta().name() + "' is on device " + name(device) +
+        ", but the method expects " + name(expected);
+    if (device.is_cpu()) {
+      message +=
+          ". Pass device memory instead, such as "
+          "ExecuTorchResult.from_host(...) or a CUDA tensor";
+    }
+    throw py::value_error(message);
+  }
+}
+
 /** A torch.Tensor input read through its public Python API, copied only to
  * change its layout. */
 class TorchTensorView final {
  public:
-  explicit TorchTensorView(const py::handle& value)
-      : owner_(py::reinterpret_borrow<py::object>(value)) {
+  TorchTensorView(const py::handle& value, size_t index)
+      : owner_(py::reinterpret_borrow<py::object>(value)), index_(index) {
     if (owner_.attr("is_neg")().cast<bool>() ||
         owner_.attr("is_conj")().cast<bool>()) {
       throw py::value_error(
@@ -772,6 +798,10 @@ class TorchTensorView final {
       throw py::value_error("Torch tensor data is not allocated");
     }
     data_ = reinterpret_cast<void*>(address);
+  }
+
+  size_t index() const {
+    return index_;
   }
 
   void* data() const {
@@ -845,23 +875,6 @@ class TorchTensorView final {
     dim_order_.assign(dim_order.begin(), dim_order.end());
   }
 
-  void validate_device(const Method& method, size_t index) const {
-    if (nbytes_ == 0) {
-      return;
-    }
-    const auto expected = method.get_input(index).toTensor().device();
-    if (device_ != expected) {
-      const auto name = [](executorch::aten::Device device) {
-        return device.is_cpu() ? std::string("cpu")
-                               : "cuda:" + std::to_string(device.index());
-      };
-      throw py::value_error(
-          "Input " + std::to_string(index) + " of method '" +
-          method.method_meta().name() + "' is on device " + name(device_) +
-          ", but the method expects " + name(expected));
-    }
-  }
-
  private:
   static std::vector<int> checked_vector(
       const py::handle& values,
@@ -893,6 +906,7 @@ class TorchTensorView final {
   }
 
   py::object owner_;
+  size_t index_;
   void* data_ = nullptr;
   std::vector<int> sizes_;
   std::vector<int> strides_;
@@ -917,13 +931,13 @@ class BorrowedInput final {
         data_(buffer_->data()),
         nbytes_(buffer_->nbytes()) {}
 
-  void validate() const {
+  void validate(const char* method_name) const {
     const auto [current_data, current_nbytes] =
         buffer_ ? buffer_->current_storage() : torch_storage();
     if (current_data != data_ || current_nbytes != nbytes_) {
       throw py::value_error(
-          "Input " + std::to_string(index_) +
-          " storage changed after set_inputs(); call set_inputs() again");
+          "Input " + std::to_string(index_) + " of method '" + method_name +
+          "': its storage changed after it was passed in; pass it again");
     }
   }
 
@@ -1068,16 +1082,6 @@ class DLPackTensorView final {
     }
     strides_ = std::move(strides);
     dim_order_.assign(dim_order.begin(), dim_order.end());
-  }
-
-  void validate_device(const Method& method, size_t index) const {
-    if (nbytes_ != 0 &&
-        device_ != method.get_input(index).toTensor().device()) {
-      throw py::value_error(
-          "Input " + std::to_string(index) + " of method '" +
-          method.method_meta().name() +
-          "': DLPack input device does not match the method input device");
-    }
   }
 
   py::object result_backing_owner() const {
@@ -1370,7 +1374,8 @@ py::object dlpack_output_owner(
 
 py::object module_aliased_torch_output(
     const executorch::aten::Tensor& tensor,
-    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs) {
+    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
+    const std::string& method_name) {
   if (torch_inputs.empty() ||
       portable_tensor_output() != PortableTensorOutput::Torch ||
       tensor.nbytes() == 0) {
@@ -1399,7 +1404,9 @@ py::object module_aliased_torch_output(
             py::str(source.attr("dtype")).cast<std::string>()) !=
             tensor.scalar_type()) {
       throw py::value_error(
-          "Input storage changed before get_outputs(); call set_inputs() again");
+          "Input " + std::to_string(input->index()) + " of method '" +
+          method_name +
+          "': its storage changed before the output was read; pass it again");
     }
     const auto offset = source.attr("storage_offset")().cast<int64_t>() +
         static_cast<int64_t>((address - start) / itemsize);
@@ -1455,9 +1462,8 @@ std::optional<EValue> scalar_input(
     return EValue(number.cast<bool>());
   }
   throw std::runtime_error(
-      "Input " + std::to_string(index) + " of method '" + method_meta.name() +
-      "' is " + runtime::tag_to_string(tag.get()) + ", but got " +
-      std::string(py::str(value.get_type())));
+      std::string("the method expects ") + runtime::tag_to_string(tag.get()) +
+      ", but got " + std::string(py::str(value.get_type())));
 }
 
 bool prefer_dlpack_input(const py::handle& value) {
@@ -1507,57 +1513,32 @@ std::shared_ptr<DeviceMemoryBuffer> allocate_device_output(
   return std::make_shared<DeviceMemoryBuffer>(std::move(buffer.get()));
 }
 
-// The Python boundary is synchronous: an execution returns only after its
-// device work has finished, so its outputs are ready wherever they are read.
-// One wait per execution covers every output, instead of one per output.
-void synchronize_device_outputs(const Method& method) {
+// The Python boundary is synchronous, and each wait is for the whole device,
+// so one wait per device covers every tensor of a run. Before the run, another
+// library may still be writing a CUDA input on its own streams: a torch tensor,
+// a DLPack tensor, or a result of these bindings, which can share memory a
+// caller gave to that library. It may also still be reading the memory of an
+// output from an earlier run, such as a dropped result's buffer or a
+// memory-planned output, which this run writes again. After the run, its
+// outputs, and any input it updated in place, are ready on every stream.
+void synchronize_tensor_devices(const Method& method) {
   std::vector<int> devices;
-  for (size_t i = 0; i < method.outputs_size(); ++i) {
-    const auto& output = method.get_output(i);
-    if (!output.isTensor() || output.toTensor().nbytes() == 0) {
-      continue;
+  const auto add = [&devices](const EValue& value) {
+    if (!value.isTensor() || value.toTensor().nbytes() == 0) {
+      return;
     }
-    const auto device = output.toTensor().device();
-    if (!device.is_cpu() &&
-        std::find(devices.begin(), devices.end(), device.index()) ==
-            devices.end()) {
-      devices.push_back(device.index());
-    }
-  }
-  for (const auto index : devices) {
-    synchronize_device(index);
-  }
-}
-
-// Another library may still be writing a CUDA input on its own streams: a
-// torch tensor, a DLPack tensor, or a result of these bindings, which can share
-// memory a caller gave to that library. It may also still be reading an output
-// buffer that a dropped result used, which the run writes again. One wait per
-// device covers all of them.
-void synchronize_devices_before_run(
-    const std::vector<std::shared_ptr<DLPackTensorView>>& dlpack_inputs,
-    const std::vector<std::shared_ptr<TorchTensorView>>& torch_inputs,
-    const std::vector<executorch::aten::Device>& output_devices = {}) {
-  std::vector<int> devices;
-  const auto add = [&devices](executorch::aten::Device device) {
+    const auto device = value.toTensor().device();
     if (!device.is_cpu() &&
         std::find(devices.begin(), devices.end(), device.index()) ==
             devices.end()) {
       devices.push_back(device.index());
     }
   };
-  for (const auto& input : dlpack_inputs) {
-    if (input->nbytes() != 0) {
-      add(input->device());
-    }
+  for (size_t i = 0; i < method.inputs_size(); ++i) {
+    add(method.get_input(i));
   }
-  for (const auto& input : torch_inputs) {
-    if (input->nbytes() != 0) {
-      add(input->device());
-    }
-  }
-  for (const auto device : output_devices) {
-    add(device);
+  for (size_t i = 0; i < method.outputs_size(); ++i) {
+    add(method.get_output(i));
   }
   for (const auto index : devices) {
     synchronize_device(index);
@@ -1915,7 +1896,7 @@ struct PyBundledModule : public BundledModule {
           method.error(),
           "Method execution failed with status 0x%" PRIx32,
           static_cast<uint32_t>(method.error()));
-      synchronize_device_outputs(*method.get());
+      synchronize_tensor_devices(*method.get());
     }
 #endif
 
@@ -2351,6 +2332,15 @@ struct PyModule final {
           "' failed while setting its inputs, so the inputs it would reuse "
           "may be a mix of two calls. Pass every input on the next call.");
     }
+#ifndef USE_ATEN_LIB
+    const auto loaded_method = module_->method(method_name);
+    THROW_IF_ERROR(
+        loaded_method.error(),
+        "Failed to execute method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(loaded_method.error()));
+    const Method& method = *loaded_method.get();
+#endif
     std::vector<InputOwner> new_input_owners(inputs_size);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
@@ -2385,9 +2375,13 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (auto scalar = scalar_input(method_meta, i, python_input)) {
+      if (auto scalar = read_input(method_meta, i, [&] {
+            return scalar_input(method_meta, i, python_input);
+          })) {
         cpp_inputs.push_back(*scalar);
-      } else if (is_torch_tensor(python_input)) {
+      } else if (read_input(method_meta, i, [&] {
+                   return is_torch_tensor(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         new_input_owners[i].torch =
@@ -2403,19 +2397,13 @@ struct PyModule final {
         }
 #else
         torch_inputs.push_back(read_input(method_meta, i, [&] {
-          return std::make_shared<TorchTensorView>(python_input);
+          return std::make_shared<TorchTensorView>(python_input, i);
         }));
         const auto& tensor = torch_inputs.back();
         new_input_owners[i].torch = tensor;
         validate_tensor_input(
             method_meta, i, tensor->scalar_type(), tensor->sizes());
-        const auto method = module_->method(method_name);
-        THROW_IF_ERROR(
-            method.error(),
-            "Failed to execute method %s, error: 0x%" PRIx32,
-            method_name.c_str(),
-            static_cast<uint32_t>(method.error()));
-        tensor->validate_device(*method.get(), i);
+        validate_input_device(method, i, tensor->device(), tensor->nbytes());
         read_input(method_meta, i, [&] {
           tensor->use_layout(method_meta.input_tensor_meta(i)->dim_order());
         });
@@ -2448,7 +2436,9 @@ struct PyModule final {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
-      } else if (prefer_dlpack_input(python_input)) {
+      } else if (read_input(method_meta, i, [&] {
+                   return prefer_dlpack_input(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto python_tensor = py::module_::import("torch.utils.dlpack")
                                  .attr("from_dlpack")(python_input);
@@ -2469,13 +2459,7 @@ struct PyModule final {
         new_input_owners[i].dlpack = view;
         validate_tensor_input(
             method_meta, i, view->scalar_type(), view->sizes());
-        const auto method = module_->method(method_name);
-        THROW_IF_ERROR(
-            method.error(),
-            "Failed to execute method %s, error: 0x%" PRIx32,
-            method_name.c_str(),
-            static_cast<uint32_t>(method.error()));
-        view->validate_device(*method.get(), i);
+        validate_input_device(method, i, view->device(), view->nbytes());
         read_input(method_meta, i, [&] {
           view->use_layout(method_meta.input_tensor_meta(i)->dim_order());
         });
@@ -2494,6 +2478,13 @@ struct PyModule final {
         }));
         const auto& buffer = buffer_inputs.back();
         new_input_owners[i].buffer = buffer;
+#ifndef USE_ATEN_LIB
+        validate_input_device(
+            method,
+            i,
+            executorch::aten::Device(executorch::aten::DeviceType::CPU),
+            buffer->nbytes());
+#endif
         validate_buffer_input(method_meta, i, *buffer);
         if (!method_meta.input_tensor_meta(i)->is_memory_planned() &&
             buffer->borrows_data()) {
@@ -2540,7 +2531,7 @@ struct PyModule final {
     auto& retained = retained_inputs_[method_name];
     for (size_t i = inputs_size; i < retained.size(); ++i) {
       if (retained[i].validation) {
-        retained[i].validation->validate();
+        retained[i].validation->validate(method_name.c_str());
       }
     }
     // A load error is the real cause, so it wins over the checks below.
@@ -2599,7 +2590,7 @@ struct PyModule final {
         dlpack_inputs.push_back(owner.dlpack);
       }
     }
-    synchronize_devices_before_run(dlpack_inputs, torch_inputs);
+    synchronize_tensor_devices(method);
 #endif
     auto outputs = module_->execute(method_name);
     THROW_IF_ERROR(
@@ -2608,15 +2599,7 @@ struct PyModule final {
         method_name.c_str(),
         static_cast<uint32_t>(outputs.error()));
 #ifndef USE_ATEN_LIB
-    {
-      const auto method = module_->method(method_name);
-      THROW_IF_ERROR(
-          method.error(),
-          "Failed to execute method %s, error: 0x%" PRIx32,
-          method_name.c_str(),
-          static_cast<uint32_t>(method.error()));
-      synchronize_device_outputs(*method.get());
-    }
+    synchronize_tensor_devices(method);
 #endif
     // DLPack producers may supply storage returned directly by the graph.
     // Keep each output's allocation alive after local adapters go out of scope.
@@ -2648,8 +2631,8 @@ struct PyModule final {
       for (size_t i = 0; i < outputs->size(); ++i) {
         const auto& output = (*outputs)[i];
         if (output.isTensor()) {
-          auto alias =
-              module_aliased_torch_output(output.toTensor(), torch_inputs);
+          auto alias = module_aliased_torch_output(
+              output.toTensor(), torch_inputs, method_name);
           if (!alias.is_none()) {
             result[i] = std::move(alias);
           }
@@ -3189,6 +3172,12 @@ struct PyMethod final {
     ObjectLock lock(mutex_);
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
+    if (inputs_size != storage_->method->inputs_size()) {
+      throw std::runtime_error(
+          "Method '" + std::string(storage_->method->method_meta().name()) +
+          "' takes " + std::to_string(storage_->method->inputs_size()) +
+          " inputs, but got " + std::to_string(inputs_size));
+    }
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
@@ -3219,10 +3208,14 @@ struct PyMethod final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (auto scalar =
-              scalar_input(storage_->method->method_meta(), i, python_input)) {
+      if (auto scalar = read_input(storage_->method->method_meta(), i, [&] {
+            return scalar_input(
+                storage_->method->method_meta(), i, python_input);
+          })) {
         cpp_inputs.push_back(*scalar);
-      } else if (is_torch_tensor(python_input)) {
+      } else if (read_input(storage_->method->method_meta(), i, [&] {
+                   return is_torch_tensor(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
@@ -3242,7 +3235,7 @@ struct PyMethod final {
 #else
         torch_inputs.push_back(
             read_input(storage_->method->method_meta(), i, [&] {
-              return std::make_shared<TorchTensorView>(python_input);
+              return std::make_shared<TorchTensorView>(python_input, i);
             }));
         const auto& view = torch_inputs.back();
         validate_tensor_input(
@@ -3250,7 +3243,8 @@ struct PyMethod final {
             i,
             view->scalar_type(),
             view->sizes());
-        view->validate_device(*storage_->method, i);
+        validate_input_device(
+            *storage_->method, i, view->device(), view->nbytes());
         read_input(storage_->method->method_meta(), i, [&] {
           view->use_layout(storage_->method->method_meta()
                                .input_tensor_meta(i)
@@ -3280,7 +3274,9 @@ struct PyMethod final {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
-      } else if (prefer_dlpack_input(python_input)) {
+      } else if (read_input(storage_->method->method_meta(), i, [&] {
+                   return prefer_dlpack_input(python_input);
+                 })) {
 #ifdef USE_ATEN_LIB
         auto python_tensor = py::module_::import("torch.utils.dlpack")
                                  .attr("from_dlpack")(python_input);
@@ -3308,7 +3304,8 @@ struct PyMethod final {
             i,
             view->scalar_type(),
             view->sizes());
-        view->validate_device(*storage_->method, i);
+        validate_input_device(
+            *storage_->method, i, view->device(), view->nbytes());
         read_input(storage_->method->method_meta(), i, [&] {
           view->use_layout(storage_->method->method_meta()
                                .input_tensor_meta(i)
@@ -3330,6 +3327,13 @@ struct PyMethod final {
                   python_input, storage_->method->method_meta(), i);
             }));
         const auto& buffer = buffer_inputs.back();
+#ifndef USE_ATEN_LIB
+        validate_input_device(
+            *storage_->method,
+            i,
+            executorch::aten::Device(executorch::aten::DeviceType::CPU),
+            buffer->nbytes());
+#endif
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
         const auto input_meta =
             storage_->method->method_meta().input_tensor_meta(i);
@@ -3369,17 +3373,6 @@ struct PyMethod final {
         cpp_inputs.data(), cpp_inputs.size());
 
     Error set_inputs_status = storage_->method->set_inputs(input_evalue_list);
-    // The runtime fails a wrong count before installing anything, so the
-    // method keeps its previous inputs and these must not be retained.
-    if (set_inputs_status != Error::Ok &&
-        cpp_inputs.size() != storage_->method->inputs_size()) {
-      THROW_IF_ERROR(
-          set_inputs_status,
-          "Method '%s' takes %zu inputs, but set_inputs() got %zu",
-          storage_->method->method_meta().name(),
-          storage_->method->inputs_size(),
-          cpp_inputs.size());
-    }
     if (set_inputs_status != Error::Ok) {
       // set_inputs() installs values one at a time and does not roll back a
       // prefix when a later value fails, so refuse to execute or read
@@ -3429,7 +3422,7 @@ struct PyMethod final {
     outputs_valid_ = false;
     handed_outputs_.clear();
     for (const auto& input : borrowed_inputs_) {
-      input.validate();
+      input.validate(storage_->method->method_meta().name());
     }
     const auto num_outputs = storage_->method->outputs_size();
     allocate_output_storages();
@@ -3457,15 +3450,7 @@ struct PyMethod final {
 #endif
     setup_output_storage(*storage_->method, output_storage_spans);
 #ifndef USE_ATEN_LIB
-    std::vector<executorch::aten::Device> output_devices;
-    for (size_t i = 0; i < storage_->device_output_storages.size(); ++i) {
-      if (storage_->device_output_storages[i]) {
-        output_devices.push_back(
-            storage_->method->get_output(i).toTensor().device());
-      }
-    }
-    synchronize_devices_before_run(
-        dlpack_inputs_, torch_inputs_, output_devices);
+    synchronize_tensor_devices(*storage_->method);
 #endif
     Error execute_status = storage_->method->execute();
     THROW_IF_ERROR(
@@ -3473,7 +3458,7 @@ struct PyMethod final {
         "method->execute() failed with error 0x%" PRIx32,
         static_cast<uint32_t>(execute_status));
 #ifndef USE_ATEN_LIB
-    synchronize_device_outputs(*storage_->method);
+    synchronize_tensor_devices(*storage_->method);
 #endif
     outputs_valid_ = true;
   }
@@ -3625,7 +3610,10 @@ struct PyMethod final {
               py::str(source.attr("dtype")).cast<std::string>()) !=
               tensor.scalar_type()) {
         throw py::value_error(
-            "Input storage changed before get_outputs(); call set_inputs() again");
+            "Input " + std::to_string(input->index()) + " of method '" +
+            storage_->method->method_meta().name() +
+            "': its storage changed before the output was read; pass it "
+            "again");
       }
       const auto offset = source.attr("storage_offset")().cast<int64_t>() +
           static_cast<int64_t>((address - start) / itemsize);

@@ -287,7 +287,7 @@ class PyExecuTorchResult final
   py::capsule to_dlpack(const py::object& stream = py::none()) {
     // Always wait for the device before handing CUDA memory to another
     // library: the result may share memory a call still has work queued on,
-    // or an upload that is still running, and this is cheap next to a call.
+    // or an upload that is still running.
     if (!device_.is_cpu() && nbytes_ != 0) {
       synchronize_device(device_.index());
     }
