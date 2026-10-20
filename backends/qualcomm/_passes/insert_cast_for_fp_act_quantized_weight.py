@@ -103,6 +103,13 @@ class InsertCastForFpActQuantizedWeight(ExportPass):
                 if bias_node.meta["val"].dtype == torch.float32:
                     bias_node.meta["val"] = bias_node.meta["val"].to(torch.float16)
 
+        # Dequantize the weight to fp16 as well, so the node stays valid if it falls
+        # back to CPU instead of being delegated.
+        weight = node.args[1]
+        if weight.target in dq_ops and weight.meta["val"].dtype == torch.float32:
+            weight.kwargs = {**weight.kwargs, "out_dtype": torch.float16}
+            weight.meta["val"] = weight.meta["val"].to(torch.float16)
+
         users = list(node.users.keys())
         orig_output_val = node.meta["val"]
         node.meta["val"] = orig_output_val.to(torch.float16)
