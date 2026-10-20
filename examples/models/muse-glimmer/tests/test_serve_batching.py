@@ -44,10 +44,20 @@ def arguments(tmp_path):
 
 def test_worker_forwards_mg_options(arguments):
     args = serve_batching._parse_args(
-        arguments + ["--max-inflight-requests", "17", "--max-vision-patches", "2048"]
+        arguments
+        + [
+            "--max-inflight-requests",
+            "17",
+            "--max-vision-patches",
+            "2048",
+            "--prefix-cache-entries",
+            "3",
+            "--prefix-checkpoint-interval",
+            "512",
+        ]
     )
     command = serve_batching._worker_command(args)
-    flags = dict(zip(command[1::2], command[2::2]))
+    flags = dict(arg.split("=", 1) for arg in command[1:])
     assert flags["--pte"] == args.model_path
     assert flags["--tokenizer"] == args.tokenizer_path
     assert flags["--backend"] == "mlx"
@@ -58,19 +68,78 @@ def test_worker_forwards_mg_options(arguments):
     assert flags["--max_input_frame_bytes"] == str(32 * 1024 * 1024)
     assert flags["--bos_id"] == "200000"
     assert flags["--eos_id"] == "200001"
+    assert flags["--prefix_checkpoint_interval"] == "512"
+
+
+@pytest.mark.parametrize("options,enabled", [([], "false"), (["--dflash"], "true")])
+def test_dflash_is_opt_in(arguments, options, enabled):
+    args = serve_batching._parse_args(arguments + options)
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--dflash"] == enabled
+    assert "--draft_argmax" not in flags
+    assert flags["--dflash_n_draft"] == "0"
+
+
+@pytest.mark.parametrize("n_draft", [0, 1, 2, 3])
+def test_draft_count_forwarded(arguments, n_draft):
+    args = serve_batching._parse_args(
+        arguments + ["--dflash", "--dflash-n-draft", str(n_draft)]
+    )
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--dflash_n_draft"] == str(n_draft)
 
 
 @pytest.mark.parametrize(
     "flag,value",
     [
-        ("--backend", "cuda"),
+        ("--backend", "vulkan"),
+        ("--dflash-n-draft", "-1"),
+        ("--dflash-n-draft", str((1 << 31) - 1)),
+        ("--dflash-n-draft", "2"),
         ("--max-vision-patches", "3"),
         ("--max-vision-patches", str(1 << 31)),
+        ("--prefix-checkpoint-interval", "8"),
+        ("--prefix-checkpoint-interval", "-1"),
     ],
 )
 def test_launcher_rejects_invalid_options(arguments, flag, value):
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(arguments + [flag, value])
+    assert error.value.code == 2
+
+
+def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments + ["--backend", "cuda", "--data-path", str(data)]
+    )
+    command = serve_batching._worker_command(args)
+    flags = dict(arg.split("=", 1) for arg in command[1:])
+    assert flags["--backend"] == "cuda"
+    assert flags["--data_path"] == str(data)
+    assert "--pos_embed_path" not in flags
+
+
+@pytest.mark.parametrize("case", ["no_weights", "pos_embed", "dflash"])
+def test_cuda_launcher_rejects_missing_weights_vision_or_dflash(
+    arguments, tmp_path, case
+):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    table = tmp_path / "pos_embed.bin"
+    data.touch()
+    table.touch()
+    argv = arguments + ["--backend", "cuda"]
+    if case != "no_weights":
+        argv += ["--data-path", str(data)]
+    if case == "pos_embed":
+        argv += ["--pos-embed-path", str(table)]
+    if case == "dflash":
+        argv += ["--dflash"]
+    with pytest.raises(SystemExit) as error:
+        serve_batching._parse_args(argv)
     assert error.value.code == 2
 
 
