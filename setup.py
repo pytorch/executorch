@@ -1411,6 +1411,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             None,
             ["EXECUTORCH_BUILD_CUDA"],
         ),
+        (
+            "backends/openvino/",
+            "executorch_backend_openvino",
+            None,
+            ["EXECUTORCH_BUILD_OPENVINO"],
+        ),
     ]
     return [
         BuiltFile(
@@ -2814,11 +2820,12 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
-        # Enable OpenVINO backend on Linux. The backend uses dlopen at
-        # runtime so it has no build-time SDK dependency.
+        # Enable the OpenVINO backend on Linux and Windows. The backend loads
+        # the OpenVINO runtime at run time, so it has no build-time SDK
+        # dependency.
         if (
             not minimal_build
-            and sys.platform == "linux"
+            and sys.platform in ("linux", "win32")
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
                 "EXECUTORCH_BUILD_OPENVINO",
