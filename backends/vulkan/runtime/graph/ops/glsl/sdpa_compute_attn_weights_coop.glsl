@@ -36,7 +36,9 @@ $if FUSE_SOFTMAX:
   // Cap on the attn_weights row held in shared memory, in texels. The host only
   // selects this variant when the context fits within this bound (see
   // use_fused_qk_softmax() in SDPA.cpp), so the indexing below is in range.
-  #define MAX_CONTEXT_TEXEL_LEN 1024
+  // Must equal kFusedSoftmaxMaxContextTexels in SDPA.cpp, which derives the
+  // host's context length cutoff from it.
+  #define MAX_CONTEXT_TEXEL_LEN 64
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
 

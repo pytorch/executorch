@@ -77,11 +77,6 @@ bool is_single_token(ComputeGraph* graph, const ValueRef& q_projected) {
   return graph->size_at<uint32_t>(-3, q_projected) == 1;
 }
 
-// Largest attn_weights row, in texels, that the fused QK+softmax shader can
-// hold in shared memory. Must match MAX_CONTEXT_TEXEL_LEN in
-// sdpa_compute_attn_weights_coop.glsl.
-constexpr int64_t kFusedSoftmaxMaxContextTexels = 1024;
-
 // Context length past which the separate attn-weights and softmax pair is
 // faster than the fused dispatch. The fused shader reduces the whole row
 // inside one work group, so its parallelism is capped at num_q_heads work
@@ -89,12 +84,21 @@ constexpr int64_t kFusedSoftmaxMaxContextTexels = 1024;
 // context texel. Below the cutoff the saved dispatch and the saved round trip
 // of attn_weights through global memory dominate; above it the lost
 // parallelism does.
-constexpr int64_t kFusedSoftmaxMaxContextLen = 256;
+//
+// The fused shader sizes its shared attn_weights row to exactly this cutoff:
+// MAX_CONTEXT_TEXEL_LEN in sdpa_compute_attn_weights_coop.glsl must equal
+// kFusedSoftmaxMaxContextTexels. Raising the cutoff means raising both.
+constexpr int64_t kFusedSoftmaxMaxContextTexels = 64;
+constexpr int64_t kFusedSoftmaxMaxContextLen =
+    kFusedSoftmaxMaxContextTexels * 4;
 
-// The cutoff also has to keep the row inside the shader's shared memory.
+// The fused shader's shared memory: four row arrays (one per texel component)
+// plus the softmax helper's two 64-entry reductions, all fp32 in the worst
+// case. Keep it within the 16 KiB maxComputeSharedMemorySize that Vulkan
+// guarantees, so no device rejects the pipeline.
 static_assert(
-    kFusedSoftmaxMaxContextLen <= kFusedSoftmaxMaxContextTexels * 4,
-    "fused QK+softmax cutoff exceeds the shader's shared attn_weights row");
+    (4 * kFusedSoftmaxMaxContextTexels + 2 * 64) * sizeof(float) <= 16384,
+    "fused QK+softmax shared memory exceeds the Vulkan minimum limit");
 
 // Whether the decode path should use the single fused QK+softmax dispatch
 // instead of the separate attn-weights and softmax pair.
