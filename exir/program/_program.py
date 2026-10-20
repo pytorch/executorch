@@ -67,7 +67,11 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
-from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
+from executorch.exir.passes.reinplace import (
+    DEFAULT_INPLACEABLE_OPS,
+    reinplace_delegate_input_mutations,
+    reinplace_pass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -1763,6 +1767,9 @@ class EdgeProgramManager:
                     # in the ExportedProgram
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
+
+            if config.run_reinplace_pass:
+                reinplace_delegate_input_mutations(new_gm, new_signature)
 
             # Tag constant weights.
             if (
