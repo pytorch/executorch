@@ -198,6 +198,9 @@ Error set_backend_options(
       }
     }
   }
+  for (const std::string& name : options.additional_cuda_graph_methods) {
+    graph_methods += (graph_methods.empty() ? "" : ",") + name;
+  }
   ET_CHECK_OR_RETURN_ERROR(
       graph_methods.size() < ::executorch::runtime::kMaxOptionValueLength,
       InvalidArgument,
@@ -288,7 +291,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   config.max_session_tokens = max_session_tokens;
   config.kv_dtype = kv_dtype;
   config.initial_capacity = initial_capacity;
-  config.options = options;
+  config.options = std::move(options);
   return create(std::move(module), config);
 }
 

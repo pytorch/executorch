@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <numeric>
+#include <utility>
 
 namespace llm = executorch::extension::llm;
 namespace b = llm::batching;
@@ -33,11 +34,21 @@ namespace executorch::extension::llm {
 // Tiny artifacts cannot pass Muse's special-token vocabulary check. Keep the
 // production factory unchanged and construct only the validated tiny geometry.
 struct CudaDFlashTestPeer {
-  static std::unique_ptr<DFlash> create(
-      std::unique_ptr<Module> module,
-      int proposals) {
+  static std::unique_ptr<DFlash>
+  create(std::unique_ptr<Module> module, int proposals, bool draft_graphs) {
+    // Capture the static drafts in CUDA graphs, as the production create does.
+    cb::CudaExecutorOptions options;
+    for (int n = 1; draft_graphs && n <= cuda_dflash_detail::kOwnerLimit; ++n) {
+      options.additional_cuda_graph_methods.push_back(
+          cuda_dflash_detail::kStaticForwardPrefix + std::to_string(n));
+    }
     auto target = cb::CudaExecutor::create(
-        std::move(module), 4, 96, static_cast<int>(aten::ScalarType::BFloat16));
+        std::move(module),
+        4,
+        96,
+        static_cast<int>(aten::ScalarType::BFloat16),
+        /*initial_capacity=*/-1,
+        std::move(options));
     EXPECT_EQ(target.error(), rt::Error::Ok);
     if (!target.ok()) {
       return nullptr;
@@ -312,10 +323,13 @@ class CudaDFlashNative : public ::testing::Test {
     rt::runtime_init();
     dir_ = dir;
   }
-  void create(bool deterministic = true, int proposals = 15) {
+  void create(
+      bool deterministic = true,
+      int proposals = 15,
+      bool draft_graphs = true) {
     auto module = std::make_unique<FixtureModule>(dir_, deterministic);
     fixture_ = module.get();
-    executor_ = Peer::create(std::move(module), proposals);
+    executor_ = Peer::create(std::move(module), proposals, draft_graphs);
     ASSERT_TRUE(executor_);
     ASSERT_TRUE(executor_->initialize());
   }
@@ -430,6 +444,8 @@ TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
     EXPECT_EQ(after.target_preamble_calls, before.target_preamble_calls);
     EXPECT_EQ(after.target_verify_calls - before.target_verify_calls, 1);
     EXPECT_EQ(after.pending_decode_owners - before.pending_decode_owners, 1);
+    EXPECT_EQ(after.draft_forwards - before.draft_forwards, 1);
+    EXPECT_EQ(after.static_draft_forwards - before.static_draft_forwards, 1);
     EXPECT_EQ(after.cycles - before.cycles, 1);
     EXPECT_EQ(after.proposed - before.proposed, 15);
     EXPECT_EQ(after.accepted - before.accepted, rejected);
@@ -586,9 +602,16 @@ TEST_F(CudaDFlashNative, FinalWholeBlockFitsExactlyAndPreservesAllPrefillRows) {
   Peer::check(*executor_, sid, 78);
   EXPECT_EQ(executor_->stats().hidden_rows_d2h, 78);
   fixture_->rejected.fill(0);
+  const auto drain = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 78, {1})}}, out));
   EXPECT_EQ(out.outputs[0]->tokens, predictions(78, 2));
   Peer::check(*executor_, sid, 80);
+  // 79 rows exceed one static block: drain dynamically, then draft statically.
+  const auto drained = executor_->stats();
+  EXPECT_EQ(drained.static_draft_forwards - drain.static_draft_forwards, 1);
+  EXPECT_GT(
+      drained.draft_forwards - drain.draft_forwards,
+      drained.static_draft_forwards - drain.static_draft_forwards);
   fixture_->rejected.fill(15);
   const auto before = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 80, {prediction(79)})}}, out));
@@ -719,5 +742,56 @@ TEST_F(CudaDFlashNative, UnmodifiedOldArtifactRunsSoloAndFourOwnerDecode) {
   EXPECT_EQ(
       executor_->stats().target_preamble_calls, before.target_preamble_calls);
   EXPECT_EQ(executor_->stats().failed_batches, 0);
+}
+
+// The production adapter captures draft_forward_{N} in CUDA graphs; on real
+// outputs those replays must decode exactly as the eager static drafts do.
+TEST_F(CudaDFlashNative, CapturedStaticDraftsMatchEager) {
+  auto run = [&](bool draft_graphs) {
+    std::vector<Tokens> emitted;
+    // The graph method list is a process-wide backend option set at load.
+    executor_.reset();
+    create(/*deterministic=*/false, /*proposals=*/15, draft_graphs);
+    if (!executor_) {
+      return std::pair{emitted, llm::CudaDFlashStats{}};
+    }
+    // The tiny artifact exports static drafts for up to three owners.
+    std::array<b::SessionId, 3> owners;
+    b::BatchInput batch;
+    for (int owner = 0; owner < 3; ++owner) {
+      owners[owner] = open();
+      Tokens prompt(owner + 3);
+      std::iota(prompt.begin(), prompt.end(), 1 + 17 * owner);
+      batch.inputs.push_back(input(owners[owner], 0, std::move(prompt)));
+    }
+    b::BatchOutput out;
+    for (int round = 0; round < 4; ++round) {
+      EXPECT_TRUE(executor_->execute(batch, out));
+      batch.inputs.clear();
+      for (int owner = 0; owner < 3; ++owner) {
+        if (!out.outputs[owner] || out.outputs[owner]->tokens.empty()) {
+          ADD_FAILURE() << "no output for owner " << owner;
+          return std::pair{emitted, executor_->stats()};
+        }
+        emitted.push_back(out.outputs[owner]->tokens);
+        batch.inputs.push_back(input(
+            owners[owner],
+            Peer::frontier(*executor_, owners[owner]),
+            {out.outputs[owner]->tokens.back()}));
+      }
+    }
+    return std::pair{emitted, executor_->stats()};
+  };
+  const auto [graph_tokens, graph_stats] = run(true);
+  const auto [eager_tokens, eager_stats] = run(false);
+  EXPECT_EQ(graph_tokens, eager_tokens);
+  EXPECT_GT(graph_stats.static_draft_forwards, 0);
+  EXPECT_EQ(
+      graph_stats.static_draft_forwards, eager_stats.static_draft_forwards);
+  EXPECT_EQ(graph_stats.draft_forwards, eager_stats.draft_forwards);
+  EXPECT_EQ(graph_stats.accepted, eager_stats.accepted);
+  EXPECT_EQ(graph_stats.bonuses, eager_stats.bonuses);
+  EXPECT_EQ(graph_stats.failed_batches, 0);
+  EXPECT_EQ(eager_stats.failed_batches, 0);
 }
 } // namespace
