@@ -8,10 +8,8 @@
 import os
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from functools import cache
-from pathlib import Path
 from typing import List
 
 
@@ -43,7 +41,7 @@ class ModelTest:
     backend: Backend
 
 
-def test_a_model_runs_through_the_openvino_delegate() -> None:
+def test_a_model_runs_through_the_openvino_delegate(required: bool = False) -> None:
     """Export a model to the OpenVINO delegate and run it, comparing against eager.
 
     The checks elsewhere prove the delegate library ships, owns its symbols and registers
@@ -53,7 +51,8 @@ def test_a_model_runs_through_the_openvino_delegate() -> None:
     The OpenVINO runtime is not part of the wheel. It comes from the openvino extra, so a
     default install cannot run this and says so rather than passing quietly. Where the runtime
     is present the export and the comparison are the point of the check, and a failure there
-    is a real one.
+    is a real one. A caller that installed the export stack passes required=True, so a missing
+    piece fails instead of skipping.
     """
     import torch
     from executorch.exir import to_edge_transform_and_lower
@@ -67,6 +66,8 @@ def test_a_model_runs_through_the_openvino_delegate() -> None:
     try:
         from executorch.backends.openvino.partitioner import OpenvinoPartitioner
     except ImportError as error:
+        if required:
+            raise
         print(
             f"SKIP: the OpenVINO export stack is not installed, so the delegate cannot "
             f"execute here ({error}). The wheel ships the adapter only; the runtime and the "
@@ -88,13 +89,16 @@ def test_a_model_runs_through_the_openvino_delegate() -> None:
         partitioner=[OpenvinoPartitioner([CompileSpec("device", b"CPU")])],
     )
     program = lowered.to_executorch()
+    delegates = [d.id for d in program.executorch_program.execution_plan[0].delegates]
+    assert "OpenvinoBackend" in delegates, (
+        f"the partitioner did not hand the model to OpenVINO (delegates: {delegates}), so "
+        f"running it would test the portable kernels instead of the delegate"
+    )
 
-    with tempfile.TemporaryDirectory() as work_dir:
-        pte = Path(work_dir) / "add_openvino.pte"
-        pte.write_bytes(program.buffer)
-
-        method = Runtime.get().load_program(pte).load_method("forward")
-        actual = method.execute(list(example))[0]
+    # From memory rather than a temporary file, which the loaded program keeps open and
+    # Windows then refuses to delete.
+    method = Runtime.get().load_program(program.buffer).load_method("forward")
+    actual = method.execute(list(example))[0]
 
     difference = (actual - eager).abs().max().item()
     assert difference == 0.0, (

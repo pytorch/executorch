@@ -91,6 +91,40 @@ inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
   throw py::value_error("Unsupported torch dtype: " + torch_dtype);
 }
 
+inline PyObject* loaded_torch_module() {
+  // Retain the module for the interpreter's lifetime. This avoids repeated
+  // sys.modules lookups without creating a static py::object whose destructor
+  // could run after Python has finalized.
+  static PyObject* torch_module = nullptr;
+  if (torch_module == nullptr) {
+    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
+    if (loaded != nullptr) {
+      Py_INCREF(loaded);
+      torch_module = loaded;
+    }
+  }
+  return torch_module;
+}
+
+inline void synchronize_torch_cuda_device(int index) {
+  py::reinterpret_borrow<py::object>(loaded_torch_module())
+      .attr("cuda")
+      .attr("synchronize")(index);
+}
+
+// Waits for every queued operation on a device. Bindings built without CUDA
+// support have no CUDA runtime of their own, so they wait through torch's,
+// which is loaded whenever such bindings see CUDA memory.
+inline void synchronize_device(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (loaded_torch_module() != nullptr) {
+    synchronize_torch_cuda_device(index);
+    return;
+  }
+#endif
+  synchronize_cuda_device(index);
+}
+
 /** Tensor result returned by portable Python bindings. */
 class PyExecuTorchResult final
     : public std::enable_shared_from_this<PyExecuTorchResult> {
@@ -251,34 +285,19 @@ class PyExecuTorchResult final
   }
 
   py::capsule to_dlpack(const py::object& stream = py::none()) {
-    // A result is ready on any stream once its upload, if any, has finished.
-    if (copy_in_flight_ && !device_.is_cpu() && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
+    // Always wait for the device before handing CUDA memory to another
+    // library: the result may share memory a call still has work queued on,
+    // or an upload that is still running, and this is cheap next to a call.
+    if (!device_.is_cpu() && nbytes_ != 0) {
+      synchronize_device(device_.index());
     }
-    wait_for_other_writers();
     (void)stream;
-    copy_in_flight_ = false;
-    *handed_out_ = true;
     return capsule();
   }
 
-  // Memory handed to another library may since have been written by it, on a
-  // stream these bindings do not know, so every read of it waits first.
-  void wait_for_other_writers() const {
-    if (*handed_out_ && !device_.is_cpu() && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
-    }
-  }
-
-  // Whether another library has held this result's memory and so may have
-  // written to it on its own streams.
-  bool handed_out() const {
-    return *handed_out_;
-  }
-
-  // A capsule for these bindings to read the result as a method input, which
-  // does not count as handing it out: see DLPackTensorView for why such an
-  // input needs no wait.
+  // A capsule for these bindings to read the result as a method input. It
+  // skips the wait in to_dlpack(), since the call waits for every CUDA input
+  // before it runs.
   py::capsule capsule() {
     auto holder = std::make_unique<DLPackHolder>(shared_from_this());
     py::capsule capsule(&holder->managed, "dltensor", [](PyObject* capsule) {
@@ -304,7 +323,9 @@ class PyExecuTorchResult final
       if (device_.is_cpu()) {
         std::memcpy(storage.data(), data_, nbytes_);
       } else {
-        wait_for_other_writers();
+        // Wait before the copy: the result may share memory a call still has
+        // work queued on, or an upload that is still running.
+        synchronize_cuda_device(device_.index());
         copy_cuda_storage(
             storage.data(),
             data_,
@@ -368,21 +389,17 @@ class PyExecuTorchResult final
           device_index,
           CudaCopy::HostToDevice);
       result->data_ = result->device_storage_.get();
-      result->copy_in_flight_ = true;
     }
     return result;
   }
 
   // `storage` must own the memory `tensor` points at; the result reads that
-  // memory and keeps `storage` alive. `handed_out` lets the caller see, after
-  // the result is gone, whether its memory was handed to another library.
+  // memory and keeps `storage` alive.
   static std::shared_ptr<PyExecuTorchResult> hand_over(
       const executorch::aten::Tensor& tensor,
-      std::shared_ptr<void> storage,
-      std::shared_ptr<bool> handed_out) {
+      std::shared_ptr<void> storage) {
     auto result = std::make_shared<PyExecuTorchResult>(tensor, /*clone=*/false);
     result->device_storage_ = std::move(storage);
-    result->handed_out_ = std::move(handed_out);
     return result;
   }
 
@@ -522,9 +539,6 @@ class PyExecuTorchResult final
   size_t nbytes_;
   executorch::aten::Device device_;
   py::object owner_;
-  std::shared_ptr<bool> handed_out_ = std::make_shared<bool>(false);
-  // A copy into this result's device memory may still be in flight.
-  bool copy_in_flight_ = false;
 };
 
 /** Contiguous buffer facade used to construct a strided torch.Tensor result. */
