@@ -438,10 +438,7 @@ def export_cuda_batching(
     def partitioner(name: str) -> CudaPartitioner:
         if name not in forward_methods:
             return CudaPartitioner(
-                [
-                    CudaBackend.generate_method_name_compile_spec(name),
-                    CompileSpec("autotune_at_compile_time", b"OFF"),
-                ]
+                [CudaBackend.generate_method_name_compile_spec(name)]
             )
         return CudaPartitioner(
             [
@@ -449,7 +446,6 @@ def export_cuda_batching(
                 CompileSpec("low_memory_mode", b"ON"),
                 CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, manifest.encode()),
                 CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, step_width_spec(name)),
-                CompileSpec("autotune_at_compile_time", b"OFF"),
             ]
         )
 
