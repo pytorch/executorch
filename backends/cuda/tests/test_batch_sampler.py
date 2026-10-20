@@ -20,7 +20,6 @@ from executorch.exir import (
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
 from executorch.extension.llm.batching.sampler import BatchSampler
-from executorch.runtime import Runtime
 
 
 def export_sampler(directory: Path, vocab: int):
@@ -56,8 +55,14 @@ def export_sampler(directory: Path, vocab: int):
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+@unittest.skipIf(
+    torch.version.hip is not None,
+    "loads through the Python runtime, which the ROCm build does not include",
+)
 class CudaBatchSamplerTest(unittest.TestCase):
     def test_dynamic_rows_with_masked_reduction_lanes(self):
+        from executorch.runtime import Runtime
+
         # A vocabulary spanning several reduction tiles exposes padding lanes.
         vocab = 202048
         with tempfile.TemporaryDirectory() as temporary:
