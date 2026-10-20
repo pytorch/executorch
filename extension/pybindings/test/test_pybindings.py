@@ -2037,6 +2037,49 @@ print("the constant was not written")
         )
         self.assertIn("the constant was not written", completed.stdout)
 
+    def test_method_keeps_its_event_tracer_alive(self):
+        # The program is dropped right away, while its method keeps running.
+        # glibc's MALLOC_PERTURB_ overwrites freed memory, so a method still
+        # pointing at a freed tracer crashes instead of passing by luck.
+        if self.kernel_mode != "portable" or not sys.platform.startswith("linux"):
+            self.skipTest("needs the portable bindings and glibc")
+        script = """
+import gc
+import sys
+
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+method = runtime._load_program_from_buffer(
+    data, enable_etdump=True, debug_buffer_size=1 << 16
+).load_method("forward")
+gc.collect()
+junk = [bytearray(256) for _ in range(20000)]
+for _ in range(5):
+    method([torch.ones(2, 2), torch.ones(2, 2)])
+print("ran after its program was dropped")
+"""
+        exported_program, _ = create_program(ModuleAdd())
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "add.pte")
+            with open(path, "wb") as file:
+                file.write(exported_program.buffer)
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path],
+                env=dict(os.environ, MALLOC_PERTURB_="165"),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("ran after its program was dropped", completed.stdout)
+
     def test_program_data_separation(self) -> None:
         eager_module = ModuleLinear()
         inputs = eager_module.get_inputs()

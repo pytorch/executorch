@@ -2043,6 +2043,10 @@ struct ProgramState final {
   // the storage.
   std::vector<std::vector<BackendOption>> backend_option_storage_;
   LoadBackendOptionsMap backend_options_;
+  // A method keeps a pointer to the tracer, which logs into the debug buffer,
+  // so both stay alive as long as any method does. The tracer goes first.
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  std::unique_ptr<ETDumpGen> event_tracer_;
 
   explicit ProgramState(
       std::unique_ptr<DataLoader> loader,
@@ -4035,8 +4039,8 @@ struct PyProgram final {
             data_path,
             std::move(program_buffer),
             backend_options)),
-        event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
+    state_->event_tracer_ = std::move(tracer);
     // Figure out the size of each non_const layer we need to support every
     // method in the program. Map will be easier to use than a list because we
     // dont know how many non_const arenas there will be
@@ -4072,12 +4076,10 @@ struct PyProgram final {
     }
 
     memory_ = std::make_shared<ProgramMemory>(std::move(planned_sizes));
-    if (event_tracer_ && debug_buffer_size > 0) {
-      // If a debug buffer was requested for the ETDump, allocate it and make
-      // sure its lifetime is as long as the event_tracer.
-      debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
-      event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
-      event_tracer_->set_event_tracer_debug_level(
+    if (state_->event_tracer_ && debug_buffer_size > 0) {
+      state_->debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
+      state_->event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
+      state_->event_tracer_->set_event_tracer_debug_level(
           EventTracerDebugLogLevel::kIntermediateOutputs);
     }
   }
@@ -4158,7 +4160,7 @@ struct PyProgram final {
     Result<Method> res = state_->program_->load_method(
         method_name.c_str(),
         memory->mem_manager(),
-        event_tracer_.get(),
+        state_->event_tracer_.get(),
         state_->data_map_.get(),
         &state_->backend_options_);
     THROW_IF_ERROR(
@@ -4173,7 +4175,7 @@ struct PyProgram final {
   }
 
   Span<uint8_t> get_etdump_debug_buffer() {
-    return Span<uint8_t>(debug_buffer_.get(), debug_buffer_size_);
+    return Span<uint8_t>(state_->debug_buffer_.get(), debug_buffer_size_);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string& method_name) {
@@ -4188,7 +4190,7 @@ struct PyProgram final {
   }
 
   bool has_etdump() {
-    return static_cast<bool>(event_tracer_);
+    return static_cast<bool>(state_->event_tracer_);
   }
 
   void write_etdump_result_to_file(
@@ -4197,7 +4199,7 @@ struct PyProgram final {
     if (!has_etdump()) {
       throw std::runtime_error("No etdump found");
     }
-    auto& etdump = *event_tracer_;
+    auto& etdump = *state_->event_tracer_;
     etdump_result result = etdump.get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       write_data_to_file(path, result.buf, result.size);
@@ -4223,8 +4225,6 @@ struct PyProgram final {
  private:
   std::shared_ptr<ProgramMemory> memory_;
   std::shared_ptr<ProgramState> state_;
-  std::unique_ptr<ETDumpGen> event_tracer_;
-  std::unique_ptr<uint8_t[]> debug_buffer_;
   size_t debug_buffer_size_;
 };
 
