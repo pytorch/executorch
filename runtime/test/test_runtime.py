@@ -52,6 +52,23 @@ class RuntimeTest(unittest.TestCase):
         outputs = method.execute(inputs)
         self.assertTrue(torch.allclose(outputs[0], inputs[0] + inputs[1]))
 
+    def test_execute_can_borrow_outputs(self):
+        ep, inputs = create_program(ModuleAdd())
+        method = Runtime.get().load_program(ep.buffer).load_method("forward")
+
+        def address(output):
+            return torch.from_dlpack(output).data_ptr()
+
+        # Borrowed outputs are views of the method's own memory, so each
+        # execution writes the same place. Cloned outputs are copies.
+        borrowed = [method.execute(inputs, clone_outputs=False)[0] for _ in range(2)]
+        self.assertEqual(address(borrowed[0]), address(borrowed[1]))
+        cloned = [method.execute(inputs)[0] for _ in range(2)]
+        self.assertNotEqual(address(cloned[0]), address(cloned[1]))
+        torch.testing.assert_close(
+            torch.from_dlpack(borrowed[1]), inputs[0] + inputs[1]
+        )
+
     def test_module_with_multiple_method_names(self):
         ep, inputs = create_program(ModuleMulti())
         runtime = Runtime.get()
