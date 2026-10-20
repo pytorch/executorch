@@ -607,7 +607,8 @@ jobs:
         cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
         bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
-        cmake --build "${BATCHING_BIN_DIR}" --target muse_glimmer_batching_test --parallel
+        cmake --build "${BATCHING_BIN_DIR}" \
+          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -619,7 +620,22 @@ jobs:
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
+          examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        # CUDA DFlash executor on a tiny exported target + draft. The native
+        # tests skip without the artifact, so fail if any skipped.
+        export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"
+        python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
+          --output-dir "${ET_MUSE_DFLASH_TINY_DIR}"
+        ctest --test-dir "${BATCHING_BIN_DIR}" -R '^muse_glimmer_cuda_dflash$' \
+          --output-on-failure --no-tests=error -V > /tmp/muse_glimmer_cuda_dflash.log 2>&1 \
+          || { cat /tmp/muse_glimmer_cuda_dflash.log; exit 1; }
+        cat /tmp/muse_glimmer_cuda_dflash.log
+        if grep -q "SKIPPED" /tmp/muse_glimmer_cuda_dflash.log; then
+          echo "::error::muse_glimmer_cuda_dflash_test skipped"
+          exit 1
+        fi
 
   unittest-cuda-quantized-gemm:
     name: unittest-cuda-quantized-gemm (${{ matrix.shard }})
