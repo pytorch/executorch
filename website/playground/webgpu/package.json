@@ -1,0 +1,12 @@
+{
+  "name": "executorch-webgpu-examples",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Prototype of the public ExecuTorch WebGPU examples playground. Zero runtime dependencies; static files only.",
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "check": "node scripts/check-wiring.mjs",
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}

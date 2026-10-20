@@ -109,7 +109,11 @@ def cuda_owner_verifier_programs(
     )
     from torch.export import Dim, export
 
-    owners = Dim("verify_owners", min=1, max=max_owners)
+    owners = (
+        Dim("verify_owners", min=1, max=max_owners)
+        if max_owners > 1
+        else Dim.STATIC
+    )
     # A one-proposal width would specialize its size-1 proposal axis.
     width = Dim("verify_width", min=3, max=block)
     logits = torch.zeros(max_owners, block, vocab_size)

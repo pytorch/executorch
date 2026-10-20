@@ -120,6 +120,15 @@ struct CudaDFlashTestPeer {
   static bool poisoned(DFlash& executor, b::SessionId sid) {
     return executor.sessions_.at(sid).poisoned;
   }
+  static std::optional<std::uint64_t> sampling_seed(
+      DFlash& executor,
+      b::SessionId sid) {
+    return executor.sessions_.at(sid).seed;
+  }
+  static std::vector<float>
+  verify_params(DFlash& executor, b::SessionId sid, b::Position first) {
+    return executor.verify_params(executor.sessions_.at(sid), first);
+  }
 };
 } // namespace executorch::extension::llm
 using Peer = llm::CudaDFlashTestPeer;
@@ -293,8 +302,8 @@ class CudaDFlashNative : public ::testing::Test {
   void SetUp() override {
     const char* dir = std::getenv("ET_MUSE_DFLASH_TINY_DIR");
     if (!dir || !*dir) {
-      GTEST_SKIP()
-          << "Set ET_MUSE_DFLASH_TINY_DIR to the existing tiny packed artifact";
+      GTEST_SKIP() << "Set ET_MUSE_DFLASH_TINY_DIR to the output of "
+                      "tests/export_cuda_dflash_tiny.py";
     }
     int devices = 0;
     if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
@@ -331,6 +340,66 @@ class CudaDFlashNative : public ::testing::Test {
   FixtureModule* fixture_ = nullptr;
   std::unique_ptr<DFlash> executor_;
 };
+
+TEST_F(
+    CudaDFlashNative,
+    SamplingInitializesMissingSeedAndPreservesExplicitZero) {
+  create();
+  ASSERT_TRUE(executor_);
+  const auto sid = open();
+  executor_->set_sampling(sid, {0.8f, 0.9f, 7}, std::nullopt);
+  EXPECT_TRUE(Peer::sampling_seed(*executor_, sid));
+  executor_->set_sampling(sid, {0.8f, 0.9f, 7}, 0);
+  ASSERT_TRUE(Peer::sampling_seed(*executor_, sid));
+  EXPECT_EQ(*Peer::sampling_seed(*executor_, sid), 0);
+  const auto params = Peer::verify_params(*executor_, sid, 100);
+  ASSERT_EQ(params.size(), 19);
+  EXPECT_EQ(params[3], llm::cuda_dflash_detail::positional_uniform(0, 100, 2));
+  EXPECT_EQ(
+      params.back(), llm::cuda_dflash_detail::positional_uniform(0, 100, 3));
+  executor_->set_sampling(sid, {0.8f, 0.9f, 7}, 42);
+  ASSERT_TRUE(Peer::sampling_seed(*executor_, sid));
+  EXPECT_EQ(*Peer::sampling_seed(*executor_, sid), 42);
+  executor_->set_sampling(sid, {0.8f, 0.9f, 7}, std::nullopt);
+  EXPECT_TRUE(Peer::sampling_seed(*executor_, sid));
+}
+
+TEST_F(CudaDFlashNative, MixedOwnerVerifyParamsSkipOnlyGreedyCoins) {
+  create();
+  ASSERT_TRUE(executor_);
+  const std::array<b::SamplingParams, 4> sampling{
+      b::SamplingParams{0.0f, 1.0f, 1},
+      b::SamplingParams{0.8f, 0.9f, 7},
+      b::SamplingParams{0.0f, 0.5f, 3},
+      b::SamplingParams{1.2f, 0.8f, 5}};
+  const std::array<std::uint64_t, 4> seeds{0, 42, 19, 17};
+  const std::array<b::Position, 4> positions{10, 100, 50, 200};
+  std::array<b::SessionId, 4> owners;
+  for (int owner = 0; owner < 4; ++owner) {
+    owners[owner] = open();
+    executor_->set_sampling(owners[owner], sampling[owner], seeds[owner]);
+  }
+  for (const int owner : {3, 0, 2, 1, 3}) {
+    const auto params =
+        Peer::verify_params(*executor_, owners[owner], positions[owner]);
+    ASSERT_EQ(params.size(), 19);
+    EXPECT_EQ(params[0], sampling[owner].temperature);
+    EXPECT_EQ(params[1], sampling[owner].top_k);
+    EXPECT_EQ(params[2], sampling[owner].top_p);
+    for (int proposal = 0; proposal < 15; ++proposal) {
+      const float expected = sampling[owner].temperature > 0.0f
+          ? llm::cuda_dflash_detail::positional_uniform(
+                seeds[owner], positions[owner] + proposal, 2)
+          : 0.0f;
+      EXPECT_EQ(params[3 + proposal], expected);
+    }
+    const float correction = sampling[owner].temperature > 0.0f
+        ? llm::cuda_dflash_detail::positional_uniform(
+              seeds[owner], positions[owner], 3)
+        : 0.0f;
+    EXPECT_EQ(params.back(), correction);
+  }
+}
 
 TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
   create();

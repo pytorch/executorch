@@ -25,6 +25,8 @@ def sampling_probabilities(
     temperature: torch.Tensor,
     top_k: torch.Tensor,
     top_p: torch.Tensor,
+    *,
+    batching_policy: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Returns ``[R, V]`` filtered probabilities and ``[R]`` argmax tokens."""
     vocab_size = logits.shape[-1]
@@ -52,8 +54,14 @@ def sampling_probabilities(
         torch.cumsum(sorted_probabilities, dim=-1) - sorted_probabilities
     )
     top_p_enabled = (top_p > 0.0) & (top_p < 1.0)
+    if batching_policy:
+        # Match BatchSampler's top-k precedence and inclusive nucleus cutoff.
+        top_p_enabled = top_p_enabled & ~((top_k > 0) & (top_k < vocab_size))
+        nucleus = mass_before_token <= top_p
+    else:
+        nucleus = mass_before_token < top_p
     sorted_probabilities = torch.where(
-        ~top_p_enabled | (mass_before_token < top_p),
+        ~top_p_enabled | nucleus,
         sorted_probabilities,
         torch.zeros_like(sorted_probabilities),
     )
@@ -216,7 +224,11 @@ def verify_owners(
         return params[:, column : column + 1].expand(owners, width).reshape(rows, 1)
 
     probabilities, greedy = sampling_probabilities(
-        target_logits.reshape(rows, vocab_size), per_row(0), per_row(1), per_row(2)
+        target_logits.reshape(rows, vocab_size),
+        per_row(0),
+        per_row(1),
+        per_row(2),
+        batching_policy=True,
     )
     probabilities = probabilities.view(owners, width, vocab_size)
     greedy = greedy.view(owners, width)
@@ -243,7 +255,7 @@ def verify_owners(
     sampled = torch.where(
         count < width - 1,
         strict_categorical_sample(excluded, coin),
-        categorical_sample(row, coin),
+        strict_categorical_sample(row, coin),
     )
     correction = torch.where(
         stochastic, sampled, greedy.gather(1, count.unsqueeze(1)).squeeze(1)
