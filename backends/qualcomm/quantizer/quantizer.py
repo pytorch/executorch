@@ -423,7 +423,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
         self._recipe = None
-        self._convert_linear_to_conv2d = False
+        self._convert_linear_to_conv2d = True
 
     @property
     def recipe(self):
