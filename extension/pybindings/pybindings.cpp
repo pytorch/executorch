@@ -1142,6 +1142,9 @@ class DLPackTensorView final {
     if (dtype.code == dlpack::DataTypeCode::BFloat && dtype.bits == 16) {
       return ScalarType::BFloat16;
     }
+    if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 32) {
+      return ScalarType::ComplexHalf;
+    }
     if (dtype.code == dlpack::DataTypeCode::Complex && dtype.bits == 64) {
       return ScalarType::ComplexFloat;
     }
