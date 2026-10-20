@@ -289,8 +289,8 @@ class CudaDFlashNative : public ::testing::Test {
   void SetUp() override {
     const char* dir = std::getenv("ET_MUSE_DFLASH_TINY_DIR");
     if (!dir || !*dir) {
-      GTEST_SKIP()
-          << "Set ET_MUSE_DFLASH_TINY_DIR to the existing tiny packed artifact";
+      GTEST_SKIP() << "Set ET_MUSE_DFLASH_TINY_DIR to the output of "
+                      "tests/export_cuda_dflash_tiny.py";
     }
     int devices = 0;
     if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {

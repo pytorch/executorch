@@ -11,15 +11,27 @@ pip install . --no-build-isolation
 ## Portable tensor mode
 
 Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
-arrays or other dense objects implementing Python's buffer protocol. CPU and
+arrays or other dense objects implementing Python's buffer protocol, including
+`ctypes` arrays, `array.array`, and complex NumPy arrays. CPU and
 CUDA `torch.Tensor` inputs are inspected through their public Python attributes
 instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
 provide CPU or CUDA allocations directly; their device indices are preserved.
 Tensor protocols can be mixed within the same call.
 
-Tensor inputs must have dense storage laid out for the exported method's
-dimension order. Stride compatibility checks are deferred; the bindings interpret
-Torch and DLPack tensor storage using the exported layout without copying data.
+Tensor inputs must have dense storage. In the portable bindings, an input laid
+out in a different dimension order than the exported method, for example a
+channels-last tensor for a contiguous method or a transposed array, is copied
+into the exported layout: on the host for buffers and CPU DLPack tensors, and by
+torch on the tensor's own device for torch tensors. Read-only buffers are
+copied too, in any layout. A non-torch CUDA DLPack input must already be in the
+exported layout. The ATen bindings do not convert inputs, and their runtime
+reads every input as contiguous, so pass contiguous inputs there.
+
+Pass an input again after changing it. A method exported with the default
+memory planning copies every input into its own memory, and a converted input
+is a copy too. Only a method exported with
+`MemoryPlanningPass(alloc_graph_input=False)` reads an unconverted, writable
+input in place, and only such an input sees the method's own in-place updates.
 CUDA inputs require a method
 exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
 execution can share the caller's device allocation.
@@ -28,13 +40,25 @@ When PyTorch is available, importing `portable_lib` imports it and portable
 bindings return `torch.Tensor` outputs. When it cannot be imported, the default
 output type is `ExecuTorchResult`. Output conversion uses Python APIs and
 DLPack; the extension does not link against PyTorch.
-`clone_outputs=True` returns independent storage on the output's original
-device. With `clone_outputs=False`, results share runtime or input storage and
-later execution may overwrite that storage.
+`clone_outputs=True` returns storage that later executions do not overwrite,
+on the output's original device. With `clone_outputs=False`, results share
+runtime or input storage and later execution may overwrite that storage.
+
+A CUDA output that fills memory the bindings allocated for it is returned
+without a copy when `clone_outputs=True`. The result keeps that memory, so a
+method writes its next execution into a second buffer, and the two take turns;
+a module allocates new memory each call. Reading the outputs again before the
+next execution returns the same object, so an in-place change to one read
+shows in the other. In torch output mode such a result is a view of memory
+torch does not own, so it cannot grow with `resize_()`.
+
+`dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
+`"bfloat16"`.
 
 Calls on a shared method or module are serialized. A sequence of separate
-`set_inputs`, `execute`, and `get_outputs` calls requires caller synchronization
-when each thread needs its own inputs and outputs.
+`set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
+held by the caller around the whole sequence: `set_inputs` hides the outputs
+until the next `execute`, so another thread's call can land in between.
 
 To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
 environment variable before importing the bindings. The setting is fixed when
@@ -63,12 +87,27 @@ CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA result
 remain on CUDA and can be passed to another DLPack consumer or back into
 ExecuTorch without moving the data to the CPU.
 
+Without torch or another DLPack library, `to_host()` copies a result to CPU
+memory, and `ExecuTorchResult.from_host()` copies a CPU buffer to a CUDA device
+for a method whose inputs live there:
+
+```python
+from executorch.extension.pybindings.portable_lib import ExecuTorchResult
+
+device_input = ExecuTorchResult.from_host(numpy_input, device_index=0)
+output = method([device_input])[0]
+result = np.asarray(output.to_host())
+```
+
 CUDA DLPack inputs and `ExecuTorchResult` outputs require CUDA-enabled bindings.
 Torch CUDA inputs and outputs synchronize through Python Torch, including in
-CPU builds of the bindings. The Python CUDA execution boundary waits for device
-work because the device allocator does not expose readiness events.
-Execution is synchronous at this boundary, including producer and consumer
-stream readiness. The synchronization has no C++ ATen dependency.
+CPU builds of the bindings. Execution is synchronous at the Python boundary:
+a call returns after its device work has finished, so its outputs are ready on
+any stream. Each call waits for the device once, rather than once per tensor.
+Before running, it also waits once if an input may still be written on another
+library's stream: a torch CUDA tensor, a DLPack input from another library, or
+an `ExecuTorchResult` whose memory was handed out through `__dlpack__`. The
+synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
 method. Bfloat16 results expose flat bytes through the buffer protocol because
@@ -87,7 +126,10 @@ The CUDA build workflow runs `test_pybindings_cuda_dlpack.py` in both output
 modes on a GPU. It checks device allocations, DLPack stream ordering, channels
 last views, cloning, and borrowed output lifetimes using a CUDA delegate.
 Set `EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1` when running this test to treat missing
-GPU hardware or a missing CUDA backend as a failure.
+GPU hardware or a missing CUDA backend as a failure. The CUDA delegate's kernels
+need the OpenMP runtime (`libgomp.so.1` on Linux). PyTorch ships one; without PyTorch,
+install it from the system, or the two tests that run without PyTorch fail
+under this setting.
 
 # Link Backends
 
