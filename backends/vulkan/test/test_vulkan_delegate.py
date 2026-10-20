@@ -1343,10 +1343,11 @@ class TestVulkanBackend(unittest.TestCase):
                 return torch.randint(-100, 100, size=shape, dtype=dtype)
             return torch.rand(size=shape, dtype=dtype)
 
-        # dim=1 with step=3 is the interleaving a YOLO pose head emits, and it
-        # is the interesting case for channels-packed storage: one output texel
-        # spans four positions along the scattered dim, so its components come
-        # from src and self alternately.
+        # dim=1 with step=3 is the interleaving a YOLO pose head emits. On a
+        # rank-3 tensor dim=1 is H, so those cases cover strided rows; the
+        # rank-4 dim=1 cases scatter along C, the packed dim, where one output
+        # texel spans four channels whose components come from src and self
+        # alternately.
         cases = [
             # (self_shape, src_shape, dim, start, end, step)
             ((1, 12, 7), (1, 4, 7), 1, 0, None, 3),
@@ -1354,9 +1355,10 @@ class TestVulkanBackend(unittest.TestCase):
             ((1, 12, 7), (1, 4, 7), 1, 2, None, 3),
             ((2, 6, 5), (2, 6, 2), 2, 1, None, 2),
             ((3, 8, 4), (2, 8, 4), 0, 1, None, 1),
-            # Channel count that is not a multiple of 4.
             ((1, 10, 5), (1, 3, 5), 1, 1, None, 3),
+            # Channel count that is not a multiple of 4.
             ((2, 6, 3, 5), (2, 3, 3, 5), 1, 1, None, 2),
+            ((1, 10, 1, 5), (1, 3, 1, 5), 1, 1, None, 3),
             # Negative dim and end, and an end past the dim size.
             ((1, 12, 7), (1, 3, 7), -2, 2, -1, 3),
             ((2, 6, 5), (2, 6, 2), 2, 3, 100, 1),
@@ -1374,12 +1376,16 @@ class TestVulkanBackend(unittest.TestCase):
                     sample_inputs,
                 )
 
-        for dtype in (torch.float16, torch.int32, torch.bool):
-            with self.subTest(dtype=dtype):
-                self.lower_module_and_test_output(
-                    SliceScatter(1, 1, None, 3),
-                    (make_input((1, 10, 5), dtype), make_input((1, 3, 5), dtype)),
-                )
+        # The rank-4 shape puts step=3 along C=10: src and self alternate
+        # across the four lanes of a texel and the last texel is a tail.
+        dtype_shapes = [((1, 10, 5), (1, 3, 5)), ((1, 10, 1, 5), (1, 3, 1, 5))]
+        for self_shape, src_shape in dtype_shapes:
+            for dtype in (torch.float16, torch.int32, torch.bool):
+                with self.subTest(shape=self_shape, dtype=dtype):
+                    self.lower_module_and_test_output(
+                        SliceScatter(1, 1, None, 3),
+                        (make_input(self_shape, dtype), make_input(src_shape, dtype)),
+                    )
 
     def test_vulkan_backend_slice_scatter_mixed_dtype(self):
         # aten casts src to self's dtype, but the Vulkan shader needs one dtype
