@@ -4254,7 +4254,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def(
           "__dlpack__",
           &PyExecuTorchResult::to_dlpack,
-          py::arg("stream") = py::none())
+          py::arg("stream") = py::none(),
+          py::kw_only(),
+          py::arg("max_version") = py::none(),
+          py::arg("dl_device") = py::none(),
+          py::arg("copy") = py::none())
       .def("__dlpack_device__", &PyExecuTorchResult::dlpack_device)
       .def(
           "to_host",

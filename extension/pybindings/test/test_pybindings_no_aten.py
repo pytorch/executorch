@@ -272,6 +272,30 @@ else:
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
                 np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
 
+    def test_dlpack_export_keywords(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        values = np.array([1.0], dtype=np.float32)
+        result = method((values, values))[0]
+        if not isinstance(result, runtime.ExecuTorchResult):
+            self.skipTest("torch output mode returns torch tensors")
+
+        shared = np.from_dlpack(result, copy=False)
+        self.assertTrue(np.shares_memory(shared, np.from_dlpack(result)))
+        copied = np.from_dlpack(result, copy=True)
+        self.assertFalse(np.shares_memory(copied, shared))
+        np.testing.assert_array_equal(copied, shared)
+        np.testing.assert_array_equal(np.from_dlpack(result, device="cpu"), shared)
+        self.assertIn(
+            '"dltensor_versioned"', repr(result.__dlpack__(max_version=(1, 0)))
+        )
+        self.assertIn('"dltensor"', repr(result.__dlpack__()))
+        with self.assertRaises(BufferError):
+            result.__dlpack__(dl_device=(2, 0), copy=False)
+        with self.assertRaises(TypeError):
+            result.__dlpack__(stream="default")
+
     def test_bfloat16_raw_buffer_input_and_output(self) -> None:
         with open(
             os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"

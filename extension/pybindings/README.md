@@ -93,7 +93,10 @@ result = np.asarray(output)
 
 CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA results
 remain on CUDA and can be passed to another DLPack consumer or back into
-ExecuTorch without moving the data to the CPU.
+ExecuTorch without moving the data to the CPU. `__dlpack__` takes the DLPack
+1.0 keywords `max_version`, `dl_device`, and `copy`, so a call such as
+`np.from_dlpack(result, copy=False)` works. A consumer that passes `stream=-1`
+orders the work itself, so that export skips the device wait.
 
 Without torch or another DLPack library, `to_host()` copies a result to CPU
 memory, and `ExecuTorchResult.from_host()` copies a CPU buffer to a CUDA device

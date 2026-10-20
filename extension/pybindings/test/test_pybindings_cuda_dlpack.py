@@ -745,6 +745,38 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def _device_waits(self, body):
+        from torch.profiler import profile, ProfilerActivity
+
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as trace:
+            body()
+        return sum(
+            event.count
+            for event in trace.key_averages()
+            if event.key == "cudaDeviceSynchronize"
+        )
+
+    def test_dlpack_export_keywords(self):
+        if not self.executorch_output:
+            self.skipTest("__dlpack__ keywords are an ExecuTorchResult feature")
+        method = self._load_method()
+        result = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        # The profiler waits for the device itself when it stops.
+        idle = self._device_waits(lambda: None)
+        # A consumer that passes stream=-1 orders the work itself.
+        self.assertEqual(self._device_waits(lambda: result.__dlpack__(stream=-1)), idle)
+        self.assertEqual(
+            self._device_waits(lambda: result.__dlpack__(stream=1)), idle + 1
+        )
+        copied = torch.from_dlpack(result.__dlpack__(max_version=(1, 0), copy=True))
+        self.assertNotEqual(copied.data_ptr(), torch.from_dlpack(result).data_ptr())
+        torch.testing.assert_close(copied.cpu(), torch.full(self.shape, 4.0))
+        host = torch.from_dlpack(
+            result.__dlpack__(max_version=(1, 0), dl_device=(1, 0), copy=True)
+        )
+        self.assertEqual(host.device, torch.device("cpu"))
+        torch.testing.assert_close(host, torch.full(self.shape, 4.0))
+
     def test_device_chain_waits_for_the_device_twice_per_call(self):
         # Feeding each output into the next call, with a host upload per call.
         # Each call waits for the device twice: once before it runs, in case
