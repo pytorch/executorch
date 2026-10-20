@@ -23,6 +23,8 @@ export const MODELS = [
     tagline: 'Larger · Built with Llama',
     approxBytes: 744e6,
     approxBytesIsEstimate: false,
+    // fp32 KV cache the program allocates for its full context.
+    kvCacheBytes: 587202560,
     arch: { layers: 16, dModel: 2048, ffn: 8192, heads: 32, kvHeads: 8, vocab: 128256 },
     assets: {
       "baseUrl": "https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-ExecuTorch-WebGPU/resolve/f2b116fc0b746ec8ba8adb93258b9e8b439cefa7/", // @lint-ignore (base URL, files resolve under it)
@@ -74,6 +76,8 @@ export const MODELS = [
     tagline: 'Fastest · 100+ languages',
     approxBytes: 416e6,
     approxBytesIsEstimate: false,
+    // fp32 KV cache the program allocates for its full context.
+    kvCacheBytes: 2055208960,
     arch: { layers: 28, dModel: 1024, ffn: 3072, heads: 16, kvHeads: 8, vocab: 151936 },
     assets: {
       "baseUrl": "https://huggingface.co/executorch-community/Qwen3-0.6B-ExecuTorch-WebGPU/resolve/65fa8ec0b8996b4a0157cdb89ea766b000b1134a/", // @lint-ignore (base URL, files resolve under it)
@@ -124,6 +128,8 @@ export const MODELS = [
     tagline: 'Larger · by Google DeepMind',
     approxBytes: 675e6,
     approxBytesIsEstimate: false,
+    // fp32 KV cache the program allocates for its full context.
+    kvCacheBytes: 477102080,
     arch: { layers: 26, dModel: 1152, ffn: 6912, heads: 4, kvHeads: 1, vocab: 262144 },
     assets: {
       "baseUrl": "https://huggingface.co/executorch-community/Gemma-3-1B-IT-ExecuTorch-WebGPU/resolve/91864e518e371b57a6433c180490ce5ab31639ec/", // @lint-ignore (base URL, files resolve under it)
