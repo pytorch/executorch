@@ -11,6 +11,7 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 
 #include <set>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -68,6 +69,39 @@ TEST(SamplerTest, TestBFloat16SamplingUsesFloatArithmetic) {
       bf16_sampler.sample(bf16_logits.data()),
       float_sampler.sample(float_logits.data()));
 }
+
+class HalfSamplingTest : public TestWithParam<std::pair<float, int>> {};
+
+TEST_P(HalfSamplingTest, MatchesFloatWithLargeVocabulary) {
+  constexpr int kVocabSize = 32768;
+  const auto [topp, topk] = GetParam();
+  Sampler half_sampler{kVocabSize, 0.7f, topp, 42};
+  Sampler float_sampler{kVocabSize, 0.7f, topp, 42};
+  half_sampler.set_topk(topk);
+  float_sampler.set_topk(topk);
+
+  std::vector<executorch::aten::Half> half_logits(kVocabSize);
+  std::vector<float> float_logits(kVocabSize);
+  for (int trial = 0; trial < 16; ++trial) {
+    for (int i = 0; i < kVocabSize; ++i) {
+      half_logits[i] = executorch::aten::Half(
+          trial % 2 == 0 ? 0.0f : (i % 1024) * 0.001f - 0.512f);
+      float_logits[i] = static_cast<float>(half_logits[i]);
+    }
+    EXPECT_EQ(
+        half_sampler.sample(half_logits.data()),
+        float_sampler.sample(float_logits.data()))
+        << "trial " << trial;
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Sampler,
+    HalfSamplingTest,
+    Values(
+        std::make_pair(1.0f, 0),
+        std::make_pair(0.9f, 0),
+        std::make_pair(1.0f, 4096)));
 
 TEST(SamplerTest, TestTopKRestrictsToCandidates) {
   // With topk=3, sampling must always return one of the top-3 indices,

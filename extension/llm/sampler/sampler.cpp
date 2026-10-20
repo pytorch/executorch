@@ -252,6 +252,20 @@ int32_t Sampler::sample(T* logits) {
 }
 
 template <>
+int32_t Sampler::sample<executorch::aten::Half>(
+    executorch::aten::Half* logits) {
+  if (inv_temperature_ == 0.0f) {
+    return sample_argmax(logits);
+  }
+  float_logits_buffer_.resize(vocab_size_);
+  for (int i = 0; i < vocab_size_; i++) {
+    float_logits_buffer_[i] = static_cast<float>(logits[i]);
+  }
+
+  return sample(float_logits_buffer_.data());
+}
+
+template <>
 int32_t Sampler::sample<executorch::aten::BFloat16>(
     executorch::aten::BFloat16* logits) {
   float_logits_buffer_.resize(vocab_size_);
@@ -264,8 +278,6 @@ int32_t Sampler::sample<executorch::aten::BFloat16>(
 
 template int32_t Sampler::sample<float>(float* logits);
 template int32_t Sampler::sample<uint16_t>(uint16_t* logits);
-template int32_t Sampler::sample<executorch::aten::Half>(
-    executorch::aten::Half* logits);
 
 } // namespace llm
 } // namespace extension

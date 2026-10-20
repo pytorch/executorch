@@ -85,6 +85,9 @@ class ET_EXPERIMENTAL Sampler {
 };
 
 template <>
+int32_t Sampler::sample<executorch::aten::Half>(executorch::aten::Half* logits);
+
+template <>
 int32_t Sampler::sample<executorch::aten::BFloat16>(
     executorch::aten::BFloat16* logits);
 
