@@ -1398,6 +1398,36 @@ class TestVulkanBackend(unittest.TestCase):
         self.check_no_delegation(et_program)
         self.run_delegated_model_and_check_output(et_program, model, sample_inputs)
 
+    def test_vulkan_backend_slice_scatter_huge_step(self):
+        # A step near INT64_MAX selects only `start`. The window size used to
+        # be computed as (end - start + step - 1) / step, which overflows
+        # int64. Eager aten does the same arithmetic, so the reference is
+        # built by hand instead of by running the module.
+        class SliceScatter(torch.nn.Module):
+            def __init__(self, step):
+                super().__init__()
+                self.step = step
+
+            def forward(self, x, src):
+                return torch.slice_scatter(
+                    x, src, dim=0, start=0, end=8, step=self.step
+                )
+
+        int64_max = 2**63 - 1
+        x = torch.rand(size=(8,), dtype=torch.float32)
+        src = torch.rand(size=(1,), dtype=torch.float32)
+        expected = x.clone()
+        expected[0] = src[0]
+        for step in (int64_max, int64_max - 7):
+            with self.subTest(step=step):
+                et_program = lower_module(
+                    SliceScatter(step).eval(), (x, src)
+                ).to_executorch()
+                self.check_vk_delegation(et_program)
+                executorch_module = _load_for_executorch_from_buffer(et_program.buffer)
+                model_output = executorch_module.run_method("forward", (x, src))
+                self.assert_outputs_equal(model_output, expected)
+
     def test_vulkan_backend_slice_scatter_dynamic(self):
         class SliceScatter(torch.nn.Module):
             def __init__(self, dim, start):

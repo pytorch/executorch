@@ -90,8 +90,10 @@ void add_slice_scatter_node(
   // The shader decides src-vs-self per output element from (start, end, step)
   // alone, so it never reads outside src as long as src is exactly as long as
   // the strided window. aten guarantees this; assert rather than clamp, since
-  // a mismatch would otherwise read out of bounds.
-  const int64_t window = start < end ? (end - start + step - 1) / step : 0;
+  // a mismatch would otherwise read out of bounds. Written so that no
+  // intermediate exceeds end - start: ceil-division via `+ step - 1` would
+  // overflow int64 for a step near INT64_MAX.
+  const int64_t window = start < end ? (end - start - 1) / step + 1 : 0;
   VK_CHECK_COND(
       graph.sizes_of(src).at(dim) == window,
       "Vulkan slice_scatter: src size along dim does not match the slice");
