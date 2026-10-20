@@ -86,7 +86,9 @@ ethos_u = [
   "tosa-tools==2026.5.0",
 ]
 openvino = [
-  "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
+  # The OpenVINO versions in this range publish no build for Python 3.15, or for Linux
+  # aarch64 on Python 3.14, so without these bounds pip fails to install the extra there.
+  "openvino>=2025.1.0,<2026.0.0; (platform_system == 'Linux' or (platform_system == 'Windows' and platform_machine == 'AMD64')) and python_version < '3.15' and (platform_machine != 'aarch64' or python_version < '3.14')",
 ]
 
 [project.urls]
