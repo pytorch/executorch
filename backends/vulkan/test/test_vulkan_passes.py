@@ -1140,3 +1140,72 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
     def test_mask_shape_mismatch_is_rejected(self):
         self.assertFalse(self._build(mask_shape=(1, self.S, self.C)))
         self.assertFalse(self._build(mask_shape=(self.S, self.C - 1)))
+
+    def _build_wrapped_sdpa_with_kv_cache(
+        self, wrapper, q_dtype=torch.float32, cache_slice=None
+    ):
+        from executorch.backends.vulkan.patterns.sdpa import check_llm_sdpa_node
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+
+        def placeholder(name, shape, dtype):
+            node = graph.placeholder(name)
+            node.meta["val"] = fake_mode.from_tensor(torch.empty(shape, dtype=dtype))
+            return node
+
+        q = placeholder("q", (1, self.S, self.H, self.D), q_dtype)
+        k_cache = placeholder("k_cache", (1, self.C, self.H, self.D), q_dtype)
+        v_cache = placeholder("v_cache", (1, self.C, self.H, self.D), q_dtype)
+        mask = placeholder("mask", (self.S, self.C), torch.float32)
+        kwargs = {
+            "query": q,
+            "key": q,
+            "value": q,
+            "start_pos": 0,
+            "seq_len": self.S,
+            "attn_mask": mask,
+            "drpout_p": 0.0,
+            "is_causal": False,
+            "scale": None,
+        }
+        if wrapper == torch.ops.higher_order.auto_functionalized:
+            kwargs.update(key_cache=k_cache, value_cache=v_cache)
+        else:
+            kwargs.update(
+                _all_bases=[k_cache, v_cache],
+                _key_cache_base_index=0,
+                _value_cache_base_index=1,
+            )
+            if cache_slice is not None:
+                start, end = cache_slice
+                kwargs.update(
+                    _key_cache_slice_dim=1,
+                    _key_cache_slice_start=start,
+                    _key_cache_slice_end=end,
+                )
+        node = graph.call_function(
+            wrapper, (_NamedOpStub("llama::sdpa_with_kv_cache"),), kwargs
+        )
+        return check_llm_sdpa_node(node)
+
+    def test_auto_functionalized_sdpa_with_kv_cache(self):
+        # The partitioner passes the wrapper node, whose op args are kwargs.
+        for wrapper in (
+            torch.ops.higher_order.auto_functionalized,
+            torch.ops.higher_order.auto_functionalized_v2,
+        ):
+            self.assertTrue(self._build_wrapped_sdpa_with_kv_cache(wrapper))
+            self.assertFalse(
+                self._build_wrapped_sdpa_with_kv_cache(wrapper, q_dtype=torch.float16)
+            )
+
+    def test_auto_functionalized_v2_cache_view(self):
+        wrapper = torch.ops.higher_order.auto_functionalized_v2
+        self.assertTrue(
+            self._build_wrapped_sdpa_with_kv_cache(wrapper, cache_slice=(0, None))
+        )
+        self.assertFalse(
+            self._build_wrapped_sdpa_with_kv_cache(wrapper, cache_slice=(0, self.C - 1))
+        )
