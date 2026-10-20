@@ -65,6 +65,8 @@ class HiddenSnapshot {
   HiddenSnapshot() = default;
   HiddenSnapshot(const HiddenSnapshot&) = delete;
   HiddenSnapshot& operator=(const HiddenSnapshot&) = delete;
+  HiddenSnapshot(HiddenSnapshot&&) = delete;
+  HiddenSnapshot& operator=(HiddenSnapshot&&) = delete;
   bool begin(std::size_t rows, std::size_t row_bytes);
   bool capture(const aten::Tensor& taps, std::size_t offset, std::size_t rows);
   bool copy_rows(
@@ -121,6 +123,8 @@ class DeviceStaging {
   DeviceStaging() = default;
   DeviceStaging(const DeviceStaging&) = delete;
   DeviceStaging& operator=(const DeviceStaging&) = delete;
+  DeviceStaging(DeviceStaging&&) = delete;
+  DeviceStaging& operator=(DeviceStaging&&) = delete;
   // Device copies of each (data, bytes) part, ordered on stream. Earlier
   // uploads must be consumed first: they share one allocation.
   std::optional<std::vector<void*>> upload(
@@ -151,7 +155,7 @@ struct CudaDFlashStats {
   std::uint64_t cycles = 0; // per-owner verification cycles
   std::uint64_t proposed = 0;
   std::uint64_t accepted = 0;
-  std::uint64_t rejected = 0;
+  std::uint64_t rejected = 0; // cycles ended by a rejection, not tokens
   std::uint64_t bonuses = 0;
   std::uint64_t failed_batches = 0;
 };
@@ -165,6 +169,12 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
       const MuseGlimmerBackendConfig& config);
+  MuseGlimmerCudaDFlashExecutor(const MuseGlimmerCudaDFlashExecutor&) = delete;
+  MuseGlimmerCudaDFlashExecutor& operator=(
+      const MuseGlimmerCudaDFlashExecutor&) = delete;
+  MuseGlimmerCudaDFlashExecutor(MuseGlimmerCudaDFlashExecutor&&) = delete;
+  MuseGlimmerCudaDFlashExecutor& operator=(MuseGlimmerCudaDFlashExecutor&&) =
+      delete;
   ~MuseGlimmerCudaDFlashExecutor() override;
   std::size_t preferred_batch_tokens() const override;
   bool initialize() override;
@@ -189,6 +199,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   using Target = ::executorch::backends::cuda::batching::CudaExecutor;
   using RawStep = ::executorch::backends::cuda::batching::RawTargetStep;
   struct State {
+    State(std::int32_t target, std::int32_t draft)
+        : target_id(target), draft_id(draft) {}
     std::int32_t target_id;
     std::int32_t draft_id;
     int frontier = 0;

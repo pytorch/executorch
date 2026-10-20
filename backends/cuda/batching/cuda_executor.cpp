@@ -25,7 +25,7 @@
 #include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/tensor/tensor.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
@@ -214,6 +214,17 @@ Error set_backend_options(
       kCudaBackendId, backend_options.view());
 }
 
+bool is_dense(const ::executorch::aten::Tensor& tensor) {
+  std::int64_t stride = 1;
+  for (auto d = tensor.dim() - 1; d >= 0; --d) {
+    if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
+      return false;
+    }
+    stride *= tensor.size(d);
+  }
+  return true;
+}
+
 } // namespace
 
 CudaExecutor::CudaExecutor(
@@ -280,7 +291,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   config.max_session_tokens = max_session_tokens;
   config.kv_dtype = kv_dtype;
   config.initial_capacity = initial_capacity;
-  config.options = options;
+  config.options = std::move(options);
   return create(std::move(module), config);
 }
 
@@ -567,12 +578,18 @@ bool CudaExecutor::execute_raw(
     }
   }
   struct Reset {
-    bool& flag;
+    explicit Reset(bool& target) : flag(target) {
+      flag = true;
+    }
+    Reset(const Reset&) = delete;
+    Reset& operator=(const Reset&) = delete;
+    Reset(Reset&&) = delete;
+    Reset& operator=(Reset&&) = delete;
     ~Reset() {
       flag = false;
     }
-  } reset{raw_executing_};
-  raw_executing_ = true;
+    bool& flag;
+  } reset(raw_executing_);
   for (const auto& slice : plan_slices(total, methods_)) {
     const int off = slice.offset;
     const int n = slice.length;
@@ -623,19 +640,15 @@ bool CudaExecutor::execute_raw(
     }
     ++calls_[slice.method];
     const auto logits = result->at(0).toTensor();
-    auto dense = [](const ::executorch::aten::Tensor& tensor) {
-      std::int64_t stride = 1;
-      for (int d = tensor.dim() - 1; d >= 0; --d) {
-        if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
-          return false;
-        }
-        stride *= tensor.size(d);
-      }
-      return true;
-    };
     if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
         logits.numel() != static_cast<std::int64_t>(rows) * vocab_size_ ||
-        !is_supported_logits_type(logits.scalar_type()) || !dense(logits)) {
+        !is_supported_logits_type(logits.scalar_type()) || !is_dense(logits)) {
+      ET_LOG(
+          Error,
+          "CudaExecutor: %s logits are not a dense [%zu, %d] tensor",
+          method.name.c_str(),
+          rows,
+          vocab_size_);
       return false;
     }
     std::optional<::executorch::aten::Tensor> taps;
@@ -646,7 +659,12 @@ bool CudaExecutor::execute_raw(
       taps = result->at(1).toTensor();
       if (taps->dim() != 3 || taps->size(0) != 1 ||
           taps->size(1) != slice.width || taps->size(2) <= 0 ||
-          !is_supported_logits_type(taps->scalar_type()) || !dense(*taps)) {
+          !is_supported_logits_type(taps->scalar_type()) || !is_dense(*taps)) {
+        ET_LOG(
+            Error,
+            "CudaExecutor: %s taps are not a dense [1, %d, H] tensor",
+            method.name.c_str(),
+            slice.width);
         return false;
       }
     }
@@ -662,7 +680,8 @@ std::optional<std::vector<Token>> CudaExecutor::argmax_rows(
     std::size_t rows) {
   using ::executorch::aten::ScalarType;
   using ::executorch::aten::SizesType;
-  if (!initialized_ || logits.dim() < 2 ||
+  if (!initialized_ || logits.dim() < 2 || !is_dense(logits) ||
+      !is_supported_logits_type(logits.scalar_type()) ||
       logits.size(logits.dim() - 1) != vocab_size_ ||
       rows > static_cast<std::size_t>(std::numeric_limits<SizesType>::max()) ||
       rows > static_cast<std::size_t>(logits.numel() / vocab_size_)) {
@@ -731,15 +750,15 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  const Result<llm_batching::util::PackedStep> step = sessions_.pack(batch);
+  Result<llm_batching::util::PackedStep> step = sessions_.pack(batch);
   if (!step.ok()) {
     return false;
   }
 
   RawTargetStep raw;
-  raw.tokens = step->tokens;
-  raw.positions = step->positions;
-  raw.seq_ids = step->seq_ids;
+  raw.tokens = std::move(step->tokens);
+  raw.positions = std::move(step->positions);
+  raw.seq_ids = std::move(step->seq_ids);
   raw.logit_indices.assign(
       step->logit_indices.begin(), step->logit_indices.end());
   return execute_raw(raw, [&](const RawTargetOutput& result) {
@@ -805,12 +824,17 @@ std::optional<std::vector<Token>> CudaExecutor::sample_rows(
   for (std::size_t row = 0; row < rows; ++row) {
     all_greedy = all_greedy && params[row * 4] == 0.0f;
   }
-  if (all_greedy ||
-      logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
-    // Host logits are sampled greedily only; the exported sampler is on CUDA.
-    return all_greedy ? argmax_rows(logits, rows) : std::nullopt;
+  if (all_greedy) {
+    return argmax_rows(logits, rows);
   }
-  if (!initialized_ || !has_sampler_ || logits.dim() < 2 ||
+  if (logits.device_type() != ::executorch::aten::DeviceType::CUDA) {
+    ET_LOG(
+        Error,
+        "CudaExecutor: sampled rows need device logits and %s",
+        kSampleMethod);
+    return std::nullopt;
+  }
+  if (!initialized_ || !has_sampler_ || logits.dim() < 2 || !is_dense(logits) ||
       logits.size(logits.dim() - 1) != vocab_size_ ||
       logits.scalar_type() != ::executorch::aten::ScalarType::Float ||
       rows == 0 ||

@@ -332,6 +332,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       // A failed forward may be abandoned on another host thread, where
       // cudaStreamPerThread no longer names the originating stream.
       if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+        // Recycling cells a forward may still write is unsafe; a later clear()
+        // retries the fence.
         poisoned_ = true;
         return;
       }
