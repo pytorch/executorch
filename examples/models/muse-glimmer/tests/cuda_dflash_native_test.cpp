@@ -430,8 +430,11 @@ TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
     EXPECT_EQ(after.target_preamble_calls, before.target_preamble_calls);
     EXPECT_EQ(after.target_verify_calls - before.target_verify_calls, 1);
     EXPECT_EQ(after.pending_decode_owners - before.pending_decode_owners, 1);
+    EXPECT_EQ(after.cycles - before.cycles, 1);
+    EXPECT_EQ(after.proposed - before.proposed, 15);
     EXPECT_EQ(after.accepted - before.accepted, rejected);
     EXPECT_EQ(after.bonuses - before.bonuses, rejected == 15);
+    EXPECT_EQ(after.rejected - before.rejected, rejected != 15);
     EXPECT_EQ(after.hidden_rows_d2d - before.hidden_rows_d2d, 16);
     EXPECT_EQ(after.hidden_rows_d2h - before.hidden_rows_d2h, rejected + 1);
     EXPECT_EQ(
@@ -562,7 +565,7 @@ TEST_F(CudaDFlashNative, WrongFeedbackAndNonOutputSlicesKeepPreamble) {
   EXPECT_EQ(
       executor_->stats().target_preamble_calls - before.target_preamble_calls,
       3);
-  // An invalid temperature fails before a target/draft forward.
+  // An invalid temperature is refused before a forward, without poisoning.
   executor_->set_sampling(sid, {-0.5f, 1.0f, 0}, 0);
   const auto valid = executor_->stats();
   EXPECT_FALSE(executor_->execute({{input(sid, 10, {prediction(9)})}}, out));
@@ -570,7 +573,8 @@ TEST_F(CudaDFlashNative, WrongFeedbackAndNonOutputSlicesKeepPreamble) {
   EXPECT_EQ(
       executor_->stats().target_preamble_calls, valid.target_preamble_calls);
   EXPECT_EQ(executor_->stats().target_verify_calls, valid.target_verify_calls);
-  EXPECT_TRUE(Peer::poisoned(*executor_, sid));
+  EXPECT_EQ(executor_->stats().failed_batches, valid.failed_batches);
+  EXPECT_FALSE(Peer::poisoned(*executor_, sid));
 }
 
 TEST_F(CudaDFlashNative, FinalWholeBlockFitsExactlyAndPreservesAllPrefillRows) {

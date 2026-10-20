@@ -12,7 +12,7 @@
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
-#include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 
 #include <algorithm>
 #include <cmath>
@@ -145,7 +145,7 @@ std::optional<DraftPlan> pack_draft(
 
 DeviceStaging::~DeviceStaging() {
   if (device_) {
-    cudaFree(device_);
+    (void)cudaFree(device_);
   }
 }
 
@@ -190,7 +190,7 @@ std::optional<std::vector<void*>> DeviceStaging::upload(
 namespace {
 bool dense(const aten::Tensor& tensor) {
   std::int64_t stride = 1;
-  for (int d = tensor.dim() - 1; d >= 0; --d) {
+  for (auto d = tensor.dim() - 1; d >= 0; --d) {
     if (tensor.size(d) > 1 && tensor.strides()[d] != stride) {
       return false;
     }
@@ -225,9 +225,9 @@ bool copy_host(
 
 namespace cuda_dflash_detail {
 HiddenSnapshot::~HiddenSnapshot() {
-  fence();
-  if (device_) {
-    cudaFree(device_);
+  // Queued copies may still read the staging if the fence failed; leak it.
+  if (fence() && device_) {
+    (void)cudaFree(device_);
   }
 }
 
@@ -384,6 +384,12 @@ Result<std::string> cache_key_metadata(Module& module, const char* name) {
       "DFlash %s must be a nonempty string",
       name);
   return std::string(outputs[0].toString());
+}
+
+// Nothing is mutated yet, so the batch is refused without poisoning the model.
+bool reject_batch() {
+  ET_LOG(Error, "CUDA DFlash rejected an invalid batch");
+  return false;
 }
 } // namespace
 
@@ -728,6 +734,10 @@ void MuseGlimmerCudaDFlashExecutor::set_sampling(
   }
   auto& state = it->second;
   state.sampling.reset();
+  if (!std::isfinite(params.temperature) || params.temperature < 0 ||
+      !std::isfinite(params.top_p) || params.top_p < 0 || params.top_p > 1) {
+    return;
+  }
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
@@ -988,10 +998,13 @@ bool MuseGlimmerCudaDFlashExecutor::draft(
   int remaining = context_limit;
   for (std::size_t i = 0; i < owners.size(); ++i) {
     auto& state = sessions_.at(owners[i]);
+    if (remaining < 0) {
+      return false;
+    }
     const auto rows = state.hidden.size() / row_bytes_;
-    const int count = static_cast<int>(std::min<std::size_t>(remaining, rows));
-    if (remaining < 0 ||
-        (proposals && rows != static_cast<std::size_t>(count))) {
+    const int count =
+        static_cast<int>(std::min(static_cast<std::size_t>(remaining), rows));
+    if (proposals && rows != static_cast<std::size_t>(count)) {
       return false;
     }
     contexts.push_back(
@@ -1141,6 +1154,8 @@ bool MuseGlimmerCudaDFlashExecutor::speculate(
       if (!burst ||
           !verification_hidden_.copy_rows(
               sessions_.at(owners[i]).hidden, i * width, burst->accepted + 1)) {
+        // Earlier owners' D2H copies are still queued into their hidden rows.
+        (void)verification_hidden_.fence();
         return false;
       }
       if (verification_hidden_.on_device()) {
@@ -1184,14 +1199,17 @@ bool MuseGlimmerCudaDFlashExecutor::fail_batch(
     const batching::BatchInput& batch,
     batching::BatchOutput& out) {
   (void)batch;
-  // A failed callback/copy may still have queued work touching host backing.
-  verification_hidden_.fence();
+  // A failed callback/copy may still have queued work touching host backing;
+  // if that cannot be fenced, keep the backing alive rather than release it.
+  const bool fenced = verification_hidden_.fence();
   if (!failed_) {
     failed_ = true;
     for (auto& item : sessions_) {
       item.second.poisoned = true;
       item.second.pending.reset();
-      item.second.hidden.clear();
+      if (fenced) {
+        item.second.hidden.clear();
+      }
     }
     // An abandoned declaration/forward affects the entire shared draft pool.
     // Never allocate another draft SID or remove stale IDs after this clear.
@@ -1215,7 +1233,10 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
 #endif
     out.outputs.clear();
     out.outputs.resize(batch.inputs.size());
-    if (!initialized_ || failed_) {
+    if (!initialized_) {
+      return reject_batch();
+    }
+    if (failed_) {
       return fail_batch(batch, out);
     }
     RawStep step;
@@ -1238,20 +1259,22 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
            (!std::isfinite(it->second.sampling->temperature) ||
             it->second.sampling->temperature < 0.0f))) {
         ET_LOG(Error, "CUDA DFlash: invalid input or sampling configuration");
-        return fail_batch(batch, out);
+        return reject_batch();
       }
       const auto start =
           static_cast<std::int64_t>(input.position) + input.offset;
       const auto end = start + input.size;
       auto [at, first] = cursor.emplace(input.sid, it->second.frontier);
+      if (target_->cache_control().pos(it->second.target_id) !=
+          it->second.frontier) {
+        return fail_batch(batch, out);
+      }
       if (start > at->second || (start < at->second && !first) ||
           end > max_context_ ||
-          target_->cache_control().pos(it->second.target_id) !=
-              it->second.frontier ||
           step.tokens.size() >
               static_cast<std::size_t>(std::numeric_limits<int>::max()) -
                   input.size) {
-        return fail_batch(batch, out);
+        return reject_batch();
       }
       if (start < at->second) {
         rewinds.emplace_back(input.sid, static_cast<int>(start));
@@ -1267,7 +1290,7 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       for (std::size_t j = 0; j < input.size; ++j) {
         const auto token = (**payload)[input.offset + j];
         if (token >= static_cast<std::uint64_t>(target_->vocab_size())) {
-          return fail_batch(batch, out);
+          return reject_batch();
         }
         step.tokens.push_back(token);
         step.positions.push_back(start + j);
@@ -1285,7 +1308,6 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
         return fail_batch(batch, out);
       }
     }
-    const auto before = stats_;
     if (pending_decode) {
       ++stats_.pending_decode_batches;
       stats_.pending_decode_owners += batch.inputs.size();
@@ -1330,36 +1352,6 @@ bool MuseGlimmerCudaDFlashExecutor::execute(
       }
     }
     ++stats_.executions;
-    ET_LOG(
-        Info,
-        "DFLASH_STATS cycles=%llu proposed=%llu accepted=%llu rejected=%llu bonuses=%llu draft_forwards_total=%llu",
-        static_cast<unsigned long long>(stats_.cycles - before.cycles),
-        static_cast<unsigned long long>(stats_.proposed - before.proposed),
-        static_cast<unsigned long long>(stats_.accepted - before.accepted),
-        static_cast<unsigned long long>(stats_.rejected - before.rejected),
-        static_cast<unsigned long long>(stats_.bonuses - before.bonuses),
-        static_cast<unsigned long long>(stats_.draft_forwards));
-    // Keep each record below the runtime's 256-byte log-message limit.
-    ET_LOG(
-        Info,
-        "DFLASH_PENDING_STATS executions_total=%llu pending_decode_batches_total=%llu pending_decode_owners_total=%llu",
-        static_cast<unsigned long long>(stats_.executions),
-        static_cast<unsigned long long>(stats_.pending_decode_batches),
-        static_cast<unsigned long long>(stats_.pending_decode_owners));
-    ET_LOG(
-        Info,
-        "DFLASH_TARGET_STATS target_preamble_calls_total=%llu target_verify_calls_total=%llu target_preamble_forwards_total=%llu target_verify_forwards_total=%llu",
-        static_cast<unsigned long long>(stats_.target_preamble_calls),
-        static_cast<unsigned long long>(stats_.target_verify_calls),
-        static_cast<unsigned long long>(stats_.target_preamble_forwards),
-        static_cast<unsigned long long>(stats_.target_verify_forwards));
-    ET_LOG(
-        Info,
-        "DFLASH_HIDDEN_STATS hidden_rows_d2h_total=%llu hidden_bytes_d2h_total=%llu hidden_rows_d2d_total=%llu hidden_bytes_d2d_total=%llu",
-        static_cast<unsigned long long>(stats_.hidden_rows_d2h),
-        static_cast<unsigned long long>(stats_.hidden_bytes_d2h),
-        static_cast<unsigned long long>(stats_.hidden_rows_d2d),
-        static_cast<unsigned long long>(stats_.hidden_bytes_d2d));
     return true;
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
