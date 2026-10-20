@@ -33,6 +33,14 @@ class RuntimeTest(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip(), "[]")
 
+    def test_runtime_exports_the_result_type(self):
+        import executorch.runtime
+        from executorch.extension.pybindings import portable_lib
+
+        self.assertIs(
+            executorch.runtime.ExecuTorchResult, portable_lib.ExecuTorchResult
+        )
+
     def test_smoke(self):
         ep, inputs = create_program(ModuleAdd())
         runtime = Runtime.get()

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -722,10 +723,27 @@ void MuseGlimmerCudaDFlashExecutor::set_sampling(
     const batching::SamplingParams& params,
     std::optional<std::uint64_t> seed) {
   const auto it = sessions_.find(session);
-  if (it != sessions_.end()) {
-    it->second.sampling = params;
-    it->second.seed = seed;
+  if (it == sessions_.end()) {
+    return;
   }
+  auto& state = it->second;
+  state.sampling.reset();
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (seed) {
+      state.seed = *seed;
+    } else {
+      std::random_device device;
+      state.seed = (static_cast<std::uint64_t>(device()) << 32) ^ device();
+    }
+    state.sampling = params;
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::exception& error) {
+    ET_LOG(
+        Error, "CUDA DFlash: could not initialize sampling: %s", error.what());
+  }
+#endif
 }
 
 bool MuseGlimmerCudaDFlashExecutor::rewind(State& state, int position) {
@@ -781,10 +799,13 @@ bool MuseGlimmerCudaDFlashExecutor::run_target(
               {sampling.temperature,
                sampling.top_p,
                static_cast<float>(sampling.top_k),
-               df::positional_uniform(
-                   state.seed.value_or(0),
-                   static_cast<batching::Position>(step.positions[index] + 1),
-                   0)});
+               sampling.temperature > 0.0f
+                   ? df::positional_uniform(
+                         *state.seed,
+                         static_cast<batching::Position>(
+                             step.positions[index] + 1),
+                         0)
+                   : 0.0f});
         }
         auto tokens = target_->sample_rows(
             output.logits, output.selected_indices.size(), params);
@@ -826,13 +847,16 @@ std::vector<float> MuseGlimmerCudaDFlashExecutor::verify_params(
     const State& state,
     batching::Position first) const {
   const auto& sampling = *state.sampling;
-  const auto seed = state.seed.value_or(0);
-  std::vector<float> params{
-      sampling.temperature, static_cast<float>(sampling.top_k), sampling.top_p};
-  for (int j = 0; j < proposals_; ++j) {
-    params.push_back(df::positional_uniform(seed, first + j, 2));
+  std::vector<float> params(proposals_ + 4, 0.0f);
+  params[0] = sampling.temperature;
+  params[1] = static_cast<float>(sampling.top_k);
+  params[2] = sampling.top_p;
+  if (sampling.temperature > 0.0f) {
+    for (int j = 0; j < proposals_; ++j) {
+      params[3 + j] = df::positional_uniform(*state.seed, first + j, 2);
+    }
+    params.back() = df::positional_uniform(*state.seed, first, 3);
   }
-  params.push_back(df::positional_uniform(seed, first, 3));
   return params;
 }
 
@@ -871,15 +895,21 @@ bool MuseGlimmerCudaDFlashExecutor::verify(
     }
     const int first = output.offset / width;
     const int count = output.length / width;
-    bool greedy = true;
+    const bool greedy = std::all_of(
+        owners.begin() + first,
+        owners.begin() + first + count,
+        [this](SessionId owner) {
+          return sessions_.at(owner).sampling->temperature == 0.0f;
+        });
     std::vector<float> params;
-    for (int i = first; i < first + count; ++i) {
-      const auto& state = sessions_.at(owners[i]);
-      greedy = greedy && state.sampling->temperature == 0.0f;
-      const auto row = verify_params(
-          state,
-          static_cast<batching::Position>(step.positions[i * width] + 1));
-      params.insert(params.end(), row.begin(), row.end());
+    if (!greedy) {
+      params.reserve(count * (width + 3));
+      for (int i = first; i < first + count; ++i) {
+        const auto row = verify_params(
+            sessions_.at(owners[i]),
+            static_cast<batching::Position>(step.positions[i * width] + 1));
+        params.insert(params.end(), row.begin(), row.end());
+      }
     }
     const auto stream =
         ::executorch::extension::cuda::getCallerStream().value_or(
