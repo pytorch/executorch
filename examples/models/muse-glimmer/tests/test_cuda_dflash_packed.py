@@ -470,7 +470,7 @@ class PackedDraftCudaTest(unittest.TestCase):
                 ),
             )
             self.assertEqual(specs["low_memory_mode"], b"ON")
-            self.assertEqual(specs["autotune_at_compile_time"], b"OFF")
+            self.assertNotIn("autotune_at_compile_time", specs)
             weights = decode_cuda_aoti_metadata(lowered[0][1].processed_bytes)
             shared_keys.append(
                 {
