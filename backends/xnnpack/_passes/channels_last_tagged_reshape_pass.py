@@ -9,6 +9,7 @@
 from enum import Enum
 from typing import List, Optional, Tuple
 
+import executorch.backends.xnnpack.custom_ops_lib  # noqa: F401  registers et_xnnpack ops
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
@@ -62,6 +63,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        exir_ops.edge.et_xnnpack.depth_to_space_2d.default,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
