@@ -491,10 +491,7 @@ def export_cuda_batching(  # noqa: C901
     def partitioner(name: str) -> CudaPartitioner:
         if name not in cache_methods:
             return CudaPartitioner(
-                [
-                    CudaBackend.generate_method_name_compile_spec(name),
-                    CompileSpec("autotune_at_compile_time", b"OFF"),
-                ]
+                [CudaBackend.generate_method_name_compile_spec(name)]
             )
         is_draft = name in draft_methods
         specs = [
@@ -508,7 +505,6 @@ def export_cuda_batching(  # noqa: C901
                 OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
                 b"2:0" if is_draft else step_width_spec(name),
             ),
-            CompileSpec("autotune_at_compile_time", b"OFF"),
         ]
         if draft_methods:
             specs.append(

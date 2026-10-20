@@ -23,7 +23,8 @@ from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
 
 
 def _reference_row(
-    logits: list[float], temperature: float, top_k: int, top_p: float, uniform: float
+    logits: list[float], temperature: float, top_k: int, top_p: float, uniform: float,
+    *, batching_policy: bool = False,
 ) -> tuple[int, list[float]]:
     vocab_size = len(logits)
     if temperature <= 0.0:
@@ -31,17 +32,18 @@ def _reference_row(
         return token, [float(index == token) for index in range(vocab_size)]
 
     ranked = sorted(range(vocab_size), key=lambda index: (-logits[index], index))
-    if 0 < top_k < vocab_size:
+    use_top_k = 0 < top_k < vocab_size
+    if use_top_k:
         ranked = ranked[:top_k]
     maximum = max(logits[index] for index in ranked)
     weights = [0.0] * vocab_size
     for index in ranked:
         weights[index] = math.exp((logits[index] - maximum) / temperature)
     total = sum(weights)
-    if 0.0 < top_p < 1.0:
+    if 0.0 < top_p < 1.0 and not (batching_policy and use_top_k):
         nucleus, nucleus_sum = [], 0.0
         for index in ranked:
-            if nucleus_sum >= top_p * total:
+            if (nucleus_sum > top_p * total if batching_policy else nucleus_sum >= top_p * total):
                 break
             nucleus.append(index)
             nucleus_sum += weights[index]
@@ -147,25 +149,48 @@ if __name__ == "__main__":
 
 
 class DFlashOwnerVerifierTest(unittest.TestCase):
-    """The batched verifier equals per-owner ``verify_speculative`` on greedy drafts."""
+    """Owner verification uses the batching target's sampling distribution."""
 
     def _reference(self, logits, candidates, params):
         width = candidates.shape[1]
         expected = []
         for owner in range(candidates.shape[0]):
             row = params[owner]
-            result = verify_speculative(
-                logits[owner],
-                torch.zeros(width - 1, logits.shape[-1]),
-                candidates[owner],
-                row[0:1],
-                row[1:2].long(),
-                row[2:3],
-                torch.tensor([True]),
-                row[3 : width + 2],
-                row[width + 2 : width + 3],
-            )
-            expected.append([int(result[0]) - 1, int(result[1])])
+            distributions = [
+                _reference_row(
+                    values.tolist(), float(row[0]), int(row[1]), float(row[2]),
+                    0.5, batching_policy=True,
+                )[1]
+                for values in logits[owner]
+            ]
+            accepted = 0
+            for index in range(width - 1):
+                proposal = int(candidates[owner, index + 1])
+                distribution = distributions[index]
+                keep = (
+                    float(row[3 + index]) < distribution[proposal]
+                    if row[0] > 0
+                    else proposal == max(range(len(distribution)), key=distribution.__getitem__)
+                )
+                if not keep:
+                    break
+                accepted += 1
+            distribution = distributions[accepted].copy()
+            if row[0] == 0:
+                correction = max(range(len(distribution)), key=distribution.__getitem__)
+            else:
+                if accepted < width - 1:
+                    distribution[int(candidates[owner, accepted + 1])] = 0.0
+                    total = sum(distribution)
+                    distribution = [value / total for value in distribution]
+                cumulative = 0.0
+                correction = max(i for i, value in enumerate(distribution) if value > 0)
+                for token, value in enumerate(distribution):
+                    cumulative += value
+                    if cumulative > float(row[-1]):
+                        correction = token
+                        break
+            expected.append([accepted, correction])
         return torch.tensor(expected)
 
     def _case(self, owners, width, vocab, temperature, top_k, top_p, seed):
@@ -186,7 +211,7 @@ class DFlashOwnerVerifierTest(unittest.TestCase):
         )
         return logits, candidates, params
 
-    def test_matches_single_owner_verifier(self) -> None:
+    def test_matches_independent_batch_sampling_reference(self) -> None:
         for temperature, top_k, top_p in (
             (0.0, 0, 1.0),
             (0.8, 0, 1.0),
@@ -203,6 +228,28 @@ class DFlashOwnerVerifierTest(unittest.TestCase):
                         verify_owners(logits, candidates, params),
                         self._reference(logits, candidates, params),
                     )
+
+    def test_top_k_overrides_top_p_like_the_target_sampler(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, :4] = 0.0
+        candidates = torch.tensor([[0, 0, 0]])
+        params = torch.tensor([[1.0, 4.0, 0.1, 0.5, 0.5, 0.4]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[0, 2]])
+
+    def test_top_p_includes_the_equal_cumulative_mass_boundary(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, :4] = 0.0
+        candidates = torch.tensor([[0, 2, 2]])
+        params = torch.tensor([[1.0, 0.0, 0.5, 0.2, 0.2, 0.75]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[2, 2]])
+
+    def test_bonus_zero_coin_selects_a_supported_token(self) -> None:
+        logits = torch.full((1, 3, 6), -100.0)
+        logits[:, :, 3] = 0.0
+        logits[:, :, 4] = 1.0
+        candidates = torch.tensor([[0, 4, 4]])
+        params = torch.tensor([[1.0, 2.0, 1.0, 0.0, 0.0, 0.0]])
+        self.assertEqual(verify_owners(logits, candidates, params).tolist(), [[2, 3]])
 
     def test_greedy_fast_path_matches_and_counts_prefix(self) -> None:
         logits, candidates, params = self._case(4, 16, 32, 0.0, 0, 1.0, 3)

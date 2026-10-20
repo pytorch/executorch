@@ -293,6 +293,7 @@ class Int4ParallelPrecompileTest(unittest.TestCase):
             self.assertNotIn("TRITON_STALE", os.environ)
         self.assertEqual(result, quantized_gemm_family._UNIMPORTABLE)
 
+    @unittest.skipIf(torch.version.hip is not None, "worker compiles are CUDA-only")
     def test_a_pool_that_cannot_start_stops_process_compiles(self) -> None:
         n, k, bucket = 448, 3072, 2
         weights = _packed(n, k, seed=31)
