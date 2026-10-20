@@ -59,7 +59,8 @@ TEST(ETDumpNoDeviceAllocatorTest, LogTensorOnUnregisteredDeviceAborts) {
   etdump_gen.set_data_sink(&buffer_data_sink.get());
 
   ET_EXPECT_DEATH(
-      etdump_gen.log_evalue(EValue(tensor)), "No device allocator registered");
+      (void)etdump_gen.log_evalue(EValue(tensor)),
+      "No device allocator registered");
 
   free(debug_buf);
 }
