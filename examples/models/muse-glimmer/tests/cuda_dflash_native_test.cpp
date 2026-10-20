@@ -357,8 +357,11 @@ TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
     EXPECT_EQ(after.target_preamble_calls, before.target_preamble_calls);
     EXPECT_EQ(after.target_verify_calls - before.target_verify_calls, 1);
     EXPECT_EQ(after.pending_decode_owners - before.pending_decode_owners, 1);
+    EXPECT_EQ(after.cycles - before.cycles, 1);
+    EXPECT_EQ(after.proposed - before.proposed, 15);
     EXPECT_EQ(after.accepted - before.accepted, rejected);
     EXPECT_EQ(after.bonuses - before.bonuses, rejected == 15);
+    EXPECT_EQ(after.rejected - before.rejected, rejected != 15);
     EXPECT_EQ(after.hidden_rows_d2d - before.hidden_rows_d2d, 16);
     EXPECT_EQ(after.hidden_rows_d2h - before.hidden_rows_d2h, rejected + 1);
     EXPECT_EQ(
