@@ -213,6 +213,15 @@ static inline SDPAMode mode_of(const std::vector<ValueRef>& resize_args) {
   return static_cast<SDPAMode>(resize_args.at(3));
 }
 
+// The separate LLM QK and softmax nodes carry a fifth resize arg: whether the
+// same graph also holds the fused QK+softmax node. Only then may they stand
+// down on decode; a graph without it (e.g. the raw attn-weights test op) must
+// keep producing scaled and masked logits.
+static inline bool has_fused_qk_softmax_node(
+    const std::vector<ValueRef>& resize_args) {
+  return resize_args.size() > 4 && resize_args.at(4) != 0;
+}
+
 // Upper bound on the GQA group size the coop-GQA shader supports; must match
 // MAX_GROUP_SIZE in the GQA branch of sdpa_compute_out_coop.glsl.
 constexpr int64_t kMaxGqaGroupSize = 8;
@@ -322,8 +331,8 @@ GlobalWorkGrid pick_sdpa_qk_gwg(
   const ValueRef k = resize_args.at(1);
   const ValueRef input_pos_symint = resize_args.at(2);
 
-  // Decode is served by the single fused QK+softmax node.
-  if (mode == SDPAMode::LLM &&
+  // Decode is served by the single fused QK+softmax node, if there is one.
+  if (mode == SDPAMode::LLM && has_fused_qk_softmax_node(resize_args) &&
       use_fused_qk_softmax(graph, q, k, input_pos_symint)) {
     // The zero grid still carries the coop shader's local work group, since
     // the lwg picker requires one.
@@ -405,8 +414,8 @@ GlobalWorkGrid pick_sdpa_softmax_gwg(
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
 
-  // Decode folds this into the fused QK+softmax node.
-  if (mode == SDPAMode::LLM &&
+  // Decode folds this into the fused QK+softmax node, if there is one.
+  if (mode == SDPAMode::LLM && has_fused_qk_softmax_node(resize_args) &&
       use_fused_qk_softmax(graph, q, resize_args.at(1), resize_args.at(2))) {
     return GlobalWorkGrid(
         {0u, 0u, 0u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
@@ -633,7 +642,8 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_mask,
     const float scale_val,
     const ValueRef attn_weights,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const bool has_fused_qk_softmax) {
   vkapi::ParamsBindList param_ubos = {
       graph.sizes_ubo(q),
       graph.sizes_ubo(k),
@@ -662,8 +672,9 @@ void add_sdpa_compute_attn_weights_node(
       {},
       // Specialization Constants
       {scale_val},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode,
+      //               has_fused_qk_softmax]
+      {q, k, input_pos_symint, mode_ref, has_fused_qk_softmax ? 1 : 0},
       // Resizing Logic
       resize_sdpa_attn_weights_node));
 }
@@ -675,7 +686,8 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef attn_weights_softmax,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const bool has_fused_qk_softmax) {
   std::string shader_name;
   if (mode == SDPAMode::LLM) {
     shader_name = "sdpa_attn_weights_softmax";
@@ -714,8 +726,9 @@ void add_sdpa_attn_weights_softmax_node(
       {},
       // Specialization Constants
       {},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode,
+      //               has_fused_qk_softmax]
+      {q, k, input_pos_symint, mode_ref, has_fused_qk_softmax ? 1 : 0},
       // Resizing Logic
       resize_sdpa_attn_weights_softmax_node));
 }
@@ -925,7 +938,8 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*attn_mask=*/kDummyValueRef,
       scale_val,
       attn_weights,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      /*has_fused_qk_softmax=*/true);
 
   add_sdpa_attn_weights_softmax_node(
       graph,
@@ -934,7 +948,8 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       k_cache,
       input_pos_symint,
       attn_weights_softmax,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      /*has_fused_qk_softmax=*/true);
 
   add_sdpa_compute_out_node(
       graph,
