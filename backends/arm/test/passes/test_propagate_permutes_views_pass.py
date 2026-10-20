@@ -1588,6 +1588,24 @@ def test_propagate_fuses_permute_view_around_table() -> None:
     assert targets == [TABLE]
 
 
+def test_propagate_up_moves_permute_before_table() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((2, 3, 4), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(x, table))
+    table_node.meta["val"] = torch.empty((2, 3, 4), dtype=torch.int8)
+    permute = graph.call_function(PERMUTE, args=(table_node, [1, 0, 2]))
+    permute.meta["val"] = torch.empty((3, 2, 4), dtype=torch.int8)
+    graph.output(permute)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteUpPass)
+
+    assert targets.index(PERMUTE) < targets.index(TABLE)
+
+
 def test_propagate_down_keeps_view_before_table_with_batched_singleton_spatial() -> (
     None
 ):

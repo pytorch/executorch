@@ -3974,6 +3974,49 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_int8x4_staging_byte_dtype_round_trip) {
+  const std::vector<utils::GPUMemoryLayout> layouts = {
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W,
+      utils::kPackedInt8_4W4C,
+      utils::kPackedInt8_4C1W,
+  };
+  const std::vector<std::vector<int64_t>> shapes = {
+      {7}, {7, 11}, {2, 9, 7}, {2, 3, 5, 7}, {1, 4, 8, 8}};
+  for (const auto& sizes : shapes) {
+    for (const auto layout : layouts) {
+      for (const auto dtype : {vkapi::kChar, vkapi::kByte}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "layout " << layout << " dtype " << dtype);
+        GraphConfig config;
+        ComputeGraph graph(config);
+        const ValueRef tensor =
+            graph.add_tensor(sizes, vkapi::kInt8x4, utils::kBuffer, layout);
+        const ValueRef staging_in = graph.set_input_tensor(tensor, dtype);
+        const ValueRef staging_out = graph.set_output_tensor(tensor, dtype);
+        const size_t numel = utils::multiply_integers(sizes);
+
+        EXPECT_GE(graph.get_staging(staging_in)->nbytes(), numel);
+        EXPECT_GE(graph.get_staging(staging_out)->nbytes(), numel);
+        std::vector<uint8_t> data_in(numel);
+        for (size_t i = 0; i < numel; ++i) {
+          data_in[i] = static_cast<uint8_t>(i * 37 + 13);
+        }
+        std::vector<uint8_t> data_out(numel);
+
+        graph.prepare();
+        graph.prepack();
+        graph.maybe_cast_and_copy_into_staging(
+            staging_in, data_in.data(), numel, dtype);
+        graph.execute();
+        graph.maybe_cast_and_copy_from_staging(
+            staging_out, data_out.data(), numel, dtype);
+        EXPECT_EQ(data_out, data_in);
+      }
+    }
+  }
+}
+
 TEST(VulkanWorkGroupSizeTest, lwg) {
   const LocalWorkGroup lwg(64u, 2u, 1u);
 
@@ -4316,15 +4359,35 @@ TEST_P(VulkanSwiGLUTest, MatchesUnfusedAcrossResizes) {
         const float y = float(up_data[broadcast ? i % width : i]);
         const float reference = (x / (1.0f + std::exp(-x))) * y;
         if (dtype == vkapi::kHalf) {
+          constexpr float fp16_min_normal = 0x1p-14f;
+          constexpr float unfused_rtol = 3e-3f;
           ASSERT_NEAR(
-              float(actual[i]), reference, 1e-3f * std::abs(reference) + 1e-7f)
+              float(actual[i]),
+              reference,
+              1e-3f * std::abs(reference) + fp16_min_normal)
               << "element " << i;
-          // The unfused path rounds twice more, including subnormal sigmoid.
-          const float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          const float sigmoid_reference = 1.0f / (1.0f + std::exp(-x));
+          const auto is_subnormal = [](const float value) {
+            return value != 0.0f && std::abs(value) < fp16_min_normal;
+          };
+          const auto may_underflow = [](const float value) {
+            return value != 0.0f &&
+                std::abs(value) < fp16_min_normal * (1.0f + unfused_rtol);
+          };
+          float atol = 6e-8f * (std::abs(x * y) + std::abs(y) + 1.0f);
+          if (is_subnormal(x) || is_subnormal(y) ||
+              may_underflow(sigmoid_reference) ||
+              may_underflow(x * sigmoid_reference) ||
+              may_underflow(reference)) {
+            // Flushing the unfused path to zero can lose the full reference
+            // magnitude. Its relative tolerance then vanishes, so the extra
+            // 1e-3 covers the fused result's relative error.
+            atol += (1.0f + 1e-3f) * std::abs(reference);
+          }
           ASSERT_NEAR(
               float(actual[i]),
               float(expected[i]),
-              3e-3f * std::abs(float(expected[i])) + atol)
+              unfused_rtol * std::abs(float(expected[i])) + atol)
               << "element " << i;
         } else {
           ASSERT_NEAR(
