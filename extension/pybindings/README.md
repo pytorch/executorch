@@ -65,6 +65,12 @@ through `torch.multiprocessing`. Call `.clone()` for a normal torch tensor.
 `dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
 `"bfloat16"`.
 
+`Method.get_attribute()` returns a view of mutable state. A constant can sit
+in read-only memory, so it comes back read-only: NumPy and the buffer protocol
+see it as read-only, and a DLPack export copies it, unless the consumer asks
+for no copy through DLPack 1.0, which marks it read-only. In torch output mode
+a constant comes back as a copy, since a torch tensor cannot be read-only.
+
 Calls on a shared method or module are serialized. A sequence of separate
 `set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
 held by the caller around the whole sequence: `set_inputs` hides the outputs

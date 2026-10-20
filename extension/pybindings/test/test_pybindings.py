@@ -1969,6 +1969,74 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
 
+    def test_constant_attribute_is_never_writable(self):
+        # A constant from the data file can sit in read-only pages, so a write
+        # through a borrowed view would crash the process.
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings return borrowed attributes")
+        eager_module = ModuleLinear()
+        program = to_edge(
+            export(eager_module, eager_module.get_inputs(), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "linear.pte")
+            ptd_path = os.path.join(directory, "linear.ptd")
+            with open(pte_path, "wb") as file:
+                file.write(program.buffer)
+            with open(ptd_path, "wb") as file:
+                file.write(bytes(program._tensor_data["_default_external_constant"]))
+            method = self.runtime._load_program(
+                pte_path, data_path=ptd_path
+            ).load_method("forward")
+            weight = method.get_attribute("linear.weight")
+            expected = eager_module.linear.weight.detach()
+            if isinstance(weight, torch.Tensor):
+                # A torch tensor cannot be read-only, so it is a copy.
+                self.assertNotEqual(
+                    weight.data_ptr(), method.get_attribute("linear.weight").data_ptr()
+                )
+                torch.testing.assert_close(weight, expected)
+            else:
+                self.assertTrue(memoryview(weight).readonly)
+                self.assertFalse(np.asarray(weight).flags.writeable)
+                np.testing.assert_array_equal(np.asarray(weight), expected.numpy())
+            # The method maps the data file, and Windows cannot delete a mapped
+            # file, so drop it before the directory goes away.
+            del weight, method
+            gc.collect()
+            # torch ignores the DLPack read-only flag, so a DLPack export must be
+            # a copy that it can write. Checked in ExecuTorchResult output mode.
+            script = """
+import sys
+
+import numpy as np
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+method = runtime._load_program(sys.argv[1], data_path=sys.argv[2]).load_method(
+    "forward"
+)
+weight = method.get_attribute("linear.weight")
+assert isinstance(weight, runtime.ExecuTorchResult)
+before = np.asarray(weight).copy()
+torch.from_dlpack(weight).add_(1)
+assert (np.asarray(weight) == before).all()
+print("the constant was not written")
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", script, pte_path, ptd_path],
+                env=dict(os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("the constant was not written", completed.stdout)
+
     def test_program_data_separation(self) -> None:
         eager_module = ModuleLinear()
         inputs = eager_module.get_inputs()

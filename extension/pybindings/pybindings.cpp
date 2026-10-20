@@ -1035,7 +1035,13 @@ class DLPackTensorView final {
     // A result of these bindings gives its capsule without the wait in
     // __dlpack__, since the call waits for every CUDA input before it runs.
     if (py::isinstance<PyExecuTorchResult>(owner_)) {
-      capsule_ = owner_.cast<std::shared_ptr<PyExecuTorchResult>>()->capsule();
+      const auto result = owner_.cast<std::shared_ptr<PyExecuTorchResult>>();
+      // A method may write its inputs, so read-only memory is read from a
+      // copy.
+      capsule_ = result->read_only()
+          ? result->to_dlpack(
+                py::none(), py::none(), py::none(), py::bool_(true))
+          : result->capsule();
     } else {
       capsule_ = advertised_device_.first == dlpack::CUDA
           ? cuda_dlpack_capsule(owner_, advertised_device_.second)
@@ -3608,10 +3614,22 @@ struct PyMethod final {
     if (!attr->device().is_cpu() && attr->nbytes() != 0) {
       synchronize_device(attr->device().index());
     }
-    return portable_tensor_result(
+    // Mutable state lives in the method's planned memory. Anything else is a
+    // constant, which can sit in read-only pages, so it is never returned as
+    // writable: a torch tensor cannot be read-only, so torch gets a copy.
+    const bool constant = attr->nbytes() != 0 &&
+        !storage_->memory->owns_data(attr->const_data_ptr());
+    if (constant && portable_tensor_output() == PortableTensorOutput::Torch) {
+      return portable_tensor_result(attr.get(), /*clone=*/true);
+    }
+    auto result = portable_tensor_result(
         attr.get(),
         /*clone=*/false,
         borrowed_output_owner(attr.get()));
+    if (constant) {
+      result.cast<PyExecuTorchResult&>().mark_read_only();
+    }
+    return result;
 #endif
   }
 

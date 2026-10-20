@@ -196,7 +196,7 @@ class PyExecuTorchResult final
         ndim,
         std::move(shape),
         std::move(byte_strides),
-        /*readonly=*/false);
+        read_only_);
   }
 
   py::buffer_info flat_buffer() {
@@ -210,7 +210,7 @@ class PyExecuTorchResult final
         /*ndim=*/1,
         {static_cast<py::ssize_t>(nbytes_)},
         {1},
-        /*readonly=*/false);
+        read_only_);
   }
 
   py::tuple shape() const {
@@ -252,7 +252,21 @@ class PyExecuTorchResult final
   py::array numpy_array(const py::object& base) {
     const auto array_dtype = dtype();
     auto info = buffer();
-    return py::array(array_dtype, info.shape, info.strides, info.ptr, base);
+    py::array array(array_dtype, info.shape, info.strides, info.ptr, base);
+    if (read_only_) {
+      array.attr("setflags")(py::arg("write") = false);
+    }
+    return array;
+  }
+
+  // For memory a method must not write, such as a constant loaded from the
+  // program or its data file.
+  void mark_read_only() {
+    read_only_ = true;
+  }
+
+  bool read_only() const {
+    return read_only_;
   }
 
   size_t nbytes() const {
@@ -328,9 +342,18 @@ class PyExecuTorchResult final
     }
     const bool move = target.device_type != own.device_type ||
         target.device_id != own.device_id;
-    if (move && !copy.is_none() && !copy.cast<bool>()) {
+    const bool versioned = wants_versioned_capsule(max_version);
+    // Consumers such as torch ignore the read-only flag, so read-only memory
+    // is shared only when the caller asks for no copy, and only in a capsule
+    // that can carry the flag.
+    const bool share_read_only =
+        versioned && !copy.is_none() && !copy.cast<bool>();
+    const bool must_copy = move || (read_only_ && !share_read_only);
+    if (must_copy && !copy.is_none() && !copy.cast<bool>()) {
       throw py::buffer_error(
-          "Moving an ExecuTorchResult to another device needs a copy");
+          move ? "Moving an ExecuTorchResult to another device needs a copy"
+               : "A read-only ExecuTorchResult is shared without a copy only "
+                 "through a DLPack 1.0 capsule, which marks it read-only");
     }
     // Wait for the device before handing CUDA memory to another library: the
     // result may share memory a call still has work queued on, or an upload
@@ -340,14 +363,12 @@ class PyExecuTorchResult final
       synchronize_device(device_.index());
     }
     auto exported = shared_from_this();
-    uint64_t flags = 0;
-    if (move || (!copy.is_none() && copy.cast<bool>())) {
+    uint64_t flags = read_only_ ? dlpack::kFlagReadOnly : 0;
+    if (must_copy || (!copy.is_none() && copy.cast<bool>())) {
       exported = copy_to(target);
-      flags |= dlpack::kFlagIsCopied;
+      flags = dlpack::kFlagIsCopied;
     }
-    return wants_versioned_capsule(max_version)
-        ? exported->versioned_capsule(flags)
-        : exported->capsule();
+    return versioned ? exported->versioned_capsule(flags) : exported->capsule();
   }
 
   py::capsule versioned_capsule(uint64_t flags) {
@@ -658,6 +679,7 @@ class PyExecuTorchResult final
   size_t nbytes_;
   executorch::aten::Device device_;
   py::object owner_;
+  bool read_only_ = false;
 };
 
 /** Contiguous buffer facade used to construct a strided torch.Tensor result. */
