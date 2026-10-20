@@ -1458,6 +1458,11 @@ def register_slice_scatter():
                 return False
             if not isinstance(val.shape[dim], int):
                 return False
+        # aten casts src to self's dtype, but the shader reads all three
+        # tensors with one dtype and SliceScatter.cpp rejects a mismatch, so
+        # leave mixed dtypes to the CPU.
+        if self_arg.meta["val"].dtype != src_arg.meta["val"].dtype:
+            return False
         return True
 
     return OpFeatures(

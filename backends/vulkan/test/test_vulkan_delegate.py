@@ -1381,6 +1381,23 @@ class TestVulkanBackend(unittest.TestCase):
                     (make_input((1, 10, 5), dtype), make_input((1, 3, 5), dtype)),
                 )
 
+    def test_vulkan_backend_slice_scatter_mixed_dtype(self):
+        # aten casts src to self's dtype, but the Vulkan shader needs one dtype
+        # for all three tensors, so a mixed-dtype slice_scatter must stay on
+        # the CPU and still produce aten's result.
+        class SliceScatter(torch.nn.Module):
+            def forward(self, x, src):
+                return torch.slice_scatter(x, src, dim=1, start=1, step=3)
+
+        sample_inputs = (
+            torch.rand(size=(1, 10, 5), dtype=torch.float32),
+            torch.randint(-100, 100, size=(1, 3, 5), dtype=torch.int32),
+        )
+        model = SliceScatter().eval()
+        et_program = lower_module(model, sample_inputs).to_executorch()
+        self.check_no_delegation(et_program)
+        self.run_delegated_model_and_check_output(et_program, model, sample_inputs)
+
     def test_vulkan_backend_slice_scatter_dynamic(self):
         class SliceScatter(torch.nn.Module):
             def __init__(self, dim, start):
