@@ -76,7 +76,7 @@ class EthosUBackend(BackendDetails):
         return vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() <= logging.INFO,
+            verbose=logger.isEnabledFor(logging.DEBUG),
             intermediate_path=compile_spec._get_intermediate_path(),
             block_placements=(
                 compile_spec.external_block_placements.to_block_placements()
