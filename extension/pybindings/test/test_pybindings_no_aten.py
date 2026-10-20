@@ -296,6 +296,51 @@ else:
         with self.assertRaises(TypeError):
             result.__dlpack__(stream="default")
 
+    def test_raw_dlpack_capsule_inputs(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        first = np.array([1.0], dtype=np.float32)
+        second = np.array([2.0], dtype=np.float32)
+        read_only = second.copy()
+        read_only.flags.writeable = False
+        for executor in (module, method):
+            for capsules in (
+                (first.__dlpack__(), second.__dlpack__()),
+                (
+                    first.__dlpack__(max_version=(1, 0)),
+                    read_only.__dlpack__(max_version=(1, 0)),
+                ),
+            ):
+                with self.subTest(executor=type(executor), capsules=capsules):
+                    output = executor(capsules)[0]
+                    np.testing.assert_array_equal(np.from_dlpack(output), [3.0])
+
+        # A producer that knows DLPack 1.0 is asked for a versioned capsule.
+        class VersionedProducer:
+            def __init__(self, array: np.ndarray) -> None:
+                self.array = array
+                self.requests = []
+
+            def __dlpack_device__(self):
+                return self.array.__dlpack_device__()
+
+            def __dlpack__(self, stream=None, max_version=None):
+                self.requests.append(max_version)
+                return self.array.__dlpack__(stream=stream, max_version=max_version)
+
+        producer = VersionedProducer(read_only)
+        np.testing.assert_array_equal(
+            np.from_dlpack(method((first, producer))[0]), [3.0]
+        )
+        self.assertEqual(producer.requests, [(1, 0)])
+        # A capsule gives its tensor away once.
+        used = first.__dlpack__()
+        method((used, second))
+        with self.assertRaisesRegex(ValueError, "already consumed"):
+            method((used, second))
+
     def test_bfloat16_raw_buffer_input_and_output(self) -> None:
         with open(
             os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"

@@ -959,13 +959,38 @@ class BorrowedInput final {
 };
 
 #ifndef USE_ATEN_LIB
+// Asks for a DLPack 1.0 capsule, which can mark memory read-only, and falls
+// back to a legacy capsule for producers that predate it.
+py::object dlpack_capsule(
+    const py::object& producer,
+    const py::object& stream) {
+  const auto request = [&](bool versioned) {
+    py::dict arguments;
+    if (!stream.is_none()) {
+      arguments["stream"] = stream;
+    }
+    if (versioned) {
+      arguments["max_version"] = py::make_tuple(1, 0);
+    }
+    return producer.attr("__dlpack__")(**arguments);
+  };
+  try {
+    return request(/*versioned=*/true);
+  } catch (py::error_already_set& error) {
+    if (!error.matches(PyExc_TypeError)) {
+      throw;
+    }
+  }
+  return request(/*versioned=*/false);
+}
+
 // Asks a producer for a capsule of CUDA memory on device `index`. Producers
 // such as torch export a CUDA tensor only while its device is the current one,
 // and torch reads that from its own state, so a torch that can use CUDA is
 // asked to switch.
 py::object cuda_dlpack_capsule(const py::object& producer, int index) {
   const auto request = [&producer] {
-    return producer.attr("__dlpack__")(py::arg("stream") = 1);
+    return dlpack_capsule(producer, py::int_(1));
   };
   PyObject* torch = loaded_torch_module();
   const auto torch_cuda = torch == nullptr
@@ -986,13 +1011,26 @@ py::object cuda_dlpack_capsule(const py::object& producer, int index) {
   }
 }
 
-/** A borrowed tensor view obtained through the producer's DLPack protocol. */
+/** A borrowed tensor view obtained through the producer's DLPack protocol,
+ * or from a DLPack capsule passed directly. */
 class DLPackTensorView final {
  public:
   explicit DLPackTensorView(const py::handle& value)
-      : owner_(py::reinterpret_borrow<py::object>(value)),
-        advertised_device_(
-            owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>()) {
+      : owner_(py::reinterpret_borrow<py::object>(value)) {
+    if (PyCapsule_CheckExact(owner_.ptr())) {
+      // A capsule carries its device in the tensor it holds, and has no
+      // producer to negotiate a stream with.
+      capsule_ = owner_;
+      const auto& tensor = take_capsule();
+      advertised_device_ = {
+          static_cast<int>(tensor.device.device_type), tensor.device.device_id};
+      validate_advertised_device();
+      read(tensor);
+      mark_used();
+      return;
+    }
+    advertised_device_ =
+        owner_.attr("__dlpack_device__")().cast<std::pair<int, int>>();
     validate_advertised_device();
     // A result of these bindings gives its capsule without the wait in
     // __dlpack__, since the call waits for every CUDA input before it runs.
@@ -1001,25 +1039,18 @@ class DLPackTensorView final {
     } else {
       capsule_ = advertised_device_.first == dlpack::CUDA
           ? cuda_dlpack_capsule(owner_, advertised_device_.second)
-          : owner_.attr("__dlpack__")();
+          : dlpack_capsule(owner_, py::none());
     }
-    if (!PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
-      throw py::value_error("__dlpack__() did not return a dltensor capsule");
-    }
-    managed_ = static_cast<dlpack::ManagedTensor*>(
-        PyCapsule_GetPointer(capsule_.ptr(), "dltensor"));
-    if (managed_ == nullptr) {
-      throw py::error_already_set();
-    }
-    initialize(managed_->dl_tensor);
-    if (PyCapsule_SetName(capsule_.ptr(), "used_dltensor") != 0) {
-      throw py::error_already_set();
-    }
+    read(take_capsule());
+    mark_used();
   }
 
   ~DLPackTensorView() {
     if (managed_ != nullptr && managed_->deleter != nullptr) {
       managed_->deleter(managed_);
+    }
+    if (versioned_ != nullptr && versioned_->deleter != nullptr) {
+      versioned_->deleter(versioned_);
     }
   }
 
@@ -1088,7 +1119,9 @@ class DLPackTensorView final {
     if (!converted_.empty()) {
       return py::none();
     }
-    auto capsule_owner = PyExecuTorchResult::dlpack_backing_owner(managed_);
+    auto capsule_owner = versioned_ != nullptr
+        ? PyExecuTorchResult::dlpack_backing_owner(versioned_)
+        : PyExecuTorchResult::dlpack_backing_owner(managed_);
     if (!capsule_owner.is_none()) {
       return capsule_owner;
     }
@@ -1100,6 +1133,65 @@ class DLPackTensorView final {
   }
 
  private:
+  // The tensor in capsule_, legacy or DLPack 1.0. The capsule keeps owning it
+  // until mark_used(), so a failure before then lets the capsule free it.
+  const dlpack::Tensor& take_capsule() {
+    if (PyCapsule_IsValid(capsule_.ptr(), "dltensor")) {
+      managed_ = static_cast<dlpack::ManagedTensor*>(
+          PyCapsule_GetPointer(capsule_.ptr(), "dltensor"));
+      if (managed_ == nullptr) {
+        throw py::error_already_set();
+      }
+      return managed_->dl_tensor;
+    }
+    if (PyCapsule_IsValid(capsule_.ptr(), "dltensor_versioned")) {
+      auto* versioned = static_cast<dlpack::ManagedTensorVersioned*>(
+          PyCapsule_GetPointer(capsule_.ptr(), "dltensor_versioned"));
+      if (versioned == nullptr) {
+        throw py::error_already_set();
+      }
+      if (versioned->version.major != 1) {
+        throw py::value_error(
+            "DLPack version " + std::to_string(versioned->version.major) +
+            " is not supported");
+      }
+      versioned_ = versioned;
+      return versioned_->dl_tensor;
+    }
+    if (PyCapsule_IsValid(capsule_.ptr(), "used_dltensor") ||
+        PyCapsule_IsValid(capsule_.ptr(), "used_dltensor_versioned")) {
+      throw py::value_error("This DLPack capsule was already consumed");
+    }
+    throw py::value_error("Expected a dltensor or dltensor_versioned capsule");
+  }
+
+  // Takes the tensor over from the capsule, so nothing else can take it again.
+  void mark_used() {
+    const auto* name =
+        versioned_ != nullptr ? "used_dltensor_versioned" : "used_dltensor";
+    if (PyCapsule_SetName(capsule_.ptr(), name) != 0) {
+      managed_ = nullptr;
+      versioned_ = nullptr;
+      throw py::error_already_set();
+    }
+  }
+
+  void read(const dlpack::Tensor& tensor) {
+    initialize(tensor);
+    if (versioned_ == nullptr ||
+        (versioned_->flags & dlpack::kFlagReadOnly) == 0 || nbytes_ == 0) {
+      return;
+    }
+    // A method may write its inputs, so read-only memory is read from a copy.
+    if (!device_.is_cpu()) {
+      throw py::value_error("Read-only DLPack device inputs are not supported");
+    }
+    converted_.assign(
+        static_cast<const uint8_t*>(data_),
+        static_cast<const uint8_t*>(data_) + nbytes_);
+    data_ = converted_.data();
+  }
+
   static executorch::aten::ScalarType scalar_type_from_dlpack(
       const dlpack::DataType& dtype) {
     if (dtype.lanes != 1) {
@@ -1280,6 +1372,7 @@ class DLPackTensorView final {
   size_t nbytes_ = 0;
   py::object capsule_;
   dlpack::ManagedTensor* managed_ = nullptr;
+  dlpack::ManagedTensorVersioned* versioned_ = nullptr;
   void* data_ = nullptr;
   std::vector<uint8_t> converted_;
   std::vector<int> sizes_;
@@ -1470,6 +1563,9 @@ std::optional<EValue> scalar_input(
 }
 
 bool prefer_dlpack_input(const py::handle& value) {
+  if (PyCapsule_CheckExact(value.ptr())) {
+    return true;
+  }
   if (!py::hasattr(value, "__dlpack__")) {
     return false;
   }
@@ -1494,7 +1590,7 @@ bool prefer_dlpack_input(const py::handle& value) {
 
 py::sequence normalize_inputs(const py::object& inputs) {
   if (PyObject_CheckBuffer(inputs.ptr()) || is_torch_tensor(inputs) ||
-      py::hasattr(inputs, "__dlpack__")) {
+      py::hasattr(inputs, "__dlpack__") || PyCapsule_CheckExact(inputs.ptr())) {
     py::list result;
     result.append(inputs);
     return result;

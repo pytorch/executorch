@@ -836,6 +836,17 @@ print("CUDA DLPack roundtrip preserved device storage")
                     output = executor(mixed_inputs)[0]
                     self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
+    def test_raw_dlpack_capsule_is_a_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(inputs[0].numpy().__dlpack__())[0]
+                torch.testing.assert_close(
+                    torch.from_dlpack(output), inputs[0] + inputs[0]
+                )
+
     def test_non_dense_numpy_input_is_rejected(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)

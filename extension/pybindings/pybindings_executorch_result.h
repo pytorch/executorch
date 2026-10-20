@@ -278,6 +278,23 @@ class PyExecuTorchResult final
     return result->owner_.is_none() ? py::cast(result) : result->owner_;
   }
 
+  static py::object dlpack_backing_owner(
+      dlpack::ManagedTensorVersioned* managed) {
+    if (managed == nullptr ||
+        managed->deleter != release_versioned_dlpack_holder ||
+        managed->manager_ctx == nullptr) {
+      return py::none();
+    }
+    const auto* holder = static_cast<const DLPackHolder*>(managed->manager_ctx);
+    if (&holder->versioned != managed ||
+        managed->dl_tensor.data != holder->result->data_ ||
+        managed->dl_tensor.byte_offset != 0) {
+      return py::none();
+    }
+    const auto& result = holder->result;
+    return result->owner_.is_none() ? py::cast(result) : result->owner_;
+  }
+
   py::tuple dlpack_device() const {
     const auto device = dl_device();
     return py::make_tuple(

@@ -16,7 +16,9 @@ arrays or other dense objects implementing Python's buffer protocol, including
 CUDA `torch.Tensor` inputs are inspected through their public Python attributes
 instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
 provide CPU or CUDA allocations directly; their device indices are preserved.
-Tensor protocols can be mixed within the same call.
+A DLPack capsule, such as the one `array.__dlpack__()` returns, can be passed
+directly too; an input consumes it, so it cannot be passed again. Tensor
+protocols can be mixed within the same call.
 
 Tensor inputs must have dense storage. In the portable bindings, an input laid
 out in a different dimension order than the exported method, for example a
