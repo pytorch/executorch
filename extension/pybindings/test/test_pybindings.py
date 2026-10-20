@@ -2013,6 +2013,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         with self.assertRaises(RuntimeError) as caught:
             executorch_module.forward([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
+        self.assertIn("Input 0 of method 'forward'", message)
         # Asserts the device is named as Python spells it, since an uppercased or
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
@@ -2482,6 +2483,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         with self.assertRaises(RuntimeError) as caught:
             method.set_inputs([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
+        self.assertIn("Input 0 of method 'forward'", message)
         self.assertIn("is on device meta", message)
         self.assertIn("only CPU and CUDA tensors", message)
 

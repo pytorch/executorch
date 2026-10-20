@@ -28,7 +28,7 @@ export const DEMOS = [
     title: 'On-device Chat',
     blurb: 'Chat with a real language model running entirely on your GPU. Talk to it, too.',
     meta: { label: 'Models', value: 'Qwen 3 0.6B, Llama 3.2 1B' },
-    models: ['qwen3-0.6b', 'llama-3.2-1b-instruct'],
+    models: ['qwen3-0.6b', 'gemma-3-1b-it'],
     compute: COMPUTE.EXECUTORCH,
     view: 'chat',
     art: 'chat',
