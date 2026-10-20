@@ -12,6 +12,7 @@ q4gsw_linear_gemv_coop__w_4x8:
     WORKERS_PER_GROUP: 64
     WEIGHT_STORAGE: buffer
     WEIGHT_KC: 0
+    GROUPED_K: false
   generate_variant_forall:
     IO_STORAGE:
       - VALUE: buffer
@@ -37,5 +38,13 @@ q4gsw_linear_gemv_coop__w_4x8:
     - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g8w8
       WEIGHT_STORAGE: buffer
       WEIGHT_KC: 0
+      NUM_GROUPS: 8
+      WORKERS_PER_GROUP: 8
+    - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g4w16_grouped
+      GROUPED_K: true
+      NUM_GROUPS: 4
+      WORKERS_PER_GROUP: 16
+    - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g8w8_grouped
+      GROUPED_K: true
       NUM_GROUPS: 8
       WORKERS_PER_GROUP: 8

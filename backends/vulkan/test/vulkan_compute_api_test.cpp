@@ -2596,8 +2596,10 @@ TEST(
 }
 
 template <typename T>
-void test_q4gsw_decode_prefill(vkapi::ScalarType dtype) {
-  constexpr int64_t K = 384;
+void test_q4gsw_decode_prefill(
+    vkapi::ScalarType dtype,
+    const int64_t K = 384,
+    const bool check_prefill = true) {
   constexpr int64_t max_m = 8;
   for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
     for (const int64_t N : {12, 1024, 1028, 2048, 4100, 8192}) {
@@ -2658,6 +2660,27 @@ void test_q4gsw_decode_prefill(vkapi::ScalarType dtype) {
             std::vector<T> actual(M * N);
             graph.maybe_cast_and_copy_from_staging(
                 staging, actual.data(), actual.size(), dtype);
+            graph.context()->querypool().extract_results();
+            bool has_gemv = false;
+            bool has_gemm = false;
+            bool has_grouped = false;
+            for (const auto& result :
+                 graph.context()->querypool().get_shader_timestamp_data()) {
+              has_gemv |= result.kernel_name.find("q4gsw_linear_gemv") !=
+                  std::string::npos;
+              has_gemm |= result.kernel_name.find("q4gsw_linear_gemm") !=
+                  std::string::npos;
+              has_grouped |=
+                  result.kernel_name.find("_grouped_") != std::string::npos;
+            }
+            EXPECT_EQ(has_gemv, M == 1);
+            EXPECT_EQ(has_gemm, M != 1);
+            EXPECT_EQ(
+                has_grouped,
+                M == 1 && K == 2048 && group_size == 128 && N > 1024);
+            if (!check_prefill && M != 1) {
+              continue;
+            }
             double squared_error = 0.0;
             double squared_reference = 0.0;
             for (int64_t m = 0; m < M; ++m) {
@@ -2688,18 +2711,6 @@ void test_q4gsw_decode_prefill(vkapi::ScalarType dtype) {
             EXPECT_LT(
                 std::sqrt(squared_error / squared_reference),
                 dtype == vkapi::kHalf ? (M == 1 ? 2e-3 : 1e-2) : 2e-5);
-            graph.context()->querypool().extract_results();
-            bool has_gemv = false;
-            bool has_gemm = false;
-            for (const auto& result :
-                 graph.context()->querypool().get_shader_timestamp_data()) {
-              has_gemv |= result.kernel_name.find("q4gsw_linear_gemv") !=
-                  std::string::npos;
-              has_gemm |= result.kernel_name.find("q4gsw_linear_gemm") !=
-                  std::string::npos;
-            }
-            EXPECT_EQ(has_gemv, M == 1);
-            EXPECT_EQ(has_gemm, M != 1);
           }
         }
       }
@@ -2719,15 +2730,39 @@ TEST(VulkanComputeGraphTest, q4gsw_decode_prefill_half) {
   test_q4gsw_decode_prefill<executorch::aten::Half>(vkapi::kHalf);
 }
 
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_float) {
+  test_q4gsw_decode_prefill<float>(
+      vkapi::kFloat, 2048, /*check_prefill=*/false);
+}
+
+TEST(VulkanComputeGraphTest, q4gsw_decode_grouped_half) {
+  if (!api::context()->adapter_ptr()->supports_16bit_storage_buffers() ||
+      !api::context()->adapter_ptr()->supports_float16_shader_types()) {
+    GTEST_SKIP();
+  }
+  test_q4gsw_decode_prefill<executorch::aten::Half>(
+      vkapi::kHalf, 2048, /*check_prefill=*/false);
+}
+
 template <typename T>
-void test_q4gsw_decode_with_padded_weights(vkapi::ScalarType dtype) {
-  constexpr int64_t K = 12;
-  constexpr int64_t padded_K = 16;
-  constexpr int64_t N = 128;
-  for (const auto storage : {utils::kBuffer, utils::kTexture3D}) {
+void test_q4gsw_decode_with_padded_weights(
+    vkapi::ScalarType dtype,
+    const int64_t K = 12,
+    const int64_t padded_K = 16,
+    const int64_t N = 128,
+    const int64_t group_size = 12,
+    const bool expect_grouped = false) {
+  const int64_t num_groups = (K + group_size - 1) / group_size;
+  std::vector<utils::StorageType> storages = {utils::kBuffer};
+  if ((std::max(padded_K, N) + 3) / 4 <=
+      api::context()->adapter_ptr()->max_texture3d_dim()) {
+    storages.push_back(utils::kTexture3D);
+  }
+  for (const auto storage : storages) {
     SCOPED_TRACE(int(storage));
     GraphConfig config;
     config.expect_dynamic_shapes = true;
+    config.enable_querypool = true;
     ComputeGraph graph(config);
     const auto input = graph.add_input_tensor(
         {1, padded_K}, dtype, storage, utils::kWidthPacked);
@@ -2740,13 +2775,13 @@ void test_q4gsw_decode_with_padded_weights(vkapi::ScalarType dtype) {
     for (int64_t n = 0; n < N; ++n) {
       std::fill_n(weights.begin() + n * padded_K / 2, K / 2, 0x99);
     }
-    std::vector<T> scales(N, T(1.0f));
+    std::vector<T> scales(num_groups * N, T(1.0f));
     VK_GET_OP_FN("et_vk.q4gsw_linear.default")
     (graph,
      {input.value,
       graph.add_tensorref({N, padded_K / 2}, vkapi::kByte, weights.data()),
-      graph.add_tensorref({1, N}, dtype, scales.data()),
-      graph.add_scalar<int64_t>(K),
+      graph.add_tensorref({num_groups, N}, dtype, scales.data()),
+      graph.add_scalar<int64_t>(group_size),
       graph.add_none(),
       output});
     const auto staging = graph.set_output_tensor(output);
@@ -2770,6 +2805,13 @@ void test_q4gsw_decode_with_padded_weights(vkapi::ScalarType dtype) {
     std::fill_n(x.begin(), K, T(1.0f));
     graph.maybe_cast_and_copy_into_staging(input.staging, x.data(), K, dtype);
     graph.execute();
+    graph.context()->querypool().extract_results();
+    bool has_grouped = false;
+    for (const auto& result :
+         graph.context()->querypool().get_shader_timestamp_data()) {
+      has_grouped |= result.kernel_name.find("_grouped_") != std::string::npos;
+    }
+    EXPECT_EQ(has_grouped, expect_grouped);
     std::vector<T> actual(N);
     graph.maybe_cast_and_copy_from_staging(
         staging, actual.data(), actual.size(), dtype);
@@ -2781,6 +2823,14 @@ void test_q4gsw_decode_with_padded_weights(vkapi::ScalarType dtype) {
 
 TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_float) {
   test_q4gsw_decode_with_padded_weights<float>(vkapi::kFloat);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<float>(
+      vkapi::kFloat, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
 }
 
 TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_half) {
@@ -2789,6 +2839,14 @@ TEST(VulkanComputeGraphTest, q4gsw_decode_with_padded_weights_half) {
     GTEST_SKIP();
   }
   test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(vkapi::kHalf);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 2044, 2048, 4100, 128, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 572, 576, 8192, 64, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 4348, 4352, 2048, 256, /*expect_grouped=*/true);
+  test_q4gsw_decode_with_padded_weights<executorch::aten::Half>(
+      vkapi::kHalf, 33248, 33280, 1024, 512, /*expect_grouped=*/false);
 }
 
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
