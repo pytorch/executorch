@@ -5,9 +5,16 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <cuda_runtime.h>
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
+#include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <array>
+
+using executorch::extension::from_blob;
+namespace aten = executorch::aten;
 
 namespace df = executorch::extension::llm::cuda_dflash_detail;
 using executorch::extension::llm::batching::Token;
@@ -127,6 +134,101 @@ TEST(CudaDFlash, NearContextLimitRequiresWholeTrainedBlock) {
   std::vector<std::uint8_t> hidden{1, 2};
   EXPECT_TRUE(df::pack_draft({{4, 59, 70, &hidden, 1}}, 4, 99, 1, 64, 2));
   EXPECT_FALSE(df::pack_draft({{4, 60, 70, &hidden, 1}}, 4, 99, 1, 64, 2));
+}
+
+TEST(CudaDFlash, EveryProposalMismatchKeepsOnlyConsumedPrefix) {
+  const std::vector<Token> proposals{11, 12, 13, 14};
+  for (std::size_t rejected = 0; rejected <= proposals.size(); ++rejected) {
+    auto predictions = proposals;
+    predictions.push_back(90);
+    if (rejected < proposals.size()) {
+      predictions[rejected] = 80;
+    }
+    const auto burst = df::verify_greedy(proposals, predictions);
+    ASSERT_TRUE(burst);
+    std::vector<Token> expected(
+        proposals.begin(), proposals.begin() + rejected);
+    expected.push_back(rejected == proposals.size() ? 90 : 80);
+    EXPECT_EQ(burst->tokens, expected);
+    EXPECT_EQ(burst->accepted, rejected);
+    EXPECT_EQ(burst->bonus, rejected == proposals.size());
+  }
+}
+
+TEST(CudaDFlash, HostSnapshotPartialRowsAndInvalidExtents) {
+  df::HiddenSnapshot snapshot;
+  std::vector<std::uint8_t> source{1, 2, 3, 4, 5, 6, 99, 99};
+  auto taps = from_blob(source.data(), {1, 4, 2});
+  ASSERT_TRUE(snapshot.begin(3, 2));
+  EXPECT_FALSE(snapshot.capture(*taps, 1, 3));
+  ASSERT_TRUE(snapshot.capture(*taps, 0, 3));
+  std::fill(source.begin(), source.end(), 0);
+  std::vector<std::uint8_t> kept{7, 8};
+  EXPECT_FALSE(snapshot.copy_rows(kept, 2, 2));
+  ASSERT_TRUE(snapshot.copy_rows(kept, 1, 2));
+  ASSERT_TRUE(snapshot.fence());
+  EXPECT_EQ(kept, std::vector<std::uint8_t>({7, 8, 3, 4, 5, 6}));
+  EXPECT_FALSE(snapshot.begin(0, 2));
+  EXPECT_FALSE(snapshot.begin(1, 0));
+  ASSERT_TRUE(snapshot.begin(1, 2));
+  EXPECT_FALSE(snapshot.copy_rows(kept, 0, 1));
+}
+
+TEST(CudaDFlashCuda, SnapshotSurvivesOverwritesSlicesAndFourUnequalPrefixes) {
+  int devices = 0;
+  if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+  void* borrowed = nullptr;
+  ASSERT_EQ(cudaMalloc(&borrowed, 20), cudaSuccess);
+  auto taps = from_blob(
+      borrowed,
+      {1, 5, 4},
+      aten::ScalarType::Byte,
+      aten::Device(aten::DeviceType::CUDA, 0),
+      [](void* data) { (void)cudaFree(data); });
+  cudaStream_t stream;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
+  {
+    executorch::extension::cuda::CallerStreamGuard guard(stream);
+    df::HiddenSnapshot snapshot;
+    // Grow, shrink, then reuse capacity across independent verification calls.
+    for (int total : {16, 8, 16}) {
+      ASSERT_TRUE(snapshot.begin(total, 4));
+      for (int offset = 0; offset < total; offset += 3) {
+        const int rows = std::min(3, total - offset);
+        std::vector<std::uint8_t> source(20, 255); // static padding sentinel
+        for (int byte = 0; byte < rows * 4; ++byte) {
+          source[byte] = offset * 4 + byte + 1;
+        }
+        ASSERT_EQ(
+            cudaMemcpyAsync(
+                borrowed, source.data(), 20, cudaMemcpyHostToDevice, stream),
+            cudaSuccess);
+        ASSERT_TRUE(snapshot.capture(*taps, offset, rows));
+        // Model the sampler/next Module call overwriting graph-owned output.
+        ASSERT_EQ(cudaMemsetAsync(borrowed, 0, 20, stream), cudaSuccess);
+        ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+      }
+      std::array<std::vector<std::uint8_t>, 4> kept;
+      const int owners = total / 4;
+      for (int owner = 0; owner < owners; ++owner) {
+        kept[owner] = {200, 201, 202, 203};
+        ASSERT_TRUE(snapshot.copy_rows(kept[owner], owner * 4, owner + 1));
+      }
+      ASSERT_TRUE(snapshot.fence());
+      for (int owner = 0; owner < owners; ++owner) {
+        std::vector<std::uint8_t> expected{200, 201, 202, 203};
+        for (int byte = 0; byte < (owner + 1) * 4; ++byte) {
+          expected.push_back(owner * 16 + byte + 1);
+        }
+        EXPECT_EQ(kept[owner], expected);
+      }
+    }
+  }
+  // A successfully fenced snapshot must not retain a live-stream requirement.
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
 }
 
 TEST(CudaDFlash, PackingRejectsDuplicateOwnersAndOversizedContext) {
