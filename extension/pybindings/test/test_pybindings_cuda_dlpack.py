@@ -279,6 +279,17 @@ class CudaDLPackTest(unittest.TestCase):
             torch.from_dlpack(output), torch.full(self.shape, 84.0)
         )
 
+    def test_device_inputs_with_unplanned_host_outputs(self):
+        # The delegate writes a device tensor that the method then copies into
+        # the caller's host output, so that device tensor must still be planned.
+        method = self._load_method(
+            self._export_delegate("unplanned_host_outputs", outputs_on_device=False)
+        )
+        output = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        torch.testing.assert_close(
+            torch.from_dlpack(output), torch.full(self.shape, 4.0)
+        )
+
     def test_clone_roundtrip_and_borrowed_output_lifetime(self):
         method = self._load_method()
         stream = torch.cuda.current_stream(self.device)
