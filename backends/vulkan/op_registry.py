@@ -48,9 +48,8 @@ class OpFeatures:
         # inputs are supported by the operator implementation.
         "are_node_inputs_supported_fn",
         # Like are_node_inputs_supported_fn, for ops whose support depends on which
-        # inputs are constants. Called with the node, the set of nodes holding
-        # constant data (parameters, unmutated buffers, lifted constants) and the
-        # partitioner's is-node-supported callback.
+        # inputs are constants. Called with the node and the set of nodes holding
+        # constant data (parameters, unmutated buffers, lifted constants).
         "are_node_inputs_supported_with_constants_fn",
         # Optional function to determine valid representation sets for input and outputs
         # once a node's actual inputs are known.
@@ -1901,7 +1900,6 @@ def unwrap_identity_repeat(arg: Any) -> Any:
 def can_rewrite_batch_norm_as_group_norm(
     node: torch.fx.Node,
     constant_nodes: AbstractSet[torch.fx.Node],
-    is_node_supported: Optional[Callable[[torch.fx.Node], bool]] = None,
 ) -> bool:
     """
     Whether ReplaceInstanceNormPass can rewrite a batch norm node into group norm.
@@ -1914,9 +1912,6 @@ def can_rewrite_batch_norm_as_group_norm(
     different reduction and is left alone.
 
     ``constant_nodes`` holds the placeholders whose data is known at export time.
-    ``is_node_supported``, when given, says whether a node will be delegated. The
-    partitioner passes it so that an affine arg read through a ``repeat`` is only
-    accepted if that ``repeat`` lands in the same delegate.
     """
     if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
         return False
@@ -1939,18 +1934,11 @@ def can_rewrite_batch_norm_as_group_norm(
     # weight.repeat(N): ReplaceInstanceNormPass looks through that repeat when N
     # is 1, but for N above 1 it is a runtime tensor, so instance norm over a
     # batch is rejected here. So are computed affine args and ones fed in as model
-    # inputs.
+    # inputs. A repeat outside the norm's partition also reaches the delegate as a
+    # runtime input, but that is only known once partitions are proposed, so
+    # VulkanPartitioner checks it then.
     for affine_arg in (node.args[1], node.args[2]):
-        source = unwrap_identity_repeat(affine_arg)
-        if source not in constant_nodes:
-            return False
-        # A repeat left on the CPU reaches the delegate as a runtime input, which
-        # the pass cannot rewrite.
-        if (
-            source is not affine_arg
-            and is_node_supported is not None
-            and not is_node_supported(affine_arg)
-        ):
+        if unwrap_identity_repeat(affine_arg) not in constant_nodes:
             return False
 
     # Only the normalized output may be consumed. Group norm returns mean and rstd

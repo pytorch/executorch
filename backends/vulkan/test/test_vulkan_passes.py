@@ -1340,7 +1340,8 @@ class TestVulkanPasses(unittest.TestCase):
     def test_instance_norm_with_repeat_not_delegated(self):
         """
         The affine args of a delegated instance norm must reach the delegate as
-        constants. If the repeats feeding them stay on the CPU, so must the norm.
+        constants. If the repeats feeding them are not in the norm's partition,
+        the norm must stay on the CPU.
         """
 
         class Conv2dInstanceNormModule(torch.nn.Module):
@@ -1352,22 +1353,52 @@ class TestVulkanPasses(unittest.TestCase):
             def forward(self, x):
                 return torch.relu(self.norm(self.conv(x)))
 
-        edge_program = lower_to_vulkan(
-            Conv2dInstanceNormModule().eval(),
-            (torch.randn(1, 8, 6, 6),),
-            operator_blocklist=[exir_ops.edge.aten.repeat.default],
-        )
-        self.assertEqual(
-            len(
-                batch_norm_no_stats_nodes(edge_program.exported_program().graph_module)
-            ),
-            1,
-        )
-        graphs = vulkan_delegate_graphs(edge_program)
-        self.assertGreater(len(graphs), 0)
-        for graph in graphs:
-            for op in graph.chain:
-                self.assertNotIn("batch_norm", op.name)
+        class SharedRepeatModule(torch.nn.Module):
+            # The repeat is delegated, but with sin on the CPU the norm cannot
+            # share its partition: a path leaves the partition through sin and
+            # re-enters it at the norm.
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8))
+                self.bias = torch.nn.Parameter(torch.randn(8))
+
+            def forward(self, x):
+                w = self.weight.repeat(1)
+                y = torch.sin(x + w.reshape(1, 8, 1, 1))
+                return torch.nn.functional.batch_norm(
+                    y, None, None, w, self.bias, training=True
+                )
+
+        repeat = exir_ops.edge.aten.repeat.default
+        sin = exir_ops.edge.aten.sin.default
+        cases = [
+            # (name, model, operator_blocklist, norm stays on the CPU)
+            ("blocklisted_repeat", Conv2dInstanceNormModule(), [repeat], True),
+            ("shared_repeat", SharedRepeatModule(), [sin], True),
+            ("shared_repeat_delegated", SharedRepeatModule(), [], False),
+        ]
+        for name, model, blocklist, norm_on_cpu in cases:
+            with self.subTest(name):
+                edge_program = lower_to_vulkan(
+                    model.eval(),
+                    (torch.randn(1, 8, 6, 6),),
+                    operator_blocklist=blocklist,
+                )
+                self.assertEqual(
+                    len(
+                        batch_norm_no_stats_nodes(
+                            edge_program.exported_program().graph_module
+                        )
+                    ),
+                    1 if norm_on_cpu else 0,
+                )
+                graphs = vulkan_delegate_graphs(edge_program)
+                self.assertGreater(len(graphs), 0)
+                op_names = [op.name for graph in graphs for op in graph.chain]
+                self.assertFalse(any("batch_norm" in op for op in op_names))
+                self.assertEqual(
+                    any("group_norm" in op for op in op_names), not norm_on_cpu
+                )
 
     def test_replace_instance_norm_rejects_leftover_batch_norm(self):
         """A batch norm without stats that cannot be rewritten fails the export."""
