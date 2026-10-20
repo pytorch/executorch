@@ -1084,6 +1084,7 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
         mask_dtype=torch.float32,
         q_dtype=torch.float32,
         is_causal=False,
+        trim_defaults=False,
     ):
         from executorch.backends.vulkan.patterns.sdpa import (
             check_llm_sdpa_node,
@@ -1110,13 +1111,19 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
         update_cache = graph.call_function(
             _NamedOpStub("llama::update_cache"), (k, k_cache, 0)
         )
-        custom_sdpa = graph.call_function(
-            _NamedOpStub("llama::custom_sdpa"),
-            (q, k_cache, v_cache, 0, mask, 0.0, is_causal),
-        )
+        args = (q, k_cache, v_cache, 0, mask, 0.0, is_causal)
+        if trim_defaults:
+            # torch.export drops trailing arguments that equal their defaults
+            assert not is_causal
+            args = args[:5]
+        custom_sdpa = graph.call_function(_NamedOpStub("llama::custom_sdpa"), args)
         supported = check_llm_sdpa_node(custom_sdpa)
         self.assertEqual(check_llm_sdpa_node(update_cache), supported)
-        self.assertEqual(find_causal_sdpa_patterns(custom_sdpa) is not None, supported)
+        match = find_causal_sdpa_patterns(custom_sdpa)
+        self.assertEqual(match is not None, supported)
+        if match is not None:
+            self.assertIs(match.attn_mask_node, mask)
+            self.assertEqual(match.is_causal_node, is_causal)
         return supported
 
     def test_causal_without_mask_is_supported(self):
@@ -1127,6 +1134,9 @@ class TestLLMSDPAPartitionerCheck(unittest.TestCase):
 
     def test_mask_is_supported(self):
         self.assertTrue(self._build(mask_shape=(self.S, self.C)))
+
+    def test_mask_with_trimmed_default_args_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C), trim_defaults=True))
 
     def test_mask_with_is_causal_is_rejected(self):
         self.assertFalse(self._build(mask_shape=(self.S, self.C), is_causal=True))

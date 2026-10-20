@@ -206,13 +206,11 @@ class CausalSDPAMatch(PatternMatch):
         self.key_cache_node = custom_sdpa_node.args[1]
         self.value_cache_node = custom_sdpa_node.args[2]
         self.start_pos_node = custom_sdpa_node.args[3]
-        self.attn_mask_node = custom_sdpa_node.args[4]
-        self.dropout_p_node = custom_sdpa_node.args[5]
-        self.is_causal_node = custom_sdpa_node.args[6]
-        if len(custom_sdpa_node.args) > 7:
-            self.scale_node = custom_sdpa_node.args[7]
-        else:
-            self.scale_node = None
+        # torch.export drops trailing arguments that equal their defaults
+        self.attn_mask_node = _get_llm_sdpa_arg(custom_sdpa_node, "attn_mask", 4, None)
+        self.dropout_p_node = _get_llm_sdpa_arg(custom_sdpa_node, "drpout_p", 5, 0.0)
+        self.is_causal_node = _get_llm_sdpa_arg(custom_sdpa_node, "is_causal", 6, False)
+        self.scale_node = _get_llm_sdpa_arg(custom_sdpa_node, "scale", 7, None)
 
         # try to find update key cache node
         self.update_key_cache_node = None
