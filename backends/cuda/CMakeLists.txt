@@ -509,5 +509,10 @@ if(BUILD_TESTING)
       aoti_cuda_backend
     )
     target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+    et_cxx_test(
+      test_cuda_cache_routing SOURCES runtime/test/test_cuda_cache_routing.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_cache_routing PRIVATE CUDA_AVAILABLE=1)
   endif()
 endif()
