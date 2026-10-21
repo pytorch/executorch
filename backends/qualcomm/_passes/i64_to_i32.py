@@ -143,7 +143,18 @@ class I64toI32(ExportPass):
                 # If the scalar operand has an int64 data type, it should be explicitly cast to int32.
                 node_val = n.meta["val"]
                 if self._is_tensor_of_dtype(node_val, torch.int64):
-                    with graph_module.graph.inserting_after(n):
+                    # A get_attr may sit above the graph inputs (create_const_node puts it
+                    # first). Once lifted it becomes a placeholder after them, so cast
+                    # right before its first user rather than right after it.
+                    first_user = next(
+                        (u for u in graph_module.graph.nodes if u in n.users), None
+                    )
+                    insert_point = (
+                        graph_module.graph.inserting_before(first_user)
+                        if n.op == "get_attr" and first_user is not None
+                        else graph_module.graph.inserting_after(n)
+                    )
+                    with insert_point:
                         args = (n,)
                         to_dst_node = graph_module.graph.create_node(
                             "call_function",
