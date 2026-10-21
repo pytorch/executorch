@@ -288,6 +288,7 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       : cache::CellCache(geometry, table_config(cfg)),
         pool_cells_(cfg.capacity),
         max_write_(*cfg.max_write),
+        dflash_block_size_(geometry.dflash_block_size),
         windows_(std::move(windows)),
         pool_(
             pool_layers(geometry, cfg),
@@ -327,15 +328,32 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 
   void clear() override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    if (dflash_block_size_ && pool_.allocated()) {
+      // A failed forward may be abandoned on another host thread, where
+      // cudaStreamPerThread no longer names the originating stream.
+      if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+        // Recycling cells a forward may still write is unsafe; a later clear()
+        // retries the fence.
+        poisoned_ = true;
+        return;
+      }
+    }
     cache::CellCache::clear();
     step_seq_ids_.clear();
+    active_owners_.clear();
+    pending_width_ = 0;
+    poisoned_ = false;
   }
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
     // A rejected declaration leaves an earlier accepted one standing, as the
     // base does.
-    if (!cache::CellCache::declare_step(seq_ids)) {
+    if (poisoned_ ||
+        (dflash_block_size_ &&
+         (pending_width_ != 0 ||
+          seq_ids.size() > static_cast<size_t>(max_write_))) ||
+        !cache::CellCache::declare_step(seq_ids)) {
       return false;
     }
     step_seq_ids_ = seq_ids;
@@ -350,16 +368,25 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
       override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    if (dflash_block_size_ && (pending_width_ != 0 || poisoned_)) {
+      return std::nullopt;
+    }
     return cache::CellCache::seq_clone(src, upto);
   }
 
   bool seq_rm(int32_t seq_id) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    if (dflash_block_size_ && pending_width_ != 0) {
+      return false;
+    }
     return cache::CellCache::seq_rm(seq_id);
   }
 
   bool rewind(int32_t seq_id, int position) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    if (dflash_block_size_ && (pending_width_ != 0 || poisoned_)) {
+      return false;
+    }
     return cache::CellCache::rewind(seq_id, position);
   }
 
@@ -389,7 +416,15 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         pool_.allocated(),
         InvalidState,
         "offgraph_kv: prepare_step must run before execute");
-    return pool_.bind(handle);
+    ET_CHECK_OR_RETURN_ERROR(
+        !dflash_block_size_ || (!poisoned_ && pending_width_ > 0),
+        InvalidState,
+        "offgraph_kv: execute requires a prepared, healthy draft step");
+    const Error bound = pool_.bind(handle);
+    if (bound != Error::Ok && dflash_block_size_) {
+      poisoned_ = true;
+    }
+    return bound;
   }
 
   // Places the declared step and writes it where the program reads it. Runs on
@@ -397,6 +432,10 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   Error prepare_step(int64_t write_length, cudaStream_t stream) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
+    ET_CHECK_OR_RETURN_ERROR(
+        !poisoned_ && (!dflash_block_size_ || pending_width_ == 0),
+        InvalidState,
+        "offgraph_kv: uncommitted or failed draft co-batch; clear required");
     if (!validated_) {
       const Error valid = pool_.validate();
       if (valid != Error::Ok) {
@@ -414,7 +453,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         max_write_);
     const int tokens = static_cast<int>(step_seq_ids_.size());
     ET_CHECK_OR_RETURN_ERROR(
-        tokens > 0 && tokens <= width,
+        tokens > 0 && tokens <= width &&
+            (!dflash_block_size_ || tokens == width),
         InvalidState,
         "offgraph_kv: a %d-token program cannot run %d declared tokens",
         width,
@@ -447,18 +487,31 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         stream));
     const int64_t scratch = pool_.rows() - 1;
 
+    if (dflash_block_size_) {
+      active_owners_.clear();
+      for (const int32_t owner : step_seq_ids_) {
+        if (active_owners_.empty() || active_owners_.back() != owner) {
+          active_owners_.push_back(owner);
+        }
+      }
+      pending_width_ = width;
+    }
     std::vector<const cache::CellStep*> steps;
     steps.reserve(windows_.size());
     for (size_t index = 0; index < windows_.size(); ++index) {
       const cache::CellStep* step =
           place_step(window_layers_[index], positions_.data(), tokens);
-      ET_CHECK_OR_RETURN_ERROR(
-          step != nullptr,
-          InvalidArgument,
-          "offgraph_kv: the declared step does not place");
+      if (step == nullptr) {
+        poisoned_ = dflash_block_size_.has_value();
+        return Error::InvalidArgument;
+      }
       steps.push_back(step);
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(upload_step(steps, width, scratch, stream));
+    const Error uploaded = upload_step(steps, width, scratch, stream);
+    if (uploaded != Error::Ok) {
+      poisoned_ = dflash_block_size_.has_value();
+      return uploaded;
+    }
     step_seq_ids_.clear();
     return Error::Ok;
   }
@@ -470,7 +523,29 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     ET_CHECK_OR_RETURN_ERROR(
         write_length > 0, InvalidArgument, "write length must be positive");
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
-    return pool_.mark_step_done();
+    if (!dflash_block_size_) {
+      return pool_.mark_step_done();
+    }
+    if (poisoned_ || pending_width_ == 0 || write_length != pending_width_) {
+      poisoned_ = true;
+      return Error::InvalidState;
+    }
+    const Error marked = pool_.mark_step_done();
+    const Error fenced = marked == Error::Ok ? pool_.synchronize() : marked;
+    if (fenced != Error::Ok) {
+      poisoned_ = true;
+      return fenced;
+    }
+    for (const int32_t owner : active_owners_) {
+      if (!cache::CellCache::rewind(
+              owner, cache::CellCache::pos(owner) - *dflash_block_size_)) {
+        poisoned_ = true;
+        return Error::InvalidState;
+      }
+    }
+    active_owners_.clear();
+    pending_width_ = 0;
+    return Error::Ok;
   }
 
   // logical_length is the read extent: every occupied cell is below it.
@@ -551,9 +626,12 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     const cache::CellStep& first = *steps.front();
     const size_t rows = static_cast<size_t>(width);
     const size_t tokens = first.cells.size();
+    const size_t queries =
+        first.query_rows.empty() ? tokens : first.query_rows.size();
+    const size_t mask_rows = dflash_block_size_ ? queries : rows;
     const size_t read_len = static_cast<size_t>(first.read_len);
     const size_t cells_bytes = rows * sizeof(int64_t);
-    const size_t mask_bytes = rows * read_len;
+    const size_t mask_bytes = mask_rows * read_len;
     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
         cells_bytes + sizeof(int64_t) + steps.size() * mask_bytes));
     auto* cells = reinterpret_cast<int64_t*>(staging_);
@@ -563,14 +641,22 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     uint8_t* masks = staging_ + cells_bytes + sizeof(int64_t);
     for (size_t index = 0; index < steps.size(); ++index) {
       uint8_t* mask = masks + index * mask_bytes;
-      std::memcpy(mask, steps[index]->mask_bits.data(), tokens * read_len);
-      const uint8_t* last = mask + (tokens - 1) * read_len;
-      for (size_t row = tokens; row < rows; ++row) {
+      const cache::CellStep& step = *steps[index];
+      for (size_t row = 0; row < queries; ++row) {
+        const size_t source =
+            step.query_rows.empty() ? row : step.query_rows[row];
+        std::memcpy(
+            mask + row * read_len,
+            step.mask_bits.data() + source * read_len,
+            read_len);
+      }
+      const uint8_t* last = mask + (queries - 1) * read_len;
+      for (size_t row = queries; row < mask_rows; ++row) {
         std::memcpy(mask + row * read_len, last, read_len);
       }
     }
     const Error enqueued =
-        enqueue_uploads(steps.size(), rows, read_len, stream);
+        enqueue_uploads(steps.size(), rows, mask_rows, read_len, stream);
     // Fenced even when a copy failed: those issued before it may still read
     // the staging.
     const Error fenced = fence_staging(stream);
@@ -584,6 +670,7 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   Error enqueue_uploads(
       size_t windows,
       size_t width,
+      size_t mask_rows,
       size_t read_len,
       cudaStream_t stream) {
     const size_t cells_bytes = width * sizeof(int64_t);
@@ -607,10 +694,10 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       const cudaError_t error = cudaMemcpy2DAsync(
           pool_.side_buffer(kFirstMaskBuffer + index),
           static_cast<size_t>(pool_cells_),
-          masks + index * width * read_len,
+          masks + index * mask_rows * read_len,
           read_len,
           read_len,
-          width,
+          mask_rows,
           cudaMemcpyHostToDevice,
           stream);
       ET_CHECK_OR_RETURN_ERROR(
@@ -686,11 +773,15 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   // pitch.
   const int pool_cells_;
   const int max_write_;
+  const std::optional<int> dflash_block_size_;
   const std::vector<int> windows_;
   std::vector<int> window_layers_;
   CudaKVPool pool_;
   std::vector<int32_t> step_seq_ids_;
   std::vector<int32_t> positions_;
+  std::vector<int32_t> active_owners_;
+  int pending_width_{0};
+  bool poisoned_{false};
   // Pinned host staging for one step's uploads, and the event marking where
   // the last step's copies from it end.
   uint8_t* staging_{nullptr};
@@ -712,8 +803,8 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   // Checked before constructing: SequenceCache asserts on an invalid geometry,
   // and returning null lets CacheFactory report the failure instead.
-  if (!cache::valid(geometry, cfg) || cfg.initial_capacity <= 0 ||
-      cfg.initial_capacity > cfg.capacity ||
+  if (!cache::valid(geometry, cfg) || geometry.dflash_block_size ||
+      cfg.initial_capacity <= 0 || cfg.initial_capacity > cfg.capacity ||
       !storage_dtype_of(cfg.kv_dtype, storage_dtype)) {
     ET_LOG(Error, "offgraph_kv: invalid cache geometry or config");
     return nullptr;
@@ -735,10 +826,6 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
 std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg) {
-  if (geometry.dflash_block_size.has_value()) {
-    ET_LOG(Error, "offgraph_kv: DFlash is unsupported on CUDA");
-    return nullptr;
-  }
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   if (!cache::valid(geometry, cfg) || cfg.initial_capacity <= 0 ||
       cfg.initial_capacity > cfg.capacity ||
@@ -753,7 +840,10 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     return nullptr;
   }
   // One pool row is the padding scratch; the table needs at least one cell.
-  if (cfg.capacity < 2) {
+  if (cfg.capacity < 2 ||
+      (geometry.dflash_block_size &&
+       (*geometry.dflash_block_size >= cfg.capacity ||
+        *geometry.dflash_block_size > *cfg.max_write))) {
     ET_LOG(Error, "offgraph_kv: the cell layout needs at least two cells");
     return nullptr;
   }
