@@ -7,8 +7,8 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/mlx_executor.h>
 
-#include <executorch/examples/models/muse-glimmer/runtime/embedding_materializer.h>
 #include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
+#include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/sampler/sampler.h>
@@ -24,118 +24,15 @@
 
 namespace executorch::extension::llm {
 namespace {
+using muse_glimmer_abi::check_constant_method;
+using muse_glimmer_abi::dense_tensor;
+using muse_glimmer_abi::tensor_abi;
 using runtime::Error;
 constexpr const char* kDecoder = "forward_from_embeddings";
 constexpr const char* kBackend = "MLXBackend";
 
-bool tensor_abi(
-    const runtime::TensorInfo& info,
-    aten::ScalarType dtype,
-    std::initializer_list<int64_t> shape) {
-  if (info.scalar_type() != dtype || info.sizes().size() != shape.size() ||
-      info.dim_order().size() != shape.size()) {
-    return false;
-  }
-  size_t bytes = runtime::elementSize(dtype);
-  size_t dim = 0;
-  for (int64_t size : shape) {
-    if (size <= 0 || size != info.sizes()[dim] ||
-        info.dim_order()[dim] != dim ||
-        static_cast<uint64_t>(size) >
-            std::numeric_limits<size_t>::max() / bytes) {
-      return false;
-    }
-    bytes *= static_cast<size_t>(size);
-    ++dim;
-  }
-  return info.nbytes() == bytes;
-}
-
-bool dense_tensor(const aten::Tensor& tensor) {
-  int64_t stride = 1;
-  for (int dim = tensor.dim() - 1; dim >= 0; --dim) {
-    if (tensor.size(dim) <= 0 ||
-        (tensor.size(dim) != 1 && tensor.strides()[dim] != stride) ||
-        stride > std::numeric_limits<int64_t>::max() / tensor.size(dim)) {
-      return false;
-    }
-    stride *= tensor.size(dim);
-  }
-  return tensor.device().is_cpu() && tensor.const_data_ptr() != nullptr;
-}
-
 Error check_mlx_backends(const runtime::MethodMeta& meta) {
-  if (meta.num_backends() == 0) {
-    return Error::InvalidProgram;
-  }
-  for (size_t i = 0; i < meta.num_backends(); ++i) {
-    ET_ASSIGN_OR_RETURN(name, meta.get_backend_name(i));
-    if (std::string(name) != kBackend) {
-      return Error::NotSupported;
-    }
-  }
-  return Error::Ok;
-}
-
-// Metadata can be read during create(), but no backend may load off-engine.
-Error check_constant_method(Module& module, const char* name) {
-  ET_ASSIGN_OR_RETURN(meta, module.method_meta(name));
-  if (meta.num_inputs() != 0 || meta.num_outputs() != 1 ||
-      meta.num_backends() != 0 || meta.num_instructions() != 0) {
-    ET_LOG(Error, "Muse Glimmer metadata %s must be constant", name);
-    return Error::InvalidProgram;
-  }
-  return Error::Ok;
-}
-
-runtime::Result<int64_t> check_vision_abi(
-    Module& module,
-    int32_t hidden,
-    aten::ScalarType dtype,
-    int max_patches) {
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      check_constant_method(module, "get_max_vision_patches"));
-  ET_ASSIGN_OR_RETURN(
-      published_patches,
-      detail::read_required_positive_int(module, "get_max_vision_patches"));
-  if (published_patches < 4 ||
-      published_patches > std::numeric_limits<int32_t>::max()) {
-    return Error::InvalidProgram;
-  }
-  // Export bounds patches in complete 2x2 downsampling groups, but publishes
-  // the original limit (which need not be divisible by four).
-  const int64_t patches = (published_patches / 4) * 4;
-  ET_ASSIGN_OR_RETURN(meta, module.method_meta("vision_encoder"));
-  if (meta.num_inputs() != 9 || meta.num_outputs() != 1) {
-    return Error::InvalidProgram;
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(check_mlx_backends(meta));
-  // Host preprocessing's nine-input ABI; inspect it without loading vision.
-  for (size_t i = 0; i < 9; ++i) {
-    ET_ASSIGN_OR_RETURN(input, meta.input_tensor_meta(i));
-    bool valid = false;
-    if (i == 0) {
-      valid = tensor_abi(input, aten::ScalarType::Float, {1, patches, 1176});
-    } else if (i == 1) {
-      // Positional interpolation is always BF16, even for an FP16 decoder.
-      valid = tensor_abi(input, aten::ScalarType::BFloat16, {1, patches, 1536});
-    } else if (i == 2 || i == 3) {
-      valid = tensor_abi(input, aten::ScalarType::Float, {patches, 48});
-    } else if (i == 6 || i == 7) {
-      valid =
-          tensor_abi(input, aten::ScalarType::Bool, {1, 1, patches, patches});
-    } else {
-      valid = tensor_abi(input, aten::ScalarType::Long, {patches});
-    }
-    if (!valid) {
-      return Error::InvalidProgram;
-    }
-  }
-  ET_ASSIGN_OR_RETURN(output, meta.output_tensor_meta(0));
-  if (!tensor_abi(output, dtype, {1, patches / 4, hidden})) {
-    return Error::InvalidProgram;
-  }
-  return std::min<int64_t>(patches, max_patches) / 4;
+  return muse_glimmer_abi::check_backends(meta, kBackend);
 }
 
 uint64_t prediction_seed(uint64_t seed, batching::Position position) {
@@ -171,67 +68,6 @@ struct MuseGlimmerMLXExecutor::DFlash {
   }
 };
 
-struct MuseGlimmerMLXExecutor::EngineEmbeddings {
-  std::shared_ptr<const MuseGlimmerPreparationSpec> spec;
-  MuseGlimmerMaterializer materializer;
-  std::string pos_embed_path;
-  std::mutex vision_mutex;
-  std::unique_ptr<MuseGlimmerVisionRuntime> vision;
-
-  EngineEmbeddings(
-      std::shared_ptr<const MuseGlimmerPreparationSpec> spec,
-      std::string path)
-      : spec(std::move(spec)),
-        materializer(this->spec),
-        pos_embed_path(std::move(path)) {}
-
-  Error initialize(Module& module) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("embed_text"));
-    if (spec->has_vision) {
-      ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("vision_encoder"));
-      MuseGlimmerVisionRuntimeConfig config;
-      config.module = &module;
-      config.execution_mutex = &vision_mutex;
-      config.pos_embed_path = pos_embed_path;
-      config.activation_dtype = spec->activation_dtype;
-      config.expected_hidden_dim = spec->hidden_dim;
-      config.max_image_tokens = spec->max_soft_tokens;
-      config.max_encoded_bytes = spec->image_limits.max_encoded_bytes;
-      config.max_image_dimension = spec->image_limits.max_image_dimension;
-      config.max_image_pixels = spec->image_limits.max_image_pixels;
-      vision = std::make_unique<MuseGlimmerVisionRuntime>(std::move(config));
-    }
-    return Error::Ok;
-  }
-
-  runtime::Result<TensorPtr> materialize(
-      Module& module,
-      const std::vector<batching::Input>& inputs) {
-    return materializer.materialize(
-        inputs,
-        [&](const MuseGlimmerRGBImage& image)
-            -> runtime::Result<PreparedMuseGlimmerImage> {
-          return vision->prepare_decoded_image(
-              image.rgb.data(), image.width, image.height);
-        },
-        [&](const std::vector<int64_t>& tokens) -> runtime::Result<TensorPtr> {
-          auto input = make_tensor_ptr(
-              {1, static_cast<aten::SizesType>(tokens.size())}, tokens);
-          ET_ASSIGN_OR_RETURN(
-              outputs,
-              module.execute(
-                  "embed_text", std::vector<runtime::EValue>{input}));
-          if (outputs.size() != 1 || !outputs[0].isTensor() ||
-              !dense_tensor(outputs[0].toTensor())) {
-            return Error::InvalidProgram;
-          }
-          // The materializer copies these rows before another method can reuse
-          // the module's shared output arena.
-          return make_tensor_ptr(outputs[0].toTensor());
-        });
-  }
-};
-
 MuseGlimmerMLXExecutor::MuseGlimmerMLXExecutor(
     std::unique_ptr<Module> module,
     std::shared_ptr<cache::Cache> cache,
@@ -242,8 +78,9 @@ MuseGlimmerMLXExecutor::MuseGlimmerMLXExecutor(
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
       spec_(std::move(spec)),
-      embeddings_(
-          std::make_unique<EngineEmbeddings>(spec_, std::move(pos_embed_path))),
+      embeddings_(std::make_unique<MuseGlimmerModelEmbeddings>(
+          spec_,
+          std::move(pos_embed_path))),
       max_sessions_(max_sessions) {}
 
 MuseGlimmerMLXExecutor::~MuseGlimmerMLXExecutor() = default;
@@ -363,7 +200,8 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
     if (has_vision) {
       ET_ASSIGN_OR_RETURN(
           soft_tokens,
-          check_vision_abi(*module, hidden, dtype, config.max_vision_patches));
+          muse_glimmer_abi::check_vision_abi(
+              *module, hidden, dtype, config.max_vision_patches, kBackend));
       max_soft_tokens = soft_tokens;
     }
     const int session_capacity = config.max_session_tokens
@@ -706,7 +544,7 @@ void MuseGlimmerMLXExecutor::set_sampling(
 
 bool MuseGlimmerMLXExecutor::accepts(
     const batching::PreparedInput& input) const {
-  return embeddings_->materializer.accepts(input);
+  return embeddings_->accepts(input);
 }
 
 runtime::Result<MuseGlimmerMLXExecutor::Rewinds>
