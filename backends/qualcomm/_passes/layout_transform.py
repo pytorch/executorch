@@ -82,6 +82,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.cumsum.default,
         exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.elu.default,
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.exp.default,

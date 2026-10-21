@@ -14,6 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
+from .op_floor_divide import define_int_floor_divide
 from .qnn_constants import OpElementWiseBinary, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -35,6 +36,9 @@ class Binary(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        # QNN has no integer FloorDiv.
+        if not node.meta["val"].is_floating_point():
+            return define_int_floor_divide(self, node, nodes_to_wrappers)
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,

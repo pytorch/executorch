@@ -157,12 +157,6 @@ def test_decompose_fill(request, kwargs):
 
 @enumerate_backends()
 @repack_pass_fixtures
-def test_decompose_floor_divide(request, kwargs):
-    DecomposeFloorDivide.test(request, kwargs)  # noqa: F405
-
-
-@enumerate_backends()
-@repack_pass_fixtures
 def test_decompose_glu(request, kwargs):
     DecomposeGlu.test(request, kwargs)  # noqa: F405
 
