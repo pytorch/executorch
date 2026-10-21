@@ -40,6 +40,36 @@ bool trim_hidden(
     int draft_frontier,
     int position);
 
+// Reusable owned storage for borrowed target taps. Capture precedes every
+// sampler/next slice; host destinations stay alive until fence().
+class HiddenSnapshot {
+ public:
+  ~HiddenSnapshot();
+  HiddenSnapshot() = default;
+  HiddenSnapshot(const HiddenSnapshot&) = delete;
+  HiddenSnapshot& operator=(const HiddenSnapshot&) = delete;
+  HiddenSnapshot(HiddenSnapshot&&) = delete;
+  HiddenSnapshot& operator=(HiddenSnapshot&&) = delete;
+  bool begin(std::size_t rows, std::size_t row_bytes);
+  bool capture(const aten::Tensor& taps, std::size_t offset, std::size_t rows);
+  bool copy_rows(
+      std::vector<std::uint8_t>& destination,
+      std::size_t offset,
+      std::size_t rows);
+  bool fence();
+  bool on_device() const {
+    return device_source_.value_or(false);
+  }
+
+ private:
+  void* device_ = nullptr;
+  void* stream_ = nullptr;
+  std::size_t capacity_ = 0, rows_ = 0, row_bytes_ = 0, captured_ = 0;
+  std::vector<std::uint8_t> host_;
+  std::optional<bool> device_source_;
+  bool stream_set_ = false;
+};
+
 struct DraftContext {
   std::int32_t id;
   int position;
@@ -66,6 +96,14 @@ struct CudaDFlashStats {
   std::uint64_t executions = 0;
   std::uint64_t draft_forwards = 0;
   std::uint64_t warmed_context_tokens = 0;
+  // Calls are packed execute_raw attempts; forwards count slice callbacks.
+  std::uint64_t target_preamble_calls = 0;
+  std::uint64_t target_verify_calls = 0;
+  std::uint64_t target_preamble_forwards = 0;
+  std::uint64_t target_verify_forwards = 0;
+  // Actual CUDA transfers, excluding static padding and CPU-resident taps.
+  std::uint64_t hidden_rows_d2h = 0, hidden_bytes_d2h = 0;
+  std::uint64_t hidden_rows_d2d = 0, hidden_bytes_d2d = 0;
   std::uint64_t cycles = 0; // per-owner verification cycles
   std::uint64_t proposed = 0;
   std::uint64_t accepted = 0;
@@ -115,8 +153,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
     std::int32_t target_id;
     std::int32_t draft_id;
     int frontier = 0;
-    // Host-owned BF16 rows [draft frontier, target frontier). Copied/fenced
-    // before a sampler or subsequent forward can overwrite borrowed GPU taps.
+    // Host-owned committed BF16 rows [draft frontier, target frontier).
+    // Verification appends only the consumed anchor and accepted proposals.
     std::vector<std::uint8_t> hidden;
     std::optional<batching::SamplingParams> sampling;
     std::optional<std::uint64_t> seed;
@@ -163,6 +201,7 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   batching::SessionId next_session_ = 1;
   std::unordered_map<batching::SessionId, State> sessions_;
   CudaDFlashStats stats_;
+  cuda_dflash_detail::HiddenSnapshot verification_hidden_;
   bool initialized_ = false;
   // A failed co-batch invalidates every draft owner. Only model restart
   // recovers.
