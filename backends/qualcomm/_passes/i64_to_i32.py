@@ -34,6 +34,10 @@ class I64toI32(ExportPass):
         exir_ops.edge.aten.scalar_tensor.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     }
+    # Multi-output ops whose int64 outputs (indices) QNN produces as int32
+    I64_MULTI_OUTPUT_OPS = {
+        exir_ops.edge.aten.topk.default,
+    }
     # This dict is to ensure that the input of the OPs are int64 due to Pytorch restrictions.
     # For example, scatter op can only accept args[2], the index, as int64.
     # Key: Ops to cast input to i64
@@ -67,6 +71,16 @@ class I64toI32(ExportPass):
                 self.copy_op, (res,), {"dtype": torch.int32}, meta
             )
         return super().call_operator(op, args, kwargs, meta)
+
+    def call_getitem(self, value, key, meta):
+        res = super().call_getitem(value, key, meta)
+        if value.node.target in self.I64_MULTI_OUTPUT_OPS and self._is_tensor_of_dtype(
+            meta["val"], torch.int64
+        ):
+            return super().call_operator(
+                self.copy_op, (res,), {"dtype": torch.int32}, meta
+            )
+        return res
 
     def _record_original_output_dtype(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
