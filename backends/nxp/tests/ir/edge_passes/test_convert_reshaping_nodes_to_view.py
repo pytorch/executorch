@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 import torch
 from executorch.backends.nxp.backend.ops_aliases import AddTensor, ViewCopy
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
