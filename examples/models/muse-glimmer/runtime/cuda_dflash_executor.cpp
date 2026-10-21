@@ -7,6 +7,8 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 
+#include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
+
 #include <cuda_runtime.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/cuda/caller_stream.h>
@@ -460,6 +462,77 @@ MuseGlimmerCudaDFlashExecutor::~MuseGlimmerCudaDFlashExecutor() {
       draft_ctl_->seq_rm(item.second.draft_id);
     }
   }
+}
+
+Result<std::shared_ptr<const MuseGlimmerPreparationSpec>> make_cuda_preparation(
+    cb::CudaExecutor& target,
+    const MuseGlimmerBackendConfig& config,
+    std::int32_t max_context,
+    std::shared_ptr<MuseGlimmerModelEmbeddings>* embeddings) {
+  ET_ASSIGN_OR_RETURN(names, target.module().method_names());
+  const bool has_vision = names.count("vision_encoder") != 0;
+  const auto hidden =
+      static_cast<std::int32_t>(target.embeddings_hidden_size());
+  std::int64_t max_soft_tokens = 0;
+  if (has_vision) {
+    ET_CHECK_OR_RETURN_ERROR(
+        hidden > 0,
+        InvalidProgram,
+        "Muse Glimmer CUDA: vision needs %s",
+        cb::kEmbeddingsMethod);
+    ET_ASSIGN_OR_RETURN(
+        soft_tokens,
+        muse_glimmer_abi::check_vision_abi(
+            target.module(),
+            hidden,
+            aten::ScalarType::BFloat16,
+            config.max_vision_patches,
+            ::executorch::backends::cuda::kCudaBackendId));
+    max_soft_tokens = soft_tokens;
+  }
+  auto spec = std::make_shared<const MuseGlimmerPreparationSpec>(
+      MuseGlimmerPreparationSpec{
+          aten::ScalarType::BFloat16,
+          has_vision ? hidden : 0,
+          max_context,
+          static_cast<std::int32_t>(target.preferred_batch_tokens()),
+          target.vocab_size(),
+          has_vision,
+          max_soft_tokens,
+          config.image_limits,
+          config.bos_id});
+  if (!has_vision) {
+    ET_CHECK_OR_RETURN_ERROR(
+        config.pos_embed_path.empty(),
+        InvalidArgument,
+        "Muse Glimmer CUDA: the program has no vision_encoder, but --pos-embed-path was given (%s)",
+        config.pos_embed_path.c_str());
+    return spec;
+  }
+  auto path = config.pos_embed_path;
+  if (path.empty()) {
+    const auto slash = config.model_path.find_last_of('/');
+    path = (slash == std::string::npos ? "."
+                                       : config.model_path.substr(0, slash)) +
+        "/pos_embed.bin";
+  }
+  auto model_embeddings =
+      std::make_shared<MuseGlimmerModelEmbeddings>(spec, std::move(path));
+  Module* module = &target.module();
+  ET_CHECK_OK_OR_RETURN_ERROR(target.set_input_embedder(
+      {[model_embeddings, module] {
+         return model_embeddings->initialize(*module);
+       },
+       [model_embeddings](const batching::PreparedInput& input) {
+         return model_embeddings->accepts(input);
+       },
+       [model_embeddings, module](const std::vector<batching::Input>& inputs) {
+         return model_embeddings->materialize(*module, inputs);
+       }}));
+  if (embeddings) {
+    *embeddings = std::move(model_embeddings);
+  }
+  return spec;
 }
 
 Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
