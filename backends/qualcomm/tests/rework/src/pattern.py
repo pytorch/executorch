@@ -4958,8 +4958,9 @@ class ResolveDebugHandle:
             "getitem": 1 + offset,
             "getitem_1": 1 + offset,
             "aten_view_copy_default": 2 + offset,
-            "aten_index_tensor": 3 + offset,
-            "aten_add_tensor": 4 + offset,
+            "aten__to_copy_default": 3 + offset,
+            "aten_index_tensor": 4 + offset,
+            "aten_add_tensor": 5 + offset,
         }
         if quantizer is not None:
             name_handle_map["quantized_decomposed_dequantize_per_tensor_default"] = 1

@@ -2997,6 +2997,11 @@ class TopKandIndex(torch.nn.Module):
         return a + self.idx_source[b]
 
 
+class TopKIndices(torch.nn.Module):
+    def forward(self, x):
+        return torch.topk(x, 3)[1]
+
+
 class Triu(torch.nn.Module):
     def __init__(self, diagonal: Optional[int] = None):
         super().__init__()
