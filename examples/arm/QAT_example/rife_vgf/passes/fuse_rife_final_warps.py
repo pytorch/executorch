@@ -9,6 +9,7 @@ import operator
 
 import torch
 from examples.arm.QAT_example.rife_vgf.shaders.final_warps import (
+    BLEND_OPERATOR_NAME,
     build_final_warps_payload,
     OPERATOR_NAME,
 )
@@ -38,13 +39,17 @@ from .pack_rife_warps_and_concat import (
     _tensor_shape,
     TOSA,
 )
+from .rife_blend import match_rife_blend
 
 logger = logging.getLogger(__name__)
 
 
 @register_fake_tosa(OPERATOR_NAME)
+@register_fake_tosa(BLEND_OPERATOR_NAME)
 def _final_warps_fake(inputs, operator_name, domain_name, implementation_attrs):
     _, height, width, _ = inputs[0].shape
+    if operator_name == BLEND_OPERATOR_NAME:
+        return [inputs[0].new_empty((1, 3, height, width))]
     return [
         inputs[0].new_empty((1, height, width, 4)),
         inputs[1].new_empty((1, height, width, 4)),
@@ -159,7 +164,7 @@ def _validate_rescales(previous, delta, total):
 
 
 class FuseRifeFinalWarpsPass(ArmPass):
-    """Fuse the IFNetTwoBlock tail while keeping final blending in TOSA."""
+    """Fuse the IFNetTwoBlock tail, including a compatible final image blend."""
 
     _passes_required_after: set[type[ExportPass]] = set()
 
@@ -266,7 +271,12 @@ class FuseRifeFinalWarpsPass(ArmPass):
         except ValueError as error:
             logger.debug("Keeping the original RIFE final tail: %s", error)
             return PassResult(graph_module, False)
-        payload = build_final_warps_payload(payloads, rescales, sigmoid)
+        try:
+            blend = match_rife_blend(self.exported_program, outputs, table)
+        except ValueError as error:
+            logger.debug("Keeping the RIFE image blend in TOSA: %s", error)
+            blend = None
+        payload = build_final_warps_payload(payloads, rescales, sigmoid, blend=blend)
         _reorder_pixel_shuffle_output(self.exported_program, phase, parameters)
         graph = graph_module.graph
         with graph.inserting_before(customs[0]):
@@ -274,13 +284,16 @@ class FuseRifeFinalWarpsPass(ArmPass):
                 TOSA.CUSTOM.default,
                 ([customs[0].args[0][0], customs[1].args[0][0], packed, phase],),
                 {
-                    "operator_name": OPERATOR_NAME,
+                    "operator_name": (
+                        OPERATOR_NAME if blend is None else BLEND_OPERATOR_NAME
+                    ),
                     "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
                     "implementation_attrs": list(json.dumps(payload).encode()),
                 },
             )
-        custom.meta = {"val": [n.meta["val"] for n in [*outputs, table]]}
-        for index, node in enumerate([*outputs, table]):
+        results = [*outputs, table] if blend is None else [blend.output]
+        custom.meta = {"val": [n.meta["val"] for n in results]}
+        for index, node in enumerate(results):
             node.target, node.args, node.kwargs = operator.getitem, (custom, index), {}
         graph.eliminate_dead_code()
         graph.lint()

@@ -12,6 +12,7 @@ from executorch.backends.arm.operators.op_tosa_rescale import (
 from . import _compile_shader_source
 
 OPERATOR_NAME = "rife.final_warps"
+BLEND_OPERATOR_NAME = "rife.final_blend"
 
 
 def _rescale_source(name, node):
@@ -32,27 +33,58 @@ def _rescale_source(name, node):
 }}"""
 
 
-def build_final_warps_payload(payloads, rescales, sigmoid_table):
+def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
     """Compile block1 PixelShuffle, flow update, mask lookup and both warps.
 
     Args:
         payloads (list[dict]): Validated original warp descriptors and qparams.
         rescales (tuple[Node, Node, Node]): Previous flow, delta and sum rescales.
         sigmoid_table (Tensor): Original signed INT8 sigmoid lookup table.
+        blend (RifeBlend | None): Optional quantized final image blend.
 
     Returns:
-        dict: Shader payload producing two RGBA images and an NCHW mask.
+        dict: Shader payload producing warped images and mask, or final RGB.
 
     """
     source = Path(__file__).with_name("final_warps.glsl").read_text()
-    source = source.replace(
-        "@RESCALES@",
-        "\n".join(
+    functions = [
+        _rescale_source(name, node)
+        for name, node in zip(
+            ("rescalePrevious", "rescaleDelta", "rescaleSum"), rescales
+        )
+    ]
+    zero_points = ""
+    if blend is not None:
+        functions.extend(
             _rescale_source(name, node)
             for name, node in zip(
-                ("rescalePrevious", "rescaleDelta", "rescaleSum"), rescales
+                (
+                    "rescaleMul0",
+                    "rescaleMul1",
+                    "rescaleAdd0",
+                    "rescaleAdd1",
+                    "rescaleOutput",
+                ),
+                blend.rescales,
             )
-        ),
+        )
+        zero_points = "\n".join(
+            f"const int {prefix}{i}_ZERO_POINT = {value};"
+            for prefix, values in (
+                ("IMAGE", blend.image_zero_points),
+                ("MASK", blend.mask_zero_points),
+            )
+            for i, value in enumerate(values)
+        )
+    source = source.replace("@FUSE_BLEND@", str(int(blend is not None)))
+    source = source.replace("@BLEND_ZERO_POINTS@", zero_points)
+    source = source.replace(
+        "@COMPLEMENT_TABLE@",
+        ", ".join(map(str, blend.complement.tolist())) if blend is not None else "",
+    )
+    source = source.replace(
+        "@RESCALES@",
+        "\n".join(functions),
     )
     source = source.replace(
         "@SIGMOID_TABLE@", ", ".join(map(str, sigmoid_table.tolist()))
@@ -76,18 +108,21 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table):
     }
     for index, original in enumerate(payloads):
         for key, value in original.items():
-            if key.startswith("input_0_") or key.startswith("output_0_"):
+            if key.startswith("input_0_") or (
+                blend is None and key.startswith("output_0_")
+            ):
                 prefix = "input" if key.startswith("input") else "output"
                 payload[key.replace(f"{prefix}_0_", f"{prefix}_{index}_")] = (
                     index + (4 if prefix == "output" else 0)
                     if key.endswith("_binding")
                     else value
                 )
-    for prefix, binding, kind in (
+    bindings = [
         ("input_2", 2, "Buffer"),
         ("input_3", 3, "Tensor"),
-        ("output_2", 6, "Tensor"),
-    ):
+        ("output_2", 6, "Tensor") if blend is None else ("output_0", 4, "Tensor"),
+    ]
+    for prefix, binding, kind in bindings:
         payload.update(
             {
                 f"{prefix}_binding": binding,

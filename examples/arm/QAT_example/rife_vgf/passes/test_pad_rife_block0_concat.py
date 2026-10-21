@@ -200,7 +200,15 @@ def test_requires_exported_program():
 
 @pytest.mark.parametrize(
     "consumer",
-    ["packed", "warp_rgb", "warp_rgb_nchw", "warp_rgba", "warp_rgba_nchw", "unknown"],
+    [
+        "packed",
+        "final_blend",
+        "warp_rgb",
+        "warp_rgb_nchw",
+        "warp_rgba",
+        "warp_rgba_nchw",
+        "unknown",
+    ],
 )
 def test_reuses_padding_only_when_alpha_is_unused(consumer):
     import operator
@@ -215,7 +223,11 @@ def test_reuses_padding_only_when_alpha_is_unused(consumer):
         name = (
             pad.OPERATOR_NAME
             if consumer == "packed"
-            else pad.flow_offset_grid_sampler_operator_name()
+            else (
+                pad.BLEND_OPERATOR_NAME
+                if consumer == "final_blend"
+                else pad.flow_offset_grid_sampler_operator_name()
+            )
         )
         custom = graph.call_function(
             TOSA.CUSTOM.default,
@@ -235,7 +247,7 @@ def test_reuses_padding_only_when_alpha_is_unused(consumer):
     graph.output_node().args = ((conv, crop),)
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
     padded_input = concat.args[0][0].args[0].args[0]
-    if consumer in ("packed", "warp_rgb", "warp_rgb_nchw"):
+    if consumer in ("packed", "final_blend", "warp_rgb", "warp_rgb_nchw"):
         assert padded_input is image
         assert image.kwargs["value"] == 40
         assert list(graph.nodes).index(image) < list(graph.nodes).index(concat)
@@ -245,7 +257,8 @@ def test_reuses_padding_only_when_alpha_is_unused(consumer):
     graph.lint()
 
 
-def test_preserves_order_when_pads_share_a_shape_constant():
+@pytest.mark.parametrize("final_blend", [False, True])
+def test_preserves_order_when_pads_share_a_shape_constant(final_blend):
     program, inputs, concat, conv = _program()
     graph = program.graph
     with graph.inserting_before(graph.output_node()):
@@ -267,7 +280,19 @@ def test_preserves_order_when_pads_share_a_shape_constant():
                 "operator_name": pad.OPERATOR_NAME,
             },
         )
-    graph.output_node().args = ((conv, custom),)
+        outputs = [conv, custom]
+        if final_blend:
+            outputs.append(
+                graph.call_function(
+                    TOSA.CUSTOM.default,
+                    (images,),
+                    {
+                        "domain_name": pad.CUSTOM_SHADER_DOMAIN_NAME,
+                        "operator_name": pad.BLEND_OPERATOR_NAME,
+                    },
+                )
+            )
+    graph.output_node().args = (tuple(outputs),)
     assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
     assert [branch.args[0].args[0] for branch in concat.args[0][:2]] == images
     assert sum(n.target == TOSA.PAD.default for n in graph.nodes) == 2

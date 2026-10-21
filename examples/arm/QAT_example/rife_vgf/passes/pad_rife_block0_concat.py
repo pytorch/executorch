@@ -20,6 +20,7 @@ from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
+from ..shaders.final_warps import BLEND_OPERATOR_NAME
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
@@ -40,7 +41,7 @@ def _ignores_alpha(custom, image):
     ):
         return False
     name = custom.kwargs.get("operator_name")
-    if name == OPERATOR_NAME:
+    if name in (OPERATOR_NAME, BLEND_OPERATOR_NAME):
         return image in custom.args[0][:2] and image not in custom.args[0][2:]
     if (
         name != flow_offset_grid_sampler_operator_name()
