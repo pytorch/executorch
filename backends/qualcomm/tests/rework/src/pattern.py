@@ -2013,6 +2013,10 @@ class DecomposeFloorDivide:
         def forward(self, x, y):
             return torch.floor_divide(x, y)
 
+    class _IntDivScalar(torch.nn.Module):
+        def forward(self, x):
+            return x // 3
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -2034,6 +2038,18 @@ class DecomposeFloorDivide:
                     torch.randint(1, 10, (3, 4), dtype=torch.int32),
                     torch.randint(1, 5, (3, 4), dtype=torch.int32),
                 ),
+                target_pass=target_pass,
+                backend_type=backend_type,
+                quantizer=quantizer,
+            )
+            assertions.assert_no_target(gm, torch.ops.aten.floor_divide.default)
+            assertions.assert_target_count(gm, torch.ops.aten.floor.default, 1)
+
+        # Python scalar divisor, as in `indices // num_classes`
+        with subtests.test(msg="int_scalar"):
+            gm = pass_pipeline.lower_export_gm(
+                module=DecomposeFloorDivide._IntDivScalar(),
+                sample_input=(torch.randint(-10, 10, (3, 4), dtype=torch.int32),),
                 target_pass=target_pass,
                 backend_type=backend_type,
                 quantizer=quantizer,
