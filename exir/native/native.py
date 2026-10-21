@@ -394,9 +394,20 @@ def to_native(
         get_lowered_submodules,
     )
 
+    # Expose every method's buffer writes before folding constants in any method.
+    method_programs = {
+        name: program.run_decompositions({})
+        for name, program in method_programs.items()
+    }
+    mutable_buffers = {
+        buffer
+        for program in method_programs.values()
+        for buffer in program.graph_signature.buffers_to_mutate.values()
+    }
+
     edge = to_edge_transform_and_lower(
         method_programs,
-        transform_passes=get_default_passes(),
+        transform_passes=get_default_passes(mutable_buffers=mutable_buffers),
         partitioner=[
             NativePartitioner(external_constants_tag=None, _serialize_as_ptn=True)
         ],
