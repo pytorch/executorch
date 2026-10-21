@@ -311,6 +311,63 @@ void get_adaptive_avg_pool2d_out_target_size(
   out_sizes[*out_ndim - 1] = output_size[1];
 }
 
+bool check_avg_pool1d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(in));
+
+  ET_CHECK_OR_RETURN_FALSE(
+      (in.dim() == 2 && in.size(0) > 0 && in.size(1) > 0) ||
+          (in.dim() == 3 && in.size(1) > 0 && in.size(2) > 0),
+      "Expected 2D or 3D (batch mode) tensor with optional 0 dim batch size for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid(kernel_size, /*kernel_ndim=*/1));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(stride, /*kernel_ndim=*/1, /*allow_empty=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+      padding, kernel_size, /*kernel_ndim=*/1, /*enforce_half_kernel=*/true));
+
+  // Guarantees a non-negative numerator in _kernel_output_size_helper, whose
+  // truncating division would otherwise round up instead of down.
+  const int64_t padded_len = in.size(in.dim() - 1) + 2 * padding[0];
+  ET_CHECK_OR_RETURN_FALSE(
+      kernel_size[0] <= padded_len,
+      "kernel_size %" PRId64 " exceeds padded input length %" PRId64,
+      kernel_size[0],
+      padded_len);
+
+  return true;
+}
+
+void get_avg_pool1d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+
+  // Batch dim is optional, so in can be either 2 or 3 dim.
+  if (in.dim() == 3) {
+    out_sizes[0] = in.size(0);
+    out_sizes[1] = in.size(1);
+  } else {
+    out_sizes[0] = in.size(0);
+  }
+
+  calculate_kernel_output_sizes(
+      in, 1, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+}
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,
