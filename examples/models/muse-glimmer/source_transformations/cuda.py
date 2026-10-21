@@ -21,13 +21,11 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
 import executorch.extension.llm.cache.update_and_attend  # noqa: F401
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import triton
 import triton.language as tl
-
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
     rotate_half,
@@ -40,15 +38,25 @@ from executorch.examples.models.muse_glimmer.model.model import (
 from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
     sample,
 )
-
 from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.library import triton_op, wrap_triton
 
 
 def add_dflash_hidden_tapping(model: nn.Module, target_layer_ids: list[int]) -> None:
     """Make a CUDA Muse Glimmer target return logits and DFlash tapped hidden states."""
+    if (
+        not target_layer_ids
+        or any(
+            type(i) is not int or not 0 <= i < len(model.layers)
+            for i in target_layer_ids
+        )
+        or target_layer_ids != sorted(set(target_layer_ids))
+    ):
+        raise ValueError(
+            "DFlash tap IDs must be nonempty, ascending, unique and in range"
+        )
     target_set = set(target_layer_ids)
-    model._dflash_target_layer_ids = target_layer_ids
+    model._dflash_target_layer_ids = tuple(target_layer_ids)
 
     def _run_embeddings_with_hidden(
         self, x: torch.Tensor, input_pos: torch.Tensor
@@ -368,6 +376,91 @@ def dflash_cuda_source_transformations(model: nn.Module) -> None:
     print(
         f"[muse_glimmer cuda] DFlash: swapped {n_swapped} attention layers with "
         f"CUDADFlashAttention (flat KV cache + length-aware triton.sdpa)"
+    )
+
+
+def _packed_dflash_attention_forward(self, x, target_hidden, positions, kv_order):
+    batch, width, _ = x.shape
+    context = target_hidden.shape[1]
+    torch._check(positions.shape[0] == context + width)
+    torch._check(kv_order.shape[0] == context + width)
+    # Project each real stream separately, preserving CUDA BF16 GEMM arithmetic.
+    k = torch.cat([self.k_proj(target_hidden), self.k_proj(x)], dim=1)
+    v = torch.cat([self.v_proj(target_hidden), self.v_proj(x)], dim=1)
+    k = self.k_norm(k.view(batch, context + width, self.n_kv_heads, self.head_dim))
+    v = v.view(batch, context + width, self.n_kv_heads, self.head_dim)
+    q = self.q_norm(self.q_proj(x).view(batch, width, self.n_heads, self.head_dim))
+    phase = torch.outer(positions.float(), self.inv_freq)
+    cos, sin = phase.cos()[None, None], phase.sin()[None, None]
+    q = rotate_half(q.transpose(1, 2), cos[:, :, context:], sin[:, :, context:])
+    k = rotate_half(k.transpose(1, 2), cos, sin).index_select(2, kv_order)
+    v = v.transpose(1, 2).index_select(2, kv_order)
+    y = torch.ops.kvcache.update_and_attend(
+        q,
+        k,
+        v,
+        positions.index_select(0, kv_order).reshape(-1, 1),
+        self.layer_idx,
+        self.attn_scale,
+        q.dtype,
+    )
+    return self.o_proj(y.transpose(1, 2).contiguous().reshape(batch, width, -1))
+
+
+def _packed_dflash_layer_forward(self, x, ctx, positions, kv_order):
+    x = x + self.self_attn(self.input_layernorm(x), ctx, positions, kv_order)
+    return x + self.mlp(self.post_attention_layernorm(x))
+
+
+def _packed_dflash_model_forward(
+    self, noise_embedding, target_hidden, positions, kv_order
+):
+    ctx = self.hidden_norm(self.fc(target_hidden))
+    x = noise_embedding
+    for layer in self.layers:
+        x = layer(x, ctx, positions, kv_order)
+    return self.norm(x)
+
+
+def enable_dflash_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
+    """Packed cell-cache draft, with block-only queries and real context K/V."""
+    layers = []
+    for i, layer in enumerate(model.layers):
+        attn = layer.self_attn
+        attn.layer_idx = i
+        attn.register_buffer(
+            "inv_freq",
+            1.0
+            / (
+                attn.rope_theta
+                ** (
+                    torch.arange(0, attn.head_dim, 2, dtype=torch.float32)
+                    / attn.head_dim
+                )
+            ),
+            persistent=False,
+        )
+        layers.append(
+            {
+                "layer_id": i,
+                "policy": "ring" if attn.is_sliding else "flat",
+                "window": attn.window_size if attn.is_sliding else 0,
+            }
+        )
+        if hasattr(attn, "kv_cache"):
+            del attn.kv_cache
+        attn.forward = types.MethodType(_packed_dflash_attention_forward, attn)
+        layer.forward = types.MethodType(_packed_dflash_layer_forward, layer)
+    model.forward = types.MethodType(_packed_dflash_model_forward, model)
+    return json.dumps(
+        {
+            "version": 1,
+            "maximum_capacity": model.config.max_seq_len,
+            "max_write": max_write,
+            "layers": layers,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
     )
 
 

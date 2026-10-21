@@ -109,6 +109,13 @@ else
 fi
 
 log_file=$(mktemp)
+log_filter='s/\r$//'
+if [[ ${target} == ethos-u55-* ]]; then
+    # Dynamic BMM can trigger this false critical datatype diagnostic.
+    known_u55_diagnostic='^\[critical\]\[u_dut\.u_npu(_simple)?\.u_npu_cc\.u_npu_cc_tsu\.proc\]'
+    known_u55_diagnostic+='\[[0-9]+ ns\] Op=4: Invalid data type, ifm=5 ofm=1$'
+    log_filter+="; /${known_u55_diagnostic}/s/^\[critical\]/[warning]/"
+fi
 
 run_simulation() {
     local -a pipeline_status
@@ -116,7 +123,7 @@ run_simulation() {
     local status
 
     set +e
-    "$@" 2>&1 | sed 's/\r$//' | tee "${log_file}"
+    "$@" 2>&1 | sed -E "${log_filter}" | tee "${log_file}"
     pipeline_status=("${PIPESTATUS[@]}")
     set -e
 
@@ -270,7 +277,7 @@ fi
 
 echo "Checking for problems in log:"
 problem_log=$(mktemp)
-grep -E "^(F|E|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" "${log_file}" > "${problem_log}" || true
+grep -E "^([FE]([[:space:]:]|$)|Error|ERROR|Fatal|FATAL|Fail|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" "${log_file}" > "${problem_log}" || true
 if [[ "${ethosu_fast}" == 1 ]]; then
     filtered_problem_log=$(mktemp)
     timing_adapter_fast_mode_regex="Failed to initialize timing-adapter #[0-9]+|Timing adapter has no effect if option --fast/-F is enabled"
