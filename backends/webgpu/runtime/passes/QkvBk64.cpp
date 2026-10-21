@@ -110,21 +110,25 @@ void resize_qkv_bk64(WebGPUGraph& graph, const QkvBk64ResizeContext& context) {
   } else {
     // The separate projections' own resize hooks are registered before this
     // one (Phase 3 processes each Q/K/V member before this fusion's combined
-    // hook) and unconditionally restore their live grids, so this hook
-    // normally has nothing to do here. That ordering isn't enforced by the
-    // type system, so fail loud rather than silently drop Q/K/V outputs if a
-    // future change ever violates it.
+    // hook) and restore their live grids, so this hook normally has nothing to
+    // do here. A member that records a decode and a prefill route keeps its
+    // inactive route at a zero grid, so require one live dispatch per member
+    // rather than all of them. That ordering isn't enforced by the type
+    // system, so fail loud rather than silently drop Q/K/V outputs if a future
+    // change ever violates it.
     for (size_t member = 0; member < context.separate_begin.size(); member++) {
+      bool live = false;
       for (size_t i = context.separate_begin[member];
-           i < context.separate_end[member];
+           i < context.separate_end[member] && !live;
            i++) {
         const auto& dispatch = graph.dispatch_at(i);
-        if (dispatch.workgroup_count_x == 0u ||
-            dispatch.workgroup_count_y == 0u) {
-          throw std::runtime_error(
-              "linear_q4gsw_bk64_qkv(resize): separate projection dispatch "
-              "was not restored before the QKV resize hook ran");
-        }
+        live = dispatch.workgroup_count_x != 0u &&
+            dispatch.workgroup_count_y != 0u;
+      }
+      if (!live) {
+        throw std::runtime_error(
+            "linear_q4gsw_bk64_qkv(resize): separate projection dispatch "
+            "was not restored before the QKV resize hook ran");
       }
     }
   }
