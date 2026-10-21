@@ -1,4 +1,4 @@
-/* Copyright 2025 Arm Limited and/or its affiliates.
+/* Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -224,16 +224,16 @@ static bool asan_check_address(const char* kind, void* addr, size_t size) {
     return true;
   }
   uintptr_t begin = (uintptr_t)addr;
+  if (size > UINTPTR_MAX - begin) {
+    asan_report_error(kind, addr, size, "overflow in address range", NULL);
+    return false;
+  }
   uintptr_t end = begin + size;
   for (size_t i = 0; i < sizeof(g_peripheral_ranges) / sizeof(g_peripheral_ranges[0]); ++i) {
     const asan_peripheral_range_t* range = &g_peripheral_ranges[i];
     if (begin >= range->start && end <= range->end) {
       return true;
     }
-  }
-  if (end < begin) {
-    asan_report_error(kind, addr, size, "overflow in address range", NULL);
-    return false;
   }
   asan_region_t* region = asan_find_region(begin, end);
   if (!region) {
