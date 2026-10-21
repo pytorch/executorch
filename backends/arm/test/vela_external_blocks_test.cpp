@@ -26,6 +26,7 @@
 using executorch::backends::arm::kVelaExternalBlockReference;
 using executorch::backends::arm::vela_bin_read;
 using executorch::backends::arm::VelaHandles;
+using executorch::backends::arm::VelaIO;
 using executorch::backends::arm::VelaIOs;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
@@ -130,9 +131,16 @@ class FakeNamedDataMap final : public NamedDataMap {
   std::vector<Entry> entries_;
 };
 
+class VelaExternalBlocksTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+};
+
 } // namespace
 
-TEST(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
+TEST_F(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
   alignas(16) const std::array<uint8_t, 16> command{
       'C', 'O', 'P', '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   const std::vector<uint8_t> weights{1, 2, 3, 4};
@@ -163,7 +171,7 @@ TEST(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
       std::memcmp(handles.weight_data, weights.data(), weights.size()), 0);
 }
 
-TEST(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
+TEST_F(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
   alignas(16) const std::array<uint8_t, 4> opaque_command{'B', 'A', 'D', '1'};
   const auto stream = stream_with_external_key("cmd_data");
   FakeNamedDataMap data_map(
@@ -179,7 +187,7 @@ TEST(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
       Error::InvalidProgram);
 }
 
-TEST(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
+TEST_F(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
   alignas(16) const std::array<uint8_t, 4> command{'C', 'O', 'P', '1'};
   const auto stream = stream_with_external_key("cmd_data", "not-a-hash");
   FakeNamedDataMap data_map("not-a-hash", command.data(), command.size());
@@ -194,7 +202,7 @@ TEST(VelaExternalBlocksTest, RejectsExternalKeyWithWrongSize) {
       Error::InvalidProgram);
 }
 
-TEST(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
+TEST_F(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
   const std::vector<uint8_t> command{
       'C', 'O', 'P', '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   std::vector<uint8_t> stream;
@@ -215,7 +223,7 @@ TEST(VelaExternalBlocksTest, ReadsInlineBlocksWithoutNamedData) {
   EXPECT_EQ(std::memcmp(handles.cmd_data, command.data(), command.size()), 0);
 }
 
-TEST(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
+TEST_F(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
   alignas(16) const std::array<uint8_t, 16> weight_data{
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   alignas(16) const std::array<uint8_t, 4> scratch_size{32, 0, 0, 0};
@@ -260,9 +268,15 @@ TEST(VelaExternalBlocksTest, ResolvesEveryExternalBlockType) {
   }
 }
 
-TEST(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
-  alignas(16) std::array<uint8_t, 4> inputs_data{1, 0, 0, 0};
-  alignas(16) std::array<uint8_t, 4> outputs_data{2, 0, 0, 0};
+TEST_F(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
+  // The payload must be large enough to hold `count` VelaIO entries, otherwise
+  // vela_bin_read rejects it. count is the first int of the buffer.
+  alignas(16) std::array<uint8_t, sizeof(VelaIOs) + sizeof(VelaIO)>
+      inputs_data{};
+  inputs_data[0] = 1; // count = 1
+  alignas(16) std::array<uint8_t, sizeof(VelaIOs) + 2 * sizeof(VelaIO)>
+      outputs_data{};
+  outputs_data[0] = 2; // count = 2
   std::vector<uint8_t> stream;
   append_block(stream, "vela_bin_stream");
   append_block(
@@ -296,8 +310,7 @@ TEST(VelaExternalBlocksTest, ResolvesMultipleExternalBlocksIndependently) {
   EXPECT_EQ(handles.outputs->count, 2);
 }
 
-TEST(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
-  executorch::runtime::runtime_init();
+TEST_F(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
   alignas(16) const std::array<uint8_t, 4> payload{1, 2, 3, 4};
   const auto stream = stream_with_external_key("unsupported");
   FakeNamedDataMap data_map(kExternalKey, payload.data(), payload.size());
@@ -308,6 +321,65 @@ TEST(VelaExternalBlocksTest, RejectsUnknownExternalBlock) {
           reinterpret_cast<const char*>(stream.data()),
           stream.size(),
           &data_map,
+          &handles),
+      Error::InvalidProgram);
+}
+
+// A block header that is truncated by the end of the buffer must be rejected
+// instead of being read out of bounds.
+TEST_F(VelaExternalBlocksTest, RejectsTruncatedBlockHeader) {
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  // Fewer than sizeof(VelaBinBlock) trailing bytes: not a full header.
+  stream.insert(stream.end(), 8, 0);
+  VelaHandles handles{};
+
+  EXPECT_EQ(
+      vela_bin_read(
+          reinterpret_cast<const char*>(stream.data()),
+          stream.size(),
+          nullptr,
+          &handles),
+      Error::InvalidProgram);
+}
+
+// A block whose declared size field exceeds the bytes remaining in the buffer
+// must be rejected before its payload (or the cursor advance) runs off the end.
+TEST_F(VelaExternalBlocksTest, RejectsBlockSizeLargerThanBuffer) {
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  // Hand-write a header claiming a 4096-byte payload but supply only one byte.
+  append_fixed_string(stream, "weight_data", 16);
+  append_u32(stream, 4096u);
+  stream.push_back(0); // external
+  stream.resize(stream.size() + 11, 0); // reserved
+  stream.push_back(0xAA); // single real payload byte
+  VelaHandles handles{};
+
+  EXPECT_EQ(
+      vela_bin_read(
+          reinterpret_cast<const char*>(stream.data()),
+          stream.size(),
+          nullptr,
+          &handles),
+      Error::InvalidProgram);
+}
+
+// An inputs/outputs block whose declared count is larger than the payload can
+// hold must be rejected, so that io[i] is never read out of bounds at execute.
+TEST_F(VelaExternalBlocksTest, RejectsIoCountExceedingPayload) {
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  // count = 1 but no VelaIO entry follows (only the 4-byte count field).
+  append_block(stream, "inputs", std::vector<uint8_t>{1, 0, 0, 0});
+  append_block(stream, "vela_end_stream");
+  VelaHandles handles{};
+
+  EXPECT_EQ(
+      vela_bin_read(
+          reinterpret_cast<const char*>(stream.data()),
+          stream.size(),
+          nullptr,
           &handles),
       Error::InvalidProgram);
 }
