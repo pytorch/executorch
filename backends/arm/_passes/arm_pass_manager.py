@@ -47,6 +47,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
+    DecomposeBoolEqualityPass,
     DecomposeChooseQParamsSymmetricPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
@@ -668,6 +669,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 DecomposeNotEqualPass(),
+                DecomposeBoolEqualityPass(),
                 NormalizeIndexPutNoneIndicesPass(),
                 NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
