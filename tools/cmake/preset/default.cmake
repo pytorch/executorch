@@ -179,6 +179,26 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
+  OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_GGML "Build the native GGML engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+  "Build the native vision classification runner (run_classification)" OFF
+  "EXECUTORCH_BUILD_NATIVE_VULKAN" OFF
+)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(

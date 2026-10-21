@@ -1340,6 +1340,47 @@ class TestPropagateDevicePass(unittest.TestCase):
             f"no graph output should be planned when it stays on the device, got {planned_outputs}",
         )
 
+    def test_device_output_copied_to_host_is_planned(self):
+        """A delegate output copied to the host is an intermediate tensor on the
+        device, so memory planning must place it even when the graph outputs are
+        left to the caller. Unplanned, the runtime hands the delegate a null
+        pointer for it."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        lowered = to_edge_transform_and_lower(
+            torch.export.export(Model(), (torch.randn(2, 2), torch.randn(2, 2))),
+            partitioner=[DeviceAwarePartitioner("cuda:0")],
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        plan = lowered.executorch_program.execution_plan[0]
+        device_intermediates = [
+            index
+            for index, value in enumerate(plan.values)
+            if index not in plan.inputs
+            and getattr(value.val, "extra_tensor_info", None) is not None
+            and value.val.extra_tensor_info.device_type == DeviceType.CUDA
+        ]
+        self.assertTrue(device_intermediates)
+        for index in device_intermediates:
+            self.assertIsNotNone(
+                plan.values[index].val.allocation_info,
+                f"device tensor {index} is not planned",
+            )
+        for index in plan.outputs:
+            self.assertIsNone(plan.values[index].val.allocation_info)
+
 
 if __name__ == "__main__":
     unittest.main()

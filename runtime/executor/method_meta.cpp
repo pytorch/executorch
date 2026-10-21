@@ -22,6 +22,19 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
+
+// Like the tensor parser, places a tensor without a device annotation on the
+// CPU.
+etensor::Device tensor_device(const executorch_flatbuffer::Tensor* tensor) {
+  if (tensor->extra_tensor_info() == nullptr) {
+    return etensor::Device{etensor::DeviceType::CPU, 0};
+  }
+  return etensor::Device{
+      static_cast<etensor::DeviceType>(
+          tensor->extra_tensor_info()->device_type()),
+      static_cast<etensor::DeviceIndex>(
+          tensor->extra_tensor_info()->device_index())};
+}
 bool has_required_metadata(const executorch_flatbuffer::ExecutionPlan& plan) {
   const auto* values = plan.values();
   const auto* inputs = plan.inputs();
@@ -154,7 +167,8 @@ Result<size_t> calculate_nbytes(
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned,
-    std::string_view name) {
+    std::string_view name,
+    etensor::Device device) {
   auto nbytes = calculate_nbytes(sizes, scalar_type);
   ET_CHECK_OR_RETURN_ERROR(
       nbytes.ok(),
@@ -162,7 +176,13 @@ Result<size_t> calculate_nbytes(
       "Failed to calculate nbytes for TensorInfo");
 
   return TensorInfo(
-      sizes, dim_order, scalar_type, is_memory_planned, name, nbytes.get());
+      sizes,
+      dim_order,
+      scalar_type,
+      is_memory_planned,
+      name,
+      nbytes.get(),
+      device);
 }
 
 TensorInfo::TensorInfo(
@@ -171,13 +191,15 @@ TensorInfo::TensorInfo(
     executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned,
     std::string_view name,
-    size_t nbytes)
+    size_t nbytes,
+    etensor::Device device)
     : sizes_(sizes),
       dim_order_(dim_order),
       name_(name),
       scalar_type_(scalar_type),
       is_memory_planned_(is_memory_planned),
-      nbytes_(nbytes) {}
+      nbytes_(nbytes),
+      device_(device) {}
 
 Span<const int32_t> TensorInfo::sizes() const {
   return sizes_;
@@ -197,6 +219,10 @@ bool TensorInfo::is_memory_planned() const {
 
 size_t TensorInfo::nbytes() const {
   return nbytes_;
+}
+
+etensor::Device TensorInfo::device() const {
+  return device_;
 }
 
 std::string_view TensorInfo::name() const {
@@ -284,8 +310,9 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}); // Count constant returns as
-                                     // memory planned.
+      std::string_view{nullptr, 0}, // Count constant returns as
+                                    // memory planned.
+      tensor_device(tensor_value));
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -341,8 +368,9 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-      std::string_view{nullptr, 0}); // Count constant returns as
-                                     // memory planned.
+      std::string_view{nullptr, 0}, // Count constant returns as
+                                    // memory planned.
+      tensor_device(tensor_value));
 }
 
 size_t MethodMeta::num_attributes() const {
@@ -398,7 +426,8 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
                   tensor_value->scalar_type()),
               tensor_value->allocation_info() != nullptr ||
                   tensor_value->data_buffer_idx() != 0 /* is_memory_planned */,
-              std::string_view{t_name->c_str(), t_name->size()});
+              std::string_view{t_name->c_str(), t_name->size()},
+              tensor_device(tensor_value));
         }
         ++counter;
       }
