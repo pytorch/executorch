@@ -41,6 +41,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -167,6 +168,20 @@ class QnnOperatorSupport(OperatorSupportBase):
             warn_if_dilated_conv_may_not_fit_vtcm(
                 node, self.soc_info.htp_info.vtcm_size_in_mb, self.phase
             )
+
+        if node.target in constant_operator:
+            # Built as a static tensor, so every value it depends on must be known AoT
+            # (full_like's first argument only supplies the shape).
+            shape_only = (
+                node.args[0]
+                if node.target == exir_ops.edge.aten.full_like.default
+                else None
+            )
+            if any(arg is not shape_only for arg in node.all_input_nodes):
+                logger.info(
+                    f"[{self.phase}] {node.target.__name__} | Skipped, value is only known at runtime"
+                )
+                return False
 
         supported = False
         if node.target.__name__ not in self.node_visitors:

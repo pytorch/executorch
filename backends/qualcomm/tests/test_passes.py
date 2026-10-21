@@ -783,6 +783,42 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def test_full_with_runtime_fill_value_stays_on_cpu(self):
+        """aten.full is lowered as a static tensor, so a fill_value only known at runtime
+        (YOLO's `torch.full(..., stride.item())`) must leave it on CPU rather than crash
+        the partitioner's support check.
+        """
+
+        class FullFromTensor(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("stride", torch.tensor([8.0, 16.0]))
+
+            def forward(self, x):
+                return x * torch.full((4, 1), self.stride[0].item())
+
+        sample_input = (torch.randn(4, 3),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                FullFromTensor(), sample_input, compiler_specs
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        self.assertTrue(
+            any(
+                node.op == "call_function" and "aten.full" in str(node.target)
+                for node in edge.exported_program().graph.nodes
+            )
+        )
+        edge.to_executorch()
+
     def test_lowering_accepts_exported_program_without_reexport(self):
         """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
         ExportedProgram as captured, never re-exporting it.
