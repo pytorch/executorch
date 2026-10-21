@@ -1,22 +1,22 @@
 [build-system]
-requires = ["scikit-build-core>=0.11", "pyyaml", "zstd", "certifi"]
+requires = ["scikit-build-core>=0.11", "pybind11>=3.0", "pyyaml", "zstd", "certifi"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "executorch-native"
 dynamic = ["version"]
-description = "ExecuTorch Native C++ SDK with Vulkan and GGML engines"
+description = "ExecuTorch Native Python runtime and C++ SDK with Vulkan and GGML engines"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "BSD-3-Clause"
+dependencies = ["numpy>=1.26"]
 
 [tool.scikit-build]
 cmake.version = ">=3.26,<4"
-build.targets = ["executorch_native_sdk"]
+build.targets = ["executorch_native_sdk", "_native"]
 install.components = ["executorch_native"]
 wheel.install-dir = "executorch_native"
 wheel.packages = []
-wheel.py-api = "py3"
 
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
