@@ -206,11 +206,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
     )
 
     print("Installing torch domain libraries")
-    torchaudio_version = (
-        "2.11.1"
-        if sys.version_info >= (3, 15) and torch_url.endswith("/cpu")
-        else "2.11.0"
-    )
+    torchaudio_version = "2.11.1" if sys.version_info >= (3, 15) else "2.11.0"
     DOMAIN_LIBRARIES = cu134_packages or [
         ("torchvision==0.29.0" if use_pytorch_nightly else "torchvision"),
         (f"torchaudio=={torchaudio_version}" if use_pytorch_nightly else "torchaudio"),
