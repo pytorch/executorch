@@ -1325,6 +1325,15 @@ class FloorDivConstantFloat(torch.nn.Module):
         return torch.floor(x / self.constant)
 
 
+class FloorDivConstantInt(torch.nn.Module):
+    def __init__(self, constant=80):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x // self.constant
+
+
 class Fold(torch.nn.Module):
     def __init__(self):
         super().__init__()

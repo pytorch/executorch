@@ -215,6 +215,11 @@ class OpElementWiseMinimum:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseMod:
+    op_name: str = "ElementWiseMod"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseMultiply:
     op_name: str = "ElementWiseMultiply"
 
