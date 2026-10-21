@@ -24,16 +24,30 @@ inline constexpr char kTargetLayers[] = "get_n_target_layers";
 inline constexpr char kMaxOwners[] = "get_draft_max_owners";
 inline constexpr char kMaxWrite[] = "get_draft_max_step_tokens";
 inline constexpr char kMaxCells[] = "get_draft_offgraph_kv_max_cells";
+// On-device verification of [owners, width] candidates; see
+// model/dflash_token_sampler.py.
+inline constexpr char kVerify[] = "dflash_verify";
+inline constexpr char kVerifyArgmax[] = "dflash_verify_argmax";
+inline constexpr int kOwnerLimit = 4;
 
-struct GreedyBurst {
+struct Burst {
   std::vector<batching::Token> tokens;
   std::size_t accepted = 0;
   bool bonus = false;
 };
-// Verification returns only new predictions, never the consumed anchor.
-std::optional<GreedyBurst> verify_greedy(
+// The new tokens of one verified block: the accepted proposals, then the
+// correction or bonus. Never the consumed anchor.
+std::optional<Burst> make_burst(
     const std::vector<batching::Token>& proposals,
-    const std::vector<batching::Token>& predictions);
+    std::int64_t accepted,
+    std::int64_t token,
+    std::int32_t vocab_size);
+// A uniform in [0, 1) that depends only on the seed, position and purpose, so
+// a seed reproduces a generation however its requests are batched.
+float positional_uniform(
+    std::uint64_t seed,
+    batching::Position position,
+    int purpose);
 bool trim_hidden(
     std::vector<std::uint8_t>& hidden,
     std::size_t row_bytes,
@@ -90,6 +104,26 @@ std::optional<DraftPlan> pack_draft(
     int context_limit,
     int max_context,
     std::size_t row_bytes);
+
+// Reusable device memory for small host-built inputs.
+class DeviceStaging {
+ public:
+  ~DeviceStaging();
+  DeviceStaging() = default;
+  DeviceStaging(const DeviceStaging&) = delete;
+  DeviceStaging& operator=(const DeviceStaging&) = delete;
+  DeviceStaging(DeviceStaging&&) = delete;
+  DeviceStaging& operator=(DeviceStaging&&) = delete;
+  // Device copies of each (data, bytes) part, ordered on stream. Earlier
+  // uploads must be consumed first: they share one allocation.
+  std::optional<std::vector<void*>> upload(
+      const std::vector<std::pair<const void*, std::size_t>>& parts,
+      void* stream);
+
+ private:
+  void* device_ = nullptr;
+  std::size_t capacity_ = 0;
+};
 } // namespace cuda_dflash_detail
 
 struct CudaDFlashStats {
@@ -114,9 +148,9 @@ struct CudaDFlashStats {
   std::uint64_t failed_batches = 0;
 };
 
-// Text-only model adapter over the existing CUDA target executor. Draft runs
-// eagerly; target methods retain their ordinary static CUDA graphs. Sampling
-// other than exactly temperature zero is rejected, not approximated.
+// Text-only model adapter over the existing CUDA target executor. Drafts are
+// greedy; dflash_verify accepts or resamples them under each session's sampling
+// on the device, so only token IDs return to the host.
 class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
@@ -180,8 +214,16 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   bool run_target(
       const RawStep& step,
       const std::vector<batching::SessionId>& token_owners,
-      std::vector<batching::Token>& predictions,
-      bool drain_context);
+      std::vector<batching::Token>& predictions);
+  // Runs the verification step and the on-device verifier; results holds
+  // [accepted, correction] per owner.
+  bool verify(
+      const RawStep& step,
+      const std::vector<batching::SessionId>& owners,
+      const std::vector<std::int64_t>& candidates,
+      std::vector<std::int64_t>& results);
+  std::vector<float> verify_params(const State& state, batching::Position first)
+      const;
   bool drain(batching::SessionId owner);
   bool draft(
       const std::vector<batching::SessionId>& owners,
@@ -210,6 +252,7 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   std::unordered_map<batching::SessionId, State> sessions_;
   CudaDFlashStats stats_;
   cuda_dflash_detail::HiddenSnapshot verification_hidden_;
+  cuda_dflash_detail::DeviceStaging verify_inputs_;
   bool initialized_ = false;
   // A failed co-batch invalidates every draft owner. Only model restart
   // recovers.

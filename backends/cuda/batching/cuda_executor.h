@@ -174,6 +174,14 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::optional<std::vector<llm_batching::Token>> argmax_rows(
       const ::executorch::aten::Tensor& logits,
       std::size_t rows);
+  // Samples device logits with the exported sampler. params is row-major
+  // [rows, 4] float32: temperature, top_p, top_k and a uniform coin, as
+  // extension/llm/batching/sampler.py consumes them. All-greedy rows take
+  // sample_argmax.
+  std::optional<std::vector<llm_batching::Token>> sample_rows(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows,
+      const std::vector<float>& params);
   ::executorch::extension::Module& module() {
     return *module_;
   }
@@ -212,6 +220,11 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
+  std::optional<std::vector<llm_batching::Token>> run_device_sampler(
+      const ::executorch::aten::Tensor& logits,
+      std::size_t rows,
+      const std::vector<float>& params,
+      bool all_greedy);
   std::optional<std::vector<llm_batching::Token>> sample_on_device(
       const ::executorch::aten::Tensor& logits,
       const std::vector<llm_batching::SessionId>& sessions);

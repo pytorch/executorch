@@ -95,6 +95,50 @@ def _export_cuda_sampler_methods(
     }
 
 
+VERIFY_METHOD = "dflash_verify"
+VERIFY_ARGMAX_METHOD = "dflash_verify_argmax"
+
+
+def cuda_owner_verifier_programs(
+    vocab_size: int, max_owners: int, block: int
+) -> dict[str, torch.export.ExportedProgram]:
+    """Batched on-device verification of up to ``max_owners`` draft blocks."""
+    from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
+        DFlashOwnerArgmaxVerifier,
+        DFlashOwnerVerifier,
+    )
+    from torch.export import Dim, export
+
+    if block < 3:
+        raise ValueError("CUDA DFlash verifiers need a block of at least 3")
+    owners = (
+        Dim("verify_owners", min=1, max=max_owners) if max_owners > 1 else Dim.STATIC
+    )
+    # A one-proposal width would specialize its size-1 proposal axis.
+    width = Dim("verify_width", min=3, max=block)
+    logits = torch.zeros(max_owners, block, vocab_size)
+    candidates = torch.zeros(max_owners, block, dtype=torch.long)
+    params = torch.zeros(max_owners, block + 3)
+    return {
+        VERIFY_METHOD: export(
+            DFlashOwnerVerifier(),
+            (logits, candidates, params),
+            dynamic_shapes=(
+                {0: owners, 1: width},
+                {0: owners, 1: width},
+                {0: owners, 1: width + 3},
+            ),
+            strict=True,
+        ),
+        VERIFY_ARGMAX_METHOD: export(
+            DFlashOwnerArgmaxVerifier(),
+            (logits, candidates),
+            dynamic_shapes=({0: owners, 1: width}, {0: owners, 1: width}),
+            strict=True,
+        ),
+    }
+
+
 def _cuda_propagate_device_config() -> dict[str, PropagateDeviceConfig]:
     """Keeps the speculative chain's vocabulary-wide tensors on the device."""
     from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
@@ -337,6 +381,7 @@ def prepare_cuda_packed_draft(
             ),
             strict=True,
         )
+    programs = {"draft_forward": program}
     geometry = offgraph_kv_cache_geometry(draft_model)
     metadata = {
         key.replace("get_", "get_draft_", 1): value for key, value in geometry.items()
@@ -357,7 +402,7 @@ def prepare_cuda_packed_draft(
             "get_dflash_draft_cache_key": "muse_glimmer_draft",
         }
     )
-    return {"draft_forward": program}, manifest, metadata
+    return programs, manifest, metadata
 
 
 def _dflash_constant_methods(
