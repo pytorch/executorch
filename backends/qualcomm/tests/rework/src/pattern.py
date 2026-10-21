@@ -282,6 +282,16 @@ class AnnotateUnbind:
         def forward(self, x):
             return torch.unbind(x, dim=0)
 
+    class _Constant(torch.nn.Module):
+        # quantized flows dequantize the constant straight from its folded data
+        def __init__(self):
+            super().__init__()
+            self.table = torch.tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+
+        def forward(self, x):
+            a, b = torch.unbind(self.table, dim=0)
+            return x * a + b
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -291,25 +301,24 @@ class AnnotateUnbind:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        module = AnnotateUnbind._Basic()
-        inputs = (torch.randn(4, 4),)
         target_pass = _passes.AnnotateUnbind
         _ = assertions
-        gm = pass_pipeline.lower_edge_ep(
-            module=module,
-            sample_input=inputs,
-            backend_type=backend_type,
-            compile_spec=compile_spec,
-            target_pass=target_pass,
-            quantizer=quantizer,
-        ).graph_module
-        partitions = get_source_partitions(gm.graph, target_pass._SOURCE_OPS)
-        nodes = list(partitions.values())[0][0].nodes
-        # TODO: update this once lpai starts to support unpack
-        if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
-            assert all(
-                QCOM_QUANT_ATTRS in n.meta for n in nodes
-            ), "unbind partition nodes should have QCOM_QUANT_ATTRS"
+        for module in (AnnotateUnbind._Basic(), AnnotateUnbind._Constant()):
+            gm = pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=(torch.randn(4, 4),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            # TODO: update this once lpai starts to support unpack
+            if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
+                partitions = get_source_partitions(gm.graph, target_pass._SOURCE_OPS)
+                nodes = list(partitions.values())[0][0].nodes
+                assert all(
+                    QCOM_QUANT_ATTRS in n.meta for n in nodes
+                ), "unbind partition nodes should have QCOM_QUANT_ATTRS"
 
 
 class BuildQuantIo:
