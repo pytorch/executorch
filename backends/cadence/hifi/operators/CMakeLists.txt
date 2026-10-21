@@ -122,6 +122,7 @@ add_library(
   ${_generic_custom_ops__srcs}
   "op_quantized_add_asym8sxasym8s_asym8s_per_tensor_out.cpp"
   "op_quantized_add_asym8uxasym8u_asym8u_per_tensor_out.cpp"
+  "op_quantized_fully_connected_packed_out.cpp"
   "op_quantized_linear_out.cpp"
   "op_quantized_layer_norm.cpp"
   "op_quantized_linear_asym8sxasym8s_asym8s_per_tensor_out.cpp"
