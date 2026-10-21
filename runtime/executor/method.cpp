@@ -188,6 +188,13 @@ class BackendDelegate final {
     // Initialize the spec list for each method spec
     for (size_t j = 0; j < number_of_compile_specs; j++) {
       auto compile_spec_in_program = compile_specs_in_program->Get(j);
+      ET_CHECK_OR_RETURN_ERROR(
+          compile_spec_in_program != nullptr &&
+              compile_spec_in_program->key() != nullptr &&
+              compile_spec_in_program->value() != nullptr,
+          InvalidProgram,
+          "CompileSpec at index %zu has null key or value",
+          j);
 
       compile_specs_list[j].key = compile_spec_in_program->key()->c_str();
       compile_specs_list[j].value = {
@@ -672,7 +679,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         auto tensors = deserialization::parseTensorList(
             items,
             values_,
-            n_value, // The size of the full array.
+            i, // The number of values constructed so far.
             memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -701,7 +708,7 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             deserialization::parseListOptionalType<executorch::aten::Tensor>(
                 items,
                 values_,
-                n_value, // The size of the full array.
+                i, // The number of values constructed so far.
                 memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
