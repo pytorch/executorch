@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -28,8 +30,23 @@ class Remove0DTensor(ExportPass):
         graph = graph_module.graph
         for node in graph.nodes:
             if node.target in self.remove_ops and len(node.meta["val"].shape) == 0:
+                source, dim, index = node.args
+                replacement = source
+                size = source.meta["val"].shape[dim]
+                if size != 1:
+                    # Keep the selected element as a 1-element slice; the source
+                    # itself is only equivalent when it holds a single element.
+                    index %= size
+                    with graph.inserting_before(node):
+                        replacement = graph.create_node(
+                            "call_function",
+                            exir_ops.edge.aten.slice_copy.Tensor,
+                            (source, dim, index, index + 1),
+                        )
+                    replacement.meta = copy.copy(node.meta)
+                    replacement.meta["val"] = source.meta["val"].narrow(dim, index, 1)
                 for user_n in list(node.users.keys()):
-                    user_n.replace_input_with(node, node.args[0])
+                    user_n.replace_input_with(node, replacement)
                 graph.erase_node(node)
 
         dead_code_elimination_pass(graph_module)
