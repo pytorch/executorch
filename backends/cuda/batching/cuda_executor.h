@@ -65,6 +65,8 @@ struct CudaExecutorOptions {
   // Capture every static method into a CUDA graph. forward_others stays
   // eager: its width varies.
   bool cuda_graph_for_static_methods = true;
+  // Other static methods of the program to capture, e.g. a model adapter's.
+  std::vector<std::string> additional_cuda_graph_methods;
 };
 
 struct CudaExecutorConfig {

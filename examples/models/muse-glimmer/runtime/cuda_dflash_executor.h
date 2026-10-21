@@ -10,6 +10,7 @@
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/examples/models/muse-glimmer/runtime/backend_factory.h>
 
+#include <array>
 #include <unordered_map>
 
 namespace executorch::extension::llm {
@@ -24,6 +25,8 @@ inline constexpr char kTargetLayers[] = "get_n_target_layers";
 inline constexpr char kMaxOwners[] = "get_draft_max_owners";
 inline constexpr char kMaxWrite[] = "get_draft_max_step_tokens";
 inline constexpr char kMaxCells[] = "get_draft_offgraph_kv_max_cells";
+// Static draft_forward_{N}: N owners, each with at most one block of context.
+inline constexpr char kStaticForwardPrefix[] = "draft_forward_";
 // On-device verification of [owners, width] candidates; see
 // model/dflash_token_sampler.py.
 inline constexpr char kVerify[] = "dflash_verify";
@@ -104,6 +107,14 @@ std::optional<DraftPlan> pack_draft(
     int context_limit,
     int max_context,
     std::size_t row_bytes);
+// Widens a plan whose context fits one block per owner to the static
+// draft_forward_{N} shape: unused context rows go last, after every block, so
+// the cache writes them to its scratch cell and no query attends them.
+bool pad_to_static(
+    DraftPlan& plan,
+    int owners,
+    int block,
+    std::size_t row_bytes);
 
 // Reusable device memory for small host-built inputs.
 class DeviceStaging {
@@ -129,6 +140,7 @@ class DeviceStaging {
 struct CudaDFlashStats {
   std::uint64_t executions = 0;
   std::uint64_t draft_forwards = 0;
+  std::uint64_t static_draft_forwards = 0;
   std::uint64_t warmed_context_tokens = 0;
   // Calls are packed execute_raw attempts; forwards count slice callbacks.
   std::uint64_t pending_decode_batches = 0;
@@ -148,9 +160,11 @@ struct CudaDFlashStats {
   std::uint64_t failed_batches = 0;
 };
 
-// Text-only model adapter over the existing CUDA target executor. Drafts are
-// greedy; dflash_verify accepts or resamples them under each session's sampling
-// on the device, so only token IDs return to the host.
+// Text-only model adapter over the existing CUDA target executor. Decode drafts
+// run the static draft_forward_{N} in CUDA graphs, as the target's static
+// methods do; longer contexts drain through the dynamic draft_forward. Drafts
+// are greedy; dflash_verify accepts or resamples them under each session's
+// sampling on the device, so only token IDs return to the host.
 class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
@@ -253,6 +267,8 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   CudaDFlashStats stats_;
   cuda_dflash_detail::HiddenSnapshot verification_hidden_;
   cuda_dflash_detail::DeviceStaging verify_inputs_;
+  // static_drafts_[n]: the program has draft_forward_{n}.
+  std::array<bool, cuda_dflash_detail::kOwnerLimit + 1> static_drafts_{};
   bool initialized_ = false;
   // A failed co-batch invalidates every draft owner. Only model restart
   // recovers.

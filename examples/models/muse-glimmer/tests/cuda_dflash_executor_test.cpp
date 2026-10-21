@@ -61,6 +61,36 @@ TEST(CudaDFlash, PositionalUniformsAreSeededAndIndependentOfBatching) {
   EXPECT_NE(u, df::positional_uniform(7, 100, 3));
 }
 
+TEST(CudaDFlash, StaticPaddingPutsUnusedContextAfterEveryBlock) {
+  const std::vector<std::uint8_t> a{1, 1, 2, 2}, b{3, 3};
+  auto plan =
+      df::pack_draft({{9, 10, 70, &a, 2}, {3, 20, 80, &b, 1}}, 4, 99, 3, 64, 2);
+  ASSERT_TRUE(plan);
+  const auto ids = plan->ids;
+  ASSERT_TRUE(df::pad_to_static(*plan, 2, 4, 2));
+  EXPECT_EQ(plan->ids, ids);
+  EXPECT_EQ(
+      plan->hidden,
+      std::vector<std::uint8_t>(
+          {1, 1, 2, 2, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
+  // Context rows 0..2, padding 3..7, queries 8..15.
+  EXPECT_EQ(
+      plan->positions,
+      std::vector<std::int64_t>(
+          {10, 11, 20, 0, 0, 0, 0, 0, 12, 13, 14, 15, 21, 22, 23, 24}));
+  EXPECT_EQ(
+      plan->kv_order,
+      std::vector<std::int64_t>(
+          {0, 1, 8, 9, 10, 11, 2, 12, 13, 14, 15, 3, 4, 5, 6, 7}));
+}
+
+TEST(CudaDFlash, StaticPaddingRejectsLongContext) {
+  const std::vector<std::uint8_t> a(2 * 5, 1);
+  auto plan = df::pack_draft({{9, 10, 70, &a, 5}}, 4, 99, 5, 64, 2);
+  ASSERT_TRUE(plan);
+  EXPECT_FALSE(df::pad_to_static(*plan, 1, 4, 2));
+}
+
 TEST(CudaDFlash, NewPreambleAnchorIsRetainedOnce) {
   // The input token (7) has already committed. The regular preamble predicts
   // 10, then verification consumes 10 and predicts the accepted/corrected tail.
