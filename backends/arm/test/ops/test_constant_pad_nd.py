@@ -35,6 +35,23 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_pad_default"
 input_t1 = Tuple[torch.Tensor]  # Input x
 
 test_data_suite = {
+    "crop_end": lambda: (torch.rand(1, 4, 16), (0, -1), 0, "constant"),
+    "crop_start": lambda: (torch.rand(1, 4, 16), (-2, 0), 0, "constant"),
+    "crop_both": lambda: (torch.rand(1, 4, 16), (-1, -2), 0, "constant"),
+    "crop_penultimate_dim": lambda: (
+        torch.rand(1, 16, 4),
+        (0, 0, 0, -1),
+        0,
+        "constant",
+    ),
+    "crop_and_pad": lambda: (torch.rand(1, 4, 16), (-2, 3), 2, "constant"),
+    "crop_shift": lambda: (torch.rand(1, 4, 16), (-1, 1), -0.5, "constant"),
+    "crop_multidim": lambda: (
+        torch.rand(1, 3, 8, 10),
+        (-1, 2, 3, -2),
+        1,
+        "constant",
+    ),
     "4dim_last1dim": lambda: (
         torch.rand(1, 1, 16, 16),
         (1, 1, 0, 0, 0, 0, 0, 0),
