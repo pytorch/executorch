@@ -3832,6 +3832,14 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cast_int_to_float(self):
+        module = CastIntToFloat()  # noqa: F405
+        sample_input = (torch.randint(0, 80, size=(3, 3)), torch.randn(3, 3))
+        module = self.get_qdq_module(module, sample_input)
+        # absolute: the class rtol of 1 would accept an all-zero output
+        self.atol, self.rtol = 1, 0
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
