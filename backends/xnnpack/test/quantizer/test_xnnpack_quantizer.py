@@ -479,6 +479,40 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
 
+    def test_set_module_type_conv2d(self):
+        # The weight/bias of a conv are get_attr nodes without nn_module_stack,
+        # so the module type filter must only be checked on the conv itself.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 8, 3)
+                self.linear = torch.nn.Linear(6, 6)
+
+            def forward(self, x):
+                return self.linear(self.conv(x))
+
+        m = M().eval()
+        example_inputs = (torch.randn(1, 3, 8, 8),)
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_module_type(torch.nn.Conv2d, quantization_config)
+        node_occurrence = {
+            # conv weight only; the linear is not quantized
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+            # input and output of the conv
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+        }
+        node_list = [
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.linear.default,
+        ]
+        self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
+
     def test_set_module_name_with_underscores(self) -> None:
         """Test that if a module name has an underscore, we can still quantize it"""
 
