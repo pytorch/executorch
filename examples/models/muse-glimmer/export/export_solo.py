@@ -11,8 +11,10 @@ exports add ``vision_encoder`` and write ``pos_embed.bin``.
 
 ``--use-offgraph-kv-cache`` keeps the KV cache out of the program and exports
 the batching runtime's contract. On MLX that is the selected-logits decoder. On
-CUDA it is the text-only artifact CudaExecutor (backends/cuda/batching) drives;
-without the flag CUDA keeps its in-graph prefill and decode methods:
+CUDA it is the artifact CudaExecutor (backends/cuda/batching) drives: the text
+forwards plus, with ``--mmproj``, ``vision_encoder``/``embed_text``/
+``forward_from_embeddings``; without the flag CUDA keeps its in-graph prefill
+and decode methods:
 
 - ``forward_{N}`` for each N in ``--forward-sizes`` (default 1, 2, 4, ..., 64):
   T = K = N, static, each captured into a CUDA graph at runtime, its quantized
@@ -133,8 +135,8 @@ def export_and_lower(
         if not 1 <= max_prefill_chunk <= config.max_seq_len:
             raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
     if backend == "cuda" and use_offgraph_kv_cache:
-        if vision_model is not None:
-            raise ValueError("the CUDA batching export is text-only")
+        if vision_fp32_mm != "none":
+            raise ValueError("CUDA batching does not support vision_fp32_mm")
         export_cuda_batching(
             model,
             config,
@@ -143,6 +145,9 @@ def export_and_lower(
             max_cells=max_cells,
             forward_sizes=forward_sizes or DEFAULT_FORWARD_SIZES,
             device_sampling=sample,
+            vision_model=vision_model,
+            pos_embed_table=pos_embed_table,
+            max_vision_patches=max_vision_patches,
         )
     elif backend == "cuda":
         _export_cuda(
@@ -257,6 +262,10 @@ def step_width_spec(method: str) -> bytes:
     return b"1:0"
 
 
+# Image prompts reach the batching cache through this method.
+EMBEDDINGS_METHOD = "forward_from_embeddings"
+
+
 def step_forward(
     model: MuseGlimmerModel,
     tokens: torch.Tensor,
@@ -268,7 +277,18 @@ def step_forward(
     The whole step runs through the decoder so every token's K/V reaches the
     cache; only the rows the batch samples from go through the LM head.
     """
-    x = model.embed_text(tokens)
+    return embeddings_step_forward(
+        model, model.embed_text(tokens), input_pos, logits_to_keep
+    )
+
+
+def embeddings_step_forward(
+    model: MuseGlimmerModel,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    logits_to_keep: torch.Tensor,
+) -> torch.Tensor:
+    """``step_forward`` from decoder inputs [1, T, dim], e.g. spliced images."""
     taps = None
     if hasattr(model, "_dflash_target_layer_ids"):
         sliding_mask, global_mask = model._build_masks(input_pos)
@@ -349,8 +369,15 @@ def export_cuda_batching(  # noqa: C901
     dflash_draft: nn.Module | None = None,
     max_draft_owners: int = 4,
     draft_max_cells: int | None = None,
+    vision_model: nn.Module | None = None,
+    pos_embed_table: torch.Tensor | None = None,
+    max_vision_patches: int = 16384,
 ):
     """Exports the forward methods and writes the artifact.
+
+    With ``vision_model`` the token forwards are unchanged, and image prompts run
+    through three more methods: ``vision_encoder``, ``embed_text`` and a dynamic
+    ``forward_from_embeddings`` over the same cache and weights.
 
     Returns the ExecutorchProgramManager so callers can inspect it.
     """
@@ -378,6 +405,10 @@ def export_cuda_batching(  # noqa: C901
         write_max_context_len,
     )
     from torch.export import Dim, export
+
+    has_vision = vision_model is not None and pos_embed_table is not None
+    if (vision_model is None) != (pos_embed_table is None):
+        raise ValueError("vision_model and pos_embed_table must be given together")
 
     if dflash_draft is not None:
         from executorch.examples.models.muse_glimmer.export.export_dflash import (
@@ -462,10 +493,52 @@ def export_cuda_batching(  # noqa: C901
             dynamic_shapes=({1: width}, {0: width}, {0: rows}),
             strict=True,
         )
+    if has_vision:
+        embeddings_width = Dim(
+            "embeddings_width", min=_CUDA_MIN_PREFILL_CHUNK, max=max_step_tokens
+        )
+        with (
+            common.BoundMethodForward(
+                model, types.MethodType(embeddings_step_forward, model)
+            ),
+            torch.no_grad(),
+        ):
+            print(
+                f"Exporting {EMBEDDINGS_METHOD} (T in [{_CUDA_MIN_PREFILL_CHUNK}, "
+                f"{max_step_tokens}])..."
+            )
+            programs[EMBEDDINGS_METHOD] = export(
+                model,
+                (
+                    torch.zeros((1, max_step_tokens, config.dim), dtype=torch.bfloat16),
+                    torch.arange(max_step_tokens, dtype=torch.long),
+                    torch.zeros(max_step_tokens, dtype=torch.long),
+                ),
+                dynamic_shapes=(
+                    {1: embeddings_width},
+                    {0: embeddings_width},
+                    {0: rows},
+                ),
+                strict=True,
+            )
+        with common.BoundMethodForward(model, model.embed_text), torch.no_grad():
+            print("Exporting embed_text...")
+            programs["embed_text"] = export(
+                model,
+                (torch.zeros((1, max_step_tokens), dtype=torch.long),),
+                dynamic_shapes=({1: Dim("embed_width", min=1, max=max_step_tokens)},),
+                strict=True,
+            )
+        programs["vision_encoder"] = common.export_vision_encoder(
+            vision_model, pos_embed_table, max_vision_patches
+        )
+        del vision_model
     del model
     gc.collect()
     torch.cuda.empty_cache()
-    forward_methods = list(programs)
+    forward_methods = [
+        name for name in programs if name not in ("embed_text", "vision_encoder")
+    ]
     if dflash_draft is not None:
         programs.update(draft_programs)
         del draft_programs, dflash_draft
@@ -520,8 +593,8 @@ def export_cuda_batching(  # noqa: C901
         max_prefill=max_step_tokens,
         activation_dtype=torch.bfloat16,
         mutable_buffer_metadata=None,
-        has_vision=False,
-        max_vision_patches=0,
+        has_vision=has_vision,
+        max_vision_patches=max_vision_patches,
     )
     constant_methods.update(geometry)
     constant_methods.update(write_max_context_len(config.max_seq_len))
@@ -560,7 +633,7 @@ def export_cuda_batching(  # noqa: C901
     del edge
     gc.collect()
 
-    common.save_pte(et_program, output_dir, None)
+    common.save_pte(et_program, output_dir, pos_embed_table)
     if torch.cuda.is_available():
         peak_mb = torch.cuda.max_memory_allocated() / (1024**2)
         print(f"EXPORT_GPU_PEAK_MEMORY_MB: {peak_mb:.1f}")
@@ -1040,8 +1113,9 @@ def main() -> None:
         "--use-offgraph-kv-cache",
         action="store_true",
         help="Allocate the KV cache at runtime and export the batching runtime's "
-        "contract: MLX's selected-logits decoder, or CUDA's text-only "
-        "forward_{N} + forward_others over a cell-layout cache. Without it CUDA "
+        "contract: MLX's selected-logits decoder, or CUDA's "
+        "forward_{N} + forward_others over a cell-layout cache (plus the vision "
+        "methods with --mmproj). Without it CUDA "
         "exports its in-graph prefill and decode methods.",
     )
     parser.add_argument(
@@ -1109,10 +1183,6 @@ def main() -> None:
     args = parser.parse_args()
 
     _validate_offgraph_prefill(parser, args)
-    if args.backend == "cuda" and args.use_offgraph_kv_cache and args.mmproj:
-        parser.error(
-            "--use-offgraph-kv-cache on CUDA exports a text-only model; omit --mmproj."
-        )
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
