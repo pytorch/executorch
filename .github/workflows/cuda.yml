@@ -34,6 +34,12 @@ on:
       - .ci/scripts/cuda_benchmark.py
       - .ci/scripts/cuda_benchmark_from_e2e.sh
       - .ci/scripts/cuda_perf_prompts/**
+      - .ci/scripts/build_muse_glimmer_batching_smoke.sh
+      - .ci/scripts/muse_glimmer_batching_smoke.cpp
+      - .ci/scripts/muse_glimmer_batching_workload.h
+      - .ci/scripts/tests/test_muse_glimmer_batching_ci.py
+      - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
+      - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
@@ -120,6 +126,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -145,10 +152,10 @@ jobs:
       script: |
         set -eux
 
-        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
-          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
-          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
-        fi
+        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
+        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -164,6 +171,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -540,8 +548,10 @@ jobs:
         # job's timeout.
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" \
           --ignore=backends/cuda/tests/test_int4_quantized_gemm.py \
+          --ignore=backends/cuda/tests/test_int4_large_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int5_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int6_quantized_gemm.py \
+          --ignore=backends/cuda/tests/test_int6_large_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_int8_quantized_gemm.py \
           --ignore=backends/cuda/tests/test_cuda_graph_timing.py
 
@@ -551,6 +561,81 @@ jobs:
         # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
         pip install gguf
         python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+
+  unittest-cuda-muse-glimmer-batching:
+    name: unittest-cuda-muse-glimmer-batching
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_ci.py' -v
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_workload.py' -v
+
+        # The normal serving binaries and the opt-in correctness tool share
+        # CudaExecutor; MG preparation tests also run on Linux.
+        make muse-glimmer-batching-cuda
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
+        cmake --build "${BATCHING_BIN_DIR}" \
+          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+        ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_smoke"
+
+        # The batching export on a tiny model, and the CLI's backend dispatch.
+        pip install gguf
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
+          examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
+          examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        # CUDA DFlash executor on a tiny exported target + draft. The native
+        # tests skip without the artifact, so fail if any skipped.
+        export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"
+        python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
+          --output-dir "${ET_MUSE_DFLASH_TINY_DIR}"
+        ctest --test-dir "${BATCHING_BIN_DIR}" -R '^muse_glimmer_cuda_dflash$' \
+          --output-on-failure --no-tests=error -V > /tmp/muse_glimmer_cuda_dflash.log 2>&1 \
+          || { cat /tmp/muse_glimmer_cuda_dflash.log; exit 1; }
+        cat /tmp/muse_glimmer_cuda_dflash.log
+        if grep -q "SKIPPED" /tmp/muse_glimmer_cuda_dflash.log; then
+          echo "::error::muse_glimmer_cuda_dflash_test skipped"
+          exit 1
+        fi
 
   unittest-cuda-quantized-gemm:
     name: unittest-cuda-quantized-gemm (${{ matrix.shard }})
@@ -566,10 +651,13 @@ jobs:
         include:
           - shard: int4
             tests: backends/cuda/tests/test_int4_quantized_gemm.py
-          - shard: int5-int6-int8-graph-timing
+          # The int4 shard alone takes ~60 min, so the large-M suites go here.
+          - shard: large-int5-int6-int8-graph-timing
             tests: >-
+              backends/cuda/tests/test_int4_large_quantized_gemm.py
               backends/cuda/tests/test_int5_quantized_gemm.py
               backends/cuda/tests/test_int6_quantized_gemm.py
+              backends/cuda/tests/test_int6_large_quantized_gemm.py
               backends/cuda/tests/test_int8_quantized_gemm.py
               backends/cuda/tests/test_cuda_graph_timing.py
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -1037,6 +1125,12 @@ jobs:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
     if: |
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -1057,7 +1151,7 @@ jobs:
           - variant: kquant-17gb
             mode: solo-text
           - variant: kquant-17gb
-            mode: solo-text-offgraph
+            mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic
