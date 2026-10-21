@@ -128,18 +128,6 @@ def _mark_nodes_as_annotated(nodes: list[Node]):
             node.meta[Q_ANNOTATION_KEY]._annotated = True
 
 
-def _filtered_out(partition: list[Node], filter_fn: Callable[[Node], bool]) -> bool:
-    """True if `filter_fn` rejects any op in `partition`.
-
-    Weight and bias get_attr/placeholder nodes are skipped: they carry no
-    nn_module_stack, so module type/name filters would reject every partition
-    that includes them.
-    """
-    return any(
-        not filter_fn(n) for n in partition if n.op not in ("get_attr", "placeholder")
-    )
-
-
 @register_annotator("linear")
 def _annotate_linear(
     gm: torch.fx.GraphModule,
@@ -235,7 +223,7 @@ def _annotate_linear_relu(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(linear_node):
             continue
 
         linear_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -322,7 +310,7 @@ def _do_annotate_conv(
         if _is_annotated(partition) or skip:
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -385,7 +373,7 @@ def _do_annotate_conv_relu(
         if is_conv_transpose and groups != 1:
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -616,7 +604,7 @@ def _do_annotate_conv_bn(  # noqa: C901
             partition.append(bias_node)
         if _is_annotated(partition):
             continue
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(conv_node):
             continue
 
         # Annotate conv inputs and pattern output
@@ -798,7 +786,7 @@ def _annotate_add_relu(  # noqa: C901
         if _is_annotated(partition):
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(add_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -854,7 +842,7 @@ def _annotate_add(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(add_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -922,7 +910,7 @@ def _annotate_mul_relu(  # noqa: C901
         if _is_annotated(partition):
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(mul_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -978,7 +966,7 @@ def _annotate_mul(
         if _is_annotated(partition):
             continue
 
-        if filter_fn and _filtered_out(partition, filter_fn):
+        if filter_fn and not filter_fn(mul_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
