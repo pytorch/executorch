@@ -123,10 +123,24 @@ def test_cuda_worker_takes_the_weights_file(arguments, tmp_path):
     assert "--pos_embed_path" not in flags
 
 
-@pytest.mark.parametrize("case", ["no_weights", "pos_embed", "dflash"])
-def test_cuda_launcher_rejects_missing_weights_vision_or_dflash(
-    arguments, tmp_path, case
-):
+def test_cuda_launcher_forwards_dflash(arguments, tmp_path):
+    data = tmp_path / "aoti_cuda_blob.ptd"
+    data.touch()
+    args = serve_batching._parse_args(
+        arguments
+        + ["--backend", "cuda", "--data-path", str(data), "--dflash"]
+        + ["--dflash-n-draft", "15"]
+    )
+    flags = dict(arg.split("=", 1) for arg in serve_batching._worker_command(args)[1:])
+    assert (flags["--backend"], flags["--dflash"], flags["--dflash_n_draft"]) == (
+        "cuda",
+        "true",
+        "15",
+    )
+
+
+@pytest.mark.parametrize("case", ["no_weights", "pos_embed"])
+def test_cuda_launcher_rejects_missing_weights_or_vision(arguments, tmp_path, case):
     data = tmp_path / "aoti_cuda_blob.ptd"
     table = tmp_path / "pos_embed.bin"
     data.touch()
@@ -136,8 +150,6 @@ def test_cuda_launcher_rejects_missing_weights_vision_or_dflash(
         argv += ["--data-path", str(data)]
     if case == "pos_embed":
         argv += ["--pos-embed-path", str(table)]
-    if case == "dflash":
-        argv += ["--dflash"]
     with pytest.raises(SystemExit) as error:
         serve_batching._parse_args(argv)
     assert error.value.code == 2
