@@ -30,7 +30,8 @@ from executorch.exir.backend.test.device_util import (
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.exir.passes import MemoryPlanningPass, propagate_device_pass
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
@@ -1619,6 +1620,138 @@ class TestPropagateDevicePass(unittest.TestCase):
                     pipeline,
                     "CPU placeholder",
                 )
+
+    def test_constant_feeding_device_delegate_is_copied(self):
+        """A constant feeding a device delegate gets an _h2d_copy into planned device
+        memory, with or without skip_h2d_for_method_inputs: its data lives in the
+        program on the host, so it is not a method input the caller can place."""
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset)
+
+        model = Model()
+        inputs = (torch.randn(2, 2),)
+        for skip in (False, True):
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=skip
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                results = self._get_executorch_program(
+                    model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+                )
+            self.assertIn("Constant 'b_offset' (16 bytes)", logs.output[0])
+            for pipeline, program, gm in results:
+                with self.subTest(pipeline=pipeline, skip=skip):
+                    nodes = _collect_device_copy_nodes(gm)
+                    # Input a is copied only when the caller cannot place it.
+                    self.assertEqual(len(nodes.h2d_nodes), 1 if skip else 2)
+                    cuda_ph, _ = self._collect_placeholders_by_device(gm)
+                    self.assertEqual(len(cuda_ph), int(skip))
+                    self.assertTrue(all(not n.meta["spec"].const for n in cuda_ph))
+                    copies = [n.meta["spec"] for n in nodes.h2d_nodes]
+                    self.assertTrue(all(not spec.const for spec in copies))
+                    self._assert_nodes_buffer_device(
+                        nodes.h2d_nodes, program, DeviceType.CUDA, pipeline, "H2D copy"
+                    )
+
+    def test_constant_copy_keeps_stored_layout(self):
+        """The copy of a constant moves its bytes as they are, so it must use the
+        layout the constant is stored in: contiguous for a transposed parameter,
+        which to_edge makes contiguous, and channels-last for a channels-last
+        one."""
+
+        class Model(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, a):
+                return torch.add(a, self.weight)
+
+        weights = {
+            "transposed": torch.randn(3, 2).t(),
+            "channels_last": torch.randn(1, 2, 3, 3).to(
+                memory_format=torch.channels_last
+            ),
+        }
+        for name, weight in weights.items():
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            for pipeline, _program, gm in self._get_executorch_program(
+                Model(weight),
+                (torch.randn(weight.shape),),
+                DeviceAwarePartitioner("cuda:0"),
+                et_config,
+            ):
+                with self.subTest(pipeline=pipeline, weight=name):
+                    nodes = _collect_device_copy_nodes(gm)
+                    self.assertEqual(len(nodes.h2d_nodes), 1)
+                    h2d = nodes.h2d_nodes[0]
+                    # The emitter rewrites the constant's spec to the stored layout.
+                    stored = h2d.args[0].meta["spec"]
+                    self.assertEqual(h2d.meta["spec"].dim_order, stored.dim_order)
+                    self.assertEqual(
+                        tuple(h2d.meta["spec"].stride), tuple(stored.stride)
+                    )
+
+    def test_constant_with_unstored_layout_is_refused(self):
+        """A constant that is neither contiguous nor channels-last is stored
+        contiguous, so its copy would not match the stored data. A pass that runs
+        after to_edge normalized the constants can create one, and lowering then
+        fails instead of producing wrong results."""
+
+        class StoreWeightTransposed(ExportedProgramPassBase):
+            def call(self, ep):
+                ep.state_dict["w"] = torch.nn.Parameter(
+                    ep.state_dict["w"].t().contiguous().t()
+                )
+                for node in ep.graph.nodes:
+                    if node.name == "p_w":
+                        node.meta["val"] = node.meta["val"].t().contiguous().t()
+                return ExportedProgramPassResult(ep, True)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(2, 3))
+
+            def forward(self, a):
+                return torch.add(a, self.w)
+
+        for skip in (False, True):
+            edge = to_edge_transform_and_lower(
+                export(Model(), (torch.randn(2, 3),)),
+                transform_passes=[StoreWeightTransposed()],
+                partitioner=[DeviceAwarePartitioner("cuda:0")],
+            )
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=skip
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            with self.subTest(skip=skip):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Constant 'p_w' feeds a delegate on cuda:0, but it is neither "
+                    "contiguous nor channels-last",
+                ):
+                    edge.to_executorch(et_config)
 
     def test_tensorspec_repr_includes_device(self):
         spec = TensorSpec(dtype=torch.float32, shape=torch.Size([2, 3]))
