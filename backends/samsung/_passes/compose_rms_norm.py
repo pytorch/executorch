@@ -45,16 +45,33 @@ class RecomposeRmsNorm(ExportPass):
                 return a
         raise RuntimeError("Failed to locate eps argument in RMSNorm add node")
 
-    def _get_gamma_node(self, output_node):
-        # gamma: one of inputs of output node
+    def _get_gamma_node(self, output_node, input_node):
+        # gamma: one of inputs of output node, but not the input node or call_function
         for a in output_node.args:
-            if isinstance(a, torch.fx.Node) and a.op != "call_function":
+            if (
+                isinstance(a, torch.fx.Node)
+                and a.op != "call_function"
+                and a is not input_node
+            ):
                 return a
-        raise RuntimeError("Failed to locate gamma argument in RMSNorm output node")
+        return None
+
+    def _get_normalized_shape(self, input_node, nodes):
+        # Derive normalized_shape from mean.dim's axis in the decomposed graph.
+        # The RMSNorm decomposition always contains a mean.dim op.
+        for n in nodes:
+            if "mean" in n.name and "dim" in n.name:
+                dims = n.args[1]
+                return [input_node.meta["val"].shape[d] for d in dims]
+        raise RuntimeError(
+            f"Failed to find mean.dim node in RMSNorm partition: {nodes}"
+        )
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        partitions = get_source_partitions(graph, [torch.nn.RMSNorm])
+        partitions = get_source_partitions(
+            graph, [torch.nn.RMSNorm, torch.ops.aten.rms_norm.default]
+        )
 
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
@@ -63,7 +80,7 @@ class RecomposeRmsNorm(ExportPass):
                     input_node = src_partition.input_nodes[0]
                 elif input_len == 2:
                     inp_0, inp_1 = src_partition.input_nodes
-                    input_node = inp_0 if len(inp_0.users) == 2 else inp_1
+                    input_node = inp_0 if inp_0.op == "call_function" else inp_1
                 else:
                     raise RuntimeError(
                         f"Found unsupported case of rms_node {src_partition}, "
@@ -72,9 +89,24 @@ class RecomposeRmsNorm(ExportPass):
 
                 output_node = src_partition.output_nodes[0]
                 eps_node = self._get_eps_node(src_partition.nodes)
-                gamma_node = self._get_gamma_node(output_node)
+                gamma_node = self._get_gamma_node(output_node, input_node)
+                normalized_shape = self._get_normalized_shape(
+                    input_node, src_partition.nodes
+                )
 
                 with graph.inserting_before(output_node):
+                    # When elementwise_affine=False, RMSNorm has no weight.
+                    # Create a fake all-ones gamma_node so the Samsung builder
+                    # always receives a valid gamma argument.
+                    if gamma_node is None:
+                        const_name = output_node.name + "_fake_gamma"
+                        weight_tensor = torch.ones(
+                            normalized_shape, dtype=input_node.meta["val"].dtype
+                        )
+                        graph_module.register_buffer(const_name, weight_tensor)
+                        gamma_node = graph.create_node("get_attr", const_name)
+                        gamma_node.meta["val"] = weight_tensor
+
                     # args schema
                     # (Tensor input, int[] normalized_shape, Tensor?
                     # weight=None, float? eps=None) -> Tensor
@@ -83,7 +115,7 @@ class RecomposeRmsNorm(ExportPass):
                         exir_ops.edge.aten.rms_norm.default,
                         (
                             input_node,
-                            list(gamma_node.meta["val"].shape),
+                            normalized_shape,
                             gamma_node,
                             eps_node,
                         ),

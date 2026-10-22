@@ -51,7 +51,14 @@ class AnnotateScalarParametersPass(ExportPass):
                 continue
             param_tensor = get_param_tensor(self.edge_program, param_tensor_node)
             if not param_tensor.shape:
-                scale = abs(float(param_tensor))
+                if constant_quantize_attrs := param_tensor_node.meta.get(
+                    "quantize_attrs"
+                ):
+                    scale = constant_quantize_attrs["scales"]
+                    zero_point = constant_quantize_attrs["zero_points"]
+                else:
+                    zero_point = 0
+                    scale = abs(float(param_tensor))
             else:
                 continue
             q_dtype = quantize_attrs[QuantConstants.QUANT_KEY.quant_dtype]
@@ -62,7 +69,7 @@ class AnnotateScalarParametersPass(ExportPass):
                 QuantConstants.QUANT_KEY.quant_dtype: q_dtype,
                 QuantConstants.QUANT_KEY.quant_max: torch.iinfo(q_dtype).max,
                 QuantConstants.QUANT_KEY.quant_min: torch.iinfo(q_dtype).min,
-                QuantConstants.QUANT_KEY.zero_point: 0,
+                QuantConstants.QUANT_KEY.zero_point: zero_point,
             }
             param_tensor_node.meta["quantize_attrs"] = qparams
 

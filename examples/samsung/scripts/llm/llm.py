@@ -10,6 +10,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import torch
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
+from executorch.backends.samsung.quantizer import EnnQuantizer, Precision
+from executorch.backends.samsung.quantizer.custom_annotation import (
+    custom_annotate_gemma3_a16w4,
+    custom_annotate_llama_a16w4,
+)
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
     gen_samsung_backend_compile_weight_spec,
@@ -24,8 +29,13 @@ from executorch.examples.samsung.scripts.llm.models.modeling_llama import (
     LlamaForCausalLM_ENN,
 )
 from executorch.examples.samsung.scripts.llm.util.util import (
+    build_calib_dataset,
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+    removing_gpu_node_in_graph,
     replace_rms_norm_with_native_rms_norm,
 )
+
 from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -33,7 +43,8 @@ from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
-from executorch.extension.llm.export.partitioner_lib import get_xnnpack_partitioner
+from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from transformers import AutoTokenizer
 
 
@@ -44,6 +55,42 @@ SUPPORTED_MODEL_NAMES = ["gemma3_1", "llama3.2_1"]
 PREFILL_FORWARD = "prefill_forward"
 DECODE_FORWARD = "decode_forward"
 GRAPH_NAMES = [PREFILL_FORWARD, DECODE_FORWARD]
+
+
+def _to_cpu(value: Any) -> Any:
+    """Recursively rewrite Tensors in nested tuple/list/dict to CPU copies.
+
+    Keeps non-tensor values unchanged. Used to run export on CPU even when the
+    reference forward was computed on GPU.
+    """
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, tuple):
+        return tuple(_to_cpu(v) for v in value)
+    if isinstance(value, list):
+        return [_to_cpu(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _to_cpu(v) for k, v in value.items()}
+    return value
+
+
+def get_device(device: Optional[str] = None, precision: bool = False) -> torch.device:
+    """Resolve the device to run the model on, checking GPU availability.
+
+    Args:
+        device: Requested device, e.g. "cpu", "cuda", or "cuda:6". If None,
+            auto-detect using CUDA availability.
+
+    Returns:
+        The resolved torch.device. Falls back to CPU if the requested CUDA
+        device is not available on the host.
+
+    """
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    if not precision:
+        device = "cpu"
+    return torch.device(device)
 
 
 def get_enn_partitioner(
@@ -89,6 +136,9 @@ def load_llm_model(
     max_context_len: int,
     max_seq_len: int,
     ar_len: int,
+    device: Optional[str] = None,
+    precision: bool = False,
+    model_path: Optional[str] = None,
 ) -> Tuple[torch.nn.Module, Any, Any, Dict[str, Any]]:
     """Load LLM model based on model name.
 
@@ -97,27 +147,41 @@ def load_llm_model(
         max_context_len: Maximum context length
         max_seq_len: Maximum sequence length
         ar_len: Auto-regression length
+        device: Compute device to load the model on (e.g., "cpu" or "cuda"). If
+            None, auto-detect using GPU availability.
+        model_path: Optional local model directory (or hub id) to load from
+            instead of the built-in default model for ``model_name``.
 
     Returns:
-        Tuple of (model, tokenizer, example_inputs, metadata)
+        Tuple of (model, tokenizer, metadata)
     """
+    target_device = get_device(device, precision)
     if model_name == "gemma3_1":
-        model_id = "google/gemma-3-1b-it"
+        if model_path is not None:
+            model_id = model_path
+        elif precision:
+            model_id = "google/gemma-3-1b-it-qat-int4-unquantized"
+        else:
+            model_id = "google/gemma-3-1b-it"
         model = Gemma3ForCausalLM_ENN.from_pretrained(
             model_id,
             dtype=torch.float32,
             max_context_len=max_context_len,
             max_seq_len=max_seq_len,
             ar_len=ar_len,
+            device_map=target_device,
         )
     elif model_name == "llama3.2_1":
-        model_id = "meta-llama/Llama-3.2-1B-Instruct"
+        model_id = (
+            model_path if model_path is not None else "meta-llama/Llama-3.2-1B-Instruct"
+        )
         model = LlamaForCausalLM_ENN.from_pretrained(
             model_id,
             dtype=torch.float32,
             max_context_len=max_context_len,
             max_seq_len=max_seq_len,
             ar_len=ar_len,
+            device_map=target_device,
         )
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
@@ -125,40 +189,191 @@ def load_llm_model(
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
+
     model.model.eval()
-    example_inputs = model.get_example_inputs(num_token=ar_len)
     metadata = model.get_metadata()
-    return model.model, tokenizer, example_inputs, metadata
+    return model, tokenizer, metadata
 
 
-def export_model(
+def load_and_prepare_model(
     model_name: str,
     max_context_len: int,
     max_seq_len: int,
     ar_len: int,
-) -> Tuple[torch.export.ExportedProgram, Dict[str, Any], Any, Any]:
-    """Export LLM model.
+    device: Optional[str] = None,
+    precision: bool = False,
+    sample_number: int = 1,
+    optimized_rotation_path: str = None,
+    model_path: Optional[str] = None,
+) -> Tuple[Any, Any, Any]:
+    """Load the LLM model and return a single ready-to-export target model.
+
+    Based on ``precision`` this is either the FP model (with native RMSNorm) or
+    the quantized (A16W4) module. Export always runs on CPU, so the target model
+    is moved to CPU here, up front, instead of inside the per-graph export loop.
+    This also makes the expensive steps (downloading/reading the weights and the
+    quantization calibration/generation) happen only a single time rather than
+    once per graph.
 
     Args:
         model_name: Name of the model (e.g., "gemma3_1")
         max_context_len: Maximum context length
         max_seq_len: Maximum sequence length
-        ar_len: Auto-regression length
+        ar_len: Auto-regression length used to build the KV cache
+        device: Compute device to load the model on (e.g., "cpu" or "cuda"). If
+            None, auto-detect using GPU availability.
+        precision: Whether to quantize the model (A16W4).
+        sample_number: Number of calibration samples to use during quantization.
+        optimized_rotation_path: Ratation martix for llama
 
     Returns:
-        Tuple of (exported_model, metadata, example_inputs, example_outputs)
+        Tuple of (causal_model, target_model, metadata). ``causal_model`` is
+        used by the export loop to rebind the KV cache and build example inputs.
     """
-    model, _, example_inputs, metadata = load_llm_model(
+    causal_model, tokenizer, metadata = load_llm_model(
         model_name=model_name,
         max_context_len=max_context_len,
         max_seq_len=max_seq_len,
         ar_len=ar_len,
+        device=device,
+        precision=precision,
+        model_path=model_path,
     )
 
-    exportable_model = replace_rms_norm_with_native_rms_norm(model)
+    exportable_model = replace_rms_norm_with_native_rms_norm(causal_model.model)
+
+    if precision:
+        quant_dtype = Precision.A16W4
+        is_per_channel = True
+        is_qat = False
+        enable_spin = False
+
+        if "gemma3" in model_name:
+            custom_annotations = (custom_annotate_gemma3_a16w4,)
+            act_observer_cls = HistogramObserver
+        else:
+            custom_annotations = (custom_annotate_llama_a16w4,)
+            act_observer_cls = MinMaxObserver
+            if optimized_rotation_path is not None and os.path.isfile(
+                optimized_rotation_path
+            ):
+                try:
+                    if id(causal_model.model.lm_head.weight) == id(
+                        causal_model.model.embed_tokens.weight
+                    ):
+                        causal_model.model.lm_head.weight = torch.nn.Parameter(
+                            causal_model.model.embed_tokens.weight.data.detach().clone(),
+                            requires_grad=False,
+                        )
+                        causal_model.config.tie_word_embeddings = False
+                    exportable_model = fuse_layer_norms(exportable_model)
+                    exportable_model = get_model_with_r1_r2(optimized_rotation_path)(
+                        exportable_model
+                    )
+                    causal_model.model = exportable_model
+                    enable_spin = True
+                except Exception:
+                    print("Enable spinquant failed")
+
+        example_inputs, dynamic_shapes = causal_model.get_example_inputs(
+            num_token=ar_len
+        )
+        with torch.inference_mode():
+            exported_model = torch.export.export(
+                exportable_model, example_inputs, dynamic_shapes=dynamic_shapes
+            )
+
+        causal_model.model = exported_model.module()
+
+        quantizer = EnnQuantizer()
+        quantizer.setup_quant_params(
+            quant_dtype,
+            is_per_channel,
+            is_qat,
+            act_observer_cls=act_observer_cls,
+            enable_spin=enable_spin,
+        )
+        quantizer.add_custom_quant_annotations(custom_annotations)
+
+        m = prepare_pt2e(exported_model.module(), quantizer)
+        m = m.to(device)
+        causal_model.model = m
+
+        dataset = build_calib_dataset(
+            tokenizer,
+            sample_number=sample_number,
+            max_length=max_seq_len,
+        )
+
+        # Run the calibration sequences through the prepared (observer-instrumented)
+        # module to collect activation statistics. The ENN causal-LM wrappers have
+        # no GenerationMixin-compatible forward, so feed the model directly instead
+        # of going through `causal_model.generate`.
+        # The model processes `ar_len` tokens per step against a fixed-length KV
+        # cache, so each calibration forward must consume `ar_len` tokens.
+        for d in dataset:
+            max_new_tokens_gen = max_seq_len - d["input_ids"].shape[1]
+            causal_model.generate(
+                d["input_ids"].to(device),
+                max_new_tokens=max_new_tokens_gen,
+                disable_compile=True,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+
+        # convert_pt2e returns the quantized GraphModule directly.
+        target_model = convert_pt2e(causal_model.model)
+
+        causal_model.model = target_model
+
+        with torch.inference_mode():
+            exported_model = torch.export.export(
+                target_model, example_inputs, dynamic_shapes=dynamic_shapes
+            )
+
+        causal_model.model = exported_model.module()
+
+        if device != torch.device("cpu"):
+            target_model = target_model.to("cpu")
+            target_model = removing_gpu_node_in_graph(target_model)
+            causal_model.target_device = torch.device("cpu")
+    else:
+        target_model = exportable_model
+
+    # Export always runs on CPU; move the selected model there up front.
+    target_model = target_model.to("cpu")
+
+    return causal_model, target_model, metadata
+
+
+def export_prepared_model(
+    causal_model: Any,
+    target_model: Any,
+    ar_len: int,
+) -> Tuple[torch.export.ExportedProgram, Any, Any]:
+    """Export a single graph (prefill/decode) from the shared prepared model.
+
+    The model itself is loaded/quantized and moved to CPU once by
+    ``load_and_prepare_model``; here we only rebind the KV cache for the graph's
+    ``ar_len`` and export the reused target model with graph-specific inputs.
+
+    Args:
+        causal_model: Loaded (and possibly quantized) causal LM wrapper.
+        target_model: Ready-to-export module (FP or quantized), already on CPU.
+        ar_len: The graph's auto-regression length.
+
+    Returns:
+        Tuple of (exported_model, example_inputs, example_outputs)
+    """
+    causal_model.ar_len = ar_len
+    causal_model.setup_kv_cache()
+
+    example_inputs = causal_model.get_example_inputs(num_token=ar_len)[0]
+    example_inputs = _to_cpu(example_inputs)
     with torch.no_grad():
-        example_outputs = exportable_model.forward(*example_inputs)
-    exported_model = torch.export.export(exportable_model, example_inputs, strict=True)
+        example_outputs = target_model.forward(*example_inputs)
+
+    with torch.inference_mode():
+        exported_model = torch.export.export(target_model, example_inputs, strict=True)
 
     remove_redundant_transposes = RemoveRedundantTransposes()
     exported_model_graph_module = remove_redundant_transposes(
@@ -166,11 +381,12 @@ def export_model(
     ).graph_module
 
     # ExportedProgram need to be re-constructed using new transformed graph module.
-    exported_model = torch.export.export(
-        exported_model_graph_module, example_inputs, strict=True
-    )
+    with torch.inference_mode():
+        exported_model = torch.export.export(
+            exported_model_graph_module, example_inputs, strict=True
+        )
 
-    return exported_model, metadata, example_inputs, example_outputs
+    return exported_model, example_inputs, example_outputs
 
 
 def export_llm(args: argparse.Namespace) -> None:
@@ -197,25 +413,33 @@ def export_llm(args: argparse.Namespace) -> None:
     # Ensure the output directory exists
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Export both prefill and decode models
+    # Load and (optionally) quantize the model once, before exporting any graph.
+    causal_model, target_model, metadata = load_and_prepare_model(
+        model_name=args.model_name,
+        max_context_len=args.max_context_len,
+        max_seq_len=args.max_seq_len,
+        ar_len=args.prefill_ar_len,
+        device=args.device,
+        precision=args.precision,
+        sample_number=args.sample_number,
+        optimized_rotation_path=args.optimized_rotation_path,
+        model_path=args.model_path,
+    )
+
+    # Export both prefill and decode models, reusing the prepared target model.
     exported_model = {}
     example_inputs = {}
     example_outputs = {}
-    metadata = None
     for graph_name in GRAPH_NAMES:
         (
             exported_model[graph_name],
-            current_metadata,
             example_inputs[graph_name],
             example_outputs[graph_name],
-        ) = export_model(
-            model_name=args.model_name,
-            max_context_len=args.max_context_len,
-            max_seq_len=args.max_seq_len,
+        ) = export_prepared_model(
+            causal_model=causal_model,
+            target_model=target_model,
             ar_len=args.prefill_ar_len if graph_name == PREFILL_FORWARD else 1,
         )
-        if graph_name == PREFILL_FORWARD:
-            metadata = current_metadata
 
     # Update metadata with get_genai_mode based on chipset and genai_mode flag
     update_metadata_with_genai_mode(metadata, args.chipset, args.genai_mode)
@@ -226,7 +450,6 @@ def export_llm(args: argparse.Namespace) -> None:
             get_enn_partitioner(
                 args.chipset, None if args.disable_weight_sharing else graph_name
             ),
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False),
         ]
         for graph_name in GRAPH_NAMES
     }
@@ -272,6 +495,7 @@ def main() -> None:
         "-c",
         "--chipset",
         required=True,
+        default="E9955",
         help="Samsung chipset, i.e. E9955, etc",
         type=str,
     )
@@ -279,7 +503,16 @@ def main() -> None:
         "-m",
         "--model_name",
         required=True,
+        default="gemma3_1",
         help=f"Model name. Valid ones: {SUPPORTED_MODEL_NAMES}",
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        help=(
+            "Compute device to run the model on, e.g. 'cpu', 'cuda', or 'cuda:6'. "
+            "If not set, auto-detect using GPU availability."
+        ),
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
     parser.add_argument(
@@ -317,7 +550,36 @@ def main() -> None:
         action="store_true",
         help="Enable genai mode. If set, get_genai_mode will be set based on chipset. This can improve performance.",
     )
-
+    parser.add_argument(
+        "-p",
+        "--precision",
+        action="store_true",
+        default=False,
+        help=("Quantization precision. If set, the model will be quantized to A16W4."),
+    )
+    parser.add_argument(
+        "--sample_number",
+        help="Number of calibration samples to use for quantization.",
+        default=256,
+        type=int,
+    )
+    parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="Optimized rotation checkpoint path. Just apply R1/R2 for llama here."
+        "You can train the rotation matrices by https://github.com/facebookresearch/SpinQuant/tree/main",
+    )
+    parser.add_argument(
+        "--model_path",
+        default=None,
+        required=False,
+        help=(
+            "Optional local model directory (or hub id) to load the model and "
+            "tokenizer from, instead of the built-in default for --model_name. "
+            "Useful for offline / pre-downloaded checkpoints."
+        ),
+    )
     args = parser.parse_args()
 
     if args.max_context_len is None:
