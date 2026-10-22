@@ -11,12 +11,20 @@ from typing import Dict, final, List
 import torch
 
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
+    ChannelsLastTaggedReshapePass,
+)
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
     XNNGraph,
+    XNNQuantizedTensorValue,
+    XNNStaticTranspose,
+    XNNTensorValue,
+    XNode,
+    XValue,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     serialize_xnnpack_binary,
@@ -25,6 +33,7 @@ from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_c
 from executorch.backends.xnnpack.utils.utils import is_param_node
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    XNN_INVALID_VALUE_ID,
     XNN_VALUE_FLAG_EXTERNAL_INPUT,
     XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
 )
@@ -97,6 +106,86 @@ def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
                     f"XNNPACK backend only supports contiguous memory format for inputs."
                     f"Expecting dim_order: {default_dim_order}, but got {node.meta['val'].dim_order()} for a placeholder node {node}."
                 )
+
+
+def define_inputs_in_memory_order(
+    xnn_graph: XNNGraph,
+    node_to_external_map: Dict[torch.fx.Node, ExternalMeta],
+    vals_to_ids: Dict[torch.fx.Node, int],
+) -> None:
+    """
+    Declares each graph input whose dim order is neither contiguous nor
+    channels-last in its memory order, followed by a static transpose back to
+    the logical layout the rest of the XNNPACK graph was built for.
+
+    At runtime XNNExecutor reshapes every external input with its sizes listed
+    in dim order, i.e. as the buffer is laid out in memory. The values here are
+    defined from the logical shape, so an input with, e.g., dim order (1, 0, 2)
+    would otherwise be reshaped to a transposed shape and either fail shape
+    propagation or be read with its axes swapped.
+    """
+    xvalues_by_id = {}
+    for xvalue in xnn_graph.xvalues:
+        union = xvalue.xvalue_union
+        tensor_value = (
+            union.tensor_value if isinstance(union, XNNQuantizedTensorValue) else union
+        )
+        xvalues_by_id[tensor_value.id_out] = xvalue
+
+    prologue = []
+    for node, meta in node_to_external_map.items():
+        if meta.io_type != XNN_VALUE_FLAG_EXTERNAL_INPUT or node not in vals_to_ids:
+            continue
+        val = node.meta.get("val", None)
+        if not isinstance(val, torch.Tensor):
+            continue
+        dim_order = tuple(val.dim_order())
+        if dim_order == tuple(range(val.dim())):
+            continue
+        if ChannelsLastTaggedReshapePass._is_nhwc_tensor(val):
+            # ChannelsLastTaggedReshapePass already bridges NHWC inputs.
+            continue
+
+        logical_id = vals_to_ids[node]
+        xvalue = xvalues_by_id[logical_id]
+        logical = xvalue.xvalue_union
+        if isinstance(logical, XNNQuantizedTensorValue):
+            raise RuntimeError(
+                f"XNNPACK does not support quantized input {node} with dim order "
+                f"{dim_order}; only contiguous or channels-last inputs are supported."
+            )
+
+        memory_id = len(xnn_graph.xvalues)
+        memory = XNNTensorValue(
+            datatype=logical.datatype,
+            num_dims=logical.num_dims,
+            dims=[logical.dims[d] for d in dim_order],
+            constant_buffer_idx=0,
+            external_id=logical.external_id,
+            flags=logical.flags,
+            id_out=memory_id,
+        )
+        xnn_graph.xvalues.append(XValue(xvalue_union=memory))
+        logical.external_id = XNN_INVALID_VALUE_ID
+        logical.flags = 0
+        xnn_graph.input_ids = [
+            memory_id if i == logical_id else i for i in xnn_graph.input_ids
+        ]
+
+        # Logical dim i is memory dim dim_order.index(i).
+        prologue.append(
+            XNode(
+                xnode_union=XNNStaticTranspose(
+                    num_dims=len(dim_order),
+                    perm=[dim_order.index(i) for i in range(len(dim_order))],
+                    input_id=memory_id,
+                    output_id=logical_id,
+                    flags=0,
+                ),
+                debug_handle=DEFAULT_DEBUG_HANDLE,
+            )
+        )
+    xnn_graph.xnodes[:0] = prologue
 
 
 @final
@@ -185,6 +274,8 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
+
+        define_inputs_in_memory_order(xnnpack_graph, node_to_external_map, vals_to_ids)
         return PreprocessResult(
             processed_bytes=serialize_xnnpack_binary(
                 xnnpack_graph, constant_data_bytes
