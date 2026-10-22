@@ -879,3 +879,16 @@ TEST(VulkanSDPATest, test_sdpa_op_llama3_params_dynamic) {
   test_vulkan_sdpa(
       0, {111, 1, 1, 1, 57, 1, 1}, head_dim, num_heads, num_kv_heads, 1);
 }
+
+// GQA group size G = Hq / Hkv = 4 (Llama-style). The other decode tests cover
+// G=2 (small_params: 8/4) and G=3 (small_params_dynamic: 6/2, llama3: 24/8);
+// this exercises the G=4 path of the AV coop-GQA shader, which reuses each V
+// texel across all query heads in a group.
+TEST(VulkanSDPATest, test_sdpa_op_gqa_group4) {
+  const int head_dim = 64;
+  const int num_heads = 8;
+  const int num_kv_heads = 2;
+
+  test_vulkan_sdpa(
+      0, {5, 1, 1, 1, 1, 3, 1}, head_dim, num_heads, num_kv_heads, 1);
+}

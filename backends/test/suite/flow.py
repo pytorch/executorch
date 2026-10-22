@@ -5,6 +5,7 @@
 
 import logging
 import os
+import shutil
 
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -44,6 +45,11 @@ class TestFlow:
     skip_patterns: list[str] = field(default_factory=lambda: [])
     """ Tests with names containing any substrings in this list are skipped. """
 
+    xfail_patterns: list[str] = field(default_factory=lambda: [])
+    """ Tests with names containing any substrings in this list are expected to fail.
+    They still run, so the report keeps recording how they fail; the marker is strict,
+    so one that starts passing is reported rather than silently ignored. """
+
     param_skip_reasons: dict[str, dict[Any, str]] = field(default_factory=dict)
     """ Skip tests with a given reason when a pytest parameter matches a given value."""
 
@@ -69,6 +75,9 @@ class TestFlow:
 
         return False, ""
 
+    def should_xfail_test(self, test_name: str) -> bool:
+        return any(pattern in test_name for pattern in self.xfail_patterns)
+
     def __str__(self):
         return self.name
 
@@ -81,6 +90,12 @@ def _register_flow(
     except Exception as e:
         logger.info(f"Skipping {backend_name} flow registration: {e}")
         return []
+
+
+def _load_cpu() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.cpu import CPU_FP32_TEST_FLOW
+
+    return [CPU_FP32_TEST_FLOW]
 
 
 def _load_xnnpack() -> list[TestFlow]:
@@ -156,6 +171,12 @@ def _load_qnn() -> list[TestFlow]:
     ]
 
 
+def _load_nxp() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.nxp import NEUTRON_IMXRT700_INT8_PTQ_FLOW
+
+    return [NEUTRON_IMXRT700_INT8_PTQ_FLOW]
+
+
 def _load_arm() -> list[TestFlow]:
     from executorch.backends.test.suite.flows.arm import (
         ARM_ETHOS_U55_FLOW,
@@ -176,11 +197,23 @@ def _load_arm() -> list[TestFlow]:
     ]
 
 
+def _load_cortex_m() -> list[TestFlow]:
+    # Every case runs on the FVP, so without it the whole flow fails the same way.
+    if not shutil.which("FVP_Corstone_SSE-300_Ethos-U55"):
+        logger.info("Skipping Cortex-M flow registration: Corstone-300 FVP not on PATH")
+        return []
+
+    from executorch.backends.test.suite.flows.cortex_m import CORTEX_M_TEST_FLOW
+
+    return [CORTEX_M_TEST_FLOW]
+
+
 def all_flows() -> dict[str, TestFlow]:
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
     flows = (
         [PORTABLE_TEST_FLOW]
+        + _register_flow(_load_cpu, "CPU")
         + _register_flow(_load_xnnpack, "XNNPACK")
         + _register_flow(_load_coreml, "Core ML")
         + _register_flow(_load_vulkan, "Vulkan")
@@ -188,6 +221,8 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_openvino, "OpenVINO")
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
+        + _register_flow(_load_cortex_m, "Cortex-M")
+        + _register_flow(_load_nxp, "NXP")
     )
 
     try:
@@ -198,5 +233,18 @@ def all_flows() -> dict[str, TestFlow]:
         ]
     except Exception as e:
         logger.info(f"Skipping MLX flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.samsung import (
+            SAMSUNG_A8W8_TEST_FLOW,
+            SAMSUNG_TEST_FLOW,
+        )
+
+        flows += [
+            SAMSUNG_TEST_FLOW,
+            SAMSUNG_A8W8_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping SAMSUNG flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

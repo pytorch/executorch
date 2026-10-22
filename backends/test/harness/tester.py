@@ -381,11 +381,16 @@ class Tester:
         logger = logging.getLogger(__name__)
         os.makedirs(artifact_dir, exist_ok=True)
 
+        def _to_physical_layout(t: torch.Tensor) -> torch.Tensor:
+            # The .bin has to match the dim_order the .pte declares; contiguous()
+            # alone would re-lay a channels_last tensor back to NCHW.
+            return t.detach().permute(t.dim_order()).contiguous()
+
         for i, inp in enumerate(inputs):
             if isinstance(inp, torch.Tensor):
                 suffix = "" if len(inputs) == 1 else f"_{i}"
                 path = os.path.join(artifact_dir, f"{artifact_name}_input{suffix}.bin")
-                inp.detach().contiguous().numpy().tofile(path)
+                _to_physical_layout(inp).numpy().tofile(path)
                 logger.info(f"Saved golden input to {path}")
 
         if isinstance(reference_output, torch.Tensor):
@@ -458,11 +463,11 @@ class Tester:
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
                     f"\tDifference: max: {torch.max(compare_model-compare_ref)}, abs: {torch.max(torch.abs(compare_model-compare_ref))}, mean abs error: {torch.mean(torch.abs(compare_model-compare_ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
-                    f"\t Numel: {model.numel()}, {ref.numel()}\n"
-                    f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
-                    f"\t   Max: {model.max()}, {ref.max()}\n"
-                    f"\t   Min: {model.min()}, {ref.min()}\n"
+                    f"\t Numel: {compare_model.numel()}, {compare_ref.numel()}\n"
+                    f"\tMedian: {compare_model.median()}, {compare_ref.median()}\n"
+                    f"\t  Mean: {compare_model.to(torch.double).mean()}, {compare_ref.to(torch.double).mean()}\n"
+                    f"\t   Max: {compare_model.max()}, {compare_ref.max()}\n"
+                    f"\t   Min: {compare_model.min()}, {compare_ref.min()}\n"
                 )
 
     @staticmethod

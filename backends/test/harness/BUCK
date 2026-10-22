@@ -8,6 +8,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = native.glob(["*.py", "stages/*.py"]),
     visibility = ["PUBLIC"],
     deps = [
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/exir:graph_module",
     ],
 )

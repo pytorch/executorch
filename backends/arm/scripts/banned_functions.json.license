@@ -1,0 +1,7 @@
+SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+SPDX-License-Identifier: MIT
+
+Derived from the MIT-licensed example at:
+https://github.com/justinchuby/lintrunner-adapters/blob/772e5936d9b02814e29e12ca1355d33b029688c2/examples/adapters/cpp_banned_functions_linter/example_banned_functions.json
+
+Modified for the ExecuTorch Arm backend.

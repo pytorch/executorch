@@ -30,23 +30,23 @@ class DynamicDispatchNode final : public DispatchNode {
       ComputeGraph*,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
-  using PickGlobalFn = const std::function<utils::uvec3(
+  using PickGwgFn = const std::function<GlobalWorkGrid(
       ComputeGraph*,
       const vkapi::ShaderInfo& shader,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
-  using PickLocalFn = const std::function<utils::uvec3(
+  using PickLwgFn = const std::function<LocalWorkGroup(
       ComputeGraph*,
       const vkapi::ShaderInfo& shader,
-      const utils::uvec3& global_workgroup_size,
+      const GlobalWorkGrid& gwg,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
   explicit DynamicDispatchNode(
       ComputeGraph& graph,
       const PickShaderFn& pick_shader_fn,
-      const PickGlobalFn& pick_global_wg_fn,
-      const PickLocalFn& pick_local_wg_fn,
+      const PickGwgFn& pick_gwg_fn,
+      const PickLwgFn& pick_lwg_fn,
       const std::vector<ArgGroup>& args,
       const vkapi::ParamsBindList& params,
       const std::vector<PushConstantDataInfo>& push_constants,
@@ -57,8 +57,8 @@ class DynamicDispatchNode final : public DispatchNode {
   explicit DynamicDispatchNode(
       ComputeGraph& graph,
       const vkapi::ShaderInfo& shader,
-      const PickGlobalFn& pick_global_wg_fn,
-      const PickLocalFn& pick_local_wg_fn,
+      const PickGwgFn& pick_gwg_fn,
+      const PickLwgFn& pick_lwg_fn,
       const std::vector<ArgGroup>& args,
       const vkapi::ParamsBindList& params,
       const std::vector<PushConstantDataInfo>& push_constants,
@@ -72,8 +72,8 @@ class DynamicDispatchNode final : public DispatchNode {
 
  protected:
   const PickShaderFn pick_shader_fn_;
-  const PickGlobalFn pick_global_wg_fn_;
-  const PickLocalFn pick_local_wg_fn_;
+  const PickGwgFn pick_gwg_fn_;
+  const PickLwgFn pick_lwg_fn_;
 
   utils::uvec3 wg_dispatch_grid_{1u, 1u, 1u};
 

@@ -923,3 +923,27 @@ TEST_F(OpMulOutTest, BroadcastDimensionMismatchWithDifferentTypes) {
     EXPECT_TENSOR_EQ(result, expected);
   }
 }
+
+TEST_F(OpMulOutTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4},
+      /*data=*/{10, 20, 30, 40, 100, 120, 140, 160, 270, 300, 330, 360});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{10, 40, 90, 40, 100, 180});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}

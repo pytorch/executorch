@@ -10,13 +10,14 @@
 ``ExportableGGUFTensor`` wraps the *raw* GGUF block bytes for one tensor and
 defers all unpacking, serving as the canonical GGUF loading representation:
 
-* ``load_gguf(path)`` -> ``{name -> ExportableGGUFTensor | Tensor}`` (quantized
-  tensors become subclasses; F32/F16 stay plain). No unpacking at load.
+* ``iter_gguf(path)`` -> streams ``(name, ExportableGGUFTensor | Tensor)`` pairs
+  (quantized tensors become subclasses; F32/F16 stay plain). No unpacking at load.
 * As a weight, it dequantizes via the ``torchao::dequantize_gguf`` custom op
   (gguf-package eager body) then a plain ``linear`` / ``embedding`` -- a backend
   can pattern-match ``dequantize_gguf`` -> linear/embedding to fuse.
-* ``.to_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` convert into
-  torchao subclasses (``Int4Tensor`` / ``IntxUnpackedToInt8Tensor``) instead.
+* ``.to_exportable_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` convert
+  into ExecuTorch/torchao subclasses (``ExportableInt4Tensor`` /
+  ``IntxUnpackedToInt8Tensor``) instead.
 
 The quant type is a string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``); the ``gguf``
 package's integer ``GGMLQuantizationType`` ids are an internal lookup detail.
@@ -28,7 +29,7 @@ Attribution: Q4_K / Q5_K / Q6_K block layouts follow llama.cpp / gguf-py
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, Optional, Tuple, Union
+from typing import Iterator, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -307,9 +308,9 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
     Stores the exact GGUF ``block_q*_K`` byte layout (no repacking) plus the
     quant type string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``). ``aten.linear`` /
     ``aten.embedding`` dequantize via the ``torchao::dequantize_gguf`` op (then a
-    plain linear/embedding); :meth:`to_int4_tensor` /
-    :meth:`to_intx_unpacked_to_int8_tensor` convert to torchao subclasses
-    instead.
+    plain linear/embedding); :meth:`to_exportable_int4_tensor` /
+    :meth:`to_intx_unpacked_to_int8_tensor` convert to ExecuTorch/torchao
+    subclasses instead.
     """
 
     tensor_data_names = ["raw"]
@@ -352,39 +353,63 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         """Build from a ``(N, row_bytes)`` uint8 GGUF block blob."""
         return cls(raw.contiguous(), ggml_type, orig_dtype)
 
+    def to(self, *args, **kwargs) -> "ExportableGGUFTensor":
+        """Move device and/or set the output dtype *without* dequantizing.
+
+        Mirrors ``IntxUnpackedToInt8Tensor.to``: the raw GGUF blocks are only
+        moved across devices; ``dtype`` becomes the dtype :meth:`dequantize`
+        will produce. Casting via ``.to`` therefore preserves the quantized
+        payload (unlike ``aten._to_copy``, which dequantizes for export).
+        """
+        kwargs = self._get_to_kwargs(*args, **kwargs)
+        device = kwargs.pop("device")
+        dtype = kwargs.pop("dtype")
+        assert dtype.is_floating_point, f"expected a floating dtype; got {dtype}"
+        return ExportableGGUFTensor(self.raw.to(device), self.ggml_type, dtype)
+
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> Tensor:
         """Dequantize to a plain float tensor using the ``gguf`` package."""
         return torch.ops.torchao.dequantize_gguf(
             self.raw, self.ggml_type, output_dtype or self.orig_dtype
         )
 
-    def to_int4_tensor(self) -> Tensor:
-        """Convert a Q4_K tensor to a torchao ``Int4Tensor``."""
-        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+    def to_exportable_int4_tensor(
+        self, output_dtype: Optional[torch.dtype] = None
+    ) -> Tensor:
+        """Convert a Q4_K tensor to an ``ExportableInt4Tensor``.
+
+        Threads ``output_dtype`` (default ``orig_dtype``) into the scale/zero_point
+        and the dequantized output dtype, so callers targeting fp16 (e.g. MLX) get
+        fp16 params while CUDA can pass bf16. The packed int nibbles are unchanged.
+        """
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
 
         if self.ggml_type != "q4_k":
             raise NotImplementedError(
-                f"to_int4_tensor only supports q4_k; got {self.ggml_type!r}"
+                f"to_exportable_int4_tensor only supports q4_k; got {self.ggml_type!r}"
             )
+        dtype = output_dtype or self.orig_dtype
         N, K = int(self.shape[0]), int(self.shape[1])
         q, eff_scale, eff_min = _q4_k_fields(self.raw, N, K)
 
         zero = torch.where(
             eff_scale != 0, eff_min / eff_scale, torch.zeros_like(eff_min)
         )
-        # Nibble-pack for Int4Tensor: even index -> low nibble, odd -> high.
+        # Nibble-pack: even index -> low nibble, odd -> high.
         packed = q[:, ::2] | (q[:, 1::2] << 4)
-        return Int4Tensor(
-            qdata=packed,
-            # Int4Tensor scale/zero layout is (K // gs, N) -- transposed.
-            scale=eff_scale.to(torch.bfloat16).t().contiguous(),
-            zero_point=zero.to(torch.bfloat16).t().contiguous(),
-            block_size=[1, Q4_K_GROUP_SIZE],
-            shape=torch.Size([N, K]),
+        return ExportableInt4Tensor(
+            packed,
+            # ExportableInt4Tensor scale/zero layout is (K // gs, N) -- transposed.
+            eff_scale.to(dtype).t().contiguous(),
+            zero.to(dtype).t().contiguous(),
+            Q4_K_GROUP_SIZE,
+            dtype,
         )
 
     def to_intx_unpacked_to_int8_tensor(
-        self, max_group_size: Optional[int] = None
+        self,
+        max_group_size: Optional[int] = None,
+        scale_dtype: Optional[torch.dtype] = None,
     ) -> Tensor:
         """Convert to a torchao ``IntxUnpackedToInt8Tensor`` (Q4_K, Q5_K or Q6_K).
 
@@ -403,6 +428,13 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         """
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
+        # Scale/zero-point dtype. GGUF stores the super-block scale as float16,
+        # so float16 is the faithful default. Callers pass their own compute
+        # dtype: the MLX repack passes the activation dtype so quantized_matmul
+        # scales match activations and MLX does not promote (e.g. bf16 + f16 ->
+        # f32); the CUDA integrations pass bfloat16.
+        sdt = scale_dtype if scale_dtype is not None else torch.float16
+
         N, K = int(self.shape[0]), int(self.shape[1])
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
@@ -418,11 +450,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 )
             return IntxUnpackedToInt8Tensor(
                 qdata=q,
-                scale=eff_scale.to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
                 zero_point=torch.zeros_like(eff_scale, dtype=torch.int8),
                 target_dtype=torch.int8,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         if self.ggml_type == "q5_k":
@@ -439,11 +471,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             # match (dequant = scale * (q - zp) is preserved).
             return IntxUnpackedToInt8Tensor(
                 qdata=q.to(torch.int8) - 16,
-                scale=eff_scale.to(torch.bfloat16),
-                zero_point=(zero - 16).to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
+                zero_point=(zero - 16).to(sdt),
                 target_dtype=torch.int5,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         if self.ggml_type == "q4_k":
@@ -460,11 +492,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             # (dequant = scale * (q - zp) is preserved).
             return IntxUnpackedToInt8Tensor(
                 qdata=q.to(torch.int8) - 8,
-                scale=eff_scale.to(torch.bfloat16),
-                zero_point=(zero - 8).to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
+                zero_point=(zero - 8).to(sdt),
                 target_dtype=torch.int4,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         raise NotImplementedError(
@@ -517,8 +549,8 @@ def iter_gguf(
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
     Quantized tensors (Q4_K, Q5_K, Q6_K) are wrapped as ``ExportableGGUFTensor``
-    with the raw block bytes; F32/F16 are returned as plain float tensors (bf16
-    for F16). GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
+    with the raw block bytes; F32/F16/BF16 are returned as plain float tensors in
+    their native dtype. GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
     """
     from gguf import GGMLQuantizationType, GGUFReader
 
@@ -538,19 +570,8 @@ def iter_gguf(
         elif tensor.tensor_type == GGMLQuantizationType.F32:
             yield tensor.name, flat.view(torch.float32).reshape(shape).clone()
         elif tensor.tensor_type == GGMLQuantizationType.F16:
-            yield (
-                tensor.name,
-                flat.view(torch.float16).reshape(shape).to(torch.bfloat16),
-            )
+            yield tensor.name, flat.view(torch.float16).reshape(shape).clone()
         elif tensor.tensor_type == GGMLQuantizationType.BF16:
             yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         else:
             raise ValueError(f"Unsupported GGUF quant type: {tensor.tensor_type}")
-
-
-def load_gguf(path: str) -> Dict[str, Union[ExportableGGUFTensor, Tensor]]:
-    """Load a GGUF file into ``{name -> ExportableGGUFTensor | Tensor}``.
-
-    Holds all tensors at once; use :func:`iter_gguf` for low peak memory.
-    """
-    return dict(iter_gguf(path))

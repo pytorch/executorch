@@ -32,9 +32,9 @@ struct ET_EXPERIMENTAL Stats {
   long inference_start_ms = 0;
   // End of the tokenizer encode time.
   long token_encode_end_ms = 0;
-  // Start of the model execution (forward function) time.
+  // Start timestamp of the most recent model execution (forward) window.
   long model_execution_start_ms = 0;
-  // End of the model execution (forward function) time.
+  // End timestamp of the most recent model execution (forward) window.
   long model_execution_end_ms = 0;
   // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
   // before the inference loop starts
@@ -45,6 +45,8 @@ struct ET_EXPERIMENTAL Stats {
   long inference_end_ms = 0;
   // Keep a running total of the time spent in sampling.
   long aggregate_sampling_time_ms = 0;
+  // Running total of time spent in model execution (forward).
+  long aggregate_model_execution_time_ms = 0;
   // Token count from prompt
   int64_t num_prompt_tokens = 0;
   // Token count from generated (total - prompt)
@@ -66,6 +68,16 @@ struct ET_EXPERIMENTAL Stats {
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
+  inline void on_model_execution_begin() {
+    model_execution_start_ms = time_in_ms();
+  }
+
+  inline void on_model_execution_end() {
+    model_execution_end_ms = time_in_ms();
+    aggregate_model_execution_time_ms +=
+        model_execution_end_ms - model_execution_start_ms;
+  }
+
   void reset(bool all_stats = false) {
     // Not resetting model_load_start_ms and model_load_end_ms because reset is
     // typically called after warmup and before running the actual run.
@@ -77,10 +89,13 @@ struct ET_EXPERIMENTAL Stats {
       model_load_end_ms = 0;
     }
     inference_start_ms = 0;
+    model_execution_start_ms = 0;
+    model_execution_end_ms = 0;
     prompt_eval_end_ms = 0;
     first_token_ms = 0;
     inference_end_ms = 0;
     aggregate_sampling_time_ms = 0;
+    aggregate_model_execution_time_ms = 0;
     num_prompt_tokens = 0;
     num_generated_tokens = 0;
     gpu_total_bytes = static_cast<uint64_t>(-1);
@@ -121,10 +136,13 @@ inline std::string stats_to_json_string(const Stats& stats) {
      << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
      << "\"inference_start_ms\":" << stats.inference_start_ms << ","
      << "\"inference_end_ms\":" << stats.inference_end_ms << ","
+     << "\"model_execution_start_ms\":" << stats.model_execution_start_ms << ","
+     << "\"model_execution_end_ms\":" << stats.model_execution_end_ms << ","
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << ",";
+     << ",\"aggregate_model_execution_time_ms\":"
+     << stats.aggregate_model_execution_time_ms << ",";
   // Only include GPU fields in the JSON if gpu_total_bytes is valid (not
   // equal to sentinel -1)
   if (stats.gpu_total_bytes != static_cast<uint64_t>(-1)) {

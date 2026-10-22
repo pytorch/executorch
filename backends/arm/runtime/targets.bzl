@@ -1,20 +1,35 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def _persistent_region_flags():
+    if native.read_config("executorch", "ethosu_persistent_region", "false") == "true":
+        return ["-DETHOSU_PERSISTENT_REGION"]
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        "fbsource//xplat/executorch/tools/buck/constraints:ethosu-persistent-region-enabled": ["-DETHOSU_PERSISTENT_REGION"],
+    })
 
 def define_common_targets():
     runtime.cxx_library(
         name = "vela_bin_stream",
         srcs = ["VelaBinStream.cpp"],
         exported_headers = ["VelaBinStream.h"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
-        deps = [
+        exported_deps = [
             "//executorch/runtime/core:core",
+        ],
+        deps = [
+            "//executorch/runtime/core:named_data_map",
         ],
     )
     runtime.cxx_library(
         name = "arm_backend",
         srcs = [
             "EthosUBackend.cpp",
-            "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_CoreDriver.cpp",
             "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],
@@ -25,6 +40,7 @@ def define_common_targets():
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
@@ -37,14 +53,25 @@ def define_common_targets():
         name = "vgf_backend",
         srcs = [
             "VGFBackend.cpp",
+            "VGFExecutionStats.cpp",
+            "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
+            "VGFZeroCopy.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
             # drop the symbols when building a shared library.
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
-        exported_headers = ["VGFSetup.h"],
+        exported_headers = [
+            "VGFExecutionStats.h",
+            "VGFNeuralStatistics.h",
+            "VGFSetup.h",
+            "VGFShapeUtils.h",
+            "VGFVulkanFeatures.h",
+            "VGFZeroCopy.h",
+        ],
+        platforms = CXX,
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,
@@ -60,7 +87,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
-            "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+            "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],

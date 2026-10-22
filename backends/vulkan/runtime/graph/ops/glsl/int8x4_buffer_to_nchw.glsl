@@ -26,12 +26,14 @@ ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 
 void main() {
   // One thread per output int32 in the NCHW staging buffer.
   // Each output int32 holds 4 consecutive NCHW bytes.
-  const uint out_int32_idx = gl_GlobalInvocationID.x;
+  const uint out_int32_idx = linear_idx_from_gid();
 
   const uint W = inp.sizes[0][0];
   const uint H = inp.sizes[0][1];

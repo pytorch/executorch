@@ -21,7 +21,6 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
-using executorch::runtime::etensor::kNumDeviceTypes;
 
 /**
  * A mock DeviceAllocator implementation for testing purposes.

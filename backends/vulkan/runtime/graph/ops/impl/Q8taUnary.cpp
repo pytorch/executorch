@@ -75,8 +75,8 @@ void add_q8ta_unary_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_linear_global_wg_with_block_config,
-      pick_square_local_wg_with_block_config,
+      pick_linear_gwg_with_block_config,
+      pick_square_lwg_with_block_config,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers

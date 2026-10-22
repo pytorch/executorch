@@ -167,7 +167,9 @@ void xa_opt_quantized_conv2d_nhwc(
   bool conv1d = input.dim() == 3;
   constexpr int kNnlibMaxDim = 4;
 
-  if (input.scalar_type() == ScalarType::Char) {
+  // NNLib's int8 entry points require symmetric weights. Let the generic
+  // implementation handle non-zero weight zero points.
+  if (input.scalar_type() == ScalarType::Char && weight_zero_point == 0) {
     WORD8* __restrict__ p_out =
         (WORD8* __restrict__)out.mutable_data_ptr<int8_t>();
     WORD8* __restrict__ p_inp =
@@ -213,11 +215,7 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32 dilation_width = dilation[1];
     WORD32 dilation_height = dilation[0];
 
-    // WORD32* kernel_bias_ptr =
-    //   (WORD32*)weight_zero_point.const_data_ptr<int32_t>();
-
     WORD32 input_zero_bias = -in_zero_point;
-    WORD32 kernel_zero_bias = -weight_zero_point;
 
     WORD32 out_multiplier32[out_channels];
     WORD32 out_shift32[out_channels];
@@ -477,7 +475,7 @@ void quantized_conv2d_nhwc_out(
     IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
@@ -508,8 +506,9 @@ void quantized_conv2d_nhwc_out(
     return;
   }
   const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
-  const int32_t weight_zero_point_int =
-      weight_zero_point.const_data_ptr<int32_t>()[0];
+  const int32_t weight_zero_point_int = weight_zero_point.has_value()
+      ? weight_zero_point->const_data_ptr<int32_t>()[0]
+      : 0;
 
   bool optimized = 0;
 

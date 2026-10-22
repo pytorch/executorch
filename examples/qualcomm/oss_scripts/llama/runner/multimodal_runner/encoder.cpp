@@ -11,7 +11,6 @@
 #include <fstream>
 
 using executorch::aten::Tensor;
-using executorch::extension::Module;
 using executorch::extension::TensorPtr;
 using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;

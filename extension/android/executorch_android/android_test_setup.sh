@@ -29,8 +29,10 @@ prepare_tinyllama() {
 }
 
 prepare_golden() {
-  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26052718.zip"
-  curl -sL -o /tmp/golden.zip "$url"
+  # _test_backend.yml uploads these with retention-days: 90, so this pin has to
+  # be refreshed from a newer hourly key before it ages out.
+  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26082700.zip"
+  curl -fsSL -o /tmp/golden.zip "$url"
   unzip -o /tmp/golden.zip -d /tmp/golden/
   for model in mobilenet_v2 vit_b_16; do
     cp "/tmp/golden/xnnpack/${model}.pte" "${BASEDIR}/src/androidTest/resources/"

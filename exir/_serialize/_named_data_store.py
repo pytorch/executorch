@@ -7,10 +7,12 @@
 # pyre-strict
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
+from executorch.exir._serialize._cord import CordBuffer, FileBackedData
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.tensor_layout import TensorLayout
 
@@ -47,7 +49,7 @@ class NamedDataStoreOutput:
             from {filename: {key: DataEntry}}.
     """
 
-    buffers: List[bytes]
+    buffers: List[CordBuffer]
     pte_data: Dict[str, DataEntry]
     external_data: Dict[str, Dict[str, DataEntry]]
 
@@ -63,12 +65,12 @@ class NamedDataStore:
         in the PTE or externally.
     - Multiple keys can point to the same buffer entry.
     - The same data can be added multiple times and all keys will point to one
-        buffer. If a duplicate blob is added with a different alignment, the
-        lcm of the current and new alignment is taken for that blob.
+        buffer. Within each output file, duplicate blobs use the lcm of every
+        requested alignment for that blob.
     """
 
     # List of unique blobs.
-    buffers: List[bytes]
+    buffers: List[CordBuffer]
     # Named data stored inside the PTE file. Map of {key: DataEntry}.
     pte_data: Dict[str, DataEntry]
     # Named data stored outside of the PTE file.
@@ -93,17 +95,29 @@ class NamedDataStore:
         self.buffer_sha256 = {}
         self.key_to_buffer_idx = {}
 
+    @staticmethod
+    def _sha256(data: CordBuffer) -> bytes:
+        if isinstance(data, FileBackedData):
+            return data.sha256()
+        return hashlib.sha256(data).digest()
+
+    @staticmethod
+    def _prefix(data: CordBuffer, size: int) -> bytes:
+        if isinstance(data, FileBackedData):
+            return data.prefix(size)
+        return data[:size]
+
     def _get_buffer_sha256(self, buffer_idx: int) -> bytes:
         sha = self.buffer_sha256.get(buffer_idx)
         if sha is None:
-            sha = hashlib.sha256(self.buffers[buffer_idx]).digest()
+            sha = self._sha256(self.buffers[buffer_idx])
             self.buffer_sha256[buffer_idx] = sha
         return sha
 
     def _add_named_data_to_map(
         self,
         key: str,
-        data: bytes,
+        data: CordBuffer,
         alignment: int,
         local_key_to_buffer_idx: Dict[str, DataEntry],
         tensor_layout: Optional[TensorLayout] = None,
@@ -127,19 +141,29 @@ class NamedDataStore:
         # Check if the key exists.
         buffer_idx = self.key_to_buffer_idx.get(key, -1)
         if buffer_idx != -1:
-            if data != self.buffers[buffer_idx]:
+            if len(data) != len(self.buffers[buffer_idx]) or self._sha256(
+                data
+            ) != self._get_buffer_sha256(buffer_idx):
                 raise ValueError(
                     f"Duplicate key {key} with different data. "
                     f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
                     f"New data size: {len(data)} bytes."
                 )
+            data_entry = self.pte_data.get(key)
+            if data_entry is None:
+                for entries in self.external_data.values():
+                    data_entry = entries.get(key)
+                    if data_entry is not None:
+                        break
+            assert data_entry is not None
+            data_entry.alignment = math.lcm(data_entry.alignment, alignment)
         else:
             # Two-level dedup: cheap fingerprint rejects non-matches fast,
             # SHA-256 confirms matches without full byte comparison.
-            fingerprint = (len(data), data[:32])
+            fingerprint = (len(data), self._prefix(data, 32))
             candidates = self.fingerprint_to_buffer_idx.get(fingerprint)
             if candidates is not None:
-                new_sha = hashlib.sha256(data).digest()
+                new_sha = self._sha256(data)
                 for candidate in candidates:
                     if new_sha == self._get_buffer_sha256(candidate):
                         buffer_idx = candidate
@@ -152,17 +176,18 @@ class NamedDataStore:
                     buffer_idx
                 )
 
-            local_key_to_buffer_idx[key] = DataEntry(
+            data_entry = DataEntry(
                 buffer_index=buffer_idx,
                 alignment=alignment,
                 tensor_layout=tensor_layout,
             )
+            local_key_to_buffer_idx[key] = data_entry
             self.key_to_buffer_idx[key] = buffer_idx
 
     def add_named_data(
         self,
         key: str,
-        data: Union[bytes, torch.Tensor],
+        data: Union[bytes, FileBackedData, torch.Tensor],
         alignment: Optional[int] = 1,
         external_tag: Optional[str] = None,
         tensor_layout: Optional[TensorLayout] = None,
@@ -171,7 +196,8 @@ class NamedDataStore:
         Adds a named blob to the NamedDataStore.
         Args:
             key (str): key associated with the data.
-            data (Union[bytes, torch.Tensor]): Union of bytes, or torch.Tensor to serialize. Note: if a tensor is passed, it must have contiguous memory layout. The tensor_layout will be inferred from the tensor and should not be passed in.
+            data: Bytes, file-backed data, or a torch.Tensor to serialize. If a
+                tensor is passed, its layout is inferred.
             alignment (int): alignment for bytes to be serialized with.
             external (Optional[str]): the external filename that this data is saved to.
             tensor_layout (Optional[TensorLayout]): layout of the tensor, if applicable.
@@ -194,8 +220,10 @@ class NamedDataStore:
                 )
             tensor_layout = real_tensor_layout
             byte_data = _tensor_to_bytes(data)
-        else:
+        elif isinstance(data, (bytes, FileBackedData)):
             byte_data = data
+        else:
+            raise TypeError(f"Unsupported named data type: {type(data)}")
 
         if external_tag is None:
             self._add_named_data_to_map(
@@ -210,10 +238,94 @@ class NamedDataStore:
                 tensor_layout,
             )
 
+    def externalize_pte_data(
+        self,
+        max_data_bytes: int,
+        tag_prefix: str,
+    ) -> None:
+        # Keep this generic API defensive because callers can bypass backend
+        # option parsing and serialized compile-spec validation.
+        if (
+            isinstance(max_data_bytes, bool)
+            or not isinstance(max_data_bytes, int)
+            or max_data_bytes <= 0
+        ):
+            raise ValueError("external data shard cap must be a positive integer")
+        if not tag_prefix:
+            raise ValueError("external data tag prefix must be nonempty")
+
+        entries_by_buffer: Dict[int, Dict[str, DataEntry]] = {}
+        for key, entry in self.pte_data.items():
+            entries_by_buffer.setdefault(entry.buffer_index, {})[key] = entry
+
+        shards: List[Dict[str, DataEntry]] = []
+        current_shard: Dict[str, DataEntry] = {}
+        current_bytes = 0
+        # Prefer stable key order over size-based packing so equivalent stores
+        # always produce the same shards.
+        ordered_groups = sorted(
+            entries_by_buffer.items(), key=lambda item: tuple(sorted(item[1]))
+        )
+        for buffer_index, entries in ordered_groups:
+            buffer_size = len(self.buffers[buffer_index])
+            if buffer_size > max_data_bytes:
+                raise ValueError(
+                    f"buffer {buffer_index} has {buffer_size} bytes and exceeds "
+                    f"external data shard cap {max_data_bytes}"
+                )
+            if current_shard and current_bytes + buffer_size > max_data_bytes:
+                shards.append(current_shard)
+                current_shard = {}
+                current_bytes = 0
+            current_shard.update(entries)
+            current_bytes += buffer_size
+        if current_shard:
+            shards.append(current_shard)
+
+        external_data = {
+            tag: dict(entries) for tag, entries in self.external_data.items()
+        }
+        for entries in shards:
+            keys = sorted(entries)
+            digest = hashlib.sha256("\0".join(keys).encode("utf-8")).hexdigest()
+            tag = f"{tag_prefix}_{digest}"
+            canonical_entries = {key: entries[key] for key in keys}
+            existing = external_data.get(tag)
+            if existing is not None and existing != canonical_entries:
+                raise ValueError(f"external data tag collision for {tag}")
+            external_data[tag] = canonical_entries
+
+        self.external_data = external_data
+        self.pte_data = {}
+
+    @staticmethod
+    def _snapshot_data_entries(
+        entries: Dict[str, DataEntry],
+    ) -> Dict[str, DataEntry]:
+        buffer_alignments: Dict[int, int] = {}
+        for entry in entries.values():
+            buffer_alignments[entry.buffer_index] = math.lcm(
+                buffer_alignments.get(entry.buffer_index, 1), entry.alignment
+            )
+        return {
+            key: DataEntry(
+                buffer_index=entry.buffer_index,
+                alignment=buffer_alignments[entry.buffer_index],
+                tensor_layout=entry.tensor_layout,
+            )
+            for key, entry in entries.items()
+        }
+
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
-        # Clean up empty maps inside self.external_data
-        self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
-        return NamedDataStoreOutput(self.buffers, self.pte_data, self.external_data)
+        return NamedDataStoreOutput(
+            buffers=list(self.buffers),
+            pte_data=self._snapshot_data_entries(self.pte_data),
+            external_data={
+                tag: self._snapshot_data_entries(entries)
+                for tag, entries in self.external_data.items()
+                if entries
+            },
+        )
 
     def merge_named_data_store(self, other: NamedDataStoreOutput) -> None:
         """

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
 from operator import attrgetter
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 # To support quantize op lowering in AOT
 try:
@@ -40,12 +40,15 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
+
+from .conv_bn import annotate_conv_bn_partitions
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -207,6 +210,15 @@ QUANT_CONFIG_DICT = {
         partial(get_qat_per_channel_quant_config),
         None,
     ),
+    (QuantDtype.use_16a8w, True): (
+        get_16a8w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
+        None,
+    ),
 }
 
 
@@ -333,7 +345,9 @@ class QnnQuantizer(Quantizer):
 
     Args:
         backend: QnnQuantizer uses the backend_type to dynamically load the appropriate backend rules as needed.
-        soc_model: QnnQuantizer checks each operation according to the soc_model. For example, LPBQ requires V69 or a newer version.
+        soc_model:
+            QnnQuantizer checks each operation according to the soc_model.
+            For an FCB target list, validation uses the target with the lowest HTP architecture.
         strict:
           When enabled (default), the validation stage raises a ValueError if quantization constraints are not met.
           In this mode, all quantization constraints must be satisfied to fully delegate to the QNN Backend.
@@ -364,13 +378,26 @@ class QnnQuantizer(Quantizer):
     def __init__(
         self,
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
-        soc_model: QcomChipset = QcomChipset.SM8750,
+        soc_model: Union[QcomChipset, Sequence[QcomChipset]] = QcomChipset.SM8750,
         strict: bool = True,
     ):
         super().__init__()
         self.strict = strict
         self.backend = backend
-        self.soc_info = _soc_info_table[soc_model]
+        self.soc_models = (
+            (soc_model,) if isinstance(soc_model, QcomChipset) else tuple(soc_model)
+        )
+        if not self.soc_models:
+            raise ValueError("soc_model must not be empty")
+        if len(self.soc_models) > 1 and backend != QnnExecuTorchBackendType.kHtpBackend:
+            raise ValueError(
+                "multiple soc_model (FCB) is only supported for HTP backend"
+            )
+        least_capable_soc_model = min(
+            self.soc_models,
+            key=lambda model: _soc_info_table[model].htp_info.htp_arch,
+        )
+        self.soc_info = _soc_info_table[least_capable_soc_model]
 
         # Lazy load rules and constraints of current backend
         self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
@@ -379,8 +406,13 @@ class QnnQuantizer(Quantizer):
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
 
-        # Load backend_opinfo of current backend and soc_model
-        self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
+        # Applied when the quantizer is built, because that is upstream of calibration, and
+        # calibration runs the model eagerly. The AMD crash this prevents needs a real
+        # convolution, so a guard applied at lowering time comes after the risk has passed.
+        disable_mkldnn_on_amd()
+
+        # Validate against the least capable FCB target.
+        self.backend_opinfo = get_backend_opinfo(str(backend), least_capable_soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
@@ -391,6 +423,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
         self._recipe = None
+        self._convert_linear_to_conv2d = False
 
     @property
     def recipe(self):
@@ -504,6 +537,13 @@ class QnnQuantizer(Quantizer):
         if self._recipe:
             self._recipe.annotate(model, self._rules_map)
         else:
+            if self.default_quant_config.is_qat:
+                # Conv+BN has to be claimed as one partition before the per-node
+                # pass. PTQ is left alone: batchnorm is already folded into the
+                # conv by the time it is quantized there.
+                annotate_conv_bn_partitions(
+                    model, self._get_quant_config, self.discard_nodes
+                )
             self._annotate(model)
             self._annotate_custom_annotation(model)
 
@@ -525,7 +565,9 @@ class QnnQuantizer(Quantizer):
         """
         return get_qnn_pass_manager_cls(
             self.backend
-        )().transform_for_annotation_pipeline(model)
+        )().transform_for_annotation_pipeline(
+            model, convert_linear_to_conv2d=self._convert_linear_to_conv2d
+        )
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
@@ -679,6 +721,17 @@ class QnnQuantizer(Quantizer):
             block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
         """
         self.block_size_map = block_size_map
+
+    def set_convert_linear_to_conv2d(self, convert_linear_to_conv2d: bool) -> None:
+        """
+        Convert linear to conv2d during the annotation pipeline.
+
+        If this is enabled, quant_recipe will need to target conv node instead of linear node.
+
+        Args:
+            convert_linear_to_conv2d (bool): True to convert during annotation.
+        """
+        self._convert_linear_to_conv2d = convert_linear_to_conv2d
 
     def set_default_quant_config(
         self,

@@ -43,7 +43,7 @@ main() {
           -B"${example_build_dir}" \
           $EXECUTORCH_ROOT/$example_dir
 
-    cmake --build "${example_build_dir}" -j5
+    cmake --build "${example_build_dir}" -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
     # Switch back to the original directory
     cd - > /dev/null

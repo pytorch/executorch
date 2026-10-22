@@ -74,7 +74,7 @@ class DecomposeVarPass(ArmOpTargetedPass):
             shape = [1 for _ in input_shape]
 
         # Get dim from args based on argument type
-        dim = get_node_arg(args, key=list, default_value=list(range(len(shape))))
+        dim = get_node_arg(args, key=list, default_value=list(range(len(input_shape))))
 
         if op == torch.ops.aten.var.dim:
             keepdim = False

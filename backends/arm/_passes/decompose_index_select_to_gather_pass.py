@@ -9,12 +9,17 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -71,6 +76,12 @@ class DecomposeIndexSelectToGatherPass(ArmOpTargetedPass):
         exir_ops.edge.aten.index_select.default,
     }
 
+    def __init__(
+        self, exported_program: ExportedProgram | None = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
@@ -80,6 +91,50 @@ class DecomposeIndexSelectToGatherPass(ArmOpTargetedPass):
         x_t, idx_t = x.data, index.data  # FakeTensor
         x_shape, idx_shape = tuple(x_t.shape), tuple(idx_t.shape)
         x_rank, idx_rank = len(x_shape), len(idx_shape)
+
+        if (
+            x_rank >= 1
+            and idx_rank == 1
+            and self.exported_program is not None
+            and is_param_node(self.exported_program, index.node)
+            and all(isinstance(size, int) for size in x_shape)
+        ):
+            constant_index = get_param_tensor(self.exported_program, index.node)
+            if constant_index is not None and constant_index.numel() > 0:
+                indices = constant_index.tolist()
+                dim_norm = dim % x_rank
+                dim_size = x_shape[dim_norm]
+                if any(index < 0 or index >= dim_size for index in indices):
+                    raise RuntimeError(
+                        f"index_select index out of range for dimension of size {dim_size}"
+                    )
+                if indices == list(range(indices[0], indices[0] + len(indices))):
+                    return super().call_operator(
+                        exir_ops.edge.aten.slice_copy.Tensor,
+                        (x, dim_norm, indices[0], indices[-1] + 1),
+                        {},
+                        meta,
+                        updated=True,
+                    )
+
+                slices = []
+                for index_value in indices:
+                    slices.append(
+                        super().call_operator(
+                            exir_ops.edge.aten.slice_copy.Tensor,
+                            (x, dim_norm, index_value, index_value + 1),
+                            {},
+                            meta,
+                            updated=True,
+                        )
+                    )
+                return super().call_operator(
+                    exir_ops.edge.aten.cat.default,
+                    (slices, dim_norm),
+                    {},
+                    meta,
+                    updated=True,
+                )
 
         assert x_rank >= 1 and idx_rank == 1 and idx_t.dtype == torch.int32, (
             f"[{self.__class__.__name__}] unsupported index_select signature: "

@@ -7,7 +7,9 @@
  */
 
 #include <c10/util/irange.h>
+#include <algorithm>
 #include <cstring>
+#include <limits>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -382,8 +384,13 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensor_is_default_or_channels_last_dim_order(weight));
+  // Transposed weights can have a non-default dim order (e.g. out_channels == 1
+  // gives [1, 0, 2, 3]); the kernel indexes them by their strides, so any order
+  // is valid here.
+  if (!transposed) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_is_default_or_channels_last_dim_order(weight));
+  }
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
   ET_CHECK_OR_RETURN_FALSE(
@@ -611,12 +618,21 @@ bool check_constant_pad_args(
       pad.size() / 2,
       in.dim());
 
-  for (size_t i = 0; i < pad.size(); ++i) {
-    ET_CHECK_OR_RETURN_FALSE(
-        pad[i] >= 0,
-        "Padding values must be non-negative, but got pad[%zu] = %" PRId64,
-        i,
-        pad[i]);
+  for (const auto i : c10::irange(pad.size() / 2)) {
+    int64_t size = in.size(in.dim() - 1 - i);
+    for (const auto j : c10::irange(2)) {
+      const int64_t crop = std::min<int64_t>(pad[2 * i + j], 0);
+      ET_CHECK_OR_RETURN_FALSE(
+          crop >= -size, "Negative padding exceeds the input dimension.");
+      size += crop;
+    }
+    for (const auto j : c10::irange(2)) {
+      const int64_t padding = std::max<int64_t>(pad[2 * i + j], 0);
+      ET_CHECK_OR_RETURN_FALSE(
+          padding <= std::numeric_limits<Tensor::SizesType>::max() - size,
+          "Padded dimension exceeds the tensor size limit.");
+      size += padding;
+    }
   }
 
   return true;

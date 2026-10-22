@@ -90,6 +90,162 @@ class TestReinplacePass(unittest.TestCase):
             )
         )
 
+    def test_returned_original_is_not_reinplaced(self) -> None:
+        class ReturnsOldAndNew(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, updated
+
+        model = ReturnsOldAndNew()
+        first = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(model, first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 0)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for inputs in (
+            first,
+            (torch.full((5,), 2.0), torch.tensor([3]), torch.tensor([-2.0])),
+        ):
+            with self.subTest(inputs=inputs):
+                for actual, expected in zip(loaded.forward(inputs), model(*inputs)):
+                    torch.testing.assert_close(actual, expected)
+
+    def test_nested_output_keeps_original_live(self) -> None:
+        class ReturnsNested(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, (original, updated)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsNested(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        actual = ep.module()(*inputs)
+        expected = ReturnsNested()(*inputs)
+        for result, reference in zip(
+            (actual[0], *actual[1]), (expected[0], *expected[1])
+        ):
+            torch.testing.assert_close(result, reference)
+
+    def test_output_view_copy_preserves_original(self) -> None:
+        class ReturnsViewAndUpdated(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                view = original.view(-1)
+                updated = original.index_put((indices,), values)
+                return view, updated
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsViewAndUpdated(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        # The view is materialized before the update, so it keeps the old value.
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for actual, expected in zip(
+            loaded.forward(inputs), ReturnsViewAndUpdated()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_later_reader_keeps_original_live(self) -> None:
+        class ReadsOriginalLater(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return updated, original * 2
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReadsOriginalLater(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        for actual, expected in zip(
+            ep.module()(*inputs), ReadsOriginalLater()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_immutable_input_is_not_reinplaced(self) -> None:
+        class UpdatesCopy(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return x.index_put((indices,), values)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(UpdatesCopy(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        torch.testing.assert_close(ep.module()(*inputs), UpdatesCopy()(*inputs))
+        torch.testing.assert_close(inputs[0], torch.zeros(5))
+
+    def test_mutable_buffer_reinplace_across_executions(self) -> None:
+        class UpdatesBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(5))
+
+            def forward(self, indices, values):
+                self.state.index_put_((indices,), values)
+                return self.state
+
+        first = (torch.tensor([0]), torch.tensor([1.0]))
+        edge = to_edge(export(UpdatesBuffer(), first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        reference = UpdatesBuffer()
+        for inputs in (first, (torch.tensor([2]), torch.tensor([3.0]))):
+            with self.subTest(inputs=inputs):
+                torch.testing.assert_close(
+                    loaded.forward(inputs)[0], reference(*inputs)
+                )
+
+    def test_accumulating_index_put_reinplaced(self) -> None:
+        """Accumulation must retain repeated-index semantics after rewriting."""
+
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                intermediate = x + 1
+                return intermediate.index_put((indices,), values, accumulate=True)
+
+        inputs = (
+            torch.zeros(5),
+            torch.tensor([1, 1]),
+            torch.tensor([2.0, 3.0]),
+        )
+        edge = to_edge(export(AccumulateModel(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        self.assertEqual(
+            len(_find_nodes(et.exported_program(), "index_put", excludes="index_put_")),
+            0,
+        )
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        torch.testing.assert_close(
+            loaded.forward(inputs)[0], AccumulateModel()(*inputs)
+        )
+
+    def test_accumulating_index_put_kwarg_reinplaced(self) -> None:
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return (x + 1).index_put((indices,), values, accumulate=True)
+
+        inputs = (torch.zeros(5), torch.tensor([1]), torch.tensor([2.0]))
+        ep = to_edge(export(AccumulateModel(), inputs, strict=True)).exported_program()
+        node = _find_nodes(ep, "index_put", excludes="index_put_")[0]
+        # Export normally normalizes accumulate to a positional argument.
+        # Exercise the keyword form too, as the pass forwards kwargs.
+        self.assertIs(node.args[3], True)
+        node.args = node.args[:3]
+        node.kwargs = {"accumulate": True}
+
+        reinplace_pass(ep)
+        inplace = _find_nodes(ep, "index_put_")
+        self.assertEqual(len(inplace), 1)
+        self.assertIs(inplace[0].kwargs["accumulate"], True)
+        self.assertEqual(len(_find_nodes(ep, "index_put", excludes="index_put_")), 0)
+
     def test_cant_reinplace(self) -> None:
         """Test that index_put on a mutable buffer that is viewed later is not safe."""
 
@@ -207,8 +363,7 @@ class TestReinplacePass(unittest.TestCase):
     def test_kwargs_are_forwarded(self) -> None:
         """When the matched node carries a value in ``node.kwargs`` (e.g.
         ``accumulate=True`` for ``index_put``), the rewrite must forward
-        those kwargs to the in-place form. Otherwise the in-place op
-        falls back to the schema default and silently changes semantics.
+        those kwargs to the in-place form.
 
         ``export`` normalizes most arguments into positional form, so we
         explicitly move ``accumulate`` into ``node.kwargs`` after export
@@ -241,14 +396,9 @@ class TestReinplacePass(unittest.TestCase):
         self.assertEqual(len(functionals), 1, "Should find a functional index_put")
         functional = functionals[0]
 
-        # index_put schema: (self, indices, values, accumulate=False).
-        # Move arg[3] -> kwargs["accumulate"] if present.
-        if len(functional.args) >= 4:
-            new_args = functional.args[:3]
-            new_kwargs = dict(functional.kwargs)
-            new_kwargs["accumulate"] = functional.args[3]
-            functional.args = new_args
-            functional.kwargs = new_kwargs
+        # Export normalizes the argument to positional form.
+        functional.args = functional.args[:3]
+        functional.kwargs = {**functional.kwargs, "accumulate": True}
         self.assertEqual(
             functional.kwargs.get("accumulate"),
             True,
@@ -325,6 +475,25 @@ class TestReinplacePass(unittest.TestCase):
         # program). Runtime execution is covered by ops with portable
         # kernels in the other tests in this file.
         edge.to_executorch()
+
+    def test_output_specs_updated_after_reinplace(self) -> None:
+        """reinplace_pass must update graph_signature.output_specs to match
+        the renamed output nodes (e.g. relu -> relu_)."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(x + 1.0)
+
+        ep = export(M(), (torch.randn(4),), strict=True)
+        edge_program = to_edge(ep).exported_program()
+
+        custom_set = {edge_ops.edge.aten.relu.default}
+        ep = reinplace_pass(edge_program, ops_to_inplace=custom_set)
+
+        output_node = next(n for n in ep.graph.nodes if n.op == "output")
+        actual_names = [arg.name for arg in output_node.args[0] if hasattr(arg, "name")]
+        spec_names = [s.arg.name for s in ep.graph_signature.output_specs]
+        self.assertEqual(actual_names, spec_names)
 
     def test_broadcasting_self_not_reinplaced(self) -> None:
         """An op whose mutated arg (self) broadcasts up to a larger output

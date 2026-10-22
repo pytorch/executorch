@@ -1,0 +1,222 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# ==============================================================================
+# Makefile.hexagon-v79
+# Builds libLpaiOpPackage.so for hexagon-v79 (inference-side / DSP)
+#
+# This target is used by the LPAI eAI runtime on the Hexagon DSP.
+# It compiles the inference-side op implementations using the Hexagon toolchain.
+#
+# Required:
+#   QNN_SDK_ROOT      - Path to QNN SDK
+#   HEXAGON_SDK_ROOT  - Path to Hexagon SDK (hexagon-sdk-6.0.0 for v79)
+#
+# Island build (make island):
+#   The uImage linker script and version note source come from the QNN SDK, so
+#   QNN_SDK_ROOT is required here as well. All inference sources are compiled
+#   into the island library.
+# ==============================================================================
+
+# define target
+QNN_TARGET := hexagon-v79
+
+# define source directories
+SRC_DIR     ?= src
+SRC_DIR_OPS ?= src/ops
+INCLUDE_DIR ?= include
+
+# define output directories
+LIB_DIR     := libs/$(QNN_TARGET)
+OBJ_DIR     := obj/$(QNN_TARGET)
+OBJ_DIR_OPS := obj/$(QNN_TARGET)/ops
+
+# define library name
+LIBRARY_NAME ?= libLpaiOpPackage.so
+LIBRARY      := $(LIB_DIR)/$(LIBRARY_NAME)
+
+# ==============================================================================
+# Hexagon SDK and toolchain setup
+# ==============================================================================
+
+ifndef HEXAGON_SDK_ROOT
+$(error ERROR: HEXAGON_SDK_ROOT is not set. Please set it to the Hexagon SDK root path.)
+endif
+
+ifndef HEXAGON_TOOLS_VERSION
+$(error ERROR: HEXAGON_TOOLS_VERSION is not set. Please set it to the correct Tools version.)
+endif
+
+# Hexagon SDK version for v79: hexagon-sdk-6.0.0
+HEXAGON_TOOLS_DIR     := $(HEXAGON_SDK_ROOT)/tools/HEXAGON_Tools/$(HEXAGON_TOOLS_VERSION)/Tools
+
+ifeq ($(wildcard $(HEXAGON_TOOLS_DIR)/.),)
+$(error ERROR: Cannot find Hexagon tools at $(HEXAGON_TOOLS_DIR). \
+        Please verify HEXAGON_SDK_ROOT and HEXAGON_TOOLS_VERSION is set correctly.)
+endif
+
+CC  := $(HEXAGON_TOOLS_DIR)/bin/hexagon-clang
+
+# ==============================================================================
+# Include paths
+# ==============================================================================
+
+ifdef QNN_SDK_ROOT
+INCLUDES += -I$(QNN_SDK_ROOT)/include/QNN
+INCLUDES += -I$(QNN_SDK_ROOT)/include/QNN/LPAI
+else
+$(error ERROR: QNN_SDK_ROOT is not set.)
+endif
+
+INCLUDES += -I$(INCLUDE_DIR)
+INCLUDES += -I$(HEXAGON_SDK_ROOT)/rtos/qurt/computev79/include/qurt
+INCLUDES += -I$(HEXAGON_SDK_ROOT)/rtos/qurt/computev79/include/posix
+INCLUDES += -I$(HEXAGON_SDK_ROOT)/incs
+INCLUDES += -I$(HEXAGON_SDK_ROOT)/incs/stddef
+
+# ==============================================================================
+# Compiler and linker flags
+# ==============================================================================
+
+COMMON_CFLAGS := -std=c11 -fPIC $(INCLUDES)
+COMMON_CFLAGS += -mv79
+COMMON_CFLAGS += -mhvx -mhvx-length=128B
+COMMON_CFLAGS += -DUSE_OS_QURT
+COMMON_CFLAGS += -DLPAI_INFERENCE_ONLY
+COMMON_CFLAGS += -DQNN_API="__attribute__((visibility(\"default\")))"
+COMMON_CFLAGS += -D__QAIC_HEADER_EXPORT="__attribute__((visibility(\"default\")))"
+
+ifdef QNN_DEBUG_ENABLE
+CFLAGS   := $(COMMON_CFLAGS) -O0 -g
+else
+CFLAGS   := $(COMMON_CFLAGS) -O2
+endif
+
+LDFLAGS := -shared -fPIC
+
+# ==============================================================================
+# Sources and objects
+#
+# Hexagon (inference-side):
+#   src/          - all .c including CustomOpLpaiInterface.c;
+#                   LPAI_INFERENCE_ONLY macro controls which branch is compiled
+#   src/ops/      - only *_inference.c, exclude *_compiler.cpp
+# ==============================================================================
+
+SOURCES         := $(wildcard $(SRC_DIR)/*.c)
+SOURCES_OPS_ALL := $(wildcard $(SRC_DIR_OPS)/*.c)
+SOURCES_OPS     := $(filter %_inference.c, $(SOURCES_OPS_ALL))
+
+OBJECTS     := $(patsubst $(SRC_DIR)/%.c,    $(OBJ_DIR)/%.o,     $(SOURCES))
+OBJECTS_OPS := $(patsubst $(SRC_DIR_OPS)/%.c,$(OBJ_DIR_OPS)/%.o, $(SOURCES_OPS))
+
+ALL_OBJECTS := $(OBJECTS) $(OBJECTS_OPS)
+
+LINKER := $(CC)
+
+# ==============================================================================
+# Build rules
+# ==============================================================================
+
+.PHONY: all
+all: library island
+
+.PHONY: library
+library: $(LIBRARY)
+
+$(LIBRARY): $(ALL_OBJECTS) | $(LIB_DIR)
+	@echo "Linking $(LIBRARY)..."
+	$(LINKER) $(LDFLAGS) -o $@ $^
+	@echo "Build complete: $@"
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(OBJ_DIR_OPS)/%.o: $(SRC_DIR_OPS)/%.c | $(OBJ_DIR_OPS)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+# ==============================================================================
+# Directory creation
+# ==============================================================================
+
+$(LIB_DIR) $(OBJ_DIR) $(OBJ_DIR_OPS):
+	@mkdir -p $@
+
+# ==============================================================================
+# Dependency files
+# ==============================================================================
+
+-include $(OBJECTS:.o=.d)
+-include $(OBJECTS_OPS:.o=.d)
+
+# ==============================================================================
+# Island build
+#
+# Produces libLpaiOpPackageIsland.so: a size-constrained shared library loaded
+# into always-resident (island) memory on the Hexagon DSP via the uImage loader.
+#
+# Uses the same inference sources as the regular library target. Objects are
+# compiled into a separate directory to avoid colliding with the regular build.
+#
+# The uImage linker script and version note source are taken from the QNN SDK
+# rather than copied here: they are Qualcomm Technologies proprietary files, and
+# the SDK ships them alongside the LPAI op package makefiles from 2.48 onwards,
+# which is already the minimum version required to build an LPAI op package.
+# ==============================================================================
+
+ISLAND_ASSETS_DIR := $(QNN_SDK_ROOT)/share/QNN/OpPackageGenerator/makefiles/LPAI/island
+LINKER_SCRIPT     := $(ISLAND_ASSETS_DIR)/uimage_v2.lcs
+UIMG_SRC          := $(ISLAND_ASSETS_DIR)/uimg_dl_v2.c
+
+ISLAND_LIBRARY_NAME := libLpaiOpPackageIsland.so
+ISLAND_LIBRARY      := $(LIB_DIR)/$(ISLAND_LIBRARY_NAME)
+
+OBJ_DIR_ISLAND     := obj/$(QNN_TARGET)/island
+OBJ_DIR_OPS_ISLAND := obj/$(QNN_TARGET)/island/ops
+UIMG_OBJ           := $(OBJ_DIR_ISLAND)/uimg_dl_v2.o
+
+OBJECTS_ISLAND     := $(patsubst $(SRC_DIR)/%.c,    $(OBJ_DIR_ISLAND)/%.o,     $(SOURCES))
+OBJECTS_OPS_ISLAND := $(patsubst $(SRC_DIR_OPS)/%.c,$(OBJ_DIR_OPS_ISLAND)/%.o, $(SOURCES_OPS))
+
+ISLAND_LDFLAGS := -shared -fPIC -T$(LINKER_SCRIPT)
+
+.PHONY: island
+island: $(ISLAND_LIBRARY)
+
+$(ISLAND_LIBRARY): $(OBJECTS_ISLAND) $(OBJECTS_OPS_ISLAND) $(UIMG_OBJ) | $(LIB_DIR)
+	@echo "Linking $(ISLAND_LIBRARY)..."
+	$(LINKER) $(ISLAND_LDFLAGS) -o $@ $^
+	@echo "Island build complete: $@"
+
+$(OBJ_DIR_ISLAND)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR_ISLAND)
+	@echo "Compiling (island) $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(OBJ_DIR_OPS_ISLAND)/%.o: $(SRC_DIR_OPS)/%.c | $(OBJ_DIR_OPS_ISLAND)
+	@echo "Compiling (island) $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(UIMG_OBJ): $(UIMG_SRC) | $(OBJ_DIR_ISLAND)
+	@echo "Compiling uImage version note..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR_ISLAND) $(OBJ_DIR_OPS_ISLAND):
+	@mkdir -p $@
+
+-include $(OBJECTS_ISLAND:.o=.d)
+-include $(OBJECTS_OPS_ISLAND:.o=.d)
+
+# ==============================================================================
+# Clean
+# ==============================================================================
+
+.PHONY: clean
+clean:
+	@echo "Cleaning hexagon-v79 build artifacts..."
+	@rm -rf $(OBJ_DIR) $(LIB_DIR)
+	@echo "Clean complete"

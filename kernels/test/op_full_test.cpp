@@ -19,11 +19,9 @@
 
 using namespace ::testing;
 using executorch::aten::IntArrayRef;
-using executorch::aten::MemoryFormat;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpFullOutTest : public OperatorTest {
@@ -85,6 +83,19 @@ class OpFullOutTest : public OperatorTest {
 ET_FORALL_REALHBF16_TYPES(GENERATE_TEST)
 
 GENERATE_SCALAR_OVERFLOW_TESTS(OpFullOutTest)
+
+// The other half of the boundary change: 127.5 used to be refused for an int8
+// tensor and now truncates to 127.
+TEST_F(OpFullOutTest, CharTensorFractionalScalarTruncates) {
+  TensorFactory<ScalarType::Char> tf;
+  std::vector<int32_t> sizes = {2, 2};
+  std::vector<int64_t> sizes_int64_t(sizes.begin(), sizes.end());
+  auto aref = IntArrayRef(sizes_int64_t.data(), sizes_int64_t.size());
+  Tensor out = tf.zeros(sizes);
+
+  op_full_out(aref, 127.5, out);
+  EXPECT_TENSOR_EQ(out, tf.full(sizes, 127));
+}
 
 TEST_F(OpFullOutTest, HalfSupport) {
   TensorFactory<ScalarType::Half> tf;

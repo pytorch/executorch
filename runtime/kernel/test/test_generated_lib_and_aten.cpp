@@ -18,9 +18,7 @@
 #include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
 using executorch::runtime::Error;
-using executorch::runtime::EValue;
 
 class GeneratedLibAndAtenTest : public ::testing::Test {
  public:

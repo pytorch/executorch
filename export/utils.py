@@ -7,6 +7,7 @@
 # pyre-strict
 import logging
 import platform
+import sys
 
 import torch
 
@@ -19,6 +20,17 @@ def is_fbcode() -> bool:
 def is_supported_platform_for_coreml_lowering() -> bool:
     system = platform.system()
     machine = platform.machine().lower()
+
+    # coremltools has no wheel for 3.14 yet, so setup.py does not declare it
+    # there. Callers use this as an import guard, so reporting the platform as
+    # supported would turn a handled "not supported" into a ModuleNotFoundError.
+    # Keep this in step with the coremltools marker in setup.py.
+    if sys.version_info >= (3, 14):
+        logging.info(
+            f"Unsupported Python for CoreML: {sys.version_info.major}."
+            f"{sys.version_info.minor}"
+        )
+        return False
 
     # Check for Linux x86_64
     if system == "Linux" and machine == "x86_64":

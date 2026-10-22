@@ -1,6 +1,7 @@
 load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID")
 load("@fbsource//xplat/caffe2:pt_defs.bzl", "get_pt_ops_deps")
 load("@fbsource//xplat/caffe2:pt_ops.bzl", "pt_operator_library")
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
@@ -167,6 +168,13 @@ def define_common_targets(is_fbcode = False):
     )
 
     define_test_targets(
+        "sdpa_av_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+    define_test_targets(
         "sdpa_test",
         extra_deps = [
             ":test_utils",
@@ -176,6 +184,36 @@ def define_common_targets(is_fbcode = False):
     )
     define_test_targets(
         "quantized_linear_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "adamw_step_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "linear_dW_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "fused_ce_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "quantized_linear_backward_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "q4gsw_requant_test",
         extra_deps = [
             ":test_utils",
         ]
@@ -202,6 +240,6 @@ def define_common_targets(is_fbcode = False):
         "conv2d_gemm_dynamic_test",
         extra_deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-            "fbsource//xplat/third-party/XNNPACK:XNNPACK",
+            third_party_dep("XNNPACK"),
         ]
     )

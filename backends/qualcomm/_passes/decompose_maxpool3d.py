@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import operator
 import warnings
 from typing import cast, List
 
@@ -94,13 +95,24 @@ class DecomposeMaxPool3d(ExportPass):
                         dilation *= 3
 
                 ceil_mode = node.args[5] if num_args > 5 else False
-                return_indices = node.args[6] if num_args > 6 else False
+                # since the indices output might not be connected
+                # only traverse getitem user and check if any of them referring to the indices
+                return_indices = (
+                    any(
+                        user.op == "call_function"
+                        and user.target is operator.getitem
+                        and user.args[1] == 1
+                        for user in node.users
+                    )
+                    if len(node.meta["val"]) > 1
+                    else False
+                )
                 if return_indices:
                     warnings.warn(
-                        "[QNN Delegate Op Builder]: The case return_indices=True is not be support, fallback",
+                        "[QNN Delegate Op Builder]: The case return_indices=True is not supported, fallback",
                         stacklevel=1,
                     )
-                    return
+                    continue
 
                 model = ModelMaxPool3D(
                     filter_size, stride, padding, dilation, return_indices, ceil_mode

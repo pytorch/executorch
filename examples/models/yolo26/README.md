@@ -21,7 +21,7 @@ To install ExecuTorch, follow this [guide](https://pytorch.org/executorch/stable
 python -m pip install --pre openvino==2026.1.0.dev20260131 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 ```
 
-- [XNNPACK backend installation guilde](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake)
+- [XNNPACK backend installation guide](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html#running-the-xnnpack-model-with-cmake)
 
 ### Step 3: Install the demo requirements
 
@@ -37,19 +37,32 @@ python -m pip install --upgrade-strategy only-if-needed --extra-index-url https:
 OpenVINO:
 
 ```bash
-python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080]  --backend openvino --device CPU
+python export_and_validate.py \
+  --model_name yolo26s \
+  --input_dims='[1920,1080]' \
+  --backend openvino \
+  --device CPU
 ```
 
 OpenVINO quantized model:
 
 ```bash
-python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080]  --backend openvino --quantize --video_path /path/to/calibration/video --device CPU
+python export_and_validate.py \
+  --model_name yolo26s \
+  --input_dims='[1920,1080]' \
+  --backend openvino \
+  --quantize \
+  --video_path /path/to/calibration/video \
+  --device CPU
 ```
 
 XNNPACK:
 
 ```bash
-python export_and_validate.py --model_name yolo26s --input_dims=[1920,1080] --backend xnnpack
+python export_and_validate.py \
+  --model_name yolo26s \
+  --input_dims='[1920,1080]' \
+  --backend xnnpack
 ```
 
 Exported model could be validated using the `--validate` key:

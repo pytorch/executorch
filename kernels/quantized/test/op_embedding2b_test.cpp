@@ -17,11 +17,9 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
-using std::optional;
 using torch::executor::native::quantized_embedding_2bit_dtype_out;
 using torch::executor::native::quantized_embedding_2bit_out;
 
@@ -278,4 +276,42 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingDeath3) {
           indices,
           out),
       "");
+}
+
+TEST(OpQuantizedEmbedding2bTest, TestOutOfBoundsIndex) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  int64_t quant_min = -2;
+  int64_t quant_max = 1;
+
+  Tensor weight_scales = tf.make({3}, {0.5, 1.0, 1.5});
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
+  Tensor out = tf.zeros({2, 4});
+
+  Tensor indices = tfl.make({2}, {1, 3});
+  ET_EXPECT_DEATH(
+      quantized_embedding_2bit_out(
+          qweight,
+          weight_scales,
+          std::nullopt,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "Index out of bounds");
+
+  indices = tfl.make({2}, {1, -1});
+  ET_EXPECT_DEATH(
+      quantized_embedding_2bit_out(
+          qweight,
+          weight_scales,
+          std::nullopt,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "Index out of bounds");
 }

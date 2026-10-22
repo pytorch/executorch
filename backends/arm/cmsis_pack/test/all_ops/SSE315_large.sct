@@ -1,0 +1,57 @@
+#! armclang -E --target=arm-arm-none-eabi -mcpu=cortex-m85 -xc
+;
+; Copyright 2026 Arm Limited and/or its affiliates.
+;
+; This source code is licensed under the BSD-style license found in the
+; LICENSE file in the root directory of this source tree.
+;
+; AC6 scatter for the all-ops image in the Corstone-315 (SSE-315) DDR window.
+;
+; TWO load regions so armlink emits clean, separately-loadable ELF segments
+; (a single combined load region produced one malformed PT_LOAD that the FVP
+; loader did not place correctly, so the RW scatter-load copied garbage over
+; the kernel registry and faulted):
+;   * LR_ROM  -> RO/code in DDR4_BLK3_S at 0x90000000
+;   * LR_RAM  -> RW + ZI in DDR4_BLK2 at 0x80000000, loaded DIRECTLY (LMA = VMA),
+;                so there is no flash->RAM copy to clobber. This image is meant
+;                for the debugger/FVP load path (RW is not preserved across a
+;                bare reset), which is exactly how we run it.
+;
+; The runtime pools (main.o ZI, right-sized to ~360 KB; see main.cpp MemReport)
+; stay UNINIT so startup does not zero them (matching the GCC build's empty
+; zero-table / fast boot).
+
+#define __ROM_BASE   0x90000000
+#define __ROM_SIZE   0x08000000
+#define __RAM_BASE   0x80000000
+#define __RAM_SIZE   0x10000000
+#define __STACK_SIZE 0x00010000
+#define __HEAP_SIZE  0x00100000
+
+LR_ROM __ROM_BASE __ROM_SIZE {
+  ER_ROM __ROM_BASE {
+    *.o (RESET, +First)
+    *(InRoot$$Sections)
+    .ANY (+RO +XO)
+  }
+}
+
+LR_RAM __RAM_BASE __RAM_SIZE {
+  RW_RAM __RAM_BASE {            ; RW data + small ZI, loaded in place (no copy)
+    .ANY (+RW +ZI)
+  }
+
+  POOLS +0 UNINIT {             ; large method/temp pools: not zero-initialised
+    main.o (+ZI)
+  }
+
+  ETHOS_CACHE +0 UNINIT {       ; Ethos-U NPU scratch (Corstone-320 only; empty on 315)
+    *(ethos_cache_buf)
+  }
+
+  ARM_LIB_HEAP  +0 EMPTY __HEAP_SIZE {
+  }
+
+  ARM_LIB_STACK (__RAM_BASE + __RAM_SIZE) EMPTY -__STACK_SIZE {
+  }
+}

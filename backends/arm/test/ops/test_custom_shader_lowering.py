@@ -37,6 +37,7 @@ from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom imp
     RewriteGridSamplerToTosaCustomPass,
 )
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
+    _dispatch_shape_for_output_shape,
     decode_payload,
     grid_sampler_2d_operator_name,
 )
@@ -256,3 +257,31 @@ def test_shader_lowering_vgf_decodes_expected_implementation_attrs():
     assert payload["input_0_binding"] == 0
     assert payload["input_1_binding"] == 1
     assert payload["output_0_binding"] == 2
+
+
+def test_grid_sampler_dispatch_shape_includes_batch_dimension():
+    assert _dispatch_shape_for_output_shape((2, 3, 5, 9)) == [2, 1, 2]
+
+
+def test_in_tree_grid_sampler_vgf_payload_uses_batched_dispatch_shape():
+    edge_model = to_edge(
+        export(
+            _GridSampleModule(),
+            (
+                torch.randn(2, 3, 11, 13),
+                torch.randn(2, 5, 9, 2),
+            ),
+        )
+    )
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        transformed = edge_model.transform([RewriteGridSamplerToTosaCustomPass()])
+
+    custom_node = next(
+        node
+        for node in transformed.exported_program().graph.nodes
+        if node.target == exir_ops.backend.tosa.CUSTOM.default
+    )
+    payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+
+    assert payload["workgroup_sizes"] == [2, 1, 2]

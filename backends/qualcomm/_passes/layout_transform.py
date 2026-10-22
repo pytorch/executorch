@@ -56,6 +56,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.qnn_custom.space_to_depth.default,
         exir_ops.edge.aten.upsample_bicubic2d.default,
         exir_ops.edge.aten.upsample_bicubic2d.vec,
         exir_ops.edge.aten.upsample_bilinear2d.default,
@@ -121,9 +122,13 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.scatter.src,
+        exir_ops.edge.aten.scatter.value,
+        exir_ops.edge.aten.scatter_add.default,
+        exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.sign.default,
         exir_ops.edge.aten.slice_copy.Tensor,
+        exir_ops.edge.aten.sort.default,
         exir_ops.edge.aten.split_with_sizes.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.sqrt.default,
@@ -348,6 +353,14 @@ class LayoutTransform(ExportPass):
                     self.mark_as_transformed(node)
                     self.traverse(node, graph_module)
             self.insert_permute, self.transformed_tag = True, QCOM_AXIS_ORDER
+
+            for node in graph.nodes:
+                if hasattr(node, "meta"):
+                    # Pop QCOM_AXIS_ORDER written by the to-edge LayoutTransform pass.
+                    # Without this, the main for-loop below would see is_transformed_node=True
+                    # for every sensitive node (deepcopy carries the tag from to-edge) and
+                    # skip them entirely, so no permute nodes would ever be inserted.
+                    node.meta.pop(QCOM_AXIS_ORDER, "")
 
         for node in sensitive_nodes:
             if not self.is_transformed_node(node):

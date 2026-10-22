@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import torch
 from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
+from executorch.exir.inplace_aliasing import verify_inplace_result_aliases
 from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
     _is_out_var_node,
@@ -136,6 +138,51 @@ def _check_default_mem_ids(gm: torch.fx.GraphModule):
                 )
 
 
+def _move_memory_meta_to_spec(node: Node) -> None:
+    """Move storage sharing metadata from node.meta to node.meta["spec"].
+
+    Only applies if _share_alloc_with_arg_idx is set.
+    """
+    share_idx = node.meta.get("_share_alloc_with_arg_idx")
+    shared_alloc_offset = node.meta.get("_shared_alloc_offset")
+
+    if share_idx is None:
+        if shared_alloc_offset is not None:
+            raise ValueError(
+                "_shared_alloc_offset meta was set but not _share_alloc_with_arg_idx."
+            )
+        return
+    if shared_alloc_offset is None:
+        shared_alloc_offset = 0
+
+    if not isinstance(share_idx, int):
+        raise TypeError("_share_alloc_with_arg_idx must be an int")
+    if not isinstance(shared_alloc_offset, int):
+        raise TypeError("_shared_alloc_offset must be an int")
+
+    output_spec = node.meta.get("spec")
+    if not isinstance(output_spec, TensorSpec):
+        raise TypeError(
+            "_share_alloc_with_arg_idx requires node.meta['spec'] to be a TensorSpec"
+        )
+
+    if share_idx < 0 or share_idx >= len(node.args):
+        raise IndexError("_share_alloc_with_arg_idx must index node.args")
+
+    input_node = node.args[share_idx]
+    if not isinstance(input_node, Node):
+        raise TypeError("_share_alloc_with_arg_idx must reference a Node argument")
+
+    base_spec = input_node.meta.get("spec")
+    if not isinstance(base_spec, TensorSpec):
+        raise TypeError(
+            "_share_alloc_with_arg_idx must reference an argument with a TensorSpec"
+        )
+
+    output_spec.storage_base = base_spec
+    output_spec.storage_base_offset = shared_alloc_offset
+
+
 @dataclass
 class _MemoryPlanningState:
     mutable_buffers: Dict[str, Set[TensorSpec]] = field(default_factory=dict)
@@ -196,13 +243,8 @@ class MemoryPlanningPass(PassBase):
                     if len(out_arg_names) == 1:
                         out_alloc_node = node.kwargs[out_arg_names[0]]
                         out_alloc_node.meta["spec"] = node.meta["spec"]
-                        share_idx = node.meta.get("_share_alloc_with_arg_idx")
-                        if share_idx is not None and share_idx < len(node.args):
-                            input_node = node.args[share_idx]
-                            if isinstance(input_node, Node):
-                                base_spec = input_node.meta.get("spec")
-                                if isinstance(base_spec, TensorSpec):
-                                    node.meta["spec"].inplace_base = base_spec
+
+                        _move_memory_meta_to_spec(node)
                         continue
                     specs = get_node_tensor_specs(node)
                     i = 0
@@ -244,6 +286,7 @@ class MemoryPlanningPass(PassBase):
         A pass for memory planning. The actual algorithm used will be picked by
         memory_planning_algo
         """
+        verify_inplace_result_aliases(graph_module)
         self._set_alloc_node_spec(graph_module)
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our

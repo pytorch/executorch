@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -226,6 +227,7 @@ def register_copy_op():
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.log10.default,
     ]
 )
 def register_unaryop_cpp_ops():
@@ -246,7 +248,7 @@ def register_clamp():
 
 
 # =============================================================================
-# BinaryOp.cpp
+# binary/BinaryOp.cpp
 # =============================================================================
 
 
@@ -265,6 +267,16 @@ def register_binaryop_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.swiglu.default)
+def register_swiglu():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
     )
@@ -290,7 +302,7 @@ def register_comparison_ops():
 
 
 # =============================================================================
-# BinaryOp.cpp (bitwise)
+# binary/BinaryOp.cpp (bitwise)
 # =============================================================================
 
 
@@ -313,17 +325,35 @@ def register_bool_binary_ops():
 
 
 # =============================================================================
-# BinaryScalarOp.cpp
+# binary/BinaryScalarOp.cpp
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
-def register_pow_tensor_scalar():
+def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
+    if type(value) not in (bool, int, float):
+        return False
+    if isinstance(value, float) and math.isnan(value):
+        return False
+    if dtype in utils.INT_T:
+        return -(2**31) <= value <= 2**31 - 1
+    return True
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.mul.Scalar,
+    ]
+)
+def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.meta["val"].dtype
+        ),
     )
 
 
@@ -335,6 +365,9 @@ def register_eq_scalar():
         outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
     )
 
 
@@ -384,7 +417,7 @@ def register_softmax_cpp_ops():
 
 
 # =============================================================================
-# MatMul.cpp
+# gemm/matmul/MatMul.cpp
 # =============================================================================
 
 
@@ -404,7 +437,7 @@ def register_matmul_cpp_ops():
 
 
 # =============================================================================
-# Linear.cpp
+# gemm/linear/Linear.cpp
 # =============================================================================
 
 
@@ -424,7 +457,7 @@ def register_linear_cpp_ops():
 
 
 # =============================================================================
-# QuantizedLinearQCSNW.cpp
+# gemm/linear/qw/{q8csw,legacy}/*.cpp
 # =============================================================================
 
 
@@ -444,7 +477,7 @@ def register_quantizedlinearqcsnw_cpp_ops():
 
 
 # =============================================================================
-# QuantizedLinear.cpp
+# gemm/linear/qw/{q4gsw,dq8ca_q4gsw,legacy}/**/*.cpp
 # =============================================================================
 
 
@@ -455,6 +488,15 @@ def register_quantizedlinearqcsnw_cpp_ops():
     ]
 )
 def register_quantizedlinear_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_q4gsw_backward.default)
+def register_linear_q4gsw_backward():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
@@ -585,7 +627,7 @@ def register_torchao_choose_qparams_affine():
 
 
 # =============================================================================
-# Q8taBinary.cpp
+# binary/q8ta/Q8taBinary.cpp
 # =============================================================================
 
 
@@ -636,7 +678,12 @@ def register_q8ta_pixel_shuffle():
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
     assert ndim is not None
-    dims_reduced = None
+    dims_reduced = (
+        []
+        if node.target
+        in (exir_ops.edge.aten.amax.default, exir_ops.edge.aten.amin.default)
+        else None
+    )
     if len(node.args) >= 2:
         dims_reduced = node.args[1]
 
@@ -680,18 +727,31 @@ def is_reduce_node_supported_by_per_row_impl(node: torch.fx.Node) -> bool:
 def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     dims_reduced = get_dims_reduced(node)
     # Only 1D and 2D reductions are supported at the moment.
-    if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) > 2:
+    if isinstance(dims_reduced, (list, tuple)) and not 1 <= len(dims_reduced) <= 2:
         return False
 
-    keepdim = get_keepdim_setting(node)
-    # keepdim = False is not supported yet for general implementation
-    if isinstance(keepdim, bool) and not keepdim:
+    # any.dim can repack the reduced texture after removing the reduction axis.
+    if not get_keepdim_setting(node) and node.target != exir_ops.edge.aten.any.dim:
         return False
+
+    if utils.ndim_of(node.args[0]) == 4:
+        dims = [dims_reduced] if isinstance(dims_reduced, int) else dims_reduced
+        # Textures fold batch into channels; neither axis can be reduced across batches.
+        if 0 in dims or (
+            1 in dims and utils.upper_bound_size(node.args[0].meta["val"].shape[0]) != 1
+        ):
+            return False
 
     return True
 
 
 def is_reduce_node_supported(node: torch.fx.Node) -> bool:
+    if (
+        node.target in (exir_ops.edge.aten.sum.dim_IntList, exir_ops.edge.aten.mean.dim)
+        and (len(node.args) < 2 or node.args[1] is None)
+        and utils.ndim_of(node.args[0]) != 1
+    ):
+        return False
     return is_reduce_node_supported_by_per_row_impl(
         node
     ) or is_reduce_node_supported_by_general_impl(node)
@@ -761,9 +821,32 @@ def register_reduce_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: (
+            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+        ),
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
 # =============================================================================
 # ArgReduce.cpp
 # =============================================================================
+
+
+def is_argreduce_node_supported(node: torch.fx.Node) -> bool:
+    ndim = utils.ndim_of(node.args[0])
+    assert ndim is not None
+    dim = node.args[1] if len(node.args) > 1 else None
+    if dim is None:
+        return ndim == 1
+    return ndim > 0 and utils.normalize_dims(dim, ndim) == ndim - 1
 
 
 @update_features(
@@ -774,13 +857,12 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
         inputs_dtypes=utils.FP_T,
         outputs_dtypes=utils.INT_T,
         supports_resize=True,
         supports_highdim=True,
-        are_node_inputs_supported_fn=is_reduce_node_supported,
-        pick_io_storage_fn=pick_storage_for_reduce,
+        are_node_inputs_supported_fn=is_argreduce_node_supported,
     )
 
 
@@ -814,7 +896,7 @@ def register_max_pool2d_with_indices():
 
 
 # =============================================================================
-# Convolution.cpp
+# convolution/Convolution.cpp
 # =============================================================================
 
 
@@ -907,7 +989,7 @@ def register_convolution_cpp_ops():
 
 
 # =============================================================================
-# Q8taConv2d*.cpp
+# convolution/conv2d/q8ta/**/Q8taConv2d*.cpp
 # =============================================================================
 
 
@@ -1010,7 +1092,7 @@ def register_q8ta_conv2d_transposed_op():
 
 
 # =============================================================================
-# Q8taLinear.cpp
+# gemm/linear/q8ta/Q8taLinear.cpp
 # =============================================================================
 
 
@@ -1263,6 +1345,21 @@ def register_alias_copy():
 
 
 # =============================================================================
+# Unfold.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.unfold_copy.default)
+def register_unfold_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
 # Gather.cpp
 # =============================================================================
 
@@ -1287,7 +1384,7 @@ def register_expand_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
-        supports_resize=False,
+        supports_resize=True,
         supports_highdim=True,
     )
 
@@ -1387,6 +1484,7 @@ def register_index_select():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1410,35 +1508,56 @@ def register_where():
 # =============================================================================
 
 
+def _index_tensor_shapes(node: torch.fx.Node):
+    """Return self, index, and axis for the supported form, else None."""
+    self_arg = node.args[0]
+    indices = node.args[1]
+
+    if not isinstance(self_arg, torch.fx.Node):
+        return None
+    self_val = self_arg.meta.get("val", None)
+    if self_val is None or not isinstance(indices, (list, tuple)):
+        return None
+
+    non_none = [(dim, index) for dim, index in enumerate(indices) if index is not None]
+    if len(non_none) != 1:
+        return None
+    index_dim, index_arg = non_none[0]
+    if index_dim >= len(self_val.size()) or not isinstance(index_arg, torch.fx.Node):
+        return None
+    index_val = index_arg.meta.get("val", None)
+    if index_val is None:
+        return None
+
+    return self_val, index_val, index_dim
+
+
+def _check_index_tensor_node(node: torch.fx.Node) -> bool:
+    shapes = _index_tensor_shapes(node)
+    if shapes is None:
+        return False
+    _, index_val, _ = shapes
+    # The gather is expressed as "one index position per output slice", so
+    # the index must be 1-D. `self` may be any rank.
+    return len(index_val.size()) == 1
+
+
+def _pick_index_tensor_storage(node: torch.fx.Node):
+    shapes = _index_tensor_shapes(node)
+    # Only the buffer shader handles a higher-rank `self`.
+    if shapes is not None and len(shapes[0].size()) > 1:
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
+    return utils.ANY_STORAGE, utils.ANY_STORAGE
+
+
 @update_features(exir_ops.edge.aten.index.Tensor)
 def register_index_tensor():
-    def check_index_tensor_node(node: torch.fx.Node) -> bool:
-        self_arg = node.args[0]
-        indices = node.args[1]
-
-        # Only support 1D self tensor
-        if not isinstance(self_arg, torch.fx.Node):
-            return False
-        self_val = self_arg.meta.get("val", None)
-        if self_val is None:
-            return False
-        if len(self_val.size()) != 1:
-            return False
-
-        # Only support exactly one non-None index tensor
-        if not isinstance(indices, (list, tuple)):
-            return False
-        non_none = [idx for idx in indices if idx is not None]
-        if len(non_none) != 1:
-            return False
-
-        return True
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_index_tensor_node,
+        are_node_inputs_supported_fn=_check_index_tensor_node,
+        pick_io_storage_fn=_pick_index_tensor_storage,
     )
 
 
@@ -1452,6 +1571,7 @@ def register_arange():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
@@ -1460,12 +1580,34 @@ def register_arange():
 # =============================================================================
 
 
+def _check_pad_is_static(node: torch.fx.Node) -> bool:
+    """Only support constant_pad_nd when the pad amounts are static.
+
+    A symbolic pad list is serialized as a VALUELIST rather than an INTLIST, and
+    Pad.cpp reads it with get_int_list(), which throws "Expected value to have
+    type IntList, got VALUELIST instead".
+
+    Supporting it properly is more than swapping in
+    extract_int_or_symint_list(), the way Split.cpp, View.cpp and Expand.cpp
+    read their symbolic lists: add_constant_pad_nd_node() folds the amounts into
+    a per-dim offset and bakes that into a params buffer at BUILD time, so the
+    dispatch would still use stale offsets even if the list were read
+    symbolically. The buffer has to be refreshed on resize first. Decline the
+    node until then.
+    """
+    pad = node.args[1]
+    if not isinstance(pad, (list, tuple)):
+        return False
+    return all(isinstance(p, int) for p in pad)
+
+
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_pad_is_static,
     )
 
 
@@ -1488,6 +1630,10 @@ def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: node.target
+        not in (exir_ops.edge.aten.full.default, exir_ops.edge.aten.full_like.default)
+        or is_scalar_value_supported(node.args[1], node.meta["val"].dtype),
     )
 
 
@@ -1496,12 +1642,21 @@ def register_full_cpp_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.scalar_tensor.default)
+@update_features(
+    [
+        exir_ops.edge.aten.scalar_tensor.default,
+        # EXIR deliberately keeps scalar_tensor in the ATen dialect.
+        torch.ops.aten.scalar_tensor.default,
+    ]
+)
 def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[0], node.meta["val"].dtype
+        ),
     )
 
 
@@ -1557,9 +1712,12 @@ def register_grid_priors():
 
 @update_features(exir_ops.edge.aten.grid_sampler_2d.default)
 def register_grid_sampler_2d():
-    # The Vulkan implementation only supports the configuration used by RIFE's
-    # WarpModule: bilinear interpolation (0), border padding (1),
-    # align_corners=True. The C++ side has VK_CHECK_COND asserts for these,
+    # The Vulkan implementation supports bilinear interpolation (0) with
+    # either zeros (0) or border (1) padding and either align_corners. That
+    # covers RIFE's WarpModule (border, align_corners=True) and the deformable
+    # attention in DETR derivatives (zeros, align_corners=False). Reflection
+    # padding and nearest/bicubic interpolation are not implemented.
+    # The C++ side has VK_CHECK_COND asserts for these,
     # but those abort the whole inference at graph build — for any other model
     # that contains a differently-configured grid_sampler_2d we want graceful
     # CPU fallback, so we gate delegation here.
@@ -1599,8 +1757,10 @@ def register_grid_sampler_2d():
         if interp is None or padding is None or align_corners is None:
             return False
 
-        # mode: 0 = bilinear; padding: 1 = border; align_corners must be True.
-        return interp == 0 and padding == 1 and bool(align_corners) is True
+        # mode: 0 = bilinear. padding: 0 = zeros, 1 = border (2 = reflection
+        # needs a coordinate fold the shader does not implement).
+        # align_corners is free: both settings are specialization constants.
+        return interp == 0 and padding in (0, 1)
 
     return OpFeatures(
         inputs_storage=[
@@ -1687,6 +1847,22 @@ def register_embedding_q4gsw():
 # =============================================================================
 
 
+def _check_batch_norm_is_4d(node: torch.fx.Node) -> bool:
+    """Only support batch norm on a 4d input.
+
+    add_native_batch_norm_node() asserts
+    VK_CHECK_COND(in_sizes.size() == 4, "BatchNorm only support 4d tensor") on
+    both the input and the output, so partitioning a batch norm whose input is
+    not 4d yields a .pte that lowers cleanly and then aborts at execute time.
+    Any conv1d model reaches here with rank-3 activations.
+    """
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        return False
+    val = input_node.meta.get("val")
+    return val is not None and val.dim() == 4
+
+
 @update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
 def register_native_batch_norm_legit_no_training():
     return OpFeatures(
@@ -1694,6 +1870,7 @@ def register_native_batch_norm_legit_no_training():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_batch_norm_is_4d,
     )
 
 
@@ -1743,6 +1920,77 @@ def register_rms_norm():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+    )
+
+
+# =============================================================================
+# FusedCe.cpp (training)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.fused_ce.default)
+def register_fused_ce():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=[utils.FP_T, utils.INT_T, utils.NONE_T],
+        outputs_dtypes=[utils.FP_T, utils.FP_T],
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
+    ]
+)
+def register_compare_scalar_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_not.default)
+def register_logical_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features("et_vk::adamw_step")
+def register_adamw_step():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_dW.default)
+def register_linear_dW():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.q4gsw_requant.default)
+def register_q4gsw_requant():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
     )
 
 

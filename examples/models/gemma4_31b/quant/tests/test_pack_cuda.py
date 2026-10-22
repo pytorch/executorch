@@ -228,7 +228,7 @@ class TestPackLinearInt6(unittest.TestCase):
     def test_matmul_correct(self):
         _require_cuda(self)
         gt = self._make_q6k_gguf(256, nb=1)  # (256, 256)
-        intx = gt.to_intx_unpacked_to_int8_tensor()
+        intx = gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         q, scale = intx.qdata, intx.scale
         module = nn.Linear(256, 256, bias=False)
         pack_linear_for_cuda(module, {"weight": gt})
@@ -250,14 +250,14 @@ class TestPackLinearInt6(unittest.TestCase):
         Builds a synthetic Q6_K ExportableGGUFTensor, packs it into a
         CudaDp4aPlanarInt6Tensor, exports a decode-shaped (M=1) nn.Linear, and
         asserts:
-          * the exported graph captured ``executorch_cuda.int6_plain_mm`` (the
-            decode custom op chosen for M<=4),
+          * the exported graph captured ``triton.int6_quantized_gemm_m1`` (the
+            decode op chosen for M=1),
           * lowering through the CUDA backend produces an ``executorch_call_delegate``,
           * running the exported graph matches the Q6_K dequant reference.
 
-        The lowered .pte is not executed here (that needs the built C-shim
+        The lowered .pte is not executed here (that needs the built CUDA
         runtime); the eager exported graph already exercises the int6 decode op
-        through its registered CUDA impl.
+        through its Triton kernel.
         """
         _require_cuda(self)
         from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -267,7 +267,7 @@ class TestPackLinearInt6(unittest.TestCase):
 
         gt = self._make_q6k_gguf(64, nb=1)  # (64, 256)
         # Reference: the shared Q6_K int8 decode, dequantized (w = q * scale).
-        intx = gt.to_intx_unpacked_to_int8_tensor()
+        intx = gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         w_ref = (
             intx.qdata.to(torch.bfloat16)
             * intx.scale.to(torch.bfloat16).repeat_interleave(16, dim=-1)
@@ -282,11 +282,11 @@ class TestPackLinearInt6(unittest.TestCase):
         with torch.no_grad():
             ep = export(module, (x,), strict=True)
 
-        # The decode (M<=4) path must capture the int6 decode custom op.
+        # The decode (M<=4) path must capture the int6 decode Triton op.
         targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
         self.assertTrue(
-            any("int6_plain_mm" in t for t in targets),
-            f"int6_plain_mm not found in exported graph: {targets}",
+            any("int6_quantized_gemm_m1" in t for t in targets),
+            f"int6_quantized_gemm_m1 not found in exported graph: {targets}",
         )
 
         # Run the exported graph and compare against the Q6_K dequant reference.

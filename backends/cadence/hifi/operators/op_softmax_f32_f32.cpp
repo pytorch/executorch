@@ -9,10 +9,8 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using torch::executor::Error;
 
 namespace impl {
 namespace HiFi {

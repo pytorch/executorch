@@ -13,6 +13,7 @@ from typing import Iterable, List, Optional, Tuple
 import numpy as np
 from generate_sampled import (  # type: ignore[import-not-found]
     FvpRunnerSession,
+    KvFvpRunnerSession,
     prepare_input,
 )
 from pytorch_tokenizers import (  # type: ignore[import-not-found, import-untyped]
@@ -186,6 +187,31 @@ def eval_prompt_nll(
     return total_nll, valid_len
 
 
+def eval_prompt_nll_kv(
+    *,
+    runner: KvFvpRunnerSession,
+    tokenizer,
+    prompt: str,
+    max_context_length: int,
+    max_tokens_per_prompt: int,
+) -> Tuple[float, int]:
+    token_ids = tokenizer.encode(prompt, bos=True, eos=False)
+    if max_tokens_per_prompt > 0:
+        token_ids = token_ids[:max_tokens_per_prompt]
+    token_ids = token_ids[:max_context_length]
+    if len(token_ids) < 2:
+        return 0.0, 0
+
+    total_nll = 0.0
+    for pos, token_id in enumerate(token_ids[:-1]):
+        logits = runner.run(token_id, pos)
+        target_id = token_ids[pos + 1]
+        if target_id >= logits.shape[0]:
+            raise RuntimeError(f"Target id {target_id} outside vocab {logits.shape[0]}")
+        total_nll += token_nll(logits, target_id)
+    return total_nll, len(token_ids) - 1
+
+
 def eval_model_ppl(
     *,
     name: str,
@@ -198,23 +224,39 @@ def eval_model_ppl(
     pad_id: int,
     max_tokens_per_prompt: int,
     timeout: int,
+    use_kv_cache: bool,
+    max_context_length: int,
 ) -> float:
     """Run FVP for each prompt and return perplexity for one runner."""
     total_nll = 0.0
     total_tokens = 0
-    with FvpRunnerSession(fvp, runner, pte, timeout) as session:
-        for idx, prompt in enumerate(prompts, start=1):
-            print(f"[eval] {name} prompt {idx}/{len(prompts)}")
-            prompt_nll, prompt_tokens = eval_prompt_nll(
-                runner=session,
-                tokenizer=tokenizer,
-                prompt=prompt,
-                window=window,
-                pad_id=pad_id,
-                max_tokens_per_prompt=max_tokens_per_prompt,
-            )
-            total_nll += prompt_nll
-            total_tokens += prompt_tokens
+    if use_kv_cache:
+        with KvFvpRunnerSession(fvp, runner, pte, timeout) as session:
+            for idx, prompt in enumerate(prompts, start=1):
+                print(f"[eval-kv] {name} prompt {idx}/{len(prompts)}")
+                prompt_nll, prompt_tokens = eval_prompt_nll_kv(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    max_context_length=max_context_length,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+                total_nll += prompt_nll
+                total_tokens += prompt_tokens
+    else:
+        with FvpRunnerSession(fvp, runner, pte, timeout) as session:
+            for idx, prompt in enumerate(prompts, start=1):
+                print(f"[eval] {name} prompt {idx}/{len(prompts)}")
+                prompt_nll, prompt_tokens = eval_prompt_nll(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    window=window,
+                    pad_id=pad_id,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+                total_nll += prompt_nll
+                total_tokens += prompt_tokens
     if total_tokens == 0:
         raise RuntimeError(f"No prompt tokens were scored for {name}.")
     return math.exp(total_nll / total_tokens)
@@ -298,7 +340,18 @@ def main() -> None:
         "--window",
         type=int,
         default=8,
-        help="Fixed runner window. Must match the exported model shape.",
+        help="Fixed runner window. Must match the exported non-KV model shape.",
+    )
+    parser.add_argument(
+        "--use-kv-cache",
+        action="store_true",
+        help="Evaluate KV-cache exports that take token and input_pos inputs.",
+    )
+    parser.add_argument(
+        "--max-context-length",
+        type=int,
+        default=None,
+        help="KV-cache context length. Defaults to --window.",
     )
     parser.add_argument(
         "--timeout",
@@ -330,6 +383,7 @@ def main() -> None:
     prompts = read_prompts(args.prompts_file, args.ppl_prompts)
     print(f"[info] Using first {len(prompts)} prompts from {args.prompts_file}")
 
+    max_context_length = args.max_context_length or args.window
     results = {
         "w8a8": eval_model_ppl(
             name="w8a8",
@@ -342,6 +396,8 @@ def main() -> None:
             pad_id=pad_id,
             max_tokens_per_prompt=args.max_tokens_per_prompt,
             timeout=args.timeout,
+            use_kv_cache=args.use_kv_cache,
+            max_context_length=max_context_length,
         ),
         "w8a16": eval_model_ppl(
             name="w8a16",
@@ -354,6 +410,8 @@ def main() -> None:
             pad_id=pad_id,
             max_tokens_per_prompt=args.max_tokens_per_prompt,
             timeout=args.timeout,
+            use_kv_cache=args.use_kv_cache,
+            max_context_length=max_context_length,
         ),
     }
 

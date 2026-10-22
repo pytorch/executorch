@@ -828,6 +828,10 @@ def _emit_py_prebuild(kind: str, fld: FBSField) -> List[str]:
             return [f"        {n}_vec = {expr}"]
         else:
             return [f"        {n}_vec = {expr} if op.{n} is not None else None"]
+    if kind == "optional_int_or_vid":
+        return [
+            f"        {n}_off = self._build_int_or_vid(builder, op.{n}) if op.{n} is not None else None"
+        ]
     if kind in _PY_PREBUILD_OFFSET:
         suffix = "_off"
         expr = _PY_PREBUILD_OFFSET[kind].format(name=n)
@@ -890,6 +894,12 @@ def _emit_py_add(
             f"        if {n}_off is not None:",
             f"            {add}(builder, {n}_off)",
         ]
+    # Optional compound offset (e.g. sorted_indices_flag: IntOrVid, no default)
+    if kind == "optional_int_or_vid":
+        return [
+            f"        if {n}_off is not None:",
+            f"            {add}(builder, {n}_off)",
+        ]
     return None
 
 
@@ -927,7 +937,7 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
     if t == "Vid":
         return "optional_vid" if not fld.required else "vid"
     if t == "IntOrVid":
-        return "int_or_vid"
+        return "optional_int_or_vid" if not fld.required else "int_or_vid"
     if t == "FloatOrVid":
         return "float_or_vid"
     if t == "VidOrTid":
@@ -1013,6 +1023,8 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
 
 # for_each_tid emitters: invoke cb(Tid) for each Tid-bearing field. Field kinds
 # that carry no Tid (vid, int_or_vid, scalars, strings, int lists) emit nothing.
+# A new Tid-bearing kind MUST be handled here: compute_temp_last_use decides
+# when a slot is freed from this walk, so a missed field frees a live tensor.
 def _emit_cpp_for_each_tid(kind: str, name: str) -> List[str]:
     """Emit for_each_tid callback lines for a field kind ([] if it has no Tid)."""
     if kind == "tid":
@@ -1099,6 +1111,8 @@ def _fbs_type_to_cpp(
             return "std::optional<Tid>"
         if fbs_type == "Vid":
             return "std::optional<Vid>"
+        if fbs_type in FBS_COMPOUND_TYPES:
+            return f"std::optional<{cpp_type}>"
         if fld is not None and fld.default == "null" and fbs_type in FBS_TO_CPP:
             return f"std::optional<{cpp_type}>"
 
@@ -1378,6 +1392,7 @@ _INSPECTOR_KIND_MAP = {
     "vid": "vid",
     "optional_vid": "vid",
     "int_or_vid": "int_or_vid",
+    "optional_int_or_vid": "int_or_vid",
     "float_or_vid": "float_or_vid",
     "vid_or_tid": "vid_or_tid",
     "int_or_vid_or_tid": "int_or_vid_or_tid",

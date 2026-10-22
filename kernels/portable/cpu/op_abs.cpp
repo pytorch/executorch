@@ -38,7 +38,7 @@ Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "abs.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "abs.out");
 
   if (in_is_complex) {
     // NOTE: Elected not to add COMPLEXH to dtype_util.h for now

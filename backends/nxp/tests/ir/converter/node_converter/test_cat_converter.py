@@ -8,6 +8,12 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    Cat,
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+)
 
 from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
@@ -16,12 +22,6 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    Cat,
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -136,7 +136,7 @@ class TestCat:
         lower_run_compare(model, input_shapes, graph_verifier, request)
 
     def test__single_input__alone_in_partition__not_delegated(self):
-        # The operator is a noop, and there is no other op in the model. The Neutron Converter would produce an empty
+        # The operator is a noop, and there is no other op in the model. The Neutron Compiler would produce an empty
         #  graph, so the `cat` is not delegated.
         input_shape = [ModelInputSpec((2, 3, 5))]
         model = CatModule(1)

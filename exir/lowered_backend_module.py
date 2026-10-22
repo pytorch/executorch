@@ -15,12 +15,14 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
 
 from executorch.exir.graph_module import _get_submodule
 
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
@@ -66,6 +68,9 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    _scratch_specs: List[
+        DelegateScratchSpec
+    ]  # Scratch buffers the backend needs at execute() time
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -75,6 +80,7 @@ class LoweredBackendModule(torch.nn.Module):
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
+        scratch_specs: Optional[List[DelegateScratchSpec]] = None,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -82,6 +88,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self._scratch_specs = scratch_specs or []
         self.meta = None
 
     # pyre-ignore
@@ -110,6 +117,7 @@ class LoweredBackendModule(torch.nn.Module):
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
+            scratch_specs=copy.deepcopy(self._scratch_specs, memo),
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -148,6 +156,13 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the Named Data Store Output
         """
         return self._named_data_store_output
+
+    @property
+    def scratch_specs(self) -> List[DelegateScratchSpec]:
+        """
+        Returns the scratch buffers the backend asked for in preprocess
+        """
+        return self._scratch_specs
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
@@ -342,7 +357,12 @@ class LoweredBackendModule(torch.nn.Module):
         )
         if memory_planning is None:
             memory_planning = MemoryPlanningPass()
-        exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
+        exported_program = _transform(
+            exported_program,
+            SpecPropPass(),
+            DelegateScratchSpecPass(),
+            memory_planning,
+        )
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
         ).program
@@ -384,7 +404,7 @@ def arrange_graph_placeholders(
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
-    but with placeholders in order of (Params + Buffers) (User Inputs)
+    but with placeholders in order of (Params + Buffers + Constants) (User Inputs)
 
     This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
     from partitioned nodes
@@ -403,32 +423,30 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
-    # Cache these properties — each call rebuilds the dict from input_specs.
+    # Cache these properties to avoid rebuilding the dict on each access.
     params_map = graph_sign.inputs_to_parameters
     buffers_map = graph_sign.inputs_to_buffers
+    constants_map = graph_sign.inputs_to_lifted_tensor_constants
     param_nodes = []
     buffer_nodes = []
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if node.name in params_map and node.meta.get("delegation_tag", None) == tag:
+        is_tagged = node.meta.get("delegation_tag", None) == tag
+        if node.name in params_map and is_tagged:
             param_nodes.append(node)
-        elif node.name in buffers_map and node.meta.get("delegation_tag", None) == tag:
+        elif node.name in buffers_map and is_tagged:
             buffer_nodes.append(node)
+        elif node.name in constants_map and is_tagged:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
-    for input_node in input_nodes:
-        new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
-        node_map[input_node] = new_node
+    for node in param_nodes + buffer_nodes + constant_nodes + input_nodes:
+        node_map[node] = new_graph.node_copy(node, lambda x: node_map[x])
 
     # Now add all the other nodes in order
     for node in gm.graph.nodes:
@@ -884,10 +902,11 @@ def create_submodule_from_nodes(
         # all uses with a getitem call to the 0th index of the result
         with gm.graph.inserting_after(submodule_node):
             proxy_out = torch.fx.Proxy(submodule_node)[0].node  # type: ignore[index]
-            submodule_node.replace_all_uses_with(proxy_out)
-            proxy_out.meta["val"] = submodule_node.meta["val"]
+            submodule_node.replace_all_uses_with(proxy_out, propagate_meta=True)
             # Reset the args since it was overwritten in the previous line
             proxy_out.args = (submodule_node, 0)
+            proxy_out.meta.pop("nn_module_stack", None)
+            proxy_out.meta.pop("source_fn_stack", None)
     else:
         # fuse_as_graphmodule will automatically propagate the metadata of the
         # partition's last node to the getitem nodes that appear after the

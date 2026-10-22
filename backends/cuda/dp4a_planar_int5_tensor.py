@@ -45,9 +45,9 @@ can reuse the INT4 even/odd extraction verbatim:
                  whole-weight dequant SNR at ~5.625 bpw.
 
 The pack/unpack helpers (:func:`pack_int5`, :func:`unpack_int5`) must stay in
-lockstep with ``int5_plain_mm.cuh`` (the decode kernel) — the per-32-weight
-even/odd high-bit byte order is the single most error-prone detail and is
-covered by the pack round-trip and the C++ gtest.
+lockstep with ``triton/kernels/int5_quantized_gemm.py`` (the decode kernels) —
+the per-32-weight even/odd high-bit byte order is the single most error-prone
+detail and is covered by the pack round-trip and the kernel tests.
 """
 
 from typing import List, Optional, Tuple
@@ -286,7 +286,9 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
                 "CudaDp4aPlanarInt5Tensor.from_exportable_gguf requires a q5_k "
                 f"ExportableGGUFTensor, got {gt.ggml_type!r}"
             )
-        return cls._from_intx_int8(gt.to_intx_unpacked_to_int8_tensor())
+        return cls._from_intx_int8(
+            gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
+        )
 
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Dequantize to a dense tensor (asymmetric: ``w = scale * (u - zero)``).

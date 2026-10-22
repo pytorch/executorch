@@ -87,8 +87,13 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
 // UTF-8 multi-byte sequence. A byte-level tokenizer can emit a token that is
 // only part of a character (e.g. one byte of a 3-byte CJK codepoint or emoji),
 // so a caller streaming text must hold the incomplete tail until it completes
-// rather than decode the partial bytes. An invalid lead byte counts as length 1
-// (emitted, so the caller can replace it) rather than stalling output.
+// rather than decode the partial bytes.
+//
+// Malformed input is emitted rather than held, so a bad byte never stalls the
+// stream: an invalid lead byte counts as length 1, and so does a valid lead
+// whose continuation bytes are not 0x80-0xBF. Both reach the caller as single
+// bytes it can replace, instead of being run together into a sequence that
+// merely looks multi-byte. Only a *well-formed* truncated tail is held back.
 ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
   size_t i = 0;
   const size_t n = s.size();
@@ -105,6 +110,19 @@ ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
       len = 4;
     } else {
       len = 1; // invalid lead byte; emit it and let the caller replace it
+    }
+    // A lead byte only promises a length; the bytes after it have to agree.
+    // Checking the ones already present means a malformed sequence degrades to
+    // the invalid-lead path above rather than being emitted whole, and a
+    // truncated *valid* sequence is still held for the bytes that finish it.
+    if (len > 1) {
+      const size_t seen = (n - i) < len ? (n - i) : len;
+      for (size_t k = 1; k < seen; ++k) {
+        if ((static_cast<unsigned char>(s[i + k]) & 0xC0) != 0x80) {
+          len = 1;
+          break;
+        }
+      }
     }
     if (i + len > n) {
       break; // incomplete trailing sequence: hold it for more bytes

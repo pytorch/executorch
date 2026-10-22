@@ -33,7 +33,7 @@ void resize_rotary_embedding_node(
   graph->virtual_resize(xk_out, xk_sizes);
 }
 
-utils::uvec3 rotary_embedding_global_wg_size(
+GlobalWorkGrid rotary_embedding_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -53,7 +53,7 @@ utils::uvec3 rotary_embedding_global_wg_size(
   // Input tokens sequence length
   const uint32_t S = graph->size_at<uint32_t>(-3, xq_out);
 
-  return {D8, QH, S};
+  return GlobalWorkGrid({D8, QH, S}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_node(
@@ -91,8 +91,8 @@ void add_rotary_embedding_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
@@ -121,7 +121,7 @@ void apply_rotary_emb(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 // HuggingFace RoPE variant
 //
 
-utils::uvec3 rotary_embedding_hf_global_wg_size(
+GlobalWorkGrid rotary_embedding_hf_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -139,7 +139,7 @@ utils::uvec3 rotary_embedding_hf_global_wg_size(
   const uint32_t QH = graph->size_at<uint32_t>(-2, xq_out);
   const uint32_t S = graph->size_at<uint32_t>(-3, xq_out);
 
-  return {D4, QH, S};
+  return GlobalWorkGrid({D4, QH, S}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_hf_node(
@@ -189,8 +189,8 @@ void add_rotary_embedding_hf_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_hf_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_hf_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
@@ -243,7 +243,7 @@ void resize_rotary_embedding_interleaved_node(
   graph->virtual_resize(out, graph->sizes_of(in));
 }
 
-utils::uvec3 rotary_embedding_interleaved_global_wg_size(
+GlobalWorkGrid rotary_embedding_interleaved_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -261,7 +261,7 @@ utils::uvec3 rotary_embedding_interleaved_global_wg_size(
   const uint32_t C = static_cast<uint32_t>(out_sizes.at(2));
 
   // One thread per output texel of 4 elements along C.
-  return {utils::div_up_4(C), N, B};
+  return GlobalWorkGrid({utils::div_up_4(C), N, B}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_interleaved_node(
@@ -303,8 +303,8 @@ void add_rotary_embedding_interleaved_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_interleaved_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_interleaved_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{x, freqs_cis}, vkapi::kRead}},
       // Parameter buffers

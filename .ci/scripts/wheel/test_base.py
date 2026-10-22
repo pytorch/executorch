@@ -41,6 +41,76 @@ class ModelTest:
     backend: Backend
 
 
+def test_a_model_runs_through_the_openvino_delegate(required: bool = False) -> None:
+    """Export a model to the OpenVINO delegate and run it, comparing against eager.
+
+    The checks elsewhere prove the delegate library ships, owns its symbols and registers
+    itself. None of that proves it computes: a delegate can register and then produce wrong
+    numbers or refuse the graph, and a registration check reports success either way.
+
+    The OpenVINO runtime is not part of the wheel. It comes from the openvino extra, so a
+    default install cannot run this and says so rather than passing quietly. Where the runtime
+    is present the export and the comparison are the point of the check, and a failure there
+    is a real one. A caller that installed the export stack passes required=True, so a missing
+    piece fails instead of skipping.
+    """
+    import torch
+    from executorch.exir import to_edge_transform_and_lower
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from executorch.runtime import Runtime
+
+    # One guard around the whole chain rather than around openvino alone. Importing the
+    # partitioner reaches the quantizer, which requires nncf, so a check that only looked for
+    # openvino would still fail on the import it cannot satisfy. Measured on a default install
+    # with openvino present and nncf absent.
+    try:
+        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+    except ImportError as error:
+        if required:
+            raise
+        print(
+            f"SKIP: the OpenVINO export stack is not installed, so the delegate cannot "
+            f"execute here ({error}). The wheel ships the adapter only; the runtime and the "
+            f"quantizer dependencies come from backends/openvino/requirements.txt. This row "
+            f"still verifies the shipped library, its owner and its registration."
+        )
+        return
+
+    class Add(torch.nn.Module):
+        def forward(self, x, y):
+            return x + y
+
+    example = (torch.ones(2, 2), torch.ones(2, 2) * 2)
+    eager = Add()(*example)
+
+    exported = torch.export.export(Add(), example)
+    lowered = to_edge_transform_and_lower(
+        exported,
+        partitioner=[OpenvinoPartitioner([CompileSpec("device", b"CPU")])],
+    )
+    program = lowered.to_executorch()
+    delegates = [d.id for d in program.executorch_program.execution_plan[0].delegates]
+    assert "OpenvinoBackend" in delegates, (
+        f"the partitioner did not hand the model to OpenVINO (delegates: {delegates}), so "
+        f"running it would test the portable kernels instead of the delegate"
+    )
+
+    # From memory rather than a temporary file, which the loaded program keeps open and
+    # Windows then refuses to delete.
+    method = Runtime.get().load_program(program.buffer).load_method("forward")
+    actual = method.execute(list(example))[0]
+
+    difference = (actual - eager).abs().max().item()
+    assert difference == 0.0, (
+        f"the OpenVINO delegate ran but its output does not match eager: maximum absolute "
+        f"difference {difference:.3e}. The delegate computed something other than the model."
+    )
+    print(
+        f"\u2713 a model runs through the OpenVINO delegate and matches eager "
+        f"\u2014 max abs diff {difference:.3e}"
+    )
+
+
 def test_cmsis_nn_install():
     import executorch.backends.cortex_m.library.cmsis_nn as cmsis_nn
 
@@ -59,17 +129,27 @@ def test_cmsis_nn_install():
 
 
 def run_tests(model_tests: List[ModelTest]) -> None:
-    # Test that we can import the portable_lib module - verifies RPATH is correct
-    print("Testing portable_lib import...")
+    # Test that we can import the _C module - verifies RPATH is correct
+    print("Testing _C import...")
     try:
-        from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+        from executorch.extension.pybindings._C import (  # noqa: F401
             _load_for_executorch,
         )
 
-        print("✓ Successfully imported _load_for_executorch from portable_lib")
+        print("✓ Successfully imported _load_for_executorch from _C")
     except ImportError as e:
-        print(f"✗ Failed to import portable_lib: {e}")
+        print(f"✗ Failed to import _C: {e}")
         raise
+
+    # Type checkers need the stub under the extension's own name, and the marker
+    # that says the package is typed.
+    from executorch.extension.pybindings import _C
+
+    bindings_dir = os.path.dirname(_C.__file__)
+    for name in ("_C.pyi", "py.typed"):
+        path = os.path.join(bindings_dir, name)
+        assert os.path.isfile(path), f"{path} is missing from the wheel"
+    print("✓ The _C type stub and py.typed ship beside _C")
 
     # Why are we doing this envvar shenanigans? Since we build the testers, which
     # uses buck, we cannot run as root. This is a sneaky of getting around that

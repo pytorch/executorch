@@ -16,7 +16,8 @@ struct Params {
 }
 @group(0) @binding(5) var<uniform> params: Params;
 
-override wg_size: u32 = 64u;
+// Fixed 64: 8x8 grid + 512-elem shared tiles are hard-locked to it (no knob).
+const wg_size: u32 = 64u;
 
 // Shmem-staged tiled GEMM (M>1): dequant weight into shmem once per K-tile.
 const WG_M: u32 = 32u;   // output rows per workgroup

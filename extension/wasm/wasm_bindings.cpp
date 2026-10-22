@@ -18,6 +18,12 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif
 
+#ifdef EXECUTORCH_WASM_WEBGPU
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <memory>
+#include <stdexcept>
+#endif
+
 #define THROW_JS_ERROR(errorType, message, ...)                           \
   ({                                                                      \
     char msg_buf[256];                                                    \
@@ -56,12 +62,18 @@ using ::executorch::extension::BufferDataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracer;
-using ::executorch::runtime::Result;
 using ::executorch::runtime::Tag;
 using ::executorch::runtime::TensorInfo;
 
 #ifdef EXECUTORCH_ENABLE_EVENT_TRACER
 using executorch::etdump::ETDumpGen;
+#endif
+
+#ifdef EXECUTORCH_WASM_WEBGPU
+using ::executorch::backends::webgpu::create_webgpu_context;
+using ::executorch::backends::webgpu::destroy_webgpu_context;
+using ::executorch::backends::webgpu::set_default_webgpu_context;
+using ::executorch::backends::webgpu::WebGPUContext;
 #endif
 
 namespace executorch {
@@ -681,9 +693,57 @@ class ET_EXPERIMENTAL JsModule final {
   std::unique_ptr<Module> module_;
 };
 
+#ifdef EXECUTORCH_WASM_WEBGPU
+/**
+ * EXPERIMENTAL: Owns the process-wide WebGPU context. The backend keeps a raw
+ * pointer to whatever set_default_webgpu_context() was given, so the context
+ * has to outlive every module loaded against it, and only one may ever be
+ * registered.
+ */
+class ET_EXPERIMENTAL WebGPUContextOwner final {
+ public:
+  static WebGPUContextOwner& instance() {
+    static WebGPUContextOwner owner;
+    return owner;
+  }
+
+  void initialize() {
+    if (context_) {
+      return;
+    }
+    auto context = std::make_unique<WebGPUContext>(create_webgpu_context());
+    set_default_webgpu_context(context.get());
+    context_ = std::move(context);
+  }
+
+  ~WebGPUContextOwner() {
+    if (context_) {
+      set_default_webgpu_context(nullptr);
+      destroy_webgpu_context(*context_);
+    }
+  }
+
+ private:
+  WebGPUContextOwner() = default;
+
+  std::unique_ptr<WebGPUContext> context_;
+};
+
+void init_webgpu() {
+  try {
+    WebGPUContextOwner::instance().initialize();
+  } catch (const std::exception& e) {
+    THROW_JS_ERROR(Error, "Failed to initialize WebGPU: %s", e.what());
+  }
+}
+#endif
+
 } // namespace
 
 EMSCRIPTEN_BINDINGS(WasmBindings) {
+#ifdef EXECUTORCH_WASM_WEBGPU
+  function("initWebGPU", &init_webgpu);
+#endif
   enum_<ScalarType>("ScalarType")
 #define JS_DECLARE_SCALAR_TYPE(T, NAME) .value(#NAME, ScalarType::NAME)
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_SCALAR_TYPE);

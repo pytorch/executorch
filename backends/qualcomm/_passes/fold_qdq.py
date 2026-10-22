@@ -39,8 +39,10 @@ class FoldQDQ(ExportPass):
             if n.target not in dq_ops:
                 continue
 
-            # skip parameters & buffers
-            if not self.force_fold and is_parameter(n.args[0], self.edge_program):
+            # skip parameters & buffers & get_attr
+            if not self.force_fold and (
+                is_parameter(n.args[0], self.edge_program) or n.args[0].op == "get_attr"
+            ):
                 self._annotate_bypass(n)
             else:
                 for user_n in user_list:

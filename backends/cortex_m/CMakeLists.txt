@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "dbf45dbfcc515421dd6099037d3e2637b90748c8"
+    "v8.0.0"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -91,6 +91,14 @@ if(EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
         "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS is ON, but CMSIS-NN did not define the cmsis_nn pybind target."
     )
   endif()
+  # CMSIS-NN's test-only shared library takes the static library's name, so on
+  # Windows its import library is cmsis-nn.lib as well: two rules for one file,
+  # which Ninja refuses. Only the import library needs another name.
+  if(WIN32 AND TARGET cmsis-nn-shared)
+    set_target_properties(
+      cmsis-nn-shared PROPERTIES ARCHIVE_OUTPUT_NAME cmsis-nn-shared
+    )
+  endif()
 endif()
 if(EXECUTORCH_BUILD_CORTEX_M)
   # Cortex-M ops kernel sources
@@ -106,6 +114,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_div.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
@@ -127,7 +136,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   target_link_libraries(
     cortex_m_kernels
     PRIVATE cmsis-nn
-    PRIVATE executorch
+    PRIVATE executorch_core
     PRIVATE kernels_util_all_deps
   )
   target_compile_definitions(
@@ -142,7 +151,8 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   )
 
   gen_operators_lib(
-    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
+    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS
+    executorch_core
   )
 
   install(

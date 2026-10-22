@@ -10,11 +10,12 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
 PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program",
+    "//executorch/runtime/core:device_memory_buffer",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
-    "//executorch/extension/aten_util:aten_bridge",
     "//executorch/devtools/bundled_program:runtime",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/flat_tensor:flat_tensor_data_map",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module",
     "//executorch/extension/module:module",
@@ -26,10 +27,12 @@ PORTABLE_MODULE_DEPS = [
 ATEN_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry_aten",
     "//executorch/runtime/executor:program_aten",
+    "//executorch/runtime/core:device_memory_buffer",
     "//executorch/runtime/core/exec_aten:lib_aten",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/flat_tensor:flat_tensor_data_map_aten",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module_aten",
     "//executorch/extension/module:module_aten",
@@ -45,29 +48,41 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/aten:generated_lib",
 ]
 
-def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
+def executorch_pybindings(
+        python_module_name,
+        srcs = [],
+        cppdeps = [],
+        visibility = ["//executorch/..."],
+        types = [],
+        compiler_flags = [],
+        use_aten = False,
+        use_cuda = False):
     runtime.cxx_python_extension(
         # @autodeps-skip
         name = python_module_name,
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
+        headers = [
+            "//executorch/extension/pybindings:pybindings_cuda.h",
+            "//executorch/extension/pybindings:pybindings_dlpack.h",
+            "//executorch/extension/pybindings:pybindings_executorch_result.h",
+        ],
         types = types,
         base_module = "executorch.extension.pybindings",
         compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
-        ],
+        ] + (["-DUSE_ATEN_LIB"] if use_aten else []) + (["-DEXECUTORCH_PYBINDINGS_CUDA"] if use_cuda else []),
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/extension/pybindings:data_loader_types",
             "//executorch/extension/pybindings:data_loader",
-        ] + cppdeps,
+        ] + cppdeps + (["//executorch/extension/cuda:caller_stream"] if use_cuda else []),
         external_deps = [
             "pybind11",
-            "libtorch_python",
-        ],
+        ] + (["libtorch_python"] if use_aten else []),
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),
         visibility = visibility,

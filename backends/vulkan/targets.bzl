@@ -10,7 +10,13 @@ def get_vulkan_compiler_flags():
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
         ],
-        "ovr_config//os:windows": [],
+        # The Windows clang host build needs -Werror relaxed for the vendored
+        # VMA headers, but MSVC cl.exe rejects the gcc-style flag, so exclude
+        # pure MSVC. OSS buck2 has no compiler constraint, so guard to non-OSS.
+        "ovr_config//os:windows": select({
+            "DEFAULT": ["-Wno-error"],
+            "ovr_config//compiler:msvc": [],
+        }) if not runtime.is_oss else ["-Wno-error"],
     })
 
 def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
@@ -178,7 +184,7 @@ def define_common_targets(is_fbcode = False):
     runtime.filegroup(
         name = "vulkan_graph_runtime_shaders",
         srcs = native.glob([
-            "runtime/graph/ops/glsl/*",
+            "runtime/graph/ops/glsl/**/*",
         ]),
     )
 

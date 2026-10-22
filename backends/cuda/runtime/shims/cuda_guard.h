@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/export.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <cstdint>
 
 namespace executorch::backends::cuda {

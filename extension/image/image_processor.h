@@ -76,6 +76,12 @@ class ImageProcessor {
       NormalizedRect roi = kFullImage) const;
 
   /// Process semi-planar YUV (NV12/NV21) into a normalized float tensor.
+  /// `uv_plane_size` is the number of readable bytes in `uv_plane`; a negative
+  /// value (the default) means the plane is complete. The decode never reads
+  /// past it: a plane that ends one
+  /// byte short of its final chroma pair — an Android camera plane view does —
+  /// is accepted, and that one missing sample is substituted from the
+  /// neighboring pair. Anything shorter is rejected.
   /// @note Not thread-safe per instance — see `process()`.
   runtime::Result<TensorPtr> process_yuv(
       const uint8_t* y_plane,
@@ -87,7 +93,8 @@ class ImageProcessor {
       YUVFormat format,
       Orientation orientation = Orientation::UP,
       NormalizedRect roi = kFullImage,
-      YUVRange range = YUVRange::VIDEO) const;
+      YUVRange range = YUVRange::VIDEO,
+      int64_t uv_plane_size = -1) const;
 
   /// Process an image into a caller-provided output tensor, avoiding per-call
   /// output allocation (e.g. to reuse one tensor across video frames). `out`
@@ -104,7 +111,8 @@ class ImageProcessor {
       Orientation orientation = Orientation::UP,
       NormalizedRect roi = kFullImage) const;
 
-  /// Semi-planar YUV (NV12/NV21) variant of `process_into`.
+  /// Semi-planar YUV (NV12/NV21) variant of `process_into`. `uv_plane_size`
+  /// follows the `process_yuv` contract.
   /// @note Not thread-safe per instance — see `process()`.
   runtime::Error process_yuv_into(
       const uint8_t* y_plane,
@@ -117,7 +125,8 @@ class ImageProcessor {
       ::executorch::aten::Tensor& out,
       Orientation orientation = Orientation::UP,
       NormalizedRect roi = kFullImage,
-      YUVRange range = YUVRange::VIDEO) const;
+      YUVRange range = YUVRange::VIDEO,
+      int64_t uv_plane_size = -1) const;
 
   const ImageProcessorConfig& config() const;
 

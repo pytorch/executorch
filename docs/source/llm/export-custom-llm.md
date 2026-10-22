@@ -255,8 +255,8 @@ modules are adapted from torchtune modules with changes for export and inference
 While ExecuTorch provides a portable, cross-platform implementation for all
 operators, it also provides specialized backends for a number of different
 targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the Core ML backend and Metal
-Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.
+the XNNPACK backend, Apple acceleration via the Core ML backend,
+and GPU acceleration via the Vulkan backend.
 
 Because optimizations are specific to a given backend, each pte file is specific
 to the backend(s) targeted at export. To support multiple devices, such as
@@ -513,7 +513,8 @@ lowered graph():
 
 ### Further Model Analysis and Debugging
 
-Through the [ExecuTorch's Developer Tools](getting-started.md#performance-analysis), users are able to profile model execution, giving timing information for each operator in the model, doing model numeric debugging, etc.
+Use [ExecuTorch's Developer Tools](../devtools-overview.md) to profile model
+execution, inspect per-operator timing, and debug numerical differences.
 
 An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.rst).
 

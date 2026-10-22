@@ -57,7 +57,9 @@ if(CONFIG_EXECUTORCH)
   if(CONFIG_CPU_CORTEX_A)
     set(EXECUTORCH_BUILD_XNNPACK ON)
   endif()
-  if(CONFIG_ETHOS_U)
+  # Zephyr renamed these symbols to ARM_ETHOS_U in 4.3. Keep compatibility with
+  # SDK releases on either side of that rename.
+  if(CONFIG_ETHOS_U OR CONFIG_ARM_ETHOS_U)
     set(EXECUTORCH_BUILD_ARM_BAREMETAL ON)
   endif()
 

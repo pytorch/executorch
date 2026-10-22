@@ -59,6 +59,16 @@ INT8_ACTIVATION_PER_CHANNEL_QSPEC = QuantizationSpec(
     ch_axis=0,
 )
 
+# 16-bit activation spec. Symmetric (zero point 0) with the -32767 quant_min
+# used by the Arm a16w8 config, so the range is symmetric about zero.
+INT16_ACTIVATION_PER_TENSOR_QSPEC = QuantizationSpec(
+    dtype=torch.int16,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+    qscheme=torch.per_tensor_symmetric,
+    quant_min=-32767,
+    quant_max=32767,
+)
+
 # Constants shared by Cortex-M quantized operators.
 CMSIS_SOFTMAX_SCALE: float = 1.0 / 256.0
 CMSIS_SOFTMAX_ZERO_POINT: int = -128
@@ -193,6 +203,17 @@ INT8_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     _get_int32_bias_qspec,
     f"{__name__}.INT8_PER_TENSOR_CONFIG",
+)
+
+
+# int16 activations (weight/bias qspecs are unused by weightless elementwise
+# ops such as quantized_div; they carry the int8/int32 defaults).
+INT16_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
+    INT16_ACTIVATION_PER_TENSOR_QSPEC,
+    INT16_ACTIVATION_PER_TENSOR_QSPEC,
+    INT8_WEIGHT_PER_TENSOR_QSPEC,
+    _get_int32_bias_qspec,
+    f"{__name__}.INT16_PER_TENSOR_CONFIG",
 )
 
 

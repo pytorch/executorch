@@ -13,7 +13,8 @@
   <name>ExecuTorch</name>
   <description overview="Documentation/README.md">ExecuTorch: PyTorch Edge Runtime for on-device AI inference on Arm Cortex-M processors.</description>
   
-  <url>https://github.com/pytorch/executorch/releases/download/%{RELEASE_VERSION}%/</url>
+  <!-- Release tags carry a leading 'v'; without it this path 404s. -->
+  <url>https://github.com/pytorch/executorch/releases/download/v%{RELEASE_VERSION}%/</url>
   <license>LICENSE</license>
   <repository type="git">https://github.com/pytorch/executorch.git</repository>
   
@@ -93,6 +94,11 @@
       <require Cclass="Machine Learning" Cgroup="NPU Support" Csub="Ethos-U Driver"/>
     </condition>
 
+    <condition id="Extension Tensor">
+      <description>ExecuTorch Tensor extension (TensorPtr utilities)</description>
+      <require condition="Runtime"/>
+    </condition>
+
     <!-- Operator conditions - each operator requires Kernel Utils -->
 %{OPERATOR_CONDITIONS}%
   </conditions>
@@ -133,6 +139,17 @@
       </files>
     </component>
 
+    <!-- ==================== Extensions ==================== -->
+    <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Extension Tensor" Cversion="%{RELEASE_VERSION}%" condition="Extension Tensor">
+      <description>ExecuTorch Tensor Extension - TensorPtr / make_tensor_ptr utilities</description>
+      <RTE_Components_h>
+        #define RTE_ML_EXECUTORCH_EXTENSION_TENSOR     /* ExecuTorch Tensor Extension */
+      </RTE_Components_h>
+      <files>
+%{TENSOR_EXTENSION_FILES}%
+      </files>
+    </component>
+
     <!-- ==================== Kernel Registration ==================== -->
     <!-- 
       This component provides unified kernel registration for all operators.
@@ -165,11 +182,10 @@
 %{CORTEX_M_OPERATOR_COMPONENTS}%
 
     <!-- ==================== Backends ==================== -->
-    
-    <!-- Ethos-U Backend (Cortex-M host, bare-metal) -->
-    <!-- Ships only EthosUBackend_Cortex_M.cpp. The Cortex-A/Linux host
-         variant is intentionally not exposed in this pack and may be
-         added in a follow-up release. -->
+
+    <!-- Ethos-U Backend (core driver, bare-metal) -->
+    <!-- Ships only EthosUBackend_CoreDriver.cpp. The Linux driver variant is
+         intentionally not exposed in this pack and may be added later. -->
     <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Backend EthosU" Cversion="%{RELEASE_VERSION}%" condition="Ethos-U">
       <description>ExecuTorch Ethos-U NPU Backend - Cortex-M host (bare-metal). Hardware acceleration for Ethos-U55/U65</description>
       <RTE_Components_h>
@@ -180,19 +196,10 @@
         #define ET_USE_ETHOS_U_BACKEND 1
       </Pre_Include_Global_h>
       <files>
-%{ETHOS_U_BACKEND_CORTEX_M_FILES}%
+%{ETHOS_U_BACKEND_CORE_DRIVER_FILES}%
       </files>
     </component>
 
   </components>
-
-  <examples>
-    <example name="ExecuTorch Inference" doc="README.md" folder="examples/inference">
-      <description>Basic ExecuTorch inference example</description>
-      <project>
-        <environment name="csolution" load="inference.csolution.yml"/>
-      </project>
-    </example>
-  </examples>
 
 </package>

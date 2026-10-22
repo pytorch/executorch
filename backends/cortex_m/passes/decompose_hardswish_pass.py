@@ -11,7 +11,7 @@ import executorch.backends.cortex_m.ops.operators  # noqa: F401
 import torch
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
-from executorch.backends.cortex_m.passes.passes_utils import quantize_val
+from executorch.backends.cortex_m.utils import quantize_val
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass

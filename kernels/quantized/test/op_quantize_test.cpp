@@ -14,10 +14,9 @@
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
+#include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::native::quantize_per_channel_out;
@@ -180,6 +179,106 @@ TEST(OpQuantizeOutTest, TestOutOfBounds) {
       quant_max,
       ScalarType::Char,
       out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
+void test_non_finite_values() {
+  TensorFactory<INPUT_DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tfo;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  // One SIMD block and a remainder containing each non-finite value.
+  Tensor input =
+      tf.make({11}, {nan, inf, -inf, 0, 1, -1, 0.25, 0.75, nan, inf, -inf});
+  Tensor out = tfo.zeros({11});
+  Tensor expected = tfo.make({11}, {5, 10, 0, 5, 7, 3, 5, 7, 5, 10, 0});
+
+  quantize_per_tensor_out(input, 0.5, 5, 0, 10, OUTPUT_DTYPE, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpQuantizeOutTest, NonFiniteValuesHaveDeterministicOutputs) {
+  test_non_finite_values<ScalarType::Float, ScalarType::Char>();
+  test_non_finite_values<ScalarType::Float, ScalarType::Byte>();
+  test_non_finite_values<ScalarType::Float, ScalarType::Short>();
+  test_non_finite_values<ScalarType::Float, ScalarType::UInt16>();
+  test_non_finite_values<ScalarType::Float, ScalarType::Bits16>();
+  test_non_finite_values<ScalarType::Float, ScalarType::Int>();
+  test_non_finite_values<ScalarType::Half, ScalarType::Char>();
+  test_non_finite_values<ScalarType::Double, ScalarType::Char>();
+}
+
+TEST(OpQuantizeOutTest, NaNMapsToClampedZeroPoint) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Char> tfo;
+  Tensor input = tf.full({9}, std::numeric_limits<float>::quiet_NaN());
+  Tensor out = tfo.zeros({9});
+
+  for (const int64_t zero_point : {-20, 20}) {
+    SCOPED_TRACE(zero_point);
+    Tensor expected = tfo.full({9}, zero_point < 0 ? -10 : 10);
+    quantize_per_tensor_out(
+        input, 0.5, zero_point, -10, 10, ScalarType::Char, out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+}
+
+TEST(OpQuantizeOutTest, LargeFiniteValuesSaturateBeforeIntegerConversion) {
+  TensorFactory<ScalarType::Float> tf;
+  const float largest = std::numeric_limits<float>::max();
+  Tensor input = tf.make(
+      {10},
+      {largest,
+       -largest,
+       1e20f,
+       -1e20f,
+       1e10f,
+       -1e10f,
+       0,
+       1,
+       largest,
+       -largest});
+  TensorFactory<ScalarType::Char> tf_char;
+  Tensor out_char = tf_char.zeros({10});
+  Tensor expected_char =
+      tf_char.make({10}, {10, -10, 10, -10, 10, -10, 5, 7, 10, -10});
+
+  quantize_per_tensor_out(input, 0.5, 5, -10, 10, ScalarType::Char, out_char);
+  EXPECT_TENSOR_EQ(out_char, expected_char);
+
+  TensorFactory<ScalarType::Int> tf_int;
+  constexpr int32_t min = std::numeric_limits<int32_t>::min();
+  constexpr int32_t max = std::numeric_limits<int32_t>::max();
+  Tensor out_int = tf_int.zeros({10});
+  Tensor expected_int =
+      tf_int.make({10}, {max, min, max, min, max, min, 5, 7, max, min});
+
+  quantize_per_tensor_out(input, 0.5, 5, min, max, ScalarType::Int, out_int);
+  EXPECT_TENSOR_EQ(out_int, expected_int);
+}
+
+TEST(OpQuantizeOutTest, PerChannelNonFiniteValuesHaveDeterministicOutputs) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+  TensorFactory<ScalarType::Char> tfo;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  Tensor input =
+      tf.make({2, 11}, {nan, inf, -inf, 0, 1, -1, 0.25, 0.75, nan, inf, -inf,
+                        nan, inf, -inf, 0, 1, -1, 0.25, 0.75, nan, inf, -inf});
+  Tensor scale = tf_double.make({2}, {0.5, 1.0});
+  Tensor zero_point = tf_long.make({2}, {5, -5});
+  Tensor out = tfo.zeros({2, 11});
+  Tensor expected =
+      tfo.make({2, 11}, {5,  10, -10, 5,  7,  3,  5,  7,  5,  10, -10,
+                         -5, 10, -10, -5, -4, -6, -5, -4, -5, 10, -10});
+
+  quantize_per_channel_out(
+      input, scale, zero_point, 0, -10, 10, ScalarType::Char, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }

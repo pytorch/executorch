@@ -1,4 +1,4 @@
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,11 +13,14 @@ from torch.fx import Node
 
 @dataclass
 class ConvParameters:
+    input_node: Node
+    weight_node: Node
+    bias_node: Node | None
     stride: list[int]
     padding: list[int]
     dilation: list[int]
     transposed: bool
-    out_padding: list[int]
+    out_padding: list[int] | None  # only meaningful for transposed conv
     groups: int
 
 
@@ -40,22 +43,37 @@ def _get_IO_channels(node: Node | tflite_model.Operator) -> (int, int):
 def get_node_tensor_params(node: Node) -> dict:
     node_tensor_params = {}
 
+    # handle input tensor parameters
     input_tensor = node.args[0]
-    assert len(input_tensor.meta["val"].shape) in [3, 4], "Supports only Conv 1D, 2D."
-    node_tensor_params["batch_size"] = input_tensor.meta["val"].shape[0]
-    node_tensor_params["inp_channels"] = input_tensor.meta["val"].shape[1]
-    node_tensor_params["inp_height"] = input_tensor.meta["val"].shape[2]
-    if len(input_tensor.meta["val"].shape) == 4:
-        node_tensor_params["inp_width"] = input_tensor.meta["val"].shape[3]
+    inp_shape = input_tensor.meta["val"].shape
+    assert len(inp_shape) in [
+        3,
+        4,
+    ], "Supports only forward Conv 2D with possible implicit batch."
 
+    node_tensor_params["inp_height"] = inp_shape[2]
+    node_tensor_params["inp_width"] = inp_shape[3]
+    if len(inp_shape) == 4:
+        node_tensor_params["inp_channels"] = inp_shape[1]
+        node_tensor_params["batch_size"] = inp_shape[0]
+    else:
+        node_tensor_params["inp_channels"] = inp_shape[0]
+        node_tensor_params["batch_size"] = 1
+
+    # handle weight tensor parameters
     weights = node.args[1]
-    node_tensor_params["out_channels"] = node.meta["val"].shape[1]
-    node_tensor_params["out_height"] = node.meta["val"].shape[2]
-    if len(node.meta["val"].shape) == 4:
-        node_tensor_params["out_width"] = node.meta["val"].shape[3]
     node_tensor_params["kernel_height"] = weights.meta["val"].shape[2]
-    if len(weights.meta["val"].shape) == 4:
-        node_tensor_params["kernel_width"] = weights.meta["val"].shape[3]
+    node_tensor_params["kernel_width"] = weights.meta["val"].shape[3]
+
+    # handle output tensor parameters
+    out_shape = node.meta["val"].shape
+
+    node_tensor_params["out_height"] = out_shape[2]
+    node_tensor_params["out_width"] = out_shape[3]
+    if len(out_shape) == 4:
+        node_tensor_params["out_channels"] = out_shape[1]
+    else:
+        node_tensor_params["out_channels"] = out_shape[0]
 
     return node_tensor_params
 

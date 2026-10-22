@@ -26,7 +26,6 @@
 #include <algorithm>
 #include <fstream>
 
-using executorch::extension::Module;
 using executorch::extension::llm::get_rss_bytes;
 using executorch::extension::llm::print_report;
 using executorch::extension::llm::Stats;
@@ -126,6 +125,9 @@ Runner::Runner(
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
+  } else if (decoder_model_version == "gemma4") {
+    decoder_model_version_ = DecoderModelVersion::kGemma4;
+    cache_mode_ = CacheMode::HybridCache;
   } else if (decoder_model_version == "granite") {
     decoder_model_version_ = DecoderModelVersion::kGranite;
   } else if (decoder_model_version == "phi_4_mini") {
@@ -208,6 +210,8 @@ Error Runner::load() {
       decoder_model_version_ == DecoderModelVersion::kGemma2 ||
       decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kGemma4) {
+    eos_ids->insert(tokenizer_->encode("<turn|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kCodegen) {
     eos_ids->insert(tokenizer_->encode("<|endoftext|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kGlm) {
@@ -234,7 +238,6 @@ Error Runner::load() {
   // k_cache: [1, n_heads, head_dim, seq_len]
   auto k_cache_shape = method_meta->output_tensor_meta(1)->sizes();
   int64_t num_heads = k_cache_shape[1];
-  int64_t head_dim = k_cache_shape[2];
   bool use_int64_token = method_meta->input_tensor_meta(0)->scalar_type() ==
       executorch::aten::ScalarType::Long;
 
@@ -274,14 +277,17 @@ Error Runner::load() {
         sliding_window_evalue__, module_->get("get_sliding_window"));
     sliding_window = sliding_window_evalue__.toInt();
   }
+  // Gemma4 uses YOCO: only self-decoder layers have KV I/O; use
+  // get_n_self_layers when available so KVManager allocates the correct number
+  // of caches.
+  int64_t num_kv_layers = num_layers;
+  if (module_->method_names()->count("get_n_self_layers") > 0) {
+    ET_ASSIGN_OR_RETURN(num_layers_evalue__, module_->get("get_n_self_layers"));
+    num_kv_layers = num_layers_evalue__.toScalar().to<int64_t>();
+  }
   kv_manager_ = std::make_unique<KVManager>(
       KVManager::Metadata{
-          context_len_,
-          head_dim,
-          max_ar_len,
-          max_cache_len,
-          num_heads,
-          num_layers},
+          context_len_, max_ar_len, max_cache_len, num_heads, num_kv_layers},
       std::make_unique<MethodMeta>(
           std::move(module_->method_meta(token_generator_method_name).get())));
 
@@ -299,7 +305,7 @@ Error Runner::load() {
       PromptProcessor::Metadata{
           context_len_,
           num_heads,
-          num_layers,
+          num_kv_layers,
           prompt_processor_ar_len,
           vocab_size,
           use_int64_token,
@@ -317,7 +323,7 @@ Error Runner::load() {
         LhdTokenGenerator::Metadata{
             context_len_,
             num_heads,
-            num_layers,
+            num_kv_layers,
             token_generator_ar_len,
             vocab_size,
             use_int64_token,
@@ -339,7 +345,7 @@ Error Runner::load() {
         TokenGenerator::Metadata{
             context_len_,
             num_heads,
-            num_layers,
+            num_kv_layers,
             token_generator_ar_len,
             vocab_size,
             use_int64_token,

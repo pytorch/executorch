@@ -6,6 +6,11 @@
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    BMM,
+    GetItem,
+    MaxPool2DWithIndices,
+)
 
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     ViewCopy,
@@ -16,12 +21,11 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
     BatchMatMulMaxPoolModel,
     BatchMatMulModel,
 )
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import BMM, GetItem, MaxPool2DWithIndices
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 

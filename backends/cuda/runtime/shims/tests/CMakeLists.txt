@@ -42,6 +42,7 @@ set(CUDA_SHIM_TESTS
     test_aoti_torch_delete_tensor_object
     test_aoti_torch__reinterpret_tensor
     test_aoti_torch_copy_
+    test_aoti_torch_zero_
     test_aoti_torch_cuda_rand
     test_aoti_torch_new_tensor_handle
     test_aoti_torch_item_bool
@@ -49,10 +50,7 @@ set(CUDA_SHIM_TESTS
 )
 
 # CUDA-specific tests requiring GPU kernels
-set(CUDA_KERNEL_TESTS
-    test_aoti_torch_cuda__weight_int4pack_mm test_aoti_torch_cuda_int4_plain_mm
-    test_aoti_torch_cuda_int5_plain_mm test_aoti_torch_cuda_int6_plain_mm
-)
+set(CUDA_KERNEL_TESTS test_aoti_torch_cuda__weight_int4pack_mm)
 
 enable_testing()
 

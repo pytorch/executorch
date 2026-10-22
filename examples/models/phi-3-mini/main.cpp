@@ -11,8 +11,6 @@
 #include <gflags/gflags.h>
 #include <iostream>
 
-using executorch::extension::llm::TextLLMRunner;
-
 DEFINE_string(
     model_path,
     "phi-3-mini.pte",

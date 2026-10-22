@@ -23,16 +23,9 @@ namespace HiFi {
 namespace native {
 namespace {
 
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
-using ::executorch::aten::TensorImpl;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::KernelRuntimeContext;
-using ::executorch::runtime::runtime_init;
 using ::executorch::runtime::testing::TensorFactory;
-using std::optional;
-using std::string_view;
 
 class HiFiDequantizePerTensorTest : public OperatorTest {
  public:

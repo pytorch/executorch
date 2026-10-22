@@ -19,10 +19,7 @@ from __future__ import annotations
 from executorch.backends.mlx.builder.op_helpers import emit_quantized_gather
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.repack_mlx import (
-    _BITS,
-    repack_mlx,
-)
+from executorch.backends.mlx.custom_kernel_ops.gguf.repack_mlx import Q4_K, repack_mlx
 from torch.fx.node import Node
 
 
@@ -39,7 +36,9 @@ def emit_embedding(
     gathered rows (MLX affine 4-bit) -- the same shape as MLX's generic quantized
     embedding.
     """
-    w_slot, scales_slot, biases_slot, group_size = repack_mlx(P, weight_node)
+    w_slot, scales_slot, biases_slot, group_size = repack_mlx(
+        P, weight_node, Q4_K, scale_dtype=output_dtype
+    )
     (indices_slot,) = P.slot_map([indices_node])
 
     out = P.make_or_get_slot(head)
@@ -51,7 +50,7 @@ def emit_embedding(
         scales_slot,
         biases_slot,
         group_size=group_size,
-        bits=_BITS,
+        bits=Q4_K.bits,
         mode="affine",
         out_dtype=output_dtype,
     )

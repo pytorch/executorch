@@ -27,8 +27,8 @@ namespace vkcompute {
 namespace vkapi {
 
 struct ShaderMetadata final {
-  const uint32_t global_workgroup_size[3];
-  const uint32_t local_workgroup_size[3];
+  const uint32_t gwg[3];
+  const uint32_t lwg[3];
 };
 
 struct ShaderResult final {
@@ -50,8 +50,8 @@ struct ShaderDuration final {
   // Execution Properties
   uint32_t dispatch_id;
   std::string kernel_name;
-  VkExtent3D global_workgroup_size;
-  VkExtent3D local_workgroup_size;
+  GlobalWorkGrid gwg;
+  LocalWorkGroup lwg;
 
   // Query indexes
   uint32_t start_query_idx;
@@ -103,8 +103,8 @@ class QueryPool final {
       const CommandBuffer&,
       const uint32_t,
       const std::string&,
-      const VkExtent3D,
-      const VkExtent3D);
+      const GlobalWorkGrid&,
+      const LocalWorkGroup&);
 
   void shader_profile_end(const CommandBuffer&);
 

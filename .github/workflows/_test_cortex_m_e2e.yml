@@ -23,8 +23,16 @@ on:
         default: 120
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   run:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         model: ${{ fromJSON(inputs.models) }}
@@ -32,8 +40,8 @@ jobs:
       fail-fast: false
     with:
       job-name: ${{ matrix.model }}-${{ matrix.target }}
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ inputs.timeout }}

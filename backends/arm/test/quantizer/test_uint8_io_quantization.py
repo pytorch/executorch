@@ -11,7 +11,10 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    QuantizationPipeline,
+    TosaPipelineINT,
+)
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
@@ -40,6 +43,33 @@ class CloneAtIoBoundary(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.clone(x)
+
+
+class CatWithHighRangeBranch(torch.nn.Module):
+    def forward(self, img0: torch.Tensor, img1: torch.Tensor) -> torch.Tensor:
+        image = torch.cat([img0, img1], dim=1)
+        high_range = image * 20.0
+        merged = torch.cat([image, high_range], dim=1)
+        return torch.clone(merged)
+
+
+class InternalCatBetweenConvs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv0 = torch.nn.Conv2d(3, 4, 1)
+        self.conv1 = torch.nn.Conv2d(3, 4, 1)
+        self.conv2 = torch.nn.Conv2d(8, 4, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x0 = self.conv0(x)
+        x1 = self.conv1(x)
+        return self.conv2(torch.cat([x0, x1], dim=1))
+
+
+def _get_observer_scale(prepared, observer_node_name: str) -> float:
+    observer = prepared.get_submodule(observer_node_name)
+    scale, _ = observer.calculate_qparams()
+    return float(scale)
 
 
 def test_uint8_io_quantization_config_tosa_INT_applies_to_io():
@@ -94,3 +124,105 @@ def test_io_boundary_shared_cluster_is_quantized():
     assert (
         clone_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
     ), "clone node has no output_qspec — IO-boundary cluster stayed in float"
+
+
+def test_cat_annotation_uint8_input():
+    """Depending on the location of the cat, we use different observers.
+
+    If we have uint8 inputs followed immediately by a cat, we observer each
+    uint8 input independently. If we have a cat further-on in the graph, outside
+    of the uint8 boundary, we annotate the cat with a SharedObserver as usual.
+
+    """
+    model = CatWithHighRangeBranch().eval()
+    test_data = (torch.rand(1, 3, 8, 8), torch.rand(1, 3, 8, 8))
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+INT")
+
+    tosa_quantizer = TOSAQuantizer(compile_spec, use_composable_quantizer=True)
+    tosa_quantizer.set_global(get_symmetric_quantization_config())
+    tosa_quantizer.set_io(get_uint8_io_quantization_config())
+
+    exported = torch.export.export(model, test_data, strict=True)
+    prepared = prepare_pt2e(exported.module(), tosa_quantizer)
+    prepared(*test_data)
+
+    graph_nodes = {node.name: node for node in prepared.graph.nodes}
+    img0_observer = next(iter(graph_nodes["img0"].users))
+    img1_observer = next(iter(graph_nodes["img1"].users))
+    clone_observer = next(iter(graph_nodes["clone"].users))
+
+    img0_scale = _get_observer_scale(prepared, img0_observer.target)
+    img1_scale = _get_observer_scale(prepared, img1_observer.target)
+    assert img0_scale < 0.01
+    assert img1_scale < 0.01
+    # For uint8 input, the two inputs are observerd independently, hence need to
+    # have different scales on the two input images.
+    assert img0_scale != img1_scale
+    assert _get_observer_scale(prepared, clone_observer.target) > 0.05
+
+    second_cat = graph_nodes["cat_1"]
+    img_observer, high_range_observer = second_cat.args[0]
+
+    img_scale = _get_observer_scale(prepared, img_observer.target)
+    high_range_scale = _get_observer_scale(prepared, high_range_observer.target)
+    # For the second cat, we need to have the same scale on the inputs being concatenated
+    # because everything outside of the IO boundary is annotated as per the
+    # backends/arm/quantizer/quantization_annotator.py
+    assert img_scale == high_range_scale
+
+
+def test_internal_cat_still_shares_qspec_with_uint8_io():
+    """Regression: preserved uint8 model IO must not disable shared-qspec
+    annotation for internal cats between quantized operators.
+    """
+    model = InternalCatBetweenConvs().eval()
+    test_data = (torch.rand(1, 3, 8, 8),)
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+INT")
+
+    tosa_quantizer = TOSAQuantizer(compile_spec, use_composable_quantizer=True)
+    tosa_quantizer.set_global(get_symmetric_quantization_config())
+    tosa_quantizer.set_io(get_uint8_io_quantization_config())
+
+    exported = torch.export.export(model, test_data, strict=True)
+    prepared = prepare_pt2e(exported.module(), tosa_quantizer)
+
+    cat_nodes = [
+        n
+        for n in prepared.graph.nodes
+        if n.op == "call_function" and n.target == torch.ops.aten.cat.default
+    ]
+    assert len(cat_nodes) == 1, f"Expected 1 cat node, got {len(cat_nodes)}"
+    cat_node = cat_nodes[0]
+
+    assert Q_ANNOTATION_KEY in cat_node.meta
+    assert cat_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
+
+
+class SliceModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x[:, :3, :, :]
+        return self.conv(x)
+
+
+def test_uint8_slice_tosa() -> None:
+    """Make sure that the SLICE operator is delegated after
+    to_edge_transform_and_lower.
+    """
+    test_data = (torch.rand(1, 6, 768, 384),)
+    model = SliceModel().eval()
+    pipeline = TosaPipelineINT(
+        model,
+        test_data,
+        aten_op="torch.ops.aten.conv2d.default",
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.quantizer.set_io(get_uint8_io_quantization_config())
+    pipeline.change_args(
+        "check_not.exir",
+        ["executorch_exir_dialects_edge__ops_aten_"],
+    )
+    pipeline.run()

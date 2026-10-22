@@ -12,7 +12,7 @@
 // ET library (portable ops only, no hardware-specific backends).
 // Use this to verify the library works on your board.
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #if __has_include("model.h")
 #include "model.h"
 #else
@@ -24,6 +24,15 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 
+static bool g_loaded = false;
+
+// ExecuTorch logs go to a weak hook so the library does not depend on Serial.
+// Without this the runtime's own diagnostics -- allocation failures, operator
+// mismatches -- are discarded, and errors surface only as bare hex codes.
+extern "C" void et_arduino_log(const char* msg) {
+  Serial.print("ET| ");
+  Serial.println(msg);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -43,12 +52,17 @@ void setup() {
     Serial.println(" bytes");
     Serial.print("  Methods: ");
     Serial.println(program->num_methods());
+    g_loaded = true;
   } else {
-    Serial.println("ERROR: Model load failed");
+    Serial.print("ERROR: Model load failed 0x");
+    Serial.println((int)program.error(), HEX);
   }
 }
 
 void loop() {
-  Serial.println("ExecuTorch ready");
+  // Report the real state. Printing a fixed string here would look identical
+  // whether or not the model loaded, and setup() has already scrolled away by
+  // the time a serial monitor attaches.
+  Serial.println(g_loaded ? "ExecuTorch ready" : "ExecuTorch FAILED to load");
   delay(5000);
 }

@@ -182,6 +182,15 @@ void profiling_create_block(const char* name) {
 }
 
 void profiler_init(void) {
+  prof_header = (prof_header_t*)((uintptr_t)prof_buf + prof_header_offset);
+  prof_arr = (prof_event_t*)((uintptr_t)prof_buf + prof_events_offset);
+  mem_allocator_arr =
+      (prof_allocator_t*)((uintptr_t)prof_buf + prof_mem_alloc_info_offset);
+  mem_prof_arr =
+      (mem_prof_event_t*)((uintptr_t)prof_buf + prof_mem_alloc_events_offset);
+  num_blocks = 0;
+  prof_stats_dumped = false;
+  profile_state_tls = {-1, 0u};
   profiling_create_block("default");
 }
 

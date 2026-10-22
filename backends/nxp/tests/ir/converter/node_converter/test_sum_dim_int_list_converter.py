@@ -21,6 +21,13 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.sum_opt
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
     Transpose,
 )
+from executorch.backends.nxp.backend.ops_aliases import (
+    AddTensor,
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    SumDimIntList,
+)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -29,13 +36,6 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    AddTensor,
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-    SumDimIntList,
-)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -55,6 +55,12 @@ class SumModule(torch.nn.Module):
 
     def forward(self, x):
         return torch.sum(x, dim=self.dim, keepdim=self.keepdim)
+
+
+class SumDefaultParamsModule(torch.nn.Module):
+    @staticmethod
+    def forward(x):
+        return torch.sum(x)
 
 
 class SumAddModule(SumModule):
@@ -170,6 +176,19 @@ class TestSumDimIntListConverter:
     )
     def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = SumModule(dim, keep_dim)
+        assert_delegated(model, input_shape, mocker, request)
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            pytest.param((4, 2), id="2D."),
+            pytest.param((2, 3, 4), id="3D."),
+            pytest.param((1, 3, 3, 7), id="4D."),
+            pytest.param((3, 1, 4, 1, 5), id="5D."),
+        ],
+    )
+    def test__default_params(self, mocker, request, input_shape):
+        model = SumDefaultParamsModule()
         assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -314,7 +333,7 @@ class TestSumDimIntListConverter:
             self, mocker, request, dim
         ):
             # If the spatial dimensions are reduced (removed), the `sum` output will always be equal in channels
-            #  first and channels last, so no `Transpose` ops are added.
+            #  first and channels last, so no `Transpose` ops before `Sum` are added.
             input_shape = (1, 7, 3, 3)
             model = MaxPoolSumModule(dim, False)
 
@@ -387,9 +406,10 @@ class TestSumDimIntListConverter:
                 pytest.param((2, 3, 4, 5, 6), [-3], id="dim=[-3], 5D->4D"),
                 pytest.param((1, 2, 3, 4, 5, 6), (1, -1), id="dim=(1, -1), 6D->4D"),
             ],
-            ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_output(self, mocker, request, input_shape, dim):
+            # If the following node requires channels input, a `Transpose` operator must be added to make the output
+            # channels first in Neutron IR.
             model = SumDimIntListMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")

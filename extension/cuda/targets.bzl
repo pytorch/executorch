@@ -7,6 +7,19 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Keep runtime types independent of the caller-stream implementation.
+    runtime.cxx_library(
+        name = "runtime_api",
+        exported_headers = [
+            "export.h",
+            "runtime_api.h",
+        ],
+        visibility = ["PUBLIC"],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+    )
+
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
     # share a caller's stream. The caller-stream thread-local must be one
     # instance per process, so the main target stays shareable: OSS cxx_library
@@ -17,10 +30,15 @@ def define_common_targets():
         name = "caller_stream",
         srcs = [
             "caller_stream.cpp",
+            "device_guard.cpp",
         ],
         exported_headers = [
             "caller_stream.h",
-            "export.h",
+            "device_guard.h",
+        ],
+        exported_deps = [
+            ":runtime_api",
+            "//executorch/runtime/core:core",
         ],
         # Opt out of the OSS force_static default so consumers *can* link one
         # shared instance and keep the thread-local unique (see above); the
@@ -32,6 +50,34 @@ def define_common_targets():
             "-DEXECUTORCH_EXTENSION_CUDA_BUILDING",
         ],
         visibility = ["PUBLIC"],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "cuda_allocator",
+        # Allow delegates to share the singleton, as they share caller_stream.
+        force_static = False,
+        srcs = [
+            "cuda_allocator.cpp",
+        ],
+        exported_headers = [
+            "cuda_allocator.h",
+        ],
+        supports_python_dlopen = True,
+        preprocessor_flags = [
+            "-DEXECUTORCH_EXTENSION_CUDA_BUILDING",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            ":runtime_api",
+            "//executorch/runtime/core:device_allocator",
+        ],
+        deps = [
+            ":caller_stream",
+            "//executorch/runtime/platform:platform",
+        ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],

@@ -68,16 +68,12 @@ class CastInt64BuffersToInt32Pass(ArmPass):
 
         buffer = store[buffer_name]
         self._assert_within_int32(buffer, node)
-        logger.warning(
-            f"Casting buffer {node.name} from torch.int64 to torch.int32"
-            f" defined in {node.meta.get('stack_trace','[no stack trace found]')}"
-        )
         store[buffer_name] = buffer.to(torch.int32)
         node.meta["val"] = node.meta["val"].to(torch.int32)
         return True
 
-    def _to_int32(self, graph_module: torch.fx.GraphModule) -> bool:
-        modified = False
+    def _to_int32(self, graph_module: torch.fx.GraphModule) -> int:
+        converted = 0
         for node in graph_module.graph.nodes:
             if len(node.users) == 0:
                 continue
@@ -89,11 +85,16 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             if fake_tensor.dtype != torch.int64:
                 continue
             if is_buffer(self.exported_program, node):
-                modified |= self._cast_buffer_to_int32(node)
-        return modified
+                converted += self._cast_buffer_to_int32(node)
+        return converted
 
     def call(self, graph_module: torch.fx.GraphModule):
-        modified = self._to_int32(graph_module)
+        converted = self._to_int32(graph_module)
+        modified = converted > 0
         if modified:
             graph_module = super().call(graph_module).graph_module
+            logger.warning(
+                "CastInt64BuffersToInt32Pass: cast %d int64 buffer(s) to int32.",
+                converted,
+            )
         return PassResult(graph_module, modified)

@@ -1,4 +1,4 @@
-name: Weekly PyTorch Pin Bump
+name: Weekly PyTorch and TorchAO Pin Bump
 
 on:
   schedule:
@@ -54,15 +54,17 @@ jobs:
           git config user.email "pytorchbot@users.noreply.github.com"
           git checkout -b "${BRANCH}"
           git add torch_pin.py
+          git add install_requirements.py
           git add .ci/docker/ci_commit_pins/pytorch.txt
           git add runtime/core/portable_type/c10/
+          git add third-party/ao
 
           if git diff --cached --quiet; then
             echo "No changes to commit. Pin is already up to date."
             exit 0
           fi
 
-          git commit -m "Bump PyTorch pin to nightly ${{ steps.nightly.outputs.version }}"
+          git commit -m "Bump PyTorch and TorchAO pins for ${{ steps.nightly.outputs.version }}"
           git push -u origin "${BRANCH}"
 
           EXISTING=$(gh pr list --label "ci/pytorch-pin-bump" --state open --json number --jq '.[0].number')
@@ -75,11 +77,12 @@ jobs:
           read -r -d '' PR_BODY <<EOF || true
           ## Summary
 
-          Automated weekly PyTorch pin bump.
+          Automated weekly PyTorch and TorchAO pin bump.
 
           - Updates \`NIGHTLY_VERSION\` in \`torch_pin.py\` to \`${NIGHTLY}\`
           - Updates \`.ci/docker/ci_commit_pins/pytorch.txt\` to the corresponding nightly commit hash
           - Syncs c10 headers from PyTorch into \`runtime/core/portable_type/c10/\`
+          - Updates the TorchAO nightly pins and \`third-party/ao\` to the newest build available for every supported CUDA channel
 
           This PR was created automatically. If CI fails, Claude will attempt to fix issues (up to 3 attempts). If CI still fails, human review will be requested.
 
@@ -88,6 +91,7 @@ jobs:
           PR_BODY=$(echo "${PR_BODY}" | sed 's/^          //')
 
           gh pr create \
-            --title "Bump PyTorch pin to nightly ${NIGHTLY}" \
+            --title "Bump PyTorch and TorchAO pins for ${NIGHTLY}" \
             --body "${PR_BODY}" \
-            --label "ci/pytorch-pin-bump"
+            --label "ci/pytorch-pin-bump" \
+            --label "ciflow/cuda"

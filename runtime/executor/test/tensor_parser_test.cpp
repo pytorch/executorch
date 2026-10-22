@@ -21,10 +21,8 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;

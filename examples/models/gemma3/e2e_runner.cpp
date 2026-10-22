@@ -64,13 +64,10 @@ DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
 namespace {
 
-using ::executorch::extension::from_blob;
-using ::executorch::extension::Module;
 using ::executorch::extension::llm::Image;
 using ::executorch::extension::llm::make_image_input;
 using ::executorch::extension::llm::make_text_input;
 using ::executorch::extension::llm::MultimodalInput;
-using ::executorch::runtime::EValue;
 
 bool ends_with(const std::string& str, const std::string& suffix) {
   return str.size() >= suffix.size() &&

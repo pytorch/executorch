@@ -85,11 +85,17 @@ easiest local path is:
 ```
 conda activate et-mlx
 python install_executorch.py
-xcrun -sdk macosx --find metal
+xcrun -sdk macosx metal --version
 ```
 
-The `metal` command must resolve to an Xcode path, not fail under standalone
-Command Line Tools.
+The command must print Metal compiler version information. If it fails, select
+the full Xcode installation and download the separately installed Metal
+Toolchain component:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
+```
 
 With ExecuTorch pybindings:
 ```

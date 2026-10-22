@@ -11,6 +11,7 @@ from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
 import torch
+from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
@@ -46,6 +47,7 @@ _PRIMITIVE_TYPES = (
     torch.device,
     torch.dtype,
     torch.layout,
+    torch.memory_format,
 )
 
 
@@ -141,7 +143,15 @@ def get_propagated_const_tensor_dict(
         all_skip_targets = _DEFAULT_SKIP_TARGETS
 
     for node in exported_program.graph.nodes:
-        if node.op != "call_function" or node.target in all_skip_targets:
+        if (
+            node.op != "call_function"
+            or node.target is memory.alloc
+            or node.target in all_skip_targets
+            # Ops with side effects (RNG draws, mutation) have to run at
+            # runtime. `aten.rand` has no tensor inputs, so without this check
+            # it would be folded into a single frozen draw.
+            or node.is_impure()
+        ):
             continue
 
         if not is_const(
@@ -203,11 +213,17 @@ def replace_with_constant_node(
     # If prop_constant_tensor_fqn already exists in the state dict, we need
     # to create a new name. Find the largest suffix of "_prop_tensor_constant",
     # and increment it by 1 to form the new name.
-    if prop_constant_tensor_fqn in exported_program.constants:
+    # A program re-entering this pass can already carry a
+    # `_prop_tensor_constant*` in state_dict from an earlier run. Emission
+    # resolves placeholders against state_dict before constants, so reusing
+    # such a name lets the stale entry shadow the tensor written here. Both
+    # the check and the suffix scan therefore span state_dict too.
+    taken = exported_program.constants.keys() | exported_program.state_dict.keys()
+    if prop_constant_tensor_fqn in taken:
         suffix = 1 + max(
             (
                 int(name[len(prefix) :])
-                for name in exported_program.constants.keys()
+                for name in taken
                 if name.startswith(prefix) and name[len(prefix) :].isdigit()
             ),
             default=-1,

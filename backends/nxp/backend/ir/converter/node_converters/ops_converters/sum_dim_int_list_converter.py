@@ -25,8 +25,9 @@ from torch.nn import Parameter
 
 class SumDimIntListConverter(NodeConverter):
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
@@ -72,7 +73,12 @@ class SumDimIntListConverter(NodeConverter):
         t_op.builtin_options = sum_options.Sum(keepdim)
 
         ops = OpsList(middle_op=t_op)
-        dim = get_dim_and_handle_io_formats(self.builder, ops, dim, keepdim)
+        # dim default value is None, it that case no changes to dim or io_formats are needed and all dims are reduced
+        dim = (
+            get_dim_and_handle_io_formats(self.builder, ops, dim, keepdim)
+            if dim is not None and dim != []
+            else None
+        )
 
         convert_axes_from_attribute(t_op, self.builder, dim)
         self.builder.append_operators(ops.flatten())

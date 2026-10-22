@@ -15,6 +15,26 @@ To enable VGF neural accelerator statistics collection, set:
 EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS=1
 ```
 
+The statistics mode defaults to mode 1. Select mode 0 or 1 explicitly with:
+
+```text
+EXECUTORCH_VGF_NEURAL_STATISTICS_MODE=0
+# or
+EXECUTORCH_VGF_NEURAL_STATISTICS_MODE=1
+```
+
+The public values `0` and `1` map to Vulkan
+`VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM` and
+`VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM`, respectively. Invalid
+mode values produce a warning and fall back to mode 1. Set these environment
+variables before the VGF backend initializes its Vulkan device.
+
+When statistics are requested, the backend enables
+`VK_ARM_data_graph_neural_accelerator_statistics` only if both the device
+extension and `dataGraphNeuralAcceleratorStatistics` feature are supported. If
+support is missing, inference still proceeds and the emitted metadata reports
+statistics as unavailable.
+
 When this option is not set, the backend does not emit the
 VGF_NEURAL_STATISTICS delegate metadata event, even if general ETDump/runtime
 profiling is enabled.
@@ -30,7 +50,7 @@ The delegate metadata payload is a UTF-8 JSON wrapper. The wrapper schema is:
 ```json
 {
   "schema": "executorch.vgf.neural_statistics",
-  "schema_version": 1,
+  "schema_version": 2,
   "backend": "VgfBackend",
   "api": "VK_ARM_data_graph",
   "event_name": "VGF_NEURAL_STATISTICS",
@@ -38,6 +58,28 @@ The delegate metadata payload is a UTF-8 JSON wrapper. The wrapper schema is:
   "data_available": true,
   "available": true,
   "reason": "",
+  "statistics_mode": {
+    "executorch_index": 1,
+    "vulkan_value": 2,
+    "vulkan_name": "VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM"
+  },
+  "target": {
+    "available": true,
+    "device_name": "Mali-G2-Pro-NX MC1",
+    "vendor_id": 5045,
+    "device_id": 0,
+    "driver_version": 0
+  },
+  "counter_layout": {
+    "available": true,
+    "schema_id": "arm.mali-g2.neural-statistics.mode1",
+    "schema_version": 1,
+    "endianness": "little",
+    "word_type": "uint32",
+    "words_per_task": 64,
+    "leading_block_count": 1,
+    "reason": ""
+  },
   "segments": []
 }
 ```
@@ -81,8 +123,16 @@ Each segment can contain:
 }
 ```
 
-We don't parse the neural accelerator blobs. Consumers should treat
-debug_database, statistics_info, and statistics_memory as opaque bytes.
+ExecuTorch keeps `debug_database`, `statistics_info`, and
+`statistics_memory` as raw/opaque blobs. Schema v2 adds normalized
+`statistics_mode`, `target`, and `counter_layout` fields next to those blobs so
+offline tooling does not have to infer the mode from counter-value patterns.
+
+The registered counter layout currently covers Arm Mali-G2 targets. For an
+unrecognized target, `counter_layout.available` is false rather than claiming
+that the G2 schema applies. Inspector continues to accept legacy schema-v1
+ETDumps, but v1 records do not contain enough information to identify the mode
+without external knowledge.
 
 ## Reading from Inspector
 
@@ -94,6 +144,9 @@ records = inspector.get_vgf_neural_statistics()
 
 for record in records:
     print(record["schema_version"], record["data_available"])
+    print(record.get("statistics_mode"))
+    print(record.get("target"))
+    print(record.get("counter_layout"))
     for segment in record["segments"]:
         stats_bytes = segment["statistics_memory"]["raw_data"]
         debug_db_bytes = segment["debug_database"]["raw_data"]

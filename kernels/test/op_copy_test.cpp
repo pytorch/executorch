@@ -20,7 +20,6 @@ using namespace ::testing;
 using executorch::aten::MemoryFormat;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpCopyTest : public OperatorTest {

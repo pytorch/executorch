@@ -17,7 +17,10 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa.backend import TOSABackend
-from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.mapping import (
+    TOSA_CONTROL_FLOW_SOURCE_NODE_META,
+    TosaSpecialDtype,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -386,7 +389,58 @@ def test_fuse_constant_args_preserves_unused_control_flow_inputs() -> None:
         "x",
     ]
     assert placeholders[1].meta["is_input"] is True
+    cond_inputs = cast(list[torch.fx.Node], cond_node.args[-1])
+    # Regularization must retain the exact parent operand, including when this
+    # unused branch input is preserved for control-flow signature consistency.
+    assert placeholders[1].meta[TOSA_CONTROL_FLOW_SOURCE_NODE_META] is cond_inputs[0]
     assert len(placeholders[1].users) == 0
+
+
+def test_fuse_constant_args_keeps_mutable_buffer_reads() -> None:
+    class SlidingWindow(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.state: torch.Tensor
+            initial = torch.arange(8, dtype=torch.float32).reshape(1, 2, 4)
+            self.register_buffer("state", initial)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            window = torch.cat([self.state[:, 1:, :], x], dim=1)
+            self.state.copy_(window)
+            return window
+
+    compile_spec = common.get_tosa_compile_spec(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    )
+    tester = ArmTester(
+        SlidingWindow(),
+        example_inputs=(torch.ones(1, 1, 4),),
+        compile_spec=compile_spec,
+    )
+    tester.export().to_edge()
+    exported_program = tester.get_artifact(StageType.TO_EDGE).exported_program()
+    (state_name,) = [
+        name
+        for name, target in exported_program.graph_signature.inputs_to_buffers.items()
+        if target == "state"
+    ]
+
+    pass_result = FuseConstantArgsPass(exported_program).call(
+        exported_program.graph_module
+    )
+
+    # The slice reads only the state, so it looks constant, but folding it would
+    # freeze the initial value and orphan the state placeholder.
+    graph = pass_result.graph_module.graph
+    assert any(
+        node.op == "call_function"
+        and node.target == exir_ops.edge.aten.slice_copy.Tensor
+        for node in graph.nodes
+    )
+    assert state_name in [node.name for node in graph.find_nodes(op="placeholder")]
+    signature = exported_program.graph_signature
+    assert signature.inputs_to_buffers[state_name] == "state"
+    assert "state" in signature.buffers_to_mutate.values()
 
 
 def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:

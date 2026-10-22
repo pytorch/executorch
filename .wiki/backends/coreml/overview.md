@@ -273,4 +273,4 @@ The `to_edge_with_preserved_ops` API (experimental) allows preserving ops like `
 
 ## CoreML Export on Linux
 
-CoreML export now works on Linux (as of v0.6+). The `coremltools` package can run on Linux for AOT compilation, though runtime execution still requires macOS/iOS. [Source: #9800]
+CoreML export now works on Linux x86_64 (as of v0.6+). The `coremltools` package can run there for AOT compilation, though runtime execution still requires macOS/iOS. It is x86_64 only because coremltools publishes no build for any other Linux architecture. [Source: #9800]

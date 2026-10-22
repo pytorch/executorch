@@ -19,6 +19,7 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/inception_v4:ic4_model",  # @manual
         "//executorch/examples/models/llama:llama2_model",  # @manual
         "//executorch/examples/models/mobilebert:mobilebert_model",  # @manual
+        "//executorch/examples/models/mlperf_tiny:models",  # @manual
         "//executorch/examples/models/mobilenet_v2:mv2_model",  # @manual
         "//executorch/examples/models/mobilenet_v3:mv3_model",  # @manual
         "//executorch/examples/models/resnet:resnet_model",  # @manual
@@ -34,8 +35,6 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/smollm2:smollm2",  # @manual
         "//executorch/examples/models/smollm3:smollm3",  # @manual
         "//executorch/examples/models/smolvlm:smolvlm",  # @manual
-        "//executorch/examples/models/whisper:whisper",  # @manual
-        "//executorch/examples/models/yolo26:yolo26",  # @manual
     ],
 )
 

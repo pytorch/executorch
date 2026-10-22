@@ -15,7 +15,6 @@ ExecuTorch supports desktop and laptop deployment across Linux, macOS, and Windo
 
 ### macOS
 - [Core ML (recommended)](backends/coreml/coreml-overview.md)
-- [MPS (Apple Silicon)](backends/mps/mps-overview.md)
 - [XNNPACK (CPU)](backends/xnnpack/xnnpack-overview.md)
 
 ### Windows

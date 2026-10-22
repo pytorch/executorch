@@ -16,6 +16,12 @@ inline constexpr auto kEosIds = "get_eos_ids";
 inline constexpr auto kMaxSeqLen = "get_max_seq_len";
 inline constexpr auto kMaxContextLen = "get_max_context_len";
 inline constexpr auto kVocabSize = "get_vocab_size";
+inline constexpr auto kActivationDtype = "get_activation_dtype";
+inline constexpr auto kLogitsToKeepMode = "get_logits_to_keep_mode";
+inline constexpr auto kNumCaches = "get_n_caches";
+inline constexpr auto kKVHeads = "get_kv_heads";
+inline constexpr auto kHeadDims = "get_head_dims";
+inline constexpr auto kWindows = "get_windows";
 inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
@@ -24,5 +30,12 @@ inline constexpr auto kVisionEncoderMethod = "vision_encoder";
 inline constexpr auto kAudioEncoderMethod = "audio_encoder";
 inline constexpr auto kTokenEmbeddingMethod = "token_embedding";
 inline constexpr auto kTextModelMethod = "text_decoder";
+
+// Text method name conventions. A single-method PTE exports kForwardMethod; a
+// two-method PTE exports kPrefillMethod and kDecodeMethod instead, and is run
+// with a dedicated decoder runner per stage.
+inline constexpr auto kForwardMethod = "forward";
+inline constexpr auto kPrefillMethod = "prefill";
+inline constexpr auto kDecodeMethod = "decode";
 
 } // namespace executorch::extension::llm
