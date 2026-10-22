@@ -161,3 +161,32 @@ class TestXnnpackPartitioner(unittest.TestCase):
         fwd2_et = executorch_module.run_method("forward_2", example_inputs)
         self.assertTrue(torch.allclose(fwd1_eager, fwd1_et[0], 1e-3))
         self.assertTrue(torch.allclose(fwd2_eager, fwd2_et[0], 1e-3))
+
+    def test_input_with_non_contiguous_dim_order(self):
+        """
+        A delegate input whose dim order is neither contiguous nor channels-last,
+        here (1, 0, 2) because the example input is a transposed view, must be
+        read in its memory layout. Previously its sizes were serialized in
+        logical order while the runtime reshapes it in dim order, so shape
+        propagation failed with xnn_status_invalid_parameter.
+        """
+
+        class BatchMatmul(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.bmm(x, y)
+
+        x = torch.randn(4, 8, 16).transpose(0, 1)
+        y = torch.randn(8, 16, 4)
+        self.assertEqual(x.dim_order(), (1, 0, 2))
+        n = torch.export.Dim("n", min=2, max=8)
+        exported = export(BatchMatmul(), (x, y), dynamic_shapes=({1: n}, {2: n}))
+        executorch = to_edge_transform_and_lower(
+            exported, partitioner=[XnnpackPartitioner()]
+        ).to_executorch()
+
+        # The bindings copy an input's buffer as is, so hand over x's bytes in
+        # its memory order (dim order (1, 0, 2)) under its logical shape.
+        x_in_memory_order = x.transpose(0, 1).contiguous().view(x.shape)
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        out = executorch_module.run_method("forward", (x_in_memory_order, y))
+        self.assertTrue(torch.allclose(torch.bmm(x, y), out[0], atol=1e-5))
