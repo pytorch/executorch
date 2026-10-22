@@ -372,6 +372,32 @@ linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 #################
 
 
+def linear_q8csw(
+    x: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+):
+    # weight_scales (and bias) may be padded to a multiple of 4.
+    n = weights.shape[0]
+    weights = weights.to(x.dtype) * weight_scales[:n].to(x.dtype).unsqueeze(-1)
+    return torch.nn.functional.linear(x, weights, None if bias is None else bias[:n])
+
+
+name = "linear_q8csw"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        Tensor weights,
+        Tensor weight_scales,
+        Tensor? bias = None) -> Tensor
+    """
+)
+lib.impl(name, linear_q8csw, "CompositeExplicitAutograd")
+linear_q8csw_op = getattr(getattr(torch.ops, namespace), name)
+
+
 def linear_q8ta_q8csw(
     x: torch.Tensor,
     input_scale: float,

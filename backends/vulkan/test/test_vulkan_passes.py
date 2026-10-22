@@ -549,6 +549,63 @@ class TestVulkanPasses(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(emb_x + emb_y, eager_ref, atol=1e-3, rtol=1e-3))
 
+    def test_fuse_torchao_int8_weight_only_linear(self):
+        """A torchao int8 per-channel weight-only linear (dequantize_affine with
+        [N, 1] scales -> linear) should fuse into et_vk.linear_q8csw. Unfused, the
+        dequantize_affine would be serialized into the delegate, which has no
+        kernel for it.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from executorch.backends.transforms.utils import get_param_tensor
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        in_features, out_features = 64, 130  # not a multiple of 4
+
+        model = torch.nn.Linear(in_features, out_features, bias=True).eval()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.randn(2, 8, in_features),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        self.assertEqual(op_node_count(gm, "linear_q8csw.default"), 1)
+        self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 0)
+
+        fused_node = next(
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "linear_q8csw.default"
+        )
+        weight, scales, bias = (get_param_tensor(ep, n) for n in fused_node.args[1:4])
+        # Scales and bias are flattened to [N] and padded to a multiple of 4.
+        self.assertEqual(tuple(scales.shape), (132,))
+        self.assertEqual(tuple(bias.shape), (132,))
+
+        fused_out = torch.ops.et_vk.linear_q8csw.default(
+            sample_inputs[0], weight, scales, bias
+        )
+        self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-5, rtol=1e-5))
+
     def test_register_param_mutation(self):
         """utils.register_param_mutation is a storage-keyed idempotency guard:
         the first call for a param returns True (proceed and record the tag), a

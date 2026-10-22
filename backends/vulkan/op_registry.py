@@ -484,6 +484,7 @@ def register_quantizedlinearqcsnw_cpp_ops():
 @update_features(
     [
         exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.linear_q8csw.default,
         exir_ops.edge.et_vk.linear_q4gsw.default,
     ]
 )
