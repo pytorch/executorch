@@ -154,12 +154,16 @@ struct WmmaRow {
   // in order, so a later row can serve the shapes an earlier one rejects.
   bool (*shape_ok)(const WmmaShape&);
   bool rowmajor_a = false; // kDq8caQ4gsw: reads row-major int8 activations
+  // kQ4gsw: the texture3d variant reads A through a storage image, so the
+  // input must be bound in VK_IMAGE_LAYOUT_GENERAL.
+  bool image_a = false;
 };
 
 struct WmmaChoice {
   std::string kernel_base;
   WmmaTile tile;
   bool rowmajor_a = false;
+  bool image_a = false;
 };
 
 // The rows of a family, in selection order (empty for kNone).
