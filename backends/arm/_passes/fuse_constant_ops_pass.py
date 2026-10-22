@@ -20,6 +20,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
@@ -50,7 +51,7 @@ class FuseConstantArgsPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgDtypePass}
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
