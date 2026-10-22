@@ -55,7 +55,9 @@ const std::vector<WmmaRow>& xe2_rows() {
        "linear_q4gsw_wmma_t128x128k16g82s16m8flib",
        {128, 128, 16, 8, 2, 16, 8, false},
        kWmmaTex3dTex2d,
-       nullptr},
+       nullptr,
+       /*rowmajor_a=*/false,
+       /*image_a=*/true},
       // 4w, buffer IO: 4 x 4 subgroups.
       {WmmaOp::kQ4gsw,
        "linear_q4gsw_wmma_t128x128k16g44s16m8fli",
@@ -251,7 +253,7 @@ std::optional<WmmaChoice> select_wmma_kernel(
     const WmmaShape& shape) {
   for (const WmmaRow& row : coopmat_family_rows(coopmat_family(device))) {
     if (wmma_row_fits(device, shape, row)) {
-      return WmmaChoice{row.kernel_base, row.tile, row.rowmajor_a};
+      return WmmaChoice{row.kernel_base, row.tile, row.rowmajor_a, row.image_a};
     }
   }
   return std::nullopt;
