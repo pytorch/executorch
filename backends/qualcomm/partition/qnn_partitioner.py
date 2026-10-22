@@ -114,7 +114,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             for soc_model in target_socs
         ]
 
-    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
+    def is_node_supported(self, _, node: torch.fx.Node) -> bool:  # noqa: C901
         if node.op != "call_function" or node.target in not_supported_operator:
             return False
 
