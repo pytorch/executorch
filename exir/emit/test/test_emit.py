@@ -22,6 +22,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
     to_edge,
+    to_edge_transform_and_lower,
 )
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
@@ -1127,6 +1128,37 @@ class TestEmit(unittest.TestCase):
                 torch.allclose(et_outputs[1], eager_outputs[1]),
                 f"Stacked outputs mismatch for shape {test_inputs[0].shape}: {et_outputs[1]} vs {eager_outputs[1]}",
             )
+
+    def test_run_emit_lstm_while_loop_dynamic_shape(self) -> None:
+        """LSTM exported with the while_loop decomposition keeps its dynamic
+        sequence length through lowering (issue #18487)."""
+        from torch.export._patches import register_lstm_while_loop_decomposition
+
+        class EmbeddingLSTM(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.embedding = torch.nn.Embedding(100, 32)
+                self.lstm = torch.nn.LSTM(32, 64, batch_first=True)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.lstm(self.embedding(x))[0]
+
+        model = EmbeddingLSTM().eval()
+        with register_lstm_while_loop_decomposition():
+            ep = export(
+                model,
+                (torch.randint(0, 100, (1, 16)),),
+                dynamic_shapes=({1: Dim("seq", min=1, max=128)},),
+            )
+            et = to_edge_transform_and_lower(ep).to_executorch()
+        loaded_model = _load_for_executorch_from_buffer(et.buffer)
+
+        for seq_len in (16, 5, 1, 128):
+            inputs = (torch.randint(0, 100, (1, seq_len)),)
+            et_output = loaded_model(inputs)[0]
+            eager_output = model(*inputs)
+            self.assertEqual(et_output.shape, eager_output.shape)
+            self.assertTrue(torch.allclose(et_output, eager_output, atol=1e-5))
 
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
