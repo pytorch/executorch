@@ -21,7 +21,7 @@ namespace vkcompute {
 namespace {
 
 // Dispatch node args:
-// {{output}, {fp_input, packed_weight, packed_weight_scales, packed_bias}}
+// {{output}, {fp_input}, {packed_weight, packed_weight_scales, packed_bias}}
 // resize_args: {group_size, weight_data, bias_data}
 WmmaShape q4gsw_runtime_shape(
     ComputeGraph* graph,
@@ -29,7 +29,7 @@ WmmaShape q4gsw_runtime_shape(
     const std::vector<ValueRef>& resize_args) {
   const ValueRef output = args.at(0).refs.at(0);
   const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_weight = args.at(1).refs.at(1);
+  const ValueRef packed_weight = args.at(2).refs.at(0);
 
   const std::vector<int64_t> out_sizes = graph->sizes_of(output);
   WmmaShape s;
@@ -85,7 +85,7 @@ vkapi::ShaderInfo pick_q4gsw_linear_wmma_shader(
     const std::vector<ValueRef>& resize_args) {
   const ValueRef output = args.at(0).refs.at(0);
   const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_weight = args.at(1).refs.at(1);
+  const ValueRef packed_weight = args.at(2).refs.at(0);
 
   const std::optional<WmmaChoice> choice = select_wmma_kernel(
       coopmat_device_key(graph), q4gsw_runtime_shape(graph, args, resize_args));
@@ -124,11 +124,18 @@ bool try_add_q4gsw_linear_wmma_node(
   }
   // Take the op over only if a row applies to its build-time shape; otherwise
   // it stays entirely on the existing path, including for later resizes.
-  if (!select_wmma_kernel(
-           coopmat_device_key(&graph), q4gsw_build_time_shape(graph, args))
-           .has_value()) {
+  const std::optional<WmmaChoice> build_choice = select_wmma_kernel(
+      coopmat_device_key(&graph), q4gsw_build_time_shape(graph, args));
+  if (!build_choice.has_value()) {
     return false;
   }
+  // A storage-image read of the input needs VK_IMAGE_LAYOUT_GENERAL
+  // (VUID-vkCmdDispatch-imageLayout-00344), which read-write access selects.
+  // The fallback kernels sample the input, which GENERAL also allows.
+  const vkapi::MemoryAccessFlags input_access = build_choice->image_a &&
+          graph.storage_type_of(fp_input) == utils::kTexture3D
+      ? vkapi::kReadWrite
+      : vkapi::kRead;
 
   const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
   const QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
@@ -159,8 +166,8 @@ bool try_add_q4gsw_linear_wmma_node(
       wmma_linear_gwg,
       quantized_linear_lwg,
       {{output, vkapi::kWrite},
-       {{fp_input, packed_weight, packed_weight_scales, packed_bias},
-        vkapi::kRead}},
+       {fp_input, input_access},
+       {{packed_weight, packed_weight_scales, packed_bias}, vkapi::kRead}},
       {graph.sizes_ubo(output), graph.sizes_ubo(fp_input)},
       {},
       // The spec constants of the linear_q4gsw_{tiled,coop} kernels. The
