@@ -7,9 +7,9 @@
 """Serve Muse Glimmer text/images with the batching multiplexed worker.
 
 Requires an off-graph batching export: export_solo.py --use-offgraph-kv-cache
-for MLX (text and images); add --backend cuda for CUDA (text only). DFlash is
-opt-in, MLX only, and requires a matching export; the legacy launcher and
-runners remain separate.
+for MLX; add --backend cuda for CUDA. Both serve text and images when exported
+with --mmproj. DFlash is opt-in and requires a matching export; the legacy
+launcher and runners remain separate.
 """
 
 import argparse
@@ -116,8 +116,6 @@ def _validate_backend(parser, args):
         return
     if args.data_path is None:
         parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
-    if args.pos_embed_path is not None:
-        parser.error("--backend cuda serves text only; omit --pos-embed-path")
 
 
 def _validate_paths(parser, args):
