@@ -14,3 +14,28 @@ fbcode_target(
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "muse_glimmer_model",
+    srcs = ["model.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.muse_glimmer.model",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "dflash_model",
+    srcs = ["dflash_model.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.muse_glimmer.model",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/muse-glimmer/model:muse_glimmer_model",
+    ],
+)

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import json
 from typing import TYPE_CHECKING
 
 import torch
@@ -177,6 +178,8 @@ def export_dflash(
     draft_max_cells: int | None = None,
     max_draft_owners: int = 4,
     forward_sizes=None,
+    kv_layout: str = "cell",
+    max_kv_seqs: int = 4,
 ) -> None:
     """Export DFlash target + draft to one CUDA or MLX .pte.
 
@@ -188,8 +191,6 @@ def export_dflash(
     mmproj loader and vision export contract to add ``vision_encoder``.
     """
     validate_dflash_export_options(backend, use_offgraph_kv_cache)
-    if use_offgraph_kv_cache and backend == "cuda" and mmproj is not None:
-        raise ValueError("the CUDA batching DFlash export is text-only")
 
     import executorch.extension.llm.export.gguf  # noqa: F401
     import executorch.extension.llm.export.int4  # noqa: F401
@@ -247,6 +248,22 @@ def export_dflash(
             activation_dtype=activation_dtype,
         )
 
+    vision_model = None
+    pos_embed_table = None
+    if mmproj is not None:
+        from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+            load_mmproj_vision_model,
+        )
+
+        print("=" * 60)
+        print("Loading vision encoder...")
+        print("=" * 60)
+        vision_model, pos_embed_table, _ = load_mmproj_vision_model(
+            mmproj,
+            backend=backend,
+            activation_dtype=activation_dtype,
+        )
+
     if use_offgraph_kv_cache and backend == "cuda":
         from executorch.examples.models.muse_glimmer.export.export_solo import (
             DEFAULT_FORWARD_SIZES,
@@ -265,24 +282,13 @@ def export_dflash(
             dflash_draft=draft_model,
             max_draft_owners=max_draft_owners,
             draft_max_cells=draft_max_cells,
+            vision_model=vision_model,
+            pos_embed_table=pos_embed_table,
+            max_vision_patches=max_vision_patches,
+            kv_layout=kv_layout,
+            max_kv_seqs=max_kv_seqs,
         )
         return
-
-    vision_model = None
-    pos_embed_table = None
-    if mmproj is not None:
-        from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-            load_mmproj_vision_model,
-        )
-
-        print("=" * 60)
-        print("Loading vision encoder...")
-        print("=" * 60)
-        vision_model, pos_embed_table, _ = load_mmproj_vision_model(
-            mmproj,
-            backend=backend,
-            activation_dtype=activation_dtype,
-        )
 
     backend_export = _export_dflash_mlx if backend == "mlx" else _export_dflash_cuda
     backend_export(
@@ -308,9 +314,19 @@ def prepare_cuda_packed_draft(
     max_step_tokens: int,
     max_cells: int,
     max_owners: int,
+    kv_layout: str = "cell",
+    max_kv_seqs: int = 4,
 ):
-    """Trace the packed draft and publish its independent cell geometry."""
-    from executorch.examples.models.muse_glimmer.export.export_solo import cell_manifest
+    """Trace the packed draft and publish its independent cache geometry.
+
+    On the sequence layout the draft keeps one private history per resident
+    session, and each owner's block attends all of it and the whole block.
+    """
+    from executorch.examples.models.muse_glimmer.export.export_solo import (
+        batched_sequence_manifest,
+        cell_manifest,
+        DRAFT_MAX_KV_SEQS_METHOD,
+    )
     from executorch.examples.models.muse_glimmer.model.dflash_model import (
         DFlashPackedExportModel,
     )
@@ -333,7 +349,12 @@ def prepare_cuda_packed_draft(
     if type(max_step_tokens) is not int or max_step_tokens < 2:
         raise ValueError("packed DFlash max_step_tokens must be an integer >= 2")
     max_write = max_step_tokens + max_owners * block
-    if type(max_cells) is not int or max_cells <= max_write:
+    if kv_layout not in ("cell", "sequence"):
+        raise ValueError(f"kv_layout must be 'cell' or 'sequence', got {kv_layout!r}")
+    sequence_layout = kv_layout == "sequence"
+    if sequence_layout and (type(max_kv_seqs) is not int or max_kv_seqs <= 0):
+        raise ValueError("the sequence layout needs max_kv_seqs > 0")
+    if not sequence_layout and (type(max_cells) is not int or max_cells <= max_write):
         raise ValueError("draft max_cells must exceed context plus all owner blocks")
     if config.dim != target_config.dim:
         raise ValueError("draft and target hidden dimensions must agree")
@@ -348,8 +369,13 @@ def prepare_cuda_packed_draft(
 
     convert_quantized_tensors_for_cuda(draft_model)
     draft_model.to(torch.bfloat16)
-    manifest = cell_manifest(
-        enable_dflash_offgraph_kv_cache(draft_model, max_write), max_cells
+    single_manifest = enable_dflash_offgraph_kv_cache(draft_model, max_write)
+    manifest = (
+        batched_sequence_manifest(
+            single_manifest, max_kv_seqs, causal=False, context_window=True
+        )
+        if sequence_layout
+        else cell_manifest(single_manifest, max_cells)
     )
     combined = DFlashPackedExportModel(target_model, draft_model)
     owners = (
@@ -417,7 +443,6 @@ def prepare_cuda_packed_draft(
             "get_dflash_target_layers": torch.tensor(
                 config.target_layers, dtype=torch.int32
             ),
-            "get_draft_offgraph_kv_max_cells": max_cells,
             "get_draft_max_step_tokens": max_write,
             "get_draft_max_owners": max_owners,
             "get_draft_dflash_block_size": block,
@@ -425,6 +450,14 @@ def prepare_cuda_packed_draft(
             "get_dflash_draft_cache_key": "muse_glimmer_draft",
         }
     )
+    if sequence_layout:
+        metadata[DRAFT_MAX_KV_SEQS_METHOD] = max_kv_seqs
+        # Fixes each sequence column's rows, which the runtime must match.
+        metadata["get_draft_offgraph_kv_seq_capacity"] = json.loads(single_manifest)[
+            "maximum_capacity"
+        ]
+    else:
+        metadata["get_draft_offgraph_kv_max_cells"] = max_cells
     return programs, manifest, metadata
 
 
@@ -1129,6 +1162,11 @@ def main() -> None:
     parser.add_argument("--max-cells", type=int, default=65536)
     parser.add_argument("--draft-max-cells", type=int, default=None)
     parser.add_argument("--max-draft-owners", type=int, default=4)
+    from executorch.examples.models.muse_glimmer.export.export_solo import (
+        add_kv_layout_arguments,
+    )
+
+    add_kv_layout_arguments(parser)
     parser.add_argument("--forward-sizes", default="1,2,4,8,16,32,64")
     args = parser.parse_args()
 
@@ -1164,6 +1202,8 @@ def main() -> None:
         draft_max_cells=args.draft_max_cells,
         max_draft_owners=args.max_draft_owners,
         forward_sizes=[int(n) for n in args.forward_sizes.split(",") if n],
+        kv_layout=args.kv_layout,
+        max_kv_seqs=args.max_kv_seqs,
     )
 
 

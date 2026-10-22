@@ -58,17 +58,8 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
         session_tokens > 1,
         InvalidArgument,
         "Muse Glimmer CUDA: sessions need room for a prompt and prediction");
-    auto spec = std::make_shared<const MuseGlimmerPreparationSpec>(
-        MuseGlimmerPreparationSpec{
-            aten::ScalarType::BFloat16,
-            /*hidden_dim=*/0,
-            session_tokens,
-            static_cast<int32_t>(executor->preferred_batch_tokens()),
-            vocab,
-            /*has_vision=*/false,
-            /*max_soft_tokens=*/0,
-            config.image_limits,
-            config.bos_id});
+    ET_ASSIGN_OR_RETURN(
+        spec, make_cuda_preparation(*executor, config, session_tokens));
     return MuseGlimmerBackend{std::move(executor), std::move(spec)};
   }
 #endif
