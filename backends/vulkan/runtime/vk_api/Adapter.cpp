@@ -185,6 +185,11 @@ VkDevice create_logical_device(
     if (std::strcmp(extension, VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME) ==
         0) {
       vulkan_memory_model_features.vulkanMemoryModel = VK_TRUE;
+      // Existing shaders use Device memory scope
+      // (VUID-RuntimeSpirv-vulkanMemoryModel-06265).
+      vulkan_memory_model_features.vulkanMemoryModelDeviceScope =
+          physical_device.vulkan_memory_model_features
+              .vulkanMemoryModelDeviceScope;
       vulkan_memory_model_features.pNext = extension_list_top;
       extension_list_top = &vulkan_memory_model_features;
       break;
