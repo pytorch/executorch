@@ -57,5 +57,6 @@ from . import (  # noqa
     op_sub,
     op_tanh,
     op_to_copy,
+    op_upsample_nearest2d,
     op_view_copy,
 )
