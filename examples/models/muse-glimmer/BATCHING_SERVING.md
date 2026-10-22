@@ -1,10 +1,10 @@
 # Muse Glimmer Batching Serving
 
-The batching runner and multiplexed worker support MLX autoregressive generation
-with text only or text plus one image across the submitted conversation, and
-CUDA autoregressive generation with text only. They are opt-in entry points; the
+The batching runner and multiplexed worker support MLX and CUDA autoregressive
+generation with text only or text plus one image across the submitted
+conversation. They are opt-in entry points; the
 legacy runners and export defaults remain unchanged. DFlash batching runs on MLX
-and CUDA (text only).
+(text only) and CUDA, which also serves images when exported with `--mmproj`.
 CUDA specifics are in [CUDA](#cuda) below.
 
 ## Export
@@ -205,8 +205,10 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
 
 `--forward-sizes` (default `1,2,4,8,16,32,64`), `--max-step-tokens` (default
 4096) and `--max-cells` (default 65536) size the methods and the shared KV
-pool; `--logits` samples on the host instead. The artifact is text only, so
-`--mmproj` is rejected.
+pool; `--logits` samples on the host instead. Add `--mmproj` for images: the
+token forwards are unchanged, and the artifact gains `vision_encoder`,
+`embed_text` and a dynamic `forward_from_embeddings` over the same cache, which
+runs only the prefill steps that carry an image.
 
 Build with `make muse-glimmer-batching-cuda` on Linux, then serve:
 
@@ -221,8 +223,8 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
   --max-context 8192
 ```
 
-`--data-path` is required and `--pos-embed-path` is rejected; image requests
-fail preparation. Every resident session reserves `--max-context` cells of the
+`--data-path` is required. Image artifacts read `pos_embed.bin` beside
+`model.pte`, or `--pos-embed-path`. Every resident session reserves `--max-context` cells of the
 pool: requests, `--prefix-cache-entries` snapshots, and one capture lane when
 snapshots are enabled. Their total reservation must leave one cell for padded
 writes within the exported `--max-cells`.
