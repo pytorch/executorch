@@ -25,6 +25,11 @@ namespace vkcompute {
 //
 enum class SDPAMode { LLM, FUSED };
 
+// has_fused_qk_softmax: the graph also holds the node added by
+// add_sdpa_compute_attn_weights_with_softmax_node for the same attention. Only
+// then does this node (and the matching softmax node) skip its dispatch on
+// decode within the fused cutoff. Leave it false when attn_weights itself is
+// the wanted output.
 void add_sdpa_compute_attn_weights_node(
     ComputeGraph& graph,
     const ValueRef q,
@@ -33,7 +38,20 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_mask,
     const float scale_val,
     const ValueRef attn_weights,
-    const SDPAMode mode);
+    const SDPAMode mode,
+    const bool has_fused_qk_softmax = false);
+
+// Decode-only fused Q @ K^T + softmax, LLM mode. It is added alongside the
+// separate attn-weights and softmax nodes, which must be created with
+// has_fused_qk_softmax = true; their work group pickers then make sure exactly
+// one of the two paths dispatches for the current context length.
+void add_sdpa_compute_attn_weights_with_softmax_node(
+    ComputeGraph& graph,
+    const ValueRef q,
+    const ValueRef k,
+    const ValueRef input_pos_symint,
+    const float scale_val,
+    const ValueRef attn_weights_softmax);
 
 void add_sdpa_attn_weights_softmax_node(
     ComputeGraph& graph,
@@ -42,7 +60,8 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef attn_weights_softmax,
-    const SDPAMode mode);
+    const SDPAMode mode,
+    const bool has_fused_qk_softmax = false);
 
 // Scalar values for the shader_override knob (see add_sdpa_compute_out_node).
 constexpr int64_t kShaderOverrideForceNonGqa = 0;
