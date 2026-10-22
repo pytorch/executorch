@@ -183,7 +183,8 @@ class TestQuantFusionPass(unittest.TestCase):
         )
 
         m = m.to_executorch()
-        # check that we are using out variant of add and slice_copy
+        # The slice aliases an input tensor, so it remains a slice_copy rather than
+        # a zero-copy memory alias.
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
             "torch.ops.aten.slice_copy.Tensor_out"
         ).run(m.exported_program().graph_module.code)
