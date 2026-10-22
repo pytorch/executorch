@@ -33,7 +33,19 @@ class CDist(torch.nn.Module):
 
 class DecomposeCDist(ExportPass):
     """
-    Decompose for math equivalent op.
+    Decompose aten.cdist and aten._cdist_forward into supported primitives.
+
+    torch.cdist(x, y, p=2) computes pairwise Euclidean distances between all
+    row pairs of two 2D (or batched) input tensors x of shape [..., P, M] and
+    y of shape [..., R, M], returning a distance matrix of shape [..., P, R].
+
+    Decomposition (p=2 only):
+        1. diff[...,i,j] = x[...,i,:] - y[...,j,:]  # broadcast: [...,P,1,M] - [...,1,R,M] -> [...,P,R,M]
+        2. sq_diff       = diff ** 2                  # element-wise square
+        3. sum_sq        = sq_diff.sum(dim=-1)        # sum over feature dim -> [..., P, R]
+        4. dist          = sqrt(sum_sq)               # Euclidean distance matrix [..., P, R]
+
+    Only p=2 is supported.
     """
 
     cdist_targets = {

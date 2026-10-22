@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_first_fake_tensor,
     get_param_tensor,
+    is_mutable_buffer,
     is_persistent_buffer,
 )
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
@@ -219,8 +220,14 @@ class FuseConstantArgsPass(ArmPass):
             if len(input_node.users) == 0:
                 self._delete_constant_placeholder(input_node)
 
+    @staticmethod
+    def _log_summary(fused: int) -> None:
+        if fused:
+            logger.debug("FuseConstantArgsPass: fused %d constant operator(s).", fused)
+
     def call(self, graph_module):
         modified = False
+        fused = 0
         input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
@@ -241,12 +248,18 @@ class FuseConstantArgsPass(ArmPass):
             input_nodes = node.all_input_nodes
             if len(input_nodes) == 0:
                 continue
+            # A mutable buffer is streaming state, not a constant: folding it
+            # would freeze its initial value, and deleting its now-unused
+            # placeholder would strand its BUFFER_MUTATION output.
             input_nodes_constant = (
-                torch._export.utils.is_param(self.exported_program, input_node)
-                or torch._export.utils.is_lifted_tensor_constant(
-                    self.exported_program, input_node
+                (
+                    torch._export.utils.is_param(self.exported_program, input_node)
+                    or torch._export.utils.is_lifted_tensor_constant(
+                        self.exported_program, input_node
+                    )
+                    or torch._export.utils.is_buffer(self.exported_program, input_node)
                 )
-                or torch._export.utils.is_buffer(self.exported_program, input_node)
+                and not is_mutable_buffer(self.exported_program, input_node)
                 for input_node in input_nodes
             )
             if not all(input_nodes_constant):
@@ -254,11 +267,8 @@ class FuseConstantArgsPass(ArmPass):
             try:
                 did_fuse = self._fuse_nodes(node)
                 if did_fuse:
-                    logger.debug(
-                        f"Fused constant op: {node.name} with placeholder inputs:"
-                        f"{[input_node.name for input_node in input_nodes]}"
-                    )
                     modified |= did_fuse
+                    fused += 1
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
@@ -269,6 +279,8 @@ class FuseConstantArgsPass(ArmPass):
             graph_module.graph.eliminate_dead_code()
             self.maybe_delete(input_nodes_to_maybe_delete)
             graph_module = super().call(graph_module).graph_module
+
+        self._log_summary(fused)
 
         return PassResult(graph_module, modified)
 

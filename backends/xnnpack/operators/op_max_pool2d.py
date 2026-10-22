@@ -6,7 +6,7 @@
 
 # pyre-unsafe
 
-from typing import cast, Dict, List
+from typing import Dict
 
 import torch
 from executorch.backends.xnnpack.operators.node_visitor import (
@@ -20,6 +20,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNMaxPooling2d,
     XNode,
 )
+from executorch.backends.xnnpack.utils.utils import normalize_pool2d_args
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
 
 
@@ -52,36 +53,23 @@ class MaxPooling2d(NodeVisitor):
         kwargs["input_id"] = vals_to_ids[node.all_input_nodes[0]]
         kwargs["output_id"] = vals_to_ids[node]
 
-        # kernel info
-        kernel_shape = cast(List[int], node.args[1])
+        kernel_shape, stride, padding_shape, dilation = normalize_pool2d_args(
+            node, has_dilation=True
+        )
+
         kwargs["pooling_height"] = kernel_shape[0]
         kwargs["pooling_width"] = kernel_shape[1]
 
-        # stride info
-        stride = cast(List[int], node.args[2])
         kwargs["stride_height"] = stride[0]
         kwargs["stride_width"] = stride[1]
 
-        # padding info
-        kwargs["padding_top"] = 0
-        kwargs["padding_right"] = 0
-        kwargs["padding_bottom"] = 0
-        kwargs["padding_left"] = 0
+        kwargs["padding_top"] = padding_shape[0]
+        kwargs["padding_right"] = padding_shape[1]
+        kwargs["padding_bottom"] = padding_shape[0]
+        kwargs["padding_left"] = padding_shape[1]
 
-        if len(node.args) > 3:
-            padding_shape = cast(List[int], node.args[3])
-            kwargs["padding_top"] = padding_shape[0]
-            kwargs["padding_right"] = padding_shape[1]
-            kwargs["padding_bottom"] = padding_shape[0]
-            kwargs["padding_left"] = padding_shape[1]
-
-        # dilation info
-        kwargs["dilation_height"] = 1
-        kwargs["dilation_width"] = 1
-        if len(node._args) > 4:
-            dilation = cast(List[int], node.args[4])
-            kwargs["dilation_height"] = dilation[0]
-            kwargs["dilation_width"] = dilation[1]
+        kwargs["dilation_height"] = dilation[0]
+        kwargs["dilation_width"] = dilation[1]
 
         # ceil mode
         ceil_mode = node.args[5] if len(node.args) > 5 else False

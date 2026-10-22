@@ -67,7 +67,7 @@ DEFINE_int32(
 DEFINE_string(
     data_path,
     "",
-    "Path to data file (.ptd) for delegate data (required for CUDA).");
+    "Path to data file (.ptd) for delegate data (required for CUDA and ROCm).");
 DEFINE_string(
     color,
     "",

@@ -35,6 +35,18 @@ class GlobalNodeFinder(NodeFinder):
         return f"{self.__class__.__name__} targeting all nodes"
 
 
+class GlobalNoOutputNodeFinder(NodeFinder):
+    """Finds all graph nodes except the output node. Output nodes
+    typically wants to inherit the previous qspec rather than applying a new
+    qspec."""
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        return (n for n in model.graph.nodes if n.op != "output")
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting all non-output nodes"
+
+
 class InputNodeFinder(NodeFinder):
     """
     Finds all placeholder nodes.

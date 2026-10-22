@@ -5,44 +5,75 @@
 
 
 import logging
-from typing import cast, Literal, Set, Type
+from typing import Any, Dict, Literal, Set, Tuple, Type
 
 import torch
+
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
     set_node_arg,
 )
+from executorch.backends.arm._passes.decompose_topk_pass import (
+    get_static_topk_config,
+    is_topk_indices_int32_cast,
+    topk_indices_only_feed_int32_casts,
+)
+from executorch.backends.arm._passes.int32_range_analysis import (
+    Int32RangeAnalysis,
+    ValueRange,
+)
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
 
 logger = logging.getLogger(__name__)
 
 
 class ConvertInt64OutputOpsToInt32Pass(ArmPass):
-    """Rewrites or removes operations that produce int64 outputs, converting
-    them to int32 where possible.
+    """Rewrite or remove operations that produce int64 outputs.
 
-    Currently, this pass handles casting, argmax and argmin operators:
+    Convert them to int32 where possible.
+
+    Currently, this pass handles casting, argmax, argmin and topk operators:
       1. int32 -> int64:
          removes the cast and redirects all uses to the original int32 value.
       2. other types -> int64:
          rewrites the cast to produce int32 instead of int64.
       3. torch.argmax() / torch.argmin()
-         insert an int64->int32 cast after the argmax/argmin node
+         insert an int64->int32 cast only along downstream paths whose values
+         are proven to remain within the int32 range. Other paths keep the
+         original int64 value or receive an int32->int64 boundary cast.
+      4. torch.topk()
+         apply the same bounded-index handling to ``getitem(topk, 1)`` while
+         leaving the values output, ``getitem(topk, 0)``, unchanged.
+
+    With a TOSA specification, also prepare supported static TopK indices
+    for delegation. All immediate index users narrow to int32, with separate
+    int64 restoration casts for remaining consumers and graph outputs.
+
+    Argmax, argmin and extracted TopK indices are the bounded-index sources.
+    Range propagation from those sources recognizes a separate allowlist of
+    safe shape and arithmetic operations.
 
     Future extensions may include other operators that return int64 outputs by
     default, rewriting them or inserting an int64 -> int32 cast to yield int32
     results.
 
     Args:
-        on_overflow: Action when an argmax/argmin index cannot safely fit in
-            int32 (i.e. the reduced dimension has more than INT32_MAX elements).
+        convert_cast_ops (bool): Whether to convert general int64 cast
+            operators. Defaults to True.
+        on_overflow (Literal["raise", "warn", "skip"]): Action when an
+            argmax/argmin/topk index cannot safely fit in int32 (i.e. the
+            reduced dimension has more than INT32_MAX elements).
             ``"raise"`` (default) raises a ``RuntimeError`` at compile time.
             ``"warn"`` logs a warning and skips the cast for that node.
             ``"skip"`` silently skips the cast for that node.
+        tosa_spec (TosaSpecification | None): Enable target-aware TopK
+            boundary preparation when provided. Requires
+            ``convert_cast_ops=False`` to preserve int64 restoration casts.
+            Defaults to None, retaining generic range conversion only.
 
     """
 
@@ -53,7 +84,9 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
     def __init__(
         self,
         *args,
+        convert_cast_ops: bool = True,
         on_overflow: Literal["raise", "warn", "skip"] = "raise",
+        tosa_spec: TosaSpecification | None = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -61,32 +94,23 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
             raise ValueError(
                 f"on_overflow must be 'raise', 'warn', or 'skip', got {on_overflow!r}"
             )
+        self.convert_cast_ops = convert_cast_ops
         self.on_overflow = on_overflow
+        if tosa_spec is not None and convert_cast_ops:
+            raise ValueError(
+                "TopK boundary preparation requires convert_cast_ops=False."
+            )
+        self.tosa_spec = tosa_spec
 
-    def _is_int32_range_safe(self, node: torch.fx.Node) -> bool:
-        """Return True if the argmax/argmin index output fits in int32."""
-        input_tensor = get_first_fake_tensor(cast(torch.fx.Node, node.args[0]))
-        dim = node.args[1] if len(node.args) > 1 and node.args[1] is not None else None
-        if dim is None:
-            size = input_tensor.numel()
-        else:
-            size = input_tensor.shape[cast(int, dim)]
-        return size <= self._INT32_MAX
+    aten_cast_ops = Int32RangeAnalysis.aten_cast_ops
+    edge_cast_ops = Int32RangeAnalysis.edge_cast_ops
+    aten_bounded_index_ops = Int32RangeAnalysis.aten_bounded_index_ops
+    edge_bounded_index_ops = Int32RangeAnalysis.edge_bounded_index_ops
+    aten_topk_ops = Int32RangeAnalysis.aten_topk_ops
+    edge_topk_ops = Int32RangeAnalysis.edge_topk_ops
 
-    aten_cast_ops = (
-        torch.ops.aten.to.dtype,
-        torch.ops.aten.to.dtype_layout,
-    )
-    edge_cast_ops = (exir_ops.edge.dim_order_ops._to_dim_order_copy.default,)
-
-    aten_argmax_ops = (torch.ops.aten.argmax.default,)
-    edge_argmax_ops = (exir_ops.edge.aten.argmax.default,)
-
-    aten_argmin_ops = (torch.ops.aten.argmin.default,)
-    edge_argmin_ops = (exir_ops.edge.aten.argmin.default,)
-
-    aten_ops = aten_cast_ops + aten_argmax_ops + aten_argmin_ops
-    edge_ops = edge_cast_ops + edge_argmax_ops + edge_argmin_ops
+    aten_ops = aten_cast_ops + aten_bounded_index_ops + aten_topk_ops
+    edge_ops = edge_cast_ops + edge_bounded_index_ops + edge_topk_ops
 
     # dtype is specified in args
     cast_ops_args = (
@@ -116,11 +140,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         if input_dtype == torch.int32:
             users = [user for user in node.users if node != user]
             for user in users:
-                logger.warning(
-                    f"Removing int32->int64 casting node {node.name} defined in"
-                    f" {node.meta.get('stack_trace','[no stack trace found]')}"
-                )
                 user.replace_input_with(node, input_node)
+            self._removed_casts += 1
         # Case 2: other types -> int64 - rewrites to cast to int32
         else:
             if node.target in self.cast_ops_kwargs:
@@ -129,71 +150,363 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
                 set_node_arg(node, 1, torch.int32)
             else:
                 raise RuntimeError(f"Unexpected target {node.target} in {node.name}")
-            output_dtype = get_first_fake_tensor(node).dtype
+            self._converted_casts += 1
+
+    @staticmethod
+    def _insert_int64_boundary(
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        to_copy_op,
+        boundaries: Dict[torch.fx.Node, torch.fx.Node],
+    ) -> torch.fx.Node:
+        if node not in boundaries:
+            with graph.inserting_after(node):
+                boundaries[node] = create_node(
+                    graph,
+                    to_copy_op,
+                    args=(node,),
+                    kwargs={"dtype": torch.int64},
+                )
+        return boundaries[node]
+
+    def _get_or_create_int32_cast(
+        self,
+        graph: torch.fx.Graph,
+        source: torch.fx.Node,
+        to_copy_op,
+        int32_source: torch.fx.Node | None = None,
+    ) -> torch.fx.Node:
+        """Create or reuse an int32 cast immediately after its source.
+
+        Args:
+            graph (torch.fx.Graph): Graph containing the source and cast.
+            source (torch.fx.Node): Bounded int64 index source.
+            to_copy_op (Any): Dialect-specific operator used for casts.
+            int32_source (torch.fx.Node | None): Existing narrowing cast to
+                reuse, or None to create one.
+
+        Returns:
+            torch.fx.Node: Int32 cast positioned immediately after source.
+
+        """
+        if int32_source is None:
+            with graph.inserting_after(source):
+                int32_source = create_node(
+                    graph,
+                    to_copy_op,
+                    args=(source,),
+                    kwargs={"dtype": torch.int32},
+                )
+            self._safe_index_casts += 1
+        else:
+            # Move the reused cast before any consumers redirected to it.
+            source.append(int32_source)
+        return int32_source
+
+    def _cast_safe_scalar_constants_to_int32(
+        self,
+        graph_module: torch.fx.GraphModule,
+        analysis: Int32RangeAnalysis,
+        safe_consumers: Set[torch.fx.Node],
+        ranges: Dict[torch.fx.Node, ValueRange],
+        to_copy_op,
+    ) -> None:
+        """Cast int64 scalar constants used by safe binary consumers.
+
+        Args:
+            graph_module (torch.fx.GraphModule): Graph being transformed.
+            analysis (Int32RangeAnalysis): Range analysis for the graph.
+            safe_consumers (set): Consumers on int32 paths.
+            ranges (dict): Proven ranges.
+            to_copy_op (Any): Dialect-specific operator used for casts.
+
+        """
+        graph = graph_module.graph
+        constant_casts: Dict[torch.fx.Node, torch.fx.Node] = {}
+        for consumer in safe_consumers:
+            for input_node in consumer.all_input_nodes:
+                if not analysis.is_safe_scalar_constant_input(
+                    consumer, input_node, ranges
+                ):
+                    continue
+                if input_node not in constant_casts:
+                    with graph.inserting_after(input_node):
+                        constant_casts[input_node] = create_node(
+                            graph,
+                            to_copy_op,
+                            args=(input_node,),
+                            kwargs={"dtype": torch.int32},
+                        )
+                consumer.replace_input_with(input_node, constant_casts[input_node])
+
+    def _cast_safe_index_paths_to_int32(
+        self,
+        graph_module: torch.fx.GraphModule,
+        analysis: Int32RangeAnalysis,
+        source: torch.fx.Node,
+        source_range: ValueRange,
+        to_copy_op,
+        int32_source: torch.fx.Node | None = None,
+    ) -> bool:
+        """Convert proven-safe paths from a bounded index source to int32.
+
+        The caller identifies the bounded source and supplies its inclusive
+        value range. Direct consumers that cannot be proven safe retain the
+        original int64 source. An int64 boundary cast is inserted when an
+        unproven consumer follows an intermediate converted to int32.
+
+        Args:
+            graph_module (torch.fx.GraphModule): Graph containing the source.
+            analysis (Int32RangeAnalysis): Range analysis for the graph.
+            source (torch.fx.Node): Int64 node with a statically known range.
+            source_range (ValueRange): Inclusive minimum and maximum.
+            to_copy_op (Any): Dialect-specific operator used for casts.
+            int32_source (torch.fx.Node | None): Existing narrowing cast to
+                reuse for safe index paths.
+
+        Returns:
+            bool: True when at least one path is converted to int32.
+
+        """
+        result = analysis.find_safe_index_consumers(source, source_range)
+        ranges = result.ranges
+        safe_consumers = result.safe_consumers
+        if not safe_consumers:
+            return False
+
+        graph = graph_module.graph
+        original_users = {node: list(node.users) for node in ranges}
+        int32_source = self._get_or_create_int32_cast(
+            graph, source, to_copy_op, int32_source
+        )
+
+        self._cast_safe_scalar_constants_to_int32(
+            graph_module, analysis, safe_consumers, ranges, to_copy_op
+        )
+
+        boundaries: Dict[torch.fx.Node, torch.fx.Node] = {}
+        for node, users in original_users.items():
+            for user in users:
+                if user in safe_consumers:
+                    if node is source and user is not int32_source:
+                        user.replace_input_with(source, int32_source)
+                elif node is not source:
+                    boundary = self._insert_int64_boundary(
+                        graph, node, to_copy_op, boundaries
+                    )
+                    user.replace_input_with(node, boundary)
+
+        return True
+
+    def _prepare_topk_index_boundary(
+        self,
+        graph: torch.fx.Graph,
+        indices: torch.fx.Node,
+        to_copy_op,
+    ) -> bool:
+        """Restore int64 separately for remaining users of bounded indices.
+
+        Args:
+            graph (torch.fx.Graph): Graph containing the index extraction.
+            indices (torch.fx.Node): Supported TopK's int64 index output.
+            to_copy_op (Any): Dialect-specific operator used for casts.
+
+        Returns:
+            bool: True when remaining consumers received restoration casts.
+
+        """
+        remaining_users = [
+            user for user in indices.users if not is_topk_indices_int32_cast(user)
+        ]
+        if not remaining_users:
+            return False
+        int32_indices = next(
+            (user for user in indices.users if is_topk_indices_int32_cast(user)), None
+        )
+        int32_indices = self._get_or_create_int32_cast(
+            graph, indices, to_copy_op, int32_indices
+        )
+        # Separate casts let gathers delegate independently of other consumers.
+        for user in remaining_users:
+            with graph.inserting_before(user):
+                int64_indices = create_node(
+                    graph, to_copy_op, (int32_indices,), {"dtype": torch.int64}
+                )
+            user.replace_input_with(indices, int64_indices)
+        return True
+
+    def _log_summary(self) -> None:
+        if self._removed_casts or self._converted_casts or self._safe_index_casts:
             logger.warning(
-                f"Converting casting node {node.name} from {input_dtype}->{output_dtype} to"
-                f" {input_dtype}->torch.int32 defined in {node.meta.get('stack_trace','[no stack trace found]')}"
+                "ConvertInt64OutputOpsToInt32Pass: removed %d int32-to-int64 "
+                "cast(s), rewrote %d cast(s) to int32, and inserted %d "
+                "range-safe index cast(s).",
+                self._removed_casts,
+                self._converted_casts,
+                self._safe_index_casts,
             )
 
-    def _cast_int64_output_to_int32(self, node: torch.fx.Node, graph: torch.fx.Graph):
-        output_tensor = node
-        to_copy_op = self._get_decomposition(node.target)
-        with graph.inserting_after(node):
-            cast_after = create_node(
-                graph,
+    def _convert_topk_indices(
+        self,
+        graph_module: torch.fx.GraphModule,
+        analysis: Int32RangeAnalysis,
+        topk: torch.fx.Node,
+    ) -> bool:
+        """Convert safe TopK paths and optionally prepare delegate boundaries.
+
+        Args:
+            graph_module (torch.fx.GraphModule): Graph containing TopK.
+            analysis (Int32RangeAnalysis): Range analysis for the graph.
+            topk (torch.fx.Node): TopK tuple-producing node.
+
+        Returns:
+            bool: True when at least one index path is converted.
+
+        """
+        index_getitems = analysis.topk_index_getitems(topk)
+        if not index_getitems:
+            return False
+
+        index_range = analysis.topk_index_range(topk)
+        if index_range is None:
+            return False
+        if not analysis.index_size_fits_int32_policy(index_range):
+            msg = (
+                f"{topk.target} indexes a dimension with more than "
+                f"{self._INT32_MAX} elements; the int64 index cannot be "
+                "safely cast to int32."
+            )
+            if self.on_overflow == "raise":
+                raise RuntimeError(msg)
+            if self.on_overflow == "warn":
+                logger.warning(msg)
+            return False
+
+        # All extracted indices already feed int32 casts, so no further
+        # index conversion or boundary preparation is needed.
+        if topk_indices_only_feed_int32_casts(topk):
+            return False
+
+        supports_topk_lowering = (
+            self.tosa_spec is not None
+            and get_static_topk_config(topk, self.tosa_spec)[0] is not None
+        )
+        modified = False
+        to_copy_op = self._get_decomposition(topk.target)
+        # Convert safe index paths to int32 regardless of TopK lowering support.
+        # For supported TopK, ensure every direct index user is an int32 cast,
+        # restoring int64 separately for consumers that still need it.
+        for indices in index_getitems:
+            if get_first_fake_tensor(indices).dtype != torch.int64:
+                continue
+
+            existing_int32_cast = next(
+                (user for user in indices.users if is_topk_indices_int32_cast(user)),
+                None,
+            )
+            modified |= self._cast_safe_index_paths_to_int32(
+                graph_module,
+                analysis,
+                indices,
+                index_range,
                 to_copy_op,
-                args=(output_tensor,),
-                kwargs={
-                    "dtype": torch.int32,
-                },
+                existing_int32_cast,
             )
-            users = [user for user in node.users if user != cast_after]
-            for user in users:
-                user.replace_input_with(output_tensor, cast_after)
-            logger.warning(
-                f"Inserting a casting node {cast_after.name} after {node.name} to cast int64 output"
-                f" to int32 for {node.name} defined in {node.meta.get('stack_trace','[no stack trace found]')}"
+            if supports_topk_lowering:
+                modified |= self._prepare_topk_index_boundary(
+                    graph_module.graph, indices, to_copy_op
+                )
+        return modified
+
+    def _convert_bounded_index(
+        self,
+        graph_module: torch.fx.GraphModule,
+        analysis: Int32RangeAnalysis,
+        node: torch.fx.Node,
+    ) -> bool:
+        """Convert safe paths from an argmax or argmin index.
+
+        Args:
+            graph_module (torch.fx.GraphModule): Graph containing the node.
+            analysis (Int32RangeAnalysis): Range analysis for the graph.
+            node (torch.fx.Node): Bounded index-producing node.
+
+        Returns:
+            bool: True when at least one index path is converted.
+
+        """
+        index_range = analysis.arg_index_range(node)
+        if index_range is None:
+            return False
+        if not analysis.index_size_fits_int32_policy(index_range):
+            msg = (
+                f"{node.target} reduces over more than {self._INT32_MAX} "
+                "elements; the int64 index cannot be safely cast to int32."
             )
+            if self.on_overflow == "raise":
+                raise RuntimeError(msg)
+            if self.on_overflow == "warn":
+                logger.warning(msg)
+            return False
+        return self._cast_safe_index_paths_to_int32(
+            graph_module,
+            analysis,
+            node,
+            index_range,
+            self._get_decomposition(node.target),
+        )
+
+    def _target_ops(self) -> Tuple[Any, ...]:
+        ops: Tuple[Any, ...] = self.aten_bounded_index_ops + self.aten_topk_ops
+        ops += self.edge_bounded_index_ops + self.edge_topk_ops
+        if self.convert_cast_ops:
+            ops += self.aten_cast_ops + self.edge_cast_ops
+        return ops
+
+    def should_run(self, graph_module: torch.fx.GraphModule) -> bool:
+        target_ops = self._target_ops()
+        return any(
+            node.op == "call_function" and node.target in target_ops and node.users
+            for node in graph_module.graph.nodes
+        )
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
+        self._removed_casts = 0
+        self._converted_casts = 0
+        self._safe_index_casts = 0
         graph = graph_module.graph
+        analysis = Int32RangeAnalysis(graph_module)
+        target_ops = self._target_ops()
         for node in list(graph.nodes):
             if node.op != "call_function":
                 continue
-            if node.target not in self.aten_ops + self.edge_ops:
+            if node.target not in target_ops or not node.users:
                 continue
+            if node.target in self.aten_topk_ops + self.edge_topk_ops:
+                modified |= self._convert_topk_indices(graph_module, analysis, node)
+                continue
+
             output_dtype = get_first_fake_tensor(node).dtype
             if output_dtype != torch.int64:
                 continue
 
             if node.target in self.aten_cast_ops + self.edge_cast_ops:
                 self._convert_casting_operators(node)
+                modified = True
             elif node.target in (
-                self.aten_argmax_ops
-                + self.edge_argmax_ops
-                + self.aten_argmin_ops
-                + self.edge_argmin_ops
+                self.aten_bounded_index_ops + self.edge_bounded_index_ops
             ):
-                if not self._is_int32_range_safe(node):
-                    msg = (
-                        f"{node.target} reduces over more than {self._INT32_MAX} elements; "
-                        f"the int64 index cannot be safely cast to int32."
-                    )
-                    if self.on_overflow == "raise":
-                        raise RuntimeError(msg)
-                    if self.on_overflow == "warn":
-                        logger.warning(msg)
-                    continue
-                self._cast_int64_output_to_int32(node, graph)
+                modified |= self._convert_bounded_index(graph_module, analysis, node)
             else:
                 raise RuntimeError(f"Unexpected target {node.target} in {node.name}")
 
-            modified = True
-
         if modified:
             graph_module.graph.eliminate_dead_code()
+            graph_module.graph.lint()
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
+
+        self._log_summary()
 
         return PassResult(graph_module, modified)

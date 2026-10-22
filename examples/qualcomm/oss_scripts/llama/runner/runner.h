@@ -44,6 +44,7 @@ enum DecoderModelVersion {
   kCodegen,
   kGlm,
   kGemma2,
+  kGemma4,
 };
 
 class Runner : public executorch::extension::llm::IRunner {

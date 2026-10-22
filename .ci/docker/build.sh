@@ -19,7 +19,7 @@ OS=ubuntu
 OS_VERSION=22.04
 CLANG_VERSION=""
 GCC_VERSION=""
-PYTHON_VERSION=3.10
+PYTHON_VERSION=3.11
 MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
@@ -57,6 +57,13 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
     CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-24.04-arm-sdk)
+    OS_VERSION=24.04
+    ARM_SDK=yes
+    CLANG_VERSION=18
+    PYTHON_VERSION=3.12
+    MINICONDA_VERSION=24.1.2-0
     ;;
   executorch-ubuntu-22.04-zephyr-sdk)
     ZEPHYR_SDK=yes
@@ -109,7 +116,16 @@ fi
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
-docker build \
+# OSDC runners have no docker daemon, so the build runs on the in-cluster
+# BuildKit pool via a remote buildx builder. That builder has nowhere to load
+# an image into, so the result has to go straight to the registry.
+if [[ -n "${REMOTE_BUILDKIT:-}" ]]; then
+  BUILD_CMD=(docker buildx build --push)
+else
+  BUILD_CMD=(docker build)
+fi
+
+"${BUILD_CMD[@]}" \
   --no-cache \
   --progress=plain \
   --build-arg "OS_VERSION=${OS_VERSION}" \

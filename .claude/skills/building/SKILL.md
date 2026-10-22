@@ -23,8 +23,8 @@ conda activate executorch
 
 **Path B — no conda (fall back to venv):**
 ```bash
-# Find a compatible Python (3.10–3.14).
-python3.12 -m venv .executorch-venv   # or python3.11, python3.10, python3.13, python3.14
+# Find a compatible Python (3.11–3.15).
+python3.12 -m venv .executorch-venv   # or python3.11, python3.13, python3.14, python3.15
 source .executorch-venv/bin/activate
 pip install --upgrade pip
 ```
@@ -32,7 +32,7 @@ pip install --upgrade pip
 **Then verify (either path):**
 
 Run `python --version` and `cmake --version`. Fix automatically:
-- **Python not 3.10–3.14**: recreate the env with a correct Python version.
+- **Python not 3.11–3.15**: recreate the env with a correct Python version.
 - **cmake missing or < 3.24**: run `pip install 'cmake>=3.24'` inside the env.
 - **cmake >= 4.0**: works in practice, no action needed.
 
@@ -60,7 +60,7 @@ For minimal install (skip example deps): `./install_executorch.sh --minimal`
 
 Enable additional backends:
 ```bash
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh --editable
+CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh --editable
 ```
 
 Verify: `python -c "from executorch.exir import to_edge_transform_and_lower; print('OK')"`
@@ -140,7 +140,7 @@ Run `cmake --list-presets` to see all available presets.
 
 **iOS/macOS frameworks:**
 ```bash
-./scripts/build_apple_frameworks.sh --coreml --mps --xnnpack
+./scripts/build_apple_frameworks.sh --coreml --xnnpack
 ```
 Link in Xcode with `-all_load` linker flag.
 
@@ -162,7 +162,6 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 |------|-----------------|
 | `EXECUTORCH_BUILD_XNNPACK` | XNNPACK CPU backend |
 | `EXECUTORCH_BUILD_COREML` | Core ML (macOS/iOS) |
-| `EXECUTORCH_BUILD_MPS` | MPS GPU (macOS/iOS) |
 | `EXECUTORCH_BUILD_METAL` | Metal compute (macOS, requires EXTENSION_TENSOR) |
 | `EXECUTORCH_BUILD_CUDA` | CUDA GPU (Linux/Windows, requires EXTENSION_TENSOR) |
 | `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` | Optimized kernels |

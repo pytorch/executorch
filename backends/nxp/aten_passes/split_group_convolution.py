@@ -193,7 +193,7 @@ class SplitGroupConvolution(PassBase):
 
         return static_parameter_node
 
-    def call(self, module: GraphModule):
+    def call(self, module: GraphModule) -> PassResult:
         self.module = module
 
         def _is_conv(node_: Node):

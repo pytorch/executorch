@@ -47,6 +47,9 @@ Thread count can be set with the following function. Ensure this is done prior t
 ```
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
+This needs `extension/threadpool/threadpool.h`, which a source build provides. The pip
+package does not publish it, because the header holds a `pthreadpool` member by value and
+the wheel vendors no pthreadpool headers to compile it against.
 
 For a deeper investigation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for more information.
 

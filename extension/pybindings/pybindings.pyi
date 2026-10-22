@@ -7,10 +7,12 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Sequence, Tuple
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
-from executorch.exir._warnings import experimental
+_T = TypeVar("_T")
 
+def experimental(message: str) -> Callable[[_T], _T]: ...
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
     """Verification maps C++ Program::Verification to Python.
@@ -20,8 +22,63 @@ class Verification(Enum):
         This API is experimental and subject to change without notice.
     """
 
-    Minimal: ...
-    InternalConsistency: ...
+    Minimal = 0
+    InternalConsistency = 1
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchResult:
+    """A tensor result of an ExecuTorch method, returned when PyTorch is not used.
+
+    Read a CPU result through the buffer protocol, NumPy, or DLPack, and a CUDA
+    result through DLPack or ``to_host()``.
+
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+
+    @property
+    def shape(self) -> Tuple[int, ...]: ...
+    @property
+    def strides(self) -> Tuple[int, ...]: ...
+    @property
+    def dtype(self) -> Any: ...
+    @property
+    def dtype_name(self) -> str:
+        """The dtype's name, such as ``"bfloat16"``, including dtypes NumPy lacks."""
+        ...
+
+    @property
+    def nbytes(self) -> int: ...
+    @property
+    def device(self) -> str:
+        """Where the data lives: ``"cpu"`` or ``"cuda:N"``."""
+        ...
+
+    def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
+    def __dlpack__(
+        self,
+        stream: Optional[int] = None,
+        *,
+        max_version: Optional[Tuple[int, int]] = None,
+        dl_device: Optional[Tuple[int, int]] = None,
+        copy: Optional[bool] = None,
+    ) -> Any: ...
+    def __dlpack_device__(self) -> Tuple[int, int]: ...
+    def to_host(self) -> ExecuTorchResult:
+        """Return a copy of this result in CPU memory."""
+        ...
+
+    @staticmethod
+    def from_host(source: Any, device_index: int = 0) -> ExecuTorchResult:
+        """Copy a dense CPU buffer, or a CPU ExecuTorchResult, to a CUDA device,
+        for use as a method input.
+
+        Requires bindings built with CUDA support.
+        """
+        ...
+
+    def __repr__(self) -> str: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
@@ -33,36 +90,23 @@ class ExecuTorchModule:
     """
 
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def __call__(self, inputs: Any, clone_outputs: bool = True) -> List[Any]: ...
+    def __call__(self, inputs: Any = ..., clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def run_method(
         self,
         method_name: str,
-        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def forward(
         self,
-        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def plan_execute(
         self, method_name: str, clone_outputs: bool = True
-    ) -> List[Any]: ...
-    # Bundled program methods.
-    def load_bundled_input(
-        self, bundle: BundledModule, method_name: str, testset_idx: int
-    ) -> None: ...
-    # pyre-ignore[3]: "Any" in return type annotations.
-    def verify_result_with_bundled_expected_output(
-        self,
-        bundle: BundledModule,
-        method_name: str,
-        testset_idx: int,
-        rtol: float = 1e-5,
-        atol: float = 1e-8,
     ) -> List[Any]: ...
     def has_etdump(self) -> bool: ...
     def write_etdump_result_to_file(
@@ -99,20 +143,20 @@ class ExecuTorchMethod:
     """
 
     # pyre-ignore[2]: "Any" in parameter type annotations.
-    def set_inputs(self, inputs: Sequence[Any]) -> None: ...
+    def set_inputs(self, inputs: Any) -> None: ...
     def execute(self) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def call(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def __call__(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     def method_meta(self) -> MethodMeta: ...
@@ -127,7 +171,14 @@ class BundledModule:
         This API is experimental and subject to change without notice.
     """
 
-    ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def verify_result_with_bundled_expected_output(
+        self,
+        method_name: str,
+        testset_idx: int,
+        rtol: float = 1e-5,
+        atol: float = 1e-8,
+    ) -> List[Any]: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class TensorInfo:
@@ -151,6 +202,10 @@ class TensorInfo:
     def is_memory_planned(self) -> bool:
         """True if the tensor is already memory planned, meaning no allocation
         needs to be provided. False otherwise"""
+        ...
+
+    def device(self) -> str:
+        """Where the program places the tensor: ``"cpu"`` or ``"cuda:N"``."""
         ...
 
     def nbytes(self) -> int:
@@ -312,6 +367,8 @@ def _load_program(
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
+    data_path: Optional[str] = None,
+    backend_options: Dict[str, Dict[str, Union[bool, int, str]]] = ...,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _load_program_from_buffer(
@@ -319,6 +376,8 @@ def _load_program_from_buffer(
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
+    data_path: Optional[str] = None,
+    backend_options: Dict[str, Dict[str, Union[bool, int, str]]] = ...,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:
@@ -329,6 +388,14 @@ def _is_available(backend_name: str) -> bool:
     """
     ...
 
+@experimental("This API is experimental and subject to change without notice.")
+def _set_option(
+    backend_name: str, options: Dict[str, Union[bool, int, str]]
+) -> None: ...
+@experimental("This API is experimental and subject to change without notice.")
+def _get_option(
+    backend_name: str, options: Dict[str, Union[bool, int, str]]
+) -> Dict[str, Union[bool, int, str]]: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _get_operator_names() -> List[str]:
     """

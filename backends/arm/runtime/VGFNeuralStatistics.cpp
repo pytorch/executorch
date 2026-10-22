@@ -8,6 +8,8 @@
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -22,6 +24,25 @@ namespace executorch {
 namespace backends {
 namespace vgf {
 namespace {
+
+std::string ascii_lower(const char* value) {
+  std::string normalized = value == nullptr ? "" : value;
+  std::transform(
+      normalized.begin(),
+      normalized.end(),
+      normalized.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return normalized;
+}
+
+bool env_flag_requested(const char* value) {
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+  const std::string normalized = ascii_lower(value);
+  return normalized != "0" && normalized != "false" && normalized != "off" &&
+      normalized != "no";
+}
 
 // Converts a C++ string into a valid JSON string literal.
 std::string json_escape(const std::string& value) {
@@ -100,6 +121,72 @@ void append_bool(std::ostringstream& out, bool value) {
   out << (value ? "true" : "false");
 }
 
+int normalized_mode_index(int mode_index) {
+  return mode_index == 0 ? 0 : 1;
+}
+
+int32_t vulkan_mode_value(int mode_index) {
+  // VkNeuralAcceleratorStatisticsModeARM values are fixed by the extension:
+  // STATISTICS0=1, STATISTICS1=2.
+  return normalized_mode_index(mode_index) + 1;
+}
+
+const char* vulkan_mode_name(int mode_index) {
+  return normalized_mode_index(mode_index) == 0
+      ? "VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM"
+      : "VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM";
+}
+
+bool has_mali_g2_counter_layout(
+    const VgfNeuralStatisticsMetadataContext& metadata) {
+  constexpr uint32_t kArmVendorId = 0x13B5;
+  return metadata.target_available && metadata.vendor_id == kArmVendorId &&
+      metadata.device_name.find("Mali-G2") != std::string::npos;
+}
+
+void append_interpretation_metadata(
+    std::ostringstream& out,
+    const VgfNeuralStatisticsMetadataContext& metadata) {
+  const int mode_index = normalized_mode_index(metadata.mode_index);
+
+  out << ",\"statistics_mode\":{";
+  out << "\"executorch_index\":" << mode_index;
+  out << ",\"vulkan_value\":" << vulkan_mode_value(mode_index);
+  out << ",\"vulkan_name\":" << json_escape(vulkan_mode_name(mode_index));
+  out << "}";
+
+  out << ",\"target\":{";
+  out << "\"available\":";
+  append_bool(out, metadata.target_available);
+  out << ",\"device_name\":" << json_escape(metadata.device_name);
+  out << ",\"vendor_id\":" << metadata.vendor_id;
+  out << ",\"device_id\":" << metadata.device_id;
+  out << ",\"driver_version\":" << metadata.driver_version;
+  out << "}";
+
+  const bool layout_available = has_mali_g2_counter_layout(metadata);
+  const std::string schema_id = layout_available
+      ? (mode_index == 0 ? "arm.mali-g2.neural-statistics.mode0"
+                         : "arm.mali-g2.neural-statistics.mode1")
+      : "";
+
+  out << ",\"counter_layout\":{";
+  out << "\"available\":";
+  append_bool(out, layout_available);
+  out << ",\"schema_id\":" << json_escape(schema_id);
+  out << ",\"schema_version\":" << (layout_available ? 1 : 0);
+  out << ",\"endianness\":\"little\"";
+  out << ",\"word_type\":\"uint32\"";
+  out << ",\"words_per_task\":" << (layout_available ? 64 : 0);
+  out << ",\"leading_block_count\":" << (layout_available ? 1 : 0);
+  out << ",\"reason\":"
+      << json_escape(
+             layout_available
+                 ? ""
+                 : "No registered neural statistics counter layout for target");
+  out << "}";
+}
+
 void append_blob(
     std::ostringstream& out,
     const char* name,
@@ -142,11 +229,7 @@ VgfNeuralStatisticsBlob query_pipeline_property(
     return make_unavailable_blob("VkPipeline is null");
   }
 
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
 
   if (!vkGetDataGraphPipelineAvailablePropertiesARM ||
       !vkGetDataGraphPipelinePropertiesARM) {
@@ -330,12 +413,34 @@ VgfNeuralStatisticsCollectorForTest& test_collector_storage() {
 
 } // namespace
 
+VgfNeuralStatisticsRuntimeConfig get_vgf_neural_statistics_runtime_config() {
+  VgfNeuralStatisticsRuntimeConfig config;
+  config.requested =
+      env_flag_requested(std::getenv(kVgfNeuralStatisticsEnableEnv));
+
+  const char* mode_value = std::getenv(kVgfNeuralStatisticsModeEnv);
+  if (mode_value == nullptr || mode_value[0] == '\0' ||
+      std::strcmp(mode_value, "1") == 0) {
+    config.mode_index = 1;
+    return config;
+  }
+
+  if (std::strcmp(mode_value, "0") == 0) {
+    config.mode_index = 0;
+    return config;
+  }
+
+  ET_LOG(
+      Info,
+      "Invalid %s=%s; expected 0 or 1. Falling back to mode 1.",
+      kVgfNeuralStatisticsModeEnv,
+      mode_value);
+  config.mode_index = 1;
+  return config;
+}
+
 bool vgf_neural_statistics_api_available() {
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   return vkGetDataGraphPipelineAvailablePropertiesARM != nullptr &&
       vkGetDataGraphPipelinePropertiesARM != nullptr;
 #else
@@ -348,11 +453,7 @@ VgfNeuralStatisticsCollection collect_vgf_neural_statistics(
     const std::vector<VgfNeuralStatisticsSegmentContext>& segments) {
   VgfNeuralStatisticsCollection collection;
 
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
 
   collection.api_available = vgf_neural_statistics_api_available();
 
@@ -455,6 +556,7 @@ std::string serialize_vgf_neural_statistics_collection(
   append_bool(out, collection.data_available);
 
   out << ",\"reason\":" << json_escape(collection.reason);
+  append_interpretation_metadata(out, collection.metadata_context);
   out << ",\"segments\":[";
 
   for (size_t i = 0; i < collection.segments.size(); ++i) {
@@ -489,32 +591,49 @@ std::string serialize_vgf_neural_statistics_collection(
   return out.str();
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 std::string make_vgf_neural_statistics_unavailable_metadata(
-    const std::string& reason) {
+    const std::string& reason,
+    const VgfNeuralStatisticsMetadataContext& metadata_context) {
   VgfNeuralStatisticsCollection collection;
   collection.api_available = false;
   collection.data_available = false;
   collection.reason = reason;
+  collection.metadata_context = metadata_context;
   return serialize_vgf_neural_statistics_collection(collection);
 }
 
+// Used by VGFSetup.cpp and tests through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 std::string collect_vgf_neural_statistics_metadata(
     VkDevice device,
-    const std::vector<VgfNeuralStatisticsSegmentContext>& segments) {
+    const std::vector<VgfNeuralStatisticsSegmentContext>& segments,
+    const VgfNeuralStatisticsMetadataContext& metadata_context) {
   const auto& test_collector = test_collector_storage();
+
+  VgfNeuralStatisticsCollection collection;
   if (test_collector) {
-    return test_collector(device, segments);
+    collection = test_collector(device, segments);
+  } else {
+    collection = collect_vgf_neural_statistics(device, segments);
   }
 
-  return serialize_vgf_neural_statistics_collection(
-      collect_vgf_neural_statistics(device, segments));
+  // Apply interpretation metadata after collection so the injected test path
+  // cannot bypass schema-v2 mode/target/counter-layout metadata.
+  collection.metadata_context = metadata_context;
+  return serialize_vgf_neural_statistics_collection(collection);
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 void set_vgf_neural_statistics_collector_for_test(
     VgfNeuralStatisticsCollectorForTest collector) {
   test_collector_storage() = std::move(collector);
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 void reset_vgf_neural_statistics_collector_for_test() {
   test_collector_storage() = nullptr;
 }

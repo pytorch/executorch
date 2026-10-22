@@ -12,6 +12,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -45,36 +46,17 @@ class GatherVisitor(NodeVisitor):
         values = inputs[0]
         indices = inputs[1]
 
-        validate_same_dtype(self.target, [values, output], ts)
+        validate_same_dtype(self.target, [values, output])
         # Indices must be int32 for TOSA GATHER
         validate_valid_dtype(
             self.target,
             [indices],
             [ts.DType.INT32],
-            self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [values, output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-                *(
-                    [ts.DType.FP8E4M3]
-                    if self.tosa_spec.support_extension("fp8e4m3")
-                    else []
-                ),
-                *(
-                    [ts.DType.FP8E5M2]
-                    if self.tosa_spec.support_extension("fp8e5m2")
-                    else []
-                ),
-            ],
-            self.tosa_spec,
+            supported_data_layout_dtypes(self.tosa_spec, include_bool=False),
         )
 
         attr = ts.TosaSerializerAttribute()

@@ -120,7 +120,7 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
     ```bash
     cd $PATH_TO_EXECUTORCH
     # example usage of performing unit test
-    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm -s $DEVICE_SERIAL -m SM8650 -b build-android/ -a $PATH_TO_TEST_ARTIFACTS
+    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm --device $DEVICE_SERIAL --soc_model SM8650 --build_folder build-android/ -a $PATH_TO_TEST_ARTIFACTS
     ```
     The test graph is expected to have 1 delegated node with only placeholders / output nodes being left. Check the execution report for more information.
 

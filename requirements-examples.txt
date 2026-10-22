@@ -1,7 +1,17 @@
 # pip packages needed to run examples.
 # TODO: Make each example publish its own requirements.txt
 datasets == 3.6.0 # 4.0.0 deprecates trust_remote_code and load scripts. For now pin to 3.6.0
+# examples/openvino/aot_optimize_and_infer.py scores accuracy with scikit-learn and
+# examples/qualcomm/scripts/mobilebert_fine_tune.py uses it too. Three Qualcomm example scripts
+# import scipy directly. Both used to arrive by accident, scikit-learn as an unmarked base
+# dependency and scipy as its transitive, and neither was ever declared. Now that scikit-learn
+# follows coremltools they have to be named where they are actually used.
+scikit-learn >= 1.7.1
+scipy
 timm == 1.0.7
 torchsr == 1.0.4
-torchtune @ git+https://github.com/pytorch/torchtune.git@6f2aa7254458145f99d7004cbd6ebc8e53a06404
+# torchtune caps pyarrow below 21, and no pyarrow in that range ships a cp314 wheel,
+# so pip falls back to the sdist and its Arrow C++ build fails. Skip it on 3.14 until
+# torchtune relaxes the cap; nothing that needs torchtune runs on 3.14 yet.
+torchtune @ git+https://github.com/pytorch/torchtune.git@3c1872ace149f03ef4ffec765d3f0a5fd0399497 ; python_version < "3.14"
 transformers == 5.0.0rc1

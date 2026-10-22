@@ -1,0 +1,40 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "IOS", "MACOSX")
+load("@fbsource//tools/build_defs/apple:fb_apple_library.bzl", "fb_apple_library")
+load("@fbsource//tools/build_defs/apple:fb_apple_resource.bzl", "fb_apple_resource")
+load("@fbsource//xplat/executorch/build/fb:clients.bzl", "EXECUTORCH_CLIENTS")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = fb_apple_library,
+    name = "ExecuTorchDump",
+    autoglob_mode = "EXPORT_UNLESS_INTERNAL",
+    extension_api_only = True,
+    frameworks = [
+        "Foundation",
+    ],
+    sdks = (IOS, MACOSX),
+    test_deps = [
+        ":ExecuTorchDumpTestResource",
+        "//xplat/executorch/kernels/portable:generated_libApple",
+    ],
+    visibility = EXECUTORCH_CLIENTS,
+    deps = select({
+        "ovr_config//os:macos": [
+            "//xplat/executorch/devtools/etdump:etdump_flatccAppleMac",
+            "//xplat/executorch/extension/apple:ExecuTorch",
+        ],
+        "DEFAULT": [
+            "//xplat/executorch/devtools/etdump:etdump_flatccApple",
+            "//xplat/executorch/extension/apple:ExecuTorch",
+        ],
+    }),
+)
+
+fb_apple_resource(
+    name = "ExecuTorchDumpTestResource",
+    files = [
+        "ExecuTorchDump/__tests__/resources/add.pte",
+    ],
+    visibility = ["PUBLIC"],
+)

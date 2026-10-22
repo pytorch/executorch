@@ -30,9 +30,6 @@ struct GraphConfig final {
 
   bool enable_querypool;
 
-  bool enable_local_wg_size_override;
-  utils::uvec3 local_wg_size_override;
-
   // If true, then resize functions should always be called even if input shapes
   // have not changed.
   bool has_data_dependent_shapes = false;
@@ -41,6 +38,11 @@ struct GraphConfig final {
   // Used for testing/debugging only. Forces ExecuteNode to trigger the resize
   // function even if none of the inputs have been updated.
   bool force_resize = false;
+
+  // Used for testing/debugging only. Selects the narrow (2-row) int4 linear
+  // output tile that is otherwise chosen only on Mali, so the variant can be
+  // exercised on any GPU.
+  bool force_narrow_int4_tile = false;
 
   // Execution properties that determine specifics re: how command buffer
   // submission is handled, etc. 0 means this field is not set.
@@ -82,7 +84,6 @@ struct GraphConfig final {
 
   void set_storage_type_override(utils::StorageType storage_type);
   void set_memory_layout_override(utils::GPUMemoryLayout memory_layout);
-  void set_local_wg_size_override(const utils::uvec3& local_wg_size);
 };
 
 } // namespace vkcompute

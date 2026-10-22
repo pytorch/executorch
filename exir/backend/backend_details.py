@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -18,6 +20,36 @@ from torch.export.exported_program import ExportedProgram
 def enforcedmethod(func):
     func.__enforcedmethod__ = True
     return func
+
+
+@experimental("This API is experimental and subject to change without notice.")
+@dataclass
+class DelegateScratchSpec:
+    """A scratch buffer the delegate needs for the duration of one execute() call.
+
+    The memory planner places these in the arena and may reuse the bytes for
+    anything whose lifetime does not overlap the delegate call. They arrive at
+    ``execute()`` through ``BackendExecutionContext::scratch_buffers()``, which
+    documents the contract the backend must honor, including the fact that no
+    absolute alignment is guaranteed.
+
+    Which memory pool a buffer lands in is a property of the target rather than
+    of the backend, so it is not expressed here. An integrator who needs
+    scratch in a particular pool sets ``mem_id`` on the spec from their own
+    memory planning pass, and ``label`` is how they tell the buffers apart:
+    the backend says what a buffer is for, the integrator decides where that
+    belongs. Labels are descriptive rather than identifying, so two buffers
+    may share one and land in the same pool without being the same buffer.
+    """
+
+    nbytes: int
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        if self.nbytes <= 0:
+            raise ValueError(
+                f"Scratch buffer size must be positive, got {self.nbytes} bytes."
+            )
 
 
 @dataclass
@@ -36,6 +68,11 @@ class PreprocessResult:
     # lowered_module.meta field in the graph, but not directly serialized
     # into the PTE file.
     _delegate_info_meta: Optional[Any] = None
+
+    # Scratch buffers the delegate needs at execute() time, memory planned into
+    # the arena and delivered through BackendExecutionContext::scratch_buffers()
+    # in this order. They are not arguments of the delegate call.
+    scratch_specs: Optional[List[DelegateScratchSpec]] = None
 
 
 """
@@ -72,6 +109,15 @@ class BackendDetails(ABC):
                     " should be a final backend implementation and should not be subclassed "
                     f"(attempted by '{cls.__name__}')."
                 )
+
+    @classmethod
+    def copy_exported_program_for_preprocess(
+        cls,
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Return an isolated program for backend preprocessing."""
+        return copy.deepcopy(edge_program)
 
     @staticmethod
     # all backends need to implement this method

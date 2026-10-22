@@ -26,7 +26,7 @@ class MinimumVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         # inputs
         input1 = node.args[0]
         input_id_1 = self.define_tensor(input1, enn_graph, vals_to_ids)
@@ -37,3 +37,5 @@ class MinimumVisitor(NodeVisitor):
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "MIN", [input_id_1, input_id_2], [output_id])
+
+        return True

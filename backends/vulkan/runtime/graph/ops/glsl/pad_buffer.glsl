@@ -32,10 +32,12 @@ ${layout_declare_ubo(B, "float", "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }
@@ -47,7 +49,7 @@ void main() {
   // value that fails the out_of_bounds check below.
   TensorIndex in_tidx = out_tidx;
   [[unroll]] for (int d = 0; d < 4; d++) {
-    in_tidx.data[0][d] -= uint(pad_per_dim[d]);
+    in_tidx.data[0][d] -= uint(safe_idx(pad_per_dim, d));
   }
 
   if (out_of_bounds(in_tidx, inp)) {

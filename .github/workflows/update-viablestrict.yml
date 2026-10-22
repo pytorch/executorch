@@ -23,6 +23,7 @@ jobs:
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict
+          main-branch: main
           requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"^Apple$\", \"viable-strict-gate\"]'
           secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           clickhouse-url: ${{ secrets.CLICKHOUSE_URL }}

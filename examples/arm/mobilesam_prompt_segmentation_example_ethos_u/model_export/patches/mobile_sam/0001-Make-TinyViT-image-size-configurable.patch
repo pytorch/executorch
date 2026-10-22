@@ -1,0 +1,34 @@
+diff --git a/mobile_sam/build_sam.py b/mobile_sam/build_sam.py
+index 9a52c50..d657eff 100644
+--- a/mobile_sam/build_sam.py
++++ b/mobile_sam/build_sam.py
+@@ -47,11 +47,12 @@ def build_sam_vit_b(checkpoint=None):
+-def build_sam_vit_t(checkpoint=None):
++def build_sam_vit_t(checkpoint=None, image_size=1024):
++    if image_size < 16 or image_size % 16 != 0:
++        raise ValueError("image_size must be at least 16 and divisible by 16")
+     prompt_embed_dim = 256
+-    image_size = 1024
+     vit_patch_size = 16
+     image_embedding_size = image_size // vit_patch_size
+     mobile_sam = Sam(
+-            image_encoder=TinyViT(img_size=1024, in_chans=3, num_classes=1000,
++            image_encoder=TinyViT(img_size=image_size, in_chans=3, num_classes=1000,
+                 embed_dims=[64, 128, 160, 320],
+                 depths=[2, 2, 6, 2],
+                 num_heads=[2, 4, 5, 10],
+                 window_sizes=[7, 7, 14, 7],
+diff --git a/mobile_sam/modeling/tiny_vit_sam.py b/mobile_sam/modeling/tiny_vit_sam.py
+index 93fa9f5..6e1f37b 100644
+--- a/mobile_sam/modeling/tiny_vit_sam.py
++++ b/mobile_sam/modeling/tiny_vit_sam.py
+@@ -607,7 +607,8 @@ class TinyViT(nn.Module):
+             layer = self.layers[i]
+             x = layer(x)
+         B,_,C=x.size()
+-        x = x.view(B, 64, 64, C)
++        height, width = self.layers[-1].input_resolution
++        x = x.view(B, height, width, C)
+         x=x.permute(0, 3, 1, 2)
+         x=self.neck(x)
+         return x

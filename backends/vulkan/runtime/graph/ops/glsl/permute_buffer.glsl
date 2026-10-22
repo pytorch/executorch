@@ -33,6 +33,8 @@ ${layout_declare_spec_const(C, "int", "permute_order", "0")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 TensorIndex permute(TensorIndex tidx) {
   TensorIndex new_tidx = tidx;
 
@@ -50,7 +52,7 @@ TensorIndex permute(TensorIndex tidx) {
 }
 
 void main() {
-  const uint inp_bufi = gl_GlobalInvocationID.x;
+  const uint inp_bufi = linear_idx_from_gid();
   if (inp_bufi >= numel(inp)) {
     return;
   }

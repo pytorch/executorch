@@ -36,6 +36,17 @@ class FlatTensorDataMap final
     : public executorch::ET_RUNTIME_NAMESPACE::NamedDataMap {
  public:
   /**
+   * The highest data schema version that this runtime can read.
+   *
+   * Keep in sync with kSchemaVersion in
+   * //executorch/extension/flat_tensor/serialize/serialize.h and with
+   * _FLAT_TENSOR_VERSION in
+   * //executorch/extension/flat_tensor/serialize/serialize.py, which are the
+   * versions that the two writers stamp into every PTD file.
+   */
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
+
+  /**
    * Creates a new DataMap that wraps FlatTensor data.
    *
    * @param[in] loader The DataLoader that wraps the FlatTensor file.

@@ -10,8 +10,10 @@ from typing import Callable, Optional
 
 import torch
 from torchao.quantization.pt2e import (
-    FakeQuantize,
+    FusedMovingAvgObsFakeQuantize,
     MinMaxObserver,
+    MovingAverageMinMaxObserver,
+    MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -64,9 +66,7 @@ def _get_activation_qspec(
 
     qscheme = torch.per_tensor_symmetric if is_symmetric else torch.per_tensor_affine
     if is_qat:
-        observer_or_fake_quant = FakeQuantize.with_args(
-            observer=observer_cls, eps=eps_value
-        )
+        observer_or_fake_quant = FusedMovingAvgObsFakeQuantize.with_args(eps=eps_value)
     else:
         observer_or_fake_quant = observer_cls.with_args(eps=eps_value)
 
@@ -103,8 +103,14 @@ def _get_weight_qspec(
         observer_cls = PerChannelMinMaxObserver
 
     if is_qat:
-        observer_or_fake_quant = FakeQuantize.with_args(
-            observer=observer_cls, eps=eps_value
+        observer_cls = FusedMovingAvgObsFakeQuantize
+        if not is_per_channel:
+            weight_qat_observer = MovingAverageMinMaxObserver
+        else:
+            weight_qat_observer = MovingAveragePerChannelMinMaxObserver
+        observer_or_fake_quant = observer_cls.with_args(
+            eps=eps_value,
+            observer=weight_qat_observer,
         )
     else:
         observer_or_fake_quant = observer_cls.with_args(eps=eps_value)
@@ -134,41 +140,3 @@ def get_a8w8_enn_quant_config(
         bias=bias_quantization_spec,
     )
     return quantization_config
-
-
-class QuantInfo:
-    def __init__(self, torch_dtype: torch.dtype, string: str):
-        self._torch_dtype = torch_dtype
-        self._string = string
-
-    @property
-    def torch_dtype(self):
-        return self._torch_dtype
-
-    @property
-    def string(self):
-        return self._string
-
-
-class QuantInfoManager:
-    QUANT_INFO_MAP = {
-        Precision.A8W8: (QuantInfo(torch.int8, "INT8"), QuantInfo(torch.int8, "INT8")),
-    }
-    FP_INFO = (
-        QuantInfo(torch.float32, "FLOAT32"),
-        QuantInfo(torch.float32, "FLOAT32"),
-    )
-
-    def __init__(self):
-        self.precision = None
-
-    def set_precision(self, precision: Precision):
-        self.precision = precision
-
-    @property
-    def weight_precison(self) -> Optional[QuantInfo]:
-        return self.QUANT_INFO_MAP.get(self.precision, self.FP_INFO)[0]
-
-    @property
-    def act_precision(self) -> Optional[QuantInfo]:
-        return self.QUANT_INFO_MAP.get(self.precision, self.FP_INFO)[1]

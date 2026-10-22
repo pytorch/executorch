@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from rms_norm.wgsl - DO NOT EDIT.
-// wgsl-sha256: 4c0ba56708bf125a7ec6ea3c51d1288e05ac00a8e2cfa10e38e9a208e230b8df
+// wgsl-sha256: 62fdfe03fc67eb44fa17ca5e91e433b3a45a96c76151777856d6f557fd829919
 inline constexpr const char* kRmsNormVec4WGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_in: array<vec4<f32>>;
@@ -27,13 +27,14 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-const WG_SIZE: u32 = 64u;
+// wg_size must be a power of two (the tree reduction halves the stride).
+override wg_size: u32 = 64u;
 
-var<workgroup> shared_sum: array<f32, WG_SIZE>;
+var<workgroup> shared_sum: array<f32, wg_size>;
 
 fn reduce_shared(worker_id: u32) {
   workgroupBarrier();
-  var stride: u32 = WG_SIZE / 2u;
+  var stride: u32 = wg_size / 2u;
   loop {
     if (stride == 0u) {
       break;
@@ -46,10 +47,10 @@ fn reduce_shared(worker_id: u32) {
   }
 }
 
-// vec4 variant of rms_norm: each lane strides by WG_SIZE over rw4 = row_width/4
+// vec4 variant of rms_norm: each lane strides by wg_size over rw4 = row_width/4
 // texels and accumulates dot(v, v). row_width is the ELEMENT count, so mean_sq
 // divides by it (not rw4). The host selects this only when row_width % 4 == 0.
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -71,7 +72,7 @@ fn main(
     }
     let v = t_in[base4 + x4];
     local_sq_sum = local_sq_sum + dot(v, v);
-    x4 = x4 + WG_SIZE;
+    x4 = x4 + wg_size;
   }
 
   shared_sum[worker_id] = local_sq_sum;
@@ -86,7 +87,7 @@ fn main(
       break;
     }
     t_out[base4 + x4] = t_in[base4 + x4] * rstd * t_weight[x4];
-    x4 = x4 + WG_SIZE;
+    x4 = x4 + wg_size;
   }
 }
 )";

@@ -5,11 +5,13 @@ load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
 )
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.cxx_library(
+non_fbcode_target(
+    _kind = runtime.cxx_library,
     name = "neuron_backend",
     srcs = [
         "NeuronBackend.cpp",
@@ -20,6 +22,7 @@ runtime.cxx_library(
         "include/**/*.h",
     ]),
     include_directories = ["include"],
+    modifiers = ["ovr_config//os/version/android/constraints:api-level-26"],
     deps = [
         "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
         "//executorch/runtime/backend:interface",

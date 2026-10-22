@@ -633,13 +633,10 @@ def build_portable_lib(
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr ARM
-    # cross-compilation) rejects it with -Werror, so exclude it for Zephyr.
-    # OSS bypasses the select since ovr_config//os:zephyr is not in the OSS
-    # buck2 prelude.
+    # GCC's C++ frontend rejects this C-only flag under -Werror.
     compiler_flags = select({
         "DEFAULT": ["-Wno-missing-prototypes"],
-        "ovr_config//os:zephyr": [],
+        "ovr_config//compiler:gcc": [],
     }) if not runtime.is_oss else ["-Wno-missing-prototypes"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
@@ -686,13 +683,11 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    # -Wno-missing-prototypes and -Wno-global-constructors are Clang-only for
-    # C++; GCC (used by Zephyr ARM cross-compilation) rejects them with
-    # -Werror, so exclude them for Zephyr. OSS bypasses the select since
-    # ovr_config//os:zephyr is not in the OSS buck2 prelude.
+    # Drop the Clang-only flags for GCC: its C++ frontend rejects
+    # -Wno-missing-prototypes under -Werror.
     compiler_flags = select({
         "DEFAULT": ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"],
-        "ovr_config//os:zephyr": ["-Wno-pass-failed", "-Wno-shadow"],
+        "ovr_config//compiler:gcc": ["-Wno-pass-failed", "-Wno-shadow"],
     }) if not runtime.is_oss else ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
@@ -1189,7 +1184,7 @@ def check_recursive_dependencies(
     runtime.genrule(
         name = name,
         macros_only = False,
-        cmd = 'mkdir -p $OUT;paths="$(query_targets allpaths({}, {}))"; echo "$paths" > $OUT/dep.txt; if [ -z "$paths" ]; then echo "Dependencies look good"; else echo {}. This will cause duplicate symbol errors when building with dtype selective build. The dependency path is: "$paths"; fail; fi'.format(parent, child, message),
+        cmd = 'mkdir -p $OUT;paths="$(query_targets allpaths({}, {}))"; echo "$paths" > $OUT/dep.txt; if [ -z "$paths" ]; then echo "Dependencies look good"; else echo {}. This will cause duplicate symbol errors when building with dtype selective build. The dependency path is: "$paths"; exit 1; fi'.format(parent, child, message),
         define_static_target = False,
         # The path is saved to $OUT/dep.txt and can be accessed via genrule_name[result].
         outs = {"result": ["dep.txt"]},

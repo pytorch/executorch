@@ -4,7 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(CMAKE_CXX_STANDARD 17)
+# This is configured as its own project rather than from the repository root, so
+# it cannot inherit the standard and has to repeat the rule: the vendored c10
+# headers these runners include need C++20 on Windows. See the note beside
+# CMAKE_CXX_STANDARD in the root CMakeLists.txt.
+if(NOT CMAKE_CXX_STANDARD)
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
+endif()
 # qnn_executor_runner: Like executor_runner but with QNN
 
 cmake_minimum_required(VERSION 3.19)

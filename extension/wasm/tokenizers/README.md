@@ -14,7 +14,7 @@ emcmake cmake . -DEXECUTORCH_BUILD_TOKENIZERS_WASM=ON \
     -Bcmake-out-wasm
 
 # Build the Wasm extension
-cmake --build cmake-out-wasm --target tokenizers_wasm -j32
+cmake --build cmake-out-wasm --target tokenizers_wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 Emscripten modules are loaded into the global `Module` object by default. This means you cannot have multiple modules in the same page. If you are also using the ExecuTorch Wasm bindings, it is recommended to use the `MODULARIZE` option to avoid conflicts.

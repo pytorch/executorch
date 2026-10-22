@@ -140,6 +140,11 @@ class vTensorStorage final {
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
 
+  vTensorStorage(
+      Context* const context,
+      const vkapi::VulkanBuffer& buffer,
+      const vkapi::ScalarType dtype);
+
  public:
   vTensorStorage(vTensorStorage& other) = delete;
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
@@ -210,7 +215,12 @@ class vTensor final {
       const utils::StorageType storage_type = utils::kTexture3D,
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true,
-      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap,
+      // When non-null, wrap this resource instead of allocating. Stored as a
+      // copy, which aliases the handle without owning it. At most one may be
+      // set.
+      const vkapi::VulkanImage* external_image = nullptr,
+      const vkapi::VulkanBuffer* external_buffer = nullptr);
 
   vTensor(const vTensor& other) = delete;
 
@@ -344,6 +354,8 @@ class vTensor final {
 
   // Whether the tensor has elements of type float, int, etc.
   vkapi::ScalarType dtype_;
+  // Requested dtype before device-specific storage emulation.
+  vkapi::ScalarType original_dtype_;
   // Information about packed dimension padding and block packing
   PackedDimInfo packed_dim_info_;
   // sizes of the tensor in NCHW dimension order
@@ -507,6 +519,10 @@ class vTensor final {
    */
   inline vkapi::ScalarType dtype() const {
     return dtype_;
+  }
+
+  inline vkapi::ScalarType original_dtype() const {
+    return original_dtype_;
   }
 
   /*

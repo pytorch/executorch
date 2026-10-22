@@ -7,12 +7,18 @@
 from typing import Callable, Dict, List
 
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import q_ops
+from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
+    PER_CHANNEL_GROUP_ENCODING,
+    q_ops,
+)
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
+    QCOM_SCALES,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
@@ -81,6 +87,9 @@ def insert_quant_node(
     quant_attrs: Dict = None,
     pop_quant_attrs: bool = True,
 ) -> torch.fx.Node:
+    assert (
+        target in q_ops
+    ), f"insert_quant_node expects a quantize target, got: {target}"
     with graph_module.graph.inserting_after(input_node):
         inserted_node = _create_q_or_dq_node(
             graph_module=graph_module,
@@ -101,6 +110,9 @@ def insert_dequant_node(
     output_node: torch.fx.node,
     target: torch.fx.node.Target,
 ) -> None:
+    assert (
+        target in dq_ops
+    ), f"insert_dequant_node expects a dequantize target, got: {target}"
     with graph_module.graph.inserting_after(input_node):
         inserted_node = _create_q_or_dq_node(
             graph_module=graph_module, node=input_node, target=target
@@ -139,6 +151,24 @@ def get_quant_attrs(
     # remap key for compatibility - block quantization only
     if dtype := quant_attrs.get("input_dtype", None):
         quant_attrs[QCOM_DTYPE] = dtype
+
+    # per-channel-group ops name their block scale tensor "scales"; QNN's
+    # per-block config reads it as QCOM_SCALE. Gate on the encoding rather than
+    # on the presence of the key: quantize_per_channel.default also has a
+    # "scales" argument but is consumed as a per-channel (not per-block) config.
+    if quant_node.target in PER_CHANNEL_GROUP_ENCODING:
+        scales = quant_attrs[QCOM_SCALES]
+        group_size = quant_attrs["group_size"]
+        num_input_features = quant_node.args[0].meta["val"].shape[-1]
+        # make_qnn_per_block_config infers blocks-per-axis from the scale
+        # shape; a mismatched checkpoint would otherwise lower silently wrong
+        if scales.shape[-1] * group_size != num_input_features:
+            raise ValueError(
+                f"group-wise scale shape {tuple(scales.shape)} is inconsistent "
+                f"with group_size {group_size} for weight with "
+                f"{num_input_features} input features"
+            )
+        quant_attrs[QCOM_SCALE] = scales
 
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs
@@ -349,19 +379,25 @@ def create_const_node(
     attr_name: str,
     value,
     source_node: torch.fx.Node,
+    const_dtype: torch.dtype = None,
+    static_shapes: bool = False,
 ) -> torch.fx.Node:
     """
     Register a scalar constant as a named buffer on the graph module and return a get_attr node referencing it.
     Used in edge dialect op decomposition passes where raw scalar arguments are not accepted by QNN op builders which need the inputs to be graph nodes.
     """
     dtype = source_node.meta["val"].dtype
+    if const_dtype is not None:
+        dtype = const_dtype
     tensor = torch.tensor(value, dtype=dtype)
     graph_module.register_buffer(attr_name, tensor)
 
     fake_mode = source_node.meta["val"].fake_mode
     with graph.inserting_before(next(iter(graph.nodes))):
         const_node = graph.get_attr(attr_name)
-        const_node.meta["val"] = fake_mode.from_tensor(tensor)
+        const_node.meta["val"] = fake_mode.from_tensor(
+            tensor, static_shapes=static_shapes
+        )
     return const_node
 
 

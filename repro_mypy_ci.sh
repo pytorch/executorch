@@ -29,7 +29,7 @@ run_in_env() {
 
 run_in_env python -m pip install --upgrade pip
 run_in_env python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-run_in_env python -m pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
+run_in_env python -m pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
 run_in_env python -m pip install -r requirements-lintrunner.txt
 run_in_env lintrunner init
 

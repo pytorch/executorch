@@ -14,6 +14,7 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import re
 import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
@@ -21,34 +22,34 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, final, List
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import (
+    DecomposeQuantNodesPass,
+    InsertRescaleInt32Pass,
+    RewriteConvPass,
+)
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     PassInsertions,
     register_pass_insertions_before,
 )
-from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
+from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (
+    FuseGridSamplerFlowOffsetPass,
+    InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
-from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
-    VgfCompileSpec,
-)
-from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import (
     model_converter_env,
     require_model_converter_executable,
 )
-from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
-    BackendDetails,
-    PreprocessResult,
-)
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
 # debug functionality
@@ -144,18 +145,24 @@ def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
     )
 
 
-def _register_grid_sampler_rewrite_pass() -> None:
-    """Register VGF-only custom shader lowering passes."""
-    existing_insertions = _registered_pass_insertions.get(RewriteConvPass)
+def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
+    existing_insertions = _registered_pass_insertions.get(target_pass_type)
     if existing_insertions is not None and any(
-        isinstance(pass_, RewriteGridSamplerToTosaCustomPass)
-        for pass_ in existing_insertions.before_passes
+        isinstance(existing_pass, type(pass_))
+        for existing_pass in existing_insertions.before_passes
     ):
         return
-    register_pass_insertions_before(
-        RewriteConvPass,
-        [RewriteGridSamplerToTosaCustomPass()],
+    register_pass_insertions_before(target_pass_type, [pass_])
+
+
+def _register_vgf_rewrite_passes() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    _register_pass_before(DecomposeQuantNodesPass, InsertGridSamplerGridDequantPass())
+    _register_pass_before(
+        InsertRescaleInt32Pass,
+        FuseGridSamplerFlowOffsetPass(),
     )
+    _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
 
 
 def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
@@ -203,7 +210,9 @@ class VgfBackend(BackendDetails):
             bytes: Target-specific VGF binary stream.
 
         """
-        compile_flags = compile_spec.compiler_flags
+        compile_flags = list(compile_spec.compiler_flags)
+        if compile_spec.emit_debug_info and "--emit-debug-info" not in compile_flags:
+            compile_flags.append("--emit-debug-info")
         artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
@@ -229,7 +238,7 @@ class VgfBackend(BackendDetails):
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
-            _register_grid_sampler_rewrite_pass()
+            _register_vgf_rewrite_passes()
             compile_spec = VgfCompileSpec._from_list(compile_specs)
             # deduce TOSA compile_spec from VGF compile spec. We get a new
             # compile spec list, containing only elements relevant for the
@@ -251,6 +260,79 @@ class VgfBackend(BackendDetails):
             _restore_registered_pass_insertions(insertions_snapshot)
 
         return PreprocessResult(processed_bytes=binary)
+
+
+_SAFE_VGF_TAG_NAME_RE = re.compile(r"[A-Za-z0-9_.-]*")
+
+
+def _validate_tag_name(tag_name: str) -> str:
+    """Validate a delegation tag before it is used in an artifact filename.
+
+    Delegation tags originate from graph metadata and must therefore be
+    treated as untrusted when they cross into filesystem operations.
+
+    Args:
+        tag_name: Delegation tag associated with the compiled partition.
+
+    Returns:
+        The unchanged tag when it is safe for use as a filename component.
+
+    Raises:
+        ValueError: If the tag contains path traversal, path separators, or
+            characters outside the filename allowlist.
+
+    """
+    if (
+        "/" in tag_name
+        or "\\" in tag_name
+        or ".." in tag_name
+        or _SAFE_VGF_TAG_NAME_RE.fullmatch(tag_name) is None
+    ):
+        raise ValueError(
+            "Invalid VGF delegation tag: only ASCII letters, digits, '_', "
+            "'.', and '-' are allowed, and path separators or '..' are "
+            "forbidden."
+        )
+
+    return tag_name
+
+
+def _safe_output_path(directory: str, filename: str) -> str:
+    """Construct an output path that is confined to ``directory``.
+
+    Both paths are resolved before comparison so traversal components and
+    existing symlinks cannot move the resulting path outside the requested
+    directory.
+
+    Args:
+        directory: Directory that must contain the resulting file.
+        filename: Filename to place inside ``directory``.
+
+    Returns:
+        Absolute normalized path to the requested output.
+
+    Raises:
+        ValueError: If the resulting path escapes ``directory``.
+
+    """
+    directory_path = os.path.realpath(directory)
+    output_path = os.path.realpath(os.path.join(directory_path, filename))
+
+    try:
+        is_contained = (
+            os.path.commonpath([directory_path, output_path]) == directory_path
+        )
+    except ValueError:
+        # On Windows, commonpath() also raises when paths reside on different
+        # drives. Such a path cannot be contained in the requested directory.
+        is_contained = False
+
+    if not is_contained:
+        raise ValueError(
+            f"VGF output path escapes the intended directory: {filename!r}"
+        )
+
+    return output_path
 
 
 def _format_repro_command(command: List[str]) -> str:
@@ -277,10 +359,12 @@ def _copy_failure_artifacts(
     if not artifact_path:
         return None
 
+    safe_tag_name = _validate_tag_name(tag_name)
+
     os.makedirs(artifact_path, exist_ok=True)
 
-    suffix = f"_{tag_name}" if tag_name else ""
-    failure_tosa_path = os.path.join(
+    suffix = f"_{safe_tag_name}" if safe_tag_name else ""
+    failure_tosa_path = _safe_output_path(
         artifact_path,
         f"failed_model_converter_input{suffix}.tosa",
     )
@@ -319,11 +403,15 @@ def vgf_compile(
         bytes: Compiled VGF binary emitted by ``model-converter``.
 
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
+    # tag_name comes from delegation metadata. Validate it before performing
+    # any filesystem operations, including failure-artifact handling.
+    safe_tag_name = _validate_tag_name(tag_name)
 
-        # We currently write out a flatbuffer as input to the converter
-        tosaname = f"output_{tag_name}.tosa"
-        tosa_path = os.path.join(tmpdir, tosaname)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # The TemporaryDirectory already provides uniqueness, so there is no
+        # reason to put untrusted delegation metadata in this filename.
+        tosaname = "output.tosa"
+        tosa_path = _safe_output_path(tmpdir, tosaname)
         with open(tosa_path, "wb") as f:
             f.write(tosa_flatbuffer)
 
@@ -354,7 +442,7 @@ def vgf_compile(
                 failure_tosa_path = _copy_failure_artifacts(
                     tosa_path,
                     artifact_path,
-                    tag_name,
+                    safe_tag_name,
                 )
             except Exception as artifact_error:
                 failure_artifact_error = artifact_error
@@ -381,9 +469,18 @@ def vgf_compile(
             )
 
         if artifact_path:
-            logger.info(f"Emitting debug output to: {vgf_path=}")
             os.makedirs(artifact_path, exist_ok=True)
-            shutil.copy2(vgf_path, artifact_path)
+
+            # Keep delegation metadata out of the temporary converter paths,
+            # but preserve it in the persistent debug artifact name. The tag
+            # has already been validated above.
+            suffix = f"_{safe_tag_name}" if safe_tag_name else ""
+            artifact_vgf_path = _safe_output_path(
+                artifact_path,
+                f"output{suffix}.tosa.vgf",
+            )
+            logger.info(f"Emitting debug output to: {artifact_vgf_path}")
+            shutil.copy2(vgf_path, artifact_vgf_path)
 
         vgf_bytes = open(vgf_path, "rb").read()
         return vgf_bytes

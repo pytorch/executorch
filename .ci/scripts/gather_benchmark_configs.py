@@ -94,7 +94,6 @@ BENCHMARK_CONFIGS = {
     ],
     "ios": [
         "coreml_fp16",
-        "mps",
         "llama3_coreml_ane",
     ],
 }
@@ -121,24 +120,8 @@ DISABLED_CONFIGS: Dict[str, List[DisabledConfig]] = {
     ],
     "mobilebert": [
         DisabledConfig(
-            config_name="mps",
-            github_issue="https://github.com/pytorch/executorch/issues/7904",
-        ),
-        DisabledConfig(
             config_name="qnn_q8",
             github_issue="https://github.com/pytorch/executorch/issues/7946",
-        ),
-    ],
-    "edsr": [
-        DisabledConfig(
-            config_name="mps",
-            github_issue="https://github.com/pytorch/executorch/issues/7905",
-        ),
-    ],
-    "llama": [
-        DisabledConfig(
-            config_name="mps",
-            github_issue="https://github.com/pytorch/executorch/issues/7907",
         ),
     ],
 }

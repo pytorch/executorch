@@ -30,13 +30,45 @@ else()
   set(_threadpool_size_flag "EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES")
 endif()
 
+# The thread pool is a process-wide singleton held in a function-local static,
+# so every library that links it statically gets its own copy. Build it shared
+# for the wheel, where several extensions are loaded into one interpreter, and
+# keep it static everywhere else so no other build changes.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_threadpool_library_type SHARED)
+else()
+  set(_threadpool_library_type STATIC)
+endif()
+
 add_library(
-  extension_threadpool threadpool.cpp threadpool_guard.cpp thread_parallel.cpp
-                       cpuinfo_utils.cpp
+  extension_threadpool
+  ${_threadpool_library_type} threadpool.cpp threadpool_guard.cpp
+  thread_parallel.cpp cpuinfo_utils.cpp
 )
-target_link_libraries(
-  extension_threadpool PUBLIC executorch_core cpuinfo pthreadpool
-)
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    extension_threadpool PROPERTIES OUTPUT_NAME executorch_threadpool
+  )
+  executorch_target_soname_policy(extension_threadpool)
+  # Ships beside libexecutorch.so in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(extension_threadpool)
+  # cpuinfo and pthreadpool are forced static, so bundle them inside this
+  # library instead of making every consumer supply them. pthreadpool is
+  # EXPORTED, because the other components run their work on this one pool.
+  # cpuinfo is not: on Windows its feature checks (cpuinfo_has_x86_avx2 and the
+  # rest) are inline reads of cpuinfo_isa, and cpuinfo.h does not declare that
+  # data dllimport, so another DLL can only ever read its own copy. Exporting
+  # the functions let XNNPACK initialize this library's copy and read its own,
+  # all zeros, and run baseline kernels. Kept private, each DLL that uses
+  # cpuinfo carries all of it. Elsewhere the whole archive is exported anyway.
+  executorch_target_whole_archive(extension_threadpool cpuinfo)
+  executorch_target_whole_archive(extension_threadpool pthreadpool EXPORTED)
+  target_link_libraries(extension_threadpool PUBLIC executorch_shared)
+else()
+  target_link_libraries(
+    extension_threadpool PUBLIC executorch_core cpuinfo pthreadpool
+  )
+endif()
 target_include_directories(
   extension_threadpool PUBLIC ${_common_include_directories}
 )

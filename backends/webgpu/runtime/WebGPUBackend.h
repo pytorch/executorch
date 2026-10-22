@@ -8,11 +8,16 @@
 
 #pragma once
 
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/runtime/backend/interface.h>
 
 namespace executorch {
 namespace backends {
 namespace webgpu {
+
+executorch::runtime::Result<WebGPUGraphConfig> parse_webgpu_graph_config(
+    executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+        compile_specs);
 
 class WebGPUBackend final : public ::executorch::runtime::BackendInterface {
  public:

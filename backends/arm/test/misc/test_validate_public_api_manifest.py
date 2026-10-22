@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 from executorch.backends.arm.scripts.public_api_manifest.validate_public_api_manifest import (
     format_validation_report,
     get_current_python_symbols,
+    get_manifest_cmake_symbols,
     get_manifest_python_symbols,
     validate_symbols,
 )
@@ -62,6 +63,87 @@ def test_get_manifest_python_symbols_flattens_nested_tables():
         "Foo": {"kind": "class", "signature": "Foo()"},
         "Foo.bar": {"kind": "function", "signature": "Foo.bar() -> None"},
     }
+
+
+def test_get_manifest_cmake_symbols_flattens_command_tables():
+    manifest = tomllib.loads(
+        """
+        [python]
+
+        [cmake.arm_runner_foo]
+        kind = "function"
+        signature = "arm_runner_foo(*, TARGET)"
+        """
+    )
+
+    assert get_manifest_cmake_symbols(manifest) == {
+        "arm_runner_foo": {
+            "kind": "function",
+            "signature": "arm_runner_foo(*, TARGET)",
+        }
+    }
+
+
+def test_static_manifest_without_cmake_section_has_no_cmake_contract():
+    manifest = tomllib.loads("[python]\n")
+
+    assert get_manifest_cmake_symbols(manifest) == {}
+
+
+def test_running_manifest_validation_rejects_cmake_drift(tmp_path, monkeypatch):
+    manifest_path = tmp_path / "api_manifest_running.toml"
+    manifest_path.write_text(
+        """
+        [python]
+
+        [cmake.arm_runner_foo]
+        kind = "function"
+        signature = "arm_runner_foo(*, TARGET)"
+        """,
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        vpam.gpam,
+        "generate_manifest_from_init",
+        lambda **_: """
+            [python]
+
+            [cmake.arm_runner_foo]
+            kind = "function"
+            signature = "arm_runner_foo(*, TARGET, REQUIRED_ARG)"
+        """,
+    )
+
+    issues = vpam.validate_manifest(manifest_path)
+
+    assert len(issues) == 1
+    assert issues[0][0] == "arm_runner_foo"
+    assert issues[0][1] == "signature changed"
+
+
+def test_validate_manifests_checks_every_manifest(monkeypatch, capsys):
+    manifest_paths = [
+        Path("api_manifest_1_4.toml"),
+        Path("api_manifest_running.toml"),
+    ]
+    validated_paths = []
+
+    def validate_manifest(manifest_path):
+        validated_paths.append(manifest_path)
+        if manifest_path.name == "api_manifest_running.toml":
+            return [("foo", "signature changed", "foo()", "foo(x)")]
+        return []
+
+    monkeypatch.setattr(vpam, "validate_manifest", validate_manifest)
+
+    failures = vpam.validate_manifests(manifest_paths)
+
+    assert failures == 1
+    assert validated_paths == manifest_paths
+    output = capsys.readouterr().out
+    assert "=== api_manifest_1_4.toml ===" in output
+    assert "=== api_manifest_running.toml ===" in output
 
 
 def test_nested_python_manifest_entries_are_validated():

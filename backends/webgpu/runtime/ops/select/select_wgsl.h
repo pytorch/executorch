@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from select.wgsl - DO NOT EDIT.
-// wgsl-sha256: 200cf5a8190045aa0562e782f01c1cfaf9681f30f679f5112ccc3d347a0ed8df
+// wgsl-sha256: a33af9c7ee49c5d12b226befbb08add1538367750ab7437b5c0b4f5fa0291af9
 inline constexpr const char* kSelectWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -21,8 +21,8 @@ inline constexpr const char* kSelectWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
@@ -44,15 +44,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     // Gather: out dim od -> in dim (od if od < dim else od+1); sel dim = index.
     var rem = out_bufi;
-    var in_bufi: u32 = params.index * in_meta.strides[params.dim];
+    var in_bufi: u32 = params.index * in_meta.strides[params.dim >> 2u][params.dim & 3u];
     for (var od: u32 = 0u; od < out_meta.ndim; od = od + 1u) {
-        let coord = rem / out_meta.strides[od];
-        rem = rem % out_meta.strides[od];
+        let coord = rem / out_meta.strides[od >> 2u][od & 3u];
+        rem = rem % out_meta.strides[od >> 2u][od & 3u];
         var id = od;
         if (od >= params.dim) {
             id = od + 1u;
         }
-        in_bufi = in_bufi + coord * in_meta.strides[id];
+        in_bufi = in_bufi + coord * in_meta.strides[id >> 2u][id & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }

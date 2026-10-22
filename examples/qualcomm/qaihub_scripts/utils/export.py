@@ -168,7 +168,6 @@ def to_context_binary(
     logger.info(f"Generating context binary for {model_lib}")
     # leverage SimpleADB for model library conversion
     lib_name = Path(model_lib).stem
-    sdk_root = os.getenv("QNN_SDK_ROOT")
     qnn_config = QnnConfig(
         soc_model=soc_model,
         build_folder=build_folder,
@@ -176,6 +175,9 @@ def to_context_binary(
         host=host,
         target=target,
     )
+    # Read after the config is built, because building it is what sets up the SDK and so may be
+    # what puts this variable in the environment.
+    sdk_root = os.getenv("QNN_SDK_ROOT")
     adb = SimpleADB(
         qnn_config=qnn_config,
         pte_path=model_lib,

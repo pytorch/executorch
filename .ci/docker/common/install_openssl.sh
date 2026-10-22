@@ -5,8 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# NB: This script is needed for sccache and is adopted from PyTorch core repo at
-# https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_openssl.sh
+# NB: This script is needed for sccache and is adopted from PyTorch core repo.
+# Core deleted its copy in pytorch/pytorch#179513, so this points at the last
+# revision that still had it instead of at a branch.
+# https://github.com/pytorch/pytorch/blob/9274b93eac9f026e9f51e282449b0300b8e05482/.ci/docker/common/install_openssl.sh
 set -ex
 
 OPENSSL=openssl-1.1.1k

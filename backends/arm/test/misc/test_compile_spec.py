@@ -9,21 +9,37 @@ from executorch.backends.arm.common.pipeline_config import (
     LeakyReLULoweringConfig,
     SoftmaxDecompositionConfig,
 )
-from executorch.backends.arm.ethosu import EthosUCompileSpec
+from executorch.backends.arm.ethosu import (
+    EthosUCompileSpec,
+    VelaExternalBlockPlacements,
+)
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
-from pytest import raises, warns
+from executorch.exir._warnings import ExperimentalWarning
+from pytest import mark, raises, warns
 
 
 def test_compile_spec_u55_INT():
     compile_spec = (
-        EthosUCompileSpec("ethos-u55", extra_flags=["--my-flag"])
+        EthosUCompileSpec(
+            "ethos-u55",
+            extra_flags=["--my-flag"],
+            external_block_placements=VelaExternalBlockPlacements(
+                cmd_data="mem1",
+                weight_data="mem2",
+            ),
+        )
         .dump_intermediate_artifacts_to("my_path")
         .dump_debug_info(EthosUCompileSpec.DebugMode.TOSA)
     )
     spec_list = compile_spec._to_list()
 
-    assert EthosUCompileSpec._from_list(spec_list) == compile_spec
+    roundtripped = EthosUCompileSpec._from_list(spec_list)
+    assert roundtripped == compile_spec
+    assert roundtripped.external_block_placements == VelaExternalBlockPlacements(
+        cmd_data="mem1",
+        weight_data="mem2",
+    )
     assert "--my-flag" in compile_spec.compiler_flags
     assert "--output-format=raw" in compile_spec.compiler_flags
     with raises(ValueError, match="Incorrect output format"):
@@ -54,7 +70,9 @@ def test_ethos_u85_defaults_to_masked_softmax_u85_INT():
     """Test that EthosUCompileSpec for U85 defaults to MASKED softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u85-256")
     pipeline_config = compile_spec._get_pass_pipeline_config()
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.MASKED
+    assert roundtripped.external_block_placements == VelaExternalBlockPlacements()
 
 
 def test_compile_spec_vgf_no_quant():
@@ -110,6 +128,16 @@ def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
     assert roundtripped.tosa_dev_mode is True
 
 
+def test_emit_debug_info_roundtrip_vgf_FP_INT():
+    disabled = VgfCompileSpec()
+    disabled_roundtripped = VgfCompileSpec._from_list(disabled._to_list())
+    assert disabled_roundtripped.emit_debug_info is False
+
+    enabled = VgfCompileSpec(emit_debug_info=True)
+    enabled_roundtripped = VgfCompileSpec._from_list(enabled._to_list())
+    assert enabled_roundtripped.emit_debug_info is True
+
+
 def test_preserve_io_quantization_warns_for_u55_INT():
     with warns(
         UserWarning,
@@ -123,3 +151,38 @@ def test_preserve_io_quantization_no_warn_for_vgf_FP_INT():
         warnings.simplefilter("always")
         VgfCompileSpec()._set_preserve_io_quantization(True)
     assert len(recorded_warnings) == 0
+
+
+@mark.parametrize("max_scratch_size", [None, 2097152, 4194304])
+def test_ethosu_scratch_capacity_roundtrip(max_scratch_size):
+    compile_spec = EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.max_scratch_size == max_scratch_size
+    assert all("max_scratch_size" not in flag for flag in roundtripped.compiler_flags)
+
+
+@mark.parametrize("max_scratch_size", [0, -1, 1.5, True, "2097152"])
+def test_ethosu_scratch_capacity_rejects_invalid_values(max_scratch_size):
+    with raises(ValueError, match="max_scratch_size must be a positive integer"):
+        EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)
+
+
+@mark.parametrize("enabled", [False, True])
+def test_ethosu_delegate_mutable_buffers_roundtrip_u85_INT(enabled):
+    compile_spec = EthosUCompileSpec("ethos-u85-256")
+    with warns(ExperimentalWarning, match="experimental"):
+        compile_spec.set_delegate_mutable_buffers(enabled)
+    flag = "--separate-persistent-region"
+    assert (flag in compile_spec.compiler_flags) == enabled
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.delegate_mutable_buffers == enabled
+    assert roundtripped.compiler_flags.count(flag) == int(enabled)
+
+
+def test_ethosu_persistent_region_extra_flag_does_not_delegate_buffers_u85_INT():
+    compile_spec = EthosUCompileSpec(
+        "ethos-u85-256", extra_flags=["--separate-persistent-region"]
+    )
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert not compile_spec.delegate_mutable_buffers
+    assert not roundtripped.delegate_mutable_buffers

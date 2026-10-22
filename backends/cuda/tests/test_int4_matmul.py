@@ -23,6 +23,7 @@ from executorch.backends.cuda.triton.kernels.int4_matmul import (
     dequant_w4_to_bf16,
     int4_matmul,
     int4_matvec,
+    int4_matvec_bf16,
 )
 
 ATOL = 0.01
@@ -250,6 +251,24 @@ class TestInt4Matvec(unittest.TestCase):
         out_mm = int4_matmul(x, packed, scale, gs)
 
         _assert_snr(self, out_mv, out_mm, "matvec vs matmul")
+
+    def test_bf16_weight_rounding_matches_int4_matmul(self):
+        torch.manual_seed(42)
+        N, K, gs = 2048, 2048, 128
+        w = torch.randn(N, K, dtype=torch.bfloat16, device=DEVICE)
+        packed, scale, _ = _quantize_simple(w, gs)
+        x = torch.randn(1, K, dtype=torch.bfloat16, device=DEVICE)
+
+        out_mv = int4_matvec_bf16(x, packed, scale, gs)
+        out_mm = int4_matmul(x, packed, scale, gs)
+
+        _assert_snr(
+            self,
+            out_mv,
+            out_mm,
+            "BF16-rounded matvec vs matmul",
+            threshold_db=80.0,
+        )
 
 
 class TestDequantThenMatmul(unittest.TestCase):

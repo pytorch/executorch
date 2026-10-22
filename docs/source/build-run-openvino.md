@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with OpenVINO Backend
+# OpenVINO Backend
 
 In this tutorial we will walk you through the process of setting up the prerequisites, building OpenVINO backend library, exporting `.pte` models with OpenVINO optimizations, and executing the exported models on Intel hardware.
 
@@ -35,13 +35,16 @@ For more information on the supported hardware, please refer to [OpenVINO System
 
 ## Instructions for Building OpenVINO Backend
 
-### Quick Start (pip wheel, Linux)
+### Quick Start (pip wheel, Linux and Windows)
 
 The easiest way to use the OpenVINO backend is via the prebuilt pip wheel:
 
 ```bash
 pip install executorch[openvino]
 ```
+
+For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python
+3.14, because the OpenVINO versions it supports publish no build there.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed
 package — no environment variable setup is needed.

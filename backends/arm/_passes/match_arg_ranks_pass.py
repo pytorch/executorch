@@ -66,6 +66,23 @@ class MatchArgRanksPass(ArmOpTargetedPass):
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
+        exir_ops.backend.tosa.ADD.default,
+        exir_ops.backend.tosa.ARITHMETIC_RIGHT_SHIFT.default,
+        exir_ops.backend.tosa.BITWISE_AND.default,
+        exir_ops.backend.tosa.BITWISE_OR.default,
+        exir_ops.backend.tosa.BITWISE_XOR.default,
+        exir_ops.backend.tosa.EQUAL.default,
+        exir_ops.backend.tosa.GREATER.default,
+        exir_ops.backend.tosa.GREATER_EQUAL.default,
+        exir_ops.backend.tosa.LOGICAL_AND.default,
+        exir_ops.backend.tosa.LOGICAL_LEFT_SHIFT.default,
+        exir_ops.backend.tosa.LOGICAL_OR.default,
+        exir_ops.backend.tosa.LOGICAL_XOR.default,
+        exir_ops.backend.tosa.MAXIMUM.default,
+        exir_ops.backend.tosa.MINIMUM.default,
+        exir_ops.backend.tosa.MUL.default,
+        exir_ops.backend.tosa.POW.default,
+        exir_ops.backend.tosa.SUB.default,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

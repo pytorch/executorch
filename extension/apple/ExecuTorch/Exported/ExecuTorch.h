@@ -9,6 +9,7 @@
 #import "ExecuTorchBackendOption.h"
 #import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchError.h"
+#import "ExecuTorchEventTracer.h"
 #import "ExecuTorchImageProcessor.h"
 #import "ExecuTorchLog.h"
 #import "ExecuTorchModule.h"

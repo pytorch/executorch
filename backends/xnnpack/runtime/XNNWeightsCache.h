@@ -10,10 +10,14 @@
 
 #include <xnnpack.h>
 
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <array>
+#include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -52,6 +56,13 @@ struct PackedDataMeta {
   uint32_t seed{0};
 };
 
+// Telemetry types live in XNNPACKBackend.h — hosts read them without pulling
+// in xnnpack.h through this header.
+using xnnpack::PackedCacheFailure;
+using xnnpack::PackedCacheHeapReason;
+using xnnpack::PackedCacheState;
+using xnnpack::PackedCacheStats;
+
 class XNNWeightsCache {
  public:
   XNNWeightsCache();
@@ -79,6 +90,26 @@ class XNNWeightsCache {
    * the name of all the packed weights used by this runtime
    */
   Result<std::vector<std::string>> finalize_for_runtime();
+
+  /**
+   * Transfers ownership of the unpacked buffers loaded since `first_index`
+   * out of this cache. finalize_for_runtime() will not free them.
+   *
+   * For values XNNPACK does not pack (PReLU slopes, for example) the subgraph
+   * keeps a pointer into the unpacked memory for the life of the runtime, so
+   * something has to keep those buffers alive past finalize_for_runtime().
+   * Callers pair this with get_num_unpacked_data() taken before the value was
+   * defined, which is how the non-weights-cache path in XNNCompiler decides
+   * what to retain.
+   *
+   * @param[in] first_index Index into the unpacked buffer list, from
+   *     get_num_unpacked_data() before the value was defined.
+   * @param[out] out Receives the buffers. The caller owns them and must keep
+   *     them alive for at least as long as the runtime.
+   */
+  void take_unpacked_data_from(
+      size_t first_index,
+      std::vector<FreeableBuffer>& out);
 
   // Taken from XNN_ALLOCATION_ALIGNMENT in xnnpack/common.h
   static const size_t kPackedAllocationAlignment = 64;
@@ -162,7 +193,50 @@ class XNNWeightsCache {
     return instance_mutex_;
   }
 
+  /**
+   * Outcome of the file-backed path for this instance. HeapFallback is
+   * sticky: once an init has been served from heap the instance keeps
+   * reporting it, because that is the memory the process is actually
+   * carrying for the rest of its life.
+   */
+  PackedCacheStats stats() const noexcept;
+
  private:
+  /** Record a fallback. Overwrites any previous failure for this instance. */
+  void record_cache_failure(PackedCacheFailure failure, int err) noexcept;
+  /** Note a working file-backed path; never downgrades a recorded fallback. */
+  void mark_cache_file_backed() noexcept;
+  /** Attribute `n` packed bytes to heap under `reason`. */
+  void record_heap_alloc(size_t n, PackedCacheHeapReason reason) noexcept;
+  /** Attribute `n` packed bytes to the mmap'd file. */
+  void record_mapped_alloc(size_t n) noexcept;
+
+  // Telemetry counters. Written from the XNNPACK callbacks (which run under
+  // the caller-held instance mutex) and read by hosts through
+  // XNNWeightsCacheManager::aggregate_stats() with no lock at all — atomics,
+  // not the mutex, are what make that read safe. The mutex is held across the
+  // whole of xnn_create_runtime, so a telemetry read that waited on it could
+  // stall an inference thread for the length of a model compile.
+  //
+  // relaxed ordering throughout: these are independent accumulators, and a
+  // reader that observes one field slightly ahead of another still gets a
+  // usable picture. There is no invariant spanning them.
+  //
+  // Cumulative for the instance's lifetime — delete_packed_data and
+  // full_unload do not decrement. Decrementing would need a ptr -> reason map
+  // kept alive purely for telemetry, and hosts sample right after a load or a
+  // generate, before anything is released, so the two agree in practice.
+  // Read them as "bytes this cache ever packed", not current residency.
+  std::atomic<int32_t> state_{static_cast<int32_t>(PackedCacheState::Disabled)};
+  std::atomic<int32_t> failure_{static_cast<int32_t>(PackedCacheFailure::None)};
+  std::atomic<int32_t> last_errno_{0};
+  std::atomic<int64_t> file_bytes_{0};
+  std::atomic<int64_t> mapped_bytes_{0};
+  std::array<
+      std::atomic<int64_t>,
+      static_cast<std::size_t>(PackedCacheHeapReason::Count)>
+      heap_bytes_by_reason_{};
+
   static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
   // Bump when the on-disk layout (footer or per-entry record) changes.
   // v2: per-entry seed added — old v1 files don't carry seeds and would
@@ -185,8 +259,11 @@ class XNNWeightsCache {
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
-  // vector holding list of strings which are containers for packed_data_ptrs
-  std::unordered_map<void*, std::string> packed_pointer_to_container_;
+  // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
+  // allocation before packing, so these buffers do not need value
+  // initialization.
+  std::unordered_map<void*, std::unique_ptr<char[]>>
+      packed_pointer_to_container_;
   // Vector hodling list of unpacked freeable buffers
   std::vector<FreeableBuffer> unpacked_data_;
   // xnnpack's weight cache provider
@@ -235,6 +312,16 @@ class XNNWeightsCache {
   // reserve_space is a re-pack (e.g., XNNPACK internal re-pack for a
   // different runtime context) that doesn't need to persist.
   bool loaded_from_disk_{false};
+
+  // Set by look_up when a named entry is present but its cached seed does not
+  // match the current ukernel's seed (i.e. an XNNPACK upgrade invalidated the
+  // loaded packing). Unlike an incidental re-pack of an already-valid loaded
+  // cache, this stale entry MUST be re-packed to the file and persisted;
+  // otherwise every launch re-packs it into heap (anonymous dirty memory that
+  // can OOM/jetsam the app in the background) and the cache never converges.
+  // Consumed (and cleared) by reserve_space so the file-backed path is taken
+  // only by the re-pack that directly follows the seed-mismatch look_up.
+  bool last_lookup_seed_mismatch_{false};
 
   // See mutex() for the locking contract — caller-owned, no internal
   // use within this class.

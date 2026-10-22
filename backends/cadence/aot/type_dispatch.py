@@ -10,10 +10,6 @@ from dataclasses import dataclass
 from typing import cast, Optional
 
 import torch
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    register_cadence_pass,
-)
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
@@ -32,7 +28,6 @@ class OpConfig:
     variant: str = "per_tensor"
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=4))
 class CompileTimeTypeDispatchPass(ExportPass):
     """
     Replaces generic ops with ops that have explicit types.

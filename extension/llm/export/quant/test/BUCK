@@ -1,0 +1,52 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_convert",
+    srcs = ["test_convert.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:int4",
+        "//executorch/extension/llm/export:load",
+        "//executorch/extension/llm/export:quant",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_quantize",
+    srcs = ["test_quantize.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:int4",
+        "//executorch/extension/llm/export:quant",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_recipe",
+    srcs = ["test_recipe.py"],
+    deps = [
+        "//executorch/extension/llm/export:quant",
+        "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_safetensors_roundtrip",
+    srcs = ["test_safetensors_roundtrip.py"],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+    ],
+)

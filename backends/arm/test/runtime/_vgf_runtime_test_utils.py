@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import shutil
 import subprocess  # nosec B404 - required to invoke trusted local VGF dump tool
 import sys
@@ -42,8 +43,12 @@ from executorch.backends.arm.test.runner_utils import (
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.backends.arm.vgf.model_converter import (
-    find_model_converter_binary,
+    get_model_converter_minimum_version_failure_reason,
+    get_model_converter_version_text,
+    MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
     model_converter_env,
+    parse_model_converter_version,
+    require_model_converter_executable,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.pass_base import ExportPass
@@ -67,60 +72,37 @@ def ensure_glslc() -> None:
 
 
 @functools.lru_cache(maxsize=1)
-def _model_converter_is_legacy_release() -> tuple[bool, str]:
-    model_converter = find_model_converter_binary()
-    if model_converter is None:
+def _model_converter_supports_vgf_tests() -> tuple[bool, str]:
+    version_text = get_model_converter_version_text()
+    if version_text is None:
         warnings.warn(
             "Could not find model-converter while evaluating the VGF runtime "
-            "legacy-version xfail gate; assuming a newer/custom build.",
+            "minimum-version xfail gate; assuming a newer/custom build.",
             stacklevel=2,
         )
-        return False, ""
+        return True, ""
 
-    try:
-        result = subprocess.run(  # nosec B603 - trusted local tool
-            [model_converter, "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=model_converter_env(),
-        )
-    except Exception as exc:
-        warnings.warn(
-            "Failed to query model-converter --version while evaluating the VGF "
-            f"runtime legacy-version xfail gate ({exc}); assuming a newer/custom "
-            "build.",
-            stacklevel=2,
-        )
-        return False, ""
-
-    version_text = (result.stdout or result.stderr).strip()
-    if not version_text:
-        warnings.warn(
-            "model-converter --version returned no output while evaluating the VGF "
-            "runtime legacy-version xfail gate; assuming a newer/custom build.",
-            stacklevel=2,
-        )
-        return False, ""
-
-    if "d8c1b8e" in version_text:
-        return (
-            True,
-            "released model-converter build d8c1b8e predates required VGF custom "
-            "shader features; use a newer source build",
-        )
-
-    warnings.warn(
-        "model-converter legacy-version xfail gate expected d8c1b8e; detected "
-        f"{version_text!r}. Assuming a newer/custom build.",
-        stacklevel=2,
+    reason = get_model_converter_minimum_version_failure_reason(
+        version_text,
+        MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        requirement_name="these VGF runtime tests",
     )
-    return False, ""
+    if reason is not None:
+        return False, reason
+
+    if parse_model_converter_version(version_text) is None:
+        warnings.warn(
+            "Could not map model-converter version output to a comparable "
+            f"release while evaluating the VGF runtime minimum-version xfail "
+            f"gate; detected {version_text!r}. Assuming a newer/custom build.",
+            stacklevel=2,
+        )
+    return True, ""
 
 
-def xfail_if_legacy_model_converter_release() -> pytest.MarkDecorator:
-    is_legacy_release, reason = _model_converter_is_legacy_release()
-    return pytest.mark.xfail(is_legacy_release, reason=reason, strict=False)
+def xfail_if_model_converter_below_minimum_version() -> pytest.MarkDecorator:
+    supports_vgf_tests, reason = _model_converter_supports_vgf_tests()
+    return pytest.mark.xfail(not supports_vgf_tests, reason=reason, strict=False)
 
 
 def find_single_vgf_json(output_dir: Path) -> Path:
@@ -145,23 +127,55 @@ def find_single_vgf_file(output_dir: Path) -> Path:
     return matches[0]
 
 
+def _require_vgf_dump_executable() -> Path:
+    """Return vgf_dump from the resolved model-converter installation.
+
+    vgf_dump must not be selected independently through PATH. It is part of the
+    Model Converter/VGF tool installation, so derive its location from the
+    already-resolved model-converter executable.
+
+    """
+    model_converter = require_model_converter_executable().resolve()
+
+    vgf_dump = model_converter.with_name("vgf_dump")
+
+    try:
+        is_executable = vgf_dump.is_file() and os.access(vgf_dump, os.X_OK)
+    except OSError:
+        is_executable = False
+
+    if not is_executable:
+        raise RuntimeError(
+            "Unable to locate an executable `vgf_dump` alongside the "
+            f"resolved model-converter executable {model_converter}. "
+            f"Expected {vgf_dump}. Install matching Model Converter/VGF "
+            "tools from the same ML SDK."
+        )
+
+    return vgf_dump.resolve()
+
+
 def load_vgf_json(output_dir: Path) -> dict:
     try:
         vgf_json_path = find_single_vgf_json(output_dir)
-    except FileNotFoundError as exc:
-        if shutil.which("vgf_dump") is None:
-            raise RuntimeError(
-                f"No .vgf.json file found in {output_dir}, and `vgf_dump` was not "
-                "found on PATH. `vgf_dump` is expected to be installed alongside "
-                "`model_converter`; check that the model-converter tools are "
-                "installed and available on PATH."
-            ) from exc
+    except FileNotFoundError:
         vgf_path = find_single_vgf_file(output_dir)
+
+        vgf_dump = _require_vgf_dump_executable()
+
         vgf_json_path = vgf_path.with_suffix(vgf_path.suffix + ".json")
-        subprocess.run(  # nosec B603, B607 - trusted local tool with fixed arguments
-            ["vgf_dump", "-i", str(vgf_path), "-o", str(vgf_json_path)],
+        subprocess.run(  # nosec B603 - trusted local tool with fixed arguments
+            [
+                str(vgf_dump),
+                "-i",
+                str(vgf_path),
+                "-o",
+                str(vgf_json_path),
+            ],
             check=True,
+            env=model_converter_env(),
         )
+
     return json.loads(vgf_json_path.read_text())
 
 

@@ -49,10 +49,16 @@ import executorch
 print('SUCCESS: ExecuTorch imported successfully')
 "
 
+    python -m pip check
+
     # Test CUDA availability and show details
-    python -c "
+    EXPECTED_CUDA_VERSION="$cuda_version" python -c "
 try:
+    import os
     import torch
+    assert torch.version.cuda == os.environ['EXPECTED_CUDA_VERSION'], (
+        torch.version.cuda, os.environ['EXPECTED_CUDA_VERSION']
+    )
     print('INFO: PyTorch version:', torch.__version__)
     print('INFO: CUDA available:', torch.cuda.is_available())
 
@@ -68,7 +74,8 @@ try:
         x = torch.randn(10, 10).to(device)
         y = torch.randn(10, 10).to(device)
         z = torch.mm(x, y)
-        print('SUCCESS: CUDA tensor operation completed on device:', z.device)
+        torch.testing.assert_close(z.cpu(), x.cpu() @ y.cpu())
+        print('SUCCESS: CUDA tensor operation matched CPU on device:', z.device)
         print('INFO: Result tensor shape:', z.shape)
 
         print('SUCCESS: ExecuTorch CUDA integration verified')
@@ -79,6 +86,14 @@ except Exception as e:
     print('ERROR: ExecuTorch CUDA test failed:', e)
     exit(1)
 "
+
+    # Require the CUDA backend and hardware instead of silently skipping these
+    # tests. Separate processes also exercise the output policy fixed at import.
+    for tensor_output in torch executorch; do
+        EXECUTORCH_PYBIND_TEST_REQUIRE_CUDA=1 \
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="$tensor_output" \
+            python extension/pybindings/test/test_pybindings_cuda_dlpack.py -v
+    done
 
     echo "SUCCESS: ExecuTorch CUDA ${cuda_version} build and verification completed successfully"
 }

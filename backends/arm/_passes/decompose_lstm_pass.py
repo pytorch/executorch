@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import List, Set, Tuple, Type
+from typing import cast, List, Optional, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
@@ -18,7 +18,8 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeLstmPass(ArmPass):
-    """Decomposes aten.lstm.input into elementary ops supported by TOSA.
+    """Decomposes aten.lstm.input and aten.lstm_cell.default into elementary ops
+    supported by TOSA.
 
     LSTM cell equations per timestep:
         i_t = sigmoid(x_t @ W_ii.T + b_ii + h_{t-1} @ W_hi.T + b_hi)
@@ -32,13 +33,17 @@ class DecomposeLstmPass(ArmPass):
     the result is sliced into i/f/g/o components. This yields 2 mm ops per
     timestep instead of 8.
 
-    Supports multi-layer, bidirectional, with/without bias, and batch_first.
+    ``lstm_cell`` applies the equations once. ``lstm.input`` unrolls the
+    sequence and reuses the same cell-step decomposition at each timestep.
+    Full LSTM supports multi-layer, bidirectional, with/without bias, and
+    batch_first.
 
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     _TARGET = torch.ops.aten.lstm.input
+    _TARGET_CELL = torch.ops.aten.lstm_cell.default
 
     _linear = torch.ops.aten.linear.default
     _add = torch.ops.aten.add.Tensor
@@ -59,8 +64,8 @@ class DecomposeLstmPass(ArmPass):
         c_prev: torch.fx.Node,
         weight_ih: torch.fx.Node,
         weight_hh: torch.fx.Node,
-        bias_ih,
-        bias_hh,
+        bias_ih: Optional[torch.fx.Node],
+        bias_hh: Optional[torch.fx.Node],
         hidden_size: int,
         seq_len: int,
         time_dim: int,
@@ -82,50 +87,21 @@ class DecomposeLstmPass(ArmPass):
                 from_node=node,
             )
 
-            gates_x = create_node(
-                graph, self._linear, args=(x_t, weight_ih, bias_ih), from_node=node
+            h_prev, c_prev = self._build_cell_step(
+                graph,
+                node,
+                x_t,
+                h_prev,
+                c_prev,
+                weight_ih,
+                weight_hh,
+                bias_ih,
+                bias_hh,
+                hidden_size,
             )
-            gates_h = create_node(
-                graph, self._linear, args=(h_prev, weight_hh, bias_hh), from_node=node
-            )
-
-            gates = create_node(
-                graph, self._add, args=(gates_x, gates_h), from_node=node
-            )
-
-            H = hidden_size
-            i_pre = create_node(
-                graph, self._slice, args=(gates, 1, 0, H), from_node=node
-            )
-            f_pre = create_node(
-                graph, self._slice, args=(gates, 1, H, 2 * H), from_node=node
-            )
-            g_pre = create_node(
-                graph, self._slice, args=(gates, 1, 2 * H, 3 * H), from_node=node
-            )
-            o_pre = create_node(
-                graph, self._slice, args=(gates, 1, 3 * H, 4 * H), from_node=node
-            )
-
-            i_t = create_node(graph, self._sigmoid, args=(i_pre,), from_node=node)
-            f_t = create_node(graph, self._sigmoid, args=(f_pre,), from_node=node)
-            g_t = create_node(graph, self._tanh, args=(g_pre,), from_node=node)
-            o_t = create_node(graph, self._sigmoid, args=(o_pre,), from_node=node)
-
-            # c_t = f_t * c_{t-1} + i_t * g_t
-            f_c = create_node(graph, self._mul, args=(f_t, c_prev), from_node=node)
-            i_g = create_node(graph, self._mul, args=(i_t, g_t), from_node=node)
-            c_t = create_node(graph, self._add, args=(f_c, i_g), from_node=node)
-
-            # h_t = o_t * tanh(c_t)
-            tanh_c = create_node(graph, self._tanh, args=(c_t,), from_node=node)
-            h_t = create_node(graph, self._mul, args=(o_t, tanh_c), from_node=node)
-
-            h_prev = h_t
-            c_prev = c_t
 
             h_t_expanded = create_node(
-                graph, self._unsqueeze, args=(h_t, time_dim), from_node=node
+                graph, self._unsqueeze, args=(h_prev, time_dim), from_node=node
             )
             timestep_outputs.append(h_t_expanded)
 
@@ -134,6 +110,93 @@ class DecomposeLstmPass(ArmPass):
 
         return timestep_outputs, h_prev, c_prev
 
+    def _build_cell_step(
+        self,
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        input_node: torch.fx.Node,
+        h_prev: torch.fx.Node,
+        c_prev: torch.fx.Node,
+        weight_ih: torch.fx.Node,
+        weight_hh: torch.fx.Node,
+        bias_ih: Optional[torch.fx.Node],
+        bias_hh: Optional[torch.fx.Node],
+        hidden_size: int,
+    ) -> Tuple[torch.fx.Node, torch.fx.Node]:
+        gates_x = create_node(
+            graph, self._linear, args=(input_node, weight_ih, bias_ih), from_node=node
+        )
+        gates_h = create_node(
+            graph, self._linear, args=(h_prev, weight_hh, bias_hh), from_node=node
+        )
+        gates = create_node(graph, self._add, args=(gates_x, gates_h), from_node=node)
+        gate_dim = -1
+
+        i_pre = create_node(
+            graph,
+            self._slice,
+            args=(gates, gate_dim, 0, hidden_size),
+            from_node=node,
+        )
+        f_pre = create_node(
+            graph,
+            self._slice,
+            args=(gates, gate_dim, hidden_size, 2 * hidden_size),
+            from_node=node,
+        )
+        g_pre = create_node(
+            graph,
+            self._slice,
+            args=(gates, gate_dim, 2 * hidden_size, 3 * hidden_size),
+            from_node=node,
+        )
+        o_pre = create_node(
+            graph,
+            self._slice,
+            args=(gates, gate_dim, 3 * hidden_size, 4 * hidden_size),
+            from_node=node,
+        )
+
+        i_t = create_node(graph, self._sigmoid, args=(i_pre,), from_node=node)
+        f_t = create_node(graph, self._sigmoid, args=(f_pre,), from_node=node)
+        g_t = create_node(graph, self._tanh, args=(g_pre,), from_node=node)
+        o_t = create_node(graph, self._sigmoid, args=(o_pre,), from_node=node)
+
+        f_c = create_node(graph, self._mul, args=(f_t, c_prev), from_node=node)
+        i_g = create_node(graph, self._mul, args=(i_t, g_t), from_node=node)
+        c_t = create_node(graph, self._add, args=(f_c, i_g), from_node=node)
+        tanh_c = create_node(graph, self._tanh, args=(c_t,), from_node=node)
+        h_t = create_node(graph, self._mul, args=(o_t, tanh_c), from_node=node)
+        return h_t, c_t
+
+    def _decompose_cell(
+        self,
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+    ) -> Tuple[torch.fx.Node, torch.fx.Node]:
+        args = node.args
+        input_node = cast(torch.fx.Node, args[0])
+        h_prev, c_prev = cast(Tuple[torch.fx.Node, torch.fx.Node], args[1])
+        weight_ih = cast(torch.fx.Node, args[2])
+        weight_hh = cast(torch.fx.Node, args[3])
+        bias_ih = cast(Optional[torch.fx.Node], args[4]) if len(args) > 4 else None
+        bias_hh = cast(Optional[torch.fx.Node], args[5]) if len(args) > 5 else None
+
+        hidden_size = h_prev.meta["val"].shape[-1]
+
+        return self._build_cell_step(
+            graph,
+            node,
+            input_node,
+            h_prev,
+            c_prev,
+            weight_ih,
+            weight_hh,
+            bias_ih,
+            bias_hh,
+            hidden_size,
+        )
+
     def call(self, graph_module: torch.fx.GraphModule):  # noqa: C901
         graph = graph_module.graph
         modified = False
@@ -141,10 +204,35 @@ class DecomposeLstmPass(ArmPass):
         for node in list(graph.nodes):
             if (
                 node.op != "call_function"
-                or node.target != self._TARGET
+                or node.target not in (self._TARGET, self._TARGET_CELL)
                 or not self.allowed_to_transform(node.meta)
             ):
                 continue
+
+            if node.target == self._TARGET_CELL:
+                users = list(node.users)
+                if any(
+                    user.target != operator.getitem
+                    or user.args[1] not in (-2, -1, 0, 1)
+                    for user in users
+                ):
+                    continue
+
+                with graph.inserting_before(node):
+                    h_t, c_t = self._decompose_cell(graph, node)
+
+                getitem_nodes = []
+                for user in users:
+                    idx = cast(int, user.args[1])
+                    user.replace_all_uses_with(h_t if idx in (-2, 0) else c_t)
+                    getitem_nodes.append(user)
+
+                for gi in getitem_nodes:
+                    graph.erase_node(gi)
+                graph.erase_node(node)
+                modified = True
+                continue
+
             getitem_users = get_getitem_users(node, 3)
 
             args = node.args

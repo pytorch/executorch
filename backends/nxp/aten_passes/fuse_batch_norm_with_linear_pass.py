@@ -69,7 +69,7 @@ class FuseBatchNormWithLinearPass(PassBase):
             attr_itr = getattr(attr_itr, atom)
         return attr_itr
 
-    def call(self, graph_module: GraphModule) -> PassResult | None:
+    def call(self, graph_module: GraphModule) -> PassResult:
         def _is_batch_norm(node_: Node) -> bool:
             return (
                 node_.op == "call_function"

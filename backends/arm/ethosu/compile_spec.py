@@ -3,12 +3,52 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
+from dataclasses import dataclass
+
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+
+@dataclass(frozen=True)
+class VelaExternalBlockPlacements:
+    """Placement tags for external Vela command and weight data.
+
+    Tags are arbitrary build-time identifiers used to group named data into
+    external PTD outputs. Deployment decides where those artifacts live and
+    supplies them to the runtime.
+
+    Attributes:
+        cmd_data: Placement tag for command data, or ``None`` to keep it inline.
+        weight_data: Placement tag for weight data, or ``None`` to keep it inline.
+
+    """
+
+    cmd_data: str | None = None
+    weight_data: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate placement tags."""
+        for placement in (self.cmd_data, self.weight_data):
+            if placement is not None and (
+                not isinstance(placement, str)
+                or not placement
+                or not placement.isascii()
+            ):
+                raise ValueError(f"Invalid external Vela placement: {placement!r}")
+
+    def to_block_placements(self) -> dict[str, str]:
+        """Return configured placement tags keyed by Vela block name."""
+        return {
+            name: placement
+            for name, placement in (
+                ("cmd_data", self.cmd_data),
+                ("weight_data", self.weight_data),
+            )
+            if placement is not None
+        }
 
 
 class EthosUCompileSpec(ArmCompileSpec):
@@ -25,10 +65,19 @@ class EthosUCompileSpec(ArmCompileSpec):
             Vela.
         config_ini (str | None): Path to a Vela .ini configuration file.
             Defaults to ``"Arm/vela.ini"``.
+        external_block_placements (VelaExternalBlockPlacements | None): Command
+            and weight data to emit as named data with their placement tags.
+        max_scratch_size (int | None): Maximum delegate scratch arena size in
+            bytes for the deployment platform. Checked against Vela's output;
+            independent of Vela's arena cache size. None disables the check.
 
     """
 
     _TARGET_KEY = "target"
+    _EXTERNAL_BLOCK_PLACEMENTS_KEY = "external_block_placements"
+    _MAX_SCRATCH_SIZE_KEY = "max_scratch_size"
+    _DELEGATE_MUTABLE_BUFFERS_KEY = "delegate_mutable_buffers"
+    _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -99,8 +148,17 @@ class EthosUCompileSpec(ArmCompileSpec):
         memory_mode: str | None = None,
         extra_flags: list[str] | None = None,
         config_ini: str | None = "Arm/vela.ini",
+        external_block_placements: VelaExternalBlockPlacements | None = None,
+        max_scratch_size: int | None = None,
     ):
         self.target = target
+        self.max_scratch_size = max_scratch_size
+        self.delegate_mutable_buffers = False
+        self.external_block_placements = (
+            VelaExternalBlockPlacements()
+            if external_block_placements is None
+            else external_block_placements
+        )
         target_lower = self.target.lower()
         resolved_config_ini = "Arm/vela.ini" if config_ini is None else config_ini
         resolved_system_config, resolved_memory_mode = (
@@ -121,19 +179,93 @@ class EthosUCompileSpec(ArmCompileSpec):
         self._set_compile_specs(tosa_spec, compiler_flags)
         self._validate()
 
+    @experimental(
+        "Delegate-owned mutable buffers are experimental and may change without "
+        "notice."
+    )
+    def set_delegate_mutable_buffers(self, enabled: bool = True) -> "EthosUCompileSpec":
+        """Let the delegate own mutable buffers (streaming state).
+
+        The buffers become variables in a persistent region kept across
+        invocations, instead of being passed as program inputs and outputs.
+        Requires Vela 5.3 or later (for --separate-persistent-region), and the
+        firmware must be built with ETHOSU_PERSISTENT_REGION.
+
+        Args:
+            enabled: Whether the delegate owns mutable buffers.
+
+        """
+        self.delegate_mutable_buffers = enabled
+        flag = self._SEPARATE_PERSISTENT_REGION_FLAG
+        self.compiler_flags = [f for f in self.compiler_flags if f != flag]
+        if enabled:
+            self.compiler_flags.append(flag)
+        return self
+
     def _to_list(self):
         """Return compile specs including the encoded Ethos-U target."""
         compile_specs = super()._to_list()
         compile_specs.append(CompileSpec(self._TARGET_KEY, self.target.encode()))
+        if self.delegate_mutable_buffers:
+            compile_specs.append(
+                CompileSpec(self._DELEGATE_MUTABLE_BUFFERS_KEY, b"true")
+            )
+        if self.max_scratch_size is not None:
+            compile_specs.append(
+                CompileSpec(
+                    self._MAX_SCRATCH_SIZE_KEY, str(self.max_scratch_size).encode()
+                )
+            )
+        block_placements = self.external_block_placements.to_block_placements()
+        if block_placements:
+            # CompileSpec values are bytes, so use deterministic JSON to
+            # preserve the placement mapping through serialization.
+            compile_specs.append(
+                CompileSpec(
+                    self._EXTERNAL_BLOCK_PLACEMENTS_KEY,
+                    json.dumps(
+                        block_placements,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode(),
+                )
+            )
         return compile_specs
 
     @classmethod
     def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
         """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
+        compile_spec.delegate_mutable_buffers = (
+            specs.get(cls._DELEGATE_MUTABLE_BUFFERS_KEY) == "true"
+        )
+        max_scratch_size = specs.get(cls._MAX_SCRATCH_SIZE_KEY)
+        compile_spec.max_scratch_size = (
+            int(max_scratch_size) if max_scratch_size is not None else None
+        )
+        serialized_placements = specs.get(cls._EXTERNAL_BLOCK_PLACEMENTS_KEY)
+        if serialized_placements is None:
+            compile_spec.external_block_placements = VelaExternalBlockPlacements()
+            return
+        placements = json.loads(serialized_placements)
+        if not isinstance(placements, dict):
+            raise ValueError("External Vela block placements must be a mapping.")
+        unknown_blocks = placements.keys() - {"cmd_data", "weight_data"}
+        if unknown_blocks:
+            raise ValueError(
+                "Unsupported external Vela blocks: " f"{sorted(unknown_blocks)}"
+            )
+        compile_spec.external_block_placements = VelaExternalBlockPlacements(
+            cmd_data=placements.get("cmd_data"),
+            weight_data=placements.get("weight_data"),
+        )
 
     def _validate(self):
         """Validate the configuration against supported Ethos-U settings."""
+        if self.max_scratch_size is not None and (
+            type(self.max_scratch_size) is not int or self.max_scratch_size <= 0
+        ):
+            raise ValueError("max_scratch_size must be a positive integer or None.")
         if len(self.compiler_flags) == 0:
             raise ValueError(
                 "compile_flags are required in the CompileSpec list for EthosUBackend"
@@ -147,8 +279,3 @@ class EthosUCompileSpec(ArmCompileSpec):
     def _get_output_format(cls) -> str:
         """Return the artifact format emitted by this compile spec."""
         return "vela"
-
-    def _create_default_pipeline_config(self) -> ArmPassPipelineConfig:
-        # Any u55 subset passes are treated as tosa specification configs
-        # As such, they should be added to the base class default.
-        return super()._create_default_pipeline_config()

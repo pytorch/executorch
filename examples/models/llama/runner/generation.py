@@ -74,7 +74,7 @@ class LlamaRunner(ABC):
         self.use_kv_cache = use_kv_cache
         self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
-        # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
+        # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen3/issues/466#issuecomment-2146759706
         if vocab_size != self.tokenizer.n_words:
             print(
                 "Warning - given vocab_size in params is unequal to tokenizer vocab size."

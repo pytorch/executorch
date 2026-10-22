@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_input_config import (
     CompilationInputConfig,
 )
+from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
 
 
 class TestCompilationInputConfig(unittest.TestCase):
@@ -22,6 +23,34 @@ class TestCompilationInputConfig(unittest.TestCase):
     def test_required_fields(self):
         with self.assertRaises(TypeError):
             CompilationInputConfig()
+
+    def test_optional_fields_default_to_none(self):
+        config = CompilationInputConfig(soc_model=MagicMock(), backend_type=MagicMock())
+        self.assertIsNone(config.model)
+        self.assertIsNone(config.example_inputs)
+        self.assertIsNone(config.compile_specs)
+        self.assertIsNone(config.graphs)
+
+    def test_example_inputs_carries_export_signature(self):
+        example_inputs = (MagicMock(name="tokens"), MagicMock(name="attn_mask"))
+        config = CompilationInputConfig(
+            soc_model=MagicMock(),
+            backend_type=MagicMock(),
+            example_inputs=example_inputs,
+        )
+        self.assertIs(config.example_inputs, example_inputs)
+
+    def test_graphs_are_addressable_by_graph_name(self):
+        graphs = {
+            name: GraphBundle(module=MagicMock(name=name), inputs=(MagicMock(),))
+            for name in ("kv_forward", "prefill_forward")
+        }
+        config = CompilationInputConfig(
+            soc_model=MagicMock(),
+            backend_type=MagicMock(),
+            graphs=graphs,
+        )
+        self.assertIs(config.graphs["prefill_forward"], graphs["prefill_forward"])
 
 
 if __name__ == "__main__":

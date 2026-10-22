@@ -36,8 +36,15 @@ from executorch.backends.cadence.aot.pass_utils import (
     get_arg,
     op_counts_match,
 )
+from executorch.backends.cadence.aot.quantizer.patterns import (
+    Conv2dPattern,
+    LinearPattern,
+)
 from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceAtenQuantizer,
     CadenceFusedConvReluQuantizer,
+    CadenceQuantizer,
+    qconfig_A8W8sym,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder
@@ -50,8 +57,11 @@ from torch.utils import _pytree as pytree
 from torchao.quantization.pt2e import (
     allow_exported_model_train_eval,
     move_exported_model_to_eval,
+    PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
+from torchao.quantization.pt2e.quantizer import QuantizationConfig
+from torchao.quantization.pt2e.quantizer.quantizer import QuantizationSpec
 
 
 def validate_numerics(
@@ -520,6 +530,33 @@ class TestFusionPasses(TestFusionPassesBase):
             },
         )
 
+    def test_quant_view_dequant_fusion_refreshes_bypassed_meta(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(quant, [-1])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(view, 1.2, 3, 0, 127, torch.int8),
+        )
+        builder.output([dequant])
+        original_graph = builder.get_graph_module()
+
+        p = FuseQuantDequantToRequantizePass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+
+        # The view now consumes the quantize's float input, so its metadata must
+        # follow; a stale int8 val fails the edge verifier's dtype check.
+        (view_node,) = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_node.meta["val"].dtype, torch.float32)
+
     def test_replace_dequant_quant_with_requantize(self) -> None:
         builder = GraphBuilder()
         x_input = torch.randint(low=0, high=5, size=(2, 12, 1, 6), dtype=torch.int8)
@@ -534,12 +571,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         builder.output([quant])
         original_graph = builder.get_graph_module()
+        original_fx_graph = original_graph.graph
+        quant_node = original_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )[0]
+        quant_node.meta["tier_2a_sentinel"] = object()
+        quant_sentinel = quant_node.meta["tier_2a_sentinel"]
         gm_before = copy.deepcopy(original_graph)
 
         p = FuseQuantDequantToRequantizePass()
         result = cast(PassResult, p(original_graph))
         self.assertTrue(result.modified)
+        self.assertIs(result.graph_module, original_graph)
+        self.assertIs(result.graph_module.graph, original_fx_graph)
         converted_graph = result.graph_module
+        requantize_node = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.cadence.requantize.per_tensor
+        )[0]
+        self.assertIs(requantize_node.meta["tier_2a_sentinel"], quant_sentinel)
+        self.assertIsNot(requantize_node.meta, quant_node.meta)
+        self.assertEqual(requantize_node.meta["val"].shape, x_input.shape)
+        self.assertEqual(requantize_node.meta["val"].dtype, torch.int8)
 
         # Validate numerical accuracy
         validate_numerics(
@@ -947,6 +1000,51 @@ class TestFuseTransposeOrPermuteOpPairsPass(TestFusionPassesBase):
         else:
             raise ValueError(f"Unsupported op: {op}")
 
+    def test_per_channel_qdq_is_not_bypassed_without_axis_remap(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    2,
+                )
+
 
 class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
     def _create_operator(
@@ -1156,12 +1254,27 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
         )
 
         # Check that the pass fuses the two transpose/permute ops.
+        original_fx_graph = gm.graph
+        output_node = next(
+            node for node in reversed(gm.graph.nodes) if node.op == "call_function"
+        )
+        output_node.meta["tier_2a_sentinel"] = object()
+        output_sentinel = output_node.meta["tier_2a_sentinel"]
+        output_shape = output_node.meta["val"].shape
         fusion_pass_result = FuseTransposeOrPermuteOpPairsPass()(gm)
         self.assertIsNotNone(fusion_pass_result)
+        self.assertIs(fusion_pass_result.graph_module, gm)
+        self.assertIs(fusion_pass_result.graph_module.graph, original_fx_graph)
         gm_after_pass = fusion_pass_result.graph_module
         if expected_is_fused:
             expected_op_counts[op1] = 0
             expected_op_counts[op2] = 0
+            replacement_view = gm_after_pass.graph.find_nodes(
+                op="call_function", target=exir_ops.edge.aten.view_copy.default
+            )[0]
+            self.assertIs(replacement_view.meta["tier_2a_sentinel"], output_sentinel)
+            self.assertIsNot(replacement_view.meta, output_node.meta)
+            self.assertEqual(replacement_view.meta["val"].shape, output_shape)
         self.check_op_counts(
             gm_after_pass,
             # pyre-fixme[6]: Incompatible parameter type
@@ -2028,3 +2141,134 @@ class ConvBNReluEndToEndFusionTest(unittest.TestCase):
         fused = compiler.apply_pre_edge_transform_passes(exported, quantizer)
         cadence_prog = compiler._lower_ep_to_cadence(fused)
         self._assert_fused_conv_no_bn(cadence_prog.exported_program().graph_module)
+
+
+class PerChannelEndToEndTest(unittest.TestCase):
+    """Quantize with per-channel weights, lower, and execute the result.
+
+    This is the only test that exercises the whole AoT path at once: quantizer
+    annotation, fusion, and every conv/linear lowering exit. Executing the
+    lowered graph through the reference implementations is what catches qparam
+    vectors that were silently dropped or collapsed to a scalar somewhere in
+    the middle.
+    """
+
+    class ConvModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.conv(x)
+
+    class LinearModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fc = torch.nn.Linear(16, 8)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.fc(x)
+
+    @staticmethod
+    def _per_channel_quantizer() -> CadenceQuantizer:
+        """A default quantizer with per-channel symmetric weight observers."""
+        weight = QuantizationSpec(
+            dtype=torch.int8,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+        )
+        config = QuantizationConfig(
+            qconfig_A8W8sym.input_activation,
+            qconfig_A8W8sym.output_activation,
+            weight,
+            None,
+        )
+        return CadenceQuantizer(
+            [
+                CadenceAtenQuantizer(Conv2dPattern(), config),
+                CadenceAtenQuantizer(LinearPattern(), config),
+            ]
+        )
+
+    def _lower(
+        self, model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+    ) -> torch.fx.GraphModule:
+        fused = compiler.quantize_pt2(model, inputs, self._per_channel_quantizer())
+        cadence_prog = compiler._lower_ep_to_cadence(fused)
+        return cadence_prog.exported_program().module()
+
+    def _assert_per_channel_qparams(self, gm: torch.fx.GraphModule) -> None:
+        """Every fused quantized op must carry vector, not scalar, qparams."""
+        all_targets = [n.target for n in gm.graph.nodes if n.op == "call_function"]
+        quantized = [
+            t
+            for t in all_targets
+            if "cadence" in getattr(t, "name", lambda: "")()
+            and any(
+                k in getattr(t, "name", lambda: "")()
+                for k in ("conv", "linear", "fully_connected")
+            )
+        ]
+        self.assertGreaterEqual(
+            len(quantized),
+            1,
+            "expected at least one fused quantized op, got: "
+            f"{[str(t) for t in all_targets]}",
+        )
+        for target in quantized:
+            # The tensor-qparam overload is the unnamed (default) one.
+            self.assertEqual(
+                target._schema.overload_name,
+                "",
+                f"{target.name()} lost the tensor-qparam overload",
+            )
+
+    def test_per_channel_conv_lowers_and_executes(self) -> None:
+        torch.manual_seed(0)
+        model = self.ConvModel().eval()
+        inputs = (torch.randn(1, 3, 8, 8),)
+
+        gm = self._lower(model, inputs)
+        self._assert_per_channel_qparams(gm)
+
+        # Executing is the point: a dropped or mis-shaped qparam vector either
+        # raises inside the reference implementations or shows up here as an
+        # output that no longer tracks the float model.
+        output = gm(*inputs)
+        expected = model(*inputs)
+        self.assertEqual(output.shape, expected.shape)
+        rel_rms = (output - expected).pow(2).mean().sqrt() / expected.std()
+        self.assertLess(
+            rel_rms, 0.1, f"quantized output does not track float: {rel_rms}"
+        )
+
+    def test_per_channel_linear_lowers_and_executes(self) -> None:
+        torch.manual_seed(0)
+        model = self.LinearModel().eval()
+        inputs = (torch.randn(4, 16),)
+
+        gm = self._lower(model, inputs)
+        self._assert_per_channel_qparams(gm)
+
+        names = [
+            n.target.name()
+            for n in gm.graph.nodes
+            if n.op == "call_function" and hasattr(n.target, "name")
+        ]
+        # The weight dequantize must be consumed by fusion, not left in the graph.
+        self.assertNotIn("quantized_decomposed::dequantize_per_channel", names)
+
+        output = gm(*inputs)
+        expected = model(*inputs)
+        self.assertEqual(output.shape, expected.shape)
+        # No float comparison here. quantized_linear requantizes by
+        # -out_multiplier/2^31 * 2^out_shift (matching the generic kernel) while
+        # fusion emits a positive multiplier, so its output comes out
+        # sign-flipped. That predates per-channel: a per-tensor linear through
+        # CadenceDefaultQuantizer shows the same relative RMS of ~1.9. The conv
+        # test above can compare against float because the conv reference
+        # requantizes from bias_scale/out_scale instead.

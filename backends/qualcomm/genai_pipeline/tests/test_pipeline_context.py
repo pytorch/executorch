@@ -93,6 +93,30 @@ class TestPipelineContextBuilder(unittest.TestCase):
         )
         self.assertEqual(ctx.prompt, test_prompts)
 
+    def test_blank_string_prompt_raises(self):
+        for blank in ("", "   ", "\t\n"):
+            with self.subTest(prompt=repr(blank)):
+                with self.assertRaises(ValueError) as cm:
+                    PipelineContext.builder().with_prompt(blank)
+                self.assertIn("empty or blank", str(cm.exception))
+
+    def test_all_blank_list_prompt_raises(self):
+        for blanks in ([], ["", "  "], [None, 42]):
+            with self.subTest(prompt=blanks):
+                with self.assertRaises(ValueError) as cm:
+                    PipelineContext.builder().with_prompt(blanks)
+                self.assertIn("cannot be empty", str(cm.exception))
+
+    def test_blank_and_non_string_list_entries_are_dropped(self):
+        ctx = (
+            PipelineContext.builder()
+            .with_model("test")
+            .with_soc(TEST_SOC_MODEL)
+            .with_prompt(["keep me", "", "   ", None, 42, "and me"])
+            .build()
+        )
+        self.assertEqual(ctx.prompt, ["keep me", "and me"])
+
     def test_with_artifact_dir(self):
         custom_dir = "/custom/path"
         ctx = (

@@ -43,6 +43,8 @@ const int out_packed_dim = get_packed_dim(out_layout);
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #define NUM_INPUTS ${NUM_INPUTS}
 
 /*
@@ -55,7 +57,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * input tensor.
  */
 void main() {
-  const int tid = int(gl_GlobalInvocationID.x);
+  const int tid = int(linear_idx_from_gid());
 
   // Compute inp_volume_sizes from output sizes, replacing concat_dim with the
   // sum of all input sizes along that dimension.

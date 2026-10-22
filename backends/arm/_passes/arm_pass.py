@@ -11,6 +11,10 @@ from collections.abc import Collection
 from typing import Any, List, Optional, Set, Type
 
 import torch
+from executorch.backends.arm._passes.mutable_buffer_utils import (
+    collect_mutable_buffer_infos,
+    restore_mutable_buffer_targets,
+)
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -85,6 +89,7 @@ class ArmPass(ExportPass):
         ops_without_quantized_fake_kernel = {
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.leaky_relu.default,
+            exir_ops.edge.aten.softplus.default,
         }
         if (
             op in ops_without_quantized_fake_kernel
@@ -217,8 +222,14 @@ class ArmPass(ExportPass):
         if not self.should_run_pass(graph_module):
             self.ensures(graph_module)
             return PassResult(graph_module, False)
+        mutable_buffers = collect_mutable_buffer_infos(graph_module)
         res = self.call(graph_module)
         self.ensures(graph_module)
+        if res is not None:
+            res = PassResult(
+                restore_mutable_buffer_targets(res.graph_module, mutable_buffers),
+                res.modified,
+            )
         return res
 
 

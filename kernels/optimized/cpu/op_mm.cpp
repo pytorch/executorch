@@ -34,6 +34,11 @@ Tensor& opt_mm_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, mat2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   if (out.numel() == 0) {
     return out;
   }

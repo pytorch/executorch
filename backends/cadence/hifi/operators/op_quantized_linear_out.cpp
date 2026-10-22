@@ -32,7 +32,7 @@ void _quantized_linear_asym8u(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
@@ -57,7 +57,9 @@ void _quantized_linear_asym8u(
       in_dim,
       out_dim,
       1,
-      -weight_zero_point.const_data_ptr<int32_t>()[0], // mat1_zero_bias
+      weight_zero_point.has_value()
+          ? -weight_zero_point->const_data_ptr<int32_t>()[0]
+          : 0, // mat1_zero_bias
       -in_zero_point, // mat2_zero_bias
       out_multiplier.const_data_ptr<int32_t>()[0],
       out_shift.const_data_ptr<int32_t>()[0],
@@ -70,7 +72,7 @@ void inline _quantized_linear_asym8s(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
@@ -102,7 +104,9 @@ void inline _quantized_linear_asym8s(
       in_dim, // vec_offset of p_mat2.
       out_dim, // out_offset, i.e., offset of next output element written
       1, // out_stride, i.e., stride to go to next output row
-      -weight_zero_point.const_data_ptr<int32_t>()[0], // mat1_zero_bias
+      weight_zero_point.has_value()
+          ? -weight_zero_point->const_data_ptr<int32_t>()[0]
+          : 0, // mat1_zero_bias
       -in_zero_point, // mat2_zero_bias
       out_multiplier.const_data_ptr<int32_t>()[0], // out_multiplier
       out_shift.const_data_ptr<int32_t>()[0], // out_shift
@@ -212,7 +216,7 @@ void quantized_linear_out(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,

@@ -188,7 +188,7 @@ if (-not $SkipArm64Windows) {
 
     # Activate the VS environment for ARM64 MSVC toolchain
     $VsGenerator = Get-InstalledVsGenerator
-    & $VsGenerator.DevShell -Arch arm64
+    & $VsGenerator.DevShell -Arch arm64 -SkipAutomaticLocation
     Assert-GeneratorSupported $VsGenerator.Generator
 
     Prepare-BuildDir $BuildRoot
@@ -335,7 +335,7 @@ if (-not $SkipX86Windows) {
 
     # Activate the VS environment for AMD64 MSVC toolchain
     $VsGenerator = Get-InstalledVsGenerator
-    & $VsGenerator.DevShell -Arch amd64
+    & $VsGenerator.DevShell -Arch amd64 -SkipAutomaticLocation
     Assert-GeneratorSupported $VsGenerator.Generator
 
     Prepare-BuildDir $BuildRoot

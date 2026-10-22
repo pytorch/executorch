@@ -13,12 +13,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
   test-qnn:
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: qnn
       flows: >-
@@ -28,4 +31,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.8xlarge.memory
+      runner-linux: mt-l-x86iavx512-32-256

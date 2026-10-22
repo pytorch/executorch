@@ -4,8 +4,8 @@
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
@@ -19,8 +19,11 @@ struct Params {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let in_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-folded flat index (lifts the 65535 1D-dispatch cap for large tensors).
+    let in_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (in_bufi >= in_meta.numel) {
         return;
     }
@@ -29,13 +32,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var rem = in_bufi;
     var out_bufi: u32 = 0u;
     for (var d: u32 = 0u; d < in_meta.ndim; d = d + 1u) {
-        let coord = rem / in_meta.strides[d];
-        rem = rem % in_meta.strides[d];
+        let coord = rem / in_meta.strides[d >> 2u][d & 3u];
+        rem = rem % in_meta.strides[d >> 2u][d & 3u];
         var out_coord = coord;
         if (d == params.concat_dim) {
             out_coord = coord + params.off_k;
         }
-        out_bufi = out_bufi + out_coord * out_meta.strides[d];
+        out_bufi = out_bufi + out_coord * out_meta.strides[d >> 2u][d & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }

@@ -17,6 +17,11 @@
 
 #include <gtest/gtest.h>
 
+#ifndef USE_ATEN_LIB
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <limits>
+#endif
+
 using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
@@ -383,6 +388,77 @@ TEST_F(OpCatOutTest, WrongOutShapeDies) {
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
+#ifndef USE_ATEN_LIB
+TEST_F(OpCatOutTest, CatDimSizeOverflowDies) {
+  // The concatenated size along the cat dim is summed in 64-bit but stored
+  // into 32-bit SizesType. Inputs whose sizes sum past the SizesType max must
+  // fail instead of silently truncating the output size.
+  // Declare huge sizes via bare TensorImpls without backing storage; the
+  // kernel must reject them before touching data.
+  Tensor::SizesType sizes_a[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_b[1] = {2};
+  Tensor::SizesType sizes_out[1] = {1};
+  Tensor::DimOrderType dim_order[1] = {0};
+  Tensor::StridesType strides[1] = {1};
+  uint8_t out_data[1] = {0};
+
+  torch::executor::TensorImpl impl_a(
+      ScalarType::Byte, 1, sizes_a, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_b(
+      ScalarType::Byte, 1, sizes_b, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_out(
+      ScalarType::Byte, 1, sizes_out, out_data, dim_order, strides);
+  Tensor a(&impl_a);
+  Tensor b(&impl_b);
+  Tensor out(&impl_out);
+  std::vector<Tensor> inputs = {a, b};
+
+  Tensor::SizesType out_sizes[executorch::runtime::kTensorDimensionLimit];
+  size_t out_ndim = 0;
+  EXPECT_FALSE(torch::executor::get_cat_out_target_size(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()),
+      /*dim=*/0,
+      out_sizes,
+      &out_ndim));
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_cat_out(
+          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+}
+
+TEST_F(OpCatOutTest, CatDimSizeOverflowBeforeAddition) {
+  // On 32-bit targets, adding these sizes before checking wraps the sum to 1.
+  Tensor::SizesType sizes_a[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_b[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_c[1] = {3};
+  Tensor::DimOrderType dim_order[1] = {0};
+  Tensor::StridesType strides[1] = {1};
+
+  torch::executor::TensorImpl impl_a(
+      ScalarType::Byte, 1, sizes_a, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_b(
+      ScalarType::Byte, 1, sizes_b, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_c(
+      ScalarType::Byte, 1, sizes_c, nullptr, dim_order, strides);
+  Tensor a(&impl_a);
+  Tensor b(&impl_b);
+  Tensor c(&impl_c);
+  std::vector<Tensor> inputs = {a, b, c};
+
+  Tensor::SizesType out_sizes[executorch::runtime::kTensorDimensionLimit];
+  size_t out_ndim = 0;
+  EXPECT_FALSE(torch::executor::get_cat_out_target_size(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()),
+      /*dim=*/0,
+      out_sizes,
+      &out_ndim));
+}
+#endif
+
 /* %python
 import torch
 torch.manual_seed(0)
@@ -463,4 +539,22 @@ TEST_F(OpCatOutTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpCatOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor y = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 6, 2, 2});
+  std::vector<Tensor> inputs = {x, y};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cat_out(TensorList(inputs.data(), inputs.size()), 1, out));
 }

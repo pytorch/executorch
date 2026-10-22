@@ -82,6 +82,12 @@ test_data_suite_bf16 = {
         [3, 2, 1],
     ),
 }
+
+test_data_suite_rank3 = {
+    "bev_class_slice": lambda: (torch.rand(1, 8, 8), [1, 1, 0]),
+    "spatial_pool": lambda: (torch.rand(3, 9, 11), [3, 2, 1]),
+}
+
 test_data_suite_fp8 = {
     "rand_fp8e4m3": lambda: (
         torch.rand(1, 8, 20, 20).to(torch.float8_e4m3fn),
@@ -168,7 +174,11 @@ class MaxPool2d(torch.nn.Module):
 
 
 @common.parametrize(
-    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+    "test_data",
+    test_data_suite
+    | test_data_suite_rank3
+    | test_data_suite_fp16
+    | test_data_suite_bf16,
 )
 def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     test_data, model_params = test_data()
@@ -197,7 +207,7 @@ def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_rank3)
 def test_max_pool2d_tosa_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -374,22 +384,28 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 
 # VGF tests
 @common.parametrize(
-    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+    "test_data",
+    test_data_suite
+    | test_data_suite_rank3
+    | test_data_suite_bf16
+    | test_data_suite_fp16,
 )
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_no_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()
+    run_on_vulkan_runtime = test_data.dim() == 4
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
         exir_op,
         quantize=False,
+        run_on_vulkan_runtime=run_on_vulkan_runtime,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_rank3)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()

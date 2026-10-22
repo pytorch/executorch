@@ -30,6 +30,7 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #include <c10/util/safe_numerics.h>
+#include <flatcc/flatcc_builder.h>
 #include <gflags/gflags.h>
 
 #include <chrono>
@@ -732,7 +733,7 @@ int main(int argc, char** argv) {
     FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);
     fclose(f);
-    free(result.buf);
+    flatcc_builder_aligned_free(result.buf);
   }
 
   if (FLAGS_dump_intermediate_outputs) {

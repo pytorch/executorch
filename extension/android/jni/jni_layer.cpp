@@ -13,6 +13,7 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
@@ -21,6 +22,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -265,6 +267,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
+  static facebook::jni::local_ref<jhybriddata> initHybridWithOptions(
+      facebook::jni::alias_ref<jclass>,
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>>
+          backendNames,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>> optionKeys,
+      facebook::jni::alias_ref<facebook::jni::JArrayInt> optionValues) {
+    return makeCxxInstance(
+        modelPath,
+        loadMode,
+        numThreads,
+        backendNames,
+        optionKeys,
+        optionValues);
+  }
+
   ExecuTorchJni(
       facebook::jni::alias_ref<jstring> modelPath,
       jint loadMode,
@@ -318,6 +338,70 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 #endif
 #endif
+  }
+
+  // Loads with the backend options after base construction, so the real load
+  // error surfaces here instead of being masked by the base ctor's "Failed to
+  // create Module".
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>>
+          backendNames,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>> optionKeys,
+      facebook::jni::alias_ref<facebook::jni::JArrayInt> optionValues)
+      : ExecuTorchJni(modelPath, loadMode, numThreads) {
+    // Group entries by backend; the grouped vectors back the map's Spans, so
+    // they must outlive the load() call (which deep-copies).
+    std::map<std::string, std::vector<executorch::runtime::BackendOption>>
+        grouped;
+    const size_t count = backendNames->size();
+    if (optionKeys->size() != count || optionValues->size() != count) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument),
+          "backend option arrays must have equal length");
+      return;
+    }
+    auto values = optionValues->pin();
+    for (size_t i = 0; i < count; ++i) {
+      executorch::runtime::BackendOption option{};
+      const std::string key = optionKeys->getElement(i)->toStdString();
+      if (key.size() >= executorch::runtime::kMaxOptionKeyLength) {
+        executorch::jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument),
+            "backend option key too long: " + key);
+        return;
+      }
+      std::strncpy(
+          option.key,
+          key.c_str(),
+          executorch::runtime::kMaxOptionKeyLength - 1);
+      option.key[executorch::runtime::kMaxOptionKeyLength - 1] = '\0';
+      option.value = static_cast<int>(values[i]);
+      grouped[backendNames->getElement(i)->toStdString()].push_back(option);
+    }
+
+    executorch::runtime::LoadBackendOptionsMap options_map;
+    for (auto& entry : grouped) {
+      const auto set_error = options_map.set_options(
+          entry.first.c_str(),
+          executorch::runtime::Span<executorch::runtime::BackendOption>(
+              entry.second.data(), entry.second.size()));
+      if (set_error != Error::Ok) {
+        executorch::jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(set_error),
+            "Failed to set backend options for " + entry.first);
+        return;
+      }
+    }
+
+    const auto load_error = module_->load(options_map);
+    if (load_error != Error::Ok) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(load_error),
+          "Failed to load Module with backend options");
+    }
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute(
@@ -556,6 +640,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
+        makeNativeMethod(
+            "initHybridWithOptions", ExecuTorchJni::initHybridWithOptions),
         makeNativeMethod("executeNative", ExecuTorchJni::execute),
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),

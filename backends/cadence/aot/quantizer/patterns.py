@@ -21,6 +21,7 @@ from executorch.backends.cadence.aot.quantizer.pattern_utils import (
     fuse_linear,
     fuse_matmul,
     insert_node_with_meta,
+    is_weight_dq,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     check_out_zero_point_is_min_range,
@@ -492,7 +493,7 @@ class Conv1dPattern(QuantizationPattern):
         if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
             return None
         dq_weight = anchor_node.args[1]
-        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+        if not is_weight_dq(dq_weight):
             return None
         quant_node = find_quant_user(anchor_node)
         if quant_node is None:
@@ -546,7 +547,7 @@ class Conv2dPattern(QuantizationPattern):
         if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
             return None
         dq_weight = anchor_node.args[1]
-        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+        if not is_weight_dq(dq_weight):
             return None
         quant_node = find_quant_user(anchor_node)
         if quant_node is None:
@@ -693,7 +694,7 @@ class LinearPattern(QuantizationPattern):
         if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
             return None
         dq_weight = anchor_node.args[1]
-        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+        if not is_weight_dq(dq_weight):
             return None
         quant_node = find_quant_user(anchor_node)
         if quant_node is None:
@@ -1008,11 +1009,7 @@ class ConvReluBasePattern(QuantizationPattern):
             else None
         )
         _arg1 = anchor_node.args[1]
-        dq_weight = (
-            _arg1
-            if isinstance(_arg1, fx.Node) and _arg1.target == DQ_PER_TENSOR
-            else None
-        )
+        dq_weight = _arg1 if is_weight_dq(_arg1) else None
         if dq_input is None or dq_weight is None:
             return None
         quant_node = find_quant_user(relu_node)

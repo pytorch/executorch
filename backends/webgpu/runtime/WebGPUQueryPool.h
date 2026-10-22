@@ -83,6 +83,12 @@ class WebGPUQueryPool {
   std::vector<ShaderDuration> durations_;
 };
 
+// Per-op durations from begin/end tick pairs (consecutive-end delta).
+void fill_shader_durations(
+    std::vector<ShaderDuration>& durations,
+    const uint64_t* ticks,
+    double ns_per_tick);
+
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu

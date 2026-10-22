@@ -25,12 +25,11 @@ def add_input_weight_zp_consts(tosa_graph, node, inputs, output_name):
     input_zp_name = f"{output_name}_input_zp"
     weight_zp_name = f"{output_name}_weight_zp"
 
-    tosa_graph.addConst([1], inputs[0].dtype, [input_zp], name=input_zp_name)
-    tosa_graph.addConst(
-        [1],
-        inputs[1].dtype,
-        weight_zp,
-        name=weight_zp_name,
+    input_zp_tensor = tosa_graph.addConst(
+        [1], inputs[0].dtype, [input_zp], name=input_zp_name
+    )
+    weight_zp_tensor = tosa_graph.addConst(
+        [1], inputs[1].dtype, weight_zp, name=weight_zp_name
     )
 
-    return input_zp_name, weight_zp_name
+    return input_zp_tensor.name, weight_zp_tensor.name

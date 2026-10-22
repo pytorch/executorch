@@ -605,6 +605,29 @@ class TestOpRepSets(unittest.TestCase):
         self.assertEqual(op_repsets.primary_arg_idx, 0)
         self.assertTrue(op_repsets.sync_primary_io_repr)
 
+    def test_single_tensor_output_in_list_construction(self):
+        """An op declared to return Tensor[] that yields exactly one tensor.
+
+        num_tensors_in_node() counts tensors rather than nesting, so such a
+        node reports 1 while meta["val"] is a one-element list rather than a
+        bare FakeTensor.
+        """
+        arg = _make_tensor_arg_node((1, 3, 8, 8))
+        node = _make_op_node(
+            target=torch.ops.aten.split_with_sizes_copy.default,
+            args=(arg, [3]),
+            output_val=[_make_fake_tensor((1, 3, 8, 8))],
+        )
+
+        op_repsets = OpRepSets(
+            TensorRepSetList(ANY_STORAGE),
+            TensorRepSetList(ANY_STORAGE),
+            node,
+            DEFAULT_TEXTURE_LIMITS,
+        )
+
+        self.assertFalse(op_repsets.any_is_empty())
+
     def test_binary_op_syncs_args(self):
         """When a single repset covers all inputs, sync_args_repr is True."""
         op_repsets = self._make_binary_op()

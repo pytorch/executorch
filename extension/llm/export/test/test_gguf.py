@@ -12,7 +12,7 @@ dequantize Q4_K / Q5_K / Q6_K). We validate that:
 
 * ``ExportableGGUFTensor.dequantize`` (and the ``torchao::dequantize_gguf`` op,
   whose eager body uses ``gguf``) reproduces ``gguf.dequantize``;
-* our hand-written ``to_int4_tensor`` / ``to_intx_unpacked_to_int8_tensor``
+* our hand-written ``to_exportable_int4_tensor`` / ``to_intx_unpacked_to_int8_tensor``
   unpack matches ``gguf.dequantize`` (within bf16 storage tolerance);
 * using the subclass as a weight dispatches linear/embedding to the fused ops.
 
@@ -90,23 +90,6 @@ def _gguf_ref(raw: torch.Tensor, qtype) -> torch.Tensor:
     return torch.from_numpy(np.asarray(gguf.dequantize(raw.numpy(), qtype))).float()
 
 
-def _int4_to_float(w) -> torch.Tensor:
-    """Dequantize an ``Int4Tensor`` from its stored fields.
-
-    ``Int4Tensor`` has no working ``dequantize()`` on CPU (``aten.dequantize`` is
-    unimplemented and the linear path needs fbgemm), so reconstruct directly
-    from its public fields (this still exercises our nibble-packing).
-    """
-    N, K = int(w.shape[0]), int(w.shape[1])
-    gs = w.block_size[1]
-    q = torch.empty(N, K, dtype=torch.float32)
-    q[:, ::2] = (w.qdata & 0x0F).float()
-    q[:, 1::2] = (w.qdata >> 4).float()
-    scale = w.scale.t().float().repeat_interleave(gs, dim=1)
-    zero = w.zero_point.t().float().repeat_interleave(gs, dim=1)
-    return scale * (q - zero)
-
-
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestExportableGGUFTensor(unittest.TestCase):
     def test_dequantize_matches_gguf(self):
@@ -122,6 +105,19 @@ class TestExportableGGUFTensor(unittest.TestCase):
             ref = _gguf_ref(raw, qtype)
             # .dequantize() routes through gguf, so it should match exactly.
             self.assertTrue(torch.equal(mine, ref), f"{qtype}")
+
+    def test_to_preserves_quantization(self):
+        raw = _make_q4k_raw(N=3, nb=2)
+        t = ExportableGGUFTensor.from_raw(raw, "q4_k", torch.bfloat16)
+        cast = t.to(torch.float16)
+        # .to() sets the output dtype without dequantizing: same subclass, the
+        # raw blocks are untouched, and dequantize() now yields the new dtype.
+        self.assertIsInstance(cast, ExportableGGUFTensor)
+        self.assertEqual(cast.dtype, torch.float16)
+        self.assertTrue(torch.equal(cast.raw, t.raw))
+        self.assertEqual(cast.dequantize().dtype, torch.float16)
+        with self.assertRaises(AssertionError):
+            t.to(torch.int8)
 
     def test_to_intx_unpacked_matches_reference(self):
         # Reference is the gguf-package dequant (ExportableGGUFTensor.dequantize);
@@ -249,22 +245,32 @@ class TestExportableGGUFTensor(unittest.TestCase):
             self.assertEqual(got["f16"].dtype, torch.float16)
             self.assertEqual(got["f32"].dtype, torch.float32)
 
-    def test_to_int4_tensor_matches_reference(self):
+    def test_to_exportable_int4_tensor_matches_reference(self):
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+
         raw = _make_q4k_raw(N=3, nb=2)
         t = ExportableGGUFTensor.from_raw(raw, "q4_k")
-        w = t.to_int4_tensor()
+        w = t.to_exportable_int4_tensor()
+        self.assertIsInstance(w, ExportableInt4Tensor)
         self.assertEqual(tuple(w.shape), (3, 512))
-        self.assertEqual(list(w.block_size), [1, Q4_K_GROUP_SIZE])
-        # Int4Tensor has no CPU dequantize(); reconstruct from its packed fields
-        # (this still exercises our nibble-packing) against the gguf reference.
+        self.assertEqual(w.group_size, Q4_K_GROUP_SIZE)
         self.assertTrue(
             torch.allclose(
-                _int4_to_float(w),
+                w.dequantize(torch.float32),
                 t.dequantize(torch.float32),
                 rtol=1e-2,
                 atol=5e-2,
             )
         )
+
+    def test_to_exportable_int4_tensor_threads_dtype(self):
+        raw = _make_q4k_raw(N=3, nb=2)
+        t = ExportableGGUFTensor.from_raw(raw, "q4_k")
+        w = t.to_exportable_int4_tensor(torch.float16)
+        self.assertEqual(w.scale.dtype, torch.float16)
+        self.assertEqual(w.zero_point.dtype, torch.float16)
+        self.assertEqual(w.orig_dtype, torch.float16)
+        self.assertEqual(w.dequantize().dtype, torch.float16)
 
     def test_dequantize_gguf_op_matches_reference(self):
         for ggml_type, make in (

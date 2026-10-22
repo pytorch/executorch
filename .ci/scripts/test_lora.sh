@@ -28,11 +28,14 @@ cmake_build_llama_runner() {
 }
 
 cleanup_files() {
-  echo "Deleting downloaded and generated files"
-  rm -rf "${HF_QWEN_PATH}/"
-  rm -rf "${HF_ADAPTER_PATH}/"
-  rm -rf *.pte *.ptd
-  rm result*.txt
+  # Only what this script generated. HF_QWEN_PATH and HF_ADAPTER_PATH point
+  # inside the huggingface_hub cache: on OSDC that is a shared read-only mount,
+  # so removing them failed the job after the tests had already passed, and
+  # anywhere else it discards a cache entry the next job wants. A teardown also
+  # must not fail a run whose tests passed.
+  echo "Deleting generated files"
+  rm -rf ./*.pte ./*.ptd || true
+  rm -f result*.txt || true
 }
 
 matches_base_response_prefix() {

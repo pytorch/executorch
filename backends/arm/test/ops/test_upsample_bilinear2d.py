@@ -34,8 +34,6 @@ test_data_suite_tosa = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
     "rand_one_double_scale": lambda: (torch.rand(2, 4, 1, 1), None, 2.0, True),
     "rand_one_double_size": lambda: (torch.rand(2, 4, 1, 1), (2, 2), None, True),
-    "rand_one_same_scale": lambda: (torch.rand(2, 4, 1, 1), None, 1.0, True),
-    "rand_one_same_size": lambda: (torch.rand(2, 4, 1, 1), (1, 1), None, True),
     # Can't compare outputs as the rounding when selecting the nearest pixel is
     # different between PyTorch and TOSA. Just check the legalization went well.
     # TODO Improve the test infrastructure to support more in depth verification
@@ -86,18 +84,6 @@ test_data_suite_tosa = {
         None,
         True,
     ),
-    "randn_one_same_scale_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        None,
-        1.0,
-        True,
-    ),
-    "randn_one_same_size_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        (1, 1),
-        None,
-        True,
-    ),
 }
 test_data_suite_tosa_bf16 = {
     "randn_double_scale_bf16": lambda: (
@@ -143,6 +129,11 @@ test_data_suite_Uxx = {
         None,
         False,
     ),
+}
+
+test_data_suite_Uxx_same_size = {
+    "rand_same_size": lambda: (torch.rand(2, 3, 5, 5), (5, 5), None, False),
+    "rand_same_scale": lambda: (torch.rand(2, 3, 5, 5), None, 1.0, False),
 }
 
 test_data_u55 = {
@@ -434,6 +425,24 @@ def test_upsample_bilinear2d_vec_u55_INT_UpsamplingBilinear2d_not_delegated(
         u55_subset=True,
     )
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_Uxx_same_size)
+def test_upsample_bilinear2d_vec_u85_INT_same_size(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data()
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        InterpolateAlignCornersFalse(size, scale_factor),
+        (test_data,),
+        aten_op,
+        qtol=1,
+        use_to_edge_transform_and_lower=True,
+    )
+    if not compare_outputs:
+        pipeline.pop_stage(-1)
     pipeline.run()
 
 

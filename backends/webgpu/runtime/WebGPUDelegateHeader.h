@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include <executorch/runtime/core/result.h>
 
 namespace executorch {
@@ -18,7 +20,8 @@ struct WebGPUDelegateHeader {
   bool is_valid() const;
 
   static executorch::runtime::Result<WebGPUDelegateHeader> parse(
-      const void* data);
+      const void* data,
+      size_t buffer_size);
 
   uint32_t header_size;
   uint32_t flatbuffer_offset;

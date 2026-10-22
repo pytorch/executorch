@@ -22,6 +22,8 @@ using executorch::runtime::CompileSpec;
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+#include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
 namespace executorch {
 namespace backends {
@@ -105,13 +107,21 @@ class VgfRepr {
       VkDevice dev,
       VkQueue queue,
       VkCommandPool pool,
-      uint32_t queue_family_index = UINT32_MAX)
+      uint32_t queue_family_index = UINT32_MAX,
+      bool neural_statistics_requested = false,
+      bool neural_statistics_device_enabled = false,
+      int neural_statistics_mode_index = 1,
+      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {})
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
         vk_command_pool(pool),
-        vk_queue_family_index(queue_family_index) {}
+        vk_queue_family_index(queue_family_index),
+        neural_statistics_requested_(neural_statistics_requested),
+        neural_statistics_device_enabled_(neural_statistics_device_enabled),
+        neural_statistics_mode_index_(neural_statistics_mode_index),
+        host_memory_import_capabilities_(host_memory_import_capabilities) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -144,6 +154,11 @@ class VgfRepr {
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
 
+  // Metadata for each IO entry. The ExecuTorch argument index is assigned
+  // later from the model boundary mapping and
+  // must not be assumed from the IO index.
+  std::vector<VgfZeroCopyIoMetadata> zero_copy_io_metadata;
+
   // Mapping to persistent IO memory
   static bool map_io(IO* io, void** handle) {
     if (io->persistent_memory == nullptr) {
@@ -165,8 +180,54 @@ class VgfRepr {
 
   std::string collect_neural_statistics_metadata() const;
 
+  bool neural_statistics_requested() const {
+    return neural_statistics_requested_;
+  }
+
+  bool host_memory_import_advertised() const {
+    return host_memory_import_capabilities_.physical_device_advertised;
+  }
+
+  bool host_memory_import_enabled() const {
+    return host_memory_import_capabilities_.logical_device_enabled;
+  }
+
+  VkDeviceSize min_imported_host_pointer_alignment() const {
+    return host_memory_import_capabilities_.min_imported_host_pointer_alignment;
+  }
+
+  const VgfHostMemoryImportCapabilities& host_memory_import_capabilities()
+      const {
+    return host_memory_import_capabilities_;
+  }
+
+  // Resource-management seam for execute().
+  VgfZeroCopyImportResult try_import_zero_copy_candidate(
+      size_t io_index,
+      void* host_pointer,
+      size_t logical_nbytes);
+
+  const VgfZeroCopySlot* zero_copy_import_slot(size_t io_index) const {
+    return zero_copy_import_manager_.slot(io_index);
+  }
+
+  // Select which tensor view is written to all descriptor bindings associated
+  // with this boundary IO. Selection itself is cheap; Vulkan descriptor writes
+  // are deferred until flush_boundary_bindings().
+  bool activate_imported_binding(size_t io_index);
+  bool activate_owned_binding(size_t io_index);
+  bool is_import_active(size_t io_index) const;
+  bool flush_boundary_bindings(
+      executorch::runtime::EventTracer* event_tracer = nullptr);
+
   ~VgfRepr() {
     free_vgf();
+    if (vk_pipeline_cache != VK_NULL_HANDLE) {
+      // The cache is private to this VgfRepr, so no other delegate instance can
+      // be accessing it while this object is being destroyed.
+      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    }
   }
 
  private:
@@ -178,6 +239,44 @@ class VgfRepr {
   VkCommandPool vk_command_pool;
   uint32_t vk_queue_family_index = UINT32_MAX;
 
+  // Owned by this VgfRepr. One cache is reused across all graph and compute
+  // segments in this loaded VGF, but is not shared with independent VgfRepr
+  // instances. flags=0 uses Vulkan's default internally synchronized cache
+  // mode.
+  VkPipelineCache vk_pipeline_cache = VK_NULL_HANDLE;
+
+  bool neural_statistics_requested_ = false;
+  bool neural_statistics_device_enabled_ = false;
+  int neural_statistics_mode_index_ = 1;
+  VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
+  VgfZeroCopyImportManager zero_copy_import_manager_;
+
+  std::vector<VgfBoundaryBindingState> zero_copy_binding_states_;
+
+  struct VgfAliasImageRecordState {
+    bool needs_tensor_aliasing = false;
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    std::vector<VkImage> images;
+  };
+
+  struct VgfAliasLayoutUse {
+    uint32_t alias_group = 0;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  };
+
+  struct VgfSegmentRecordPlan {
+    std::vector<VgfAliasLayoutUse> alias_layouts;
+  };
+
+  // The VGF decoders are temporary. Persist only the small amount of alias
+  // information required to re-record the execute command buffer after a
+  // descriptor update.
+  std::unordered_map<uint32_t, VgfAliasImageRecordState>
+      execute_alias_image_states_;
+  std::vector<uint32_t> execute_output_image_alias_groups_;
+  std::vector<VgfSegmentRecordPlan> execute_segment_record_plans_;
+
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;
   double timestamp_period_ns = 0.0;
@@ -187,7 +286,16 @@ class VgfRepr {
   // than once) in execute_vgf
   VkCommandBuffer vk_execute_cmd = VK_NULL_HANDLE;
   VkFence vk_execute_fence = VK_NULL_HANDLE;
+  // True only while vk_execute_cmd has an outstanding queue submission.
+  // A freshly-created unsignaled fence is not evidence of pending execution.
+  bool execute_submission_pending_ = false;
   // Note: the vector of tensor memory is stored in IOs above
+
+  bool record_execute_command_buffer(VkCommandBuffer command_buffer);
+  bool select_boundary_tensor_view(
+      size_t io_index,
+      VkTensorViewARM tensor_view,
+      bool imported);
 
   bool init_timestamp_queries();
   void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);

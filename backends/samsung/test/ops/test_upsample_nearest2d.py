@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class UpsampleNearest2d(torch.nn.Module):
@@ -34,7 +35,7 @@ class TestUpsampleNearest2d(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()

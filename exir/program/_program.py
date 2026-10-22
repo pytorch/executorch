@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,7 +33,10 @@ from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import (
+    contains_any_call_fn_target_op,
+    get_control_flow_submodules,
+)
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
@@ -50,6 +53,7 @@ from executorch.exir.passes import (
     OpReplacePass,
     remove_unused_parameters_pass,
 )
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -205,7 +209,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
@@ -688,14 +694,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
     new_gm = new_ep.exported_program.graph_module
-    if config._use_edge_ops:
-        new_gm_res = OpReplacePass()(new_gm)
+    new_gm_res = OpReplacePass()(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
+    if not config._skip_dim_order:
+        new_gm_res = MemoryFormatOpsPass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
-        if not config._skip_dim_order:
-            new_gm_res = MemoryFormatOpsPass()(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -751,11 +756,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
 
 
@@ -815,6 +822,13 @@ def _generate_edge_program(
     # Remove unused parameters
     program = remove_unused_parameters_pass(program)
 
+    if not config._skip_dim_order:
+        # Normalize constants and buffers before MemoryFormatOpsPass rewrites
+        # preserve-format copies, which cannot represent arbitrary dim orders.
+        program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+            program
+        )
+
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
     passes = [
@@ -824,10 +838,9 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
-    if config._use_edge_ops:
-        passes.append(OpReplacePass())
-        if not config._skip_dim_order:
-            passes.append(MemoryFormatOpsPass())
+    passes.append(OpReplacePass())
+    if not config._skip_dim_order:
+        passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:
@@ -857,7 +870,7 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize constant tensor dim order on the unlifted graph
+    # Normalize tensor constants introduced by the preceding passes.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1113,6 +1126,14 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _apply_pre_decomposition_transforms(
+    program: ExportedProgram, partitioners: List[Partitioner]
+) -> ExportedProgram:
+    for partitioner in partitioners:
+        program = partitioner.transform_for_pre_decomposition(program)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1136,11 +1157,13 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        partitioners_for_program = partitioner.get(name, [])
+        program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            partitioners_for_program = partitioner.get(name, [])
             final_ops_to_preserve = set()
 
             # Decompose by default if there are no partitioners for the method
@@ -1168,7 +1191,12 @@ def _gen_edge_manager_for_partitioners(
                         if table.pop(op, None) is not None:
                             ops_needing_preservation.append(op)
 
-                    program = program.run_decompositions(table)
+                    # The initial ``run_decompositions({})`` above has already
+                    # functionalized the graph. This second call only applies
+                    # operator decompositions from the remaining table, so it is
+                    # safe to skip when none of those targets occur in the graph.
+                    if contains_any_call_fn_target_op(program.graph_module, table):
+                        program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
                     # EDGE_DO_NOT_DECOMP path for the partitioner
@@ -1344,6 +1372,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+        for method in edge_manager.methods:
+            lift_constant_tensor_pass(edge_manager.exported_program(method))
 
         if generate_etrecord:
             edge_manager._etrecord.add_extra_export_modules(

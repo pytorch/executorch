@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
-
 import torch
 
 from executorch.backends.nxp.backend.edge_helper import (
@@ -141,7 +139,7 @@ class FuseLinearAndAddPass(PassBase):
             )
             return True
 
-    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: GraphModule) -> PassResult:
         def _is_applicable_linear_node(node_: Node):
             is_linear = (
                 node_.op == "call_function"
