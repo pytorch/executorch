@@ -14,6 +14,7 @@ from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer i
     PerBlockParamObserver,
 )
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    MovingAveragePerChannelLiveScaleObserver,
     PerChannelParamObserver,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -27,7 +28,6 @@ from torchao.quantization.pt2e import (
     FusedMovingAvgObsFakeQuantize,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
-    MovingAveragePerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
@@ -229,7 +229,7 @@ def get_fp16a8w_qat_per_channel_quant_config(
         quant_min=torch.iinfo(torch.int8).min + 1,
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_channel_symmetric,
-        observer=MovingAveragePerChannelMinMaxObserver.with_args(**extra_args),
+        observer=MovingAveragePerChannelLiveScaleObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -602,6 +602,13 @@ def get_16a8w_qnn_qat_config(
     return quantization_config
 
 
+def _per_channel_weight_eps(weight_dtype, eps: float = None) -> float:
+    # int16 weights floor at the 16-bit eps, every narrower width at the 8-bit one.
+    if eps:
+        return eps
+    return DEFAULT_EPS_16BIT if weight_dtype == torch.int16 else DEFAULT_EPS_8BIT
+
+
 def get_ptq_per_channel_quant_config(
     act_dtype=torch.uint8,
     weight_dtype=torch.int8,
@@ -670,7 +677,9 @@ def get_ptq_per_channel_quant_config(
         quant_max=q_max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+            eps=_per_channel_weight_eps(weight_dtype, eps)
+        ),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
@@ -1026,7 +1035,9 @@ def get_qat_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer=PerChannelParamObserver.with_args(**extra_args),
+        observer=PerChannelParamObserver.with_args(
+            eps=_per_channel_weight_eps(weight_dtype, eps)
+        ),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
