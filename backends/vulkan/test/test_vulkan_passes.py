@@ -1546,21 +1546,21 @@ class TestVulkanPasses(unittest.TestCase):
 
     def test_partitioner_skips_quant_ops_without_runtime_kernel(self):
         """The Vulkan runtime implements torchao.dequantize_affine only inside
-        fused patterns. An 8-bit weight-only linear has no fused pattern, so its
-        dequantize_affine must stay outside of the Vulkan delegate.
+        fused patterns. An 8-bit per-group weight-only linear has no fused
+        pattern, so its dequantize_affine must stay outside of the Vulkan delegate.
         """
         from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
             VulkanPartitioner,
         )
         from executorch.exir import to_edge_transform_and_lower
-        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.granularity import PerGroup
         from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
         from torchao.utils import unwrap_tensor_subclass
 
         model = torch.nn.Sequential(torch.nn.Linear(64, 64))
         quantize_(
             model,
-            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerGroup(32)),
         )
         unwrap_tensor_subclass(model)
         sample_inputs = (torch.randn(2, 64),)
@@ -1571,6 +1571,167 @@ class TestVulkanPasses(unittest.TestCase):
         )
         gm = edge_program.exported_program().graph_module
         self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 1)
+
+    def test_fuse_torchao_int8_weight_only_linear(self):
+        """A torchao int8 per-channel weight-only linear (dequantize_affine with
+        [N, 1] scales -> linear) should fuse into et_vk.linear_q8csw. Unfused, the
+        dequantize_affine would be serialized into the delegate, which has no
+        kernel for it.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from executorch.backends.transforms.utils import get_param_tensor
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        in_features, out_features = 64, 130  # not a multiple of 4
+
+        model = torch.nn.Linear(in_features, out_features, bias=True).eval()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.randn(2, 8, in_features),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        self.assertEqual(op_node_count(gm, "linear_q8csw.default"), 1)
+        self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 0)
+
+        fused_node = next(
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "linear_q8csw.default"
+        )
+        weight, scales, bias = (get_param_tensor(ep, n) for n in fused_node.args[1:4])
+        # Scales and bias are flattened to [N] and padded to a multiple of 4.
+        self.assertEqual(tuple(scales.shape), (132,))
+        self.assertEqual(tuple(bias.shape), (132,))
+
+        fused_out = torch.ops.et_vk.linear_q8csw.default(
+            sample_inputs[0], weight, scales, bias
+        )
+        self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-5, rtol=1e-5))
+
+    def test_torchao_int8_weight_only_linear_lowers_to_linear_q8csw(self):
+        """End to end, with and without bias: the delegate runs linear_q8csw and
+        no dequantize_affine is left anywhere in the program."""
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        for bias in (True, False):
+            with self.subTest(bias=bias):
+                model = torch.nn.Sequential(torch.nn.Linear(64, 130, bias=bias))
+                quantize_(
+                    model,
+                    IntxWeightOnlyConfig(
+                        weight_dtype=torch.int8, granularity=PerAxis(0)
+                    ),
+                )
+                unwrap_tensor_subclass(model)
+                edge_program = to_edge_transform_and_lower(
+                    torch.export.export(model, (torch.randn(2, 64),), strict=True),
+                    partitioner=[VulkanPartitioner()],
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
+                gm = edge_program.exported_program().graph_module
+                self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 0)
+                ops = [
+                    op.name
+                    for graph in vulkan_delegate_graphs(edge_program)
+                    for op in graph.chain
+                ]
+                self.assertEqual(ops, ["et_vk.linear_q8csw.default"])
+
+    def test_torchao_int8_asymmetric_weight_only_linear_runs_as_float(self):
+        """linear_q8csw has no weight zero points, so an asymmetric linear has
+        its weight dequantized to a float constant instead."""
+        from torchao.quantization.granularity import PerAxis
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.quantization.quant_primitives import MappingType
+        from torchao.utils import unwrap_tensor_subclass
+
+        model = torch.nn.Sequential(torch.nn.Linear(64, 8))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int8,
+                granularity=PerAxis(0),
+                mapping_type=MappingType.ASYMMETRIC,
+            ),
+        )
+        unwrap_tensor_subclass(model)
+        sample_inputs = (torch.randn(2, 64),)
+        eager_ref = model(*sample_inputs)
+
+        edge_program = to_edge(
+            torch.export.export(model, sample_inputs, strict=True),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        self.assertTrue(fuse_pass.call(ep.graph_module).modified)
+        ep.graph_module.graph.eliminate_dead_code()
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "dequantize_affine.default"), 0)
+        self.assertEqual(op_node_count(gm, "linear_q8csw.default"), 0)
+        self.assertTrue(
+            torch.allclose(ep.module()(*sample_inputs), eager_ref, atol=1e-6)
+        )
+
+    def test_pt2e_weight_only_linear_keeps_its_route(self):
+        """PT2E per-channel weight-only linears go through
+        FuseQuantizedOpsTransform, not linear_q8csw: 4-bit weights to
+        linear_qcs4w and 8-bit ones to _weight_int8pack_mm."""
+        from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+            get_symmetric_quantization_config,
+            VulkanQuantizer,
+        )
+
+        for weight_bits, expected in (
+            (4, "et_vk.linear_qcs4w.default"),
+            (8, "aten._weight_int8pack_mm.default"),
+        ):
+            with self.subTest(weight_bits=weight_bits):
+                sample_inputs = (torch.randn(4, 64),)
+                model = torch.nn.Linear(64, 128).eval()
+                quantizer = VulkanQuantizer().set_global(
+                    get_symmetric_quantization_config(
+                        is_dynamic=False, weight_bits=weight_bits
+                    )
+                )
+                prepared = prepare_pt2e(
+                    torch.export.export(model, sample_inputs).module(), quantizer
+                )
+                prepared(*sample_inputs)
+                converted = convert_pt2e(prepared)
+                edge_program = lower_to_vulkan(converted, sample_inputs)
+                ops = [
+                    op.name
+                    for graph in vulkan_delegate_graphs(edge_program)
+                    for op in graph.chain
+                ]
+                self.assertIn(expected, ops)
+                self.assertNotIn("et_vk.linear_q8csw.default", ops)
 
     def test_fuse_q8ta_linear(self):
         """Test that sequential quantized linears fuse into q8ta_linear when output quantization is present."""

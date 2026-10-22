@@ -127,7 +127,7 @@ _WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
 
 
 # Vulkan fusion patterns whose fused ops the WebGPU runtime does not implement.
-_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue"}
+_WEBGPU_SKIP_FUSION_PATTERNS = {"conv2d_with_epilogue", "quantized_linear_q8csw"}
 
 _MUL_TARGETS = (torch.ops.aten.mul.Tensor, exir_ops.edge.aten.mul.Tensor)
 
