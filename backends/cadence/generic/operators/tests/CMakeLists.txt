@@ -48,7 +48,7 @@ endif()
 # checks with EXPECT_TENSOR_EQ, mirroring the BUCK tests.
 add_executable(
   cadence_generic_op_tests
-  test_op_sdpa_bitwise_mask_gen.cpp
+  test_op_quantized_layer_norm.cpp test_op_sdpa_bitwise_mask_gen.cpp
   ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
 )
 target_compile_definitions(cadence_generic_op_tests PRIVATE GTEST_HAS_PTHREAD=0)
