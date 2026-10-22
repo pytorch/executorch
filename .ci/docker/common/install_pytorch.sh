@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,12 +24,6 @@ else
   export SCCACHE_DIR=/tmp/sccache
 fi
 
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip_install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip_install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
 configure_pytorch_compiler() {
   local cxx_version
   cxx_version=$(/usr/bin/c++ --version | head -n1)
@@ -44,73 +39,7 @@ configure_pytorch_compiler() {
   fi
 }
 
-install_pytorch_and_domains() {
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || true
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
-
-  chown -R ci-user .
-
-  export _GLIBCXX_USE_CXX11_ABI=1
-  if [[ "$(uname -m)" == "aarch64" ]]; then
-    export BUILD_IGNORE_SVE_UNAVAILABLE=1
-  fi
-  if [[ -n "${PYTORCH_BUILD_MAX_JOBS:-}" ]]; then
-    export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
-  fi
-  configure_pytorch_compiler
-  # PyTorch no longer supports "python setup.py bdist_wheel"; it now builds
-  # through scikit-build-core (PEP 517). Build the wheel with the standard
-  # frontend and keep build isolation off, so PyTorch builds against this
-  # environment's numpy and toolchain (avoids an ABI mismatch) and reuses
-  # sccache.
-  #
-  # With isolation off the frontend does not fetch the PEP 517 build
-  # requirements, so install them here. They go into a throwaway venv rather
-  # than into the image, because scikit-build-core registers a setuptools
-  # build_ext plugin: left in the image it hijacks every later
-  # "pip install --no-build-isolation" and turns on C++20 module scanning that
-  # the image compiler cannot satisfy. The venv inherits the image's
-  # site-packages, so PyTorch still builds against the same numpy.
-  #
-  # Keep in sync with pytorch/pyproject.toml [build-system].requires.
-  local build_venv=/tmp/pytorch-build-venv
-  rm -rf "${build_venv}"
-  conda_run python -m venv --system-site-packages "${build_venv}"
-  # No pip cmake: scikit-build-core would prefer it over the image's, and it
-  # searches site-packages, where MKL and libomp are not.
-  conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
-    ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
-  # These images have no module scanner, and nothing here uses modules.
-  conda_run env CMAKE_CXX_SCAN_FOR_MODULES=OFF \
-    "${build_venv}/bin/python" -m build --wheel --no-isolation
-  rm -rf "${build_venv}"
-  pip_install "$(echo dist/*.whl)"
-
-  # A build with no BLAS succeeds silently. Run from / to import the wheel.
-  (cd / && conda_run python -c "
-import torch
-assert torch._C.has_lapack, 'built without LAPACK'
-torch.linalg.qr(torch.randn(4, 4))
-")
-
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.11
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.29
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || true
-  # Clean up the cloned PyTorch repo to reduce the Docker image size
-  rm -rf pytorch
-
-  # Print sccache stats for debugging
-  as_ci_user sccache --show-stats
-}
-
-install_pytorch_and_domains
+configure_pytorch_compiler
+export TORCH_VERSION
+export PYTHON_EXECUTABLE="/opt/conda/envs/py_${PYTHON_VERSION}/bin/python"
+conda_run bash "$(dirname "${BASH_SOURCE[0]}")/install_pinned_pytorch.sh"
