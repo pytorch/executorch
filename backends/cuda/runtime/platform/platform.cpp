@@ -86,11 +86,24 @@ executorch::runtime::Result<void*> load_library(
     Dl_info info;
     // Get info about a symbol we know exists in this backend library
     if (dladdr((void*)&load_library, &info) && info.dli_fname) {
-      // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols
+      // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols. Clear any
+      // earlier error first, so dlerror() below reports only this call's.
+      dlerror();
       void* handle =
           dlopen(info.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
       if (!handle) {
-        ET_LOG(Error, "Failed to promote symbols: %s", dlerror());
+        const char* error = dlerror();
+        if (error != nullptr) {
+          ET_LOG(Error, "Failed to promote symbols: %s", error);
+        } else {
+          // dlopen found no library to re-open and set no error. That is the
+          // case when this backend is linked into the executable, whose
+          // symbols are global already.
+          ET_LOG(
+              Info,
+              "Not promoting symbols: %s is not loaded as a shared library",
+              info.dli_fname);
+        }
       } else {
         // Close the handle after successful promotion
         dlclose(handle);
