@@ -20,6 +20,7 @@ import concurrent.futures
 import contextlib
 import os
 import pickle
+import re
 import statistics
 import tempfile
 import types
@@ -887,10 +888,10 @@ class Int4QuantizedGemmTest(unittest.TestCase):
             )
         source = "\n".join(code)
         name = autotuner.fn.fn.__name__
-        self.assertIn(f"def {name}(", source)
-        block = source[
-            source.rindex("user_autotune(", 0, source.index(f"def {name}(")) :
-        ]
+        # A module-level kernel's def is renamed to Inductor's kernel name: name plus a suffix.
+        kernel_def = re.search(rf"^def {re.escape(name)}\w*\(", source, re.MULTILINE)
+        self.assertIsNotNone(kernel_def, source)
+        block = source[source.rindex("user_autotune(", 0, kernel_def.start()) :]
         configs = block[: block.index("],")]
         self.assertEqual(configs.count("'num_warps'"), 1)
         _check_close(self, compiled, eager)
