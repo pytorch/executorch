@@ -94,9 +94,9 @@ jobs:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      # Bootstrap the Windows base env with Python 3.11 so the conda solver's
-      # certifi dependency is satisfiable. https://github.com/pytorch/test-infra/pull/9177
-      test-infra-ref: 8223f28ee8c5e3ec091ede9822176fb2a01ffd11
+      # Avoid the unsatisfiable conda upgrade in the Windows runner's base env.
+      # https://github.com/pytorch/test-infra/pull/9179
+      test-infra-ref: e3d344d886a7281f6a919115d332df2a080da8ad
       build-matrix: ${{ needs.filter-matrix.outputs.matrix }}
       pre-script: ${{ matrix.pre-script }}
       env-script: ${{ matrix.env-script }}
