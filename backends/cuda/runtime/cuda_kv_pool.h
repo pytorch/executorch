@@ -29,9 +29,10 @@ namespace executorch::backends::cuda {
 // the AOTI bindings that point every compiled program at them. Which rows mean
 // what is the owning cache's business, never this class's.
 //
-// Growable layers share one row count that grows geometrically toward their
-// declared rows, moving their storage; fixed layers and side buffers are
-// allocated once and never move, so a program may capture their addresses.
+// Growable layers share one row count that grows geometrically, each layer
+// holding that many rows up to its declared rows, moving their storage; fixed
+// layers and side buffers are allocated once and never move, so a program may
+// capture their addresses.
 //
 // Not thread-safe: the owning cache serializes every call.
 class CudaKVPool final {
