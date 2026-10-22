@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <xnnpack.h>
 #include <atomic>
+#include <cstring>
 #include <fstream>
 #include <mutex>
 #include <thread>
@@ -592,6 +593,100 @@ TEST_F(XNNWeightsCacheTest, QualifiedNameSurvivesReloadOfSamePointer) {
   ASSERT_EQ(
       cache.get_unpacked_data_names(), std::vector<std::string>{"weight"});
   ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+namespace {
+xnn_weights_cache_look_up_key keyFor(const uint8_t* kernel) {
+  xnn_weights_cache_look_up_key key{};
+  key.seed = 7;
+  key.kernel = kernel;
+  return key;
+}
+
+size_t packUnder(
+    xnn_weights_cache_provider* provider,
+    const uint8_t* kernel,
+    uint8_t fill) {
+  xnn_weights_cache_look_up_key key = keyFor(kernel);
+  void* space = provider->reserve_space(provider->context, 64);
+  memset(space, fill, 64);
+  return provider->look_up_or_insert(provider->context, &key, space, 64);
+}
+} // namespace
+
+// Deconvolution packs its kernel first and only then calls look_up_or_insert,
+// so a second kernel can arrive under an already packed name with different
+// bytes. The cache must store it separately: XNNPACK takes the returned offset
+// as the operator's packed weights, so a miss here would send the operator to
+// an invalid offset. The name itself cannot tell the two apart, so from then
+// on it must miss: a hit would hand a later consumer whichever packing the
+// name happens to point at.
+TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  xnn_weights_cache_provider* provider = cache.get();
+  Result<const uint8_t*> first = cache.load_unpacked_data("weight");
+  Result<const uint8_t*> second = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(second.ok());
+
+  const size_t first_offset = packUnder(provider, first.get(), 1);
+  xnn_weights_cache_look_up_key first_key = keyFor(first.get());
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), first_offset);
+
+  const size_t second_offset = packUnder(provider, second.get(), 2);
+  ASSERT_NE(first_offset, SIZE_MAX);
+  ASSERT_NE(second_offset, SIZE_MAX);
+  ASSERT_NE(first_offset, second_offset);
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, first_offset)),
+      1);
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, second_offset)),
+      2);
+
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  const size_t third_offset = packUnder(provider, first.get(), 3);
+  ASSERT_NE(third_offset, first_offset);
+  ASSERT_NE(third_offset, second_offset);
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+// The retired name must not come back from the cache file either: a program
+// loaded again would otherwise hit it with a matching seed and run on the
+// other node's packing without repacking.
+TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_conflict_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+    ASSERT_TRUE(kernel.ok());
+    ASSERT_NE(packUnder(provider, kernel.get(), 1), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 2), SIZE_MAX);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    ASSERT_TRUE(cache.get_packed_data_names().empty());
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+    ASSERT_TRUE(kernel.ok());
+    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  ::unlink(cache_path.c_str());
 }
 
 TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {

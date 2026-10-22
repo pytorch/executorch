@@ -47,6 +47,11 @@ struct PackedDataMeta {
   // and then save_packed_index-ed). delete_packed_data preserves these
   // entries so the next init reuses the saved file instead of re-packing.
   bool from_load{false};
+  // True once a second kernel packed under this name with different bytes:
+  // the name does not tell the two apart, so look_up treats it as a miss
+  // from then on and save_packed_index leaves it out of the file. Nodes
+  // under a conflicted name pack unnamed, outside the cache.
+  bool conflicted{false};
   // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
   // guarantees this is consistent across runs of the same ukernel; when
   // XNNPACK upgrades and a ukernel implementation changes, the seed
