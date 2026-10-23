@@ -27,6 +27,13 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
 
 
+def _keeps_last_dim(view_node: torch.fx.Node) -> bool:
+    """True if `view_node` leaves its input's last dim unchanged."""
+    src = view_node.args[0]
+    assert isinstance(src, torch.fx.Node)
+    return str(src.meta["val"].shape[-1]) == str(view_node.meta["val"].shape[-1])
+
+
 class QuantizedLinearMatch(PatternMatch):
     def __init__(self, mm_node: torch.fx.Node) -> None:  # noqa: C901
         self.anchor_node = mm_node
@@ -98,8 +105,14 @@ class QuantizedLinearMatch(PatternMatch):
         anchor_primary_input_node = self.anchor_node.args[input_arg_idx]
         assert isinstance(anchor_primary_input_node, torch.fx.Node)
 
-        # Skip potential view_copy between dq and linear
-        if utils.is_view_copy_node(anchor_primary_input_node):
+        # Skip potential view_copy between dq and linear. Only the view that
+        # flattens the leading dims of a decomposed N-D linear may be skipped: the
+        # fused op takes the N-D input and contracts its last dim, so a reshape that
+        # changes the last dim (e.g. merging heads, [S, H, D] -> [S, H * D]) must
+        # stay in the graph.
+        if utils.is_view_copy_node(
+            anchor_primary_input_node
+        ) and _keeps_last_dim(anchor_primary_input_node):
             self.all_nodes.append(anchor_primary_input_node)
             anchor_primary_input_node = anchor_primary_input_node.args[
                 0
