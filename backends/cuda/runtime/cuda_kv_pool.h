@@ -85,6 +85,11 @@ class CudaKVPool final {
   // follow if it runs on another.
   runtime::Error mark_step_done();
 
+  // Orders `stream` behind the previous step's stream, so work issued on
+  // another host thread (where cudaStreamPerThread names another stream) still
+  // sees that step's writes. A step on the same stream is already ordered.
+  runtime::Error follow_previous_step(cudaStream_t stream);
+
   // Host fence on the pool's device before cells can be reclaimed or reset.
   runtime::Error synchronize(bool all_streams = false);
 
@@ -99,9 +104,17 @@ class CudaKVPool final {
   // allocated().
   void* side_buffer(size_t index) const;
   size_t side_buffer_bytes(size_t index) const;
+  // Device pointer of layer `index`'s K or V storage, which moves when a
+  // growable layer grows. Precondition: allocated().
+  void* layer_data(size_t index, bool value) const;
   // The stream of the latest step, on which side-buffer writes must be issued.
   cudaStream_t stream() const {
     return stream_;
+  }
+
+  // The device owning the storage. Precondition: allocated().
+  int device() const {
+    return device_;
   }
 
   int64_t rows() const {
@@ -144,7 +157,6 @@ class CudaKVPool final {
       Allocation& out);
   void release(void* ptr, cudaStream_t stream);
   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
-  runtime::Error follow_previous_step(cudaStream_t stream);
   runtime::Error allocate_initial(int64_t required_rows, cudaStream_t stream);
   runtime::Error allocate_side_buffers(cudaStream_t stream);
   runtime::Error grow(int64_t new_rows, int64_t live_rows, cudaStream_t stream);
