@@ -423,7 +423,8 @@ event tracer.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 13.2 and 13.4, so pick the index
+On Linux, the package on PyPI is the CUDA build, for the same CUDA version as the `torch` package
+there. Releases also cover CUDA 13.2 and 13.4 on their own indexes, so you can pick the one
 matching the CUDA version you have (`cu132` or `cu134`). For CUDA 13.2:
 
 ```

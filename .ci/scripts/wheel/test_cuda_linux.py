@@ -143,6 +143,27 @@ def test_cuda_libraries_resolve_relatively() -> None:
         print(f"✓ {name} resolves the CUDA runtime relatively ({relative[0]})")
 
 
+def test_no_library_needs_cuda_torch() -> None:
+    """No shipped library may record a dependency on PyTorch's own CUDA libraries.
+
+    The CUDA delegate needs only the CUDA runtime. A library that names libtorch_cuda or
+    libc10_cuda cannot load next to a CPU-only torch, so the whole wheel then fails to import
+    there even though nothing in it calls into those libraries.
+    """
+    package_dir = _package_dir()
+    cuda_torch = {"libtorch_cuda.so", "libc10_cuda.so"}
+    offenders = {}
+    for library in test_shared_libraries._shipped_shared_objects(package_dir):
+        needed = test_shared_libraries._recorded_dependencies(library) & cuda_torch
+        if needed:
+            offenders[str(library.relative_to(package_dir))] = sorted(needed)
+    assert not offenders, (
+        f"these libraries depend on PyTorch's CUDA libraries, so the wheel cannot be imported "
+        f"with a CPU-only torch: {offenders}"
+    )
+    print("✓ no shipped library depends on PyTorch's CUDA libraries")
+
+
 def _row_architectures() -> list[str]:
     """The architectures this row claims, from the same script the build uses.
 
@@ -586,6 +607,7 @@ if __name__ == "__main__":
     test_cuda_libraries_are_shipped()
     test_cuda_runtime_is_declared()
     test_cuda_libraries_resolve_relatively()
+    test_no_library_needs_cuda_torch()
     test_device_code_covers_the_row()
     test_portable_device_code_is_present()
     test_the_delegate_registers()
