@@ -20,10 +20,8 @@ from executorch.backends.qualcomm.export_utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
-
 from executorch.examples.qualcomm.oss_scripts.llm_utils.qnn_decoder_model_manager import (
     get_qnn_llm_edge_manager,
-    HUGGING_FACE_REPO_IDS,
 )
 from executorch.examples.qualcomm.utils import make_output_dir
 
@@ -35,25 +33,15 @@ logging.getLogger().setLevel(logging.INFO)
 
 PTE_FILENAME = "hf_causal_lm_qnn"
 
-# Map the HF decoder_model keys (HUGGING_FACE_REPO_IDS) to the version strings
-# the shared qnn_llama_runner understands (see runner.cpp Runner()).
-DECODER_MODEL_VERSION = {
-    "llama3_2-1b": "llama3",
-    "qwen2_5-0_5b": "qwen2_5",
-    "qwen2_5-1_5b_instruct": "qwen2_5",
-    "qwen2_5-0_5b_instruct": "qwen2_5",
-    "qwen3-0_6b": "qwen3",
-    "smollm2_135m": "smollm2_135m",
-    "granite-3_3-2b": "granite",
-}
 
-
-def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
+def compile(
+    args: argparse.Namespace, qnn_config: QnnConfig, pte_name: str
+):  # noqa: C901
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    manager = get_qnn_llm_edge_manager(args.decoder_model, args.max_seq_len)
+    manager = get_qnn_llm_edge_manager(args.decoder_model_id, args.max_seq_len)
 
     fixed_point_type = {}
     if not args.use_fp16:
@@ -71,14 +59,11 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
         else:
             raise ValueError("Only support uint16 logits output for quantized hf llm.")
 
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(args.decoder_model_id)
         tokenizer_json_path = tokenizer.save_pretrained(args.artifact)[-1]
 
         manager.pt2e_quantize(
             fixed_point_type,
-            args.calibration_tasks,
-            args.calibration_limit,
             args.prompt,
             tokenizer_json_path,
             qnn_config.backend,
@@ -97,15 +82,15 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
                 "scale": logits_quant_attrs["scale"],
                 "zero_point": logits_quant_attrs["zero_point"],
             },
-            open(f"{args.artifact}/{PTE_FILENAME}_quant_attrs.txt", "w"),
+            open(f"{args.artifact}/{pte_name}_quant_attrs.txt", "w"),
         )
 
-    manager.to_executorch(args.artifact, PTE_FILENAME)
+    manager.to_executorch(args.artifact, pte_name)
 
 
-def inference(args: argparse, qnn_config: QnnConfig):
-    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{PTE_FILENAME}"
-    pte_path = f"{args.artifact}/{PTE_FILENAME}.pte"
+def inference(args: argparse, qnn_config: QnnConfig, pte_name: str):
+    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_name}"
+    pte_path = f"{args.artifact}/{pte_name}.pte"
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -121,12 +106,10 @@ def inference(args: argparse, qnn_config: QnnConfig):
             text = text[len(prefix) :]
         outputs.append(args.prompt + text)
 
-    model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(args.decoder_model_id)
     tokenizer_json_path = tokenizer.save_pretrained(args.artifact)[-1]
     seq_len = args.max_seq_len
     runner_bin = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
-    decoder_model_version = DECODER_MODEL_VERSION[args.decoder_model]
 
     # The base (non-instruct) HF models were not trained on the runner's chat
     # template. Tokenize the raw prompt here (matching the Python calibration
@@ -146,7 +129,6 @@ def inference(args: argparse, qnn_config: QnnConfig):
                 f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
                 f"{args.build_folder}/{runner_bin}",
                 f"--tokenized_prompt {tokenized_prompt_path}",
-                f"--decoder_model_version {decoder_model_version}",
                 "--eval_mode 0",
                 f"--tokenizer_path {tokenizer_json_path}",
                 f"--model_path {pte_path}",
@@ -168,10 +150,9 @@ def inference(args: argparse, qnn_config: QnnConfig):
                 f"cd {workspace} &&",
                 "./qnn_llama_runner",
                 "--tokenized_prompt tokenized_prompt.raw",
-                f"--decoder_model_version {decoder_model_version}",
                 "--eval_mode 0",
                 "--tokenizer_path tokenizer.json",
-                f"--model_path {PTE_FILENAME}.pte",
+                f"--model_path {pte_name}.pte",
                 f"--seq_len {seq_len}",
                 "--temperature 0",
                 "--output_path outputs/result.txt",
@@ -207,12 +188,12 @@ def main(args):
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     if args.compile_only:
-        compile(args, qnn_config)
+        compile(args, qnn_config, PTE_FILENAME)
     elif args.pre_gen_pte:
-        inference(args, qnn_config)
+        inference(args, qnn_config, PTE_FILENAME)
     else:
-        compile(args, qnn_config)
-        inference(args, qnn_config)
+        compile(args, qnn_config, PTE_FILENAME)
+        inference(args, qnn_config, PTE_FILENAME)
 
 
 if __name__ == "__main__":
@@ -242,10 +223,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--decoder_model",
-        choices=list(HUGGING_FACE_REPO_IDS.keys()),
-        help=f"The Hugging Face decoder model to export. Available options are: {list(HUGGING_FACE_REPO_IDS.keys())}",
-        required=True,
+        "--decoder_model_id",
+        help="The Hugging Face ID to export, e.g., 'NousResearch/Llama-3.2-1B'",
+        default="NousResearch/Llama-3.2-1B",
     )
 
     parser.add_argument(
@@ -254,31 +234,9 @@ if __name__ == "__main__":
         default=128,
         type=int,
     )
-    parser.add_argument(
-        "--calibration_tasks",
-        nargs="+",
-        type=str,
-        default=None,
-        help="Tasks for GPTQ calibration from lm_eval. Currently unsupported.",
-    )
-    parser.add_argument(
-        "--calibration_limit",
-        type=int,
-        default=None,
-        help="number of samples used for calibration from lm_eval. Currently unsupported.",
-    )
 
     try:
         args = parser.parse_args()
-
-        if args.calibration_tasks is not None or args.calibration_limit is not None:
-            parser.error(
-                "--calibration_tasks/--calibration_limit are not supported yet. "
-                "Calibration uses --prompt instead."
-            )
-
-        if args.artifact is None:
-            args.artifact = args.decoder_model
         main(args)
     except Exception as e:
         if args.ip and args.port != -1:

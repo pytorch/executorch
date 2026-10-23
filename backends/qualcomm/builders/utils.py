@@ -182,6 +182,7 @@ def is_constant(
 def deduce_dtype(
     tensor: torch.Tensor, quant_infos: Optional[Dict] = None
 ) -> torch.dtype:
+    # Please be extra careful when modifying the logic here as HF Repo uses it too.
     if quant_infos:
         quant_range = quant_infos["quant_max"] - quant_infos["quant_min"]
         unsigned = quant_infos["quant_min"] >= 0
