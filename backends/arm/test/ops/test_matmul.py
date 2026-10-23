@@ -479,6 +479,30 @@ def test_matmul_vgf_no_quant(test_case: test_case_t):
     pipeline.run()
 
 
+@common.parametrize(
+    "test_case",
+    test_suite_fp8,
+    xfails={
+        "double_input_rand_rand_3d_fp8e5m2": (
+            "PyTorch lacks the required FP8 CPU kernels for bmm.",
+            NotImplementedError,
+        ),
+    },
+)
+@common.SkipIfNoModelConverter
+def test_matmul_vgf_no_quant_fp8(test_case: test_case_t):
+    test_data = test_case()
+    pipeline = VgfPipeline[input_t](
+        test_data.module,
+        test_data.input_factory(),
+        aten_op_mm,
+        list(test_data.exir_ops),
+        quantize=False,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_case", test_suite, xfails=vgf_quant_xfails)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_quant(test_case: test_case_t):
