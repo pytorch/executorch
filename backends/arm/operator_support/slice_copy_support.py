@@ -25,6 +25,13 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
+def _supported_int_dtypes(tosa_spec) -> tuple[torch.dtype, ...]:
+    """Integer dtypes TOSA SLICE accepts under ``tosa_spec``."""
+    if tosa_spec.support_extension("int64"):
+        return (torch.int8, torch.int16, torch.int32, torch.int64)
+    return (torch.int8, torch.int16, torch.int32)
+
+
 @register_tosa_support_check
 class SliceCopySupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for ``aten.slice_copy``."""
@@ -81,7 +88,7 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
 
         values_dtype = node.args[0].meta["val"].dtype  # type: ignore[union-attr]
 
-        SUPPORTED_INT_DTYPES = (torch.int8, torch.int16, torch.int32)
+        SUPPORTED_INT_DTYPES = _supported_int_dtypes(tosa_spec)
         SUPPORTED_FLOAT_DTYPES = (
             torch.float16,
             torch.float32,

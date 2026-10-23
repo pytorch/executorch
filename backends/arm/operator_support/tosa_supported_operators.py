@@ -75,6 +75,7 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
 )
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
+    keeps_int64,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -628,6 +629,113 @@ def _disallowed_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
     return dtypes
 
 
+class CheckInt64Unsupported(OperatorSupportBase):
+    """Reject int64 operands for ops that EXT-INT64 does not cover.
+
+    Without the narrowing passes an int64 tensor reaches serialization, where
+    the dialect raises instead of the node falling back to CPU.
+
+    """
+
+    # EXT-INT64 defines no i64 form of CLAMP, and cumsum lowers through ops
+    # that have none either.
+    unsupported_targets = {
+        exir_ops.edge.aten.clamp.default,
+        exir_ops.edge.aten.clamp.Tensor,
+        exir_ops.edge.aten.cumsum.default,
+        # relu and hardtanh become CLAMP, which has no i64 form.
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.hardtanh.default,
+        # these decompose through a pass that casts operands to int32.
+        exir_ops.edge.aten.div.Tensor_mode,
+        exir_ops.edge.aten.floor_divide.default,
+        exir_ops.edge.aten.remainder.Tensor,
+        exir_ops.edge.aten.remainder.Scalar,
+        # EXT-INT64 defines no i64 MATMUL.
+        exir_ops.edge.aten.mm.default,
+        exir_ops.edge.aten.bmm.default,
+        # POW, LOGICAL_* , CEIL and FLOOR have no i64 form either.
+        exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.logical_and.default,
+        exir_ops.edge.aten.logical_or.default,
+        exir_ops.edge.aten.logical_xor.default,
+        exir_ops.edge.aten.logical_not.default,
+        exir_ops.edge.aten.ceil.default,
+        exir_ops.edge.aten.floor.default,
+        # round lowers through FLOOR, and the boolean reductions need bool.
+        exir_ops.edge.aten.round.default,
+        exir_ops.edge.aten.any.default,
+        exir_ops.edge.aten.any.dim,
+        exir_ops.edge.aten.any.dims,
+        exir_ops.edge.aten.all.default,
+        exir_ops.edge.aten.all.dim,
+        exir_ops.edge.aten.all.dims,
+        # ARGMAX has no i64 input form.
+        exir_ops.edge.aten.argmax.default,
+        exir_ops.edge.aten.argmin.default,
+    }
+
+    # Comparisons need matching operand dtypes, and nothing promotes them.
+    mixed_width_targets = {
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.ne.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+    }
+
+    # A reduction that asks for a different accumulation dtype is lowered
+    # without it, so an int64 input would be summed at the wrong width.
+    dtype_changing_targets = {
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def __init__(self, reporter: WhyNoPartitionReporter) -> None:
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target in self.mixed_width_targets:
+            dtypes = {get_first_fake_tensor(n).dtype for n in node.all_input_nodes}
+            if torch.int64 in dtypes and len(dtypes) > 1:
+                self.reporter.report_reject(
+                    node, f"{node.target} has mixed-width int64 operands."
+                )
+                return False
+            return True
+
+        if node.target in self.dtype_changing_targets:
+            out = node.meta.get("val")
+            dtype = getattr(out, "dtype", None)
+            in_dtypes = {get_first_fake_tensor(n).dtype for n in node.all_input_nodes}
+            if (
+                dtype is not None
+                and dtype not in in_dtypes
+                and (dtype == torch.int64 or torch.int64 in in_dtypes)
+            ):
+                self.reporter.report_reject(
+                    node, f"{node.target} drops the requested accumulation dtype."
+                )
+                return False
+            return True
+
+        if node.target not in self.unsupported_targets:
+            return True
+
+        if not any(
+            get_first_fake_tensor(n).dtype == torch.int64 for n in node.all_input_nodes
+        ):
+            return True
+
+        self.reporter.report_reject(
+            node, f"EXT-INT64 does not define an int64 {node.target}."
+        )
+        return False
+
+
 def _negative_checks(
     tosa_spec: TosaSpecification,
     exported_program: ExportedProgram,
@@ -639,6 +747,9 @@ def _negative_checks(
     checks.append(ControlFlowSubmoduleSupported(exported_program, tosa_spec, reporter))
     checks.append(ControlFlowOpSupported(exported_program, tosa_spec, reporter))
     checks.extend(_registered_negative_checks(tosa_spec, reporter))
+
+    if keeps_int64(tosa_spec):
+        checks.append(CheckInt64Unsupported(reporter))
 
     if tosa_spec.support_integer() and tosa_spec.support_float():
         checks.append(CheckMixedProfileOperatorSupport(reporter))
