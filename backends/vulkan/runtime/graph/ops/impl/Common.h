@@ -120,6 +120,8 @@ LocalWorkGroup pick_required_lwg(
  * H unique rows = H * K unique elements from the input tensor and W unique cols
  * = W * K elements from the weight tensor, resulting in (W + H) * K unique
  * elements in total.
+ *
+ * On Adreno the shape is not square: see pick_adreno_xy_lwg.
  */
 LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
@@ -127,6 +129,13 @@ LocalWorkGroup pick_xy_square_lwg(
     const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
+
+/**
+ * The Adreno branch of pick_xy_square_lwg, separate so it can be tested
+ * without a device. Prefers a 2:1 x:y shape (16x4x1 at 64 threads) and never
+ * returns 8x8x1 or 4x16x1, which Adreno miscomputes (#22327).
+ */
+LocalWorkGroup pick_adreno_xy_lwg(const GlobalWorkGrid& gwg, uint32_t nthreads);
 
 LocalWorkGroup pick_xz_square_lwg(
     ComputeGraph* graph,
