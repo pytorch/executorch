@@ -415,3 +415,4 @@ class LoweredBackendModule:
     named_data_store: Optional[bytes] = None
     # The delegate scratch buffers, in declaration order.
     scratch_specs: Optional[List[DelegateScratchSpec]] = None
+    share_handle_across_calls: bool = False
