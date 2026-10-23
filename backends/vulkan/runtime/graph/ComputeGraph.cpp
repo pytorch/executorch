@@ -235,7 +235,11 @@ std::vector<int64_t> ComputeGraph::extract_int_or_symint_list(
       "Cannot extract int or symint list from Value with type ", val.type());
 }
 
-utils::StorageType ComputeGraph::suggested_storage_type() {
+utils::StorageType ComputeGraph::suggested_storage_type(
+    const std::vector<int64_t>& sizes) {
+  if (sizes.size() > 4) {
+    return utils::kBuffer;
+  }
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
   }
@@ -478,11 +482,13 @@ ValueRef ComputeGraph::add_tensor(
     const utils::AxisMapLayout axis_map_layout) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
+  const utils::StorageType effective_storage_type =
+      (sizes.size() > 4) ? utils::kBuffer : storage_type;
   values_.emplace_back(api::vTensor(
       context(),
       sizes,
       dtype,
-      storage_type,
+      effective_storage_type,
       memory_layout,
       false,
       axis_map_layout));
@@ -517,7 +523,7 @@ ValueRef ComputeGraph::add_tensor(
   return add_tensor(
       sizes,
       dtype,
-      suggested_storage_type(),
+      suggested_storage_type(sizes),
       memory_layout,
       shared_object_idx,
       axis_map_layout);

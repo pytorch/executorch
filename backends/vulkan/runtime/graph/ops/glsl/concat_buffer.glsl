@@ -45,6 +45,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * This shader template concatenates up to NUM_INPUT input tensors to the
  * output tensor along the concat_dim. Elements from the input tensor will
  * be inserted along the output's concat_dim starting at concat_offset.
+ * Supports arbitrary dimensions up to 8D using BufferMetadata.
  */
 void main() {
   const int tid = int(linear_idx_from_gid());
@@ -54,53 +55,54 @@ void main() {
   // responsible for reading one item from this volume and writing it to the
   // appropriate output location.
 
-  // Compute inp_volume_sizes from output sizes, replacing concat_dim with the
-  // sum of all input sizes along that dimension.
-  ivec4 inp_volume_sizes = ivec4(outp.sizes[0]);
+  // Compute total size along concat_dim
   int total_concat_dim = 0;
   $for i in range(NUM_INPUTS):
-    total_concat_dim += int(safe_idx(inp${i}p.sizes[0], concat_dim));
-  safe_set(inp_volume_sizes, concat_dim, total_concat_dim);
+    total_concat_dim += int(size_at(inp${i}p, concat_dim));
 
-  // Account for 0 size input tensors
-  if (any(lessThanEqual(inp_volume_sizes, ivec4(0)))) {
+  if (total_concat_dim <= 0) {
     return;
   }
 
-  // Decompose flat index into 4D tensor index (contiguous WHCN layout)
-  TensorIndex4D inp_volume_tidx;
-  {
-    int remaining = tid;
-    const int div_x = remaining / inp_volume_sizes.x;
-    const int div_xy = div_x / inp_volume_sizes.y;
-    inp_volume_tidx.data = ivec4(
-        remaining % inp_volume_sizes.x,
-        div_x % inp_volume_sizes.y,
-        div_xy % inp_volume_sizes.z,
-        div_xy / inp_volume_sizes.z);
+  // Decompose flat index into N-D tensor index (contiguous WHCN layout)
+  TensorIndex inp_volume_tidx;
+  initialize(inp_volume_tidx);
+  int remaining = tid;
+  const int n = int_ndim(outp);
+  for (int d = 0; d < n; ++d) {
+    int dim_size = (d == concat_dim) ? total_concat_dim : int(size_at(outp, d));
+    if (dim_size <= 0) {
+      return;
+    }
+    inp_volume_tidx.data[div_4(d)][mod_4(d)] = remaining % dim_size;
+    remaining = remaining / dim_size;
   }
 
-  // bounds check
-  if (any(greaterThanEqual(inp_volume_tidx.data, inp_volume_sizes))) {
+  // Bounds check: if remaining > 0, tid is outside the input volume
+  if (remaining > 0) {
     return;
   }
 
   int concat_offset = t_concat_offset[0];
 
-  TensorIndex4D out_tidx = inp_volume_tidx;
-  out_tidx.data[concat_dim] += concat_offset;
+  TensorIndex out_tidx = inp_volume_tidx;
+  out_tidx.data[div_4(concat_dim)][mod_4(concat_dim)] += uint(concat_offset);
 
-  const uint out_bufi = tensor4d_idx_to_linear_idx(outp, out_tidx);
+  const uint out_bufi = tensor_idx_to_linear_idx(outp, out_tidx);
+  if (out_of_bounds(out_bufi, outp)) {
+    return;
+  }
 
   // Go through the list of input tensors, and find which input this output
   // element should be read from.
   $for i in range(NUM_INPUTS):
-    if (inp_volume_tidx.data[concat_dim] < int(safe_idx(inp${i}p.sizes[0], concat_dim))) {
-      uint inp_bufi = tensor4d_idx_to_linear_idx(inp${i}p, inp_volume_tidx);
+    uint in_dim_size_${i} = size_at(inp${i}p, concat_dim);
+    if (idx_at(inp_volume_tidx, concat_dim) < in_dim_size_${i}) {
+      uint inp_bufi = tensor_idx_to_linear_idx(inp${i}p, inp_volume_tidx);
       t_out[out_bufi] = t_inp${i}[inp_bufi];
       return;
     }
     else {
-      inp_volume_tidx.data[concat_dim] -= int(safe_idx(inp${i}p.sizes[0], concat_dim));
+      inp_volume_tidx.data[div_4(concat_dim)][mod_4(concat_dim)] -= in_dim_size_${i};
     }
 }

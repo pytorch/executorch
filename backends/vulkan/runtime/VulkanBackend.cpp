@@ -263,6 +263,10 @@ class GraphBuilder {
       return get_memory_layout(it->second);
     }
 
+    if (dims_vector.size() > 4) {
+      return utils::kWidthPacked;
+    }
+
     if (tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT) {
       return compute_graph_->suggested_memory_layout(dims_vector);
     }
@@ -271,13 +275,17 @@ class GraphBuilder {
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
-    utils::StorageType storage_type =
-        tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
-        ? compute_graph_->suggested_storage_type()
-        : get_storage_type(tensor_fb->storage_type());
-
     UIntVector dims_fb = tensor_fb->dims();
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
+
+    utils::StorageType storage_type =
+        tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+        ? compute_graph_->suggested_storage_type(dims_vector)
+        : get_storage_type(tensor_fb->storage_type());
+
+    if (dims_vector.size() > 4) {
+      storage_type = utils::kBuffer;
+    }
 
     utils::GPUMemoryLayout memory_layout =
         get_resolved_memory_layout(fb_id, tensor_fb, dims_vector);
