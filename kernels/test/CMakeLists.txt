@@ -178,6 +178,7 @@ set(all_test_sources
     "op_atanh_test.cpp"
     "op_avg_pool1d_test.cpp"
     "op_avg_pool2d_test.cpp"
+    "op_avg_pool3d_test.cpp"
     "op_bitwise_and_test.cpp"
     "op_bitwise_left_shift_test.cpp"
     "op_bitwise_not_test.cpp"
