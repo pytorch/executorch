@@ -79,8 +79,8 @@ The target SoC must be one of those listed in the `QcomChipset` enum; see [qc_sc
 
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
  - Click the "Get Software" button to download the latest version of the QNN SDK.
- - Although newer versions are available, we have verified and recommend using QNN 2.50.0 for stability.
- - You can download it directly from the following link: [QNN 2.50.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip)
+ - Although newer versions are available, we have verified and recommend using QNN 2.51.0 for stability.
+ - You can download it directly from the following link: [QNN 2.51.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.0.260929/v2.51.0.260929.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -617,7 +617,9 @@ cd $DEMO_APP
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "libQnnHtp.so"
 ```
 
-Expected size for QNN 2.50.0: ~2,601,473,189 bytes
+This prints the single `arm64-v8a/libQnnHtp.so` entry bundled from the
+`com.qualcomm.qti:qnn-runtime` artifact. Expected size for QNN 2.51.0:
+~4,158,496 bytes.
 
 ***Step 3***. Monitor Logs During Model Loading
 
