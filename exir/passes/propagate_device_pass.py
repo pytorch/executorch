@@ -18,6 +18,9 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    _schema_writes_input,
+)
 
 # Re-exported for backward compatibility; the dataclass lives in a lightweight
 # module so that ExecutorchBackendConfig can reference it without importing the
@@ -145,6 +148,21 @@ def _clone_spec_with_device(
     new_spec.init_mem_planning_fields()
     _set_device_on_spec(new_spec, device_type, device_index)
     return new_spec
+
+
+def _is_written_in_place(node: torch.fx.Node) -> bool:
+    """Whether an op that reads *node* also writes it, per the op's schema.
+
+    A mutable op left on the host does this once to_executorch has removed
+    auto_functionalized, so a copy of *node* can miss the write. Only direct
+    readers count: a write through a view of *node* is not seen. Custom op
+    schemas are trusted, as functionalization trusts them.
+    """
+    return any(
+        _schema_writes_input(user, user.target._schema, node)  # pyre-ignore[16]
+        for user in node.users
+        if hasattr(user.target, "_schema")
+    )
 
 
 class PropagateDevicePass(PassBase):
@@ -327,8 +345,10 @@ class PropagateDevicePass(PassBase):
         rewires the consumer straight to that device tensor and drops both copies.
         The device comparison is the correctness guard: a genuine cross-device
         move (e.g. ``cuda:0 -> host -> cuda:1``) has differing devices and is left
-        intact. A D2H feeding other (host) consumers keeps those users and is
-        removed only once it becomes dead.
+        intact. So is a round-trip whose host copy any op writes in place,
+        wherever that write is, because the device tensor never sees it. A D2H
+        feeding other (host) consumers keeps those users and is removed only once
+        it becomes dead.
         """
         h2d = torch.ops.et_copy._h2d_copy.default
         d2h = torch.ops.et_copy._d2h_copy.default
@@ -356,6 +376,7 @@ class PropagateDevicePass(PassBase):
             if (
                 x_spec.device != h2d_spec.device
                 or x_spec.device_index != h2d_spec.device_index
+                or _is_written_in_place(src)
             ):
                 continue
 

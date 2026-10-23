@@ -142,6 +142,55 @@ class PerAddDeviceDelegatePartitioner(Partitioner):
         )
 
 
+# A mutable op that stays on the host, like a KV cache update. Once
+# to_executorch removes auto_functionalized, it adds other into x in place.
+_test_lib = torch.library.Library("propagate_device_test", "DEF")
+_test_lib.define("accumulate(Tensor(a!) x, Tensor other) -> Tensor")
+_test_lib.define(
+    "accumulate.out(Tensor(a!) x, Tensor other, *, Tensor(b!) out) -> Tensor(b!)"
+)
+
+
+@torch.library.impl(_test_lib, "accumulate", "CompositeExplicitAutograd")
+def _accumulate(x: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    x.add_(other)
+    return x.clone()
+
+
+@torch.library.impl(_test_lib, "accumulate.out", "CompositeExplicitAutograd")
+def _accumulate_out(
+    x: torch.Tensor, other: torch.Tensor, out: torch.Tensor
+) -> torch.Tensor:
+    x.add_(other)
+    return out.copy_(x)
+
+
+def _lower_with_host_writer(
+    model: torch.nn.Module,
+    inputs: tuple,
+    devices: List[str],
+    et_config: ExecutorchBackendConfig,
+) -> torch.fx.GraphModule:
+    """Delegate each add of a model that also calls accumulate on the host."""
+    edge = to_edge(
+        export(model, inputs),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    et = edge.to_backend(PerAddDeviceDelegatePartitioner(devices)).to_executorch(
+        et_config
+    )
+    return et.exported_program().graph_module
+
+
+def _host_writer(gm: torch.fx.GraphModule) -> torch.fx.Node:
+    (writer,) = [
+        n
+        for n in gm.graph.nodes
+        if n.target == torch.ops.propagate_device_test.accumulate.out
+    ]
+    return writer
+
+
 class TestPropagateDevicePass(unittest.TestCase):
     @staticmethod
     def _collect_tensor_specs(node: torch.fx.Node) -> List[TensorSpec]:
@@ -492,6 +541,37 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"[{pipeline}] expected the inter-delegate D2H to be elided "
                     f"(1 boundary D2H), got {len(nodes.d2h_nodes)}",
                 )
+
+    def test_same_device_copies_kept_when_host_op_writes_copy(self):
+        """A host op that writes the host copy of a delegate output in place
+        changes what the next delegate on the same device reads, so that
+        round-trip stays."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y
+                torch.ops.propagate_device_test.accumulate(a, y)
+                return a + y
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            ExecutorchBackendConfig(
+                emit_stacktrace=False, enable_non_cpu_memory_planning=True
+            ),
+        )
+        written = _host_writer(gm).args[0]
+        self.assertEqual(written.target, torch.ops.et_copy._d2h_copy.out)
+        second = _collect_device_copy_nodes(gm).delegate_nodes[1]
+        self.assertIn(
+            written,
+            [
+                arg.args[0]
+                for arg in second.args[1:]
+                if arg.target == torch.ops.et_copy._h2d_copy.out
+            ],
+        )
 
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
