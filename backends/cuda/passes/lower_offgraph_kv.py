@@ -215,19 +215,20 @@ def cell_step(
     so no causal alignment describes visibility and the mask is always
     explicit. ``read_len`` bounds the sweep to the occupied extent.
 
-    ``cells`` and ``mask`` are declared at the widest step; this one uses
-    their first T rows. ``k``/``v`` are BHSD; the pools are BSHD. sdpa returns
+    ``cells`` and ``mask`` are declared at the widest step; writes use the
+    first K/V-width cells and attention uses the first query-width mask rows.
+    ``k``/``v`` are BHSD; the pools are BSHD. sdpa returns
     the query's dtype; ``out_dtype`` is the neutral op's requested output dtype.
     """
-    width = q.shape[2]
-    slots = cells[:width]
+    query_width = q.shape[2]
+    slots = cells[: k.shape[2]]
     _write(k_pool, slots, k)
     _write(v_pool, slots, v)
     out = torch.ops.triton.sdpa(
         q,
         k_pool.transpose(1, 2),
         v_pool.transpose(1, 2),
-        mask[:, :, :width, :],
+        mask[:, :, :query_width, :],
         0.0,
         False,
         scale,
@@ -319,6 +320,53 @@ def _source_input(node):
     return node
 
 
+def _cell_position_source(node):
+    # Edge conversion emits copy variants of the value-preserving view ops.
+    # Match overloads exactly rather than admitting arbitrary name substrings.
+    preserving = tuple(
+        op
+        for name in (
+            *_VALUE_PRESERVING_OPS,
+            "view_copy",
+            "unsqueeze_copy",
+            "squeeze_copy",
+            "expand_copy",
+            "alias_copy",
+        )
+        for op in (
+            getattr(torch.ops.aten, name).default,
+            getattr(exir_ops.edge.aten, name).default,
+        )
+    )
+    selects = (
+        torch.ops.aten.index_select.default,
+        exir_ops.edge.aten.index_select.default,
+    )
+    width = node.meta["val"].shape[0]
+    selected = False
+    while node.op == "call_function":
+        if node.target in preserving:
+            node = node.args[0]
+        elif node.target in selects and not selected:
+            source, dim, index = node.args
+            shape = source.meta["val"].shape
+            if (
+                dim != 0
+                or shape[0] != width
+                or tuple(node.meta["val"].shape) != tuple(shape)
+                or index.meta["val"].dim() != 1
+                or index.meta["val"].shape[0] != shape[0]
+            ):
+                raise ValueError(
+                    "off-graph cell position index_select must preserve full width on dim 0"
+                )
+            selected = True
+            node = source
+        else:
+            break
+    return node
+
+
 class CheckOffGraphKVStepWidthPass:
     """Check the declared step width against the delegated program.
 
@@ -331,7 +379,10 @@ class CheckOffGraphKVStepWidthPass:
 
     requires_exported_program = True
 
-    def __init__(self, value: bytes) -> None:
+    def __init__(self, value: bytes, layout: str = "sequence") -> None:
+        if layout not in ("sequence", "cell"):
+            raise ValueError(f"invalid off-graph KV layout {layout!r}")
+        self._cell_layout = layout == "cell"
         text = value.decode("utf-8")
         fields = text.split(":")
         if len(fields) != 2 or not all(f.isdigit() for f in fields):
@@ -358,11 +409,16 @@ class CheckOffGraphKVStepWidthPass:
                 )
             declared = inputs[self._input]
             position = node.args[3]
-            if _source_input(position) is not declared:
+            source = (
+                _cell_position_source(position)
+                if self._cell_layout
+                else _source_input(position)
+            )
+            if source is not declared:
                 raise ValueError(
                     f"off-graph KV step width names input {self._input} "
                     f"({declared.name}), but the cache op's position comes "
-                    f"from {_source_input(position).name}"
+                    f"from {source.name}"
                 )
             shape = declared.meta["val"].shape
             width = position.meta["val"].shape[0]
@@ -371,6 +427,12 @@ class CheckOffGraphKVStepWidthPass:
                     f"off-graph KV step width names dim {self._dim} of "
                     f"{declared.name} {tuple(shape)}, which is not the step's "
                     f"{width} positions"
+                )
+            k, v = (arg.meta["val"] for arg in node.args[1:3])
+            if k.shape[2] != width or v.shape[2] != width:
+                raise ValueError(
+                    "off-graph KV step width requires matching K/V extent and "
+                    f"positions, got {k.shape[2]}, {v.shape[2]} and {width}"
                 )
         return exported_program
 

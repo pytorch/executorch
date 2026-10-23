@@ -141,7 +141,24 @@ class RewritePadPass(ArmOpTargetedPass):
                 )
             # F.pad pad tuples are ordered from the innermost dimension outward.
             dim = rank - 1 - pair_idx
-            output = self._pad_along_dim(output, dim, left, right, mode, meta)
+            # Reflect and replicate use the original borders; circular wraps
+            # the cropped input.
+            if mode != "circular":
+                output = self._pad_along_dim(
+                    output, dim, max(left, 0), max(right, 0), mode, meta
+                )
+            if left < 0 or right < 0:
+                output = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (output, dim, max(-left, 0), right if right < 0 else None),
+                    {},
+                    meta,
+                    True,
+                )
+            if mode == "circular":
+                output = self._pad_along_dim(
+                    output, dim, max(left, 0), max(right, 0), mode, meta
+                )
         return output
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
