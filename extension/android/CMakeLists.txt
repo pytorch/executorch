@@ -77,6 +77,12 @@ add_library(
                         jni/jni_helper.cpp
 )
 
+if(EXECUTORCH_USE_GENERIC_JNI)
+  target_compile_definitions(
+    executorch_jni PRIVATE EXECUTORCH_USE_GENERIC_JNI=1
+  )
+endif()
+
 set(link_libraries)
 list(
   APPEND

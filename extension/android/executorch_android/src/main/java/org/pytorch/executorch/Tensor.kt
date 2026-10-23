@@ -691,7 +691,7 @@ abstract class Tensor internal constructor(shape: LongArray) {
       return result
     }
 
-    // Called from native
+    // Called from native via fbjni.
     @DoNotStrip
     @JvmStatic
     private fun nativeNewTensor(
@@ -700,19 +700,29 @@ abstract class Tensor internal constructor(shape: LongArray) {
         dtype: Int,
         hybridData: HybridData,
     ): Tensor {
-      val tensor =
-          when {
-            DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape)
-            DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape)
-            DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape)
-            DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape)
-            DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape)
-            DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape)
-            DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
-            else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
-          }
+      val tensor = nativeNewTensor(data, shape, dtype)
       tensor.mHybridData = hybridData
       return tensor
+    }
+
+    // Called from native via generic JNI.
+    @DoNotStrip
+    @JvmStatic
+    private fun nativeNewTensor(
+        data: ByteBuffer,
+        shape: LongArray,
+        dtype: Int,
+    ): Tensor {
+      return when {
+        DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape)
+        DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape)
+        DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape)
+        DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape)
+        DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape)
+        DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape)
+        DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
+        else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
+      }
     }
 
     /**
