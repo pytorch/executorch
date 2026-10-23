@@ -83,6 +83,11 @@ Install the latest stable Python package in a Python 3.11–3.15 environment:
 pip install executorch
 ```
 
+On Linux this is the CUDA build, matching the `torch` package on PyPI. On macOS
+and Windows it is the CPU build. For the CPU-only Linux build or another CUDA
+version, see
+[Getting Started](https://docs.pytorch.org/executorch/main/getting-started.html).
+
 Install a nightly built from `main` to use the newest features:
 
 ```bash
