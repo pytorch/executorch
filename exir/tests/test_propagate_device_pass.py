@@ -660,9 +660,9 @@ class TestPropagateDevicePass(unittest.TestCase):
             with self.subTest(case=case):
                 nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(len(nodes.delegate_nodes), 2)
-                # Only method inputs are copied to the device: x and y, then y
-                # again, unless the caller places them.
-                self.assertEqual(len(nodes.h2d_nodes), 0 if skip_h2d else 3)
+                # Only method inputs are copied to the device, x and y once
+                # each, unless the caller places them.
+                self.assertEqual(len(nodes.h2d_nodes), 0 if skip_h2d else 2)
                 self.assertTrue(
                     all(n.args[0].op == "placeholder" for n in nodes.h2d_nodes)
                 )
@@ -921,14 +921,14 @@ class TestPropagateDevicePass(unittest.TestCase):
                     4,
                     f"[{pipeline}] expected four delegates",
                 )
-                # a -> {D0, D1} and b -> {D0, D2} give 4 graph-input H2D copies;
-                # the single graph output gives 1 D2H. All inter-delegate
-                # round-trips (including delegate 0's output feeding D1 and D2)
-                # are elided.
+                # a -> {D0, D1} and b -> {D0, D2} give one graph-input H2D copy
+                # each, shared by the delegates that read it; the single graph
+                # output gives 1 D2H. All inter-delegate round-trips (including
+                # delegate 0's output feeding D1 and D2) are elided.
                 self.assertEqual(
                     len(nodes.h2d_nodes),
-                    4,
-                    f"[{pipeline}] expected 4 boundary H2D copies, got "
+                    2,
+                    f"[{pipeline}] expected 2 boundary H2D copies, got "
                     f"{len(nodes.h2d_nodes)}",
                 )
                 self.assertEqual(
@@ -1754,6 +1754,89 @@ class TestPropagateDevicePass(unittest.TestCase):
                     "contiguous nor channels-last",
                 ):
                     edge.to_executorch(et_config)
+
+    def test_constant_read_by_several_delegates_is_copied_once_per_device(self):
+        """A constant read by several delegates gets one _h2d_copy for each
+        device, not one for each delegate."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = {
+            device: _lower_add_to_device(inputs, device)
+            for device in ("cuda:0", "cuda:1")
+        }
+
+        class Model(torch.nn.Module):
+            def __init__(self, devices):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+                self.first, self.second, self.third = (lowered[d] for d in devices)
+
+            def forward(self, x):
+                return (
+                    self.first(x, self.offset),
+                    self.second(x, self.offset),
+                    self.third(x, self.offset),
+                )
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False, enable_non_cpu_memory_planning=True
+        )
+        cases = {
+            "one device": (("cuda:0", "cuda:0", "cuda:0"), [0]),
+            "two devices": (("cuda:0", "cuda:1", "cuda:0"), [0, 1]),
+        }
+        for case, (devices, copy_indices) in cases.items():
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                et = to_edge(export(Model(devices), inputs[:1])).to_executorch(
+                    deepcopy(et_config)
+                )
+            gm = et.exported_program().graph_module
+            with self.subTest(case=case):
+                self.assertEqual(len(logs.output), len(copy_indices))
+                nodes = _collect_device_copy_nodes(gm)
+                offset_copies = [
+                    n for n in nodes.h2d_nodes if n.args[0].name == "b_offset"
+                ]
+                self.assertEqual(
+                    sorted(n.meta["spec"].device_index for n in offset_copies),
+                    copy_indices,
+                )
+                for delegate, device in zip(nodes.delegate_nodes, devices):
+                    offset = delegate.args[2]
+                    self.assertIn(offset, offset_copies)
+                    self.assertEqual(f"cuda:{offset.meta['spec'].device_index}", device)
+
+    def test_tensor_written_on_host_is_copied_for_each_delegate(self):
+        """A tensor that a host op writes in place between two delegates on one
+        device gets a new copy for the second delegate, so it reads the new
+        value."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                t = x * 2
+                a = t + y
+                torch.ops.propagate_device_test.accumulate(t, a)
+                return a, t + y
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            ExecutorchBackendConfig(
+                emit_stacktrace=False, enable_non_cpu_memory_planning=True
+            ),
+        )
+        writer = _host_writer(gm)
+        first, second = _collect_device_copy_nodes(gm).delegate_nodes
+        (second_copy,) = [
+            arg
+            for arg in second.args[1:]
+            if arg.target == torch.ops.et_copy._h2d_copy.out
+            and arg.args[0] is writer.args[0]
+        ]
+        nodes = list(gm.graph.nodes)
+        self.assertLess(nodes.index(first), nodes.index(writer))
+        self.assertLess(nodes.index(writer), nodes.index(second_copy))
 
     def test_skip_h2d_for_input_shared_by_device_delegates(self):
         """With skip_h2d_for_method_inputs=True, a method input read by two
