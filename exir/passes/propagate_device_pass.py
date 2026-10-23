@@ -202,10 +202,11 @@ class PropagateDevicePass(PassBase):
 
     Skip-copy optimizations:
     - skip_h2d_for_method_inputs: If the input is a graph-level placeholder
-      feeding directly to a delegate, don't insert H2D — tag the placeholder
-      as device instead (user provides GPU tensor at runtime). Constants are
-      placeholders too, but their data is stored on the host, so they still
-      get an H2D copy.
+      feeding a delegate, don't insert H2D; tag the placeholder as device
+      instead (user provides GPU tensor at runtime). Every reader of the
+      placeholder must then be a delegate on that device, or the pass raises.
+      Constants are placeholders too, but their data is stored on the host,
+      so they still get an H2D copy.
     - skip_d2h_for_method_outputs: The graph output reads a delegate output
       on device, not its D2H copy; the copy stays only for other readers. When
       one of them writes the copy in place, the graph output reads a device
@@ -238,6 +239,17 @@ class PropagateDevicePass(PassBase):
         """Check if a node is a graph-level input (placeholder)."""
         return node.op == "placeholder"
 
+    def _delegate_device(
+        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
+    ) -> Optional[tuple[schema.DeviceType, int]]:
+        """The target device of a delegate call node, or None when there is none."""
+        if node.op != "call_function" or node.target != executorch_call_delegate:
+            return None
+        lowered_module = _get_lowered_module(graph_module, node)
+        if lowered_module is None:
+            return None
+        return _get_target_device_from_compile_specs(lowered_module)
+
     def _insert_h2d_copies(
         self,
         graph_module: torch.fx.GraphModule,
@@ -260,17 +272,43 @@ class PropagateDevicePass(PassBase):
                 and self._is_placeholder(arg)
                 and not arg_spec.const
             ):
-                # TODO(gasoonjia): support skip_h2d_for_method_inputs for
-                # multiple-user placeholder inputs.
-                if len(arg.users) != 1:
+                # The spec is shared by every reader, so all of them must be
+                # delegates on this same device.
+                other_readers = [
+                    user
+                    for user in arg.users
+                    if self._delegate_device(graph_module, user)
+                    != (target_device_type, device_index)
+                ]
+                if other_readers:
+                    write_back = next(
+                        (
+                            user
+                            for user in other_readers
+                            if user.target == torch.ops.aten.copy_.default
+                            and user.args[0] is arg
+                        ),
+                        None,
+                    )
+                    refusal = (
+                        f"skip_h2d_for_method_inputs=True cannot place placeholder "
+                        f"'{arg.name}' on {target_device_type.name.lower()}:"
+                        f"{device_index}, because "
+                        f"'{(write_back or other_readers[0]).name}'"
+                    )
+                    if write_back is not None:
+                        raise RuntimeError(
+                            f"{refusal} writes it back on the host (the method "
+                            f"mutates it). Either disable "
+                            f"skip_h2d_for_method_inputs, or, for a mutable buffer, "
+                            f"have the partitioner put the buffer and every op that "
+                            f"reads or writes it in the delegate; tag_mutated_buffer "
+                            f"tags the buffer once those ops are there."
+                        )
                     raise RuntimeError(
-                        f"skip_h2d_for_method_inputs=True requires placeholder "
-                        f"'{arg.name}' to have exactly one user, but it has "
-                        f"{len(arg.users)} users. The placeholder is shared by "
-                        f"multiple consumers, so its TensorSpec cannot be safely "
-                        f"mutated in-place to the delegate's device. Either disable "
-                        f"skip_h2d_for_method_inputs, or ensure the placeholder is "
-                        f"used exclusively by this delegate."
+                        f"{refusal} also reads it and is not a delegate on that "
+                        f"device. Either disable skip_h2d_for_method_inputs, or use "
+                        f"the placeholder only from delegates on one device."
                     )
                 _set_device_on_spec(arg_spec, target_device_type, device_index)
                 changed = True

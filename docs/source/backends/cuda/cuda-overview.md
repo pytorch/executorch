@@ -169,6 +169,15 @@ out works, and the snippet above sets it explicitly only to make the requirement
 it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
 during device-aware memory planning.
 
+**With `skip_h2d_for_method_inputs`, an input that a device delegate reads may only be read by
+delegates on that device.** If anything else reads it, even only its shape, such as an operator
+outside those delegates, a delegate on another device, or the method output, `to_executorch` raises
+an error instead of adding a copy. Turn the flag off, or have the partitioner put those operators in
+a delegate on that device. `to_executorch` also refuses an input that the method changes, because
+the change is written back on the host. For a mutable buffer, have the partitioner put the buffer
+and every operator that reads or writes it in the delegate. `tag_mutated_buffer` tags the buffer
+once those operators are there, and the CUDA partitioner already calls it.
+
 **A constant that a delegate reads from outside is still copied.** Constants, such as weights and
 buffers the method does not change, are not passed by the caller. Their data stays in host memory,
 in the program or in its external data file, so `to_executorch` adds a copy to the device that runs
