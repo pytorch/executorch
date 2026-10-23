@@ -1408,6 +1408,12 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             None,
             ["EXECUTORCH_BUILD_CUDA"],
         ),
+        (
+            "backends/openvino/",
+            "executorch_backend_openvino",
+            None,
+            ["EXECUTORCH_BUILD_OPENVINO"],
+        ),
     ]
     return [
         BuiltFile(
@@ -2338,6 +2344,12 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "lib/cmake/executorch/executorch-config.cmake",
                 ),
+                # Type checkers find a stub only under the module's own name, so
+                # the extension's stub ships as _C.pyi, as the Buck build names it.
+                (
+                    "extension/pybindings/pybindings.pyi",
+                    "extension/pybindings/_C.pyi",
+                ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator
             # build, which needs the kernel and tensor helpers, and a C++ application
@@ -2811,11 +2823,12 @@ class CustomBuild(build):
                 f"-DQNN_SDK_ROOT={qnn_sdk_root}",
             ]
 
-        # Enable OpenVINO backend on Linux. The backend uses dlopen at
-        # runtime so it has no build-time SDK dependency.
+        # Enable the OpenVINO backend on Linux and Windows. The backend loads
+        # the OpenVINO runtime at run time, so it has no build-time SDK
+        # dependency.
         if (
             not minimal_build
-            and sys.platform == "linux"
+            and sys.platform in ("linux", "win32")
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args,
                 "EXECUTORCH_BUILD_OPENVINO",

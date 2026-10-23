@@ -91,6 +91,40 @@ inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
   throw py::value_error("Unsupported torch dtype: " + torch_dtype);
 }
 
+inline PyObject* loaded_torch_module() {
+  // Retain the module for the interpreter's lifetime. This avoids repeated
+  // sys.modules lookups without creating a static py::object whose destructor
+  // could run after Python has finalized.
+  static PyObject* torch_module = nullptr;
+  if (torch_module == nullptr) {
+    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
+    if (loaded != nullptr) {
+      Py_INCREF(loaded);
+      torch_module = loaded;
+    }
+  }
+  return torch_module;
+}
+
+inline void synchronize_torch_cuda_device(int index) {
+  py::reinterpret_borrow<py::object>(loaded_torch_module())
+      .attr("cuda")
+      .attr("synchronize")(index);
+}
+
+// Waits for every queued operation on a device. Bindings built without CUDA
+// support have no CUDA runtime of their own, so they wait through torch's,
+// which is loaded whenever such bindings see CUDA memory.
+inline void synchronize_device(int index) {
+#ifndef EXECUTORCH_PYBINDINGS_CUDA
+  if (loaded_torch_module() != nullptr) {
+    synchronize_torch_cuda_device(index);
+    return;
+  }
+#endif
+  synchronize_cuda_device(index);
+}
+
 /** Tensor result returned by portable Python bindings. */
 class PyExecuTorchResult final
     : public std::enable_shared_from_this<PyExecuTorchResult> {
@@ -113,9 +147,6 @@ class PyExecuTorchResult final
     if (nbytes_ != 0 && tensor.const_data_ptr() == nullptr) {
       throw py::value_error("ExecuTorch result data is not allocated");
     }
-    if (!device_.is_cpu() && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
-    }
     if (clone && device_.is_cpu()) {
       storage_.resize(nbytes_);
       if (!storage_.empty()) {
@@ -131,6 +162,10 @@ class PyExecuTorchResult final
             tensor.const_data_ptr(),
             nbytes_,
             device_.index());
+        // The source can be memory the caller owns, such as an input the
+        // method returns, and the caller may write it on another stream as
+        // soon as this call returns. A clone must not see that write.
+        synchronize_cuda_device(device_.index());
         data_ = device_storage_.get();
       }
       owner_ = py::none();
@@ -161,7 +196,7 @@ class PyExecuTorchResult final
         ndim,
         std::move(shape),
         std::move(byte_strides),
-        /*readonly=*/false);
+        read_only_);
   }
 
   py::buffer_info flat_buffer() {
@@ -175,7 +210,7 @@ class PyExecuTorchResult final
         /*ndim=*/1,
         {static_cast<py::ssize_t>(nbytes_)},
         {1},
-        /*readonly=*/false);
+        read_only_);
   }
 
   py::tuple shape() const {
@@ -209,7 +244,7 @@ class PyExecuTorchResult final
       throw std::runtime_error(
           std::string("ExecuTorch result dtype ") +
           executorch::runtime::toString(scalar_type_) +
-          " cannot be represented by NumPy");
+          " cannot be represented by NumPy; dtype_name names it");
     }
     return py::dtype(name);
   }
@@ -217,7 +252,21 @@ class PyExecuTorchResult final
   py::array numpy_array(const py::object& base) {
     const auto array_dtype = dtype();
     auto info = buffer();
-    return py::array(array_dtype, info.shape, info.strides, info.ptr, base);
+    py::array array(array_dtype, info.shape, info.strides, info.ptr, base);
+    if (read_only_) {
+      array.attr("setflags")(py::arg("write") = false);
+    }
+    return array;
+  }
+
+  // For memory a method must not write, such as a constant loaded from the
+  // program or its data file.
+  void mark_read_only() {
+    read_only_ = true;
+  }
+
+  bool read_only() const {
+    return read_only_;
   }
 
   size_t nbytes() const {
@@ -243,18 +292,104 @@ class PyExecuTorchResult final
     return result->owner_.is_none() ? py::cast(result) : result->owner_;
   }
 
+  static py::object dlpack_backing_owner(
+      dlpack::ManagedTensorVersioned* managed) {
+    if (managed == nullptr ||
+        managed->deleter != release_versioned_dlpack_holder ||
+        managed->manager_ctx == nullptr) {
+      return py::none();
+    }
+    const auto* holder = static_cast<const DLPackHolder*>(managed->manager_ctx);
+    if (&holder->versioned != managed ||
+        managed->dl_tensor.data != holder->result->data_ ||
+        managed->dl_tensor.byte_offset != 0) {
+      return py::none();
+    }
+    const auto& result = holder->result;
+    return result->owner_.is_none() ? py::cast(result) : result->owner_;
+  }
+
   py::tuple dlpack_device() const {
     const auto device = dl_device();
     return py::make_tuple(
         static_cast<int>(device.device_type), device.device_id);
   }
 
-  py::capsule to_dlpack(const py::object& stream = py::none()) {
-    if (!device_.is_cpu() && nbytes_ != 0) {
-      synchronize_cuda_device(device_.index());
+  // The DLPack __dlpack__ protocol, with the keywords of DLPack 1.0.
+  py::capsule to_dlpack(
+      const py::object& stream,
+      const py::object& max_version,
+      const py::object& requested_device,
+      const py::object& copy) {
+    if (!copy.is_none() && !py::isinstance<py::bool_>(copy)) {
+      throw py::type_error("copy must be True, False, or None");
     }
-    // The producer storage is ready for consumption on any requested stream.
-    (void)stream;
+    if (!stream.is_none() &&
+        (!py::isinstance<py::int_>(stream) ||
+         py::isinstance<py::bool_>(stream))) {
+      throw py::type_error("stream must be an integer or None");
+    }
+    if (!device_.is_cpu() && !stream.is_none() && stream.cast<int64_t>() == 0) {
+      throw py::value_error(
+          "stream 0 is ambiguous for CUDA; pass 1, 2, -1, or a stream handle");
+    }
+    const auto own = dl_device();
+    auto target = own;
+    if (!requested_device.is_none()) {
+      const auto requested = requested_device.cast<std::pair<int, int>>();
+      target = {
+          static_cast<dlpack::DeviceType>(requested.first), requested.second};
+    }
+    const bool move = target.device_type != own.device_type ||
+        target.device_id != own.device_id;
+    const bool versioned = wants_versioned_capsule(max_version);
+    // Consumers such as torch ignore the read-only flag, so read-only memory
+    // is shared only when the caller asks for no copy, and only in a capsule
+    // that can carry the flag.
+    const bool share_read_only =
+        versioned && !copy.is_none() && !copy.cast<bool>();
+    const bool must_copy = move || (read_only_ && !share_read_only);
+    if (must_copy && !copy.is_none() && !copy.cast<bool>()) {
+      throw py::buffer_error(
+          move ? "Moving an ExecuTorchResult to another device needs a copy"
+               : "A read-only ExecuTorchResult is shared without a copy only "
+                 "through a DLPack 1.0 capsule, which marks it read-only");
+    }
+    // Wait for the device before handing CUDA memory to another library: the
+    // result may share memory a call still has work queued on, or an upload
+    // that is still running. A consumer that passes -1 orders the work itself.
+    if (!device_.is_cpu() && nbytes_ != 0 &&
+        (stream.is_none() || stream.cast<int64_t>() != -1)) {
+      synchronize_device(device_.index());
+    }
+    auto exported = shared_from_this();
+    uint64_t flags = read_only_ ? dlpack::kFlagReadOnly : 0;
+    if (must_copy || (!copy.is_none() && copy.cast<bool>())) {
+      exported = copy_to(target);
+      flags = dlpack::kFlagIsCopied;
+    }
+    return versioned ? exported->versioned_capsule(flags) : exported->capsule();
+  }
+
+  py::capsule versioned_capsule(uint64_t flags) {
+    auto holder = std::make_unique<DLPackHolder>(shared_from_this());
+    holder->versioned.flags = flags;
+    py::capsule capsule(
+        &holder->versioned, "dltensor_versioned", [](PyObject* capsule) {
+          if (PyCapsule_IsValid(capsule, "dltensor_versioned")) {
+            auto* managed = static_cast<dlpack::ManagedTensorVersioned*>(
+                PyCapsule_GetPointer(capsule, "dltensor_versioned"));
+            managed->deleter(managed);
+          }
+        });
+    holder.release();
+    return capsule;
+  }
+
+  // A capsule for these bindings to read the result as a method input. It
+  // skips the wait in to_dlpack(), since the call waits for every CUDA input
+  // before it runs.
+  py::capsule capsule() {
     auto holder = std::make_unique<DLPackHolder>(shared_from_this());
     py::capsule capsule(&holder->managed, "dltensor", [](PyObject* capsule) {
       if (PyCapsule_IsValid(capsule, "dltensor")) {
@@ -271,7 +406,128 @@ class PyExecuTorchResult final
     return python_dtype(scalar_type_).torch_name;
   }
 
+  // Lets a caller without torch read a CUDA result, or keep a CPU copy that
+  // later calls cannot overwrite.
+  std::shared_ptr<PyExecuTorchResult> to_host() const {
+    std::vector<uint8_t> storage(nbytes_);
+    if (nbytes_ != 0) {
+      if (device_.is_cpu()) {
+        std::memcpy(storage.data(), data_, nbytes_);
+      } else {
+        // Wait before the copy: the result may share memory a call still has
+        // work queued on, or an upload that is still running.
+        synchronize_cuda_device(device_.index());
+        copy_cuda_storage(
+            storage.data(),
+            data_,
+            nbytes_,
+            device_.index(),
+            CudaCopy::DeviceToHost);
+      }
+    }
+    auto result = std::shared_ptr<PyExecuTorchResult>(new PyExecuTorchResult(
+        sizes_,
+        strides_,
+        scalar_type_,
+        executorch::aten::Device(executorch::aten::DeviceType::CPU, 0)));
+    result->storage_ = std::move(storage);
+    result->data_ = result->storage_.data();
+    return result;
+  }
+
+  // Copies a CPU result to a CUDA device, keeping its dtype and layout, which
+  // a buffer export cannot carry for dtypes such as bfloat16.
+  std::shared_ptr<PyExecuTorchResult> to_device(int device_index) const {
+    if (!device_.is_cpu()) {
+      throw py::value_error(
+          "from_host() takes a CPU result; this one is already on a device");
+    }
+    return from_host(data_, sizes_, strides_, scalar_type_, device_index);
+  }
+
+  // Lets a caller without torch place host data on a CUDA device, to pass as
+  // an input to a method whose inputs live there. The data must be dense in
+  // the given strides, as for any ExecuTorch input.
+  static std::shared_ptr<PyExecuTorchResult> from_host(
+      const void* data,
+      std::vector<executorch::aten::SizesType> sizes,
+      std::vector<executorch::aten::StridesType> strides,
+      executorch::aten::ScalarType scalar_type,
+      int device_index) {
+    if (device_index < 0 ||
+        device_index > std::numeric_limits<
+                           executorch::runtime::etensor::DeviceIndex>::max()) {
+      throw py::value_error(
+          "CUDA device index " + std::to_string(device_index) +
+          " is out of range");
+    }
+    require_cuda_device(device_index);
+    auto result = std::shared_ptr<PyExecuTorchResult>(new PyExecuTorchResult(
+        std::move(sizes),
+        std::move(strides),
+        scalar_type,
+        executorch::aten::Device(
+            executorch::aten::DeviceType::CUDA,
+            static_cast<executorch::runtime::etensor::DeviceIndex>(
+                device_index))));
+    if (result->nbytes_ != 0) {
+      result->device_storage_ =
+          allocate_cuda_result(result->nbytes_, device_index);
+      copy_cuda_storage(
+          result->device_storage_.get(),
+          data,
+          result->nbytes_,
+          device_index,
+          CudaCopy::HostToDevice);
+      result->data_ = result->device_storage_.get();
+    }
+    return result;
+  }
+
+  // `storage` must own the memory `tensor` points at; the result reads that
+  // memory and keeps `storage` alive.
+  static std::shared_ptr<PyExecuTorchResult> hand_over(
+      const executorch::aten::Tensor& tensor,
+      std::shared_ptr<void> storage) {
+    auto result = std::make_shared<PyExecuTorchResult>(tensor, /*clone=*/false);
+    result->device_storage_ = std::move(storage);
+    return result;
+  }
+
+  std::string repr() const {
+    std::string shape;
+    for (size_t i = 0; i < sizes_.size(); ++i) {
+      shape += (i == 0 ? "" : ", ") + std::to_string(sizes_[i]);
+    }
+    if (sizes_.size() == 1) {
+      shape += ",";
+    }
+    return "ExecuTorchResult(shape=(" + shape +
+        "), dtype=" + torch_dtype_name() + ", device=" + device_name() + ")";
+  }
+
+  std::string device_name() const {
+    return device_.is_cpu() ? "cpu" : "cuda:" + std::to_string(device_.index());
+  }
+
  private:
+  // A result with this layout and no data yet, for the factories above.
+  PyExecuTorchResult(
+      std::vector<executorch::aten::SizesType> sizes,
+      std::vector<executorch::aten::StridesType> strides,
+      executorch::aten::ScalarType scalar_type,
+      executorch::aten::Device device)
+      : sizes_(std::move(sizes)),
+        strides_(std::move(strides)),
+        scalar_type_(scalar_type),
+        nbytes_(
+            static_cast<size_t>(executorch::aten::compute_numel(
+                sizes_.data(),
+                static_cast<ssize_t>(sizes_.size()))) *
+            executorch::runtime::elementSize(scalar_type)),
+        device_(device),
+        owner_(py::none()) {}
+
   struct DLPackHolder final {
     explicit DLPackHolder(std::shared_ptr<PyExecuTorchResult> value)
         : result(std::move(value)),
@@ -287,12 +543,17 @@ class PyExecuTorchResult final
           0};
       managed.manager_ctx = this;
       managed.deleter = release_dlpack_holder;
+      versioned.version = {1, 0};
+      versioned.manager_ctx = this;
+      versioned.deleter = release_versioned_dlpack_holder;
+      versioned.dl_tensor = managed.dl_tensor;
     }
 
     std::shared_ptr<PyExecuTorchResult> result;
     std::vector<int64_t> shape;
     std::vector<int64_t> strides;
     dlpack::ManagedTensor managed{};
+    dlpack::ManagedTensorVersioned versioned{};
   };
 
   static void release_dlpack_holder(dlpack::ManagedTensor* managed) {
@@ -300,6 +561,50 @@ class PyExecuTorchResult final
     // The retained result may own Python buffer exports and capsules.
     py::gil_scoped_acquire gil;
     delete static_cast<DLPackHolder*>(managed->manager_ctx);
+  }
+
+  static void release_versioned_dlpack_holder(
+      dlpack::ManagedTensorVersioned* managed) {
+    py::gil_scoped_acquire gil;
+    delete static_cast<DLPackHolder*>(managed->manager_ctx);
+  }
+
+  static bool wants_versioned_capsule(const py::object& max_version) {
+    if (max_version.is_none()) {
+      return false;
+    }
+    const auto version = max_version.cast<std::pair<int, int>>();
+    return version.first >= 1;
+  }
+
+  // A copy on `target`, for a DLPack consumer that asks for one.
+  std::shared_ptr<PyExecuTorchResult> copy_to(dlpack::Device target) const {
+    if (target.device_type == dlpack::DeviceType::CPU &&
+        target.device_id == 0) {
+      return to_host();
+    }
+    if (target.device_type != dlpack::DeviceType::CUDA) {
+      throw py::buffer_error(
+          "ExecuTorchResult copies only to CPU and CUDA devices");
+    }
+    if (device_.is_cpu()) {
+      return to_device(target.device_id);
+    }
+    if (target.device_id != device_.index()) {
+      throw py::buffer_error(
+          "ExecuTorchResult does not copy between CUDA devices");
+    }
+    auto result = std::shared_ptr<PyExecuTorchResult>(
+        new PyExecuTorchResult(sizes_, strides_, scalar_type_, device_));
+    if (nbytes_ != 0) {
+      result->device_storage_ = allocate_cuda_result(nbytes_, device_.index());
+      copy_cuda_storage(
+          result->device_storage_.get(), data_, nbytes_, device_.index());
+      // The consumer may read the copy on any stream.
+      synchronize_cuda_device(device_.index());
+      result->data_ = result->device_storage_.get();
+    }
+    return result;
   }
 
   dlpack::Device dl_device() const {
@@ -376,6 +681,7 @@ class PyExecuTorchResult final
   size_t nbytes_;
   executorch::aten::Device device_;
   py::object owner_;
+  bool read_only_ = false;
 };
 
 /** Contiguous buffer facade used to construct a strided torch.Tensor result. */

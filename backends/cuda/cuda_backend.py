@@ -802,9 +802,18 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
+        cell_layout = any(
+            spec.key == OFFGRAPH_KV_COMPILE_SPEC
+            and parse_offgraph_kv_manifest(spec.value)["layout"] == "cell"
+            for spec in compile_specs
+        )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC:
-                passes.append(CheckOffGraphKVStepWidthPass(spec.value))
+                passes.append(
+                    CheckOffGraphKVStepWidthPass(
+                        spec.value, layout="cell" if cell_layout else "sequence"
+                    )
+                )
         for spec in compile_specs:
             if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
                 passes.append(
