@@ -334,7 +334,10 @@ function(gen_custom_ops_aot_lib)
   set_target_properties(${GEN_LIB_NAME} PROPERTIES CXX_STANDARD 20)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
+  # torch_cpu_library is the CPU half of torch. Linking torch would also force
+  # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
+  # then not load this library.
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch_cpu_library)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
