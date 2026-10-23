@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <executorch/backends/cpu/runtime/KernelProvider.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/extension/threadpool/threadpool_guard.h>
@@ -12,7 +13,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,7 +31,23 @@ int main(int argc, char** argv) {
   executorch::extension::threadpool::NoThreadPoolGuard threadpool_guard;
   executorch::runtime::BackendOptions<1 + 2 * max_preferences> options;
   executorch::runtime::LoadBackendOptionsMap backends;
-  executorch::extension::Module module(argv[1]);
+  const char* etdump_path = std::getenv("ET_CPU_ETDUMP");
+  std::unique_ptr<executorch::etdump::ETDumpGen> tracer;
+  if (etdump_path) {
+#ifdef ET_EVENT_TRACER_ENABLED
+    tracer = std::make_unique<executorch::etdump::ETDumpGen>();
+#else
+    fprintf(
+        stderr,
+        "ET_CPU_ETDUMP requires -c executorch.event_tracer_enabled=true\n");
+    return 1;
+#endif
+  }
+  auto* etdump = tracer.get();
+  executorch::extension::Module module(
+      argv[1],
+      executorch::extension::Module::LoadMode::File,
+      std::move(tracer));
   if (argc > 3) {
     using executorch::runtime::Error;
     if (options.set_option("preference_count", argc - 3) != Error::Ok) {
@@ -119,6 +138,17 @@ int main(int argc, char** argv) {
         run,
         golden.size(),
         max_error);
+  }
+  if (etdump) {
+    const auto result = etdump->get_etdump_data();
+    std::unique_ptr<void, decltype(&free)> dump_data(result.buf, &free);
+    std::ofstream file(etdump_path, std::ios::binary);
+    if (!dump_data ||
+        !file.write(static_cast<const char*>(result.buf), result.size)) {
+      fprintf(stderr, "Failed to write ETDump to %s\n", etdump_path);
+      return 1;
+    }
+    printf("ETDump: path=%s bytes=%zu\n", etdump_path, result.size);
   }
   return 0;
 }
