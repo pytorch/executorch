@@ -10,6 +10,8 @@ from executorch.backends.transforms.utils import (
 )
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_manager import ExportedProgramPassManager
 from torch.export import export
 from torch.export.graph_signature import InputKind
 
@@ -204,3 +206,59 @@ def test_create_delete_non_persistent_buffer():
 
 def test_create_delete_constant_tensor():
     _test_create_delete(InputKind.CONSTANT_TENSOR)
+
+
+def _test_delete_inside_a_pass(kind: InputKind, persistent_buffer: bool = None):
+    """Backend passes keep a reference to the program they were built from,
+    while ExportedProgramPassManager runs them on a shallow copy of it. The
+    deletion has to edit the shared signature in place, or the copy that the
+    manager verifies and returns still lists the deleted placeholder."""
+    module = EmptyNetwork()
+    exported_program = export(module, args=module.test_data, strict=True)
+    exported_program = to_edge(exported_program).exported_program()
+    graph = exported_program.graph_module.graph
+
+    const_name = "test_node"
+    input_node = list(graph.nodes)[0]
+    with graph.inserting_before(input_node):
+        const_node = create_constant_placeholder(
+            exp_program=exported_program,
+            graph=graph,
+            kind=kind,
+            name=const_name,
+            data=torch.ones(1),
+            persistent_buffer=persistent_buffer,
+        )
+    assert len(exported_program.graph_signature.input_specs) == 2
+
+    def delete_unused_constant(graph_module: torch.fx.GraphModule) -> PassResult:
+        delete_constant_placeholder(exported_program, const_node)
+        return PassResult(graph_module, True)
+
+    result = ExportedProgramPassManager([delete_unused_constant])(exported_program)
+    transformed = result.exported_program
+    signature = transformed.graph_signature
+
+    assert len(signature.input_specs) == 1
+    assert const_name not in signature.inputs_to_parameters
+    assert const_name not in signature.inputs_to_buffers
+    assert const_name not in signature.inputs_to_lifted_tensor_constants
+    assert len(transformed.state_dict) == 0
+    assert len(transformed.constants) == 0
+    assert transformed.module()(torch.zeros(1)) == 0
+
+
+def test_delete_inside_a_pass_parameter():
+    _test_delete_inside_a_pass(InputKind.PARAMETER)
+
+
+def test_delete_inside_a_pass_persistent_buffer():
+    _test_delete_inside_a_pass(InputKind.BUFFER, True)
+
+
+def test_delete_inside_a_pass_non_persistent_buffer():
+    _test_delete_inside_a_pass(InputKind.BUFFER, False)
+
+
+def test_delete_inside_a_pass_constant_tensor():
+    _test_delete_inside_a_pass(InputKind.CONSTANT_TENSOR)
