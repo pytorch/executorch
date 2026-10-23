@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # load("//caffe2/test/fb:defs.bzl", "define_tests")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -80,6 +85,7 @@ def define_arm_tests():
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_diff_pte.py",
+        "misc/test_parse_ethosu_delegate_metadata.py",
         "misc/test_external_vela_blocks.py",
         "misc/test_vela_persistent_region.py",
         "misc/test_delegated_state_partitioning.py",
