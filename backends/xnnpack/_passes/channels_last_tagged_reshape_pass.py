@@ -173,6 +173,18 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     def _is_nhwc(self, tensor: torch.Tensor) -> bool:
         return ChannelsLastTaggedReshapePass._is_nhwc_tensor(tensor)
 
+    @staticmethod
+    def is_dtype_cast(node: torch.fx.Node) -> bool:
+        """A _to_copy that changes dtype (fp32 <-> fp16) keeps the layout of
+        its input and is serialized as a convert node, not a transpose."""
+        src = node.args[0]
+        return (
+            isinstance(src, torch.fx.Node)
+            and "val" in src.meta
+            and "val" in node.meta
+            and node.meta["val"].dtype != src.meta["val"].dtype
+        )
+
     def requires_nhwc_input(self, node: torch.fx.Node) -> bool:
         return node.target in self.memory_sensitive_ops_nhwc
 
@@ -562,7 +574,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # The node requires nchw inputs
                 for input_node in node.all_input_nodes:
                     self.input_to_nchw(graph_module, input_node, node)
-            elif node.target == exir_ops.edge.aten._to_copy.default:
+            elif (
+                node.target == exir_ops.edge.aten._to_copy.default
+                and not self.is_dtype_cast(node)
+            ):
                 self.tag_node(node)
             else:
                 # The node can have inputs in any format (but all must be the
