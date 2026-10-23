@@ -1,3 +1,10 @@
+<!--
+Copyright 2026 Arm Limited and/or its affiliates.
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+-->
+
 # ExecuTorch Arm&reg; Backend
 
 This subtree contains the Arm&reg; Backend implementation for ExecuTorch.
@@ -384,6 +391,7 @@ Below is an overview of some of the testing options this script provides:
 
 | Command                                              | Description                                                  |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
+| `test_arm_backend.sh test_buck_declarations`         | Checks changed Arm Python Buck declarations without Arm tool setup. |
 | `test_arm_backend.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
 | `test_arm_backend.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
 | `test_arm_backend.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
@@ -452,6 +460,54 @@ bash backends/arm/scripts/install_models_for_test.sh
 Installing model test dependencies is a standalone process. The script installs
 only the dependencies needed for model tests, skipping all other setup
 procedures.
+
+### Buck2 CI coverage
+
+The GitHub Buck2 job runs the Vela parser C++ tests together and then runs each
+case in a separate process, so a test cannot depend on runtime initialization by
+an earlier case. With the revision-pinned Buck2 on your `PATH`, run this check from
+the repository root:
+
+```bash
+bash .ci/scripts/unittest-arm-buck2.sh
+```
+
+The separate **test-arm-backend-buck-declarations** job checks for new dependency
+and test-registration gaps in the Arm test package. It uses the same entrypoint as
+local runs and requires only Git and Python 3, without Arm tool setup or third-party
+Python packages:
+
+```bash
+backends/arm/test/test_arm_backend.sh test_buck_declarations
+```
+
+By default, local runs compare the working tree against `HEAD^`. To check a change
+spanning several commits, set `BASE_REVISION` to the commit before your change:
+
+```bash
+BASE_REVISION=<base-commit> backends/arm/test/test_arm_backend.sh test_buck_declarations
+```
+
+GitHub pull requests compare against the merge base with the PR's target branch;
+pushes use the previous commit from the event. Manual runs and new branches use
+`HEAD^`. Declaration checks are excluded from the `all` suite because they need a
+change-specific baseline.
+
+This static check follows supported in-repository Python library declarations,
+including transitive dependencies, and compares findings against the base revision.
+Existing findings do not fail the job. New confirmed missing dependencies,
+unregistered Arm tests, and unsupported declarations under `backends/arm/` fail
+the check. Unsupported declarations outside Arm are reported as warnings with
+their declaration file and unsupported construct; dependency gaps that cannot be
+proven because of those declarations are also warnings. A warning becoming an
+error is treated as a new regression.
+
+Arm backend contributors maintain this checker alongside the Arm Buck declarations
+and its regression tests in `.ci/scripts/tests/test_arm_buck_declarations.py`.
+Moving the Arm Python tests onto the public runtime wrapper would allow Buck2
+queries to replace this limited static analysis. The checker does not run Meta's
+internal Python Buck tests or validate third-party dependencies. Those internal
+tests remain necessary for full packaged-test coverage.
 
 ## Using git hooks
 

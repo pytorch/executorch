@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # load("//caffe2/test/fb:defs.bzl", "define_tests")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -191,13 +196,16 @@ def define_arm_tests():
             ] if test_file == "misc/test_diff_pte.py" else []),
         )
 
+    # Preserve the label used by internal CI to select individual Vela cases.
+    # OSS CI uses the separate vela package to avoid internal-only Python loads.
     runtime.cxx_test(
         name = "vela_external_blocks_test",
-        srcs = ["vela_external_blocks_test.cpp"],
+        srcs = ["//executorch/backends/arm/test/vela:vela_external_blocks_test.cpp"],
         deps = [
             "//executorch/backends/arm/runtime:vela_bin_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
