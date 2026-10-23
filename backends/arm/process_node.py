@@ -17,6 +17,7 @@ from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import normalize_symint
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -144,6 +145,11 @@ def process_call_function(
     node_visitors: Dict[str, NodeVisitor],
     tosa_spec: TosaSpecification,
 ):
+    if node.target == exir_ops.backend.tosa.CONST.default:
+        # Temporarily skip dialect constants: visitors still create serializer
+        # constants until the node-visitor flow is replaced by direct lowering.
+        return
+
     # Unpack arguments and convert
     try:
         inputs = [TosaArg(arg, tosa_spec) for arg in node.args]

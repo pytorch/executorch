@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
+from typing import Any, cast, List
 
 import torch.fx
 import tosa_serializer as ts
@@ -31,11 +31,11 @@ class MulVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [*inputs[:2], output])
         validate_valid_dtype(
             self.target,
-            [*inputs, output],
+            [*inputs[:2], output],
             [
                 ts.DType.INT8,
                 ts.DType.INT16,
@@ -46,7 +46,10 @@ class MulVisitor(NodeVisitor):
             ],
         )
 
-        shift = tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")
+        shift_node = cast(torch.fx.Node, node.args[2])
+        shift = tosa_graph.addConst(
+            [1], ts.DType.INT8, shift_node.args[0], name=f"{output.name}_shift"
+        )
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute()
         self._serialize_operator(

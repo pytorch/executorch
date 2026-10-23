@@ -152,11 +152,19 @@ def LOGICAL_NOT(input1: torch.Tensor) -> torch.Tensor:
 
 
 @register_fake_tosa_op(
-    "NEGATE(Tensor input1) -> Tensor",
+    "NEGATE(Tensor input1, Tensor input_zp, Tensor output_zp) -> Tensor",
     DUAL_PROFILE_SPECS,
 )
-def NEGATE(input1: torch.Tensor) -> torch.Tensor:
+def NEGATE(
+    input1: torch.Tensor, input_zp: torch.Tensor, output_zp: torch.Tensor
+) -> torch.Tensor:
     _validate_negate_dtype(input1.dtype)
+    for zero_point in (input_zp, output_zp):
+        if zero_point.numel() != 1 or zero_point.dtype != input1.dtype:
+            raise TosaValueError(
+                "NEGATE zero points must be scalar tensors matching the input dtype",
+                op="NEGATE",
+            )
     return torch.empty_like(input1, dtype=input1.dtype)
 
 

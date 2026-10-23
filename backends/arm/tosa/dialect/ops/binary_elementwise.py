@@ -256,24 +256,26 @@ def MINIMUM(
 
 
 @register_fake_tosa_op(
-    "MUL(Tensor input1, Tensor input2, *, int shift=0) -> Tensor",
+    "MUL(Tensor input1, Tensor input2, Tensor shift) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
 def MUL(
     input1: torch.Tensor,
     input2: torch.Tensor,
-    *,
-    shift: int = 0,
+    shift: torch.Tensor,
 ) -> torch.Tensor:
     output_dtype = _validate_and_infer_mul_output_dtype(input1.dtype)
 
-    if shift < 0 or shift > 63:
-        raise TosaValueError("shift must be in the range [0, 63]", op="MUL")
-    if input1.dtype != torch.int32 and shift != 0:
-        raise TosaValueError(
-            "Only int32 MUL supports a non-zero shift value",
-            op="MUL",
-        )
+    if shift.dtype != torch.int8 or shift.shape != (1,):
+        raise TosaValueError("MUL shift must be a single-element int8 tensor", op="MUL")
+    if not isinstance(shift, torch._subclasses.fake_tensor.FakeTensor):
+        shift_value = shift.item()
+        if not 0 <= shift_value <= 63:
+            raise TosaValueError("shift must be in the range [0, 63]", op="MUL")
+        if input1.dtype != torch.int32 and shift_value != 0:
+            raise TosaValueError(
+                "Only int32 MUL supports a non-zero shift value", op="MUL"
+            )
 
     return binary_meta(input1, input2, "MUL", output_dtype=output_dtype)
 

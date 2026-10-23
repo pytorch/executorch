@@ -126,7 +126,6 @@ def test_to_tosa_FP(test_data: Tuple):
         aten_op=[],
         exir_op=[],
     )
-    # int to int cast is not supported in TOSA+FP profile
     if not new_dtype.is_floating_point and not torch.is_floating_point(test_tensor):
         pipeline.change_args(
             "check_count.exir",

@@ -53,7 +53,7 @@ class NegVisitor(NodeVisitor):
             ts.DType.FP32,
         ]
 
-        validate_num_inputs(self.target, inputs, 1)
+        validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [*inputs, output])
         validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
 
