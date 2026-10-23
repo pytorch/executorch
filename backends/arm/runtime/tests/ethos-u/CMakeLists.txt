@@ -82,18 +82,55 @@ set_tests_properties(
 )
 
 find_package(Threads REQUIRED)
+add_library(
+  ethosu_execution_stats_test_library STATIC
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+)
+target_include_directories(
+  ethosu_execution_stats_test_library
+  PRIVATE
+    "${EXECUTORCH_ROOT}/.."
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+
 add_executable(
   ethosu_execution_stats_test
-  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_pmu_test_stubs.cpp"
   "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_execution_stats_test.cpp"
 )
 target_include_directories(
-  ethosu_execution_stats_test PRIVATE "${EXECUTORCH_ROOT}/.."
+  ethosu_execution_stats_test
+  PRIVATE
+    "${EXECUTORCH_ROOT}/.."
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
 )
-target_link_libraries(ethosu_execution_stats_test PRIVATE Threads::Threads)
+target_link_libraries(
+  ethosu_execution_stats_test PRIVATE ethosu_execution_stats_test_library
+                                      Threads::Threads
+)
 add_test(NAME ethosu_execution_stats COMMAND ethosu_execution_stats_test)
 set_tests_properties(
   ethosu_execution_stats PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
+add_executable(
+  ethosu_pmu_callbacks_test
+  "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_pmu_test_stubs.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_pmu_callbacks_test.cpp"
+)
+target_include_directories(
+  ethosu_pmu_callbacks_test
+  PRIVATE
+    "${EXECUTORCH_ROOT}/.."
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+)
+target_link_libraries(
+  ethosu_pmu_callbacks_test PRIVATE ethosu_execution_stats_test_library
+                                    Threads::Threads
+)
+add_test(NAME ethosu_pmu_callbacks COMMAND ethosu_pmu_callbacks_test)
+set_tests_properties(
+  ethosu_pmu_callbacks PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
 add_test(

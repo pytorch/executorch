@@ -57,6 +57,10 @@ endif()
 
 option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
+option(EXECUTORCH_ARM_ETHOSU_PMU_STATS
+       "Link Ethos-U PMU statistics into the Arm executor runner"
+       ${EXECUTORCH_BUILD_ARM_BAREMETAL}
+)
 option(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
        "Report Ethos-U PMU statistics per delegate" OFF
 )
@@ -67,7 +71,6 @@ set(ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES
     "16"
     CACHE STRING "Maximum delegates tracked by per-delegate profiling"
 )
-
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 set(BUNDLED_PROGRAM_LIBRARY_DIR
     ""
@@ -352,6 +355,12 @@ if(ET_NUM_INFERENCES)
 endif()
 
 if(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if(NOT EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+    message(
+      FATAL_ERROR
+        "ET_ARM_ETHOSU_PER_DELEGATE_PROFILING requires EXECUTORCH_ARM_ETHOSU_PMU_STATS"
+    )
+  endif()
   if(NOT ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES MATCHES "^[1-9][0-9]*$")
     message(
       FATAL_ERROR
@@ -366,6 +375,19 @@ if(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
   )
   target_compile_definitions(
     executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+  )
+endif()
+
+if(EXECUTORCH_ARM_ETHOSU_PMU_STATS)
+  if(NOT TARGET ethosu_execution_stats)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_ARM_ETHOSU_PMU_STATS is currently only supported by the bare-metal Ethos-U backend"
+    )
+  endif()
+  target_link_libraries(arm_executor_runner PRIVATE ethosu_execution_stats)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE ET_ARM_ETHOSU_PMU_STATS
   )
 endif()
 

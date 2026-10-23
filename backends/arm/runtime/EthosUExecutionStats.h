@@ -11,6 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 
+// Optional runner hooks. The stats library provides weak no-op definitions.
+extern "C" {
+void EthosUBackend_npu_begin();
+void EthosUBackend_npu_end();
+}
+
 namespace executorch::backends::arm {
 
 // Containers of Ethos-U metrics.
@@ -20,6 +26,13 @@ namespace executorch::backends::arm {
 struct EthosUExecutionStats;
 struct EthosUExecutionRecord;
 struct EthosUStatsBuffer;
+
+// Public API of the ethosu_execution_stats library.
+// Register runner-owned storage for subsequent invocations. Pass nullptr to
+// stop capture; replace the buffer only when no invocations are running.
+EthosUStatsBuffer* set_ethosu_stats_buffer(EthosUStatsBuffer* buffer) noexcept;
+// Returns true when this library is linked.
+bool ethosu_execution_metrics_enabled() noexcept;
 
 constexpr size_t kMaxPmuEventCounters = 8;
 
