@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    XNNConvert,
     XNNGraph,
     XNNStaticTranspose,
     XNode,
@@ -42,6 +43,25 @@ class ConvertMemoryFormat(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
+        input_node = get_input_node(node, 0)
+        if node.meta["val"].dtype != input_node.meta["val"].dtype:
+            # fp32 <-> fp16 cast (the partitioner admits no other dtype
+            # conversion and no dim-order change on the same node): an XNNPACK
+            # convert node, the layout follows the tags on the two tensors.
+            self.define_tensor(input_node, xnn_graph, vals_to_ids)
+            self.define_tensor(node, xnn_graph, vals_to_ids)
+            xnn_graph.xnodes.append(
+                XNode(
+                    xnode_union=XNNConvert(
+                        input_id=vals_to_ids[input_node],
+                        output_id=vals_to_ids[node],
+                        flags=0,
+                    ),
+                    debug_handle=debug_handle,
+                )
+            )
+            return
+
         memory_format_target = node.kwargs.get("memory_format", torch.contiguous_format)
         to_channels_last = bool(memory_format_target == torch.channels_last)
         to_contiguous = bool(memory_format_target == torch.contiguous_format)
@@ -50,7 +70,6 @@ class ConvertMemoryFormat(NodeVisitor):
             "Unsupported Memory Format for XNNPACK",
         )
 
-        input_node = get_input_node(node, 0)
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
 
