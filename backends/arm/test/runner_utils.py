@@ -300,8 +300,14 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         return all(isinstance(dim, numbers.Integral) for dim in shape_like)
 
     def to_torch_tensor() -> torch.Tensor:
-        if output_tensor.dtype == torch.bfloat16 or array.dtype.type is np.void:
-            return torch.frombuffer(array, dtype=output_tensor.dtype)
+        if (
+            output_tensor.dtype
+            in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2)
+            or array.dtype.type is np.void
+        ):
+            return torch.frombuffer(array, dtype=output_tensor.dtype).reshape(
+                array.shape
+            )
         return torch.from_numpy(array)
 
     if dim_order == NHWC_ORDER:
