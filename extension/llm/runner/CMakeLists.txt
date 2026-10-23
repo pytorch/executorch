@@ -112,19 +112,22 @@ endif()
 # Python bindings for MultimodalRunner
 if(EXECUTORCH_BUILD_PYBIND)
   # Create the Python extension module for LLM runners
-  pybind11_add_module(
-    _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
+  executorch_add_pybind_module(
+    _llm_runner ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
   )
-  strip_python_lib(_llm_runner)
 
   find_package_torch()
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )
-  # Link with the extension_llm_runner library and its dependencies
+  # Link with the extension_llm_runner library and its dependencies.
+  #
+  # torch_cpu_library is the CPU half of torch. Linking torch would also force
+  # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
+  # then not load this library.
   target_link_libraries(
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
-                        portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
+                        portable_lib ${TORCH_PYTHON_LIBRARY} torch_cpu_library
   )
   executorch_target_link_shared_runtime(_llm_runner)
 

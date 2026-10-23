@@ -77,9 +77,31 @@ class _State(threading.local):
 
 
 _STATE = _State()
+
+
+def graph_timing_active() -> bool:
+    """Whether a ``cuda_graph_timing()`` context is active on this thread."""
+    return _STATE.stats is not None
+
+
 _INSTALL_LOCK = threading.Lock()
 _installed_previous: Callable[..., Any] | None = None
 _install_count = 0
+
+
+def time_with_cuda_graph_us_counted(fn: Callable[[], Any]) -> float:
+    """``time_with_cuda_graph_us`` with the out-of-memory retries and the captured
+    and fallback counts of the active ``cuda_graph_timing()``."""
+    stats = _STATE.stats
+    if stats is None:
+        return time_with_cuda_graph_us(fn)
+    try:
+        us = _time_capturing_robustly(fn, stats)
+    except Exception:
+        stats.fallbacks += 1
+        raise
+    stats.captured += 1
+    return us
 
 
 def _default_cuda_bench(

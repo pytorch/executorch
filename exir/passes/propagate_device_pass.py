@@ -15,6 +15,7 @@ from typing import Optional
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
 import executorch.exir.schema as schema
 import torch
+import torch.utils._pytree as pytree
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 
@@ -298,6 +299,14 @@ class PropagateDevicePass(PassBase):
                 d2h_node,
                 delete_user_cb=lambda user, _d2h=d2h_node: user != _d2h,
             )
+            # Memory planning finds the graph outputs through the output node's
+            # spec, so it has to name the copy now rather than the device tensor.
+            for user in d2h_node.users:
+                if user.op == "output" and "spec" in user.meta:
+                    user.meta["spec"] = pytree.tree_map(
+                        lambda value: d2h_spec if value is spec else value,
+                        user.meta["spec"],
+                    )
         return True
 
     def _elide_redundant_same_device_copies(
