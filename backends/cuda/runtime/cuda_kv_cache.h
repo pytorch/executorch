@@ -198,8 +198,8 @@ runtime::Error attach_offgraph_kv_cache(
 // invalid, so CacheFactory reports the failure instead of the cache asserting
 // during construction.
 //
-// Flat layers start at cfg.initial_capacity rows and grow geometrically up to
-// cfg.capacity; ring layers hold window + max_write - 1 rows from the start.
+// Every layer starts at cfg.initial_capacity rows and grows geometrically: a
+// flat layer up to cfg.capacity, a ring layer up to window + max_write - 1.
 // cfg.kv_dtype is an ExecuTorch ScalarType; the slim enum the storage uses
 // shares its numbering, and unsupported values are rejected here.
 std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
@@ -230,8 +230,9 @@ inline int batched_sequence_max_segments(int max_seqs) {
 // cfg.capacity is one sequence's capacity (the program's maximum_capacity),
 // cfg.max_seqs its sequence columns and cfg.max_write its widest step; all
 // fix shapes the program declared, so they must match the export exactly.
-// Flat layers start at cfg.initial_capacity rows and grow geometrically to
-// cfg.capacity; ring layers hold min(capacity, window + max_write - 1).
+// Every layer starts at cfg.initial_capacity rows and grows geometrically: a
+// flat layer to cfg.capacity, a ring layer to min(capacity, window +
+// max_write - 1).
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);
