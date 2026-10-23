@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 import torch
 import tosa_serializer as ts
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import keeps_int64, TosaSpecification
 
 TOSA_CONTROL_FLOW_REGION_NAME_META = "tosa_control_flow_region_name"
 TOSA_CONTROL_FLOW_SOURCE_NODE_META = "tosa_control_flow_source_node"
@@ -28,8 +28,6 @@ UNSUPPORTED_DTYPES = (
     torch.cfloat,
     torch.complex128,
     torch.cdouble,
-    torch.int64,
-    torch.long,
 )
 
 
@@ -114,6 +112,7 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.short: ts.DType.INT16,
         torch.int32: ts.DType.INT32,
         torch.int: ts.DType.INT32,
+        torch.int64: ts.DType.INT64,
         torch.bool: ts.DType.BOOL,
         torch.float8_e4m3fn: ts.DType.FP8E4M3,
         torch.float8_e5m2: ts.DType.FP8E5M2,
@@ -243,6 +242,9 @@ class TosaArg:
                     return False
             case ts.DType.BF16:
                 if not tosa_spec.support_extension("bf16"):
+                    return False
+            case ts.DType.INT64:
+                if not keeps_int64(tosa_spec):
                     return False
             case ts.DType.FP8E4M3:
                 if not (
