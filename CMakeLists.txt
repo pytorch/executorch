@@ -1450,11 +1450,16 @@ if(EXECUTORCH_BUILD_PYBIND)
       aten_bridge PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
     )
     target_compile_options(aten_bridge PUBLIC ${_pybind_compile_options})
+    # torch_cpu_library is the CPU half of torch. Linking torch would also force
+    # libtorch_cuda into DT_NEEDED in a CUDA build, and a CPU-only torch could
+    # then not load this library.
     if(EXECUTORCH_BUILD_SHARED)
-      target_link_libraries(aten_bridge PRIVATE torch c10 executorch_shared)
+      target_link_libraries(
+        aten_bridge PRIVATE torch_cpu_library c10 executorch_shared
+      )
     else()
       target_link_libraries(
-        aten_bridge PRIVATE torch c10 executorch extension_tensor
+        aten_bridge PRIVATE torch_cpu_library c10 executorch extension_tensor
       )
     endif()
   endif()
