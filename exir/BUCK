@@ -296,6 +296,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
