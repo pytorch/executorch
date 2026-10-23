@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.24)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(samsung_example)
@@ -59,3 +59,182 @@ target_link_libraries(
 set_target_properties(
   enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden
 )
+
+option(EXYNOS_BUILD_LLM_RUNNER
+       "Build enn_executor_llm_runner and the Exynos LLM runner library" OFF
+)
+# C API in exynos_llm_wrapper.h. Always compiled into enn_executor_llm_runner;
+# additionally shipped as libexynos_llm_wrapper.so when
+# EXYNOS_BUILD_LLM_WRAPPER_SO is ON.
+option(EXYNOS_BUILD_LLM_WRAPPER_SO
+       "Build libexynos_llm_wrapper.so and exynos_llm_wrapper_sample" OFF
+)
+if(EXYNOS_BUILD_LLM_WRAPPER_SO AND NOT EXYNOS_BUILD_LLM_RUNNER)
+  message(
+    FATAL_ERROR "EXYNOS_BUILD_LLM_WRAPPER_SO requires EXYNOS_BUILD_LLM_RUNNER"
+  )
+endif()
+if(NOT EXYNOS_BUILD_LLM_RUNNER)
+  return()
+endif()
+
+find_package(tokenizers REQUIRED)
+
+set(_llm_compile_options
+    -Wno-deprecated-declarations -Wno-unused-const-variable
+    -Wno-unused-variable -Wno-inconsistent-missing-override
+)
+
+link_directories(${EXECUTORCH_ROOT}/build_samsung_android/lib)
+
+add_library(lib_portable_ops STATIC IMPORTED)
+set_target_properties(
+  lib_portable_ops
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/lib/libportable_ops_lib.a"
+)
+
+add_subdirectory(executor_runner/llm/runner)
+
+add_library(lib_tokenizer STATIC IMPORTED)
+set_target_properties(
+  lib_tokenizer
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/extension/llm/tokenizers/libtokenizers.a"
+)
+
+add_library(lib_extension_llm_runner STATIC IMPORTED)
+set_target_properties(
+  lib_extension_llm_runner
+  PROPERTIES
+    IMPORTED_LOCATION
+    "${EXECUTORCH_ROOT}/build_samsung_android/extension/llm/runner/libextension_llm_runner.a"
+)
+
+add_library(lib_enn_backend STATIC IMPORTED)
+set_target_properties(
+  lib_enn_backend
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libenn_backend.a"
+)
+
+add_library(lib_executorch STATIC IMPORTED)
+set_target_properties(
+  lib_executorch
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libexecutorch.a"
+)
+
+add_library(lib_custom_op STATIC IMPORTED)
+set_target_properties(
+  lib_custom_op
+  PROPERTIES IMPORTED_LOCATION
+             "${EXECUTORCH_ROOT}/build_samsung_android/lib/libcustom_ops.a"
+)
+
+set(enn_executor_llm_runner_deps
+    executorch_core extension_data_loader extension_module extension_tensor
+    extension_flat_tensor lib_extension_llm_runner
+)
+
+set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod
+                         extension_threadpool pthreadpool kleidiai
+)
+
+list(
+  APPEND
+  xnnpack_backend_libs
+  optimized_native_cpu_ops_lib
+  optimized_kernels
+  portable_kernels
+  cpublas
+  eigen_blas
+)
+
+# Extra sources for cpuinfo
+set(XNNPACK_ROOT ${EXECUTORCH_ROOT}/backends/xnnpack)
+list(APPEND xnnpack_backend_libs cpuinfo)
+list(APPEND _common_include_directories
+     ${XNNPACK_ROOT}/third-party/cpuinfo/include
+)
+
+# quantized_ops_lib: Register quantized op kernels into the runtime
+list(APPEND xnnpack_backend_libs quantized_kernels quantized_ops_lib)
+
+set(exynos_llm_link_libs
+    log
+    gflags
+    android
+    lib_portable_ops
+    ${enn_executor_llm_runner_deps}
+    ${xnnpack_backend_libs}
+    sentencepiece
+    re2
+    lib_tokenizer
+    -Wl,--whole-archive
+    lib_executorch
+    lib_custom_op
+    lib_enn_backend
+    enn_logging
+    -Wl,--no-whole-archive
+)
+
+add_library(
+  exynos_llm_wrapper_obj OBJECT
+  ${CMAKE_CURRENT_LIST_DIR}/executor_runner/exynos_llm_wrapper.cpp
+)
+target_compile_definitions(exynos_llm_wrapper_obj PRIVATE EXECUTORCH_VERSION=2)
+target_compile_options(exynos_llm_wrapper_obj PRIVATE ${_llm_compile_options})
+target_link_libraries(exynos_llm_wrapper_obj PRIVATE enn_llm_runner)
+set_target_properties(
+  exynos_llm_wrapper_obj PROPERTIES CXX_VISIBILITY_PRESET hidden
+                                    VISIBILITY_INLINES_HIDDEN ON
+)
+
+add_executable(
+  enn_executor_llm_runner
+  ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_llm_runner.cpp
+)
+
+target_include_directories(
+  enn_executor_llm_runner
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/backends/samsung/runtime
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
+
+target_compile_options(enn_executor_llm_runner PRIVATE ${_llm_compile_options})
+target_link_libraries(
+  enn_executor_llm_runner PRIVATE exynos_llm_wrapper_obj enn_llm_runner
+                                  ${exynos_llm_link_libs}
+)
+
+if(EXYNOS_BUILD_LLM_WRAPPER_SO)
+  # Bundles all dependencies so only the .so + header need to be shipped.
+  add_library(
+    exynos_llm_wrapper SHARED $<TARGET_OBJECTS:exynos_llm_wrapper_obj>
+  )
+  set_target_properties(exynos_llm_wrapper PROPERTIES LINKER_LANGUAGE CXX)
+  target_include_directories(
+    exynos_llm_wrapper PUBLIC ${CMAKE_CURRENT_LIST_DIR}/executor_runner
+  )
+  target_link_libraries(
+    exynos_llm_wrapper PRIVATE enn_llm_runner ${exynos_llm_link_libs}
+                               -Wl,--exclude-libs,ALL
+  )
+
+  # Sample CLI consuming the public C API the way an app uses the .so.
+  add_executable(
+    exynos_llm_wrapper_sample
+    ${CMAKE_CURRENT_LIST_DIR}/executor_runner/exynos_llm_wrapper_sample_main.cpp
+  )
+  target_compile_options(
+    exynos_llm_wrapper_sample PRIVATE ${_llm_compile_options}
+  )
+  target_link_libraries(exynos_llm_wrapper_sample PRIVATE exynos_llm_wrapper)
+  set_target_properties(
+    exynos_llm_wrapper_sample PROPERTIES CXX_VISIBILITY_PRESET hidden
+  )
+endif()
