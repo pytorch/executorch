@@ -8,6 +8,15 @@ non_fbcode_target(_kind = define_common_targets,)
 
 fbcode_target(_kind = define_common_targets,)
 
+fbcode_target(_kind = runtime.python_library,
+    name = "gemma4",
+    srcs = ["__init__.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    deps = [":text_decoder"],
+    visibility = ["PUBLIC"],
+)
+
 # Text decoder module
 fbcode_target(_kind = runtime.python_library,
     name = "text_decoder",
