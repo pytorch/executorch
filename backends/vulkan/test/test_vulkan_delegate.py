@@ -32,6 +32,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -2489,6 +2490,118 @@ class TestVulkanBackend(unittest.TestCase):
             ConvGroupNormModule(),
             sample_inputs,
         )
+
+    def test_vulkan_backend_instance_norm(self):
+        # ReplaceInstanceNormPass rewrites a batch-1 instance norm with constant
+        # affine args into group norm with one group per channel.
+        class ConvInstanceNormModule(torch.nn.Module):
+            def __init__(self, channels):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, channels, kernel_size=3, padding=1)
+                self.norm = torch.nn.InstanceNorm2d(channels, affine=True)
+                torch.nn.init.normal_(self.norm.weight)
+                torch.nn.init.normal_(self.norm.bias)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        for channels in (16, 13):
+            with self.subTest(channels=channels):
+                model = ConvInstanceNormModule(channels)
+                sample_inputs = (torch.randn(1, 3, 32, 32),)
+                edge_program = lower_module(model.eval(), sample_inputs)
+                self.assertEqual(
+                    [
+                        node.target
+                        for node in edge_program.exported_program().graph.nodes
+                        if node.op == "call_function"
+                        and node.target != operator.getitem
+                    ],
+                    [torch.ops.higher_order.executorch_call_delegate],
+                )
+                self.lower_module_and_test_output(model, sample_inputs)
+
+    def test_vulkan_backend_instance_norm_large_offset(self):
+        # A mean far from zero relative to the standard deviation. Computing the
+        # variance as E[x^2] - E[x]^2 in fp32 rounds it to zero or below here.
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self, channels):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(channels, affine=True)
+
+            def forward(self, x):
+                return self.norm(x)
+
+        cases = [
+            # Unit weight and zero bias: [8192, 8193] has a variance of 0.25, so it
+            # normalizes to about +-1.
+            ("two_values", InstanceNormModule(1), torch.tensor([[[[8192.0, 8193.0]]]])),
+            ("offset_1000", InstanceNormModule(8), 1000 + torch.rand(1, 8, 16, 16)),
+        ]
+        for name, model, x in cases:
+            with self.subTest(name):
+                self.lower_module_and_test_output(
+                    model.eval(), (x,), atol=2e-3, rtol=1e-3
+                )
+
+    def test_vulkan_backend_instance_norm_not_rewritable(self):
+        # Group norm prepacks its affine args, so an instance norm whose affine
+        # args are not constants by the time group norm sees them must stay on
+        # the CPU: a batch above 1 repeats them at runtime, and model inputs are
+        # not constants at all.
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(8, affine=True)
+
+            def forward(self, x):
+                return torch.relu(self.norm(x + 1.0))
+
+        class InputAffineModule(torch.nn.Module):
+            def forward(self, x, weight, bias):
+                return torch.relu(F.instance_norm(x + 1.0, weight=weight, bias=bias))
+
+        # The repeats of the affine args are delegated while the norm is not, so
+        # these also check that the delegate still computes them.
+        class InstanceNorm1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(8, 8, 3, padding=1)
+                self.norm = torch.nn.InstanceNorm1d(8, affine=True)
+                torch.nn.init.normal_(self.norm.weight)
+                torch.nn.init.normal_(self.norm.bias)
+
+            def forward(self, x):
+                return torch.relu(self.norm(self.conv(x)))
+
+        class ComputedWeightModule(InstanceNormModule):
+            def forward(self, x):
+                weight = self.norm.weight * 2
+                return F.instance_norm(x + 1.0, weight=weight, bias=self.norm.bias)
+
+        cases = [
+            ("batch_2", InstanceNormModule(), (torch.randn(2, 8, 5, 6),)),
+            (
+                "input_affine",
+                InputAffineModule(),
+                (torch.randn(1, 8, 5, 6), torch.randn(8), torch.randn(8)),
+            ),
+            ("instance_norm_1d", InstanceNorm1dModule(), (torch.randn(1, 8, 20),)),
+            ("computed_weight", ComputedWeightModule(), (torch.randn(1, 8, 5, 6),)),
+        ]
+        for name, model, sample_inputs in cases:
+            with self.subTest(name):
+                edge_program = lower_module(model.eval(), sample_inputs)
+                targets = [
+                    node.target
+                    for node in edge_program.exported_program().graph.nodes
+                    if node.op == "call_function"
+                ]
+                self.assertIn(
+                    exir_ops.edge.aten._native_batch_norm_legit.no_stats, targets
+                )
+                self.assertIn(torch.ops.higher_order.executorch_call_delegate, targets)
+                self.lower_module_and_test_output(model, sample_inputs)
 
     def test_vulkan_backend_group_norm_different_groups(self):
         class GroupNormModule(torch.nn.Module):
