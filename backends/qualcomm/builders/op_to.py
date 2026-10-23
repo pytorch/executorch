@@ -12,7 +12,7 @@ from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
 from .node_visitor_manager import register_node_visitor
-from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpCast, OpConvert, OpQuantize, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -137,6 +137,36 @@ class To(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
+
+        # Cast copies an integer's raw value into a quantized tensor, and the HTP
+        # rejects Convert there: cast to float, then quantize.
+        if (
+            node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta["val"].is_floating_point()
+        ):
+            float_tensor_wrapper = self.define_custom_tensor_wrapper(
+                node_name=node.name + "_float",
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                dtype=PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+                quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                quant_configs={},
+                dims=output_tensor.size(),
+                tensor=output_tensor,
+                is_fake_tensor=True,
+                nodes_to_wrappers=nodes_to_wrappers,
+            )
+            cast_op = PyQnnManager.PyQnnOpWrapper(
+                f"{node.name}_float", QNN_OP_PACKAGE_NAME_QTI_AISW, OpCast.op_name
+            )
+            cast_op.AddInputTensors(node_input_tensors)
+            cast_op.AddOutputTensors([float_tensor_wrapper])
+            quantize_op = PyQnnManager.PyQnnOpWrapper(
+                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpQuantize.op_name
+            )
+            quantize_op.AddInputTensors([float_tensor_wrapper])
+            quantize_op.AddOutputTensors([output_tensor_wrapper])
+            return ops + [cast_op, quantize_op]
 
         qnn_op = OpCast if self.is_cast_node(node) else OpConvert
         op = PyQnnManager.PyQnnOpWrapper(
