@@ -24,6 +24,7 @@ from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.cortex_m.utils import (
     build_activation_lut,
     is_foldable_alpha,
+    lowered_output_dtype,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -1209,8 +1210,7 @@ def _get_minimum_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
-    input_tensor = _get_input_tensor_data(node)
-    if input_tensor.dtype not in (torch.int8, torch.int32):
+    if lowered_output_dtype(node.args[0]) not in (torch.int8, torch.int32):
         return None
     return DialectNodeSpec(exir_ops.edge.cortex_m.minimum.default, node.args)
 
@@ -1220,8 +1220,7 @@ def _get_maximum_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
-    input_tensor = _get_input_tensor_data(node)
-    if input_tensor.dtype != torch.int8:
+    if lowered_output_dtype(node.args[0]) != torch.int8:
         return None
     return DialectNodeSpec(exir_ops.edge.cortex_m.maximum.default, node.args)
 
@@ -1241,8 +1240,12 @@ def _get_permute_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
+    if lowered_output_dtype(node.args[0]) != torch.int8:
+        return None
+    # Shape, unlike dtype, survives AtenToDialectPass: a substitution keeps the
+    # replaced node's meta and computes the same function over it.
     input_tensor = _get_input_tensor_data(node)
-    if input_tensor.dtype != torch.int8 or not 1 <= input_tensor.dim() <= 4:
+    if not 1 <= input_tensor.dim() <= 4:
         return None
     return _transpose_spec(node, input_tensor)
 
