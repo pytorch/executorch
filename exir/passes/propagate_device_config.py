@@ -56,10 +56,12 @@ class PropagateDeviceConfig:
     # A dict can be used to set per-method values, keyed by method name.
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
-    # When True, device delegate outputs that are directly method outputs
-    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
-    # Useful for cross-method GPU pipelines where the next method consumes
-    # GPU tensors directly.
+    # When True, device delegate outputs that the method returns stay on
+    # device: the method output never reads a _d2h_copy of them. When a host op
+    # writes the host copy of such an output in place, the method returns a
+    # device copy of the written tensor, which costs a copy on every call.
+    # Useful for cross-method GPU pipelines where the next method consumes GPU
+    # tensors directly.
     #
     # Pair with MemoryPlanningPass(alloc_graph_output=False) for the same reason as the input flag.
     # A dict can be used to set per-method values, keyed by method name.
