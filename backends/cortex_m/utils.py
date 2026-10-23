@@ -14,6 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from torch.fx import Node
+from torch.fx.node import Argument
 
 # L-shift value used in CMSIS-NN for int8 operations
 SHIFT_INT8 = 20
@@ -196,6 +197,25 @@ def skips_quantized_max_pool2d(node: Node) -> bool:
         .get("cortex_m", {})
         .get("skip_quantized_max_pool2d", False)
     )
+
+
+def lowered_output_dtype(node: Argument) -> torch.dtype | None:
+    """The dtype of this node's first output on device.
+
+    Folded output qparams win over the fake tensor, which stays fp32 on
+    ops such as tanh and softmax until AtenToCortexMPass rewrites them.
+    An argument that is not a node, or carries neither, reports None, so
+    a caller gating a substitution on int8 declines it rather than raising.
+    """
+    if not isinstance(node, Node):
+        return None
+    qparams = node.meta.get("output_qparams", {}).get(0)
+    if qparams is not None:
+        return qparams.dtype
+    value = node.meta.get("val")
+    if isinstance(value, (tuple, list)):
+        value = value[0] if value else None
+    return value.dtype if isinstance(value, torch.Tensor) else None
 
 
 def is_qualified_int8_node(args) -> bool:

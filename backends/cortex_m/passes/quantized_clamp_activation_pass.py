@@ -7,11 +7,14 @@ import logging
 from typing import Any
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
-from executorch.backends.cortex_m.utils import get_activation_bounds, quantize_val
+from executorch.backends.cortex_m.utils import (
+    get_activation_bounds,
+    lowered_output_dtype,
+    quantize_val,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node
@@ -71,11 +74,7 @@ class QuantizedClampActivationPass(ExportPass):
         input_node = node.args[0] if len(node.args) > 0 else None
         if not isinstance(input_node, Node):
             return False
-        try:
-            tensor = get_first_fake_tensor(input_node)
-        except Exception:
-            return False
-        if tensor is None or tensor.dtype != torch.int8:
+        if lowered_output_dtype(input_node) != torch.int8:
             return False
 
         try:
