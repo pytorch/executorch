@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.decompose_embedding_pass import (
     DecomposeEmbeddingPass,
 )
+from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import EdgeOpOverload, ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
@@ -115,6 +116,9 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
         return modified
 
     def call(self, graph_module: torch.fx.GraphModule):
+        if keeps_int64():
+            return PassResult(graph_module, False)
+
         self._placeholder_casts_inserted = 0
         modified = False
         modified |= self._insert_placeholder_i64_to_i32_casts(graph_module)

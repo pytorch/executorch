@@ -12,6 +12,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
+from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -44,6 +45,9 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
     ]
 
     def call(self, graph_module: torch.fx.GraphModule):
+        if keeps_int64():
+            return PassResult(graph_module, False)
+
         modified = False
         converted = 0
         skipped = 0

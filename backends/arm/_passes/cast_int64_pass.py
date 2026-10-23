@@ -9,6 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
 from torch.export import ExportedProgram
@@ -89,6 +90,9 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         return converted
 
     def call(self, graph_module: torch.fx.GraphModule):
+        if keeps_int64():
+            return PassResult(graph_module, False)
+
         converted = self._to_int32(graph_module)
         modified = converted > 0
         if modified:
