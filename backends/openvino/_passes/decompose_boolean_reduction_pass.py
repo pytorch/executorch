@@ -100,11 +100,15 @@ class DecomposeBooleanReductionPass(ExportPass):
         if input_node is None or _node_dtype(input_node) != torch.bool:
             return
 
+        # Pin the output dtype: OpenVINO keeps int32 for cumsum(int32) while
+        # PyTorch promotes the result to int64.
+        output_dtype = node.meta["val"].dtype
         opset = _get_opset(node.target)
         with graph.inserting_before(node):
             input_as_int = graph.call_function(
                 opset["to_copy"], (input_node,), {"dtype": torch.int32}
             )
+            input_as_int.meta["val"] = input_node.meta["val"].to(torch.int32)
             if kind == "sum":
                 dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim")
                 keepdim = (
@@ -112,18 +116,17 @@ class DecomposeBooleanReductionPass(ExportPass):
                     if len(node.args) > 2
                     else node.kwargs.get("keepdim", False)
                 )
-                dtype = node.args[3] if len(node.args) > 3 else node.kwargs.get("dtype")
-                kwargs = {"dtype": dtype} if dtype is not None else {}
                 result = graph.call_function(
-                    opset["sum"], (input_as_int, dim, keepdim), kwargs
+                    opset["sum"],
+                    (input_as_int, dim, keepdim),
+                    {"dtype": output_dtype},
                 )
             else:  # cumsum
                 dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim")
-                dtype = node.args[2] if len(node.args) > 2 else node.kwargs.get("dtype")
-                kwargs = {"dtype": dtype} if dtype is not None else {}
                 result = graph.call_function(
-                    opset["cumsum"], (input_as_int, dim), kwargs
+                    opset["cumsum"], (input_as_int, dim), {"dtype": output_dtype}
                 )
+            result.meta = node.meta.copy()
             node.replace_all_uses_with(result)
         graph.erase_node(node)
 
@@ -137,5 +140,6 @@ class DecomposeBooleanReductionPass(ExportPass):
         opset = _get_opset(node.target)
         with graph.inserting_before(node):
             result = graph.call_function(opset["bitwise_and"], (a_node, b_node))
+            result.meta = node.meta.copy()
             node.replace_all_uses_with(result)
         graph.erase_node(node)
