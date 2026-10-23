@@ -165,6 +165,22 @@ def _is_written_in_place(node: torch.fx.Node) -> bool:
     )
 
 
+def _replace_output_spec(
+    node: torch.fx.Node, old_spec: TensorSpec, new_spec: TensorSpec
+) -> None:
+    """Replace *old_spec* with *new_spec* in the spec of the output node reading *node*.
+
+    Memory planning finds the graph outputs through the output node's spec, so
+    it has to name the tensor that is actually returned.
+    """
+    for user in node.users:
+        if user.op == "output" and "spec" in user.meta:
+            user.meta["spec"] = pytree.tree_map(
+                lambda value: new_spec if value is old_spec else value,
+                user.meta["spec"],
+            )
+
+
 class PropagateDevicePass(PassBase):
     """
     After to_backend, walk the graph and insert H2D/D2H copy ops at delegate
@@ -182,8 +198,10 @@ class PropagateDevicePass(PassBase):
     - skip_h2d_for_method_inputs: If the input is a graph-level placeholder
       feeding directly to a delegate, don't insert H2D — tag the placeholder
       as device instead (user provides GPU tensor at runtime).
-    - skip_d2h_for_method_outputs: If a delegate output feeds directly to
-      graph output, don't insert D2H; the output stays on device.
+    - skip_d2h_for_method_outputs: The graph output reads a delegate output
+      on device, not its D2H copy; the copy stays only for other readers. When
+      one of them writes the copy in place, the graph output reads a device
+      copy of the written tensor instead.
     """
 
     def __init__(
@@ -211,10 +229,6 @@ class PropagateDevicePass(PassBase):
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""
         return node.op == "placeholder"
-
-    def _feeds_directly_to_output(self, node: torch.fx.Node) -> bool:
-        """Check if all users of a node are output nodes."""
-        return all(user.op == "output" for user in node.users)
 
     def _insert_h2d_copies(
         self,
@@ -309,9 +323,6 @@ class PropagateDevicePass(PassBase):
         spec: TensorSpec,
     ) -> None:
         """Insert a D2H copy after *node*, a device tensor, for all of its users."""
-        if self.skip_d2h_for_method_outputs and self._feeds_directly_to_output(node):
-            return
-
         with graph_module.graph.inserting_after(node):
             d2h_node = graph_module.graph.call_function(
                 torch.ops.et_copy._d2h_copy.default,
@@ -327,14 +338,47 @@ class PropagateDevicePass(PassBase):
                 d2h_node,
                 delete_user_cb=lambda user, _d2h=d2h_node: user != _d2h,
             )
-            # Memory planning finds the graph outputs through the output node's
-            # spec, so it has to name the copy now rather than the device tensor.
-            for user in d2h_node.users:
-                if user.op == "output" and "spec" in user.meta:
-                    user.meta["spec"] = pytree.tree_map(
-                        lambda value: d2h_spec if value is spec else value,
-                        user.meta["spec"],
+            _replace_output_spec(d2h_node, spec, d2h_spec)
+
+    def _keep_method_outputs_on_device(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        """Make the graph output read the device tensor instead of its D2H copy.
+
+        The copy stays for its other users, such as a host op. When one of them
+        writes the copy in place, the device tensor never sees that write, so the
+        output reads a new device copy of the written host copy instead.
+        """
+        d2h = torch.ops.et_copy._d2h_copy.default
+        for node in list(graph_module.graph.nodes):
+            if (
+                node.op != "call_function"
+                or node.target != d2h
+                or not any(user.op == "output" for user in node.users)
+            ):
+                continue
+            returned = node.args[0]
+            if _is_written_in_place(node):
+                device_spec = returned.meta["spec"]
+                with graph_module.graph.inserting_before(
+                    graph_module.graph.output_node()
+                ):
+                    returned = graph_module.graph.call_function(
+                        torch.ops.et_copy._h2d_copy.default, (node,)
                     )
+                returned.meta["spec"] = _clone_spec_with_device(
+                    node.meta["spec"], device_spec.device, device_spec.device_index
+                )
+                returned.meta["val"] = node.meta.get("val")
+                if "tensor_meta" in node.meta:
+                    returned.meta["tensor_meta"] = node.meta["tensor_meta"]
+            _replace_output_spec(node, node.meta["spec"], returned.meta["spec"])
+            node.replace_all_uses_with(
+                returned, delete_user_cb=lambda user: user.op == "output"
+            )
+            if not node.users:
+                graph_module.graph.erase_node(node)
 
     def _elide_redundant_same_device_copies(
         self,
@@ -411,6 +455,8 @@ class PropagateDevicePass(PassBase):
         #            returns a single tensor gets the D2H copy itself.
         #   Pass 3 – Elide the redundant device->host->device round-trips left
         #            between consecutive same-device delegates by passes 1 and 2.
+        #            With skip_d2h_for_method_outputs, then make the graph output
+        #            read device tensors instead of D2H copies.
         changed = False
         device_delegates: set[torch.fx.Node] = set()
 
@@ -498,11 +544,14 @@ class PropagateDevicePass(PassBase):
 
         # Third pass: elide the redundant device->host->device round-trips left
         # between consecutive same-device delegates by the per-boundary H2D/D2H
-        # insertion above. Only meaningful when passes 1/2 modified the graph
-        # (there was a device delegate); when nothing changed there are no copies
-        # to elide, so skip the scan entirely.
+        # insertion above, then, with skip_d2h_for_method_outputs, make the graph
+        # output read device tensors. Only meaningful when passes 1/2 modified the
+        # graph (there was a device delegate); when nothing changed there are no
+        # copies to elide, so skip the scan entirely.
         if changed:
             self._elide_redundant_same_device_copies(graph_module)
+            if self.skip_d2h_for_method_outputs:
+                self._keep_method_outputs_on_device(graph_module)
 
         graph_module.recompile()
         return PassResult(graph_module, changed)
