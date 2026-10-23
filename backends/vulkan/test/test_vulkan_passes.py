@@ -398,6 +398,48 @@ class TestVulkanPasses(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-3, rtol=1e-3))
 
+    def test_fuse_aten_rms_norm(self):
+        """F.rms_norm and nn.RMSNorm decompose to pow -> mean(dim=[ndim - 1]) ->
+        add.Scalar -> rsqrt -> mul -> mul, which must fuse into et_vk.rms_norm
+        like the hand-written x * rsqrt(mean(x * x, -1) + eps) * w form.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+
+        class FunctionalRmsNorm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.rand(64) + 0.5)
+
+            def forward(self, x):
+                return torch.nn.functional.rms_norm(x, (64,), self.weight, 1e-6)
+
+        for model in (FunctionalRmsNorm(), torch.nn.RMSNorm(64, eps=1e-6)):
+            model = model.eval()
+            for shape in ((6, 64), (2, 6, 64)):
+                sample_inputs = (torch.randn(shape),)
+                eager_ref = model(*sample_inputs)
+
+                program = torch.export.export(model, sample_inputs, strict=True)
+                edge_program = to_edge(
+                    program,
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
+                ep = edge_program._edge_programs["forward"]
+                fuse_pass = FusePatternsPass()
+                fuse_pass._exported_program = ep
+                result = fuse_pass.call(ep.graph_module)
+
+                self.assertTrue(result.modified)
+                gm = ep.graph_module
+                self.assertEqual(op_node_count(gm, "rms_norm.default"), 1)
+                self.assertEqual(op_node_count(gm, "mean.dim"), 0)
+                self.assertEqual(op_node_count(gm, "rsqrt.default"), 0)
+
+                fused_out = ep.module()(*sample_inputs)
+                self.assertTrue(
+                    torch.allclose(fused_out, eager_ref, atol=1e-5, rtol=1e-5)
+                )
+
     def test_torchao_quantized_embedding_rejects_bad_embed_dim(self):
         """A torchao 4-bit quantized embedding whose embed_dim is not a multiple
         of 32 must NOT fuse: the runtime shader asserts embed_dim % 32 == 0

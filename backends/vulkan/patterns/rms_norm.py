@@ -83,7 +83,11 @@ class RmsNormMatch(PatternMatch):
         add_node = self._get_single_arg_node(
             rsqrt_node, exir_ops.edge.aten.rsqrt.default
         )
-        if add_node is None or add_node.target != exir_ops.edge.aten.add.Tensor:
+        # add.Scalar is what aten.rms_norm (F.rms_norm, nn.RMSNorm) decomposes to.
+        if add_node is None or add_node.target not in (
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.add.Scalar,
+        ):
             return
 
         self.all_nodes.append(add_node)
@@ -104,11 +108,13 @@ class RmsNormMatch(PatternMatch):
 
         self.all_nodes.append(mean_node)
 
-        # Verify mean has keepdim=True and dim=[-1]
+        # Verify mean has keepdim=True and reduces the last dim only, given as
+        # -1 or, as aten.rms_norm's decomposition spells it, as ndim - 1.
         if len(mean_node.args) < 3:
             return
         mean_dims = mean_node.args[1]
-        if mean_dims != [-1]:
+        ndim = len(mean_node.meta["val"].shape)
+        if mean_dims != [-1] and mean_dims != [ndim - 1]:
             return
         if not mean_node.args[2]:
             return
