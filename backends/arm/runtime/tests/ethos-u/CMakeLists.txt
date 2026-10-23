@@ -66,6 +66,21 @@ set_tests_properties(
   vela_external_blocks PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
+find_package(Threads REQUIRED)
+add_executable(
+  ethosu_execution_stats_test
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUExecutionStats.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_execution_stats_test.cpp"
+)
+target_include_directories(
+  ethosu_execution_stats_test PRIVATE "${EXECUTORCH_ROOT}/.."
+)
+target_link_libraries(ethosu_execution_stats_test PRIVATE Threads::Threads)
+add_test(NAME ethosu_execution_stats COMMAND ethosu_execution_stats_test)
+set_tests_properties(
+  ethosu_execution_stats PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 add_test(
   NAME memory_allocation_baseline
   COMMAND "${_ethos_u_runtime_tests_dir}/test_memory_allocation_baseline.sh"
