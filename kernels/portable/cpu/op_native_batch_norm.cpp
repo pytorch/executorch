@@ -6,9 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <numeric>
 #include <tuple>
+#include <utility>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
@@ -21,6 +25,68 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using SizesType = executorch::aten::SizesType;
+
+namespace {
+
+template <typename CTYPE>
+auto channel_moments(
+    const CTYPE* input,
+    size_t batches,
+    size_t channels,
+    size_t inner) {
+  using COMPUTE_T =
+      typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
+  constexpr size_t kLanes = 8;
+  const size_t tail_start = inner - inner % kLanes;
+  const auto count = static_cast<COMPUTE_T>(batches * inner);
+  std::array<COMPUTE_T, kLanes> sums{};
+  COMPUTE_T tail_sum = 0;
+  for (size_t b = 0; b < batches; ++b) {
+    const CTYPE* x = input + b * channels * inner;
+    for (size_t j = 0; j < tail_start; j += kLanes) {
+      for (size_t lane = 0; lane < kLanes; ++lane) {
+        sums[lane] += static_cast<COMPUTE_T>(x[j + lane]);
+      }
+    }
+    for (size_t j = tail_start; j < inner; ++j) {
+      tail_sum += static_cast<COMPUTE_T>(x[j]);
+    }
+  }
+  COMPUTE_T mean =
+      (std::accumulate(sums.begin(), sums.end(), COMPUTE_T{0}) + tail_sum) /
+      count;
+  std::array<COMPUTE_T, kLanes> deviations{};
+  std::array<COMPUTE_T, kLanes> squares{};
+  COMPUTE_T tail_deviation = 0;
+  COMPUTE_T tail_square = 0;
+  for (size_t b = 0; b < batches; ++b) {
+    const CTYPE* x = input + b * channels * inner;
+    for (size_t j = 0; j < tail_start; j += kLanes) {
+      for (size_t lane = 0; lane < kLanes; ++lane) {
+        const COMPUTE_T d = static_cast<COMPUTE_T>(x[j + lane]) - mean;
+        deviations[lane] += d;
+        squares[lane] += d * d;
+      }
+    }
+    for (size_t j = tail_start; j < inner; ++j) {
+      const COMPUTE_T d = static_cast<COMPUTE_T>(x[j]) - mean;
+      tail_deviation += d;
+      tail_square += d * d;
+    }
+  }
+  const COMPUTE_T d_sum =
+      std::accumulate(deviations.begin(), deviations.end(), COMPUTE_T{0}) +
+      tail_deviation;
+  const COMPUTE_T sq_sum =
+      std::accumulate(squares.begin(), squares.end(), COMPUTE_T{0}) +
+      tail_square;
+  const COMPUTE_T correction = d_sum / count;
+  const COMPUTE_T variance =
+      std::max((sq_sum - d_sum * correction) / count, COMPUTE_T{0});
+  return std::pair{mean + correction, variance};
+}
+
+} // namespace
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
     KernelRuntimeContext& ctx,
@@ -240,7 +306,6 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
   size_t N = in.size(0);
   size_t C = in.size(1);
   size_t inner = getTrailingDims(in, 1);
-  size_t elements_per_channel = N * inner;
 
   ET_KERNEL_CHECK(
       ctx,
@@ -268,52 +333,28 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
     CTYPE* invstd_data = invstd_out.mutable_data_ptr<CTYPE>();
 
-    // Initialize accumulators to zero before accumulating
-    std::memset(mean_data, 0, C * sizeof(CTYPE));
-    std::memset(invstd_data, 0, C * sizeof(CTYPE));
-
-    // Compute sum and sum of squares for each channel
-    for (size_t b = 0; b < N; ++b) {
-      const CTYPE* b_in_data = in_data + b * C * inner;
-      for (size_t c = 0; c < C; ++c) {
-        const CTYPE* x = b_in_data + c * inner;
-
-        CTYPE sum = reduce_add(x, inner);
-        CTYPE sq_sum = vec_powerf(x, inner);
-
-        mean_data[c] += sum;
-        invstd_data[c] += sq_sum;
-      }
-    }
-
-    // Compute mean and invstd for each channel
-    const CTYPE elements_per_channel_ct =
-        static_cast<CTYPE>(elements_per_channel);
+    using COMPUTE_T =
+        typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
     for (size_t c = 0; c < C; ++c) {
-      CTYPE mean = mean_data[c] / elements_per_channel_ct;
-      // Var[x] = E[x^2] - E[x]^2
-      CTYPE var = invstd_data[c] / elements_per_channel_ct - mean * mean;
-      CTYPE invstd = 1.0 / std::sqrt(var + eps);
+      const auto [mean, var] =
+          channel_moments(in_data + c * inner, N, C, inner);
+      const COMPUTE_T invstd =
+          COMPUTE_T{1} / std::sqrt(var + static_cast<COMPUTE_T>(eps));
       mean_data[c] = mean;
       invstd_data[c] = invstd;
-    }
-
-    for (size_t i = 0; i < N; ++i) {
-      for (size_t c = 0; c < C; ++c) {
-        CTYPE mean = mean_data[c];
-        CTYPE invstd = invstd_data[c];
-        CTYPE weight_val = 1;
-        if (weight.has_value()) {
-          weight_val = weight.value().const_data_ptr<CTYPE>()[c];
-        }
-        CTYPE bias_val = 0;
-        if (bias.has_value()) {
-          bias_val = bias.value().const_data_ptr<CTYPE>()[c];
-        }
+      const COMPUTE_T weight_val = weight.has_value()
+          ? static_cast<COMPUTE_T>(weight.value().const_data_ptr<CTYPE>()[c])
+          : 1;
+      const COMPUTE_T bias_val = bias.has_value()
+          ? static_cast<COMPUTE_T>(bias.value().const_data_ptr<CTYPE>()[c])
+          : 0;
+      for (size_t b = 0; b < N; ++b) {
+        const size_t offset = (b * C + c) * inner;
         for (size_t j = 0; j < inner; ++j) {
-          *out_data = (*in_data - mean) * invstd * weight_val + bias_val;
-          out_data++;
-          in_data++;
+          out_data[offset + j] =
+              (static_cast<COMPUTE_T>(in_data[offset + j]) - mean) * invstd *
+                  weight_val +
+              bias_val;
         }
       }
     }
