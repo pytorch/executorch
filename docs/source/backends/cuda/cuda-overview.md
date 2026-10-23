@@ -181,8 +181,9 @@ once those operators are there, and the CUDA partitioner already calls it.
 **A constant that a delegate reads from outside is still copied.** Constants, such as weights and
 buffers the method does not change, are not passed by the caller. Their data stays in host memory,
 in the program or in its external data file, so `to_executorch` adds a copy to the device that runs
-on every call, one for each delegate that reads the constant, and logs a warning. Keep constants
-inside the delegate to avoid that cost.
+on every call, one for each device that reads the constant, and logs a warning. Each copy stays in
+device memory until the last delegate on that device has read it. Keep constants inside the
+delegate to avoid that cost.
 
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer and the runtime copies the caller's memory into it, so the
