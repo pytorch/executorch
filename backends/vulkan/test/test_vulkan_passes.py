@@ -1052,3 +1052,170 @@ class TestVulkanPasses(unittest.TestCase):
         before = op_node_count(ep.graph_module, "view_copy.default")
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)
+
+
+class _NamedOpStub:
+    """Stands in for a llama custom op, which may not be registered here."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self.__name__ = name.replace("::", "_")
+
+    def name(self) -> str:
+        return self._name
+
+    def __call__(self, *args):
+        raise NotImplementedError
+
+
+class TestLLMSDPAPartitionerCheck(unittest.TestCase):
+    """
+    check_llm_sdpa_node keeps llama::custom_sdpa / update_cache configurations
+    that the Vulkan SDPA cannot run on CPU, instead of failing at load time. The
+    causal_sdpa pattern must not match them either, since a matched node is
+    delegated without the per-op checks.
+    """
+
+    S, C, H, D = 4, 16, 2, 8
+
+    def _build(
+        self,
+        mask_shape=None,
+        mask_dtype=torch.float32,
+        q_dtype=torch.float32,
+        is_causal=False,
+        trim_defaults=False,
+    ):
+        from executorch.backends.vulkan.patterns.sdpa import (
+            check_llm_sdpa_node,
+            find_causal_sdpa_patterns,
+        )
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+
+        def placeholder(name, shape, dtype):
+            node = graph.placeholder(name)
+            node.meta["val"] = fake_mode.from_tensor(torch.empty(shape, dtype=dtype))
+            return node
+
+        q = placeholder("q", (1, self.S, self.H, self.D), q_dtype)
+        k = placeholder("k", (1, self.S, self.H, self.D), q_dtype)
+        k_cache = placeholder("k_cache", (1, self.C, self.H, self.D), q_dtype)
+        v_cache = placeholder("v_cache", (1, self.C, self.H, self.D), q_dtype)
+        mask = None
+        if mask_shape is not None:
+            mask = placeholder("mask", mask_shape, mask_dtype)
+
+        update_cache = graph.call_function(
+            _NamedOpStub("llama::update_cache"), (k, k_cache, 0)
+        )
+        args = (q, k_cache, v_cache, 0, mask, 0.0, is_causal)
+        if trim_defaults:
+            # torch.export drops trailing arguments that equal their defaults
+            assert not is_causal
+            args = args[:5]
+        custom_sdpa = graph.call_function(_NamedOpStub("llama::custom_sdpa"), args)
+        supported = check_llm_sdpa_node(custom_sdpa)
+        self.assertEqual(check_llm_sdpa_node(update_cache), supported)
+        match = find_causal_sdpa_patterns(custom_sdpa)
+        self.assertEqual(match is not None, supported)
+        if match is not None:
+            self.assertIs(match.attn_mask_node, mask)
+            self.assertEqual(match.is_causal_node, is_causal)
+        return supported
+
+    def test_causal_without_mask_is_supported(self):
+        self.assertTrue(self._build(is_causal=True))
+
+    def test_non_causal_without_mask_is_rejected(self):
+        self.assertFalse(self._build(is_causal=False))
+
+    def test_mask_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C)))
+
+    def test_mask_with_trimmed_default_args_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C), trim_defaults=True))
+
+    def test_mask_with_is_causal_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(self.S, self.C), is_causal=True))
+
+    def test_mask_dtype_mismatch_is_rejected(self):
+        # The CPU op requires an fp32 mask, also for an fp16 query.
+        self.assertFalse(
+            self._build(mask_shape=(self.S, self.C), q_dtype=torch.float16)
+        )
+
+    def test_mask_shape_mismatch_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(1, self.S, self.C)))
+        self.assertFalse(self._build(mask_shape=(self.S, self.C - 1)))
+
+    def _build_wrapped_sdpa_with_kv_cache(
+        self, wrapper, q_dtype=torch.float32, cache_slice=None
+    ):
+        from executorch.backends.vulkan.patterns.sdpa import check_llm_sdpa_node
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+
+        def placeholder(name, shape, dtype):
+            node = graph.placeholder(name)
+            node.meta["val"] = fake_mode.from_tensor(torch.empty(shape, dtype=dtype))
+            return node
+
+        q = placeholder("q", (1, self.S, self.H, self.D), q_dtype)
+        k_cache = placeholder("k_cache", (1, self.C, self.H, self.D), q_dtype)
+        v_cache = placeholder("v_cache", (1, self.C, self.H, self.D), q_dtype)
+        mask = placeholder("mask", (self.S, self.C), torch.float32)
+        kwargs = {
+            "query": q,
+            "key": q,
+            "value": q,
+            "start_pos": 0,
+            "seq_len": self.S,
+            "attn_mask": mask,
+            "drpout_p": 0.0,
+            "is_causal": False,
+            "scale": None,
+        }
+        if wrapper == torch.ops.higher_order.auto_functionalized:
+            kwargs.update(key_cache=k_cache, value_cache=v_cache)
+        else:
+            kwargs.update(
+                _all_bases=[k_cache, v_cache],
+                _key_cache_base_index=0,
+                _value_cache_base_index=1,
+            )
+            if cache_slice is not None:
+                start, end = cache_slice
+                kwargs.update(
+                    _key_cache_slice_dim=1,
+                    _key_cache_slice_start=start,
+                    _key_cache_slice_end=end,
+                )
+        node = graph.call_function(
+            wrapper, (_NamedOpStub("llama::sdpa_with_kv_cache"),), kwargs
+        )
+        return check_llm_sdpa_node(node)
+
+    def test_auto_functionalized_sdpa_with_kv_cache(self):
+        # The partitioner passes the wrapper node, whose op args are kwargs.
+        for wrapper in (
+            torch.ops.higher_order.auto_functionalized,
+            torch.ops.higher_order.auto_functionalized_v2,
+        ):
+            self.assertTrue(self._build_wrapped_sdpa_with_kv_cache(wrapper))
+            self.assertFalse(
+                self._build_wrapped_sdpa_with_kv_cache(wrapper, q_dtype=torch.float16)
+            )
+
+    def test_auto_functionalized_v2_cache_view(self):
+        wrapper = torch.ops.higher_order.auto_functionalized_v2
+        self.assertTrue(
+            self._build_wrapped_sdpa_with_kv_cache(wrapper, cache_slice=(0, None))
+        )
+        self.assertFalse(
+            self._build_wrapped_sdpa_with_kv_cache(wrapper, cache_slice=(0, self.C - 1))
+        )
