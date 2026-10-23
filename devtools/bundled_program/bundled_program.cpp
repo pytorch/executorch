@@ -274,9 +274,9 @@ ET_NODISCARD Error load_bundled_input(
   ET_CHECK_OR_RETURN_ERROR(
       testset_idx < test_cases->size(),
       InvalidArgument,
-      "testset_idx %zu is out of range [0, %u]",
+      "testset_idx %zu is out of range [0, %zu]",
       testset_idx,
-      test_cases->size());
+      static_cast<size_t>(test_cases->size()));
   auto bundled_inputs =
       test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
           ->inputs();
@@ -490,9 +490,9 @@ ET_NODISCARD Error verify_method_outputs(
   ET_CHECK_OR_RETURN_ERROR(
       testset_idx < test_cases->size(),
       InvalidArgument,
-      "testset_idx %zu is out of range [0, %u]",
+      "testset_idx %zu is out of range [0, %zu]",
       testset_idx,
-      test_cases->size());
+      static_cast<size_t>(test_cases->size()));
   auto bundled_expected_outputs =
       test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
           ->expected_outputs();
