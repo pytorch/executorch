@@ -783,6 +783,40 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def test_constant_only_partition_stays_on_cpu(self):
+        """An int64 buffer gets an int32 cast from I64toI32. When the buffer's consumer is
+        not delegated, that cast alone would form a partition with no graph input, which
+        QNN cannot compile ("No graph inputs present").
+        """
+
+        class Lookup(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.arange(10) % 3)
+
+            def forward(self, x):
+                values, indices = x.topk(4)
+                return values + self.table[indices].float()
+
+        sample_input = (torch.randn(10),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                Lookup(),
+                sample_input,
+                compiler_specs,
+                skip_node_op_set={"aten.index.Tensor", "aten.topk.default"},
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        edge.to_executorch()
+
     def test_lowering_accepts_exported_program_without_reexport(self):
         """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
         ExportedProgram as captured, never re-exporting it.
