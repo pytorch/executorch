@@ -37,6 +37,9 @@ inline constexpr char kTargetLayers[] = "get_n_target_layers";
 inline constexpr char kMaxOwners[] = "get_draft_max_owners";
 inline constexpr char kMaxWrite[] = "get_draft_max_step_tokens";
 inline constexpr char kMaxCells[] = "get_draft_offgraph_kv_max_cells";
+// Published instead of kMaxCells when the draft keeps a history per sequence.
+inline constexpr char kMaxSeqs[] = "get_draft_offgraph_kv_max_seqs";
+inline constexpr char kSeqCapacity[] = "get_draft_offgraph_kv_seq_capacity";
 // Static draft_forward_{N}: N owners, each with at most one block of context.
 inline constexpr char kStaticForwardPrefix[] = "draft_forward_";
 // On-device verification of [owners, width] candidates; see

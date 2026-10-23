@@ -48,6 +48,9 @@ inline constexpr char kStaticMethodPrefix[] = "forward_";
 inline constexpr char kDynamicMethod[] = "forward_others";
 // The cell layout's pool size, which fixes the shape of its step buffers.
 inline constexpr char kMaxCellsMethod[] = "get_offgraph_kv_max_cells";
+// Published instead of the cell count by a program whose KV cache keeps a
+// private history per sequence.
+inline constexpr char kMaxSeqsMethod[] = "get_offgraph_kv_max_seqs";
 // Optional: the fewest selected rows forward_others was exported for. Its
 // selector is padded up to it. Defaults to 1.
 inline constexpr char kMinSelectedRowsMethod[] = "get_min_prefill_chunk";
