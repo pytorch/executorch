@@ -101,11 +101,29 @@ Error vela_bin_read(
     int size,
     const NamedDataMap* named_data_map,
     VelaHandles* handles) {
-  const char* ptr = data;
+  if (data == nullptr || handles == nullptr || size <= 0) {
+    return Error::InvalidProgram;
+  }
 
-  while (ptr - data < size) {
+  const char* ptr = data;
+  size_t remaining = static_cast<size_t>(size);
+
+  while (remaining > 0) {
+    if (remaining < sizeof(VelaBinBlock)) {
+      return Error::InvalidProgram;
+    }
     VelaBinBlock* b = reinterpret_cast<VelaBinBlock*>(const_cast<char*>(ptr));
-    ptr += sizeof(VelaBinBlock) + next_mul_16(b->size);
+    const size_t available_payload_size = remaining - sizeof(VelaBinBlock);
+    if (b->size > available_payload_size) {
+      return Error::InvalidProgram;
+    }
+    const size_t payload_size = next_mul_16(b->size);
+    if (payload_size > available_payload_size) {
+      return Error::InvalidProgram;
+    }
+    const size_t block_size = sizeof(VelaBinBlock) + payload_size;
+    ptr += block_size;
+    remaining -= block_size;
 
     VelaBlockPayload payload{b->data, b->size};
     if (b->external == kVelaExternalBlockReference) {
@@ -160,7 +178,7 @@ Error vela_bin_read(
     } else if (!strncmp(
                    b->name, "vela_end_stream", strlen("vela_end_stream"))) {
       // expect vela_end_stream last
-      if (ptr - data != size) {
+      if (remaining != 0) {
         ET_LOG(Error, "Expected vela binary to end with vela_end_stream");
         return Error::InvalidProgram;
       }
