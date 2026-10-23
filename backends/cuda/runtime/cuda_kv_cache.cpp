@@ -82,7 +82,9 @@ std::vector<CudaKVPool::Layer> sequence_pool_layers(
         ring ? static_cast<int64_t>(layer.policy.window) +
                 cfg.max_write.value_or(1) - 1
              : static_cast<int64_t>(cfg.capacity),
-        /*growable=*/!ring});
+        // A ring cannot wrap before it holds all its slots, so until then it
+        // grows as a flat layer does, and a growth copies a plain prefix.
+        /*growable=*/true});
   }
   return layers;
 }
@@ -195,7 +197,9 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     std::lock_guard<std::mutex> guard(mutex_);
     OffGraphKVMetrics metrics;
     metrics.logical_length = length();
-    metrics.flat_capacity = pool_.rows();
+    // The pool's shared rows can exceed a small flat layer when a ring
+    // ceiling dominates, so clamp to what the flat layers hold.
+    metrics.flat_capacity = std::min<int64_t>(pool_.rows(), capacity());
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
     return metrics;
@@ -1143,7 +1147,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       metrics.logical_length =
           std::max<int64_t>(metrics.logical_length, sequence.plan.length());
     }
-    metrics.flat_capacity = pool_.rows() / columns_;
+    metrics.flat_capacity =
+        std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
     return metrics;
@@ -1181,7 +1186,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           layer.n_kv_heads,
           layer.head_dim,
           rows_of(layer, cfg) * (*cfg.max_seqs + 1),
-          /*growable=*/!is_ring(layer)});
+          // A ring cannot wrap before it holds all its rows, so until then it
+          // grows with the flat layers.
+          /*growable=*/true});
     }
     return layers;
   }
@@ -1206,9 +1213,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       const size_t slot = static_cast<size_t>(layer.n_kv_heads) *
           layer.head_dim * slimc10::elementSize(storage_dtype());
       const size_t pitch = slot * columns_;
-      const int64_t rows = is_ring(layer)
-          ? layer_rows_[index]
-          : std::min<int64_t>(keep, pool_.rows() / columns_);
+      const int64_t held =
+          std::min(layer_rows_[index], pool_.rows() / columns_);
+      const int64_t rows =
+          is_ring(layer) ? held : std::min<int64_t>(keep, held);
       for (const bool value : {false, true}) {
         auto* base = static_cast<uint8_t*>(pool_.layer_data(index, value));
         const cudaError_t error = cudaMemcpy2DAsync(

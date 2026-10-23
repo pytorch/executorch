@@ -302,7 +302,7 @@ class CudaKVCacheTest : public ::testing::Test {
 
 } // namespace
 
-TEST_F(CudaKVCacheTest, FlatLayersGrowGeometricallyAndKeepHistory) {
+TEST_F(CudaKVCacheTest, LayersGrowGeometricallyAndKeepHistory) {
   constexpr int kWindow = 4;
   constexpr int kMaxWrite = 9;
   auto cache_ptr = make_cache(flat_and_ring(kWindow), config(32, 4, kMaxWrite));
@@ -314,45 +314,55 @@ TEST_F(CudaKVCacheTest, FlatLayersGrowGeometricallyAndKeepHistory) {
   // Nothing is allocated until the first step asks for it.
   EXPECT_EQ(kv.metrics().allocated_bytes, 0);
 
+  // A ring starts as small as a flat layer: it cannot wrap before it is full.
   ASSERT_EQ(kv.prepare_step(3, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
   constexpr int kRingRows = kWindow + kMaxWrite - 1;
+  constexpr int64_t kRowBytes = kRow * static_cast<int64_t>(sizeof(uint16_t));
   EXPECT_EQ(kv.metrics().flat_capacity, 4);
   EXPECT_EQ(kv.metrics().growth_count, 0);
-  EXPECT_EQ(
-      kv.metrics().allocated_bytes,
-      2 * (4 + kRingRows) * kRow * static_cast<int64_t>(sizeof(uint16_t)));
+  EXPECT_EQ(kv.metrics().allocated_bytes, 2 * (4 + 4) * kRowBytes);
 
-  // Stand in for the kernels: the step writes rows [0, 3).
+  // Stand in for the kernels: the step writes rows [0, 3) of both layers.
   const auto history = iota_rows(3);
-  ASSERT_EQ(
-      cudaMemcpy(
-          container.bound["flat_k"].data,
-          history.data(),
-          history.size() * sizeof(uint16_t),
-          cudaMemcpyHostToDevice),
-      cudaSuccess);
+  for (const char* name : {"flat_k", "ring_k"}) {
+    ASSERT_EQ(
+        cudaMemcpy(
+            container.bound[name].data,
+            history.data(),
+            history.size() * sizeof(uint16_t),
+            cudaMemcpyHostToDevice),
+        cudaSuccess);
+  }
   void* first_flat = container.bound["flat_k"].data;
   void* first_ring = container.bound["ring_k"].data;
   ASSERT_EQ(kv.commit_step(3), Error::Ok);
 
-  // 3 + 2 > 4: doubles to 8, moves the flat storage, keeps what was written.
+  // 3 + 2 > 4: doubles to 8, moves both layers, keeps what was written.
   ASSERT_EQ(kv.prepare_step(2, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
   EXPECT_EQ(kv.metrics().flat_capacity, 8);
   EXPECT_EQ(kv.metrics().growth_count, 1);
   EXPECT_NE(container.bound["flat_k"].data, first_flat);
-  EXPECT_EQ(container.bound["ring_k"].data, first_ring);
+  EXPECT_NE(container.bound["ring_k"].data, first_ring);
   EXPECT_EQ(read_rows(container.bound["flat_k"].data, 3), history);
+  EXPECT_EQ(read_rows(container.bound["ring_k"].data, 3), history);
   ASSERT_EQ(kv.commit_step(2), Error::Ok);
 
-  // A step wider than doubling asks for: grows straight to what it needs.
+  // A step wider than doubling asks for: grows straight to what it needs. The
+  // ring stops at its slots and no longer moves.
   ASSERT_EQ(kv.prepare_step(9, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
   EXPECT_EQ(kv.metrics().flat_capacity, 16);
+  EXPECT_EQ(kv.metrics().allocated_bytes, 2 * (16 + kRingRows) * kRowBytes);
+  void* full_ring = container.bound["ring_k"].data;
   ASSERT_EQ(kv.commit_step(9), Error::Ok);
   ASSERT_EQ(kv.prepare_step(9, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
   EXPECT_EQ(kv.metrics().flat_capacity, 32);
   EXPECT_EQ(kv.metrics().growth_count, 3);
+  EXPECT_EQ(kv.metrics().allocated_bytes, 2 * (32 + kRingRows) * kRowBytes);
+  EXPECT_EQ(container.bound["ring_k"].data, full_ring);
   ASSERT_EQ(kv.commit_step(9), Error::Ok);
 
   // Filling to exactly the declared capacity needs no growth; one more token
@@ -369,6 +379,26 @@ TEST_F(CudaKVCacheTest, FlatLayersGrowGeometricallyAndKeepHistory) {
   EXPECT_EQ(kv.metrics().logical_length, 0);
   EXPECT_EQ(kv.metrics().flat_capacity, 32);
   EXPECT_EQ(kv.metrics().growth_count, 3);
+  kv.forget_handle(&handle);
+}
+
+TEST_F(CudaKVCacheTest, MetricsClampFlatCapacityAtTheFlatLayers) {
+  // The ring's ceiling (4 + 8 - 1 = 11) dominates the flat capacity, so
+  // doubling from 6 rows lands the shared count at 11 while the flat layer
+  // caps at 8. metrics must report what the flat layers hold.
+  auto cache_ptr = make_cache(flat_and_ring(4), config(8, 3, 8));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+  for (int token = 0; token < 7; ++token) {
+    ASSERT_EQ(kv.prepare_step(1, cudaStreamPerThread), Error::Ok);
+    ASSERT_EQ(kv.commit_step(1), Error::Ok);
+  }
+  EXPECT_EQ(kv.metrics().logical_length, 7);
+  EXPECT_EQ(kv.metrics().flat_capacity, 8);
+  EXPECT_EQ(kv.metrics().growth_count, 2);
   kv.forget_handle(&handle);
 }
 
@@ -2536,6 +2566,107 @@ TEST_F(
   writer.join();
   EXPECT_EQ(cudaFreeHost(after), cudaSuccess);
   EXPECT_EQ(cudaStreamDestroy(reader), cudaSuccess);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, CloneOfAnUnwrappedRingCopiesThePrefix) {
+  auto cache_ptr = make(/*initial=*/4);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, a, a}), Error::Ok);
+
+  // The ring holds kRingRows rows but the pool only 4 per column: the clone
+  // copies the 4-row prefix, not the whole ring.
+  const size_t slot = kHeads * kDim * sizeof(uint16_t);
+  const size_t pitch = slot * kColumns;
+  std::vector<uint8_t> rows(pitch * 4, 0);
+  for (int r = 0; r < 4; ++r) {
+    std::fill_n(rows.begin() + r * pitch, slot, static_cast<uint8_t>(r + 1));
+  }
+  ASSERT_EQ(
+      cudaMemcpy(
+          fake.bound["r_k"].data,
+          rows.data(),
+          rows.size(),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  const auto c = control->seq_clone(a, std::nullopt);
+  ASSERT_TRUE(c.has_value());
+  EXPECT_EQ(control->pos(*c), 4);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint8_t> after(rows.size());
+  ASSERT_EQ(
+      cudaMemcpy(
+          after.data(),
+          fake.bound["r_k"].data,
+          after.size(),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  for (int r = 0; r < 4; ++r) {
+    EXPECT_EQ(after[r * pitch + *c * slot], r + 1) << r;
+  }
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, RingLayersGrowUntilTheyHoldTheirSlots) {
+  auto cache_ptr = make(/*initial=*/2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  constexpr int64_t kRowBytes =
+      kHeads * kDim * static_cast<int64_t>(sizeof(uint16_t)) * kColumns;
+  const int32_t a = *control->seq_new();
+
+  // Two rows per column for both layers, not the ring's kRingRows up front.
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a}), Error::Ok);
+  EXPECT_EQ(kv->metrics().allocated_bytes, 2 * (2 + 2) * kRowBytes);
+
+  // Past kRingRows the ring stops growing while the flat layer keeps going.
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(kMaxWrite, a)), Error::Ok);
+  constexpr int kLength = 2 + kMaxWrite;
+  static_assert(kLength > kRingRows);
+  EXPECT_EQ(control->pos(a), kLength);
+  EXPECT_EQ(kv->metrics().flat_capacity, kLength);
+  EXPECT_EQ(
+      kv->metrics().allocated_bytes, 2 * (kLength + kRingRows) * kRowBytes);
+
+  // A wrapped ring is cloned whole.
+  const size_t slot = kHeads * kDim * sizeof(uint16_t);
+  std::vector<uint8_t> ring(slot * kColumns * kRingRows, 0);
+  for (int r = 0; r < kRingRows; ++r) {
+    std::fill_n(
+        ring.begin() + (r * kColumns + a) * slot,
+        slot,
+        static_cast<uint8_t>(r + 1));
+  }
+  ASSERT_EQ(
+      cudaMemcpy(
+          fake.bound["r_k"].data,
+          ring.data(),
+          ring.size(),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  const auto c = control->seq_clone(a, std::nullopt);
+  ASSERT_TRUE(c.has_value());
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint8_t> after(ring.size());
+  ASSERT_EQ(
+      cudaMemcpy(
+          after.data(),
+          fake.bound["r_k"].data,
+          after.size(),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  for (int r = 0; r < kRingRows; ++r) {
+    EXPECT_EQ(after[(r * kColumns + *c) * slot], r + 1) << r;
+  }
   kv->forget_handle(&handle);
 }
 
