@@ -14,6 +14,7 @@
 #include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/runtime/core/evalue.h>
 #include <gtest/gtest.h>
+#include <array>
 
 #include <algorithm>
 #include <atomic>
@@ -2132,4 +2133,477 @@ TEST_F(CudaCellCacheTest, BuilderValidatesAndIsRegisteredForBatchedKinds) {
     EXPECT_NE(built.get()->as<cache::BatchControl>(), nullptr) << kind;
     EXPECT_NE(built.get()->as<cu::CudaKVCache>(), nullptr) << kind;
   }
+}
+
+namespace {
+
+class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
+ protected:
+  static constexpr int kCapacity = 16;
+  static constexpr int kMaxWrite = 8;
+  static constexpr int kMaxSeqs = 3;
+  static constexpr int kColumns = kMaxSeqs + 1;
+  static constexpr int kWindow = 2;
+  // min(capacity, window + max_write - 1)
+  static constexpr int kRingRows = kWindow + kMaxWrite - 1;
+  static constexpr int kSegments = 2 * kMaxSeqs;
+
+  static cache::CacheConfig sequence_config(int initial = 4) {
+    auto cfg = config(kCapacity, initial, kMaxWrite);
+    cfg.max_seqs = kMaxSeqs;
+    return cfg;
+  }
+
+  static std::shared_ptr<cache::Cache> make(
+      int initial = 4,
+      std::optional<int> block_size = std::nullopt) {
+    auto geometry = flat_and_ring(kWindow);
+    geometry.dflash_block_size = block_size;
+    return cu::make_cuda_batched_sequence_kv_cache(
+        geometry, sequence_config(initial));
+  }
+
+  // What a program lowered in the batched-sequence layout declares for make().
+  static FakeContainer container() {
+    FakeContainer container{
+        {"f_k", "f_v", "r_k", "r_v", "seq_cols", "seq_info"},
+        {"__et_offgraph_kv_layer_0_k",
+         "__et_offgraph_kv_layer_0_v",
+         "__et_offgraph_kv_layer_1_k",
+         "__et_offgraph_kv_layer_1_v",
+         "__et_offgraph_kv_seq_cols",
+         "__et_offgraph_kv_seq_info"},
+        {},
+        0};
+    for (size_t index = 0; index < 4; ++index) {
+      declare(
+          container,
+          container.fqns[index],
+          slimc10::ScalarType::BFloat16,
+          {1, (index < 2 ? kCapacity : kRingRows) * kColumns, kHeads, kDim});
+    }
+    declare(
+        container,
+        "__et_offgraph_kv_seq_cols",
+        slimc10::ScalarType::Long,
+        {kMaxWrite});
+    declare(
+        container,
+        "__et_offgraph_kv_seq_info",
+        slimc10::ScalarType::Int,
+        {kSegments, 4});
+    return container;
+  }
+
+  static std::vector<int64_t> read_cols(void* device, int count) {
+    std::vector<int64_t> values(count);
+    EXPECT_EQ(
+        cudaMemcpy(
+            values.data(),
+            device,
+            count * sizeof(int64_t),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    return values;
+  }
+
+  using Info = std::vector<std::array<int32_t, 4>>;
+  static Info read_info(void* device, int rows) {
+    std::vector<int32_t> flat(kSegments * 4);
+    EXPECT_EQ(
+        cudaMemcpy(
+            flat.data(),
+            device,
+            flat.size() * sizeof(int32_t),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    Info out(rows);
+    for (int i = 0; i < rows; ++i) {
+      for (int j = 0; j < 4; ++j) {
+        out[i][j] = flat[i * 4 + j];
+      }
+    }
+    return out;
+  }
+
+  static Error step(
+      cache::Cache& cache,
+      cu::CudaDelegateHandle& handle,
+      const std::vector<int32_t>& seq_ids,
+      int64_t width = 0) {
+    auto* control = cache.as<cache::BatchControl>();
+    auto* kv = cache.as<cu::CudaKVCache>();
+    if (!control->declare_step(seq_ids)) {
+      return Error::InvalidArgument;
+    }
+    if (width == 0) {
+      width = static_cast<int64_t>(seq_ids.size());
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(kv->prepare_step(width, cudaStreamPerThread));
+    ET_CHECK_OK_OR_RETURN_ERROR(kv->rebind_for_execute(&handle));
+    return kv->commit_step(width);
+  }
+};
+
+} // namespace
+
+TEST_F(CudaBatchedSequenceCacheTest, EachSequenceWritesItsOwnColumn) {
+  auto cache_ptr = make();
+  ASSERT_NE(cache_ptr, nullptr);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  ASSERT_NE(control, nullptr);
+  ASSERT_NE(kv, nullptr);
+  EXPECT_EQ(control->max_seqs(), kMaxSeqs);
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+
+  // Prefilled together in a program two wider: padding names the scratch.
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, a, b, b}, 7), Error::Ok);
+  EXPECT_EQ(
+      read_cols(fake.bound["seq_cols"].data, 7),
+      std::vector<int64_t>({0, 0, 0, 1, 1, kMaxSeqs, kMaxSeqs}));
+  EXPECT_EQ(
+      read_info(fake.bound["seq_info"].data, 3),
+      Info({{0, 3, 0, 3}, {3, 2, 1, 2}, {0, 0, 0, 0}}));
+  EXPECT_EQ(
+      fake.bound["f_k"].sizes,
+      std::vector<int64_t>({1, kCapacity * kColumns, kHeads, kDim}));
+  EXPECT_EQ(fake.bound["seq_info"].dtype, slimc10::ScalarType::Int);
+  EXPECT_EQ(kv->metrics().flat_capacity, 4);
+
+  // Decoding in the other order keeps each one's column and own length.
+  ASSERT_EQ(step(*cache_ptr, handle, {b, a}), Error::Ok);
+  EXPECT_EQ(
+      read_cols(fake.bound["seq_cols"].data, 2), std::vector<int64_t>({1, 0}));
+  EXPECT_EQ(
+      read_info(fake.bound["seq_info"].data, 2),
+      Info({{0, 1, 1, 3}, {1, 1, 0, 4}}));
+  EXPECT_EQ(control->pos(a), 4);
+  EXPECT_EQ(control->pos(b), 3);
+  EXPECT_EQ(kv->metrics().logical_length, 4);
+
+  // The longest sequence decides the rows; growth doubles them.
+  ASSERT_EQ(step(*cache_ptr, handle, {a}), Error::Ok);
+  const auto metrics = kv->metrics();
+  EXPECT_EQ(metrics.flat_capacity, 8);
+  EXPECT_EQ(metrics.growth_count, 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, AdmissionIsPerSequenceAndBounded) {
+  auto cache_ptr = make(/*initial=*/kCapacity);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  std::vector<int32_t> ids;
+  for (int i = 0; i < kMaxSeqs; ++i) {
+    ids.push_back(*control->seq_new());
+  }
+  EXPECT_FALSE(control->seq_new().has_value());
+  // Unknown ids, and steps past max_write, are refused.
+  EXPECT_FALSE(control->declare_step({ids[0], 99}));
+  EXPECT_FALSE(
+      control->declare_step(std::vector<int32_t>(kMaxWrite + 1, ids[0])));
+  // A sequence fills its own capacity without touching another's room.
+  for (int i = 0; i < kCapacity / kMaxWrite; ++i) {
+    ASSERT_EQ(
+        step(*cache_ptr, handle, std::vector<int32_t>(kMaxWrite, ids[0])),
+        Error::Ok);
+  }
+  EXPECT_EQ(control->pos(ids[0]), kCapacity);
+  EXPECT_FALSE(control->declare_step({ids[0]}));
+  EXPECT_TRUE(control->declare_step({ids[1]}));
+  ASSERT_TRUE(control->seq_rm(ids[0]));
+  EXPECT_EQ(control->seq_new(), ids[0]);
+  EXPECT_EQ(control->pos(ids[0]), 0);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, CloneCopiesThePrefixIntoAFreeColumn) {
+  auto cache_ptr = make(/*initial=*/8);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, a, a}), Error::Ok);
+
+  // Fill a's column with a recognizable pattern, then clone its first 3 rows.
+  const size_t slot = kHeads * kDim * sizeof(uint16_t);
+  const size_t pitch = slot * kColumns;
+  std::vector<uint8_t> rows(pitch * 8, 0);
+  for (int r = 0; r < 4; ++r) {
+    std::fill_n(rows.begin() + r * pitch, slot, static_cast<uint8_t>(r + 1));
+  }
+  ASSERT_EQ(
+      cudaMemcpy(
+          fake.bound["f_k"].data,
+          rows.data(),
+          rows.size(),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  const auto c = control->seq_clone(a, 3);
+  ASSERT_TRUE(c.has_value());
+  EXPECT_NE(*c, a);
+  EXPECT_EQ(control->pos(*c), 3);
+  EXPECT_EQ(control->pos(a), 4);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint8_t> after(rows.size());
+  ASSERT_EQ(
+      cudaMemcpy(
+          after.data(),
+          fake.bound["f_k"].data,
+          after.size(),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  for (int r = 0; r < 4; ++r) {
+    EXPECT_EQ(after[r * pitch + *c * slot], r < 3 ? r + 1 : 0) << r;
+  }
+  // The clone continues at its own length.
+  ASSERT_EQ(step(*cache_ptr, handle, {*c}), Error::Ok);
+  EXPECT_EQ(read_info(fake.bound["seq_info"].data, 1), Info({{0, 1, *c, 4}}));
+  EXPECT_FALSE(control->seq_clone(99, std::nullopt).has_value());
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, ClearRecoversAbandonedDFlashStep) {
+  auto cache_ptr = make(kCapacity, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a}));
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  EXPECT_EQ(control->pos(a), 3);
+  control->clear();
+  const auto b = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({b, b, b}));
+  EXPECT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, CloneOnAnotherStreamWaitsForTheCopy) {
+  auto cache_ptr = make(kCapacity);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  cudaStream_t first = nullptr;
+  cudaStream_t second = nullptr;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&first, cudaStreamNonBlocking), cudaSuccess);
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&second, cudaStreamNonBlocking), cudaSuccess);
+  const auto a = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a, a}));
+  ASSERT_EQ(kv->prepare_step(4, first), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(kv->commit_step(4), Error::Ok);
+  ASSERT_EQ(cudaStreamSynchronize(first), cudaSuccess);
+  const size_t slot = kHeads * kDim * sizeof(uint16_t);
+  const size_t pitch = slot * kColumns;
+  std::vector<uint8_t> before(pitch * kCapacity, 0);
+  for (int row = 0; row < 4; ++row) {
+    std::fill_n(before.begin() + row * pitch + a * slot, slot, 0x3c);
+  }
+  ASSERT_EQ(
+      cudaMemcpy(
+          fake.bound["f_k"].data,
+          before.data(),
+          before.size(),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  uint8_t* after = nullptr;
+  ASSERT_EQ(cudaMallocHost(&after, before.size()), cudaSuccess);
+  ASSERT_EQ(
+      cudaLaunchHostFunc(
+          first,
+          [](void*) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+          },
+          nullptr),
+      cudaSuccess);
+  const auto b = control->seq_clone(a, 4);
+  ASSERT_TRUE(b.has_value());
+  ASSERT_TRUE(control->declare_step({*b}));
+  ASSERT_EQ(kv->prepare_step(1, second), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(
+      cudaMemcpyAsync(
+          after,
+          fake.bound["f_k"].data,
+          before.size(),
+          cudaMemcpyDeviceToHost,
+          second),
+      cudaSuccess);
+  ASSERT_EQ(cudaStreamSynchronize(second), cudaSuccess);
+  for (int row = 0; row < 4; ++row) {
+    EXPECT_EQ(after[row * pitch + *b * slot], 0x3c) << row;
+  }
+  EXPECT_EQ(cudaStreamSynchronize(first), cudaSuccess);
+  EXPECT_EQ(cudaFreeHost(after), cudaSuccess);
+  kv->forget_handle(&handle);
+  cache_ptr.reset();
+  EXPECT_EQ(cudaStreamDestroy(second), cudaSuccess);
+  EXPECT_EQ(cudaStreamDestroy(first), cudaSuccess);
+}
+
+TEST_F(
+    CudaBatchedSequenceCacheTest,
+    CloneAcrossPerThreadStreamsWaitsForWrites) {
+  auto cache_ptr = make(kCapacity);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto a = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, a, a}));
+  ASSERT_EQ(kv->prepare_step(4, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(kv->commit_step(4), Error::Ok);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  const size_t slot = kHeads * kDim * sizeof(uint16_t);
+  const size_t pitch = slot * kColumns;
+  auto* data = fake.bound["f_k"].data;
+  ASSERT_EQ(cudaMemset(data, 0, pitch * kCapacity), cudaSuccess);
+  uint8_t* after = nullptr;
+  cudaStream_t reader = nullptr;
+  ASSERT_EQ(cudaMallocHost(&after, pitch * kCapacity), cudaSuccess);
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&reader, cudaStreamNonBlocking), cudaSuccess);
+  // The writer runs a second step wholly on its own per-thread stream, as a
+  // delegate thread would, so the step-done event lands behind its delayed
+  // writes. The clone below runs on another thread's stream and must wait for
+  // them: without the fence it reads zeros, the writes still being behind
+  // the sleep.
+  std::atomic<bool> ready{false}, release{false};
+  std::thread writer([&]() {
+    EXPECT_EQ(cudaSetDevice(0), cudaSuccess);
+    EXPECT_TRUE(control->declare_step({a, a, a, a}));
+    EXPECT_EQ(kv->prepare_step(4, cudaStreamPerThread), Error::Ok);
+    EXPECT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+    EXPECT_EQ(
+        cudaLaunchHostFunc(
+            cudaStreamPerThread,
+            [](void*) {
+              std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            },
+            nullptr),
+        cudaSuccess);
+    EXPECT_EQ(
+        cudaMemset2DAsync(
+            static_cast<uint8_t*>(data) + a * slot,
+            pitch,
+            0x3c,
+            slot,
+            4,
+            cudaStreamPerThread),
+        cudaSuccess);
+    EXPECT_EQ(kv->commit_step(4), Error::Ok);
+    ready.store(true);
+    while (!release.load())
+      std::this_thread::yield();
+    EXPECT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
+  });
+  while (!ready.load())
+    std::this_thread::yield();
+  const auto b = control->seq_clone(a, 4);
+  EXPECT_TRUE(b.has_value());
+  if (b) {
+    EXPECT_TRUE(control->declare_step({*b}));
+    EXPECT_EQ(kv->prepare_step(1, reader), Error::Ok);
+    EXPECT_EQ(
+        cudaMemcpyAsync(
+            after, data, pitch * kCapacity, cudaMemcpyDeviceToHost, reader),
+        cudaSuccess);
+    EXPECT_EQ(cudaStreamSynchronize(reader), cudaSuccess);
+    for (int row = 0; row < 4; ++row) {
+      EXPECT_EQ(after[row * pitch + *b * slot], 0x3c) << row;
+    }
+  }
+  release.store(true);
+  writer.join();
+  EXPECT_EQ(cudaFreeHost(after), cudaSuccess);
+  EXPECT_EQ(cudaStreamDestroy(reader), cudaSuccess);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, RewindRespectsTheRingFloor) {
+  auto cache_ptr = make(/*initial=*/kCapacity);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(kMaxWrite, a)), Error::Ok);
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(kMaxWrite, a)), Error::Ok);
+  // A ring of kRingRows rows retains back to 16 - window = 14 only.
+  EXPECT_FALSE(control->rewind(a, 2));
+  EXPECT_TRUE(control->rewind(a, 15));
+  EXPECT_EQ(control->pos(a), 15);
+  EXPECT_FALSE(control->rewind(a, 16));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, DFlashQueriesOnlyEachOwnersBlock) {
+  constexpr int kBlock = 2;
+  auto cache_ptr = make(/*initial=*/kCapacity, kBlock);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+  // a: 3 new context + block; b: 1 new context + block; padded to 8.
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, a, a, a, b, b, b}), Error::Ok);
+  EXPECT_EQ(
+      read_cols(fake.bound["seq_cols"].data, 8),
+      std::vector<int64_t>({0, 0, 0, 0, 0, 1, 1, 1}));
+  // Queries pack block by block; each sees its context and its block.
+  EXPECT_EQ(
+      read_info(fake.bound["seq_info"].data, 2),
+      Info({{0, kBlock, 0, 5}, {kBlock, kBlock, 1, 3}}));
+  // The blocks are dropped after the forward.
+  EXPECT_EQ(control->pos(a), 3);
+  EXPECT_EQ(control->pos(b), 1);
+  // An owner split into two runs, or one short of its block, is refused.
+  EXPECT_FALSE(control->declare_step({a, a, b, b, a}));
+  EXPECT_FALSE(control->declare_step({a, b, b}));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, BuilderValidatesAndIsRegistered) {
+  auto no_seqs = sequence_config();
+  no_seqs.max_seqs.reset();
+  EXPECT_EQ(
+      cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(kWindow), no_seqs),
+      nullptr);
+  auto no_write = sequence_config();
+  no_write.max_write.reset();
+  EXPECT_EQ(
+      cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(kWindow), no_write),
+      nullptr);
+  auto built = cache::CacheFactory::global().build(
+      cu::kCudaBackendId,
+      cache::kind::kBatchedSequence,
+      flat_and_ring(kWindow),
+      sequence_config());
+  ASSERT_TRUE(built.ok());
+  EXPECT_NE(built.get()->as<cache::BatchControl>(), nullptr);
+  EXPECT_NE(built.get()->as<cu::CudaKVCache>(), nullptr);
 }
