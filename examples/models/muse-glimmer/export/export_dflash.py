@@ -188,8 +188,6 @@ def export_dflash(
     mmproj loader and vision export contract to add ``vision_encoder``.
     """
     validate_dflash_export_options(backend, use_offgraph_kv_cache)
-    if use_offgraph_kv_cache and backend == "cuda" and mmproj is not None:
-        raise ValueError("the CUDA batching DFlash export is text-only")
 
     import executorch.extension.llm.export.gguf  # noqa: F401
     import executorch.extension.llm.export.int4  # noqa: F401
@@ -247,6 +245,29 @@ def export_dflash(
             activation_dtype=activation_dtype,
         )
 
+    vision_model = None
+    pos_embed_table = None
+    if mmproj is not None:
+        from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+            load_mmproj_vision_model,
+        )
+
+        print("=" * 60)
+        print("Loading vision encoder...")
+        print("=" * 60)
+        vision_model, pos_embed_table, _ = load_mmproj_vision_model(
+            mmproj,
+            backend=backend,
+            activation_dtype=activation_dtype,
+        )
+
+    if (
+        draft_model is not None
+        and use_offgraph_kv_cache
+        and backend == "cuda"
+        and vision_model is not None
+    ):
+        raise ValueError("the CUDA batching DFlash export does not support vision yet")
     if use_offgraph_kv_cache and backend == "cuda":
         from executorch.examples.models.muse_glimmer.export.export_solo import (
             DEFAULT_FORWARD_SIZES,
@@ -265,24 +286,11 @@ def export_dflash(
             dflash_draft=draft_model,
             max_draft_owners=max_draft_owners,
             draft_max_cells=draft_max_cells,
+            vision_model=vision_model,
+            pos_embed_table=pos_embed_table,
+            max_vision_patches=max_vision_patches,
         )
         return
-
-    vision_model = None
-    pos_embed_table = None
-    if mmproj is not None:
-        from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-            load_mmproj_vision_model,
-        )
-
-        print("=" * 60)
-        print("Loading vision encoder...")
-        print("=" * 60)
-        vision_model, pos_embed_table, _ = load_mmproj_vision_model(
-            mmproj,
-            backend=backend,
-            activation_dtype=activation_dtype,
-        )
 
     backend_export = _export_dflash_mlx if backend == "mlx" else _export_dflash_cuda
     backend_export(
