@@ -2004,56 +2004,6 @@ class DecomposeFill:
         )
 
 
-class DecomposeFloorDivide:
-    class _IntDiv(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.floor_divide(x, y)
-
-    class _FloatDiv(torch.nn.Module):
-        def forward(self, x, y):
-            return torch.floor_divide(x, y)
-
-    @staticmethod
-    @unpack_pass_fixtures
-    def test(
-        subtests,
-        quantizer,
-        compile_spec,
-        backend_type: QnnExecuTorchBackendType,
-        assertions: Assertions,
-        pass_pipeline: PassPipeline,
-    ):
-        _ = compile_spec
-        target_pass = _passes.DecomposeFloorDivide
-
-        # Integer inputs: pass fires — floor_divide decomposed into div + floor
-        with subtests.test(msg="int"):
-            gm = pass_pipeline.lower_export_gm(
-                module=DecomposeFloorDivide._IntDiv(),
-                sample_input=(
-                    torch.randint(1, 10, (3, 4), dtype=torch.int32),
-                    torch.randint(1, 5, (3, 4), dtype=torch.int32),
-                ),
-                target_pass=target_pass,
-                backend_type=backend_type,
-                quantizer=quantizer,
-            )
-            assertions.assert_no_target(gm, torch.ops.aten.floor_divide.default)
-            assertions.assert_target_count(gm, torch.ops.aten.floor.default, 1)
-
-        # Float inputs: pass does not fire — floor_divide preserved as-is
-        with subtests.test(msg="float"):
-            gm = pass_pipeline.lower_export_gm(
-                module=DecomposeFloorDivide._FloatDiv(),
-                sample_input=(torch.randn(3, 4), torch.rand(3, 4) + 0.1),
-                target_pass=target_pass,
-                backend_type=backend_type,
-                quantizer=quantizer,
-            )
-            assertions.assert_target_count(gm, torch.ops.aten.floor_divide.default, 1)
-            assertions.assert_no_target(gm, torch.ops.aten.floor.default)
-
-
 class DecomposeGlu:
     class _Basic(torch.nn.Module):
         def forward(self, x):

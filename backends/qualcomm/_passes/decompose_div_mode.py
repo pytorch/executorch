@@ -44,6 +44,12 @@ class DecomposeDivMode(ExportPass):
                 rounding_mode = node.kwargs.get("rounding_mode", None)
                 if rounding_mode is None and len(node.args) > 2:
                     rounding_mode = node.args[2]
+                if (
+                    rounding_mode == "floor"
+                    and not node.meta["val"].is_floating_point()
+                ):
+                    # integer floor division is exact in int32 (op_floor_divide)
+                    continue
 
                 div_op = (
                     exir_ops.edge.aten.div.Tensor

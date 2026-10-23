@@ -1233,8 +1233,9 @@ class TestQNNFloatingPointOperator(TestQNN):
                         torch.randint(-100, 100, (10, 10)).float(),
                         torch.full((10, 10), 2.5),
                     ),
-                    # TODO: this test case exists rounding issue
-                    # (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(0, 24000, (300,)), torch.full((300,), 80)),
+                    (torch.randint(-30000, 30000, (10, 10)), torch.full((10, 10), -7)),
                     (torch.tensor([10]), torch.arange(1, 5)),  # Failed
                     (torch.arange(-10, 10), torch.tensor([2])),
                     (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
@@ -1251,6 +1252,10 @@ class TestQNNFloatingPointOperator(TestQNN):
             {
                 QCOM_MODULE: [FloorDivConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [FloorDivConstantInt()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randint(-24000, 24000, (300,)),)],
             },
         ]
 
@@ -2310,7 +2315,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     (
                         torch.tensor([7.0, 5.0, 4.0, -3.0, 8.0, 1.0]).reshape(2, 3),
                         torch.tensor([2.0, 3.0, 1.5, 2.0, 3.0, 4.0]).reshape(2, 3),
-                    )
+                    ),
+                    (
+                        torch.randint(-30000, 30000, (2, 3)),
+                        torch.tensor([80, -7, 3, 100, 9, -80]).reshape(2, 3),
+                    ),
                 ],
             },
             {
@@ -4437,6 +4446,8 @@ class TestQNNQuantizedOperator(TestQNN):
                         torch.full((10, 10), 2.5),
                     ),
                     (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.randint(0, 24000, (300,)), torch.full((300,), 80)),
+                    (torch.randint(-30000, 30000, (10, 10)), torch.full((10, 10), -7)),
                     (torch.tensor([10]), torch.arange(1, 5)),
                     (torch.arange(-10, 10), torch.tensor([2])),
                     (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
@@ -4453,6 +4464,10 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [FloorDivConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [FloorDivConstantInt()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randint(-24000, 24000, (300,)),)],
             },
         ]
 

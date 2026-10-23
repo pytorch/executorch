@@ -519,7 +519,6 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.empty.memory_format`, `aten.empty_strided` | `DecomposeEmpty` |
 | `aten.special_expm1` | `DecomposeExpM1` |
 | `aten.fill.Scalar` | `DecomposeFill` |
-| `aten.floor_divide` | `DecomposeFloorDivide` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
 | `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |

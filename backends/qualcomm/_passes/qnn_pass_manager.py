@@ -35,7 +35,6 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeLinalgVectorNorm,
@@ -234,11 +233,6 @@ class QnnPassManager(PassManager):
             DecomposeExpM1,
             DecomposeFill,
             DecomposeVar,
-            # DecomposeFloorDivide does not apply to the annotation pipeline,
-            # since the CPU QDQ model would reduce accuracy.
-            # We keep div and floor operations in floating-point to maintain precision.
-            # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
-            DecomposeFloorDivide,
             DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
