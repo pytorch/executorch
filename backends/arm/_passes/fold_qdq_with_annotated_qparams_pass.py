@@ -367,6 +367,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         if node.target not in {
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
         }:
             return
         if len(node.meta["output_qparams"]) == 0:
