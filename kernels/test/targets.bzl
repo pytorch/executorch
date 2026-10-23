@@ -221,6 +221,7 @@ def define_common_targets():
     _common_op_test("op_atan2_test", ["aten", "portable"])
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
+    _common_op_test("op_avg_pool3d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
     _common_op_test("op_bitwise_left_shift_test", ["portable"])
     _common_op_test("op_bitwise_not_test", ["aten", "portable"])

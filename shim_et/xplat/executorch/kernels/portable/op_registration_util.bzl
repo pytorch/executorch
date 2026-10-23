@@ -349,6 +349,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_avg_pool3d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_bitwise_and",
         deps = [
             ":scalar_utils",
