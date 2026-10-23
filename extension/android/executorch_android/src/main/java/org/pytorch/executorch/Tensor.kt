@@ -53,6 +53,37 @@ abstract class Tensor internal constructor(shape: LongArray) {
 
   @DoNotStrip private var mHybridData: HybridData? = null
 
+  // Set when this tensor is a Module output that views the module's memory; see [Module].
+  @Volatile
+  internal var outputOwner: Module? = null
+    private set
+
+  internal var outputMethod = ""
+    private set
+
+  internal var outputGeneration = 0L
+    private set
+
+  internal fun viewModuleOutput(owner: Module, methodName: String, generation: Long) {
+    outputMethod = methodName
+    outputGeneration = generation
+    outputOwner = owner
+  }
+
+  internal inline fun <T> readData(block: () -> T): T {
+    val owner = outputOwner ?: return block()
+    owner.lockOutput(outputMethod, outputGeneration)
+    try {
+      return block()
+    } finally {
+      owner.unlockOutput()
+    }
+  }
+
+  internal fun checkReadable() {
+    outputOwner?.checkOutputValid(outputMethod, outputGeneration)
+  }
+
   /** Returns the number of elements in this tensor. */
   fun numel(): Long = numel(shape)
 
@@ -155,6 +186,10 @@ abstract class Tensor internal constructor(shape: LongArray) {
             "Tensor of type ${javaClass.simpleName} cannot return data as double array."
         )
 
+  /**
+   * Returns the buffer holding this tensor's data. For a [Module] output, the buffer views the
+   * module's memory and is only valid as long as the tensor is.
+   */
   @DoNotStrip
   open fun getRawDataBuffer(): Buffer =
       throw IllegalStateException(
@@ -231,19 +266,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
       Tensor(shape) {
     override fun dtype(): DType = DType.UINT8
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsUnsignedByteArray: ByteArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = ByteArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataIntoUnsigned(dst: ByteBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.uint8)"
@@ -253,19 +293,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
       Tensor(shape) {
     override fun dtype(): DType = DType.INT8
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsByteArray: ByteArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = ByteArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: ByteBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.int8)"
@@ -275,19 +320,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
       Tensor(shape) {
     override fun dtype(): DType = DType.INT32
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsIntArray: IntArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = IntArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: IntBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.int32)"
@@ -297,19 +347,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
   internal constructor(private val data: FloatBuffer, shape: LongArray) : Tensor(shape) {
     override fun dtype(): DType = DType.FLOAT
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsFloatArray: FloatArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = FloatArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: FloatBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.float32)"
@@ -319,40 +374,47 @@ abstract class Tensor internal constructor(shape: LongArray) {
   internal constructor(private val data: ShortBuffer, shape: LongArray) : Tensor(shape) {
     override fun dtype(): DType = DType.HALF
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsShortArray: ShortArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = ShortArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: ShortBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override val dataAsFloatArray: FloatArray
-      get() {
+      get() = readData {
         data.rewind()
         val remaining = data.remaining()
         val arr = FloatArray(remaining)
         for (i in 0 until remaining) {
           arr[i] = halfBitsToFloat(data.get())
         }
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: FloatBuffer) {
-      data.rewind()
-      val remaining = data.remaining()
-      if (dst.remaining() < remaining) {
-        throw java.nio.BufferOverflowException()
-      }
-      for (i in 0 until remaining) {
-        dst.put(halfBitsToFloat(data.get()))
+      readData {
+        data.rewind()
+        val remaining = data.remaining()
+        if (dst.remaining() < remaining) {
+          throw java.nio.BufferOverflowException()
+        }
+        for (i in 0 until remaining) {
+          dst.put(halfBitsToFloat(data.get()))
+        }
       }
     }
 
@@ -390,19 +452,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
       Tensor(shape) {
     override fun dtype(): DType = DType.INT64
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsLongArray: LongArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = LongArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: LongBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.int64)"
@@ -412,19 +479,24 @@ abstract class Tensor internal constructor(shape: LongArray) {
   internal constructor(private val data: DoubleBuffer, shape: LongArray) : Tensor(shape) {
     override fun dtype(): DType = DType.DOUBLE
 
-    override fun getRawDataBuffer(): Buffer = data
+    override fun getRawDataBuffer(): Buffer {
+      checkReadable()
+      return data
+    }
 
     override val dataAsDoubleArray: DoubleArray
-      get() {
+      get() = readData {
         data.rewind()
         val arr = DoubleArray(data.remaining())
         data.get(arr)
-        return arr
+        arr
       }
 
     override fun copyDataInto(dst: DoubleBuffer) {
-      data.rewind()
-      dst.put(data)
+      readData {
+        data.rewind()
+        dst.put(data)
+      }
     }
 
     override fun toString(): String = "Tensor(${Arrays.toString(shape)}, dtype=torch.float64)"
