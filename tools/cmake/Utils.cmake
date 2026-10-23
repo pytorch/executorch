@@ -726,3 +726,37 @@ function(executorch_add_shared_library target_name)
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 endfunction()
+
+# These Python extensions remain SHARED because other ET targets link them. On
+# Unix, create them without the embedding library required by
+# pybind11_add_module(SHARED): Python symbols resolve from the loading
+# interpreter.
+function(executorch_add_pybind_module target)
+  if(MSVC)
+    pybind11_add_module(${target} SHARED ${ARGN})
+    return()
+  endif()
+
+  add_library(${target} SHARED ${ARGN})
+  target_link_libraries(${target} PRIVATE pybind11::module)
+  pybind11_extension(${target})
+
+  if(NOT DEFINED CMAKE_CXX_VISIBILITY_PRESET)
+    set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden)
+  endif()
+  if(NOT DEFINED CMAKE_CUDA_VISIBILITY_PRESET)
+    set_target_properties(${target} PROPERTIES CUDA_VISIBILITY_PRESET hidden)
+  endif()
+  if(NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    target_link_libraries(${target} PRIVATE pybind11::lto)
+  endif()
+  if(DEFINED CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type)
+    if(NOT _build_type MATCHES "DEBUG|RELWITHDEBINFO|NONE")
+      pybind11_strip(${target})
+    endif()
+  endif()
+  if(APPLE)
+    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
+endfunction()

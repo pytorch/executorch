@@ -339,7 +339,7 @@ async def test_http_missing_native_reset_clears_transcript_and_is_idempotent(
 
 
 @pytest.mark.anyio
-async def test_runtime_prefix_cache_is_creation_only(native_worker):
+async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker):
     worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
@@ -360,6 +360,10 @@ async def test_runtime_prefix_cache_is_creation_only(native_worker):
         assert cold.reused_prompt_tokens == 0
         assert warm.reused_prompt_tokens == 4
         assert warm.prefilled_prompt_tokens == 1
+        replacement = await asyncio.wait_for(generate("first"), 10)
+        assert replacement.session_reset_reason == "prefix_clone"
+        assert replacement.reused_prompt_tokens == 4
+        assert replacement.prefilled_prompt_tokens == 1
         await asyncio.wait_for(worker.reset_session("first"), 5)
         reset = await asyncio.wait_for(generate("first"), 10)
         assert reset.reused_prompt_tokens == 0

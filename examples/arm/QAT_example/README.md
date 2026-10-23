@@ -11,8 +11,10 @@ Use a standard Practical-RIFE checkout with this layout:
 
 ```text
 <model-root>/train_log/IFNet_HDv3.py
-<model-root>/train_log/flownet.pkl
 ```
+
+Pass `--checkpoint /path/to/flownet.pkl` to load trained weights. The
+checkpoint is optional; omitting it uses the model's initial weights.
 
 The triples file must identify frame interpolation samples in this order:
 
@@ -33,6 +35,7 @@ PTQ, and QAT at the default 768x384 shape while preserving uint8 image IO:
 python examples/arm/QAT_example/qat_loop.py \
   --triples-list <path-to-real-triples.csv> \
   --model-root <path-to-Practical-RIFE> \
+  --checkpoint <path-to-Practical-RIFE>/train_log/flownet.pkl \
   --height 768 \
   --width 384 \
   --max-triples 10 \
@@ -63,6 +66,27 @@ Small random or short QAT runs are useful only for checking that the flow runs.
 Do not use them as model-quality evidence. For example, two samples and three
 QAT steps can produce very low PSNR while still proving that eager, PTQ, and
 QAT execution is wired correctly.
+
+## Model Selection
+
+Use `--model-class` to select a compatible model class from
+`train_log/IFNet_HDv3.py` in your Practical-RIFE checkout. For example,
+add `--model-class IFNetTwoBlock` to the command above.
+
+### Packed Intermediate Warps
+
+The RIFE VGF extension runs `PackRifeWarpsAndConcatPass` after TOSA lowering.
+For the supported integer pattern, one shader samples both images and both
+feature tensors and writes the second block's CONCAT input directly as C32.
+It copies the existing full-resolution mask, features and flow, inserts the
+constant timestep, and adds four dummy channels. Four zero weight columns
+make the following convolution ignore those channels.
+
+The pass checks shader identities, descriptors, matching sampling qparams,
+private warp consumers, and symmetric convolution weights before rewriting.
+Unsupported graphs are left unchanged. Image padding and the first block's
+C15 input are unchanged. State resizing, block tails and final blending stay
+in TOSA. `glslc` must be available when exporting a matching graph.
 
 ## Reference Samples
 
