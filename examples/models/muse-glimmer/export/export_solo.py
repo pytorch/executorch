@@ -527,13 +527,16 @@ def export_cuda_batching(  # noqa: C901
         materialize_runtime_buffers(model, dtype=torch.bfloat16)
     geometry = offgraph_kv_cache_geometry(model)
 
-    # A sequence prefill samples a few rows; tracing all rows creates a
-    # max_step_tokens * vocab FP32 output during AOTI's JIT validation.
-    example_rows = _CUDA_MIN_PREFILL_CHUNK if sequence_layout else max_step_tokens
+    # The selected logits feed the device samplers, which take at most
+    # MAX_SAMPLE_ROWS rows, so a step never selects more. Bounding the selector
+    # there instead of at the step width keeps the memory-planned FP32 logits
+    # output at MAX_SAMPLE_ROWS * vocab rather than max_step_tokens * vocab.
+    max_selected_rows = min(max_step_tokens, MAX_SAMPLE_ROWS)
+    example_rows = _CUDA_MIN_PREFILL_CHUNK if sequence_layout else max_selected_rows
     width = Dim(
         "width", min=max(widest_static, _CUDA_MIN_PREFILL_CHUNK), max=max_step_tokens
     )
-    rows = Dim("rows", min=_CUDA_MIN_PREFILL_CHUNK, max=max_step_tokens)
+    rows = Dim("rows", min=_CUDA_MIN_PREFILL_CHUNK, max=max_selected_rows)
     programs = {}
     with (
         common.BoundMethodForward(model, types.MethodType(step_forward, model)),
