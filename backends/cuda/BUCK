@@ -174,6 +174,7 @@ fbcode_target(
         "triton/kernels/quantized_gemm_family.py",
         "triton/kernels/quantized_gemm_utils.py",
         "triton/kernels/sdpa.py",
+        "triton/kernels/sdpa_varlen.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
         "triton/kernels/triton_mutation_cache.py",
