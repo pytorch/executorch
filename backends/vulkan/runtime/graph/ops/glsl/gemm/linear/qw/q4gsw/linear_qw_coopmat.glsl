@@ -14,10 +14,9 @@
  *
  * Performs: out[M,N] = activation[M,K] * weight^T[N,K] (+ bias)
  *
- * Inner-loop math is pure fp16 -> fp32 MMA via coopMatMulAdd for both
- * formats. The weight scale is applied during the B-tile store to shared
- * memory: each int weight is unpacked (nibble - 8 for INT4; bitfieldExtract
- * for INT8), cast to fp16, and multiplied by its scale before it lands in
+ * Inner-loop math is pure fp16 -> fp32 MMA via coopMatMulAdd. The weight
+ * scale is applied during the B-tile store to shared memory: each INT4 weight
+ * is unpacked, cast to fp16, and multiplied by its scale before it lands in
  * Bsh, keeping the K-loop a clean fp16 MMA.
  *
  * Loop structure follows the NVIDIA double-buffered GEMM reference
@@ -32,18 +31,16 @@
  *     math and are only consumed at the store stage.
  *   - Ping-pong shared-memory slices make the overlap safe.
  *
- * Each thread keeps its 8 weight scales (2 f16vec4) in registers. For INT4
- * they are reloaded from global only when the prefetched chunk crosses a
- * group boundary (a workgroup-uniform branch); for INT8 (per-channel = a
- * single group spanning all of K) they are loaded once in the prologue.
- * There is no scales staging in shared memory and no extra barrier.
+ * Each thread keeps its 8 weight scales (2 f16vec4) in registers and reloads
+ * them only when the prefetched chunk crosses a group boundary (a
+ * workgroup-uniform branch). There is no scales staging in shared memory and
+ * no extra barrier.
  *
  * Tile hierarchy (yaml; mirrors the double-buffered reference):
  *   MMA_*         per-MMA-instruction shape (16x16x16 fp16)
- *   WG_TILE_*     output tile per workgroup (128x128)
- *   SG_GRID_*     subgroup grid inside workgroup (4x2 = 8 subgroups)
- *   SUBGROUP_SIZE 32, forced at pipeline creation via the
- *                 REQUIRED_SUBGROUP_SIZE annotation below
+ *   WG_TILE_*     output tile per workgroup (128x64)
+ *   SG_GRID_*     subgroup grid inside workgroup (2x2 = 4 subgroups)
+ *   SUBGROUP_SIZE 32, forced at pipeline creation from the yaml
  *
  * Storage: activation/output forced to buffer; INT weight = texture2d or
  * buffer (yaml variant). DTYPE = half only.
@@ -55,8 +52,6 @@
  *   INT4: group_size % WG_TILE_K == 0  (each group = whole number of chunks)
  * Misaligned shapes silently miscompute / overrun — gate at dispatch time.
  */
-
-// REQUIRED_SUBGROUP_SIZE = 32
 
 #version 450 core
 

@@ -15,6 +15,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/legacy/Q8taQ8cswLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <limits>
+
 namespace vkcompute {
 
 //
@@ -51,6 +53,51 @@ void resize_linear_qw_node(
   graph->virtual_resize(output, new_out_sizes);
 }
 
+// Static Workgroup storage declared by the bias-free shader variants. Keep
+// these formulas in sync with the shared arrays in the corresponding GLSL.
+constexpr uint32_t padded_fp16_stride_uvec4(uint32_t elements) {
+  constexpr uint32_t kFp16PerUvec4 = 8u;
+  // The GLSL deliberately adds one uvec4 of skew, even for aligned rows.
+  return (elements + kFp16PerUvec4) / kFp16PerUvec4;
+}
+
+constexpr uint32_t q4gsw_coopmat_shared_memory_bytes(
+    const CoopmatTileDims& dims) {
+  // Two ping-pong arrays: Ash[M][padded K] and Bsh[K][padded N].
+  return 2u *
+      (dims.m * padded_fp16_stride_uvec4(dims.k) +
+       dims.k * padded_fp16_stride_uvec4(dims.n)) *
+      16u;
+}
+
+constexpr uint32_t kQ4gswCoopmatSharedMemoryBytes =
+    q4gsw_coopmat_shared_memory_bytes(kQ4gswCoopmatDims);
+
+constexpr uint32_t dq8ca_q4gsw_coopmat_shared_memory_bytes(uint32_t mma_k) {
+  constexpr uint32_t kScalarBytes = 4u;
+  const uint32_t num_k_slabs = kDq8caQ4gswCoopmatDims.k / mma_k;
+  // A is byte-packed; B is uint-packed with a 16-byte skew per column.
+  const uint32_t a_double_buffer_bytes =
+      2u * kDq8caQ4gswCoopmatDims.m * kDq8caQ4gswCoopmatDims.k;
+  const uint32_t b_double_buffer_bytes = 2u * num_k_slabs *
+      kDq8caQ4gswCoopmatDims.n * (mma_k / 4u + 4u) * kScalarBytes;
+  const uint32_t activation_params_bytes =
+      kDq8caQ4gswCoopmatDims.m * 2u * kScalarBytes;
+  const uint32_t weight_params_bytes =
+      2u * kDq8caQ4gswCoopmatDims.n * 2u * kScalarBytes;
+  return a_double_buffer_bytes + b_double_buffer_bytes +
+      activation_params_bytes + weight_params_bytes;
+}
+
+constexpr uint32_t kDq8caQ4gswCoopmatSg32SharedMemoryBytes =
+    dq8ca_q4gsw_coopmat_shared_memory_bytes(32u);
+constexpr uint32_t kDq8caQ4gswCoopmatSg64SharedMemoryBytes =
+    dq8ca_q4gsw_coopmat_shared_memory_bytes(16u);
+
+static_assert(kQ4gswCoopmatSharedMemoryBytes == 29696u);
+static_assert(kDq8caQ4gswCoopmatSg32SharedMemoryBytes == 16384u);
+static_assert(kDq8caQ4gswCoopmatSg64SharedMemoryBytes == 18432u);
+
 static CoopmatTileDims coopmat_tile_dims(const std::string& kernel_name) {
   // Exact prefix matches (the "linear_dq8ca_*" names must not match the
   // weight-only entries).
@@ -79,10 +126,9 @@ GlobalWorkGrid quantized_linear_gwg(
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
 
-  // Coopmat variants dispatch a 256-thread WG per 64x64 output tile.  Mirrors
-  // LinearCoopmat.cpp's pick_linear_coopmat_gwg — the multiplication
-  // by kCoopmatInvocations cancels the framework's div_up, since
-  // lwg = {256, 1, 1}.
+  // Coopmat variants dispatch one workgroup per shader-specific output tile.
+  // Scaling x by the workgroup size cancels the dispatcher's division by the
+  // required local size.
   if (shader.kernel_name.find("_coopmat") != std::string::npos) {
     const CoopmatTileDims dims = coopmat_tile_dims(shader.kernel_name);
     const uint32_t num_tiles_n = utils::div_up(N, dims.n);
@@ -138,11 +184,7 @@ LocalWorkGroup quantized_linear_lwg(
   return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
-// Returns true when the q4gsw coopmat shader can be dispatched for this
-// (M, N, K, dtype, output_storage, group_size) tuple. Preconditions match what
-// linear_q4gsw_coopmat.glsl assumes; the subgroup_size == 64 check scopes this
-// to wave64 devices (e.g. AMD RDNA), which the coopmat tiling is tuned for.
-bool can_use_q4gsw_coopmat(
+static bool has_q4gsw_coopmat_compatible_layout(
     ComputeGraph* graph,
     const ValueRef output,
     const ValueRef fp_input,
@@ -150,36 +192,34 @@ bool can_use_q4gsw_coopmat(
     const ValueRef bias,
     int64_t tile_m,
     int64_t tile_n,
-    int64_t tile_k) {
+    int64_t tile_k,
+    uint32_t wg_size) {
   // The coopmat shaders only build HAS_BIAS=false variants, so they would
   // silently drop a bias. Fall back to the tiled path (which applies bias at
   // runtime via the apply_bias spec constant) whenever a bias is present.
   if (!graph->val_is_none(bias)) {
     return false;
   }
-  const auto* adapter = graph->context()->adapter_ptr();
-  if (!adapter->supports_cooperative_matrix()) {
+  // Coopmat shaders use flat, width-packed buffer addressing. A singleton
+  // batch dimension has the same layout and is how LLM prefill reaches this
+  // operator after the decomposed linear pattern is fused.
+  const int64_t output_dim = graph->dim_of(output);
+  const int64_t input_dim = graph->dim_of(fp_input);
+  if (output_dim != input_dim || (output_dim != 2 && output_dim != 3)) {
     return false;
   }
-  if (adapter->subgroup_size() != 64) {
+  if (graph->storage_type_of(output) != utils::kBuffer ||
+      graph->storage_type_of(fp_input) != utils::kBuffer) {
     return false;
   }
-  // These coopmat shaders have only been validated on AMD-RDNA GPUs (Samsung
-  // Xclipse and AMD Radeon). Gate to those families so the path stays off on
-  // other devices that advertise cooperative matrix support but have not been
-  // validated.
-  if (!graph->device_is_amd()) {
+  if (graph->dtype_of(output) != vkapi::kHalf ||
+      graph->dtype_of(fp_input) != vkapi::kHalf) {
     return false;
   }
-  // Coopmat shaders dispatch over gl_WorkGroupID.xy only; batched (rank > 2)
-  // outputs would silently miscompute all slices beyond the first.
-  if (graph->dim_of(output) > 2) {
-    return false;
-  }
-  if (graph->storage_type_of(output) != utils::kBuffer) {
-    return false;
-  }
-  if (graph->dtype_of(output) != vkapi::kHalf) {
+  if (graph->packed_dim_of(output) != WHCN::kWidthDim ||
+      graph->packed_dim_of(fp_input) != WHCN::kWidthDim ||
+      !graph->has_standard_axis_map(output) ||
+      !graph->has_standard_axis_map(fp_input)) {
     return false;
   }
 
@@ -187,29 +227,146 @@ bool can_use_q4gsw_coopmat(
   const int64_t N = utils::val_at(-1, out_sizes);
   const int64_t M = utils::val_at(-2, out_sizes);
   const std::vector<int64_t> in_sizes = graph->sizes_of(fp_input);
+  const int64_t input_M = utils::val_at(-2, in_sizes);
   const int64_t K = utils::val_at(-1, in_sizes);
 
-  if (M % tile_m != 0) {
+  if (output_dim == 3 && (out_sizes.at(0) != 1 || in_sizes.at(0) != 1)) {
     return false;
   }
-  if (N % tile_n != 0) {
+  if (M <= 0 || N <= 0 || K <= 0 || group_size <= 0 || M != input_M) {
     return false;
   }
-  if (K % tile_k != 0) {
+  // The shaders have no edge guards, and quantization groups must contain
+  // whole K tiles.
+  if (M % tile_m != 0 || N % tile_n != 0 || K % tile_k != 0 ||
+      group_size % tile_k != 0 || K % group_size != 0) {
     return false;
   }
-  if (group_size % tile_k != 0) {
+
+  const uint64_t num_tiles_n = static_cast<uint64_t>(N / tile_n);
+  const uint64_t num_tiles_m = static_cast<uint64_t>(M / tile_m);
+  const utils::uvec3 max_wg_count =
+      graph->context()->adapter_ptr()->max_compute_workgroup_count();
+  // GWG.x stores tile_count * WG_SIZE before dispatch divides by WG_SIZE.
+  if (num_tiles_n > max_wg_count[0] || num_tiles_m > max_wg_count[1] ||
+      max_wg_count[2] == 0u ||
+      num_tiles_n * wg_size > std::numeric_limits<uint32_t>::max()) {
     return false;
   }
   return true;
+}
+
+static bool can_request_subgroup_size(
+    const vkapi::Adapter* adapter,
+    uint32_t subgroup_size) {
+  return adapter->supports_required_subgroup_size_for_compute() &&
+      subgroup_size >= adapter->min_subgroup_size() &&
+      subgroup_size <= adapter->max_subgroup_size();
+}
+
+static bool has_q4gsw_coopmat_device_resources(
+    vkapi::Adapter* adapter,
+    uint32_t subgroup_size,
+    uint32_t wg_size,
+    uint32_t shared_memory_bytes) {
+  const utils::uvec3 max_wg_size = adapter->max_compute_workgroup_size();
+  // SUBGROUP_SIZE in the shader YAML becomes a required subgroup size on the
+  // Vulkan pipeline, so both its range and subgroup-count limit apply.
+  return adapter->supports_cooperative_matrix() &&
+      adapter->supports_vulkan_memory_model() &&
+      adapter->supports_float16_shader_types() &&
+      adapter->supports_16bit_storage_buffers() &&
+      adapter->supports_subgroup_compute_basic() &&
+      can_request_subgroup_size(adapter, subgroup_size) &&
+      wg_size % subgroup_size == 0u &&
+      wg_size / subgroup_size <= adapter->max_compute_workgroup_subgroups() &&
+      wg_size <= adapter->max_compute_workgroup_invocations() &&
+      wg_size <= max_wg_size[0] && max_wg_size[1] >= 1u &&
+      max_wg_size[2] >= 1u &&
+      shared_memory_bytes <= adapter->max_compute_shared_memory_size();
+}
+
+bool can_use_q4gsw_coopmat(
+    ComputeGraph& graph,
+    const ValueRef output,
+    const ValueRef fp_input,
+    int64_t group_size,
+    const ValueRef bias) {
+  auto* adapter = graph.context()->adapter_ptr();
+  constexpr uint32_t kRequiredSubgroupSize = 32u;
+  return adapter->supports_fp16_cooperative_matrix(16, 16, 16) &&
+      adapter->supports_fp16_cooperative_matrix_accumulator(16, 16) &&
+      has_q4gsw_coopmat_device_resources(
+             adapter,
+             kRequiredSubgroupSize,
+             kQ4gswCoopmatDims.wg_size,
+             kQ4gswCoopmatSharedMemoryBytes) &&
+      has_q4gsw_coopmat_compatible_layout(
+             &graph,
+             output,
+             fp_input,
+             group_size,
+             bias,
+             kQ4gswCoopmatDims.m,
+             kQ4gswCoopmatDims.n,
+             kQ4gswCoopmatDims.k,
+             kQ4gswCoopmatDims.wg_size);
+}
+
+const char* pick_dq8ca_q4gsw_coopmat_variant(
+    ComputeGraph* graph,
+    const ValueRef output,
+    const ValueRef fp_input,
+    int64_t group_size,
+    const ValueRef bias) {
+  auto* adapter = graph->context()->adapter_ptr();
+  // After the int8 MMA, the shader uses fp32 matrices for scale/correction
+  // math and converts the result through an fp16 accumulator for the store.
+  if (!has_q4gsw_coopmat_compatible_layout(
+          graph,
+          output,
+          fp_input,
+          group_size,
+          bias,
+          kDq8caQ4gswCoopmatDims.m,
+          kDq8caQ4gswCoopmatDims.n,
+          kDq8caQ4gswCoopmatDims.k,
+          kDq8caQ4gswCoopmatDims.wg_size) ||
+      !adapter->supports_int8_shader_types() ||
+      !adapter->supports_fp16_cooperative_matrix_accumulator(16, 16) ||
+      !adapter->supports_fp32_cooperative_matrix_accumulator(16, 16)) {
+    return nullptr;
+  }
+
+  // Each variant is tuned for, and pinned to, the device's native width.
+  const uint32_t subgroup_size = adapter->subgroup_size();
+  if (subgroup_size == 32 &&
+      has_q4gsw_coopmat_device_resources(
+          adapter,
+          32,
+          kDq8caQ4gswCoopmatDims.wg_size,
+          kDq8caQ4gswCoopmatSg32SharedMemoryBytes) &&
+      adapter->supports_int8_cooperative_matrix(16, 16, 32)) {
+    return "_sg32";
+  }
+  // Preserve the wave64/K16 geometry used by AMD/RDNA, but select it by
+  // capabilities rather than by vendor name.
+  if (subgroup_size == 64 &&
+      has_q4gsw_coopmat_device_resources(
+          adapter,
+          64,
+          kDq8caQ4gswCoopmatDims.wg_size,
+          kDq8caQ4gswCoopmatSg64SharedMemoryBytes) &&
+      adapter->supports_int8_cooperative_matrix(16, 16, 16)) {
+    return "";
+  }
+  return nullptr;
 }
 
 vkapi::ShaderInfo pick_linear_qw_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-
   const ValueRef output = args.at(0).refs.at(0);
   const ValueRef fp_input = args.at(1).refs.at(0);
   const ValueRef packed_int_weight = args.at(1).refs.at(1);
@@ -223,14 +380,7 @@ vkapi::ShaderInfo pick_linear_qw_shader(
     const int64_t group_size =
         graph->extract_scalar<int64_t>(resize_args.at(0));
     if (can_use_q4gsw_coopmat(
-            graph,
-            output,
-            fp_input,
-            group_size,
-            resize_args.at(2),
-            kQ4gswCoopmatDims.m,
-            kQ4gswCoopmatDims.n,
-            kQ4gswCoopmatDims.k)) {
+            *graph, output, fp_input, group_size, resize_args.at(2))) {
       std::string kernel_name = "linear_q4gsw_coopmat";
       // Output storage is buffer (gated above); weight storage matches the
       // existing variants.
@@ -522,8 +672,12 @@ void quantized_linear_impl(
 
   const ValueRef packed_weight =
       prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
-  const ValueRef packed_weight_scales = prepack_standard(
-      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+  const ValueRef packed_weight_scales = graph.add_tensor(
+      graph.sizes_of(weight_scales_data),
+      graph.dtype_of(fp_input),
+      utils::kBuffer,
+      utils::kWidthPacked);
+  add_prepack_standard_node(graph, weight_scales_data, packed_weight_scales);
   // Weight affine quant not supported at the moment
   const ValueRef packed_weight_zeros = kDummyValueRef;
 
@@ -676,6 +830,34 @@ void quantized_linear_impl(
       group_size,
       bias_data,
       packed_bias,
+      output);
+}
+
+void add_q4gsw_coopmat_linear_node(
+    ComputeGraph& graph,
+    const ValueRef fp_input,
+    const ValueRef weight_data,
+    const ValueRef weight_scales_data,
+    const ValueRef group_size,
+    const ValueRef bias_data,
+    const ValueRef output) {
+  const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
+  QuantizationConfig input_quant_config(32, kNoQuantization, {});
+  QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
+
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      kDummyValueRef,
+      kDummyValueRef,
+      weight_data,
+      kDummyValueRef,
+      weight_scales_data,
+      kDummyValueRef,
+      group_size,
+      bias_data,
       output);
 }
 
