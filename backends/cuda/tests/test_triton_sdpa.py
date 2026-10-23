@@ -35,11 +35,14 @@ def _import_sdpa():
     return sdpa
 
 
-def _reference_sdpa(q, k, v, attn_mask=None, is_causal=False, scale=None):
-    """Compute reference SDPA in float32 with expanded KV heads for GQA.
+def _reference_sdpa(
+    q, k, v, attn_mask=None, is_causal=False, scale=None, dtype=torch.float32
+):
+    """Compute reference SDPA with expanded KV heads for GQA.
 
     Adapted from FlashAttention's testing.py: expand KV heads via
-    repeat_interleave, upcast to float32, use torch SDPA.
+    repeat_interleave, upcast to float32, use torch SDPA. Pass the inputs'
+    dtype instead to get torch SDPA's own result at that precision.
     """
     H_q = q.shape[1]
     H_kv = k.shape[1]
@@ -54,11 +57,10 @@ def _reference_sdpa(q, k, v, attn_mask=None, is_causal=False, scale=None):
     if attn_mask is not None and attn_mask.shape[1] == 1 and H_q > 1:
         attn_mask = attn_mask.expand(-1, H_q, -1, -1)
 
-    # Upcast to float32 for reference accuracy
     return F.scaled_dot_product_attention(
-        q.float(),
-        k.float(),
-        v.float(),
+        q.to(dtype),
+        k.to(dtype),
+        v.to(dtype),
         attn_mask=attn_mask,
         is_causal=is_causal,
         scale=scale,
@@ -67,6 +69,10 @@ def _reference_sdpa(q, k, v, attn_mask=None, is_causal=False, scale=None):
 
 def _max_abs_error(out, ref):
     return (out.float() - ref.float()).abs().max().item()
+
+
+def _mean_abs_error(out, ref):
+    return (out.float() - ref.float()).abs().mean().item()
 
 
 # bf16 kernel vs fp32 reference tolerance.
@@ -83,9 +89,6 @@ HEAD_DIMS_POW2 = [64, 128, 256]
 HEAD_DIMS_NON_POW2 = [80, 96]
 
 # Sequence length pairs (seqlen_q, seqlen_kv) adapted from FlashAttention
-# Note: Lk must be >= BLOCK_N (32) to avoid unmasked zero-padding in K
-# that dilutes softmax. This is a pre-existing kernel limitation for very
-# short KV sequences.
 SEQLEN_PAIRS_BASIC = [
     (1, 64),
     (1, 128),
@@ -586,6 +589,107 @@ class TestTritonSdpa(unittest.TestCase):
 
         self.assertFalse(torch.isnan(out).any())
         self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    # ------------------------------------------------------------------
+    # Keys that end inside a KV tile
+    #
+    # The last KV tile's positions past the keys' end load as zeros and must
+    # get no softmax weight. These tests compare the kernel's error against
+    # the fp32 reference with torch SDPA's error at the same dtype: the two
+    # are about equal, and weighting the padding makes the kernel's an order
+    # of magnitude larger.
+    # ------------------------------------------------------------------
+
+    def test_kv_tail_not_tile_multiple(self):
+        """L_kv not a multiple of BLOCK_N, with and without a mask."""
+        B = 1
+        for dtype, D, (H_q, H_kv), (Lq, Lk), use_mask in itertools.product(
+            [torch.bfloat16, torch.float16],
+            [64, 80],
+            [(4, 4), (8, 2)],
+            [(1, 177), (64, 227), (602, 602), (16, 20)],
+            [False, True],
+        ):
+            with self.subTest(
+                dtype=dtype, D=D, H_q=H_q, H_kv=H_kv, Lq=Lq, Lk=Lk, mask=use_mask
+            ):
+                torch.manual_seed(42)
+                q = torch.randn(B, H_q, Lq, D, dtype=dtype, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=dtype, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=dtype, device="cuda")
+                mask = None
+                if use_mask:
+                    mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+                    mask[..., -3:] = False
+
+                out = self.sdpa(q, k, v, attn_mask=mask, enable_gqa=H_q != H_kv)
+                ref = _reference_sdpa(q, k, v, attn_mask=mask)
+                torch_out = _reference_sdpa(q, k, v, attn_mask=mask, dtype=q.dtype)
+
+                self.assertEqual(out.dtype, dtype)
+                self.assertLess(
+                    _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
+                )
+
+    def test_kv_len_bound_not_tile_multiple(self):
+        """A kv_len bound that is not a multiple of BLOCK_N, without a mask."""
+        B, D = 1, 64
+        for (H_q, H_kv), Lq, (kv_len, Lk) in itertools.product(
+            [(4, 4), (8, 2)], [1, 64], [(131, 200), (20, 64)]
+        ):
+            with self.subTest(H_q=H_q, H_kv=H_kv, Lq=Lq, kv_len=kv_len, Lk=Lk):
+                torch.manual_seed(42)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+
+                out = self.sdpa(q, k, v, enable_gqa=H_q != H_kv, kv_len=kv_len_t)
+                k, v = k[:, :, :kv_len], v[:, :, :kv_len]
+                ref = _reference_sdpa(q, k, v)
+                torch_out = _reference_sdpa(q, k, v, dtype=q.dtype)
+
+                self.assertLess(
+                    _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
+                )
+
+    # ------------------------------------------------------------------
+    # float16
+    # ------------------------------------------------------------------
+
+    def test_fp16_causal(self):
+        """float16 causal attention for MHA and GQA, pow2 and non-pow2 head dims."""
+        B, L = 2, 227
+        for D, (H_q, H_kv) in itertools.product([64, 80], [(4, 4), (8, 2)]):
+            with self.subTest(D=D, H_q=H_q, H_kv=H_kv):
+                torch.manual_seed(42)
+                q = torch.randn(B, H_q, L, D, dtype=torch.float16, device="cuda")
+                k = torch.randn(B, H_kv, L, D, dtype=torch.float16, device="cuda")
+                v = torch.randn(B, H_kv, L, D, dtype=torch.float16, device="cuda")
+
+                out = self.sdpa(q, k, v, is_causal=True, enable_gqa=H_q != H_kv)
+                ref = _reference_sdpa(q, k, v, is_causal=True)
+                torch_out = _reference_sdpa(q, k, v, is_causal=True, dtype=q.dtype)
+
+                self.assertEqual(out.dtype, torch.float16)
+                self.assertLess(
+                    _mean_abs_error(out, ref), 2 * _mean_abs_error(torch_out, ref)
+                )
+
+    def test_fp16_with_kv_len_rejected(self):
+        """kv_len can select the split-K and TMA kernels, which are bf16-only."""
+        q = torch.randn(1, 4, 1, 64, dtype=torch.float16, device="cuda")
+        k = torch.randn(1, 4, 512, 64, dtype=torch.float16, device="cuda")
+        kv_len = torch.tensor([100], dtype=torch.int32, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, k, k, kv_len=kv_len)
+
+    def test_mixed_dtypes_rejected(self):
+        """Q, K and V must share one dtype."""
+        q = torch.randn(1, 4, 8, 64, dtype=torch.float16, device="cuda")
+        k = torch.randn(1, 4, 8, 64, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, k, k)
 
     # ------------------------------------------------------------------
     # is_causal + kv_len: in-kernel bottom-right causal reconstruction
