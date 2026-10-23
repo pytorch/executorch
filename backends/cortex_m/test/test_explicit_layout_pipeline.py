@@ -20,6 +20,7 @@ from executorch.backends.cortex_m.test.tester import (
     CortexMRunPasses,
     CortexMTester,
 )
+from executorch.backends.cortex_m.utils import lowered_output_dtype
 from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
@@ -67,6 +68,69 @@ class UnsupportedAvgPool(torch.nn.Module):
         )
 
 
+class LutActivationThenConv1d(torch.nn.Module):
+    """A LUT activation feeding a convolution.
+
+    tanh lowers to ``cortex_m::quantized_activation``, but only in
+    ``AtenToCortexMPass``, which runs after the layout validator. Until then
+    it keeps an fp32 fake tensor and passes that dtype on to the convolution,
+    so validating on ``val`` rejects this graph even though it lowers.
+    An activation that ``ActivationFusionPass`` folds into the convolution
+    clamp, such as relu, never exposes the gap.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        return self.conv(torch.tanh(x))
+
+
+class LutActivationViewThenConv1d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        return self.conv(torch.tanh(x).view(1, 8, 16))
+
+
+class LutActivationReluThenConv1d(torch.nn.Module):
+    """A relu between a LUT activation and a convolution.
+
+    Nothing fuses this relu. ``ActivationFusionPass`` only folds an
+    activation that follows a convolution, so it reaches
+    ``QuantizedClampActivationPass``, which has to quantize its bound
+    against the sigmoid's qparams. Left alone on int8 codes, ``aten.relu``
+    clamps at 0 rather than at the zero point and erases everything below
+    it -- and it is meant to be a no-op here, sigmoid being positive.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        return self.conv(torch.relu(torch.sigmoid(x)))
+
+
+class LutActivationClampThenConv2d(torch.nn.Module):
+    """A two-sided clamp between a LUT activation and a convolution.
+
+    The same gap as ``LutActivationReluThenConv1d``, with bounds of its
+    own: unquantized, ``aten.clamp`` holds fp32 limits against int8 codes
+    and keeps an fp32 value on a tensor the convolution reads as int8.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 4, 1)
+
+    def forward(self, x):
+        return self.conv(torch.clamp(torch.tanh(x), -0.5, 0.5))
+
+
 class NHWCPaddedConv(torch.nn.Module):
     def __init__(self, channels, shared_pad):
         super().__init__()
@@ -82,6 +146,12 @@ class NHWCPaddedConv(torch.nn.Module):
 
 def _count(exported_program, target) -> int:
     return sum(node.target == target for node in exported_program.graph.nodes)
+
+
+def _only(exported_program, target) -> Node:
+    nodes = [node for node in exported_program.graph.nodes if node.target == target]
+    assert len(nodes) == 1, f"expected one {target}, found {len(nodes)}"
+    return nodes[0]
 
 
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
@@ -370,6 +440,109 @@ def test_implementation_transpose_conv2d_strided_pointwise(hardtanh):
     )
     tester.to_executorch().serialize()
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_explicit_layout_accepts_conv_fed_by_lut_activation():
+    """A convolution behind a LUT activation lowers and keeps its numerics."""
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(LutActivationThenConv1d().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.aten.convolution.default) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "model,inputs,bounds",
+    [
+        (LutActivationReluThenConv1d, (torch.randn(1, 8, 16),), (int, type(None))),
+        (LutActivationClampThenConv2d, (torch.randn(1, 4, 8, 8),), (int, int)),
+    ],
+)
+def test_clamp_between_lut_activation_and_conv_is_quantized(model, inputs, bounds):
+    """A clamp-like activation inside an int8 chain runs on int8 terms.
+
+    The convolution reaches a CMSIS-NN kernel either way. What the fake
+    tensor costs is the clamp between it and the LUT activation: left in
+    float, its bounds mean nothing against int8 codes and the tensor the
+    convolution reads is still declared fp32.
+    """
+    torch.manual_seed(0)
+    tester = _run_explicit_layout_passes(CortexMTester(model().eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    clamp = _only(program, exir_ops.edge.aten.clamp.default)
+    assert tuple(type(bound) for bound in clamp.args[1:]) == bounds
+    assert clamp.meta["val"].dtype == torch.int8
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "model,inputs,bounds",
+    [
+        (LutActivationReluThenConv1d, (torch.randn(1, 8, 16),), (int, type(None))),
+        (LutActivationClampThenConv2d, (torch.randn(1, 4, 8, 8),), (int, int)),
+    ],
+)
+def test_clamp_between_lut_activation_and_conv_is_quantized_on_legacy_passes(
+    model, inputs, bounds
+):
+    """The same clamp on the default pass list, which has no validator.
+
+    Here the clamp is the only thing standing between the LUT activation
+    and the rest of the graph: nothing rejects an unquantized one, so it
+    reaches the program. `aten.relu` left alone cuts at code 0 while the
+    zero point is -128, and `aten.clamp` left on float bounds promotes
+    the tensor back to fp32 in front of a dequantize that reads int8.
+    """
+    torch.manual_seed(0)
+    tester = CortexMTester(model().eval(), inputs)
+    tester.quantize().export().to_edge().run_passes()
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    assert _count(program, exir_ops.edge.aten.relu.default) == 0
+    clamp = _only(program, exir_ops.edge.aten.clamp.default)
+    assert tuple(type(bound) for bound in clamp.args[1:]) == bounds
+    assert clamp.meta["val"].dtype == torch.int8
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_explicit_layout_accepts_conv_fed_by_view_of_lut_activation():
+    """A dtype-agnostic op between the LUT activation and the conv stays int8."""
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 128),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(LutActivationViewThenConv1d().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_lowered_output_dtype_reads_first_output_of_multi_output_node():
+    node = torch.fx.Graph().call_function(
+        exir_ops.edge.aten.max_pool2d_with_indices.default
+    )
+    node.meta["val"] = (
+        torch.empty(1, dtype=torch.int8),
+        torch.empty(1, dtype=torch.int64),
+    )
+    assert lowered_output_dtype(node) == torch.int8
+
+
+def test_lowered_output_dtype_declines_a_non_node_argument():
+    """Substitutions read it straight off ``node.args``, which holds literals."""
+    assert lowered_output_dtype(5.0) is None
 
 
 def test_explicit_layout_rejects_unsupported_spatial_operator():

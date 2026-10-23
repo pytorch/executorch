@@ -10,6 +10,7 @@ import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import torch
 from executorch.backends.cortex_m.utils import (
     coerce_int_pair,
+    lowered_output_dtype,
     skips_quantized_max_pool2d,
 )
 from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
@@ -134,12 +135,15 @@ class ValidateCortexMExplicitLayoutPass(ExportPass):
             input_value = (
                 input_node.meta.get("val") if isinstance(input_node, Node) else None
             )
-            if (
-                not isinstance(input_value, torch.Tensor)
-                or input_value.dtype != torch.int8
-            ):
+            input_dtype = (
+                lowered_output_dtype(input_node)
+                if isinstance(input_node, Node)
+                else None
+            )
+            if not isinstance(input_value, torch.Tensor) or input_dtype != torch.int8:
                 raise RuntimeError(
-                    f"Cortex-M layout copy {node.name} must move an int8 tensor."
+                    f"Cortex-M layout copy {node.name} must move an int8 tensor, "
+                    f"but its input {input_node} is {input_dtype}."
                 )
             rank = input_value.dim()
             if (
