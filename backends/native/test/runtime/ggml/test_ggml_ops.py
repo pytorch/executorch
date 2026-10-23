@@ -173,10 +173,9 @@ class ConvBN(torch.nn.Module):
         return self.relu6(self.bn(self.conv(x)))
 
 
-class UnfoldableBN(torch.nn.Module):
-    """Batch norms no convolution can absorb: one reads a convolution output
-    that is also read elsewhere, one the sole reader of a convolution whose
-    weight is shared, one a ReLU."""
+class SharedConvBN(torch.nn.Module):
+    """Batch norms reading a shared convolution output, a convolution with
+    shared weights, and a ReLU."""
 
     def __init__(self):
         super().__init__()
@@ -732,15 +731,16 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["SQRT"] + ops["MUL"], 0)
 
-    def test_unfoldable_batch_norms(self):
+    def test_batch_norms_with_shared_convolution(self):
         ops = collections.Counter()
         self._check(
-            UnfoldableBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
+            SharedConvBN(), (torch.randn(1, 4, 5, 6),), graph_ops=ops, **_MATMUL_TOL
         )
-        # Scale and shift come from load; each graph has three batch norms
-        # (one scale multiply each) and two convolutions.
+        # AOT folds the shared-weight branch; two batch norm scales and two
+        # convolutions remain in each graph.
         self.assertEqual(ops["SQRT"], 0)
-        self.assertEqual(2 * ops["MUL"], 3 * ops["MUL_MAT"])
+        self.assertGreater(ops["MUL_MAT"], 0)
+        self.assertEqual(ops["MUL"], ops["MUL_MAT"])
 
     def test_batch_norm_of_computed_statistics(self):
         # Statistics computed in the graph cannot fold at load.
