@@ -12,14 +12,14 @@ from .utils import merge_decomposed_graph
 
 
 class FloorDivide(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dtype: torch.dtype):
         super().__init__()
+        self.dtype = dtype
 
     def forward(self, x, y):
-        dtype = x.dtype
         result = torch.div(x, y)
         result = torch.floor(result)
-        return result.to(dtype)
+        return result.to(self.dtype)
 
 
 class DecomposeFloorDivide(ExportPass):
@@ -36,14 +36,23 @@ class DecomposeFloorDivide(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            model = FloorDivide()
             if (
                 torch.ops.aten.floor_divide.default == node.target
                 and not torch.is_floating_point(node.meta["val"])
             ):
+                # The divisor may be a Python scalar (e.g. `indices // num_classes`):
+                # trace it as a 0-dim tensor, then remap it back to the scalar.
+                model = FloorDivide(node.meta["val"].dtype)
                 decomposed_module = torch.export.export(
                     model,
-                    (node.args[0].meta["val"], node.args[1].meta["val"]),
+                    tuple(
+                        (
+                            arg.meta["val"]
+                            if isinstance(arg, torch.fx.Node)
+                            else torch.tensor(arg)
+                        )
+                        for arg in node.args[:2]
+                    ),
                     strict=True,
                 ).module()
                 with graph.inserting_before(node):
