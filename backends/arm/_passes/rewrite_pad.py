@@ -25,6 +25,26 @@ class RewritePadPass(ArmOpTargetedPass):
     }
 
     def _rewrite_constant_pad(self, input_tensor, pad, value, meta):
+        input_rank = len(input_tensor.data.shape)
+        pad = list(pad)
+        for i in range(0, len(pad), 2):
+            left, right = pad[i : i + 2]
+            if left < 0 or right < 0:
+                # Negative padding crops the input; TOSA PAD only adds elements.
+                input_tensor = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (
+                        input_tensor,
+                        input_rank - 1 - i // 2,
+                        max(-left, 0),
+                        right if right < 0 else None,
+                    ),
+                    {},
+                    meta,
+                    True,
+                )
+                pad[i : i + 2] = [max(left, 0), max(right, 0)]
+
         output_dtype = meta["val"].dtype
         if output_dtype in (torch.int8, torch.int16):
             input_qparams = meta.data.get("input_qparams", {})
@@ -43,7 +63,6 @@ class RewritePadPass(ArmOpTargetedPass):
         input_pad = []
         for pair in reversed(pad_pairs):
             input_pad.extend(pair)
-        input_rank = len(input_tensor.data.shape)
         # Place spatial dimensions last and pad non-spatial dimensions with 0 padding
         shape = [0] * ((input_rank * 2 - len(pad))) + input_pad
 
