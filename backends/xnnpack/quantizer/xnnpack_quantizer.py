@@ -272,6 +272,8 @@ MUL_TARGETS = {torch.ops.aten.mul.Tensor}
 
 CAT_TARGETS = {torch.ops.aten.cat.default}
 
+UPSAMPLE_NEAREST2D_TARGETS = {torch.ops.aten.upsample_nearest2d.vec}
+
 
 class XNNPACKQuantizer(Quantizer):
     supported_config_and_operators = _get_supported_config_and_operators()
@@ -292,6 +294,7 @@ class XNNPACKQuantizer(Quantizer):
         QuantPattern("mul_relu", False, False, MUL_TARGETS),
         QuantPattern("mul", False, False, MUL_TARGETS),
         QuantPattern("cat", False, False, CAT_TARGETS),
+        QuantPattern("upsample_nearest2d", False, False, UPSAMPLE_NEAREST2D_TARGETS),
     ]
 
     def __init__(self) -> None:
