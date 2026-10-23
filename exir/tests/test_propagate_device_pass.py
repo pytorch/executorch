@@ -13,6 +13,7 @@ from typing import List, NamedTuple, Optional
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -99,6 +100,23 @@ def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
         d2h_nodes=d2h_nodes,
         delegate_nodes=delegate_nodes,
         getitem_nodes=getitem_nodes,
+    )
+
+
+def _lower_add_to_device(inputs: tuple, device: str) -> torch.nn.Module:
+    """Lower a module that returns ``x + y`` to a delegate on ``device``."""
+
+    class Add(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.add(x, y)
+
+    return to_backend(
+        BackendWithCompilerDemo.__name__,
+        to_edge(export(Add(), inputs)).exported_program(),
+        [
+            CompileSpec("max_value", bytes([4])),
+            CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, device.encode("utf-8")),
+        ],
     )
 
 
@@ -572,6 +590,98 @@ class TestPropagateDevicePass(unittest.TestCase):
                 if arg.target == torch.ops.et_copy._h2d_copy.out
             ],
         )
+
+    def test_single_tensor_delegate_output_read_on_host(self):
+        """A host op that reads the output of a lowered module returning one
+        tensor reads a host copy of it."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return torch.sin(self.lowered(x, y))
+
+        et = to_edge(export(Model(), inputs)).to_executorch(
+            ExecutorchBackendConfig(
+                emit_stacktrace=False, enable_non_cpu_memory_planning=True
+            )
+        )
+        gm = et.exported_program().graph_module
+        nodes = _collect_device_copy_nodes(gm)
+        (d2h,) = nodes.d2h_nodes
+        self.assertIs(d2h.args[0], nodes.delegate_nodes[0])
+        (sin,) = d2h.users
+        self.assertEqual(sin.target, torch.ops.aten.sin.out)
+        self._assert_nodes_buffer_device(
+            [d2h], et._emitter_output.program, DeviceType.CPU, "host op", "D2H copy"
+        )
+
+    def test_single_tensor_delegate_output_copied_to_host(self):
+        """A lowered module that returns one tensor, called from another module,
+        has no getitem after its call. Its device output still gets a _d2h_copy,
+        and the next call on the same device reads it without a round-trip."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return self.lowered(self.lowered(x, y), y)
+
+        for skip_d2h in (False, True):
+            et = to_edge(export(Model(), inputs)).to_executorch(
+                ExecutorchBackendConfig(
+                    emit_stacktrace=False,
+                    propagate_device_config=PropagateDeviceConfig(
+                        skip_d2h_for_method_outputs=skip_d2h
+                    ),
+                    enable_non_cpu_memory_planning=True,
+                )
+            )
+            program = et._emitter_output.program
+            gm = et.exported_program().graph_module
+            with self.subTest(skip_d2h=skip_d2h):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 2)
+                # Only method inputs are copied to the device: x and y, then y again.
+                self.assertEqual(len(nodes.h2d_nodes), 3)
+                self.assertTrue(
+                    all(n.args[0].op == "placeholder" for n in nodes.h2d_nodes)
+                )
+                # Only the method output can be copied back to the host.
+                self.assertEqual(len(nodes.d2h_nodes), 0 if skip_d2h else 1)
+                (output,) = gm.graph.output_node().args[0]
+                self.assertEqual(
+                    output.target,
+                    (
+                        executorch_call_delegate
+                        if skip_d2h
+                        else torch.ops.et_copy._d2h_copy.out
+                    ),
+                )
+                self._assert_nodes_buffer_device(
+                    nodes.delegate_nodes,
+                    program,
+                    DeviceType.CUDA,
+                    f"skip_d2h={skip_d2h}",
+                    "Delegate",
+                )
+                self._assert_nodes_buffer_device(
+                    nodes.d2h_nodes,
+                    program,
+                    DeviceType.CPU,
+                    f"skip_d2h={skip_d2h}",
+                    "D2H copy",
+                )
 
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two

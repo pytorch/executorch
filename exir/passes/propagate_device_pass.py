@@ -173,16 +173,17 @@ class PropagateDevicePass(PassBase):
     When a delegate has a target_device CompileSpec (e.g., "cuda:0"):
     - For each delegate input: insert et_copy._h2d_copy before the delegate call.
       The original input node stays CPU; the h2d_copy output is tagged as device.
-    - For each delegate output: insert et_copy._d2h_copy after each getitem.
-      The getitem stays device; the d2h_copy output is tagged as CPU.
+    - For each delegate output: insert et_copy._d2h_copy after each getitem,
+      or after the call itself when it returns a single tensor.
+      The delegate output stays device; the d2h_copy output is tagged as CPU.
     - Getitem nodes that extract from a delegate call inherit the device.
 
     Skip-copy optimizations:
     - skip_h2d_for_method_inputs: If the input is a graph-level placeholder
       feeding directly to a delegate, don't insert H2D — tag the placeholder
       as device instead (user provides GPU tensor at runtime).
-    - skip_d2h_for_method_outputs: If the getitem feeds directly to graph
-      output, don't insert D2H — the output stays on device.
+    - skip_d2h_for_method_outputs: If a delegate output feeds directly to
+      graph output, don't insert D2H; the output stays on device.
     """
 
     def __init__(
@@ -298,9 +299,18 @@ class PropagateDevicePass(PassBase):
             return False
 
         _set_device_on_spec(spec, source_spec.device, source_spec.device_index)
+        self._insert_d2h_after(graph_module, node, spec)
+        return True
 
+    def _insert_d2h_after(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        spec: TensorSpec,
+    ) -> None:
+        """Insert a D2H copy after *node*, a device tensor, for all of its users."""
         if self.skip_d2h_for_method_outputs and self._feeds_directly_to_output(node):
-            return True
+            return
 
         with graph_module.graph.inserting_after(node):
             d2h_node = graph_module.graph.call_function(
@@ -325,7 +335,6 @@ class PropagateDevicePass(PassBase):
                         lambda value: d2h_spec if value is spec else value,
                         user.meta["spec"],
                     )
-        return True
 
     def _elide_redundant_same_device_copies(
         self,
@@ -398,7 +407,8 @@ class PropagateDevicePass(PassBase):
         #   Pass 2 – For each getitem that extracts from a device-tagged delegate
         #            (tracked in device_delegates), propagate the device onto the
         #            getitem spec and insert a D2H copy after it so downstream
-        #            non-delegated ops receive CPU tensors.
+        #            non-delegated ops receive CPU tensors. A delegate call that
+        #            returns a single tensor gets the D2H copy itself.
         #   Pass 3 – Elide the redundant device->host->device round-trips left
         #            between consecutive same-device delegates by passes 1 and 2.
         changed = False
@@ -449,10 +459,20 @@ class PropagateDevicePass(PassBase):
                     lowered_module.backend_id,
                 )
 
-        # Second pass: propagate device through getitem nodes and insert D2H
-        # only for delegates that have a target_device.
+        # Second pass: propagate device through getitem nodes and insert D2H,
+        # after each getitem or single-tensor call, only for delegates that have
+        # a target_device.
         for node in list(graph_module.graph.nodes):
-            if node.op == "call_function" and node.target == operator.getitem:
+            # A lowered module that returns one tensor and is called from another
+            # module has no getitem after its call, so copy its output directly.
+            if (
+                node in device_delegates
+                and self.enable_non_cpu_memory_planning
+                and isinstance(node.meta.get("spec"), TensorSpec)
+            ):
+                self._insert_d2h_after(graph_module, node, node.meta["spec"])
+                changed = True
+            elif node.op == "call_function" and node.target == operator.getitem:
                 source = node.args[0]
                 if isinstance(source, torch.fx.Node) and source in device_delegates:
                     if self.enable_non_cpu_memory_planning:
