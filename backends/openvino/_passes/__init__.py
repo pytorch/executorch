@@ -4,6 +4,7 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+from .decompose_boolean_reduction_pass import DecomposeBooleanReductionPass
 from .decompose_floor_divide_pass import DecomposeFloorDividePass
 
-__all__ = ["DecomposeFloorDividePass"]
+__all__ = ["DecomposeBooleanReductionPass", "DecomposeFloorDividePass"]
