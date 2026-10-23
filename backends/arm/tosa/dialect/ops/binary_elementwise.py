@@ -62,10 +62,20 @@ def _validate_int_dtype(dtype: torch.dtype, op: str) -> None:
         _require_int_profile_support(dtype, op)
         return
 
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, op)
+        return
+
     _raise_unsupported_dtype(dtype, op)
 
 
 def _validate_any_profile_int_dtype(dtype: torch.dtype, op: str) -> None:
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, op)
+        return
+
     if dtype not in INT_DTYPES:
         _raise_unsupported_dtype(dtype, op)
 
@@ -87,12 +97,22 @@ def _validate_add_sub_dtype(dtype: torch.dtype, op: str) -> None:
     if dtype == torch.int32:
         return
 
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, op)
+        return
+
     _validate_fp_dtype(dtype, op)
 
 
 def _validate_profile_int32_or_fp_dtype(dtype: torch.dtype, op: str) -> None:
     if dtype == torch.int32:
         _require_int_profile_support(dtype, op)
+        return
+
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, op)
         return
 
     _validate_fp_dtype(dtype, op)
@@ -117,6 +137,11 @@ def _validate_and_infer_mul_output_dtype(dtype: torch.dtype) -> torch.dtype:  # 
         if dtype != torch.int32:
             _require_int_profile_support(dtype, "MUL")
         return torch.int32
+
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, "MUL")
+        return torch.int64
 
     _raise_unsupported_dtype(dtype, "MUL")
 

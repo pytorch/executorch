@@ -28,6 +28,9 @@ def _validate_integer_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
+    if dtype == torch.int64 and tosa_spec.support_extension("int64"):
+        return
+
     raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
 
 
@@ -40,6 +43,9 @@ def _validate_abs_dtype(dtype: torch.dtype) -> None:
                 f"TOSA spec {tosa_spec} doesn't support int32 for ABS",
                 op="ABS",
             )
+        return
+
+    if dtype == torch.int64 and tosa_spec.support_extension("int64"):
         return
 
     validate_float_dtype(dtype, "ABS")
@@ -63,7 +69,7 @@ def _validate_bool_dtype(dtype: torch.dtype, op: str) -> None:
 
 
 def _validate_negate_dtype(dtype: torch.dtype) -> None:
-    if dtype in (torch.int8, torch.int16, torch.int32):
+    if dtype in (torch.int8, torch.int16, torch.int32, torch.int64):
         _validate_integer_dtype(dtype, "NEGATE")
         return
 

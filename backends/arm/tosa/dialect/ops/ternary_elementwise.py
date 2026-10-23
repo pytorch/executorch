@@ -43,6 +43,11 @@ def _validate_select_value_dtype(dtype: torch.dtype) -> None:
             _raise_unsupported_profile(dtype, "SELECT")
         return
 
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, "SELECT")
+        return
+
     if dtype in {torch.float16, torch.float32}:
         if not tosa_spec.support_float():
             _raise_unsupported_profile(dtype, "SELECT")

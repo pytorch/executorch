@@ -38,6 +38,11 @@ def _validate_comparison_dtype(dtype: torch.dtype, op: str) -> None:
             _raise_unsupported_profile(dtype, op)
         return
 
+    if dtype == torch.int64:
+        if not get_context_spec().support_extension("int64"):
+            _raise_unsupported_profile(dtype, op)
+        return
+
     if dtype in FP_DTYPES:
         if not tosa_spec.support_float():
             _raise_unsupported_profile(dtype, op)
