@@ -198,6 +198,7 @@ def define_arm_tests():
             "//executorch/backends/arm/runtime:vela_bin_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
