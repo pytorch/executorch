@@ -36,7 +36,8 @@ class RshiftVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32]
+            + ([ts.DType.INT64] if self.tosa_spec.support_extension("int64") else []),
         )
 
         attr = ts.TosaSerializerAttribute()

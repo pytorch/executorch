@@ -35,4 +35,5 @@ class IdentityVisitor(SimpleNodeVisitor):
                 ts.DType.FP8E4M3,
                 ts.DType.FP8E5M2,
             ],
+            extension_dtypes={"int64": [ts.DType.INT64]},
         )
