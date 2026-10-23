@@ -11,9 +11,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -240,10 +242,49 @@ class QnnPartitioner(Partitioner):
             self.skip_node_id_set,
             self.skip_node_op_set,
         )
-        return generate_partitions_from_list_of_nodes(
+        partitions = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
+        return self._drop_orphaned_parameter_dequants(partitions, edge_program)
+
+    @staticmethod
+    def _drop_orphaned_parameter_dequants(
+        partitions: List[Partition], edge_program: torch.export.ExportedProgram
+    ) -> List[Partition]:
+        """
+        FoldQDQ keeps the dequantize of a quantized parameter and marks it (and the
+        nodes feeding it) QCOM_BYPASS_NODE, so it is force-passed and delegated with its
+        consumer, where the encoding is folded into the weight. If the consumer is not
+        delegated (rejected by op validation, or in skip_node_id_set), the dequantize
+        would be lowered on its own as a QNN Dequantize, which rejects per-channel
+        encodings and fails context binary generation. Leave it on CPU with its consumer.
+        """
+        for partition in partitions:
+            stack = [
+                node
+                for node in partition.nodes
+                if node.target in dq_ops
+                and node.meta.get(QCOM_BYPASS_NODE, False)
+                and (
+                    is_parameter(node.args[0], edge_program)
+                    or node.args[0].op == "get_attr"
+                )
+            ]
+            while stack:
+                node = stack.pop()
+                if node not in partition.nodes or any(
+                    user in partition.nodes for user in node.users
+                ):
+                    continue
+                partition.remove_node(node)
+                stack.extend(
+                    arg
+                    for arg in node.args
+                    if isinstance(arg, torch.fx.Node)
+                    and arg.meta.get(QCOM_BYPASS_NODE, False)
+                )
+        return [partition for partition in partitions if partition.nodes]
 
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
