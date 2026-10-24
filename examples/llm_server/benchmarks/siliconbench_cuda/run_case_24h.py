@@ -40,8 +40,14 @@ def main():
     parser.add_argument('--mode', choices=['performance', 'correctness'], required=True)
     parser.add_argument('--quality-scope', choices=['full', 'smoke'], default='full')
     parser.add_argument('--smoke-per-category', type=int, default=8)
+    parser.add_argument('--correctness-max-tokens', type=int)
+    parser.add_argument('--correctness-chat-template-kwargs', type=json.loads)
     args = parser.parse_args()
     assert args.correctness_rounds > 0 and args.smoke_per_category > 0
+    if args.correctness_max_tokens is not None:
+        assert args.mode == 'correctness' and args.correctness_max_tokens > 0
+    if args.correctness_chat_template_kwargs is not None:
+        assert args.mode == 'correctness' and isinstance(args.correctness_chat_template_kwargs, dict)
     def interrupted(signum, frame):
         raise InterruptedError('Controller interrupted; clean up its owned server')
     signal.signal(signal.SIGTERM, interrupted)
@@ -153,6 +159,16 @@ def main():
                         metric='server output tokens / complete HTTP workload wall time',
                         memory_repetition_policy='Peak sampled during each performance round, mean/sample SD over rounds 2-4',
                         memory='sampled total device memory and server process-tree RSS; not allocator allocated/reserved')
+        if args.mode == 'correctness':
+            template_kwargs = dict(enable_thinking=False)
+            template_kwargs.update(args.correctness_chat_template_kwargs or {})
+            settings['correctness_request_configuration'] = dict(
+                max_tokens_override=args.correctness_max_tokens,
+                source_prompt_budgets_preserved=args.correctness_max_tokens is None,
+                chat_template_kwargs=template_kwargs, temperature=0, top_p=1,
+                evaluation_client_sha256=hashlib.sha256((args.correctness_root/'scripts/run_eval.py').read_bytes()).hexdigest(),
+                scorer_sha256=hashlib.sha256((args.correctness_root/'scripts/score_f1.py').read_bytes()).hexdigest(),
+                source_prompt_and_label_files_unchanged=True)
         (args.output/'settings.json').write_text(json.dumps(settings, indent=2)+'\n')
         sampler = threading.Thread(target=sample_memory, daemon=True)
         sampler.start()
@@ -245,10 +261,15 @@ def main():
                         prompts = [json.loads(line) for line in (inputs/'prompts.jsonl').open()]
                     provenance = dict(settings, correctness_round=repetition, shots=shots,
                                       correctness_prompts_sha256=hashlib.sha256((inputs/'prompts.jsonl').read_bytes()).hexdigest())
-                    run([args.python, '-B', str(args.correctness_root/'scripts/run_eval.py'),
+                    evaluation_command = [args.python, '-B', str(args.correctness_root/'scripts/run_eval.py'),
                          '--base-url', f'http://127.0.0.1:{args.port}', '--model', served_model,
                          '--prompts', str(inputs/'prompts.jsonl'), '--output', str(target/'responses.jsonl'),
-                         '--concurrency', str(args.concurrency), '--max-retries', '0'], target/'evaluation.log', 21600)
+                         '--concurrency', str(args.concurrency), '--max-retries', '0']
+                    if args.correctness_max_tokens is not None:
+                        evaluation_command += ['--max-tokens-override', str(args.correctness_max_tokens)]
+                    if args.correctness_chat_template_kwargs is not None:
+                        evaluation_command += ['--chat-template-kwargs', json.dumps(args.correctness_chat_template_kwargs)]
+                    run(evaluation_command, target/'evaluation.log', 21600)
                     responses = [json.loads(line) for line in (target/'responses.jsonl').open()]
                     assert len(responses) == expected_items
                     assert len({str(row['id']) for row in responses}) == expected_items

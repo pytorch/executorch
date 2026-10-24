@@ -35,6 +35,8 @@ async def one_request(
     top_p: float,
     timeout: int,
     max_retries: int,
+    max_tokens_override: int | None = None,
+    template_kwargs: dict | None = None,
 ) -> dict:
     payload = {
         "model": model,
@@ -49,6 +51,16 @@ async def one_request(
         # this, Gemma4-E4B-it consumed the entire 256-token max_tokens
         # budget on reasoning and never emitted JSON, scoring F1≈0.14.
         "chat_template_kwargs": {"enable_thinking": False},
+    }
+    if max_tokens_override is not None:
+        assert max_tokens_override > 0
+        payload["max_tokens"] = max_tokens_override
+    if template_kwargs is not None:
+        assert isinstance(template_kwargs, dict)
+        payload["chat_template_kwargs"].update(template_kwargs)
+    request_parameters = {
+        key: payload[key] for key in
+        ["max_tokens", "temperature", "top_p", "stream", "chat_template_kwargs"]
     }
 
     last_err = None
@@ -85,6 +97,7 @@ async def one_request(
                 "finish_reason": choice.get("finish_reason"),
                 "latency_s": latency,
                 "error": None,
+                "request_parameters": request_parameters,
             }
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
@@ -101,6 +114,7 @@ async def one_request(
         "finish_reason": None,
         "latency_s": time.perf_counter() - t0,
         "error": last_err,
+        "request_parameters": request_parameters,
     }
 
 
@@ -149,6 +163,7 @@ async def run(args):
                 result = await one_request(
                     session, args.base_url, args.model, rec,
                     args.temperature, args.top_p, args.timeout, args.max_retries,
+                    args.max_tokens_override, args.chat_template_kwargs,
                 )
                 out_f.write(json.dumps(result, ensure_ascii=False) + "\n")
                 out_f.flush()
@@ -189,9 +204,17 @@ def main():
     parser.add_argument("--timeout", type=int, default=300,
                         help="Per-request timeout in seconds")
     parser.add_argument("--max-retries", type=int, default=2)
+    parser.add_argument("--max-tokens-override", type=int,
+                        help="Explicit diagnostic quality budget; preserve source prompts")
+    parser.add_argument("--chat-template-kwargs", type=json.loads,
+                        help="Explicit official template arguments as a JSON object")
     parser.add_argument("--overwrite", action="store_true",
                         help="Delete existing responses.jsonl before running")
     args = parser.parse_args()
+    if args.max_tokens_override is not None and args.max_tokens_override <= 0:
+        parser.error("--max-tokens-override must be positive")
+    if args.chat_template_kwargs is not None and not isinstance(args.chat_template_kwargs, dict):
+        parser.error("--chat-template-kwargs must be a JSON object")
 
     asyncio.run(run(args))
 
