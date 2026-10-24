@@ -37,6 +37,7 @@ def define_common_targets(is_fbcode = False):
             "shims/cuda_guard.cpp",
             "shims/int4mm.cu",
             "shims/memory.cpp",
+            "shims/mm.cu",
             "shims/rand.cu",
             "shims/sort.cu",
             "shims/tensor_attribute.cpp",
@@ -46,6 +47,7 @@ def define_common_targets(is_fbcode = False):
             "shims/int4mm.cuh",
             "shims/int4mm.h",
             "shims/memory.h",
+            "shims/mm.h",
             "shims/rand.h",
             "shims/sort.h",
             "shims/tensor_attribute.h",
@@ -75,6 +77,7 @@ def define_common_targets(is_fbcode = False):
             "gcc",
         ],
         external_deps = [
+            ("cuda", None, "cublasLt-lazy"),
             ("cuda", None, "cuda-lazy"),
         ],
     )

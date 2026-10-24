@@ -254,10 +254,17 @@ set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
 )
 
 # Only build CUDA-only operator shims when the CUDA toolchain is available.
+set(_aoti_cuda_shims_use_cublas OFF)
 if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
        runtime/shims/sort.cu runtime/shims/rand.cu
   )
+  # The cuBLAS matrix multiplication shims load cuBLASLt with dlopen and are
+  # not ported to Windows yet, so aoti_cuda_shims.lib must not list them.
+  if(NOT WIN32)
+    list(APPEND _aoti_cuda_shim_sources runtime/shims/mm.cu)
+    set(_aoti_cuda_shims_use_cublas ON)
+  endif()
 endif()
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
@@ -319,6 +326,15 @@ else()
     PRIVATE cuda_platform -Wl,--whole-archive aoti_common_shims_slim
             -Wl,--no-whole-archive
     PUBLIC ${_cuda_runtime_libraries} extension_cuda ${CMAKE_DL_LIBS}
+  )
+endif()
+
+# cuBLASLt is loaded on the first matrix multiplication rather than linked, so
+# models that never call the cuBLAS shims do not need the library installed.
+if(_aoti_cuda_shims_use_cublas)
+  target_compile_definitions(
+    aoti_cuda_shims
+    PRIVATE ET_CUBLASLT_LIBRARY="libcublasLt.so.${CUDAToolkit_VERSION_MAJOR}"
   )
 endif()
 

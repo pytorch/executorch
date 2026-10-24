@@ -51,6 +51,10 @@ set(CUDA_SHIM_TESTS
 
 # CUDA-specific tests requiring GPU kernels
 set(CUDA_KERNEL_TESTS test_aoti_torch_cuda__weight_int4pack_mm)
+# The cuBLAS shims are built only on Linux.
+if(NOT WIN32)
+  list(APPEND CUDA_KERNEL_TESTS test_aoti_torch_cuda_mm_out)
+endif()
 
 enable_testing()
 

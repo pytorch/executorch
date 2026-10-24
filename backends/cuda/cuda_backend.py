@@ -773,6 +773,9 @@ class CudaBackend(AotiBackend, BackendDetails):
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_sort_stable": None,
             "aoti_torch_cuda_randint_low_out": None,
+            "aoti_torch_cuda_mm_out": None,
+            "aoti_torch_cuda_addmm_out": None,
+            "aoti_torch_cuda_bmm_out": None,
         }
 
     @classmethod

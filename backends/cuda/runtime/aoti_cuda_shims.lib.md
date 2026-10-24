@@ -33,4 +33,5 @@ the same source differ.
 
 A name only resolves if something in the DLL defines it. The DLL is built from the
 CUDA shims plus the SlimTensor common shims, so a shim added to the ETensor common
-shims will link and then fail to load.
+shims will link and then fail to load. The cuBLAS shims in `shims/mm.cu` are not
+built for Windows, so they must not be listed either.
