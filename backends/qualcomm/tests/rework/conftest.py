@@ -9,6 +9,7 @@ import itertools
 import logging
 import os
 import random
+import re
 import subprocess
 import tempfile
 import time
@@ -19,6 +20,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any, List, Tuple
 
 import numpy as np
@@ -37,6 +39,12 @@ from executorch.backends.qualcomm.export_utils import (
     setup_common_args_and_variables,
     SimpleADB,
     to_edge_transform_and_lower_to_qnn,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    _soc_info_table,
+    HtpArch,
+    LpaiHardwareVersion,
+    QcomChipset,
 )
 from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -560,12 +568,249 @@ def export_and_verify(
     )
 
 
+def _get_htp_arch_from_path(path: Path) -> HtpArch | None:
+    try:
+        rework_index = path.parts.index("rework")
+    except ValueError:
+        return None
+
+    if path.parts[rework_index + 1 : rework_index + 3] not in (
+        ("htp", "e2e"),
+        ("htp", "feature"),
+    ):
+        return None
+
+    for part in path.parts[rework_index + 3 : -1]:
+        match = re.fullmatch(r"v(\d+)", part)
+        if match is None:
+            continue
+        try:
+            return HtpArch(int(match.group(1)))
+        except ValueError as error:
+            raise pytest.UsageError(
+                f"Unknown HTP architecture directory {part} in {path}."
+            ) from error
+    return None
+
+
+def _get_lpai_hardware_version_from_path(
+    path: Path,
+) -> LpaiHardwareVersion | None:
+    try:
+        rework_index = path.parts.index("rework")
+    except ValueError:
+        return None
+
+    if path.parts[rework_index + 1 : rework_index + 3] not in (
+        ("lpai", "e2e"),
+        ("lpai", "feature"),
+    ):
+        return None
+
+    for part in path.parts[rework_index + 3 : -1]:
+        match = re.fullmatch(r"v(\d+)", part)
+        if match is None:
+            continue
+        try:
+            hardware_version = LpaiHardwareVersion(int(match.group(1)))
+        except ValueError as error:
+            raise pytest.UsageError(
+                f"Unknown LPAI hardware version directory {part} in {path}."
+            ) from error
+        if hardware_version == LpaiHardwareVersion.NONE:
+            raise pytest.UsageError(
+                f"Unknown LPAI hardware version directory {part} in {path}."
+            )
+        return hardware_version
+    return None
+
+
+def _validate_htp_test_path(path: Path, soc_model: str | None) -> None:
+    expected_arch = _get_htp_arch_from_path(path)
+    if expected_arch is None or soc_model is None:
+        return
+
+    try:
+        soc_info = _soc_info_table[QcomChipset[soc_model]]
+    except KeyError as error:
+        raise pytest.UsageError(f"Unknown --soc_model {soc_model}.") from error
+
+    actual_arch = soc_info.htp_info.htp_arch
+    if actual_arch == HtpArch.NONE:
+        raise pytest.UsageError(f"--soc_model {soc_model} does not support HTP.")
+    if actual_arch != expected_arch:
+        raise pytest.UsageError(
+            f"--soc_model {soc_model} resolves to HTP v{actual_arch.value}, but "
+            f"{path} targets HTP v{expected_arch.value}. Select the v{actual_arch.value} "
+            f"test path or use an HTP v{expected_arch.value} SoC."
+        )
+
+
+def _validate_lpai_test_path(path: Path, soc_model: str | None) -> None:
+    expected_version = _get_lpai_hardware_version_from_path(path)
+    if expected_version is None or soc_model is None:
+        return
+
+    try:
+        soc_info = _soc_info_table[QcomChipset[soc_model]]
+    except KeyError as error:
+        raise pytest.UsageError(f"Unknown --soc_model {soc_model}.") from error
+
+    if (
+        soc_info.lpai_info is None
+        or soc_info.lpai_info.lpai_hardware_version == LpaiHardwareVersion.NONE
+    ):
+        raise pytest.UsageError(f"--soc_model {soc_model} does not support LPAI.")
+
+    actual_version = soc_info.lpai_info.lpai_hardware_version
+    if actual_version != expected_version:
+        raise pytest.UsageError(
+            f"--soc_model {soc_model} resolves to LPAI v{actual_version.value}, but "
+            f"{path} targets LPAI v{expected_version.value}. Select the "
+            f"v{actual_version.value} test path or use an LPAI "
+            f"v{expected_version.value} SoC."
+        )
+
+
+def pytest_collect_file(file_path, parent):
+    path = Path(file_path)
+    soc_model = parent.config.getoption("soc_model")
+    _validate_htp_test_path(path, soc_model)
+    _validate_lpai_test_path(path, soc_model)
+
+
+def get_backend_str(qnn_config) -> str:
+    return {
+        QnnExecuTorchBackendType.kHtpBackend: "htp",
+        QnnExecuTorchBackendType.kGpuBackend: "gpu",
+        QnnExecuTorchBackendType.kLpaiBackend: "lpai",
+    }.get(qnn_config.backend)
+
+
+def get_ipc(qnn_config):
+    ip = qnn_config.ip or "localhost"
+    port = qnn_config.port if (qnn_config.port and qnn_config.port > 0) else 8888
+    return ip, port
+
+
+def add_default_cmds(cmds: List, qnn_config) -> None:
+    ip, port = get_ipc(qnn_config)
+    cmds.extend(
+        [
+            "--soc_model",
+            qnn_config.soc_model,
+            "--target",
+            qnn_config.target,
+            "--ip",
+            ip,
+            "--port",
+            str(port),
+            "--seed",
+            "1126",
+            "--backend",
+            get_backend_str(qnn_config),
+        ]
+    )
+    if qnn_config.compile_only:
+        cmds.extend(["--compile_only"])
+    elif qnn_config.device:
+        cmds.extend(["--device", qnn_config.device])
+
+    if qnn_config.host:
+        cmds.extend(["--host", qnn_config.host])
+    elif qnn_config.enable_x86_64:
+        cmds.extend(["--enable_x86_64"])
+
+    if getattr(qnn_config, "online_prepare", False):
+        cmds.extend(["--online_prepare"])
+
+    if getattr(qnn_config, "shared_buffer", False):
+        cmds.extend(["--shared_buffer"])
+
+    if qnn_config.pre_gen_pte:
+        cmds.extend(["--pre_gen_pte", qnn_config.pre_gen_pte])
+
+
+def require_paths(paths: dict) -> None:
+    """Fail loudly when a provided path does not exist on disk."""
+    for name, path in paths.items():
+        if not path or not os.path.exists(path):
+            pytest.fail(f"Required artifact not found: {name}")
+
+
 def pytest_addoption(parser):
     setup_common_args_and_variables(parser=parser)
     parser.addoption(
         "--test_report",
         type=str,
         help="Specify report path while testing",
+    )
+    parser.addoption(
+        "--executorch_root",
+        type=str,
+        default=None,
+        help="Root directory of the ExecuTorch repository.",
+    )
+    parser.addoption(
+        "--artifact_dir",
+        type=str,
+        default=None,
+        help="Directory for storing compiled artifacts.",
+    )
+    parser.addoption(
+        "--image_dataset",
+        type=str,
+        default=None,
+        help="Path to the ImageNet-style image dataset.",
+    )
+    parser.addoption(
+        "--sentence_dataset",
+        type=str,
+        default=None,
+        help="Path to the sentence / NLP dataset.",
+    )
+    parser.addoption(
+        "--qa_dataset",
+        type=str,
+        default=None,
+        help="Path to the QA dataset (used by e.g. T5).",
+    )
+    parser.addoption(
+        "--pretrained_weight",
+        type=str,
+        default=None,
+        help="Path to pretrained model weights.",
+    )
+    parser.addoption(
+        "--oss_repo",
+        type=str,
+        default=None,
+        help="Path to the OSS repository required by some scripts.",
+    )
+    parser.addoption(
+        "--model_name",
+        type=str,
+        default=None,
+        help="Model name (e.g. llama3_2-1b_instruct) for LLM / multimodality tests.",
+    )
+    parser.addoption(
+        "--llama_artifacts",
+        type=str,
+        default=None,
+        help="Directory containing llama checkpoint/params/tokenizer files.",
+    )
+    parser.addoption(
+        "--static_llm_eval_method",
+        type=str,
+        default=None,
+        choices=["wikitext_ppl", "hellaswag_acc_norm", "sqnr"],
+        help="Evaluation method for the static LLM test.",
+    )
+    parser.addoption(
+        "--use_fp16",
+        action="store_true",
+        default=False,
+        help="Use FP16 weights (used by test_llama_stories_110m).",
     )
 
 
