@@ -34,9 +34,15 @@ def main():
                         help='Run correctness only at these selected concurrencies; performance coverage is unchanged')
     parser.add_argument('--case-plan',type=Path,help='Explicit reviewed subset of the same standard cells')
     parser.add_argument('--phases', nargs='+', choices=['performance', 'correctness'], default=['performance', 'correctness'])
+    parser.add_argument('--correctness-max-tokens',type=int)
+    parser.add_argument('--correctness-chat-template-kwargs',type=json.loads)
     parser.add_argument('--install-supervisor', metavar='PROGRAM')
     parser.add_argument('--supervisor-config-dir', type=Path, default=Path('/etc/supervisor/conf.d'))
     args = parser.parse_args()
+    if args.correctness_max_tokens is not None:
+        assert set(args.phases)=={'correctness'} and args.correctness_max_tokens>0
+    if args.correctness_chat_template_kwargs is not None:
+        assert set(args.phases)=={'correctness'} and isinstance(args.correctness_chat_template_kwargs,dict)
     assert not args.output.exists(), 'Retain existing attempts; inspect before using a new output directory'
     if args.install_supervisor:
         program = args.install_supervisor
@@ -80,6 +86,8 @@ def main():
             assert all(row[0]=='correctness' for row in chosen)
             cases=chosen
         (args.output/'matrix.json').write_text(json.dumps(dict(model=args.model, cases=cases,
+                                            correctness_request_overrides=dict(max_tokens=args.correctness_max_tokens,
+                                              chat_template_kwargs=args.correctness_chat_template_kwargs),
                                             acceptance_pending=True),indent=2)+'\n')
         for phase,cache,c,variant in cases:
             name = f'{phase}-agent-{variant}-prefix-{cache}-c{c}'
@@ -95,6 +103,10 @@ def main():
                        '--cpp-build',args.cpp_off_build if variant=='llamacpp-off' else 'build-stock-cublas']
             if args.native_inputs:
                 command += ['--native-inputs',str(args.native_inputs)]
+            if phase=='correctness' and args.correctness_max_tokens is not None:
+                command += ['--correctness-max-tokens',str(args.correctness_max_tokens)]
+            if phase=='correctness' and args.correctness_chat_template_kwargs is not None:
+                command += ['--correctness-chat-template-kwargs',json.dumps(args.correctness_chat_template_kwargs)]
             with (args.output/(name+'.log')).open('x') as log:
                 subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
             result = json.loads((args.output/name/'progress.json').read_text())
