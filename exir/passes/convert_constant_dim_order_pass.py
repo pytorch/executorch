@@ -42,7 +42,7 @@ def _update_placeholder_meta(
         ),
         None,
     )
-    if input_spec is None:
+    if placeholder_node is None:
         raise RuntimeError(f"Missing placeholder for {input_spec.arg.name}.")
 
     placeholder_node.meta["val"] = placeholder_node.meta["val"].contiguous()
