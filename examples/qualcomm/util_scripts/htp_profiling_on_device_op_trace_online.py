@@ -26,9 +26,9 @@ import torch
 from executorch.backends.qualcomm.debugger.utils import generate_htp_profile_result
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.tests.models import SimpleModel
@@ -58,7 +58,7 @@ def main(args) -> None:
         quant_dtype=QuantDtype.use_8a8w,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
@@ -68,7 +68,7 @@ def main(args) -> None:
         soc_id=get_soc_to_chipset_map()[args.soc_model],
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         inputs=example_inputs,
-        adb=adb,
+        device=device,
     )
 
     if args.ip and args.port != -1:
