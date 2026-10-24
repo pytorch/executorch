@@ -108,7 +108,7 @@ def main():
     auto private_pool = executorch::extension::cuda::CudaAllocator::pool_for_device(0);
     if (FLAGS_pool_retain_mib >= 0) {
       if (private_pool == nullptr) throw std::runtime_error("No private CUDA pool to control");
-      const uint64_t retain_bytes = static_cast<uint64_t>(FLAGS_pool_retain_mib) * 1024 * 1024;
+      uint64_t retain_bytes = static_cast<uint64_t>(FLAGS_pool_retain_mib) * 1024 * 1024;
       check_cuda(cudaMemPoolSetAttribute(private_pool, cudaMemPoolAttrReleaseThreshold, &retain_bytes));
     }
     memory_snapshot("ready-after-policy");
