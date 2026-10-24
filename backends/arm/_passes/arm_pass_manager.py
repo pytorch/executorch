@@ -635,7 +635,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeGroupedConvPass(),
                 DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
-                CastInt64BuffersToInt32Pass(exported_program),
+                CastInt64BuffersToInt32Pass(exported_program, tosa_spec=self.tosa_spec),
                 DecomposeIndexSelectToGatherPass(exported_program),
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
@@ -698,7 +698,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
-                CastInt64BuffersToInt32Pass(exported_program),
+                CastInt64BuffersToInt32Pass(exported_program, tosa_spec=self.tosa_spec),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
@@ -751,7 +751,7 @@ class ArmPassManager(ExportedProgramPassManager):
         # Postprocessing/cleanup passes
         self.add_passes(
             [
-                CastInt64BuffersToInt32Pass(exported_program),
+                CastInt64BuffersToInt32Pass(exported_program, tosa_spec=self.tosa_spec),
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
@@ -804,10 +804,14 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeSelectScatterPass(tfa_pass=True),
                     DecomposeSliceScatterPass(tfa_pass=True),
                     DecomposeDynamicFullPass(tfa_pass=True),
-                    ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
+                    ConvertInt64ConstOpsToInt32Pass(
+                        tfa_pass=True, tosa_spec=self.tosa_spec
+                    ),
                     ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
                     ConvertBoolSumPass(tfa_pass=True),
-                    InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
+                    InsertInt32CastsAfterInt64PlaceholdersPass(
+                        tfa_pass=True, tosa_spec=self.tosa_spec
+                    ),
                     FoldScalarMulIntoConvPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),
                     DecomposeScaledDotProductAttentionPass(tfa_pass=True),

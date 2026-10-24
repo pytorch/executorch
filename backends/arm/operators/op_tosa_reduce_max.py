@@ -45,6 +45,9 @@ class MaxVisitor(NodeVisitor):
         ]
         if self.tosa_spec.is_U55_subset:
             valid_dtypes.remove(ts.DType.INT32)
+        if self.tosa_spec.support_extension("int64"):
+            valid_dtypes.append(ts.DType.INT64)
+
         validate_valid_dtype(
             self.target,
             [inputs[0], output],

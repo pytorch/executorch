@@ -9,6 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import keeps_int64_through
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer
 from torch.export import ExportedProgram
@@ -21,9 +22,12 @@ class CastInt64BuffersToInt32Pass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
+    def __init__(
+        self, exported_program: ExportedProgram, *args, tosa_spec=None, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+        self.tosa_spec = tosa_spec
 
     def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
         for node in graph_module.graph.nodes:
@@ -83,6 +87,8 @@ class CastInt64BuffersToInt32Pass(ArmPass):
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
             if fake_tensor.dtype != torch.int64:
+                continue
+            if keeps_int64_through(node, self.tosa_spec):
                 continue
             if is_buffer(self.exported_program, node):
                 converted += self._cast_buffer_to_int32(node)

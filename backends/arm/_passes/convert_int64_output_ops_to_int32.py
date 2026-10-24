@@ -24,7 +24,7 @@ from executorch.backends.arm._passes.int32_range_analysis import (
     Int32RangeAnalysis,
     ValueRange,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import keeps_int64, TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -471,6 +471,9 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         )
 
     def call(self, graph_module: torch.fx.GraphModule):
+        if self.tosa_spec is not None and keeps_int64(self.tosa_spec):
+            return PassResult(graph_module, False)
+
         modified = False
         self._removed_casts = 0
         self._converted_casts = 0

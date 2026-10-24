@@ -110,3 +110,47 @@ def test_int64_tosa_INT(test_data: Tuple):
         .to_executorch()
         .run_method_and_compare_outputs(inputs)
     )
+
+
+class Int64Op(torch.nn.Module):
+    def __init__(self, op):
+        super().__init__()
+        self.op = op
+
+    def forward(self, *args):
+        return self.op(*args)
+
+
+# Operands straddle the int32 range, so a narrowed lowering cannot reproduce
+# the reference result, and 2**53 + 1 is not representable as a double.
+_WIDE = torch.tensor([2**40, -(2**38), 2**31, -1], dtype=torch.int64)
+_WIDE_2 = torch.tensor([2**39, 2**37, 1, -(2**40)], dtype=torch.int64)
+_NEAR_2_53 = torch.tensor([2**53, 2**53 + 1, 2**53 + 2, -(2**53)], dtype=torch.int64)
+_NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
+_COND = torch.tensor([True, False, True, False])
+
+# A matched int64 pair delegates; a pair mixing widths falls back instead.
+int64_extension_suite = {
+    "add": (lambda x, y: x + y, (_WIDE, _WIDE_2), 1),
+    "sub": (lambda x, y: x - y, (_WIDE, _WIDE_2), 1),
+    "mul": (lambda x, y: x * y, (_WIDE, _WIDE_2), 1),
+    "gt_scalar": (lambda x, y: x > 9007199254740993, (_NEAR_2_53, _WIDE), 1),
+    "where_int64": (torch.where, (_COND, _WIDE, _WIDE_2), 1),
+    "where_x_narrow": (torch.where, (_COND, _NARROW, _WIDE), 0),
+    "where_y_narrow": (torch.where, (_COND, _WIDE, _NARROW), 0),
+}
+
+
+@common.parametrize("test_data", int64_extension_suite)
+def test_int64_extension_tosa_INT(test_data: Tuple):
+    op, inputs, delegates = test_data
+    (
+        ArmTester(
+            Int64Op(op),
+            inputs,
+            common.get_tosa_compile_spec("TOSA-1.1+INT+int64"),
+        )
+        .export()
+        .to_edge_transform_and_lower()
+        .check_count({"torch.ops.higher_order.executorch_call_delegate": delegates})
+    )

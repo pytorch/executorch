@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 import torch
 import tosa_serializer as ts
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import keeps_int64, TosaSpecification
 
 TOSA_CONTROL_FLOW_REGION_NAME_META = "tosa_control_flow_region_name"
 TOSA_CONTROL_FLOW_SOURCE_NODE_META = "tosa_control_flow_source_node"
@@ -28,8 +28,6 @@ UNSUPPORTED_DTYPES = (
     torch.cfloat,
     torch.complex128,
     torch.cdouble,
-    torch.int64,
-    torch.long,
 )
 
 
@@ -81,7 +79,9 @@ class TosaSpecialDtype(Enum):
                 raise ValueError(f"Unrecognized TosaSpecialDtype {self}.")
 
 
-def map_dtype(data_type: torch.dtype) -> Any:
+def map_dtype(
+    data_type: torch.dtype, tosa_spec: TosaSpecification | None = None
+) -> Any:
     """Map a ``torch.dtype`` to a ``ts.DType``.
 
     Args:
@@ -95,6 +95,11 @@ def map_dtype(data_type: torch.dtype) -> Any:
 
     """
     if data_type in UNSUPPORTED_DTYPES:
+        raise ValueError(f"Unsupported type: {data_type}")
+
+    if data_type in (torch.int64, torch.long) and not (
+        tosa_spec is not None and keeps_int64(tosa_spec)
+    ):
         raise ValueError(f"Unsupported type: {data_type}")
 
     dtype_map = {
@@ -114,6 +119,7 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.short: ts.DType.INT16,
         torch.int32: ts.DType.INT32,
         torch.int: ts.DType.INT32,
+        torch.int64: ts.DType.INT64,
         torch.bool: ts.DType.BOOL,
         torch.float8_e4m3fn: ts.DType.FP8E4M3,
         torch.float8_e5m2: ts.DType.FP8E5M2,
@@ -126,7 +132,7 @@ def map_dtype(data_type: torch.dtype) -> Any:
 # Returns the shape and type of a node
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
-def extract_tensor_meta(meta):
+def extract_tensor_meta(meta, tosa_spec: TosaSpecification | None = None):
     """Extract dtype, shape, and dimension order from FX metadata.
 
     Args:
@@ -164,7 +170,7 @@ def extract_tensor_meta(meta):
     shape = tuple(val.size())
     if special_dtype == TosaSpecialDtype.FP4E2M1 and val.dtype == torch.uint8:
         shape = (*shape[:-1], shape[-1] * 2)
-    dtype = map_dtype(val.dtype)
+    dtype = map_dtype(val.dtype, tosa_spec)
 
     return (dtype, shape)
 
@@ -186,7 +192,7 @@ class TosaArg:
 
     """
 
-    def __process_node(self, argument: torch.fx.Node):
+    def __process_node(self, argument: torch.fx.Node, tosa_spec=None):
         """Parse a ``torch.fx.Node`` and populate tensor attributes.
 
         Args:
@@ -198,7 +204,7 @@ class TosaArg:
 
         if "val" in argument.meta:
             output_dtype, self.shape = extract_tensor_meta(
-                argument.meta
+                argument.meta, tosa_spec
             )  # Handle special case of types not representable in torch (i.e. i48_t)
             if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
                 output_dtype = special_type.get_tosa_dtype()
@@ -244,6 +250,9 @@ class TosaArg:
             case ts.DType.BF16:
                 if not tosa_spec.support_extension("bf16"):
                     return False
+            case ts.DType.INT64:
+                if not keeps_int64(tosa_spec):
+                    return False
             case ts.DType.FP8E4M3:
                 if not (
                     tosa_spec.support_extension("fp8e4m3")
@@ -283,7 +292,7 @@ class TosaArg:
         """
 
         if isinstance(argument, torch.fx.Node):
-            self.__process_node(argument)
+            self.__process_node(argument, tosa_spec)
             if not self.__validate(tosa_spec):
                 raise ValueError(
                     f"{tosa_spec} doesn't support tensor {self.__repr__()}"

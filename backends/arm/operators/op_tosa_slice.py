@@ -37,6 +37,9 @@ class SliceVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 3)
         validate_same_dtype(self.target, [inputs[0], output])
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
+
         validate_valid_dtype(
             self.target,
             [inputs[0], output],

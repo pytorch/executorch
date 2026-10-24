@@ -67,6 +67,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_EXT_CONTROL_FLOW_SupportList,
+    TOSA_EXT_INT64_SupportList,
     TOSA_EXT_MXFP_SupportList,
     TOSA_EXT_SHAPE_SupportList,
     TOSA_PRO_FP_SupportList,
@@ -75,6 +76,7 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
 )
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
+    keeps_int64,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -643,13 +645,12 @@ def _negative_checks(
     if tosa_spec.support_integer() and tosa_spec.support_float():
         checks.append(CheckMixedProfileOperatorSupport(reporter))
 
-    if not tosa_spec.support_extension("int64"):
-        checks.append(
-            _AllowDynamicW8A8QParamsOr(
-                CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
-                tosa_spec,
-            )
+    checks.append(
+        _AllowDynamicW8A8QParamsOr(
+            CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
+            tosa_spec,
         )
+    )
 
     checks.append(CheckScalarReductionInputs(reporter))
 
@@ -1206,6 +1207,21 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
+def _int64_operands_agree(node: fx.Node) -> bool:
+    """Whether no operand of `node` is int64 beside a narrower integer.
+
+    A bool operand is a predicate rather than a value, as SELECT takes, so it
+    does not make the remaining operands mixed.
+
+    """
+    dtypes = {
+        get_first_fake_tensor(arg).dtype
+        for arg in node.args
+        if isinstance(arg, fx.Node) and "val" in arg.meta
+    } - {torch.bool}
+    return torch.int64 not in dtypes or dtypes == {torch.int64}
+
+
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
     """Reject general int64 tensors while allowing safe exceptions.
 
@@ -1430,6 +1446,12 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     ) -> bool:
         """Return True when int64 use is absent or safe per exceptions."""
         if is_submodule_node(node):
+            return True
+        if (
+            keeps_int64(self.tosa_spec)
+            and node.target in TOSA_EXT_INT64_SupportList
+            and _int64_operands_agree(node)
+        ):
             return True
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
