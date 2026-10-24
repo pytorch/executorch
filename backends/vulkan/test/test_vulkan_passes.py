@@ -398,6 +398,62 @@ class TestVulkanPasses(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-3, rtol=1e-3))
 
+    def test_fuse_8da4w_linear_keeps_following_reshape(self):
+        """A reshape after a dynamically quantized linear that is not the view
+        restoring a decomposed N-D linear's leading dims must stay in the graph:
+        the fused et_vk.linear_dq8ca_q4gsw replaces the pattern's output node and
+        produces input.shape[:-1] + [N], not the reshaped shape.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.utils import unwrap_tensor_subclass
+
+        class LinearReshapeAdd(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(64, 32, bias=False)
+                self.register_buffer("pos", torch.randn(3, 32))
+
+            def forward(self, x):
+                # [6, 64] -> [6, 32] -> [2, 3, 32], then broadcast over dim 0
+                return self.linear(x).view(2, 3, 32) + self.pos
+
+        model = LinearReshapeAdd().eval()
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.randn(6, 64),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "linear_dq8ca_q4gsw.default"), 1)
+        # The reshape to [2, 3, 32] is still there, after the fused linear.
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 1)
+
+        fused_out = ep.module()(*sample_inputs)
+        self.assertEqual(tuple(fused_out.shape), (2, 3, 32))
+        self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-2, rtol=1e-2))
+
     def test_torchao_quantized_embedding_rejects_bad_embed_dim(self):
         """A torchao 4-bit quantized embedding whose embed_dim is not a multiple
         of 32 must NOT fuse: the runtime shader asserts embed_dim % 32 == 0
