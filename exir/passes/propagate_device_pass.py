@@ -532,18 +532,23 @@ class PropagateDevicePass(PassBase):
             writers = _in_place_writers(node)
             if writers:
                 device_spec = returned.meta["spec"]
-                with graph_module.graph.inserting_before(
-                    graph_module.graph.output_node()
-                ):
-                    returned = graph_module.graph.call_function(
-                        torch.ops.et_copy._h2d_copy.default, (node,)
-                    )
-                returned.meta["spec"] = _copy_output_spec(
-                    node.meta["spec"], device_spec.device, device_spec.device_index
+                output_node = graph_module.graph.output_node()
+                # A later delegate on this device may already read a device copy
+                # of the written host copy.
+                returned = _reusable_copy(
+                    node, output_node, device_spec.device, device_spec.device_index
                 )
-                returned.meta["val"] = node.meta.get("val")
-                if "tensor_meta" in node.meta:
-                    returned.meta["tensor_meta"] = node.meta["tensor_meta"]
+                if returned is None:
+                    with graph_module.graph.inserting_before(output_node):
+                        returned = graph_module.graph.call_function(
+                            torch.ops.et_copy._h2d_copy.default, (node,)
+                        )
+                    returned.meta["spec"] = _copy_output_spec(
+                        node.meta["spec"], device_spec.device, device_spec.device_index
+                    )
+                    returned.meta["val"] = node.meta.get("val")
+                    if "tensor_meta" in node.meta:
+                        returned.meta["tensor_meta"] = node.meta["tensor_meta"]
                 logger.warning(
                     "A method output (%d bytes) comes from a delegate on %s:%d "
                     "and '%s' writes it in place on the host, so it is copied to "
