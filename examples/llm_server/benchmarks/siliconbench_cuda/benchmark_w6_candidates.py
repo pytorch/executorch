@@ -15,6 +15,7 @@ import statistics
 import subprocess
 import sys
 import time
+import traceback
 
 
 def main():
@@ -64,6 +65,8 @@ def main():
     from executorch.backends.cuda.dp4a_planar_int6_tensor import CudaDp4aPlanarInt6Tensor
     from executorch.backends.cuda.triton.kernels import int6_quantized_gemm as native
     from executorch.backends.cuda.autotune import cuda_graph_timing as clock
+    from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+    from torch._library.triton import set_wrap_triton_enabled
     from candidates_w6a16_v6 import CONFIGS,run
     from candidates_w6a16_v6.validate import _oracle
     assert torch.cuda.get_device_capability()==(12,0)
@@ -76,7 +79,8 @@ def main():
                 device=torch.cuda.get_device_name(),capability=list(torch.cuda.get_device_capability()),
                 torch=torch.__version__,triton=triton.__version__,GGUF_sha256=digest.hexdigest(),
                 rounds=4,discarded=[1],averaged=[2,3,4],orders=['AB','BA','AB','BA'],
-                native_reference='Native W6A16 complete invocation, autotuned before measurement; executable-selected config still requires integration review',
+                native_reference='Native W6A16 complete invocation; eager split/tile selection frozen before graph capture; executable-selected config still requires integration review',
+                graph_measurement='Raw eager Triton launches, bypassing the per-call higher-order-op autotuner wrapper only within this benchmark',
                 A100_acceptance_separate=True,automatic_deployment=False,cases=[])
     def save(status,**fields):
         (a.output/'results.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -110,7 +114,7 @@ def main():
         reader=GGUFReader(str(a.gguf))
         q6=[t for t in reader.tensors if t.tensor_type==GGMLQuantizationType.Q6_K]
         assert len(q6)==52
-        with torch.inference_mode(),torch.cuda.stream(torch.cuda.Stream()):
+        with set_wrap_triton_enabled(False),torch.inference_mode(),torch.cuda.stream(torch.cuda.Stream()):
             for role,n,k in [('ffn_down',6656,19968),('attn_v',256,6656)]:
                 tensor=next(t for t in q6 if t.name.endswith('.'+role+'.weight'))
                 assert tuple(map(int,tensor.shape[::-1]))==(n,k)
@@ -124,9 +128,23 @@ def main():
                     generator=torch.Generator(device='cuda').manual_seed(25000+m+n)
                     x=torch.randn((m,k),dtype=torch.bfloat16,device='cuda',generator=generator)
                     oracle=_oracle(x,*planes)
-                    reference=lambda:native._launch_w6a16(m,x,*planes,16)
+                    with autotune_launch_params() as selection:
+                        native._launch_w6a16(m,x,*planes,16)
+                    assert len(selection.picks)==1
+                    pick=selection.picks[0]
+                    assert pick.function.endswith('._launch_w6a16') and pick.param=='split_k'
+                    split=int(pick.choice)
+                    selected=native._BUCKET_KERNELS[m].best_config
+                    cfg=triton.Config(dict(selected.kwargs),num_warps=selected.num_warps,
+                                      num_stages=selected.num_stages,num_ctas=selected.num_ctas)
+                    reference=lambda:native._launch_w6a16(m,x,*planes,16,split_k=split,config=cfg)
                     reference();torch.cuda.synchronize()
-                    record=dict(role=role,M=m,N=n,K=k,GGUF_tensor=tensor.name,GGUF_tensor_sha256=raw_sha,reference_numerics=check(reference,oracle),candidates=[])
+                    record=dict(role=role,M=m,N=n,K=k,GGUF_tensor=tensor.name,GGUF_tensor_sha256=raw_sha,
+                                reference_numerics=check(reference,oracle),
+                                reference_selection=dict(split_k=split,split_times_us=pick.times_us,
+                                    config=dict(kwargs=cfg.kwargs,num_warps=cfg.num_warps,
+                                                num_stages=cfg.num_stages,num_ctas=cfg.num_ctas),
+                                    eagerly_selected=True,executable_selected_config_unproven=True),candidates=[])
                     report['cases'].append(record)
                     for ident,cfg in CONFIGS.items():
                         if cfg['bucket']!=m:continue
@@ -134,13 +152,19 @@ def main():
                         try:
                             numeric=check(own,oracle)
                             result=dict(id=ident,config=cfg,numerics=numeric,timing=paired(reference,own))
-                        except Exception as error:result=dict(id=ident,error_type=type(error).__name__,detail=str(error)[-500:])
+                        except Exception as error:
+                            result=dict(id=ident,error_type=type(error).__name__,detail=str(error)[-500:])
+                            if 'capture' in str(error).lower():
+                                record['candidates'].append(result)
+                                (a.output/'exception-traceback.txt').write_text(traceback.format_exc())
+                                raise
                         record['candidates'].append(result);save('running-candidate-pairs',role=role,m=m,candidate=ident)
                     del x,oracle,reference
                 del planes,weight,gt,raw
                 torch.cuda.empty_cache()
         save('completed',cases=len(report['cases']),candidate_records=sum(len(c['candidates']) for c in report['cases']),server_acceptance_pending=True)
     except Exception as error:
+        (a.output/'exception-traceback.txt').write_text(traceback.format_exc())
         save('failed',error_type=type(error).__name__,detail=str(error)[-1000:]);raise
 
 
