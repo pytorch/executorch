@@ -382,6 +382,59 @@ void apply_kernel_2d_reduce_then_map_fn(
   }
 }
 
+/**
+ * 1-D counterpart of apply_kernel_2d_reduce_then_map_fn for contiguous inputs
+ * of shape (C, L) or (N, C, L). Values are accumulated in ACC so that reduced
+ * precision types can accumulate in a wider type.
+ *
+ * reduce_fn should have the following signature:
+ *
+ * ```
+ * ACC reduce_fn(const CTYPE in_val, const ACC accum);
+ * ```
+ *
+ * map_fn should have the following signature:
+ *
+ * ```
+ * CTYPE map_fn(const int64_t count, const ACC accum);
+ * ```
+ */
+template <typename CTYPE, typename ACC, typename ReduceOp, typename MapOp>
+void apply_kernel_1d_reduce_then_map_fn(
+    const ReduceOp& reduce_fn,
+    const MapOp& map_fn,
+    const bool include_pad,
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    Tensor& out) {
+  const int64_t kernel = kernel_size[0];
+  const int64_t step = val_at(stride, 0, /*default_value=*/kernel);
+  const int64_t pad = padding[0];
+  const int64_t in_len = in.size(in.dim() - 1);
+  const int64_t out_len = out.size(out.dim() - 1);
+
+  const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
+  CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
+
+  for (const auto row : c10::irange(in.numel() / in_len)) {
+    const CTYPE* const in_row = in_ptr + row * in_len;
+    CTYPE* const out_row = out_ptr + row * out_len;
+    for (const auto o : c10::irange(out_len)) {
+      const int64_t start = o * step - pad;
+      const int64_t end = std::min(start + kernel, in_len + pad);
+      const int64_t begin = std::max<int64_t>(start, 0);
+      const int64_t stop = std::min(end, in_len);
+      ACC accum = 0;
+      for (const auto i : c10::irange(begin, stop)) {
+        accum = reduce_fn(in_row[i], accum);
+      }
+      out_row[o] = map_fn(include_pad ? end - start : stop - begin, accum);
+    }
+  }
+}
+
 //
 // Operator specific utility functions
 //
@@ -398,6 +451,22 @@ void get_adaptive_avg_pool2d_out_target_size(
     size_t* const out_ndim);
 
 bool check_arange_args(double start, double end, double step, Tensor& out);
+
+bool check_avg_pool1d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const Tensor& out);
+
+void get_avg_pool1d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim);
 
 bool check_avg_pool2d_args(
     const Tensor& in,
