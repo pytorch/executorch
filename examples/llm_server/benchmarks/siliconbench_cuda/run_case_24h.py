@@ -73,6 +73,7 @@ def main():
     stop_sampler = threading.Event()
     memory = []
     phase = 'baseline'
+    performance_round = None
 
     def progress(status, **fields):
         record = dict(status=status, controller_pid=os.getpid(), elapsed_s=time.monotonic()-started, **fields)
@@ -86,6 +87,7 @@ def main():
     def sample_memory():
         while not stop_sampler.is_set():
             try:
+                sampled_phase, sampled_round = phase, performance_round
                 row = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used,power.draw,clocks.sm',
                                                '--format=csv,noheader,nounits'], text=True, timeout=15).strip()
                 values = [float(x.strip()) for x in row.split(',')]
@@ -98,7 +100,7 @@ def main():
                         break
                     owners.update(children)
                 rss = sum(value for pid, _, value in table if pid in owners)
-                memory.append(dict(elapsed_s=time.monotonic()-started, phase=phase,
+                memory.append(dict(elapsed_s=time.monotonic()-started, phase=sampled_phase, performance_round=sampled_round,
                                    GPU_used_MiB=values[0], power_W=values[1], clocks_SM_MHz=values[2],
                                    server_tree_host_RSS_KiB=rss))
             except (ValueError, subprocess.SubprocessError) as exc:
@@ -138,6 +140,7 @@ def main():
                                                      '--format=csv,noheader'], text=True).strip(),
                         source_code_patches_by_driver=False,
                         metric='server output tokens / complete HTTP workload wall time',
+                        memory_repetition_policy='Peak sampled during each performance round, mean/sample SD over rounds 2-4',
                         memory='sampled total device memory and server process-tree RSS; not allocator allocated/reserved')
         (args.output/'settings.json').write_text(json.dumps(settings, indent=2)+'\n')
         sampler = threading.Thread(target=sample_memory, daemon=True)
@@ -168,6 +171,7 @@ def main():
         if args.mode == 'performance':
             rounds = []
             for repetition in [1,2,3,4]:
+                performance_round = repetition
                 phase = 'performance'
                 progress('running-performance', round=repetition, server_pid=server.pid)
                 target = args.output/f'repeat-{repetition}'
@@ -190,7 +194,22 @@ def main():
                          for key in keys if key in rounds[0]}
             (args.output/'performance-aggregate.json').write_text(json.dumps(aggregate, indent=2)+'\n')
         phase = 'post-performance-idle'
+        performance_round = None
         stop_sampler.wait(2)
+        if args.mode == 'performance':
+            memory_by_round = []
+            for repetition in [1,2,3,4]:
+                samples = [row for row in memory if row.get('performance_round')==repetition and 'GPU_used_MiB' in row]
+                assert samples, 'Each performance round needs observed memory samples'
+                memory_by_round.append(dict(round=repetition, samples=len(samples),
+                    GPU_peak_MiB=max(row['GPU_used_MiB'] for row in samples),
+                    host_RSS_peak_KiB=max(row['server_tree_host_RSS_KiB'] for row in samples)))
+            memory_aggregate = {key: dict(mean=statistics.mean(row[key] for row in memory_by_round[1:]),
+                       sample_stddev=statistics.stdev(row[key] for row in memory_by_round[1:]),
+                       first_discarded=memory_by_round[0][key], values=[row[key] for row in memory_by_round[1:]])
+                       for key in ['GPU_peak_MiB','host_RSS_peak_KiB']}
+            memory_aggregate['rounds'] = memory_by_round
+            (args.output/'performance-memory-aggregate.json').write_text(json.dumps(memory_aggregate, indent=2)+'\n')
         if args.mode == 'correctness':
             scores = []
             for repetition in range(1, args.correctness_rounds+1):

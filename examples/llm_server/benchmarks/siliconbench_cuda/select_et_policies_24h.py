@@ -98,19 +98,20 @@ def main():
                  selection_metric='Geometric mean of output TPS at c1 and c16, within each cache mode',
                  quality_acceptance_pending=True, kernel_acceptance_is_separate=True), indent=2)+'\n')
         state('collecting-main-matrix', selected_programs={k:v['probe']['program'] for k,v in selected.items()})
-        for cache, chosen in selected.items():
-            probe = chosen['probe']
-            env = dict(os.environ, **probe.get('environment', {}))
-            env['SB_ET_PREFIX_ENTRIES'] = str(probe['prefix_entries'])
-            env['SB_CHECKPOINT'] = str(probe['checkpoint_interval'] if cache=='on' else 0)
-            cmd = [args.python, '-B', str(Path(__file__).with_name('run_matrix_24h.py')),
-                   '--wrapper', chosen['wrapper'], '--model', args.model, '--client', str(args.client),
-                   '--prompts', str(args.prompts), '--correctness-root', str(args.correctness_root), '--python', args.python,
-                   '--output', str(args.output/cache), '--lock', str(args.lock), '--port', str(args.port),
-                   '--variants', 'executorch', '--cache-modes', cache, '--concurrencies', '1', '2', '4', '8', '16']
-            with (args.output/(cache+'-matrix.log')).open('x') as log:
-                subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-            assert json.loads((args.output/cache/'progress.json').read_text())['status']=='completed'
+        for phase in ['performance', 'correctness']:
+            for cache, chosen in selected.items():
+                probe = chosen['probe']
+                env = dict(os.environ, **probe.get('environment', {}))
+                env['SB_ET_PREFIX_ENTRIES'] = str(probe['prefix_entries'])
+                env['SB_CHECKPOINT'] = str(probe['checkpoint_interval'] if cache=='on' else 0)
+                cmd = [args.python, '-B', str(Path(__file__).with_name('run_matrix_24h.py')),
+                       '--wrapper', chosen['wrapper'], '--model', args.model, '--client', str(args.client),
+                       '--prompts', str(args.prompts), '--correctness-root', str(args.correctness_root), '--python', args.python,
+                       '--output', str(args.output/phase/cache), '--lock', str(args.lock), '--port', str(args.port),
+                       '--phases', phase, '--variants', 'executorch', '--cache-modes', cache, '--concurrencies', '1', '2', '4', '8', '16']
+                with (args.output/(phase+'-'+cache+'-matrix.log')).open('x') as log:
+                    subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                assert json.loads((args.output/phase/cache/'progress.json').read_text())['status']=='completed'
         state('completed', performance_cells=10, full_quality_cells=4, smoke_quality_cells=6,
               final_quality_memory_and_kernel_acceptance_pending=True)
     except Exception as exc:

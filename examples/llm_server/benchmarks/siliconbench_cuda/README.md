@@ -70,3 +70,5 @@ Performance-first collection uses run_matrix_24h.py and run_case_24h.py. Every p
 Prefix policy probes use evaluate_mg_prefix_24h.py and evaluate_gemma_policy_24h.py with --phases performance. Full accepted correctness is then collected for the selected settings. Correctness uses the server-advertised model ID; the requested comparison model name remains in provenance.
 
 select_et_policies_24h.py selects completed error-free c1/c16 prefix policy probes for each cache mode, preserves all candidates and rejected attempts, and queues the selected full main matrix. Its probe plan contains a user-defined tuning cutoff. Selection is provisional until quality and kernel acceptance are reviewed.
+
+Primary memory is the observed per-round device peak averaged over performance rounds 2-4, with sample SD and the discarded first peak preserved. Whole-case worst peaks remain available separately. ET selected policies collect both cache modes for performance before starting quality.
