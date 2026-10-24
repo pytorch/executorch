@@ -5,7 +5,14 @@
 
 import torch
 
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import keeps_int64, TosaSpecification
+
+INT64_CASTS = {
+    (torch.bool, torch.int64),
+    (torch.int64, torch.bool),
+    (torch.int32, torch.int64),
+    (torch.int64, torch.int32),
+}
 
 SupportedCastMap = dict[torch.dtype, list[torch.dtype]]
 SupportedCastSet = set[tuple[torch.dtype, torch.dtype]]
@@ -171,5 +178,8 @@ def supported_to_dim_order_casts(tosa_spec: TosaSpecification) -> SupportedCastM
         casts.update(BF16_FP8E4M3_CASTS)
     if tosa_spec.support_extension("bf16") and tosa_spec.support_extension("fp8e5m2"):
         casts.update(BF16_FP8E5M2_CASTS)
+
+    if keeps_int64(tosa_spec):
+        casts = {c for c in casts if torch.int64 not in c} | (casts & INT64_CASTS)
 
     return _cast_map(casts)
