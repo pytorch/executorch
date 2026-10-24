@@ -232,12 +232,19 @@ def main(
     else:
         calibration_dataset = None
 
-    # Setup pre-processing
+    # Setup pre-processing. nms=False selects the NMS-free head; since
+    # ultralytics 8.4.140 predict() runs on a copy of the model, so export that
+    # fused, warmed-up copy (see YOLO26Model) instead of the cold original.
     np_dummy_tensor = np.ones((input_dims[0], input_dims[1], 3))
-    model.predict(np_dummy_tensor, imgsz=((input_dims[0], input_dims[1])), device="cpu")
+    model.predict(
+        np_dummy_tensor,
+        imgsz=((input_dims[0], input_dims[1])),
+        device="cpu",
+        nms=False,
+    )
 
-    # ultralytics 8.4.133-8.4.139 switch to channels_last in predict(); undo it.
-    pt_model = model.model.to(
+    # predict() converts the copy to channels_last on x86 CPUs; undo it.
+    pt_model = model.predictor.model.model.to(
         torch.device("cpu"), memory_format=torch.contiguous_format
     )
 
