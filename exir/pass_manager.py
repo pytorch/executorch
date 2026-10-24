@@ -15,8 +15,11 @@ import torch
 import torch.fx.passes.infra.pass_manager as fx
 import torch.utils._pytree as pytree
 from executorch.exir._program_utils import (
+    _disambiguate_mutation_outputs,
+    _get_mutation_output_clone_op,
     _get_updated_graph_signature,
     _get_updated_range_constraints,
+    _set_mutation_output_clone_op,
 )
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
@@ -179,6 +182,8 @@ class ExportedProgramPassManager(fx.PassManager):
         self,
         exported_program: ExportedProgram,
         override_verifiers: Optional[list[Type[Verifier]]] = None,
+        *,
+        mutation_output_clone_op: Callable[..., torch.Tensor] | None = None,
     ) -> ExportedProgramPassResult:
         """
         Runs passes on an ExportedProgram.
@@ -195,6 +200,9 @@ class ExportedProgramPassManager(fx.PassManager):
             self.solve_constraints()
 
         exported_program = copy.copy(exported_program)
+        clone_op = _get_mutation_output_clone_op(
+            exported_program, mutation_output_clone_op
+        )
 
         if override_verifiers:
             exported_program._verifiers = override_verifiers
@@ -222,9 +230,14 @@ class ExportedProgramPassManager(fx.PassManager):
                             # possible that the verifier will fail upon new ExportedProgram construction,
                             # and we should only run verification after each pass if
                             # run_checks_after_each_pass is True.
-                            new_graph_signature = _get_updated_graph_signature(
+                            _disambiguate_mutation_outputs(
                                 exported_program.graph_signature,
                                 res.graph_module,
+                                clone_op=clone_op,
+                            )
+                            _set_mutation_output_clone_op(res.graph_module, clone_op)
+                            new_graph_signature = _get_updated_graph_signature(
+                                exported_program.graph_signature, res.graph_module
                             )
                             # ExportedProgram.__init__ runs this, but this path mutates
                             # the program in place and never reconstructs it. Duplicate

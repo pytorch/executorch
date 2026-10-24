@@ -220,6 +220,7 @@ def define_common_targets(is_fbcode = False):
             ":models",
             "//caffe2:torch",
             "//caffe2/functorch:functorch_src",
+            "//executorch/exir:_program_utils",
             "//executorch/exir:graph_module",
             "//executorch/exir:lib",
             "//executorch/exir:memory",
@@ -246,6 +247,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:spec_prop_pass",
             "//executorch/exir/passes:sym_to_tensor_pass",
             "//executorch/exir/program:program",
+            "//executorch/exir/verification:verifier",
             "//executorch/extension/pybindings:portable_lib",  # @manual
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
             "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
