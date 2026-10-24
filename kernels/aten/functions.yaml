@@ -86,6 +86,8 @@
 
 - op: avg_pool2d.out
 
+- op: avg_pool3d.out
+
 - op: baddbmm.out
 
 - op: bitwise_and.Tensor_out

@@ -370,6 +370,71 @@ void get_avg_pool2d_out_target_size(
       in, 2, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
 }
 
+bool check_avg_pool3d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const bool count_include_pad,
+    const std::optional<int64_t>& divisor_override,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_CHECK_OR_RETURN_FALSE(
+      (in.dim() == 4 || in.dim() == 5) && out.dim() == in.dim(),
+      "Expected matching 4D or 5D input and output tensors");
+  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(stride, 3, true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 3, true));
+  ET_CHECK_OR_RETURN_FALSE(
+      in.size(in.dim() - 4) > 0, "Expected non-empty channels");
+  for (const auto i : c10::irange(3)) {
+    const int64_t kernel = val_at(kernel_size, i);
+    const int64_t step = val_at(stride, i, kernel);
+    ET_CHECK_OR_RETURN_FALSE(
+        kernel <= std::numeric_limits<int32_t>::max() &&
+            step <= std::numeric_limits<int32_t>::max(),
+        "Kernel size and stride must fit in int32_t");
+    ET_CHECK_OR_RETURN_FALSE(
+        in.size(in.dim() - 3 + i) >= kernel,
+        "Input spatial size must be at least the kernel size");
+    const int64_t size = _kernel_output_size_helper(
+        in.size(in.dim() - 3 + i),
+        kernel,
+        val_at(padding, i),
+        step,
+        1,
+        ceil_mode,
+        false,
+        0);
+    ET_CHECK_OR_RETURN_FALSE(
+        size > 0 &&
+            size <= std::numeric_limits<executorch::aten::SizesType>::max(),
+        "Invalid pooling output size");
+  }
+  if (divisor_override.has_value()) {
+    ET_CHECK_OR_RETURN_FALSE(
+        divisor_override.value() != 0, "divisor_override must be non-zero");
+  }
+  return true;
+}
+
+void get_avg_pool3d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+  for (const auto i : c10::irange(in.dim() - 3)) {
+    out_sizes[i] = in.size(i);
+  }
+  calculate_kernel_output_sizes(
+      in, 3, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+}
+
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
