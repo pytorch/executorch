@@ -44,6 +44,8 @@ def main():
     from gguf import GGUFReader,GGMLQuantizationType
     from executorch.examples.models.gemma4_31b.batching_gguf_loader import decode_q4_blocks
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+    from executorch.examples.models.gemma4_31b import cuda_packers
     from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
     from aoti_single_threaded import SingleThreadedPackage
     from candidates_w4a16_v9.validate import precision_oracle
@@ -51,6 +53,7 @@ def main():
     assert torch.cuda.get_device_capability()==(12,0)
     assert digest(Path(native.__file__))=='fb72d31e6d3f91e076fe9721744eacb7c379ffe0612c57e3c48ae4a25c20027c'
     assert digest(a.precision_control)=='10affaf3cd36f17a68f8336e764e24b16e54dd509d89577c9009445b2f41cf9b'
+    assert digest(Path(cuda_packers.__file__))=='c1243e267d373490cf325d14d9431a80d163c313b56d6f217c83cd7f1a74f15e'
     spec=importlib.util.spec_from_file_location('unchanged_precision_reference',a.precision_control);corrected=importlib.util.module_from_spec(spec);spec.loader.exec_module(corrected)
     assert digest(a.gguf)=='7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
     original=json.loads(a.source_report.read_text());case=original['AOTI_cases'][-1]
@@ -70,9 +73,20 @@ def main():
     try:
         with torch.inference_mode(),torch.cuda.stream(torch.cuda.Stream()):
             t=next(t for t in GGUFReader(str(a.gguf)).tensors if t.name=='blk.0.ffn_down.weight')
-            assert t.tensor_type==GGMLQuantizationType.Q4_0
+            n,k=tuple(reversed(t.shape.tolist()));assert (n,k)==(3840,15360)
             raw=torch.frombuffer(memoryview(t.data),dtype=torch.uint8).clone()
-            portable=decode_q4_blocks(raw,'q4_0',(3840,15360));obj=CudaCoalescedInt4Tensor.from_exportable_int4_tensor(portable)
+            if t.tensor_type==GGMLQuantizationType.Q4_K:
+                portable=ExportableGGUFTensor.from_raw(raw.reshape(n,-1),'q4_k')
+                module=torch.nn.Linear(k,n,bias=False,device='meta')
+                cuda_packers.pack_linear_for_cuda(module,{'weight':portable});obj=module.weight
+            else:
+                assert t.tensor_type in [GGMLQuantizationType.Q4_0,GGMLQuantizationType.Q4_1]
+                typ='q4_0' if t.tensor_type==GGMLQuantizationType.Q4_0 else 'q4_1'
+                portable=decode_q4_blocks(raw,typ,(n,k))
+                obj=CudaCoalescedInt4Tensor.from_exportable_int4_tensor(portable)
+            report['source_tensor']=dict(name=t.name,quantization=t.tensor_type.name,n=n,k=k,
+                raw_weight_sha256=hashlib.sha256(raw.numpy().tobytes()).hexdigest(),
+                packer_sha256=digest(Path(cuda_packers.__file__)),original_benchmark_packing_branch_reproduced=True)
             w=tuple(getattr(obj,key).cuda() for key in ['qdata','scale','scale_step','zero_point','zero_point_step'])
             x=torch.randn((8,15360),dtype=torch.bfloat16,device='cuda',generator=torch.Generator(device='cuda').manual_seed(22000+8+3840))
             report['packed_weight_sha256']=[hashlib.sha256(v.cpu().view(torch.uint8).numpy().tobytes()).hexdigest() for v in w]
