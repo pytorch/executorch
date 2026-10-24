@@ -231,6 +231,10 @@
       "sha256": "7ac367635495f4fe0ce4d426db5387c2986d961406aad01e8ecc8e27c57cba51",
       "bytes": 11746
     },
+    "handoff_cpp_quality.py": {
+      "sha256": "4f70dea79e92a938f11d1cd847c0ff64b76f084c021a4b3902f58b611e18f513",
+      "bytes": 5164
+    },
     "ka_v8_export_hook.py": {
       "sha256": "ce89c02f66ca492e94005f89d329623c97a7f8cc7a260e169925f8e78205a17d",
       "bytes": 3652
@@ -259,6 +263,10 @@
       "sha256": "aca3577de5c69965208fa6d20985473ccb25a0bbfadcdaab975bd1bd9346b091",
       "bytes": 10681
     },
+    "prepare_cpp_quality_reuse.py": {
+      "sha256": "ac81cec4343e3efcac1944113c943d3bfe7ec7bb6296338ca127ac5a0d2ee0f2",
+      "bytes": 5495
+    },
     "prepare_gemma_checkpoint.py": {
       "sha256": "529899e20859e2a2ba150e4fce7366a52165a5bd7b6fd556058a99a74194e233",
       "bytes": 9427
@@ -284,8 +292,8 @@
       "bytes": 5524
     },
     "run_matrix_24h.py": {
-      "sha256": "87ed5ad757e147471718c83d9f9fc778601705f81ca1064b50195daf975d13b2",
-      "bytes": 6163
+      "sha256": "7a24ccba049d88daca2779419a54e816ea49ba4d9c1d6a92c8a1987df44e35f3",
+      "bytes": 6718
     },
     "select_et_policies_24h.py": {
       "sha256": "e76ff92ea2bf5918a2624feaec0cebb86483b6767f0c809802f5bc28a1580d26",
