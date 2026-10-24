@@ -28,6 +28,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--export-progress', type=Path, required=True)
     parser.add_argument('--candidate', type=Path, required=True)
+    parser.add_argument('--baseline-export-progress', type=Path, required=True)
+    parser.add_argument('--baseline', type=Path, required=True)
+    parser.add_argument('--prefix-entries', type=int, choices=[1,16], default=1)
     parser.add_argument('--base-wrapper', type=Path, required=True)
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--prompts', type=Path, required=True)
@@ -38,7 +41,7 @@ def main():
     parser.add_argument('--port', type=int, default=19083)
     args = parser.parse_args()
     assert not args.output.exists(), 'Keep previous results and failed attempts'
-    assert args.export_progress.exists() and args.base_wrapper.is_file()
+    assert args.export_progress.exists() and args.baseline_export_progress.exists() and args.base_wrapper.is_file()
     args.output.mkdir(parents=True)
     completed = []
 
@@ -49,20 +52,43 @@ def main():
         pending.replace(args.output / 'progress.json')
 
     try:
-        state('waiting-artifact-export', export_progress=str(args.export_progress))
+        state('waiting-artifact-export', export_progress=str(args.export_progress),
+              baseline_export_progress=str(args.baseline_export_progress))
         while True:
-            export = json.loads(args.export_progress.read_text())
-            if export['status'] == 'completed':
+            exports = [json.loads(path.read_text()) for path in
+                       [args.baseline_export_progress, args.export_progress]]
+            if all(export['status'] == 'completed' for export in exports):
                 break
-            assert export['status'] not in ['failed', 'cancelled', 'aborted'], export
+            assert all(export['status'] not in ['failed', 'cancelled', 'aborted'] for export in exports), exports
             time.sleep(30)
-        assert Path(export['artifact']).resolve() == args.candidate.resolve()
+        assert [Path(export['artifact']).resolve() for export in exports] == [args.baseline.resolve(), args.candidate.resolve()]
         state('waiting-GPU-lock-for-artifact-audit')
         with args.lock.open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             assert not subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid',
                                                 '--format=csv,noheader'], text=True).strip()
             audit = json.loads((args.candidate / 'artifact-audit.json').read_text())
+            baseline_audit = json.loads((args.baseline / 'artifact-audit.json').read_text())
+            required_resident = 16 + args.prefix_entries + 1
+            for artifact, proof, budget in [(args.baseline, baseline_audit, 2048),
+                                            (args.candidate, audit, 512)]:
+                assert proof['max_resident_sequences'] >= required_resident
+                assert proof['constant_metadata']['get_offgraph_kv_max_seqs'] == proof['max_resident_sequences']
+                assert proof['constant_metadata']['get_max_prefill_chunk'] == budget
+                assert proof['supported_prefix_entries_with_16_active'] >= args.prefix_entries
+                assert proof['fresh_export'] and proof['same_GGUF_and_packer']
+                assert proof['runtime_and_source_checkout_unchanged']
+                assert proof['selected_output_bound'] == [64, 262144]
+                assert proof['context'] == 12288 and proof['active_sessions'] == proof['decode_ceiling'] == 16
+                assert proof['static_methods'] == [1, 2, 4, 8, 16, 32, 64]
+                assert proof['AOTI_wrapper_optimization'] == 'O2'
+                assert set(proof['artifacts']) == {'model.pte', 'aoti_cuda_blob.ptd'}
+                for name, record in proof['artifacts'].items():
+                    assert digest(artifact / name) == record['sha256']
+            assert baseline_audit['GGUF_sha256'] == audit['GGUF_sha256']
+            assert baseline_audit['packer_sha256'] == audit['packer_sha256']
+            assert baseline_audit['precision_kernel_sha256'] == audit['precision_kernel_sha256']
+            assert baseline_audit['max_resident_sequences'] == audit['max_resident_sequences']
             assert audit['fresh_export'] and audit['same_GGUF_and_packer']
             assert audit['runtime_and_source_checkout_unchanged']
             assert audit['GGUF_sha256'] == '7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -73,24 +99,27 @@ def main():
             assert audit['constant_metadata']['get_max_prefill_chunk'] == 512
             assert audit['safe_ring_rows'] == 1535
             assert audit['AOTI_wrapper_optimization'] == 'O2'
-            for name, record in audit['artifacts'].items():
-                assert name in ['model.pte', 'aoti_cuda_blob.ptd']
-                assert digest(args.candidate / name) == record['sha256']
             body = args.base_wrapper.read_text()
             pattern = re.compile(r'(?m)^([ \t]*)artifact="([^"\n]+)"[ \t]*$')
             matches = list(pattern.finditer(body))
             assert len(matches) == 1, 'Expected one reviewed ET artifact assignment'
             assert 'step2048' in matches[0].group(2), 'Expected the existing 2048-write baseline'
             assert body.count('--prefix-cache-entries "$et_prefix_entries"') == 1
+            entry_marker = 'et_prefix_entries=${SB_ET_PREFIX_ENTRIES:-16}'
+            assert body.count(entry_marker) == 1
+            body = body.replace(entry_marker, 'et_prefix_entries=${SB_ET_PREFIX_ENTRIES:-' + str(args.prefix_entries) + '}')
+            os.environ['SB_ET_PREFIX_ENTRIES'] = str(args.prefix_entries)
             replacement = matches[0].group(1) + 'artifact=' + shlex.quote(str(args.candidate.resolve()))
             candidate_body = pattern.sub(lambda _: replacement, body)
             base_wrapper = args.output / 'serve-baseline.sh'
             candidate_wrapper = args.output / 'serve-candidate.sh'
-            base_wrapper.write_text(body)
+            base_wrapper.write_text(pattern.sub(lambda _: matches[0].group(1) + 'artifact=' + shlex.quote(str(args.baseline.resolve())), body))
             candidate_wrapper.write_text(candidate_body)
             for wrapper in [base_wrapper, candidate_wrapper]:
                 subprocess.run(['bash', '-n', str(wrapper)], check=True)
-            provenance = dict(candidate_audit=audit, candidate_wrapper_sha256=digest(candidate_wrapper),
+            provenance = dict(candidate_audit=audit, baseline_audit=baseline_audit,
+                              prefix_entries=args.prefix_entries, required_resident_sequences=required_resident,
+                              candidate_wrapper_sha256=digest(candidate_wrapper),
                               base_wrapper_sha256=digest(base_wrapper), total_cases=8,
                               only_wrapper_change='ET artifact path', deployment_accepted=False)
             (args.output / 'comparison-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')

@@ -31,7 +31,8 @@ def main():
     parser.add_argument('--gguf',type=Path,required=True)
     parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--precision-control',type=Path,required=True)
-    parser.add_argument('--max-step-tokens',type=int,choices=[256,512,1024],default=512)
+    parser.add_argument('--max-step-tokens',type=int,choices=[256,512,1024,2048],default=512)
+    parser.add_argument('--max-kv-seqs',type=int,choices=[17,18,33],default=18)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--job-dir',type=Path,required=True)
     parser.add_argument('--lock',type=Path,required=True)
@@ -41,7 +42,8 @@ def main():
     def state(status,**fields):
         pending=args.job_dir/'progress.pending.json'
         pending.write_text(json.dumps(dict(status=status,controller_pid=os.getpid(),
-                                         max_step_tokens=args.max_step_tokens,**fields),indent=2)+'\n')
+                                         max_step_tokens=args.max_step_tokens,
+                                         max_kv_seqs=args.max_kv_seqs,**fields),indent=2)+'\n')
         pending.replace(args.job_dir/'progress.json')
 
     if not args.owned_gpu_worker:
@@ -120,7 +122,7 @@ def main():
     state('exporting',safe_ring_rows=1024+args.max_step_tokens-1)
     sys.argv=['export_batching','--gguf',str(args.gguf),'--config',str(args.config),
               '--output-dir',str(args.output),'--max-seq-len','12288',
-              '--max-step-tokens',str(args.max_step_tokens),'--max-kv-seqs','17']
+              '--max-step-tokens',str(args.max_step_tokens),'--max-kv-seqs',str(args.max_kv_seqs)]
     runpy.run_module('executorch.examples.models.gemma4_31b.export_batching',run_name='__main__')
 
     from executorch.exir._serialize._program import deserialize_pte_binary
@@ -137,7 +139,7 @@ def main():
             value=plan.values[plan.outputs[0]].val
             if isinstance(value,Int):metadata[name]=value.int_val
             elif isinstance(value,String):metadata[name]=value.string_val
-    assert metadata['get_offgraph_kv_max_seqs']==17 and metadata['get_max_context_len']==12288
+    assert metadata['get_offgraph_kv_max_seqs']==args.max_kv_seqs and metadata['get_max_context_len']==12288
     assert metadata['get_activation_dtype'] in [int(ScalarType.BFLOAT16),'bf16','bfloat16']
     assert metadata['get_n_caches']==48 and metadata['get_max_prefill_chunk']==args.max_step_tokens
     output=methods['forward_others'].values[methods['forward_others'].outputs[0]].val
@@ -149,7 +151,7 @@ def main():
                 if compile_spec.key!='offgraph_kv_manifest':continue
                 manifest=json.loads(bytes(compile_spec.value))
                 assert manifest['layout']=='batched-sequence' and manifest['maximum_capacity']==12288
-                assert manifest['max_seqs']==17 and manifest['max_segments']==34
+                assert manifest['max_seqs']==args.max_kv_seqs and manifest['max_segments']==2*args.max_kv_seqs
                 assert manifest['max_write']==args.max_step_tokens and manifest['causal'] is True
                 assert not manifest.get('context_window',False)
                 rings=[layer for layer in manifest['layers'] if layer['policy']=='ring']
@@ -160,7 +162,8 @@ def main():
     builds=[json.loads(line) for line in (args.job_dir/'actual-compiler-optimization.jsonl').read_text().splitlines()]
     optimized=[b for b in builds if b['optimization_flags'] and b['optimization_flags'][-1]=='-O2']
     assert optimized and not any(b['optimization_flags'] and b['optimization_flags'][-1]=='-O0' for b in builds)
-    expected_kv=40*(1024+args.max_step_tokens-1)*18*8*256*4+8*12288*18*1*512*4
+    columns=args.max_kv_seqs+1
+    expected_kv=40*(1024+args.max_step_tokens-1)*columns*8*256*4+8*12288*columns*1*512*4
     policy=json.loads((args.output/'sampler-policy.json').read_text())
     assert sorted(policy['stop_tokens'])==[1,50,106] and policy['suppress_tokens']==[258882,258883]
     audit=dict(fresh_export=True,selected_output_bound=output.sizes,constant_metadata=metadata,
@@ -171,7 +174,9 @@ def main():
                expected_KV_bytes=expected_kv,expected_KV_GiB=expected_kv/2**30,
                AOTI_wrapper_optimization='O2',actual_optimized_builds=len(optimized),
                sampler_policy=policy,
-               prefill_activation='BF16; native small tails retained',physical_columns=18,
+               prefill_activation='BF16; native small tails retained',physical_columns=columns,
+               max_resident_sequences=args.max_kv_seqs,
+               supported_prefix_entries_with_16_active=max(0,args.max_kv_seqs-16-1),
                context=12288,active_sessions=16,decode_ceiling=16,static_methods=[1,2,4,8,16,32,64],
                safe_ring_rows=1024+args.max_step_tokens-1,runtime_and_source_checkout_unchanged=True,
                same_GGUF_and_packer=True,PTD_binary_identity_with_previous_export_not_assumed=True,
