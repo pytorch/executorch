@@ -88,6 +88,7 @@ def main():
     from candidates_w4a16_v8 import CONFIGS, run
     from candidates_w4a16_v8.aoti import candidate_op, config_index
     from candidates_w4a16_v8.validate import precision_oracle, staged_oracle, error_stats
+    from aoti_single_capture_timing import time_single_aoti_capture_us, TIMING_POLICY
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.set_float32_matmul_precision('highest')
@@ -137,7 +138,8 @@ def main():
         return dict(relative_rms=float(d.square().mean().sqrt() / oracle.float().square().mean().sqrt().clamp_min(1e-8)),
                     max_abs=float(d.abs().max()), diagnostic_only=True)
 
-    def paired(reference, candidate):
+    def paired(reference, candidate, timer=None):
+        timer = clock.time_with_cuda_graph_us if timer is None else timer
         samples = {'reference': [], 'candidate': []}
         for repeat in range(4):
             order = [('reference', reference), ('candidate', candidate)]
@@ -147,7 +149,7 @@ def main():
                 bounded()
                 for _ in range(3):
                     fn()
-                samples[label].append(clock.time_with_cuda_graph_us(fn))
+                samples[label].append(timer(fn))
         means = {label: statistics.mean(v[1:]) for label, v in samples.items()}
         return dict(samples_us=samples, means_us=means,
                     sample_sd_us={label: statistics.stdev(v[1:]) for label, v in samples.items()},
@@ -204,7 +206,9 @@ def main():
                 'reference': checked(lambda: call('reference', xx), native_oracle),
                 'candidate': checked(lambda: call('candidate', xx), candidate_oracle)},
                 candidate_versus_native=difference(call('candidate', xx), call('reference', xx))))
-        record['paired_timing'] = paired(lambda: call('reference', x), lambda: call('candidate', x))
+        record['paired_timing'] = paired(lambda: call('reference', x), lambda: call('candidate', x),
+                                        timer=time_single_aoti_capture_us)
+        record['AOTI_timing_policy'] = TIMING_POLICY
         save('AOTI-package-load-validated', role=role)
         del models
         torch.cuda.empty_cache()

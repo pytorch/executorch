@@ -96,6 +96,7 @@ def main():
             from candidates_w4a16_v8 import CONFIGS,run,bind_launcher
             from candidates_w4a16_v8.aoti import candidate_op,config_index
             from candidates_w4a16_v8.validate import make_weights,precision_oracle,error_stats
+            from aoti_single_capture_timing import time_single_aoti_capture_us, TIMING_POLICY
             torch.set_num_threads(2)
             torch.backends.cuda.matmul.allow_tf32=False
             torch.set_float32_matmul_precision('highest')
@@ -145,7 +146,8 @@ def main():
                 assert stats['relative_rms']<.005,stats
                 return dict(deterministic=True,**stats)
 
-            def paired(reference,candidate):
+            def paired(reference,candidate,timer=None):
+                timer=clock.time_with_cuda_graph_us if timer is None else timer
                 samples={'reference':[],'candidate':[]};orders=[]
                 for repeat in range(4):
                     idle_except_self()
@@ -154,7 +156,7 @@ def main():
                     orders.append([role for role,_ in order])
                     for role,fn in order:
                         for _ in range(3):fn()
-                        samples[role].append(clock.time_with_cuda_graph_us(fn))
+                        samples[role].append(timer(fn))
                 means={key:statistics.mean(values[1:]) for key,values in samples.items()}
                 return dict(samples_us=samples,means_us=means,orders=orders,
                             sample_sd_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
@@ -220,7 +222,9 @@ def main():
                     check={label:checked(lambda label=label,xx=xx:call(label,xx),oracle)
                            for label in ['reference','candidate']}
                     record['tail_numerics'].append(dict(m=actual_m,checks=check))
-                record['paired_timing']=paired(lambda:call('reference',x),lambda:call('candidate',x))
+                record['paired_timing']=paired(lambda:call('reference',x),lambda:call('candidate',x),
+                                               timer=time_single_aoti_capture_us)
+                record['AOTI_timing_policy']=TIMING_POLICY
                 record['interpretation']='Both reference and candidate packaged/loaded with the same dynamic-M range and correct arithmetic; explicit reference config remains a feasible control, not proof of the whole-server selected config'
                 save('AOTI-package-load-validated',role=role,bucket=bucket,config_id=bound.config_id)
                 del models
@@ -316,7 +320,7 @@ def main():
                         baseline=lookup[(bucket,n,k)];cfg=baseline['config']
                         ncfg=triton.Config({key:value for key,value in cfg.items() if key not in ['num_warps','num_stages']},
                                            num_warps=cfg['num_warps'],num_stages=cfg['num_stages'])
-                        audit_aoti(role,bucket,n,k,w,baseline,ncfg)
+                        audit_aoti('Gemma-real-'+role,bucket,n,k,w,baseline,ncfg)
                     del w
                     torch.cuda.empty_cache()
             assert len(report.get('AOTI_cases',[]))==4

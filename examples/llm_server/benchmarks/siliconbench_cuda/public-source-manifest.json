@@ -11,6 +11,14 @@
       "sha256": "a1477aa1c2bca52aa19c4bd7ddc9fc109edc89e21d96e10a30501c072711407c",
       "bytes": 14327
     },
+    "aoti_single_capture_timing.py": {
+      "sha256": "0b10141c5868da24b86f6e6e92dd044a8666cc81dd20c13f7d0d75a528f814ed",
+      "bytes": 2037
+    },
+    "audit_aoti_single_capture.py": {
+      "sha256": "adf15137cfe4db702fd55552f2082ad6217a195489e866bb5b257e10a837821d",
+      "bytes": 7581
+    },
     "benchmark_candidates.py": {
       "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
       "bytes": 14495
@@ -24,8 +32,8 @@
       "bytes": 16738
     },
     "benchmark_candidates_v8.py": {
-      "sha256": "8160805e58c3e78ba39e002cebd8779d312580d14f5f68117accb7af75db2bc7",
-      "bytes": 22287
+      "sha256": "7fef17cc1c6896c15f7f04ec9d6dacf15d22d9ad529623638880dccb7480dee1",
+      "bytes": 22603
     },
     "benchmark_gemma.py": {
       "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
@@ -36,8 +44,8 @@
       "bytes": 31649
     },
     "benchmark_mg_w4a16_v8.py": {
-      "sha256": "d23855bcc7367cf1286033f071d46741ada64fbbd656821322e33a1e2367257e",
-      "bytes": 17831
+      "sha256": "0a5b5bfca8eddd2a246a03a4cf125f0ae65f7878ba6c64b50e70f819f36f4d32",
+      "bytes": 18107
     },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
