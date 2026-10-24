@@ -1,0 +1,33 @@
+# CUDA SiliconBench experiment tools
+
+Prepared with OpenAI Codex and KernelAgent. These are experimental evaluation tools; the candidate kernels have not passed deployment acceptance.
+
+The intended matrix is Muse Glimmer 30B agent and Gemma4 12B agent, ExecuTorch/vLLM/SGLang/llama.cpp FORCE_CUBLAS ON/OFF, prefix caching ON/OFF, concurrency 1/2/4/8/16. Use stock framework code and public switches. Preserve existing data and use a shared GPU lock. Keep model artifacts and every output outside the Git checkout.
+
+Performance means server output tokens divided by complete workload wall time. Run four rounds, discard the first, average the last three. Record output counts, TTFT and sampled memory separately. HTTP TTFT is not pure GPU prefill. The driver records device memory, not allocator allocated/reserved memory. An ExecuTorch memory excess above 15% requires a component audit.
+
+`prepare.py` builds a second stock llama.cpp configuration with only FORCE_CUBLAS changed, pins public GMRID data and builds 0/5-shot prompts. It expects the existing FORCE_CUBLAS build under `build-stock-cublas`. Correctness scripts are from WindChimeRan/SiliconBench commit 55d695bf21060b79498014b5029505fbeb6e54b9. GMRID has 1,147 news items, eight labels, weighted F1. All response IDs are checked before scoring, so missing requests cannot disappear from F1. Error responses are scored as incorrect.
+
+```bash
+python prepare.py --root /workspace/my-benchmark --cpp-repo /workspace/llama.cpp --output /workspace/my-benchmark/preparation --python /workspace/my-benchmark/.venv/bin/python
+```
+
+The correctness inputs are written to `preparation/correctness`; pass that location to `run_case.py`. The preparation script links the reviewed `correctness/scripts` directory into that input directory. Run each server through your launch wrapper. The wrapper must honor SB_PORT, SB_PREFIX_CACHE=on/off and SB_CPP_BUILD and use the same model/quantization/KV/configuration as the performance run.
+
+```bash
+python run_case.py --wrapper /workspace/serve.sh --backend vllm --variant vllm-stock --model gemma4-12b-it --prefix-cache off --client /workspace/benchmark_cuda.py --prompts /workspace/agent_benchmark_prompts.json --correctness-root /workspace/my-benchmark/preparation/correctness --python /workspace/my-benchmark/.venv/bin/python --concurrency 16 --output /workspace/my-benchmark/results/vllm-off-c16 --lock /workspace/my-benchmark/gpu.lock
+```
+
+The default is four full correctness rounds for each shot setting, in addition to the four performance rounds. Raw conversations, token IDs, logs and model files remain in the experiment output and must not be committed.
+
+The `candidates_w4a16_precision_v4` package is Triton W4A16/BF16, packed INT4 bytes unchanged, FP32 affine reconstruction, final BF16 weight operand and FP32 accumulation. Runtime source files are unchanged from the KA v4 output. The validation script's source inventory omits a task-private historical hash inventory; numerical validation is unchanged. M8/M16 are the current candidate buckets. Optimizations for M1/M2/M4 are still pending. All new M8/M16 candidates failed the measured A100 no-regression gate. They must not replace the A100 implementation. RTX5090 validation and real-model F1/performance acceptance are still required.
+
+Validate numeric behavior before measuring any candidate:
+
+```bash
+python -m candidates_w4a16_precision_v4.validate --help
+```
+
+Generate the public cache/build launch switches from an existing reviewed wrapper using `python make_wrapper.py --base /workspace/base-serve.sh --output /workspace/serve.sh`. The native llama.cpp OFF build may choose quantized activation kernels during prefill; label it as a native-policy comparison rather than A16-confirmed.
+
+The vendored correctness scripts retain the SiliconBench MIT license in `correctness/LICENSE`.
