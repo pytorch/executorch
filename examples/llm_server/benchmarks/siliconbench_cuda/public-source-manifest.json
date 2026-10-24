@@ -247,6 +247,10 @@
       "sha256": "6aa8c9df6bda7f954c04127358550c508eef856eefc99bbb4b6a32253f1a0beb",
       "bytes": 19369
     },
+    "diagnose_native_cubin_bindings.py": {
+      "sha256": "64929b5f06dccaddaf74049c5bc877900b7a1ac871f91e3564ea89dc36a76058",
+      "bytes": 12040
+    },
     "diagnose_native_reducer_warps.py": {
       "sha256": "8bab1919e62e0090b54a8d1ac1757b1c8622d0015d06592bfa51dd208df7f322",
       "bytes": 10360
