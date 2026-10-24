@@ -998,6 +998,38 @@ class TestPropagateDevicePass(unittest.TestCase):
                 nodes = list(gm.graph.nodes)
                 self.assertLess(nodes.index(_host_writer(gm)), nodes.index(output))
 
+    def test_skip_d2h_shares_the_device_copy_of_a_written_output(self):
+        """With skip_d2h_for_method_outputs, a returned output that a host op
+        writes before a later delegate on the same device reads it needs a
+        device copy for both. The method output reads the same copy as that
+        delegate."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y
+                torch.ops.propagate_device_test.accumulate(a, y)
+                return a, a + y
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            _host_writer_config(
+                False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_d2h_for_method_outputs=True
+                ),
+            ),
+        )
+        (copy,) = [
+            n
+            for n in _collect_device_copy_nodes(gm).h2d_nodes
+            if n.args[0] is _host_written(gm)
+        ]
+        _, second = _collect_device_copy_nodes(gm).delegate_nodes
+        self.assertIn(copy, second.args[1:])
+        self.assertIs(gm.graph.output_node().args[0][0], copy)
+
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
         directly-connected delegates must be preserved -- the round-trip is a
