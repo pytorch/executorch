@@ -80,7 +80,7 @@ def main():
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
     from candidates_w4a16_v8.validate import precision_oracle,error_stats
     from aoti_single_capture_timing import time_single_aoti_capture_us,TIMING_POLICY
-    from aoti_explicit_stream import run_aoti_on_current_stream,INVOCATION_POLICY
+    from aoti_single_threaded import SingleThreadedPackage,INVOCATION_POLICY
     try:
         assert torch.cuda.get_device_capability() == (12,0)
         assert digest(a.gguf) == '7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -92,7 +92,7 @@ def main():
             path=Path(package['path'])
             assert path.resolve().is_relative_to(a.reuse_report.parent.resolve())
             assert path.stat().st_size==package['bytes'] and digest(path)==package['sha256']
-            models[label]=torch._inductor.aoti_load_package(str(path))
+            models[label]=SingleThreadedPackage(path,a.output/'official-api-extracted'/label)
         assert set(models)=={'reference','candidate'}
         reader=GGUFReader(str(a.gguf))
         tensor=next(t for t in reader.tensors if t.name=='blk.0.attn_k.weight')
@@ -102,7 +102,7 @@ def main():
         w=tuple(getattr(obj,key).cuda() for key in ['qdata','scale','scale_step','zero_point','zero_point_step'])
         x=torch.randn((8,3840),dtype=torch.bfloat16,device='cuda',generator=torch.Generator(device='cuda').manual_seed(26001))
         def call(label,xx):
-            result=run_aoti_on_current_stream(models[label], [xx,*w])
+            result=models[label](xx,*w)
             if isinstance(result,(tuple,list)):
                 assert len(result)==1;result=result[0]
             return result
@@ -124,7 +124,7 @@ def main():
                     for _ in range(3):call(label,x)
                     samples[label].append(time_single_aoti_capture_us(lambda label=label:call(label,x)))
         means={label:statistics.mean(values[1:]) for label,values in samples.items()}
-        result=dict(validated=True,source_report_sha256=digest(a.reuse_report),packages=record['packages'],
+        result=dict(validated=True,source_report_sha256=digest(a.reuse_report),packages=record['packages'],extracted_package_members={k:v.members for k,v in models.items()},
             GGUF_sha256=digest(a.gguf),timing_policy=TIMING_POLICY,invocation_policy=INVOCATION_POLICY,one_AOTI_invocation_per_capture=True,
             rounds=4,discarded=[1],averaged=[2,3,4],warmups=3,tail_checks=checks,
             samples_us=samples,means_us=means,orders=orders,
@@ -132,6 +132,7 @@ def main():
             candidate_over_reference=means['candidate']/means['reference'],
             model_runtime_source_and_packages_unchanged=True,no_server_candidate_enabled=True)
         (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n')
+        for model in models.values():model.close()
         state('completed',validation_only=True,no_server_candidate_enabled=True)
     except Exception as e:
         (a.output/'exception-traceback.txt').write_text(traceback.format_exc())
