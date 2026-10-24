@@ -1,86 +1,83 @@
 # TensorRT Backend
 
 The TensorRT backend runs ExecuTorch models on NVIDIA GPUs with
-[TensorRT](https://developer.nvidia.com/tensorrt), NVIDIA's inference library. At export
-time the model graph is compiled into TensorRT engines. The engines are stored inside the
-`.pte` file, and at run time the delegate hands each one back to TensorRT.
+[TensorRT](https://developer.nvidia.com/tensorrt), NVIDIA's inference library. At export time,
+TensorRT compiles the parts of the model it supports into engines (programs optimized for your
+GPU), and the engines are stored in the `.pte` file. At run time, the TensorRT delegate hands each
+engine back to TensorRT.
 
 The delegate is built and shipped by the [Torch-TensorRT](https://github.com/pytorch/TensorRT)
-project, so it comes from its wheel and not from the ExecuTorch wheel. Everything after
-installation is the normal ExecuTorch API: the same `.pte` file, the same `Module` class, the
-same runtime.
+project, not by ExecuTorch. You export with Torch-TensorRT, and you run with the normal ExecuTorch
+runtime and its usual APIs. The
+[Torch-TensorRT ExecuTorch guide](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html)
+covers every option in detail.
+
+This page describes Torch-TensorRT 2.15 and newer. What is marked "nightly only" is not in
+Torch-TensorRT 2.15 or the ExecuTorch build it installs. For those features, use a
+[nightly build](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#nightly-builds),
+or a later release once there is one.
 
 ## Features
 
-- **TensorRT engines inside a `.pte`.** One file holds the program and its engines, so the
-  runtime loads a model the usual way.
-- **Works with the CUDA backend in one program.** Operators TensorRT cannot convert can be
-  compiled by the ExecuTorch [CUDA backend](../cuda/cuda-overview.md) instead of falling back
-  to the CPU. Both delegates live in the same `.pte` and run in the same method.
-- **GPU resident inputs and outputs.** The copies around the method boundary can be turned
-  off, so a pipeline that already holds its data on the GPU does not pay for them.
-- **CUDA graph replay.** An engine can be recorded once and replayed with a single launch,
-  which helps models that launch many short kernels. This needs a Torch-TensorRT build newer
-  than the 2026-10-06 nightly, see [Feature availability](#feature-availability).
-- **Shared activation scratch.** Many engines in one program can share one scratch buffer
-  instead of each keeping its own.
-- **Shared engines.** Loading the same program twice keeps one copy of the engine weights in
-  GPU memory. This also needs a build newer than the 2026-10-06 nightly.
-- **Caller-owned CUDA stream.** The application can give every delegate the same stream,
-  including a CUDA green context stream, so the model stays inside one part of the GPU.
+- **TensorRT engines inside a `.pte`.** One file holds the program and its engines.
+- **Works with the CUDA backend in one program.** Operators that TensorRT cannot compile can go to
+  the ExecuTorch [CUDA backend](../cuda/cuda-overview.md) instead of the CPU, so the whole model
+  stays on the GPU.
+- **Inputs and outputs that stay on the GPU.** The copies at the edges of the program can be
+  turned off, for a pipeline that already has its data on the GPU.
+- **Your own CUDA stream.** It can belong to a CUDA green context, which gives the model a fixed
+  share of the GPU's compute units.
+- **CUDA graph replay.** A whole engine runs with one launch.
+- **Shared activation scratch.** Many engines can share one buffer for their temporary results.
+- **Shared engines.** Loading the same program twice keeps one copy of the engine weights in GPU
+  memory.
+- **Weight streaming.** An engine can keep part of its weights in CPU memory.
+- **Zero-copy KV cache.** The engine of a large language model (LLM) can update its key-value (KV)
+  cache in place.
+- **Nightly only:** engines in a separate data file, optimization profiles (tunings for different
+  input sizes) chosen per call, CUDA graph replay for engines on the shared activation scratch, and
+  setting runtime options from Python.
 
 ## Target Requirements
 
-- **Hardware**: NVIDIA GPU.
-- **Operating system**: Linux, on x86_64 and on aarch64.
-- **CUDA**: 13.x. The delegate links CUDA 13, so a CUDA 12 build is not supported.
-- **Drivers**: an NVIDIA driver that matches the CUDA version.
+- **Hardware**: an NVIDIA GPU that CUDA 13 supports. ExecuTorch's CUDA backend is built for
+  compute capability 8.0 (Ampere) and newer.
+- **Operating system**: Linux on x86-64 with glibc (the GNU C library) 2.28 or newer, Linux on
+  aarch64 with glibc 2.35 or newer, or Windows on x86-64 (nightly only).
+- **CUDA**: 13. The prebuilt delegate links the CUDA 13 runtime.
+- **Drivers**: an NVIDIA driver that supports CUDA 13.
 
-TensorRT itself and the CUDA runtime arrive as dependencies of the wheels, so a system
-install of either is not required.
+On Linux, TensorRT and the CUDA runtime come as dependencies of the Python packages, so you do not
+need a system install of either. On Windows, TensorRT comes the same way, but the delegate loads
+the CUDA runtime from a CUDA 13 toolkit install. Install the toolkit, and make sure `CUDA_PATH` or
+`CUDA_HOME` points at it.
+
+By default, TensorRT builds each engine for the operating system, the GPU and the TensorRT version
+it is exported with. So export your programs on the kind of machine that will run them, with the
+same packages.
+
+On Windows, ExecuTorch's CUDA backend cannot export a program, and ExecuTorch's Python runtime there
+does not include the CUDA backend. So
+[sending operators to the CUDA backend](#sending-the-rest-to-the-cuda-backend) is a Linux setup.
 
 ## Development Requirements
 
-One command installs everything needed to export a model. The `executorch` extra pulls in a
-CUDA build of ExecuTorch, the delegate wheel, Torch-TensorRT, and PyTorch:
+Install the packages as the
+[installation section](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#installation)
+of the Torch-TensorRT guide shows. On Windows, follow its
+[nightly builds](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#nightly-builds)
+part. That gives you Torch-TensorRT, PyTorch, a CUDA build of ExecuTorch, and the TensorRT
+delegate, which is the `torch-tensorrt-executorch-runtime` package.
 
-```bash
-pip install --pre "torch-tensorrt[executorch]" \
-  --index-url https://download.pytorch.org/whl/nightly/cu132 \
-  --extra-index-url https://pypi.org/simple \
-  --extra-index-url https://pypi.nvidia.com
-```
-
-Swap `cu132` for the channel that matches your CUDA, for example `cu134` for CUDA 13.4. Keep
-PyTorch, ExecuTorch, and Torch-TensorRT on the same channel.
-
-All three indexes matter. Without `--pre` pip takes the latest stable Torch-TensorRT from the
-public index, which pairs with an older ExecuTorch release than this page describes. Without
-NVIDIA's index the TensorRT package resolves to a source build that takes about twenty
-minutes and then fails.
-
-A CUDA build of ExecuTorch is required, not only to build against. The delegate needs a
-library that only the CUDA wheels carry, so a CPU-only build installs and then fails on
-import.
-
-If you also want the CUDA backend to pick up the operators TensorRT rejects, install a CUDA
-toolkit as well. That backend compiles those operators at export time with `nvcc`.
-
-### Feature availability
-
-Two features on this page are newer than the 2026-10-06 Linux nightly of Torch-TensorRT and
-its delegate package, which was the newest one when this page was written:
-
-- [CUDA graph replay](#cuda-graph-replay). With the 2026-10-06 build, `torch_tensorrt.save`
-  rejects `use_cuda_graphs` with a `TypeError`.
-- [Shared engines](#shared-engines). The 2026-10-06 delegate keeps every engine private, so
-  loading a program twice still holds two copies of its weights.
-
-Both are on the Torch-TensorRT main branch and in its 2.15 release branch. To use them,
-install a wheel newer than 2026-10-06 once one is published, or build Torch-TensorRT from
-source. Everything else on this page works with the 2026-10-06 build.
+The CUDA build of ExecuTorch is required even to run a program: the delegate needs ExecuTorch's
+`extension_cuda` library, which only the CUDA builds ship. To send the operators that TensorRT
+rejects to the CUDA backend, you also need a CUDA toolkit, because that backend compiles them at
+export time with `nvcc`, the CUDA compiler. PyTorch finds `nvcc` on your `PATH` or under
+`CUDA_HOME`.
 
 ## Using the TensorRT Backend
+
+The Python examples on this page run in order, and later ones reuse names from earlier ones.
 
 ### Exporting a model
 
@@ -93,68 +90,89 @@ import torch_tensorrt
 
 class MyModel(torch.nn.Module):
     def forward(self, x):
-        return x + 1
+        return torch.relu(x) + 1
 
 
 with torch.no_grad():
     model = MyModel().eval().cuda()
-    example_input = (torch.randn(2, 3, 4, 4).cuda(),)
+    example_inputs = (torch.randn(2, 3, 4, 4, device="cuda"),)
 
-    exported_program = torch.export.export(model, example_input)
+    exported_program = torch.export.export(model, example_inputs)
     trt_gm = torch_tensorrt.dynamo.compile(
         exported_program,
-        arg_inputs=example_input,
+        arg_inputs=example_inputs,
         min_block_size=1,
     )
-
     torch_tensorrt.save(
         trt_gm,
         "model.pte",
         output_format="executorch",
-        arg_inputs=example_input,
         retrace=False,
     )
 ```
 
-`retrace=False` is required. Re-exporting the compiled graph drops the engine, and the error
-only shows up much later when the program is loaded.
+`retrace=False` saves the compiled graph as it is, which nightly builds of Torch-TensorRT do by
+default. Torch-TensorRT 2.15 re-exports the graph by default instead, so on 2.15 pass
+`retrace=False`.
 
-### Letting the CUDA backend take what TensorRT rejects
+The Torch-TensorRT page on
+[saving models](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/saving_models.html#executorch-save)
+describes the other options of `save`. It also shows how to put several methods in one file, and
+how to let the engine update a KV cache in place.
 
-TensorRT has no converter for every ATen operator. By default the leftover operators run on
-the CPU, which costs a copy in each direction. Pass a `CudaPartitioner` and they are compiled
-by the ExecuTorch CUDA backend instead, so the whole model stays on the GPU:
+### Sending the rest to the CUDA backend
+
+TensorRT cannot convert every PyTorch operator. By default the ones it rejects run on ExecuTorch's
+CPU kernels, with a copy in each direction on every call. If an operator such as `erfinv` has no
+CPU kernel, the method fails to load. Pass a `CudaPartitioner`, and the ExecuTorch CUDA backend
+compiles those operators instead:
 
 ```python
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 
-torch_tensorrt.save(
-    trt_gm,
-    "coalesced.pte",
-    output_format="executorch",
-    arg_inputs=example_input,
-    retrace=False,
-    partitioners=[
-        CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
-    ],
-)
+
+class CoalescedModel(torch.nn.Module):
+    def forward(self, x):
+        return torch.cos(torch.erfinv(torch.tanh(x)))
+
+
+with torch.no_grad():
+    coalesced_model = CoalescedModel().eval().cuda()
+    coalesced_inputs = (torch.randn(64, 64, device="cuda"),)
+
+    coalesced_gm = torch_tensorrt.dynamo.compile(
+        torch.export.export(coalesced_model, coalesced_inputs),
+        arg_inputs=coalesced_inputs,
+        min_block_size=1,
+    )
+    torch_tensorrt.save(
+        coalesced_gm,
+        "coalesced.pte",
+        output_format="executorch",
+        retrace=False,
+        partitioners=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+    )
 ```
 
-The TensorRT partitioner always runs first, and the `CudaPartitioner` picks up the rest. For
-a model such as `cos(erfinv(tanh(x)))`, where TensorRT cannot take `erfinv`, the result is one
-`.pte` whose delegate list reads `['TensorRTBackend', 'CudaBackend', 'TensorRTBackend']`.
+TensorRT takes what it can first, and the `CudaPartitioner` takes the rest. TensorRT cannot take
+`erfinv`, so this program's delegates are `['TensorRTBackend', 'CudaBackend', 'TensorRTBackend']`.
+The Torch-TensorRT docs call such a program *coalesced*.
 
-The CUDA backend writes its external weights to a `.ptd` file beside the `.pte` under a fixed
-name. Save each coalesced model into its own directory. A second export into the same
-directory overwrites the first model's weights, and the first model then still loads and
-returns a wrong answer with no error.
+The export writes the weights of the CUDA part to a data file, `aoti_cuda_blob.ptd`, next to the
+`.pte`. Pass that file when you load the program: if the CUDA part has weights, loading fails
+without it. The file has the same name for every model, so a second export into the same directory
+overwrites the first one's weights, and the first model can then return wrong answers with no
+error. Save each model into its own directory.
 
 ### Keeping inputs and outputs on the GPU
 
-By default ExecuTorch inserts a host to device copy before the first delegate and a device to
-host copy after the last one, so a method is safe to call with CPU tensors. If your data is
-already on the GPU, turn those copies off:
+By default, the program copies its inputs to the GPU before the first delegate, and its outputs
+back after the last one, so you can call it with CPU tensors. If your data is already on the GPU,
+turn those copies off. In the flag names, h2d means host (CPU) to device (GPU), and d2h the other
+way:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig
@@ -165,45 +183,36 @@ torch_tensorrt.save(
     trt_gm,
     "device_resident.pte",
     output_format="executorch",
-    arg_inputs=example_input,
     retrace=False,
     backend_config=ExecutorchBackendConfig(
         propagate_device_config=PropagateDeviceConfig(
             skip_h2d_for_method_inputs=True,
             skip_d2h_for_method_outputs=True,
         ),
-        enable_non_cpu_memory_planning=True,
         memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
     ),
 )
 ```
 
-Three points are easy to miss:
+- The two skip flags work only with `enable_non_cpu_memory_planning`, which is on by default.
+  With either flag set, turning it off makes the export raise a `ValueError`.
+- `alloc_graph_input=False` is required. Without it the program keeps its own input buffer, and
+  handing it a GPU tensor fails with error `0x10` (`NotSupported`). The log then says
+  `Error copying tensor data at input 0`.
+- The outputs stay in the program's own GPU memory. To have them outside that memory, also pass
+  `alloc_graph_output=False`. Then each output needs a GPU buffer before the call: in C++ you pass
+  your own with `Module::set_output`, and the Python runtime allocates one for you.
 
-- **Both skip flags need `enable_non_cpu_memory_planning=True`.** Copy insertion happens
-  during device aware memory planning. Setting it to `False` raises a `ValueError`.
-- **Inputs must be unplanned**, with `MemoryPlanningPass(alloc_graph_input=False)`. Without
-  it the program reserves its own input buffer and the runtime copies the caller's memory
-  into it, which puts the copy straight back.
-- **Leave the outputs planned when Python runs the program.** The program's own device arena
-  then holds the output, and Python returns a copy of it as a CUDA tensor. With
-  `alloc_graph_output=False` the caller provides the output memory instead. A C++ caller does
-  that with `Module::set_output`. The Python bindings do it correctly starting with ExecuTorch
-  1.6.0.dev20261008, but the 2026-10-06 delegate wheel pins ExecuTorch 1.6.0.dev20260925, so
-  with that wheel keep the outputs planned.
-
-The choice is baked into the `.pte`. A program exported this way wants CUDA tensors, so pass
-CUDA tensors. A host tensor works only when TensorRT is the first to read that input. On most
-GPUs it then stages a copy on every call, which is the cost the export existed to remove. When
-the CUDA backend reads it first, as it can in a coalesced program, it refuses the host memory
-and the call fails.
+Pass CUDA tensors to a program exported this way. A CPU tensor costs a copy on every call when the
+first delegate to use that input is TensorRT, and fails when it is the CUDA backend. **Nightly
+only:** the Python runtime refuses it in both cases.
 
 ## Runtime Integration
 
 ### Python
 
-Import the delegate package once, anywhere before a program is loaded. The import is what
-registers the backend. Nothing else about your code changes:
+Import the delegate package once, before you load a program. The import registers the delegate.
+ExecuTorch's own CUDA backend needs no import, and nothing else in your code changes:
 
 ```python
 from pathlib import Path
@@ -217,26 +226,29 @@ forward = program.load_method("forward")
 outputs = forward.execute((torch.ones(2, 3, 4, 4),))
 ```
 
-If the delegate cannot be loaded, that import raises straight away instead of leaving the
-failure to show up later as a program that will not load.
-
-A coalesced program needs no extra registration. Both backends are registered, and the
-program records which parts go where. Its weights are a different matter. If the part the
-CUDA backend compiled has weights, they are in the `aoti_cuda_blob.ptd` file saved beside the
-`.pte`, and the runtime does not look for that file on its own. Pass it when you load:
+If the delegate cannot load, the import raises a `DelegateCompatibilityError` right away. If the
+export wrote a data file, such as `aoti_cuda_blob.ptd` from the CUDA backend, pass it when you load:
 
 ```python
 program = Runtime.get().load_program(
     Path("coalesced.pte"), data_path=Path("aoti_cuda_blob.ptd")
 )
+outputs = program.load_method("forward").execute((torch.ones(64, 64),))
 ```
 
-Without it, loading a program whose CUDA part has weights fails.
+A program that keeps its inputs and outputs on the GPU takes CUDA tensors and returns CUDA tensors:
 
-### C++ against the installed wheels
+```python
+program = Runtime.get().load_program(Path("device_resident.pte"))
+outputs = program.load_method("forward").execute(
+    (torch.ones(2, 3, 4, 4, device="cuda"),)
+)
+```
 
-The wheels ship a prebuilt delegate and a CMake package, so a C++ application can link them
-without building anything from source:
+### C++
+
+The Python packages ship the prebuilt delegate and its CMake package, so a C++ application can link
+it without building anything from source. The steps below are for Linux.
 
 ```cmake
 find_package(executorch REQUIRED COMPONENTS backend_cuda kernels_optimized)
@@ -250,24 +262,28 @@ target_link_libraries(my_app PRIVATE
 )
 ```
 
-`kernels_optimized` supplies the `et_copy` operators that move data across the method
-boundary. `backend_cuda` is needed by any coalesced program, and also by a TensorRT only
-program that still has those boundary copies, because it registers the device allocator they
-use.
+- `kernels_optimized` provides the CPU operators: the copies between the CPU and the GPU at the
+  edges of the program, and any operator that stays on the CPU.
+- `backend_cuda` registers the allocator for the program's GPU memory, so a program that uses only
+  TensorRT needs it too.
 
-The two packages live in two distributions, so point CMake at both. ExecuTorch is a namespace
-package, so its path has to come from its distribution metadata:
+The two CMake packages are inside two Python packages, so point CMake at both. ExecuTorch's
+location comes from its package metadata, because `executorch.__file__` is `None`:
 
 ```bash
-cmake -DCMAKE_PREFIX_PATH="$(TORCH_TENSORRT_SKIP_DELEGATE_REGISTRATION=1 python -c 'import importlib.metadata as m, torch_tensorrt_executorch_runtime as r, pathlib; print(str(pathlib.Path(str(m.distribution("executorch").locate_file("executorch"))) / "share" / "cmake") + ";" + str(pathlib.Path(r.__file__).parent))')" ...
+ET_CMAKE=$(python -c 'import importlib.metadata as m, pathlib; print(pathlib.Path(str(m.distribution("executorch").locate_file("executorch"))) / "share" / "cmake")')
+DELEGATE=$(TORCH_TENSORRT_SKIP_DELEGATE_REGISTRATION=1 python -c 'import pathlib, torch_tensorrt_executorch_runtime as r; print(pathlib.Path(r.__file__).parent)')
+cmake -DCMAKE_PREFIX_PATH="${ET_CMAKE};${DELEGATE}" ...
 ```
 
-CMake 3.28 or newer is needed for the form above, because the `backend_cuda` component
-rejects older versions. CMake is not part of the wheels, so install it yourself.
+`TORCH_TENSORRT_SKIP_DELEGATE_REGISTRATION=1` in the second command lets Python import the
+delegate package to read its path, without loading the delegate.
 
-There is no header to include. The delegate registers itself with the backend registry from a
-static initializer inside the shared library, and everything after that is the ordinary
-ExecuTorch C++ API:
+You need CMake 3.28 or newer: on older versions the ExecuTorch package does not provide the
+`executorch::` targets used above. CMake is not part of the packages, so install it yourself.
+
+Running a program needs no header from the delegate. It registers itself when its library loads, and
+the rest is the ordinary ExecuTorch C++ API:
 
 ```cpp
 #include <cstdio>
@@ -294,198 +310,93 @@ int main() {
 }
 ```
 
-For a coalesced program whose CUDA part has weights, pass the data file to the constructor
-as well, for the same reason as in Python:
+If the export wrote a data file, pass it to the constructor:
 
 ```cpp
 Module module("coalesced.pte", "aoti_cuda_blob.ptd");
 ```
 
-Linking the target also records the wheel's own library directory in your binary, which is
-right for an application built against an installed wheel and wrong for anything you plan to
-redistribute. Turn it off with `EXECUTORCH_BACKEND_TENSORRT_EMBED_RUNPATH` and
-`CMAKE_SKIP_BUILD_RPATH`, both set before `find_package`.
-
-### Building from source
-
-The delegate source ships inside `libtorchtrt.tar.gz` as
-`torch_tensorrt/src/torch_tensorrt/executorch/`. Turn on ExecuTorch's CUDA backend and the
-extensions a `Module` app uses, add the delegate next to ExecuTorch, and link the target it
-provides:
-
-```cmake
-set(EXECUTORCH_BUILD_CUDA ON)
-set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-set(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
-set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
-
-add_subdirectory("executorch")
-add_subdirectory("torch_tensorrt/src/torch_tensorrt/executorch")
-
-target_link_libraries(my_runner PRIVATE
-  executorch
-  executorch::backends
-  executorch::extensions
-  executorch::kernels
-  executorch::backend_tensorrt
-)
-```
-
-Turn on the CUDA backend even for a program that only uses TensorRT. It builds the shared
-`extension_cuda` library the delegate links, and it registers the device allocator the
-boundary copies use. Without it the delegate stops at configure time. It also needs PyTorch
-installed in the Python environment that CMake finds. The other options are the extensions
-the CUDA backend and the `Module` class depend on, and CMake stops with an error if one of
-them is missing.
-
-Building the delegate needs CUDA Toolkit 12.5 or newer. `libextension_cuda` stays a shared
-library on purpose, so that every CUDA-capable delegate in the process reads the same caller
-stream.
+The Torch-TensorRT guide explains
+[how to ship such an application](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#run-from-c)
+to other machines, and links to the instructions for building the delegate from source.
 
 ## Performance Options
 
-### Choosing the CUDA stream
+Each option below links to its section of the Torch-TensorRT guide. The guide's section
+[Setting a runtime option](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#setting-a-runtime-option)
+shows how to set the options that apply at run time: from C++, or from Python with a nightly
+build.
 
-With no stream chosen, both delegates run on `cudaStreamPerThread`, the default stream of the
-calling thread. A coalesced program run from one thread is therefore ordered correctly as it
-is, with nothing to add.
-
-To run every delegate on a stream of your own, for example a green context stream, scope a
-guard over the whole execution:
-
-```cpp
-#include <executorch/extension/cuda/caller_stream.h>
-
-using namespace executorch::extension;
-
-cuda::CallerStreamGuard guard(stream);
-module.forward(input);
-```
-
-The guard lives in the `extension_cuda` library, so add it to the link recipe above:
-
-```cmake
-find_package(executorch REQUIRED COMPONENTS backend_cuda extension_cuda kernels_optimized)
-
-target_link_libraries(my_app PRIVATE executorch::extension_cuda)
-```
-
-One guard reaches every CUDA-capable delegate, because they all resolve the same shared
-`libextension_cuda`. The stream must be on the same device as the engine. The CUDA backend
-refuses a caller stream for a method that uses its own CUDA graphs.
-
-### Green contexts
-
-Because both delegates honor the caller's stream, that stream can be a CUDA green context
-stream. A green context holds a fixed number of streaming multiprocessors, so the whole model
-is confined to that part of the GPU and the rest stays free for other work. Create the stream
-with `cuGreenCtxStreamCreate` and scope the same guard over it.
-
-This has been exercised on a 108 SM card with a green context holding 8 of them, running a
-program split across the TensorRT delegate and the CUDA backend.
-
-### CUDA graph replay
-
-This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see
-[Feature availability](#feature-availability).
-
-Replay is off by default. When it is on, the delegate records an engine's kernel launches
-once as a CUDA graph and then replays the whole engine with one launch. It helps engines with
-fixed shapes that launch many short kernels, where the CPU launch work is a large part of
-each call.
-
-Turn it on at export time:
-
-```python
-torch_tensorrt.save(
-    trt_gm,
-    "model.pte",
-    output_format="executorch",
-    arg_inputs=example_input,
-    retrace=False,
-    use_cuda_graphs=True,
-)
-```
-
-It is not free. Each engine keeps one stable device buffer per input and output, and every
-call copies each input in and each output out. For an engine with few kernels, or with large
-inputs and outputs, those copies can cost more than the launches they save. Shapes that
-change on every call never replay and still pay the copies.
-
-Some engines never replay, even with replay on. An engine on the shared activation scratch
-below always takes the ordinary path, so turning on both options gives no replay. Engines
-with aliased outputs, GPUs without stream-ordered memory, and drivers older than CUDA 12.5
-also keep the ordinary path, as does a call on a green context stream. The delegate logs the
-reason once.
-
-Recording is also not safe next to every kind of work. While a recording is running, creating
-or destroying a TensorRT engine elsewhere in the process is unsafe, and so is a whole device
-sync such as `cudaDeviceSynchronize` or `torch.cuda.synchronize()`. Leave replay off when
-other threads may do any of that. A C++ host can refuse a program's saved request for one
-load:
-
-```cpp
-#include <executorch/extension/module/module.h>
-
-using namespace executorch::extension;
-using namespace executorch::runtime;
-
-BackendOptions<1> options;
-options.set_option("use_cuda_graphs", false);
-LoadBackendOptionsMap by_backend;
-by_backend.set_options("TensorRTBackend", options.view());
-module.load(by_backend);
-```
-
-### Shared activation scratch
-
-A TensorRT execution context allocates its own activation scratch and holds it for as long as
-the context lives. A model lowered to many small engines pays that cost many times over, and
-can run out of GPU memory on the engine count alone. This option backs all of a device's
-contexts from one buffer instead, grown to the largest size any call has asked for:
-
-```cpp
-#include <executorch/runtime/backend/interface.h>
-
-using namespace executorch::runtime;
-
-BackendOptions<1> options;
-options.set_option("use_shared_activation_scratch", true);
-set_option("TensorRTBackend", options.view());
-```
-
-Set it before loading the methods whose contexts should use the pool. The memory saved is the
-sum of the separate scratch sizes less the largest of them.
-
-The cost is parallelism. Contexts that share one buffer do not run at the same time on the
-device. The backend holds a per device lock from the claim on the buffer through the enqueue,
-so two calls on one device are serialized at submission. The pool also never shrinks, and a
-device that has run a pooled engine must not be reset with `cudaDeviceReset()`.
-
-### Shared engines
-
-This feature needs a Torch-TensorRT build newer than the 2026-10-06 nightly, see
-[Feature availability](#feature-availability).
-
-When the same program is loaded twice, for example once per robot arm, handles loaded from
-the same engine bytes, for the same device and the same weight streaming request, share one
-engine. The engine weights are in GPU memory once. Each handle still gets its own execution
-context and buffers.
-
-This is on by default. Measured on an 8 GB Jetson Orin Nano, loading one robot policy a second
-time grew GPU memory by 806 MiB without sharing and by 122 MiB with it. Those numbers are the
-cost of the second load, not the total. Finding a match means hashing the engine bytes on
-every load, which costs roughly 0.15 s per GB on a Jetson AGX Thor. Pass the
-`use_shared_engines` load option as `false` to keep one module's engines private.
+- [**Choosing the CUDA stream.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#choosing-the-cuda-stream)
+  By default, both delegates run on `cudaStreamPerThread`, the default stream of the calling
+  thread, so a program split between them runs in the right order on one thread. To use your own
+  stream, put one `executorch::extension::cuda::CallerStreamGuard` around the call. It reaches
+  every delegate.
+  - The stream must be on the same device as the engine, and the CUDA backend refuses a caller
+    stream for a method that uses the CUDA backend's own CUDA graph option.
+  - The guard comes from `executorch/extension/cuda/caller_stream.h`. Add the `extension_cuda`
+    component to `find_package(executorch ...)` and link `executorch::extension_cuda`. Your own CUDA
+    calls, such as creating the stream, also need `CUDA::cudart` from `find_package(CUDAToolkit)`,
+    with a CUDA 13 toolkit.
+  - Synchronize the stream before you read GPU outputs, because the CUDA backend can return while
+    its work is still queued.
+  - The stream can belong to a CUDA green context. A green context owns a fixed number of the GPU's
+    streaming multiprocessors (SMs), so the model stays inside that part of the GPU. Creating its
+    stream with `cuGreenCtxStreamCreate` also needs `CUDA::cuda_driver`. TensorRT then warns that
+    the engine was built without green context constraints, which it says may cause crashes or
+    undefined behavior. Torch-TensorRT has no option to build engines with them.
+- [**CUDA graph replay.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#cuda-graph-replay)
+  Pass `use_cuda_graphs=True` to `torch_tensorrt.save`. It helps engines with fixed shapes that
+  launch many short kernels.
+  - It costs a copy of every input and output, and an engine whose input shapes change on every
+    call never replays. Calls on a green context stream, or on a stream of another CUDA context,
+    do not replay either, and the guide lists a few rarer cases.
+  - A program saved with replay on can still have it turned off at load, with the
+    `use_cuda_graphs` option.
+  - While a graph is being recorded, no other thread may create or destroy a TensorRT engine or
+    execution context (the object that runs an engine) anywhere outside this delegate, or call
+    `cudaDeviceSynchronize()` or `torch.cuda.synchronize()`. Recording happens again after every
+    shape change, so leave replay off when other threads may do these things.
+- [**Shared activation scratch.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#shared-activation-scratch)
+  The `use_shared_activation_scratch` option, set for the whole process before the program loads,
+  lets all engines on a device share one buffer for their temporary results. That saves memory for
+  a model split into many engines, but two engines on the shared scratch never run at the same
+  time. The scratch never shrinks, and a device that used it must not be reset with
+  `cudaDeviceReset()`. Engines on the shared scratch replay CUDA graphs only in nightly builds.
+- [**Shared engines.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#shared-engines)
+  On by default: loading the same program twice, on the same device and with the same weight
+  streaming budget, keeps one copy of each engine in GPU memory. Engines are matched by a hash of
+  their bytes, which a crafted program could match on purpose, so every program in the process must
+  be trusted. To keep one program's engines private, pass the `use_shared_engines` option as
+  `false` when you load it (from Python, nightly only).
+- [**Weight streaming.**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#weight-streaming)
+  An engine compiled with `enable_weight_streaming=True` can keep part of its weights in CPU memory.
+  Set how many bytes stay on the GPU with `weight_streaming_budget_per_engine` in
+  `torch_tensorrt.save`, or with the `weight_streaming_budget` load option.
+- [**Engines in a separate data file**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#keep-the-engines-in-a-separate-file)
+  (nightly only). Pass `external_engine_data="engines"` to `torch_tensorrt.save` to write the
+  engines to `engines.ptd` instead of the `.pte`, and pass that file when you load the program.
+  The Python loader takes one data file, so for a program that also uses the CUDA backend, pass
+  `external_engine_data="aoti_cuda_blob"` to share its file.
+- [**Optimization profiles**](https://docs.pytorch.org/TensorRT/user_guide/runtime_performance/executorch.html#optimization-profiles)
+  (nightly only). One engine can be tuned for several ranges of input shapes, for example one for
+  decoding one token at a time and one for a long prompt. A C++ application picks the profile for
+  each call with `torch_tensorrt::executorch_backend::OptimizationProfileGuard`, from the
+  `torch_tensorrt/executorch/TensorRTBackend.h` header. Without the guard, every engine runs
+  profile 0, and Python cannot choose a profile.
+  - The Python packages do not carry the delegate's headers. Compile against `cpp/include` in the
+    Torch-TensorRT source, or `torch_tensorrt/include` in `libtorchtrt.tar.gz`, at the same version
+    as your delegate, and against the headers of a TensorRT SDK (the C++ development package).
+  - On Windows, the packaged delegate does not export the guard.
 
 ## Examples
 
 - [Export a static shape model](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_static_shape.py)
-- [Export a coalesced TensorRT and CUDA model](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_coalesced.py)
+- [Export a model whose input shapes can change](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_dynamic_shape.py)
+- [Export a model split between TensorRT and the CUDA backend](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_coalesced.py)
 - [Export a model that keeps its data on the GPU](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_device_resident.py)
-- [C++ reference runner, including the green context option](https://github.com/pytorch/TensorRT/tree/main/examples/executorch_reference_runner)
-
-The Torch-TensorRT documentation covers the export options in more detail, including dynamic
-shapes, programs with more than one method, and a zero copy KV cache for decoder models.
+- [Export a decoder step whose KV cache stays in memory you own](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_kv_cache_decode.py)
+- [Export one engine with two optimization profiles](https://github.com/pytorch/TensorRT/blob/main/examples/torchtrt_executorch_example/export_multi_profile.py)
+  (nightly only)
+- [C++ and Python reference runners](https://github.com/pytorch/TensorRT/tree/main/examples/executorch_reference_runner)
+  (the two multi-profile programs need a nightly build)
