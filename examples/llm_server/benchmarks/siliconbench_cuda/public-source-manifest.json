@@ -243,6 +243,14 @@
       "sha256": "12dc70cc45b2d6cecb0205f3933cb3fd4dc6b351e18148b396e828c4a71f8ff7",
       "bytes": 19014
     },
+    "diagnose_v9_aoti_repeats.py": {
+      "sha256": "c5442ae5eda4c3b6e53baa76f39d5374ec4df930710bf478b6c7a1fb09070aea",
+      "bytes": 8851
+    },
+    "enforce_owned_tuning_deadline.py": {
+      "sha256": "4f6b61c1714b6cc3a30c4353a469f81d197ab304023f9def218bce2a0878d24f",
+      "bytes": 6458
+    },
     "enforce_tuning_deadline.py": {
       "sha256": "160ff37c603229ef0b9e1ab419336f94025bb7c3c25c0070eee5adc70874c5ad",
       "bytes": 2127
