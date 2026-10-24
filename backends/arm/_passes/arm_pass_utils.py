@@ -17,6 +17,7 @@ import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -828,3 +829,30 @@ def permute_fake_tensor_metadata(
         requires_grad=fake_tensor.requires_grad,
     )
     return FakeTensor(fake_tensor.fake_mode, meta_tensor, fake_tensor.fake_device)
+
+
+def keeps_int64_through(node: torch.fx.Node, tosa_spec=None) -> bool:
+    """Whether `node` may stay int64 instead of being narrowed to int32.
+
+    Without a specification the node narrows, which is the behavior the
+    extension is absent.
+
+    """
+    # Imported here as operator_support imports this module in turn.
+    from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
+        TOSA_EXT_INT64_SupportList,
+    )
+
+    def aten_overload(target):
+        return target._op if isinstance(target, EdgeOpOverload) else target
+
+    # The pass also runs before the edge dialect, where users carry the ATen
+    # overload rather than the edge one.
+    supported = {aten_overload(op) for op in TOSA_EXT_INT64_SupportList}
+    users = list(node.users)
+    return (
+        tosa_spec is not None
+        and keeps_int64(tosa_spec)
+        and bool(users)
+        and all(aten_overload(u.target) in supported for u in users)
+    )
