@@ -199,6 +199,10 @@
       "sha256": "33c9ddaf9c7656a30b06d935d70a513e2dd737ca4f4e37f15ca746461a830c03",
       "bytes": 9444
     },
+    "diagnose_mg_generation_budget.py": {
+      "sha256": "f3c3c97ae4e09488edd120a620af6c5503c295f506a6aae645a28db0f6f42edf",
+      "bytes": 7749
+    },
     "enforce_tuning_deadline.py": {
       "sha256": "160ff37c603229ef0b9e1ab419336f94025bb7c3c25c0070eee5adc70874c5ad",
       "bytes": 2127
