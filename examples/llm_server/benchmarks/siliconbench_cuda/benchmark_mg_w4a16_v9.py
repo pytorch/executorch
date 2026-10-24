@@ -92,6 +92,7 @@ def main():
     from native_gemm_oracle_diagnostic import native_fma_oracle
     TIMING_POLICY='unchanged native cuda_graph_timing.time_with_cuda_graph_us; cold L2 per call; 4-32 calls in one graph; minimum GPU event interval'
     from aoti_single_threaded import SingleThreadedPackage, INVOCATION_POLICY
+    from isolated_aoti_export import compile_package
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.set_float32_matmul_precision('highest')
@@ -109,7 +110,10 @@ def main():
     assert proof['native_source_sha256']=='fb72d31e6d3f91e076fe9721744eacb7c379ffe0612c57e3c48ae4a25c20027c'
     diag=proof['native_oracle_diagnostic']
     assert diag['native_FMA_numeric_gate_passed'] and diag['native_vs_independent_FMA_oracle']['relative_rms']<.005
-    assert diag['controls'][0]['decoder_vs_independent_FMA_dense']['different_elements']==0
+    assert diag['unmodified_native_GEMM_full_basis_sweep'] and diag['native_basis_FMA_exact_match']
+    assert diag['basis_columns_completed']==6656 and diag['basis_native_GEMM_calls']==832
+    assert diag['all_native_weight_elements_observed']==132907008
+    assert diag['native_basis_vs_independent_FMA_dense']['different_elements']==0
     assert diag['controls'][1]['decoder_vs_eager_staged']['different_elements']==0
     assert diag['N']==19968 and diag['K']==6656 and diag['M']==8
     report = dict(scope=__doc__, GGUF_sha256=digest_file(a.gguf), public_source_release=str(here),
@@ -125,7 +129,7 @@ def main():
                   weight_source='Actual unchanged MG GGUF, native portable conversion/fusion/CUDA packing',
                   default_pending_MG_policy_unchanged=True, automatic_deployment=False,
                   server_performance_F1_memory_acceptance_pending=True, A100_acceptance_separate=True,
-                  native_FMA_diagnostic_sha256=digest_file(a.native_fma_diagnostic),numeric_gate_unchanged=.005,cases=[], AOTI_cases=[])
+                  native_FMA_diagnostic_sha256=digest_file(a.native_fma_diagnostic),numeric_gate_unchanged=.005,isolated_native_candidate_export_processes=True,all_eager_checks_before_AOTI=True,cases=[], AOTI_cases=[])
 
     def save(status, **fields):
         (a.output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -203,12 +207,12 @@ def main():
         for label, module in [('reference', Reference()), ('candidate', Candidate())]:
             bounded()
             save('compiling-AOTI-package', role=role, label=label)
-            ep = torch.export.export(module, (x, *w), dynamic_shapes=dynamic, strict=True)
             package = directory / (role + '-m'+str(bucket)+'-' + label + '.pt2')
-            torch._inductor.aoti_compile_and_package(ep, package_path=str(package))
+            export_metadata = compile_package((x,*w), package, et_source=a.et_source, bucket=bucket,
+                config_id=ident, baseline=baseline, label=label, reference_kind='MG-native', deadline_utc=a.deadline_utc)
             models[label] = SingleThreadedPackage(package,directory/'official-api-extracted'/package.stem)
             record['packages'][label] = dict(path=str(package), bytes=package.stat().st_size,
-                                             sha256=digest_file(package), export_range_constraints=str(ep.range_constraints))
+                                             sha256=digest_file(package), export_range_constraints=export_metadata['export_range_constraints'], isolated_export=export_metadata)
         def call(label, xx):
             y = models[label](xx, *w)
             if isinstance(y, (tuple, list)):
@@ -248,6 +252,7 @@ def main():
         portable['ffn_gate_up'] = fuse_along_output([portable['ffn_gate'], portable['ffn_up']])
         source_records['ffn_gate_up'] = dict(ordered_source_roles=['ffn_gate', 'ffn_up'], fusion_before_CUDA_packing=True)
         report['GGUF_tensors'] = source_records
+        AOTI_jobs=[]
         with torch.inference_mode(), torch.cuda.stream(torch.cuda.Stream()):
             for role in ['ffn_gate', 'ffn_up', 'ffn_gate_up']:
                 expected_n = 39936 if role == 'ffn_gate_up' else 19968
@@ -295,10 +300,12 @@ def main():
                                 paired_timing=paired(reference, own)))
                             save('running-candidate-pairs', role=role, m=m, candidate=ident)
                     if role in ['ffn_gate','ffn_gate_up']:
-                        audit_aoti(role,w,metadata,cfg,m)
+                        AOTI_jobs.append((role,w,metadata,cfg,m))
                     del x, candidate_oracle, native_oracle, reference
                 del w, packed, module
                 torch.cuda.empty_cache()
+            for job in AOTI_jobs:
+                audit_aoti(*job)
         save('completed', cases=len(report['cases']), candidate_records=sum(len(c['candidates']) for c in report['cases']),
              AOTI_cases=len(report['AOTI_cases']), server_acceptance_pending=True)
     except Exception as error:

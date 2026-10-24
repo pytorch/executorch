@@ -44,8 +44,8 @@
       "bytes": 23001
     },
     "benchmark_candidates_v9.py": {
-      "sha256": "1e05292dfa89b45db832012ad237515690fdee72e867cd862a6e67e4626dfe50",
-      "bytes": 22034
+      "sha256": "763b891090ae7fe46812d23ae9391a653ecbdc75bfe4d1893fedbe5f140e6e48",
+      "bytes": 22809
     },
     "benchmark_candidates_v9_fused.py": {
       "sha256": "c8894ed335348936941de579dddd5920dcce62d8b6ddfd050fbd799dd74e0284",
@@ -64,8 +64,8 @@
       "bytes": 18569
     },
     "benchmark_mg_w4a16_v9.py": {
-      "sha256": "9c4c64983480d675fb79c039a5dcbe485826b4c29699d0ccb3eb3ded82dc1c36",
-      "bytes": 19725
+      "sha256": "09ac966aee4cac6aadce814a93b1f2fa6d7101db5461efa5699a809aac50ac1e",
+      "bytes": 20301
     },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
@@ -302,6 +302,10 @@
     "handoff_cpp_quality.py": {
       "sha256": "4f70dea79e92a938f11d1cd847c0ff64b76f084c021a4b3902f58b611e18f513",
       "bytes": 5164
+    },
+    "isolated_aoti_export.py": {
+      "sha256": "b6f54f4e0fa52d2e9b1acd1457c83bcb2696385c2e0683e9fac9fd2e48796fa8",
+      "bytes": 7453
     },
     "ka_v8_export_hook.py": {
       "sha256": "ce89c02f66ca492e94005f89d329623c97a7f8cc7a260e169925f8e78205a17d",

@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--buckets', nargs='+', type=int, choices=[8,16], default=[8,16])
     parser.add_argument('--deadline-utc', required=True)
     parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--isolated-AOTI-export', action='store_true')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     cutoff = datetime.datetime.fromisoformat(args.deadline_utc.replace('Z','+00:00'))
@@ -98,6 +99,7 @@ def main():
             from candidates_w4a16_v9.validate import make_weights,precision_oracle,error_stats
             TIMING_POLICY='unchanged native cuda_graph_timing.time_with_cuda_graph_us; cold L2 per call; 4-32 calls in one graph; minimum GPU event interval'
             from aoti_single_threaded import SingleThreadedPackage, INVOCATION_POLICY
+            from isolated_aoti_export import compile_package
             torch.set_num_threads(2)
             torch.backends.cuda.matmul.allow_tf32=False
             torch.set_float32_matmul_precision('highest')
@@ -112,6 +114,7 @@ def main():
 
             previous=json.loads(args.native_search.read_text())
             report['candidate_generation']='v9, M8/M16 only; no new serving buckets'
+            report['isolated_native_candidate_export_processes']=args.isolated_AOTI_export
             report.update(device=subprocess.check_output(['nvidia-smi','--query-gpu=uuid,name,driver_version,power.limit',
                                                          '--format=csv,noheader'],text=True).strip(),
                           torch=torch.__version__,triton=triton.__version__,source_sha256={})
@@ -214,12 +217,18 @@ def main():
                 for label,module in [('reference',Reference()),('candidate',Candidate())]:
                     idle_except_self()
                     save('compiling-AOTI-package',role=role,bucket=bucket,label=label)
-                    ep=torch.export.export(module,inputs,dynamic_shapes=dynamic,strict=True)
                     package=folder/(role+'-m'+str(bucket)+'-'+ident+'-'+label+'.pt2')
-                    torch._inductor.aoti_compile_and_package(ep,package_path=str(package))
+                    export_metadata=None
+                    if args.isolated_AOTI_export:
+                        export_metadata=compile_package(inputs,package,et_source=args.et_source,bucket=bucket,
+                            config_id=ident,baseline=baseline,label=label,reference_kind='Gemma-precision-native',
+                            deadline_utc=args.deadline_utc,precision_control=args.precision_control)
+                    else:
+                        ep=torch.export.export(module,inputs,dynamic_shapes=dynamic,strict=True)
+                        torch._inductor.aoti_compile_and_package(ep,package_path=str(package))
                     models[label]=SingleThreadedPackage(package,folder/'official-api-extracted'/package.stem)
                     record['packages'][label]=dict(path=str(package),bytes=package.stat().st_size,
-                        sha256=hashlib.sha256(package.read_bytes()).hexdigest(),export_range_constraints=str(ep.range_constraints))
+                        sha256=hashlib.sha256(package.read_bytes()).hexdigest(),export_range_constraints=export_metadata['export_range_constraints'] if export_metadata else str(ep.range_constraints),isolated_export=export_metadata)
                 def call(label,xx):
                     result=models[label](xx,*w)
                     if isinstance(result,(tuple,list)):
