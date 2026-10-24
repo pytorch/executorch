@@ -152,6 +152,7 @@ fbcode_target(_kind = runtime.python_test,
         "quantizer/*.py",
     ]),
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//pytorch/ao:torchao",  # @manual
