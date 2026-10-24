@@ -190,16 +190,17 @@ validate_program(const executorch_flatbuffer::Program* program) {
              item_idx++) {
           int32_t evalue_index = items->Get(item_idx);
 
-          // Check bounds.
+          // Check bounds (must reference an already-constructed preceding
+          // evalue).
           if (evalue_index < 0 ||
-              static_cast<flatbuffers::uoffset_t>(evalue_index) >=
-                  values->size()) {
+              static_cast<flatbuffers::uoffset_t>(evalue_index) >= value_idx) {
             ET_LOG(
                 Error,
-                "TensorList item %u has out-of-bounds index %d (values size "
-                "%u) in execution plan %u",
+                "TensorList item %u has invalid or forward-referenced index %d "
+                "(value_idx %u, values size %u) in execution plan %u",
                 static_cast<unsigned>(item_idx),
                 evalue_index,
+                static_cast<unsigned>(value_idx),
                 static_cast<unsigned>(values->size()),
                 static_cast<unsigned>(plan_idx));
             return Error::InvalidProgram;
@@ -224,6 +225,76 @@ validate_program(const executorch_flatbuffer::Program* program) {
                 Error,
                 "TensorList item %u references non-Tensor evalue (type %d) at "
                 "index %d in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(referenced_value->val_type()),
+                evalue_index,
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+        }
+      } else if (
+          value->val_type() ==
+          executorch_flatbuffer::KernelTypes::OptionalTensorList) {
+        const auto* opt_tensor_list =
+            static_cast<const executorch_flatbuffer::OptionalTensorList*>(
+                value->val());
+
+        if (opt_tensor_list == nullptr) {
+          ET_LOG(
+              Error,
+              "OptionalTensorList is null for value %u in execution plan %u",
+              static_cast<unsigned>(value_idx),
+              static_cast<unsigned>(plan_idx));
+          return Error::InvalidProgram;
+        }
+
+        const auto* items = opt_tensor_list->items();
+        if (items == nullptr) {
+          ET_LOG(Error, "OptionalTensorList items is null");
+          return Error::InvalidProgram;
+        }
+
+        for (flatbuffers::uoffset_t item_idx = 0; item_idx < items->size();
+             item_idx++) {
+          int32_t evalue_index = items->Get(item_idx);
+          if (evalue_index == -1) {
+            continue;
+          }
+
+          if (evalue_index < 0 ||
+              static_cast<flatbuffers::uoffset_t>(evalue_index) >= value_idx) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u has invalid or forward-referenced "
+                "index %d (value_idx %u, values size %u) in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                evalue_index,
+                static_cast<unsigned>(value_idx),
+                static_cast<unsigned>(values->size()),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
+          const auto* referenced_value = values->Get(evalue_index);
+          if (referenced_value == nullptr) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u references null evalue at index %d "
+                "in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                evalue_index,
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
+          if (referenced_value->val_type() !=
+                  executorch_flatbuffer::KernelTypes::Tensor &&
+              referenced_value->val_type() !=
+                  executorch_flatbuffer::KernelTypes::Null) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u references non-Tensor/Null evalue "
+                "(type %d) at index %d in execution plan %u",
                 static_cast<unsigned>(item_idx),
                 static_cast<int>(referenced_value->val_type()),
                 evalue_index,
