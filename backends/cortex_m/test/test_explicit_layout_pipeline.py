@@ -131,6 +131,24 @@ class LutActivationClampThenConv2d(torch.nn.Module):
         return self.conv(torch.clamp(torch.tanh(x), -0.5, 0.5))
 
 
+class LutActivationThenElementwise(torch.nn.Module):
+    """An elementwise binary op fed by a LUT activation.
+
+    ``minimum`` and ``maximum`` pick their kernel from the same fake
+    tensor the input-side layout permute does, and there is no layout
+    copy here to involve the validator -- the convolution is what drags
+    one in. So this is the gap on its own: a graph that is int8 start to
+    finish and still leaves one op on the portable kernel.
+    """
+
+    def __init__(self, fn) -> None:
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x, y):
+        return self.fn(torch.tanh(x), y)
+
+
 class NHWCPaddedConv(torch.nn.Module):
     def __init__(self, channels, shared_pad):
         super().__init__()
@@ -454,6 +472,53 @@ def test_explicit_layout_accepts_conv_fed_by_lut_activation():
     assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
     assert _count(program, exir_ops.edge.aten.convolution.default) == 0
     assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_layout_permute_behind_lut_activation_lowers_to_transpose():
+    """Every layout move in an int8 chain reaches a CMSIS-NN transpose.
+
+    The convolution has a layout move on each side. The one on its output
+    is synthesized as ``channels_last.permute_copy``, whose substitution
+    reads no dtype; the one on its input is an ``aten.permute_copy``, and
+    its substitution read the same fake tensor the layout validator used
+    to. Behind a LUT activation that tensor is fp32, so the input-side
+    move was left on the portable kernel while the output-side move
+    converted. Numerics are unaffected -- portable ``permute_copy``
+    computes the right thing on int8 -- so what this costs is the
+    invariant: a selective build registering only the kernels the graph
+    is supposed to need fails to load.
+    """
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(LutActivationThenConv1d().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "fn,cortex_m_op,aten_op",
+    [
+        (torch.minimum, exir_ops.edge.cortex_m.minimum, exir_ops.edge.aten.minimum),
+        (torch.maximum, exir_ops.edge.cortex_m.maximum, exir_ops.edge.aten.maximum),
+    ],
+)
+def test_elementwise_behind_lut_activation_lowers_to_cortex_m(fn, cortex_m_op, aten_op):
+    """An elementwise binary op behind a LUT activation reaches CMSIS-NN."""
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8))
+    tester = _run_explicit_layout_passes(
+        CortexMTester(LutActivationThenElementwise(fn).eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, cortex_m_op.default) == 1
+    assert _count(program, aten_op.default) == 0
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
