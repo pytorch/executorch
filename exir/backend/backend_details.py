@@ -74,6 +74,15 @@ class PreprocessResult:
     # in this order. They are not arguments of the delegate call.
     scratch_specs: Optional[List[DelegateScratchSpec]] = None
 
+    # Whether every call of this lowered module in a method may run on one
+    # delegate handle, so the runtime initializes the backend once instead of
+    # once per call. Set it only if execute() reads its arguments again on
+    # every call, keeps nothing on the handle that is tied to one call or that
+    # changes later results, and writes outputs only into the output tensors it
+    # is given. Ignored when scratch_specs is not empty, because the runtime keeps
+    # scratch on the delegate and each call has its own.
+    share_handle_across_calls: bool = False
+
 
 """
 How to create a backend (for example, BackendWithCompilerDemo):
