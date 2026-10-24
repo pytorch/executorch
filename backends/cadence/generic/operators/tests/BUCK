@@ -41,3 +41,22 @@ jarvis_wrapper.cxx_test(
         "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
 )
+
+jarvis_wrapper.cxx_test(
+    name = "test_op_sdpa_bitwise_ring_mask_gen",
+    srcs = [
+        "test_op_sdpa_bitwise_ring_mask_gen.cpp",
+    ],
+    compatible_backends = ["generic"],
+    labels = [ci.linux(ci.mode("fbsource//arvr/mode/platform010/dev"))],
+    platforms = CXX,
+    visibility = [
+        "fbsource//xplat/executorch/backends/cadence/...",
+        "fbcode//executorch/backends/cadence/...",
+    ],
+    deps = [
+        "fbsource//xplat/executorch/backends/cadence/generic/operators:op_sdpa_bitwise_ring_mask_gen",
+        "fbsource//xplat/executorch/kernels/test:gtest_utils",
+        "fbsource//xplat/executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ],
+)
