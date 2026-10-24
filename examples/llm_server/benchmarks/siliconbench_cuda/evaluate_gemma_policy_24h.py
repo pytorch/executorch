@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--export-progress', type=Path, required=True)
     parser.add_argument('--export-program', required=True)
     parser.add_argument('--artifact', type=Path, required=True)
-    parser.add_argument('--max-step-tokens', type=int, choices=[256,512], required=True)
+    parser.add_argument('--max-step-tokens', type=int, choices=[256,512,1024], required=True)
     parser.add_argument('--prefix-entries', type=int, choices=[1,16], required=True)
     parser.add_argument('--checkpoint-interval', type=int, choices=[0,512,1024], default=0)
     parser.add_argument('--checkpoint-preparation', type=Path)
