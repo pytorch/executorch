@@ -35,6 +35,10 @@ def stop_at_cutoff(name):
     assert {'RUNNING', 'STARTING', 'STOPPING'}.intersection(before.stdout.split()), before.stdout
     stopped = subprocess.run(['supervisorctl', 'stop', name], capture_output=True, text=True, timeout=90)
     after = subprocess.run(['supervisorctl', 'status', name], capture_output=True, text=True, timeout=30)
+    until = time.monotonic()+90
+    while 'STOPPING' in after.stdout.split() and time.monotonic()<until:
+        time.sleep(2)
+        after = subprocess.run(['supervisorctl', 'status', name], capture_output=True, text=True, timeout=30)
     assert TERMINAL_SERVICES.intersection(after.stdout.split()), (name, stopped.stdout, after.stdout)
     return dict(program=name, action='terminal-after-cutoff-stop', stop_returncode=stopped.returncode,
                 status=after.stdout.strip(), concurrent_guard_stop_allowed=True)
