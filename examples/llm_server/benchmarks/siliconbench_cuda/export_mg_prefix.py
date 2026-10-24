@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--et-source', type=Path, required=True)
     parser.add_argument('--gguf', type=Path, required=True)
     parser.add_argument('--reference-deployment', type=Path, required=True)
-    parser.add_argument('--max-kv-seqs', type=int, choices=[18,33], default=18)
+    parser.add_argument('--max-kv-seqs', type=int, choices=[18,21,33], default=18)
     parser.add_argument('--max-step-tokens', type=int, choices=[2048,8192], default=8192)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--job-dir', type=Path, required=True)

@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--precision-control',type=Path,required=True)
     parser.add_argument('--max-step-tokens',type=int,choices=[256,512,1024,2048],default=512)
-    parser.add_argument('--max-kv-seqs',type=int,choices=[17,18,33],default=18)
+    parser.add_argument('--max-kv-seqs',type=int,choices=[17,18,25,33],default=18)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--job-dir',type=Path,required=True)
     parser.add_argument('--lock',type=Path,required=True)

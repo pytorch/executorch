@@ -37,7 +37,7 @@ def main():
     parser.add_argument('--python', required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--prefix-entries', type=int, choices=[1,16], default=1)
+    parser.add_argument('--prefix-entries', type=int, choices=[1,4,16], default=1)
     parser.add_argument('--checkpoint-interval', type=int, choices=[0,512,1024], default=0)
     parser.add_argument('--initial-kv-capacity', type=int, choices=[512,1024,2048,12288], default=12288)
     parser.add_argument('--cache-modes', nargs='+', choices=['off','on'], default=['off','on'])

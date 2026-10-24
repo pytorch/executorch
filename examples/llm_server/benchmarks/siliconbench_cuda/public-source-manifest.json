@@ -192,24 +192,24 @@
       "bytes": 12392
     },
     "evaluate_gemma_policy_24h.py": {
-      "sha256": "62eb0fa7b8b32ebcd3af9eefcf83943192e9add0ab68ed9278250cf8d511a7db",
-      "bytes": 12795
+      "sha256": "0a9e69e54df42fd03a3e281e9cd7afb30d10367c449fc001f04e0a35ac801038",
+      "bytes": 12797
     },
     "evaluate_mg_prefix.py": {
       "sha256": "d15ee54d3e9af57d28bcd9a5e0a9154b84f1fe406d579c7bf251b9e1dd5019a1",
       "bytes": 10052
     },
     "evaluate_mg_prefix_24h.py": {
-      "sha256": "7bcf1a54c4c2ba812da44334b28808a853e910d408ee1ab7492665b64fc3eb5f",
-      "bytes": 10270
+      "sha256": "6a6c4008c5bd8dde8fcb9182185c99b7acf8fc6a7c087f0160364e418aa7ff15",
+      "bytes": 10272
     },
     "export_gemma_memory.py": {
-      "sha256": "0875f5dff3440af172b3eed33160e396240d313b01c836763a77ac2aae6e9981",
-      "bytes": 11677
+      "sha256": "5802baca9bc1c647fb790ca7e0fd3b693ef2b4ae2d390e886ca02e108873d929",
+      "bytes": 11680
     },
     "export_mg_prefix.py": {
-      "sha256": "51c57b6da2553beaa4f04ed2bcfca91015285ceb891eeb9d20b70cc488e28542",
-      "bytes": 10930
+      "sha256": "5af8f64bea57aaab4c88fba6b688e2f38a9be0a3c625b5afdedcdf37a6984c78",
+      "bytes": 10933
     },
     "make_mg_stock_quality_wrapper.py": {
       "sha256": "164388402b6bb409a7c1a357f64d949d9d3719fbc7804344028d8e042338be90",
