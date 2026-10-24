@@ -2763,6 +2763,15 @@ class SliceCopyWithStep(torch.nn.Module):
         )
 
 
+class SelectElement(torch.nn.Module):
+    def __init__(self, index):
+        super().__init__()
+        self.index = index
+
+    def forward(self, x, y):
+        return y + x[self.index]
+
+
 class SelectScatter(torch.nn.Module):
     def __init__(self, dim, index):
         super().__init__()

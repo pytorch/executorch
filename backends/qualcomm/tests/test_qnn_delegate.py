@@ -2495,6 +2495,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_select_element(self):
+        sample_input = (torch.randn(4), torch.randn(3, 4))
+        for i, index in enumerate([1, -1]):
+            with self.subTest(i=i):
+                module = SelectElement(index)  # noqa: F405
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_select_scatter(self):
         test_comb = [
             {
@@ -6144,6 +6151,14 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_select_element(self):
+        sample_input = (torch.randn(4), torch.randn(3, 4))
+        for i, index in enumerate([1, -1]):
+            with self.subTest(i=i):
+                module = SelectElement(index)  # noqa: F405
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_scatter(self):
         test_comb = [

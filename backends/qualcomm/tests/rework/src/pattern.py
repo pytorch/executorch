@@ -5012,6 +5012,8 @@ class Remove0DTensor:
 
         assertions.assert_no_target(gm, exir_ops.edge.aten.select_copy.int)
         assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+        # x has 4 elements, so the selected one must be kept, not x itself
+        assertions.assert_target_count(gm, exir_ops.edge.aten.slice_copy.Tensor, 1)
 
 
 class SeqMSE:
