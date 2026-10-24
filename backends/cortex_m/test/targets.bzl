@@ -105,6 +105,19 @@ def define_common_targets(is_fbcode = False):
             ],
         )
 
+        python_unittest(
+            name = "test_propagate_qparams",
+            srcs = ["test_propagate_qparams.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/arm/_passes:passes",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m:utils",
+                "//executorch/backends/cortex_m/ops:ops",
+                "//executorch/exir/dialects:lib",
+            ],
+        )
+
         python_pytest(
             name = "test_attention",
             srcs = ["ops/test_attention.py"],

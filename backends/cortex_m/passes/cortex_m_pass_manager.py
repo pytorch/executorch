@@ -54,6 +54,7 @@ from .explicit_layout_pass import (
 from .fuse_conv_padding_pass import FuseConvPaddingPass
 from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
+from .propagate_qparams_pass import PropagateQParamsPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
@@ -139,6 +140,8 @@ class CortexMPassManager(ExportedProgramPassManager):
         # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
+        # After the plumbing has settled, before anything asks what it carries.
+        PropagateQParamsPass,
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,
         AtenToCortexMPass,
