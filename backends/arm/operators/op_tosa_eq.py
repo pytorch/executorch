@@ -23,6 +23,7 @@ class EqualVisitor(SimpleNodeVisitor):
             attr_method="EqualAttribute",
             num_inputs=2,
             input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            extension_dtypes={"int64": [ts.DType.INT64]},
             output_dtypes=[ts.DType.BOOL],
             same_dtype_with_output=False,
             dtype_check_inputs_only=True,

@@ -34,11 +34,16 @@ class SumVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output])
-        validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-        )
+        supported_dtypes = [
+            ts.DType.INT32,
+            ts.DType.FP16,
+            ts.DType.FP32,
+            ts.DType.BF16,
+        ]
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
+
+        validate_valid_dtype(self.target, [inputs[0], output], supported_dtypes)
 
         tensor = inputs[0]
 

@@ -33,11 +33,11 @@ class RshiftVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output])
-        validate_valid_dtype(
-            self.target,
-            [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-        )
+        supported_dtypes = [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32]
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
+
+        validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
 
         attr = ts.TosaSerializerAttribute()
         round = False

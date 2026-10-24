@@ -39,6 +39,9 @@ class CatVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, [1, 2])
         input_tosa_args = [TosaArg(arg, self.tosa_spec) for arg in inputs[0].special]
         validate_same_dtype(self.target, [*input_tosa_args, output])
+        if self.tosa_spec.support_extension("int64"):
+            supported_dtypes.append(ts.DType.INT64)
+
         validate_valid_dtype(
             self.target,
             [*input_tosa_args, output],
