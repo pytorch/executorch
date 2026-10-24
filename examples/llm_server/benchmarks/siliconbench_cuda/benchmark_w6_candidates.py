@@ -135,23 +135,23 @@ def main():
                     assert pick.function.endswith('._launch_w6a16') and pick.param=='split_k'
                     split=int(pick.choice)
                     selected=native._BUCKET_KERNELS[m].best_config
-                    cfg=triton.Config(dict(selected.kwargs),num_warps=selected.num_warps,
-                                      num_stages=selected.num_stages,num_ctas=selected.num_ctas)
-                    reference=lambda:native._launch_w6a16(m,x,*planes,16,split_k=split,config=cfg)
+                    reference_config=triton.Config(dict(selected.kwargs),num_warps=selected.num_warps,
+                                                   num_stages=selected.num_stages,num_ctas=selected.num_ctas)
+                    reference=lambda m=m,x=x,planes=planes,split=split,config=reference_config:native._launch_w6a16(m,x,*planes,16,split_k=split,config=config)
                     reference();torch.cuda.synchronize()
                     record=dict(role=role,M=m,N=n,K=k,GGUF_tensor=tensor.name,GGUF_tensor_sha256=raw_sha,
                                 reference_numerics=check(reference,oracle),
                                 reference_selection=dict(split_k=split,split_times_us=pick.times_us,
-                                    config=dict(kwargs=cfg.kwargs,num_warps=cfg.num_warps,
-                                                num_stages=cfg.num_stages,num_ctas=cfg.num_ctas),
+                                    config=dict(kwargs=reference_config.kwargs,num_warps=reference_config.num_warps,
+                                                num_stages=reference_config.num_stages,num_ctas=reference_config.num_ctas),
                                     eagerly_selected=True,executable_selected_config_unproven=True),candidates=[])
                     report['cases'].append(record)
-                    for ident,cfg in CONFIGS.items():
-                        if cfg['bucket']!=m:continue
+                    for ident,candidate_config in CONFIGS.items():
+                        if candidate_config['bucket']!=m:continue
                         own=lambda ident=ident:run(x,*planes,bucket=m,config=ident)
                         try:
                             numeric=check(own,oracle)
-                            result=dict(id=ident,config=cfg,numerics=numeric,timing=paired(reference,own))
+                            result=dict(id=ident,config=candidate_config,numerics=numeric,timing=paired(reference,own))
                         except Exception as error:
                             result=dict(id=ident,error_type=type(error).__name__,detail=str(error)[-500:])
                             if 'capture' in str(error).lower():
