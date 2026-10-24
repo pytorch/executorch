@@ -149,9 +149,23 @@ Error platform_execute(
 
   // Write outputs from scratch into EValue pointers.
   for (int i = 0; i < output_count; i++) {
-    const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
+    // Reject offsets that would copy from outside the scratch buffer.
+    const int out_offset = handles.outputs->io[i].offset;
     auto tensor_out = args[input_count + i]->toTensor();
     const size_t tensor_bytes = tensor_out.nbytes();
+    if (out_offset < 0 ||
+        static_cast<size_t>(out_offset) + tensor_bytes >
+            handles.scratch_data_size) {
+      ET_LOG(
+          Error,
+          "Output %d scratch offset %d + size %zu out of range for scratch size %zu",
+          i,
+          out_offset,
+          tensor_bytes,
+          handles.scratch_data_size);
+      return Error::InvalidProgram;
+    }
+    const char* output_addr = ethosu_scratch + out_offset;
 
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)

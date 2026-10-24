@@ -199,7 +199,7 @@ These are the components the package provides:
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux, Windows (runs programs exported on Linux) |
 | `extension_cuda` | Shared CUDA allocator, stream and device helpers. Allocator headers require the CUDA toolkit. A program that calls the CUDA runtime itself links `CUDA::cudart`. | Linux, Windows |
-| `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_openvino` | The OpenVINO delegate | Linux, Windows |
 | `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
@@ -253,17 +253,27 @@ The quantized kernels are deliberately left out of that variable, because loadin
 stops the runtime.
 
 The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
-itself, and the adapter opens `libopenvino_c.so` by name when the model is loaded. Python callers
-get that path set for them on import; a standalone C++ program does not, so install the runtime and
-point the program at it:
+itself, and the adapter opens `libopenvino_c.so` (`openvino_c.dll` on Windows) by name when the
+model is loaded. Python callers get that path set for them on import; a standalone C++ program does
+not, so install the runtime and point the program at it:
 
 ```bash
 pip install "executorch[openvino]"
 export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+pip install "executorch[openvino]"
+$env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'openvino_c.dll'))"
+```
+
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
+
+For now the openvino extra installs no runtime on Python 3.15, or on Linux aarch64 with
+Python 3.14, because the OpenVINO versions it supports publish no build there.
 
 The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
 file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
@@ -413,7 +423,8 @@ event tracer.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 13.2 and 13.4, so pick the index
+On Linux, the package on PyPI is the CUDA build, for the same CUDA version as the `torch` package
+there. Releases also cover CUDA 13.2 and 13.4 on their own indexes, so you can pick the one
 matching the CUDA version you have (`cu132` or `cu134`). For CUDA 13.2:
 
 ```

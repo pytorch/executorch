@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -145,6 +146,131 @@ TEST_F(CPUPlanTest, ConnectedRegionsExposeIntermediateModelOutputs) {
   ASSERT_EQ(plan.execute(execution), Error::Ok);
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[0], 3);
   EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 5);
+}
+
+TEST_F(CPUPlanTest, ActivationsStayInXNNPACKRegionAndPreserveFanout) {
+  value("x", true);
+  value("y", true);
+  for (const auto* name : {"sum", "relu", "sigmoid", "out"}) {
+    value(name);
+  }
+  add("sum", 0, 1, 2);
+  for (const auto* target :
+       {"torch.ops.aten.relu.default", "torch.ops.aten.sigmoid.default"}) {
+    const ptn::ValueId input = graph.nodes.size() + 1;
+    ptn::Node node;
+    node.name = target;
+    node.target = target;
+    node.inputs = {{"self", ptn::TensorArg{input}}};
+    node.outputs = {{ptn::OutputValueKind::Tensor, input + 1}};
+    graph.nodes.push_back(std::move(node));
+  }
+  add("out", 2, 4, 5);
+  finish({2, 3, 5});
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  EXPECT_EQ(plan.steps()[0].region.nodes, (std::vector<KernelId>{0, 1, 2, 3}));
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (float shift : {-1.0f, 1.0f}) {
+    for (size_t index = 0; index < 11; ++index) {
+      static_cast<float*>(buffers[0].data)[index] = float(index) - 5;
+      static_cast<float*>(buffers[1].data)[index] = shift;
+    }
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+    for (size_t index = 0; index < 11; ++index) {
+      const float sum = float(index) - 5 + shift;
+      const float relu = std::max(0.0f, sum);
+      EXPECT_FLOAT_EQ(static_cast<float*>(buffers[2].data)[index], sum);
+      EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[index], relu);
+      EXPECT_NEAR(
+          static_cast<float*>(buffers[5].data)[index],
+          sum + 1.0f / (1.0f + std::exp(-relu)),
+          1e-6);
+    }
+  }
+}
+
+TEST_F(CPUPlanTest, BatchedMatrixMultiplyUsesXNNPACKForDynamicOperands) {
+  graph.values.emplace_back(
+      "lhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.values.emplace_back(
+      "rhs", ptn::ScalarType::Float, std::vector<int64_t>{2, 3, 2});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 2});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values[1].role = ptn::ValueRole::UserInput;
+  graph.input_ids = {0, 1};
+  ptn::Node bmm;
+  bmm.name = "bmm";
+  bmm.target = "torch.ops.aten.bmm.default";
+  bmm.inputs = {{"self", ptn::TensorArg{0}}, {"mat2", ptn::TensorArg{1}}};
+  bmm.outputs = {{ptn::OutputValueKind::Tensor, 2, {}}};
+  graph.nodes.push_back(std::move(bmm));
+  finish({2});
+
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  const std::array<float, 12> lhs{1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 1, 3};
+  const std::array<float, 12> rhs{1, 2, 3, 4, 5, 6, 2, 0, 0, 3, 4, 5};
+  std::copy(lhs.begin(), lhs.end(), static_cast<float*>(buffers[0].data));
+  std::copy(rhs.begin(), rhs.end(), static_cast<float*>(buffers[1].data));
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  const auto* result = static_cast<const float*>(buffers[2].data);
+  EXPECT_EQ(
+      (std::vector<float>(result, result + 8)),
+      (std::vector<float>{22, 28, 49, 64, 10, 10, 12, 18}));
+}
+
+TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.values.back().role = ptn::ValueRole::UserInput;
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{2, 2, 3});
+  graph.input_ids = {0};
+  ptn::Node softmax;
+  softmax.name = "softmax";
+  softmax.target = "torch.ops.aten._softmax.default";
+  softmax.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"dim", ptn::IntArg{-1}},
+      {"half_to_float", ptn::BoolArg{false}}};
+  softmax.outputs = {{ptn::OutputValueKind::Tensor, 1}};
+  graph.nodes.push_back(std::move(softmax));
+  finish({1});
+
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  const std::array<float, 12> input{
+      0, 0, 0, 0, 1, 2, 1000, 1000, 1000, -1000, -999, -998};
+  std::copy(input.begin(), input.end(), static_cast<float*>(buffers[0].data));
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  const float denominator = 1 + std::exp(1.0f) + std::exp(2.0f);
+  const std::array<float, 12> expected{
+      1.0f / 3,
+      1.0f / 3,
+      1.0f / 3,
+      1 / denominator,
+      std::exp(1.0f) / denominator,
+      std::exp(2.0f) / denominator,
+      1.0f / 3,
+      1.0f / 3,
+      1.0f / 3,
+      1 / denominator,
+      std::exp(1.0f) / denominator,
+      std::exp(2.0f) / denominator};
+  const auto* result = static_cast<const float*>(buffers[1].data);
+  for (size_t index = 0; index < expected.size(); ++index) {
+    EXPECT_NEAR(result[index], expected[index], 1e-5) << index;
+  }
 }
 
 TEST_F(
