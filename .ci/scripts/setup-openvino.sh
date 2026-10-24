@@ -18,24 +18,26 @@ for arg in "$@"; do
   esac
 done
 
-# Download and install OpenVINO from release packages. --nightly selects a newer
-# release rather than a nightly build, because OpenVINO deletes old nightlies.
+OPENVINO_PACKAGES_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages"
 if [ "${USE_NIGHTLY}" = true ]; then
-  OPENVINO_VERSION="2026.1"
-  OPENVINO_BUILD="2026.1.0.21367.63e31528c62"
-  OPENVINO_SHA256="3b4d92fec96860dfea844cd7c23e190d76c243e75815491d53405b4ced892103"
+  # Only for quick testing. OpenVINO deletes nightlies after a few months, so
+  # take the newest one instead of pinning a build that will disappear.
+  OPENVINO_URL=$(curl -fsSL --retry 3 --retry-all-errors "${OPENVINO_PACKAGES_URL}/nightly/latest.txt" | sed -n 's/^ubuntu22_x86_64://p')
+  : "${OPENVINO_URL:?could not get the ubuntu22_x86_64 nightly from latest.txt}"
+  OPENVINO_SHA256=$(curl -fsSL --retry 3 --retry-all-errors "${OPENVINO_URL}.sha256" | sed -nE 's/^([0-9a-f]{64}).*/\1/p')
+  : "${OPENVINO_SHA256:?could not get the SHA-256 of the nightly from its .sha256 file}"
 else
-  OPENVINO_VERSION="2026.0"
-  OPENVINO_BUILD="2026.0.0.20965.c6d6a13a886"
-  OPENVINO_SHA256="3c99a294d1a12a96a945c56a3b27a099df885980f7667b996cff67b4ff3cf46a"
+  OPENVINO_VERSION="2026.4.1"
+  OPENVINO_BUILD="2026.4.1.22982.07f9c262b05"
+  OPENVINO_SHA256="e2541afe65a81d5aabe981f9a86ad2c7efe557922b71e5649b6aafffec7c982b"
+  OPENVINO_URL="${OPENVINO_PACKAGES_URL}/${OPENVINO_VERSION}/linux/openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64.tgz"
 fi
-OPENVINO_EXTRACTED_DIR="openvino_toolkit_ubuntu22_${OPENVINO_BUILD}_x86_64"
-OPENVINO_URL="https://storage.openvinotoolkit.org/repositories/openvino/packages/${OPENVINO_VERSION}/linux/${OPENVINO_EXTRACTED_DIR}.tgz"
-echo "Using OpenVINO release: ${OPENVINO_BUILD}"
+OPENVINO_EXTRACTED_DIR=$(basename "${OPENVINO_URL}" .tgz)
+echo "Using OpenVINO: ${OPENVINO_EXTRACTED_DIR}"
 
-curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --retry-all-errors --fail ${OPENVINO_URL}
+curl -Lo /tmp/openvino_toolkit.tgz --retry 3 --retry-all-errors --fail "${OPENVINO_URL}"
 # The storage server answers a missing file with an HTML page and HTTP 200, so
-# compare the download with the pinned hash before extracting it.
+# compare the download with the expected hash before extracting it.
 echo "${OPENVINO_SHA256}  /tmp/openvino_toolkit.tgz" | sha256sum -c -
 tar -xzf /tmp/openvino_toolkit.tgz
 mv "${OPENVINO_EXTRACTED_DIR}" openvino
