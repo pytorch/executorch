@@ -43,6 +43,10 @@
       "sha256": "364e14af269a27442070ecf0e57d60763be30ac74772225f363a80a68d4cef53",
       "bytes": 23001
     },
+    "benchmark_candidates_v9.py": {
+      "sha256": "1e05292dfa89b45db832012ad237515690fdee72e867cd862a6e67e4626dfe50",
+      "bytes": 22034
+    },
     "benchmark_gemma.py": {
       "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
       "bytes": 31783
@@ -151,6 +155,34 @@
       "sha256": "f09041260be122da0952c991a3ad5eb7447ad5dd9fcfe13d54d887098fd9ee94",
       "bytes": 17059
     },
+    "candidates_w4a16_v9/README.md": {
+      "sha256": "bf0557492931fc04aa2e99e696951a31b000af1e33d9c6f532c5a1876eb78cd9",
+      "bytes": 1028
+    },
+    "candidates_w4a16_v9/__init__.py": {
+      "sha256": "b74c644e5a904029667488052893f0be74fcc183c83e4ffd7b499e6f7f69f028",
+      "bytes": 465
+    },
+    "candidates_w4a16_v9/aoti.py": {
+      "sha256": "49105d61e5831a95703b80779d51368bfb4e33e00d8e5bfb349dec3ed739ea02",
+      "bytes": 5725
+    },
+    "candidates_w4a16_v9/common.py": {
+      "sha256": "fec0a132b88ce6f3e50e01d6e2d7a587b5fb68800b3111d8adf0fec3441d8d0d",
+      "bytes": 5325
+    },
+    "candidates_w4a16_v9/kernels.py": {
+      "sha256": "dc0ca3f9417db0c0a01e355d5e1bb0cf1609cc33205aacdf9e55220ea9b82594",
+      "bytes": 11925
+    },
+    "candidates_w4a16_v9/policy.py": {
+      "sha256": "f2acf6fa16ecf91bb713e3fe5611d5d48f28862312250a9d3cf3326bc57584a8",
+      "bytes": 2030
+    },
+    "candidates_w4a16_v9/validate.py": {
+      "sha256": "cbe03f91a78fc8a0319e06cfe9f1fec43926cb9354aafe940d74bb3fcda8786c",
+      "bytes": 17999
+    },
     "candidates_w6a16_v6/README.md": {
       "sha256": "08acf40158b643fb703ae808f25adcd4ba36f9ef27951fa881d47d8c817d9f1c",
       "bytes": 1017
@@ -202,6 +234,10 @@
     "diagnose_mg_generation_budget.py": {
       "sha256": "f3c3c97ae4e09488edd120a620af6c5503c295f506a6aae645a28db0f6f42edf",
       "bytes": 7749
+    },
+    "diagnose_mg_native_oracle.py": {
+      "sha256": "12dc70cc45b2d6cecb0205f3933cb3fd4dc6b351e18148b396e828c4a71f8ff7",
+      "bytes": 19014
     },
     "enforce_tuning_deadline.py": {
       "sha256": "160ff37c603229ef0b9e1ab419336f94025bb7c3c25c0070eee5adc70874c5ad",
@@ -262,6 +298,10 @@
     "make_wrapper.py": {
       "sha256": "bb550a39903ad70348bfdc2fbfa6473ac3e6a27be7ecd859fb90eaf338cc3234",
       "bytes": 1952
+    },
+    "native_gemm_oracle_diagnostic.py": {
+      "sha256": "428ad4957420dfb2f58546cbce22275acb1691477de68b19fe843d803299618a",
+      "bytes": 3678
     },
     "prepare.py": {
       "sha256": "aca3577de5c69965208fa6d20985473ccb25a0bbfadcdaab975bd1bd9346b091",
