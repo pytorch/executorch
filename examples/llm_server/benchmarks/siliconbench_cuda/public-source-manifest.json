@@ -60,8 +60,8 @@
       "bytes": 18569
     },
     "benchmark_mg_w4a16_v9.py": {
-      "sha256": "f52526885aa1af1d0ade8007b4518f9b7abc71cd91ceeca54d35612aa6e36401",
-      "bytes": 19709
+      "sha256": "9c4c64983480d675fb79c039a5dcbe485826b4c29699d0ccb3eb3ded82dc1c36",
+      "bytes": 19725
     },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",

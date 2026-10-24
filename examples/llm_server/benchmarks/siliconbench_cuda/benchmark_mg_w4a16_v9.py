@@ -215,7 +215,7 @@ def main():
                 assert len(y) == 1
                 y = y[0]
             return y
-        for m in [5, 7, 8]:
+        for m in [lower, bucket-1, bucket]:
             bounded()
             xx = x[:m].contiguous()
             candidate_oracle, native_oracle = precision_oracle(xx, w), native_fma_oracle(xx, w)
