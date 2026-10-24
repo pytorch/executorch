@@ -153,7 +153,10 @@ def main():
             assert server.poll() is None, 'Server exited; inspect its remote log'
             try:
                 with urllib.request.urlopen(f'http://127.0.0.1:{args.port}/v1/models', timeout=3) as response:
-                    if json.load(response).get('data'):
+                    models = json.load(response).get('data')
+                    if models:
+                        served_model = models[0]['id']
+                        (args.output/'served-model.json').write_text(json.dumps(dict(requested=args.model, served=served_model))+'\n')
                         break
             except Exception:
                 pass
@@ -213,7 +216,7 @@ def main():
                     provenance = dict(settings, correctness_round=repetition, shots=shots,
                                       correctness_prompts_sha256=hashlib.sha256((inputs/'prompts.jsonl').read_bytes()).hexdigest())
                     run([args.python, '-B', str(args.correctness_root/'scripts/run_eval.py'),
-                         '--base-url', f'http://127.0.0.1:{args.port}', '--model', args.model,
+                         '--base-url', f'http://127.0.0.1:{args.port}', '--model', served_model,
                          '--prompts', str(inputs/'prompts.jsonl'), '--output', str(target/'responses.jsonl'),
                          '--concurrency', str(args.concurrency), '--max-retries', '0'], target/'evaluation.log', 21600)
                     responses = [json.loads(line) for line in (target/'responses.jsonl').open()]
