@@ -172,9 +172,9 @@ def _schema_aliases_input(
     )
 
 
-def _is_written_in_place(node: torch.fx.Node) -> bool:
-    """Whether an op writes *node* in place, directly or through a view of it,
-    per the op's schema.
+def _in_place_writer(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """An op that writes *node* in place, directly or through a view of it,
+    per the op's schema, or None.
 
     A mutable op left on the host does this once to_executorch has removed
     auto_functionalized, so a copy of *node* can miss the write. If the op
@@ -197,11 +197,16 @@ def _is_written_in_place(node: torch.fx.Node) -> bool:
             if schema is None:
                 continue
             if _schema_writes_input(user, schema, alias):
-                return True
+                return user
             if user not in aliases and _schema_aliases_input(user, schema, alias):
                 aliases.add(user)
                 pending.append(user)
-    return False
+    return None
+
+
+def _is_written_in_place(node: torch.fx.Node) -> bool:
+    """Whether an op writes *node* in place; see _in_place_writer."""
+    return _in_place_writer(node) is not None
 
 
 def _replace_spec(
@@ -487,7 +492,8 @@ class PropagateDevicePass(PassBase):
 
         The copy stays for its other users, such as a host op. When one of them
         writes the copy in place, the device tensor never sees that write, so the
-        output reads a new device copy of the written host copy instead.
+        output reads a new device copy of the written host copy instead, and a
+        warning says so.
         """
         d2h = torch.ops.et_copy._d2h_copy.default
         for node in list(graph_module.graph.nodes):
@@ -498,7 +504,8 @@ class PropagateDevicePass(PassBase):
             ):
                 continue
             returned = node.args[0]
-            if _is_written_in_place(node):
+            writer = _in_place_writer(node)
+            if writer is not None:
                 device_spec = returned.meta["spec"]
                 with graph_module.graph.inserting_before(
                     graph_module.graph.output_node()
@@ -512,6 +519,17 @@ class PropagateDevicePass(PassBase):
                 returned.meta["val"] = node.meta.get("val")
                 if "tensor_meta" in node.meta:
                     returned.meta["tensor_meta"] = node.meta["tensor_meta"]
+                logger.warning(
+                    "A method output (%d bytes) comes from a delegate on %s:%d "
+                    "and '%s' writes it in place on the host, so it is copied to "
+                    "the host and back to the device on every call, even with "
+                    "skip_d2h_for_method_outputs. Have the partitioner take that "
+                    "op into the delegate to avoid those copies.",
+                    device_spec.nbytes(),
+                    device_spec.device.name.lower(),
+                    device_spec.device_index,
+                    writer.target,
+                )
             _replace_spec(
                 [graph_module.graph.output_node()],
                 node.meta["spec"],

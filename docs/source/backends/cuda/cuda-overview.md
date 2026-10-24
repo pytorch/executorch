@@ -185,6 +185,12 @@ on every call, one for each device that reads the constant, and logs a warning. 
 device memory until the last delegate on that device has read it. Keep constants inside the
 delegate to avoid that cost.
 
+**With `skip_d2h_for_method_outputs`, a returned output that a custom operator outside the
+delegate writes in place is still copied.** This is a custom operator with a mutable argument, such
+as a KV cache update. It writes the host copy, so `to_executorch` returns a device copy of the
+written tensor. That copies the output to the host and back on every call and logs a warning. Put
+that operator in the delegate to avoid it.
+
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer and the runtime copies the caller's memory into it, so the
 copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,

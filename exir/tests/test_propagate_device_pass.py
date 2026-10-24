@@ -918,7 +918,8 @@ class TestPropagateDevicePass(unittest.TestCase):
         """With skip_d2h_for_method_outputs, a returned delegate output whose
         host copy a host op writes in place, directly or through a view, is
         returned as a device copy of the written host copy, because the device
-        tensor never sees the write."""
+        tensor never sees the write. A warning names the op that writes it,
+        since these copies run on every call."""
 
         class Model(torch.nn.Module):
             def __init__(self, write_view):
@@ -934,18 +935,23 @@ class TestPropagateDevicePass(unittest.TestCase):
                 return a
 
         for write_view in (False, True):
-            gm = _lower_with_host_writer(
-                Model(write_view),
-                (torch.randn(2, 2), torch.randn(2, 2)),
-                ["cuda:0"],
-                _host_writer_config(
-                    write_view,
-                    propagate_device_config=PropagateDeviceConfig(
-                        skip_d2h_for_method_outputs=True
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                gm = _lower_with_host_writer(
+                    Model(write_view),
+                    (torch.randn(2, 2), torch.randn(2, 2)),
+                    ["cuda:0"],
+                    _host_writer_config(
+                        write_view,
+                        propagate_device_config=PropagateDeviceConfig(
+                            skip_d2h_for_method_outputs=True
+                        ),
                     ),
-                ),
-            )
+                )
             with self.subTest(write_view=write_view):
+                (warning,) = logs.output
+                self.assertIn(
+                    "'propagate_device_test.accumulate.default' writes it", warning
+                )
                 (output,) = gm.graph.output_node().args[0]
                 self.assertEqual(output.target, torch.ops.et_copy._h2d_copy.out)
                 self.assertEqual(output.meta["spec"].device, DeviceType.CUDA)
