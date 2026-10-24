@@ -27,6 +27,7 @@ def main():
     for key in ['et-source', 'gguf', 'reuse-report', 'output', 'lock']:
         p.add_argument('--'+key, type=Path, required=True)
     p.add_argument('--deadline-utc', required=True)
+    p.add_argument('--timing-method', choices=['single-call','native-multicall'],default='single-call')
     p.add_argument('--owned-worker', action='store_true', help=argparse.SUPPRESS)
     a = p.parse_args()
     cutoff = datetime.datetime.fromisoformat(a.deadline_utc.replace('Z', '+00:00'))
@@ -81,6 +82,12 @@ def main():
     from candidates_w4a16_v8.validate import precision_oracle,error_stats
     from aoti_single_capture_timing import time_single_aoti_capture_us,TIMING_POLICY
     from aoti_single_threaded import SingleThreadedPackage,INVOCATION_POLICY
+    from executorch.backends.cuda.autotune import cuda_graph_timing as native_clock
+    if a.timing_method=='native-multicall':
+        timer=native_clock.time_with_cuda_graph_us
+        TIMING_POLICY='unchanged native cuda_graph_timing.time_with_cuda_graph_us; cold L2 per call; 4-32 calls in one graph; minimum GPU event interval'
+    else:
+        timer=time_single_aoti_capture_us
     try:
         assert torch.cuda.get_device_capability() == (12,0)
         assert digest(a.gguf) == '7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -122,10 +129,10 @@ def main():
                 order=['reference','candidate'] if n%2==0 else ['candidate','reference'];orders.append(order)
                 for label in order:
                     for _ in range(3):call(label,x)
-                    samples[label].append(time_single_aoti_capture_us(lambda label=label:call(label,x)))
+                    samples[label].append(timer(lambda label=label:call(label,x)))
         means={label:statistics.mean(values[1:]) for label,values in samples.items()}
         result=dict(validated=True,source_report_sha256=digest(a.reuse_report),packages=record['packages'],extracted_package_members={k:v.members for k,v in models.items()},
-            GGUF_sha256=digest(a.gguf),timing_policy=TIMING_POLICY,invocation_policy=INVOCATION_POLICY,one_AOTI_invocation_per_capture=True,
+            GGUF_sha256=digest(a.gguf),timing_policy=TIMING_POLICY,invocation_policy=INVOCATION_POLICY,one_AOTI_invocation_per_capture=a.timing_method=='single-call',timing_method=a.timing_method,native_timer_source_sha256=digest(Path(native_clock.__file__)),
             rounds=4,discarded=[1],averaged=[2,3,4],warmups=3,tail_checks=checks,
             samples_us=samples,means_us=means,orders=orders,
             sample_sd_us={label:statistics.stdev(values[1:]) for label,values in samples.items()},

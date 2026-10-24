@@ -96,7 +96,8 @@ def main():
             from candidates_w4a16_v8 import CONFIGS,run,bind_launcher
             from candidates_w4a16_v8.aoti import candidate_op,config_index
             from candidates_w4a16_v8.validate import make_weights,precision_oracle,error_stats
-            from aoti_single_capture_timing import time_single_aoti_capture_us, TIMING_POLICY
+            TIMING_POLICY='unchanged native cuda_graph_timing.time_with_cuda_graph_us; cold L2 per call; 4-32 calls in one graph; minimum GPU event interval'
+            from aoti_single_threaded import SingleThreadedPackage, INVOCATION_POLICY
             torch.set_num_threads(2)
             torch.backends.cuda.matmul.allow_tf32=False
             torch.set_float32_matmul_precision('highest')
@@ -208,7 +209,7 @@ def main():
                     ep=torch.export.export(module,inputs,dynamic_shapes=dynamic,strict=True)
                     package=folder/(role+'-m'+str(bucket)+'-'+label+'.pt2')
                     torch._inductor.aoti_compile_and_package(ep,package_path=str(package))
-                    models[label]=torch._inductor.aoti_load_package(str(package))
+                    models[label]=SingleThreadedPackage(package,folder/'official-api-extracted'/package.stem)
                     record['packages'][label]=dict(path=str(package),bytes=package.stat().st_size,
                         sha256=hashlib.sha256(package.read_bytes()).hexdigest(),export_range_constraints=str(ep.range_constraints))
                 def call(label,xx):
@@ -223,10 +224,13 @@ def main():
                            for label in ['reference','candidate']}
                     record['tail_numerics'].append(dict(m=actual_m,checks=check))
                 record['paired_timing']=paired(lambda:call('reference',x),lambda:call('candidate',x),
-                                               timer=time_single_aoti_capture_us)
+                                               timer=clock.time_with_cuda_graph_us)
                 record['AOTI_timing_policy']=TIMING_POLICY
+                record['AOTI_invocation_policy']=INVOCATION_POLICY
+                record['extracted_package_members']={k:v.members for k,v in models.items()}
                 record['interpretation']='Both reference and candidate packaged/loaded with the same dynamic-M range and correct arithmetic; explicit reference config remains a feasible control, not proof of the whole-server selected config'
                 save('AOTI-package-load-validated',role=role,bucket=bucket,config_id=bound.config_id)
+                for model in models.values():model.close()
                 del models
                 torch.cuda.empty_cache()
 
