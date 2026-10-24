@@ -43,6 +43,9 @@ on:
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
+      - exir/passes/convert_constant_dim_order_pass.py
+      - exir/passes/propagate_device_config.py
+      - exir/passes/propagate_device_pass.py
   workflow_dispatch:
     inputs:
       models:
@@ -469,8 +472,9 @@ jobs:
   unittest-cuda:
     name: unittest-cuda (${{ matrix.shard }})
     needs: [changed-files, run-decision]
-    # This job runs the pybindings device test, so it also has to fire on the
-    # two pybindings paths the workflow filter lists.
+    # This job runs the pybindings device test and the device placement test,
+    # so it also has to fire on the pybindings and device pass paths the
+    # workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -481,6 +485,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/convert_constant_dim_order_pass.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_config.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/passes/propagate_device_pass.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     # kernel: Triton kernels and their autotuning. system: lowering passes, op
     # dispatch, export/runtime, and model tests. Together they do not fit the

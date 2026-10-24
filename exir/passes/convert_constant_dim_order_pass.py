@@ -42,7 +42,7 @@ def _update_placeholder_meta(
         ),
         None,
     )
-    if input_spec is None:
+    if placeholder_node is None:
         raise RuntimeError(f"Missing placeholder for {input_spec.arg.name}.")
 
     placeholder_node.meta["val"] = placeholder_node.meta["val"].contiguous()
@@ -54,9 +54,9 @@ def convert_constant_dim_order_pass(
     """
     Normalize lifted tensors to default or channels-last dim order.
 
-    Tensor constants and buffers with other dim orders or striding are converted
-    to contiguous tensors. This pass acts in-place on the unlifted exported
-    program.
+    Tensor constants, buffers and parameters with other dim orders or striding
+    are converted to contiguous tensors. This pass acts in-place on the unlifted
+    exported program.
 
     Args:
         exported_program: The ExportedProgram to transform.
@@ -83,6 +83,13 @@ def convert_constant_dim_order_pass(
                 else InputKind.CONSTANT_TENSOR
             )
             _update_placeholder_meta(exported_program, key, kind)
+
+    for key, param in exported_program.named_parameters():
+        if _should_transform(param):
+            exported_program.state_dict[key] = torch.nn.Parameter(
+                param.contiguous(), requires_grad=param.requires_grad
+            )
+            _update_placeholder_meta(exported_program, key, InputKind.PARAMETER)
 
     # Convert buffers.
     for key, buffer in exported_program.named_buffers():

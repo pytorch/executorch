@@ -823,8 +823,10 @@ def _generate_edge_program(
     program = remove_unused_parameters_pass(program)
 
     if not config._skip_dim_order:
-        # Normalize constants and buffers before MemoryFormatOpsPass rewrites
-        # preserve-format copies, which cannot represent arbitrary dim orders.
+        # Normalize constants, buffers and parameters before partitioning, so a
+        # delegate sees the layout the program stores, and before
+        # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
+        # represent arbitrary dim orders.
         program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
             program
         )
@@ -870,7 +872,10 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize tensor constants introduced by the preceding passes.
+    # Normalize tensor constants introduced by the preceding passes. With
+    # _skip_dim_order this is the only call, so it fixes the layout of
+    # parameters, buffers and constants, but ops computed from them keep the
+    # old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )

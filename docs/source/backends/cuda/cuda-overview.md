@@ -169,6 +169,28 @@ out works, and the snippet above sets it explicitly only to make the requirement
 it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
 during device-aware memory planning.
 
+**With `skip_h2d_for_method_inputs`, an input that a device delegate reads may only be read by
+delegates on that device.** If anything else reads it, even only its shape, such as an operator
+outside those delegates, a delegate on another device, or the method output, `to_executorch` raises
+an error instead of adding a copy. Turn the flag off, or have the partitioner put those operators in
+a delegate on that device. `to_executorch` also refuses an input that the method changes, because
+the change is written back on the host. For a mutable buffer, have the partitioner put the buffer
+and every operator that reads or writes it in the delegate. `tag_mutated_buffer` tags the buffer
+once those operators are there, and the CUDA partitioner already calls it.
+
+**A constant that a delegate reads from outside is still copied.** Constants, such as weights and
+buffers the method does not change, are not passed by the caller. Their data stays in host memory,
+in the program or in its external data file, so `to_executorch` adds a copy to the device that runs
+on every call, one for each device that reads the constant, and logs a warning. Each copy stays in
+device memory until the last delegate on that device has read it. Keep constants inside the
+delegate to avoid that cost.
+
+**With `skip_d2h_for_method_outputs`, a returned output that a custom operator outside the
+delegate writes in place is still copied.** This is a custom operator with a mutable argument, such
+as a KV cache update. It writes the host copy, so `to_executorch` returns a device copy of the
+written tensor. That copies the output to the host and back on every call and logs a warning. Put
+that operator in the delegate to avoid it.
+
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer and the runtime copies the caller's memory into it, so the
 copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,

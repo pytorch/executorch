@@ -13,6 +13,7 @@ from typing import List, NamedTuple, Optional
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -29,7 +30,12 @@ from executorch.exir.backend.test.device_util import (
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.exir.passes import (
+    MemoryPlanningPass,
+    propagate_device_pass,
+    ToOutVarPass,
+)
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
@@ -102,6 +108,23 @@ def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
     )
 
 
+def _lower_add_to_device(inputs: tuple, device: str) -> torch.nn.Module:
+    """Lower a module that returns ``x + y`` to a delegate on ``device``."""
+
+    class Add(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.add(x, y)
+
+    return to_backend(
+        BackendWithCompilerDemo.__name__,
+        to_edge(export(Add(), inputs)).exported_program(),
+        [
+            CompileSpec("max_value", bytes([4])),
+            CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, device.encode("utf-8")),
+        ],
+    )
+
+
 class PerAddDeviceDelegatePartitioner(Partitioner):
     """Delegates each ``aten.add.Tensor`` as its OWN delegate, each with a
     per-op ``target_device``.
@@ -140,6 +163,74 @@ class PerAddDeviceDelegatePartitioner(Partitioner):
             tagged_exported_program=exported_program,
             partition_tags=partition_tags,
         )
+
+
+# A mutable op that stays on the host, like a KV cache update. Once
+# to_executorch removes auto_functionalized, it adds other into x in place.
+_test_lib = torch.library.Library("propagate_device_test", "DEF")
+_test_lib.define("accumulate(Tensor(a!) x, Tensor other) -> Tensor")
+_test_lib.define(
+    "accumulate.out(Tensor(a!) x, Tensor other, *, Tensor(b!) out) -> Tensor(b!)"
+)
+
+
+@torch.library.impl(_test_lib, "accumulate", "CompositeExplicitAutograd")
+def _accumulate(x: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    x.add_(other)
+    return x.clone()
+
+
+@torch.library.impl(_test_lib, "accumulate.out", "CompositeExplicitAutograd")
+def _accumulate_out(
+    x: torch.Tensor, other: torch.Tensor, out: torch.Tensor
+) -> torch.Tensor:
+    x.add_(other)
+    return out.copy_(x)
+
+
+def _lower_with_host_writer(
+    model: torch.nn.Module,
+    inputs: tuple,
+    devices: List[str],
+    et_config: ExecutorchBackendConfig,
+) -> torch.fx.GraphModule:
+    """Delegate each add of a model that also calls accumulate on the host."""
+    edge = to_edge(
+        export(model, inputs),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    et = edge.to_backend(PerAddDeviceDelegatePartitioner(devices)).to_executorch(
+        et_config
+    )
+    return et.exported_program().graph_module
+
+
+def _host_writer(gm: torch.fx.GraphModule) -> torch.fx.Node:
+    (writer,) = [
+        n
+        for n in gm.graph.nodes
+        if n.target == torch.ops.propagate_device_test.accumulate.out
+    ]
+    return writer
+
+
+def _host_written(gm: torch.fx.GraphModule) -> torch.fx.Node:
+    """The tensor that accumulate writes, looking through the view it may write."""
+    written = _host_writer(gm).args[0]
+    if written.target == torch.ops.aten.as_strided.default:
+        return written.args[0]
+    return written
+
+
+def _host_writer_config(write_view: bool, **kwargs) -> ExecutorchBackendConfig:
+    return ExecutorchBackendConfig(
+        emit_stacktrace=False,
+        enable_non_cpu_memory_planning=True,
+        # A write through a view leaves the aten.as_strided that
+        # to_executorch makes for it, which has no out variant.
+        to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure=write_view),
+        **kwargs,
+    )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -493,6 +584,452 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"(1 boundary D2H), got {len(nodes.d2h_nodes)}",
                 )
 
+    def test_same_device_copies_kept_when_host_op_writes_copy(self):
+        """A host op that writes the host copy of a delegate output in place,
+        directly or through a view, changes what the next delegate on the same
+        device reads, so that round-trip stays. The input it only reads still
+        gets one copy for both delegates."""
+
+        class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
+            def forward(self, x, y):
+                a = x + y
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(a.view(-1), y.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(a, y)
+                return a + y
+
+        for write_view in (False, True):
+            gm = _lower_with_host_writer(
+                Model(write_view),
+                (torch.randn(2, 2), torch.randn(2, 2)),
+                ["cuda:0", "cuda:0"],
+                _host_writer_config(write_view),
+            )
+            with self.subTest(write_view=write_view):
+                written = _host_written(gm)
+                self.assertEqual(written.target, torch.ops.et_copy._d2h_copy.out)
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertIn(
+                    written,
+                    [
+                        arg.args[0]
+                        for arg in nodes.delegate_nodes[1].args[1:]
+                        if arg.target == torch.ops.et_copy._h2d_copy.out
+                    ],
+                )
+                y_copies = [n for n in nodes.h2d_nodes if n.args[0].name == "y"]
+                self.assertEqual(len(y_copies), 1)
+
+    def test_host_writes_after_the_device_readers_keep_no_copies(self):
+        """Host ops that write tensors in place only after the delegates on one
+        device have read them cannot change what those delegates read. So the
+        round-trip between the delegates is still removed, and the tensor both
+        delegates read gets one copy."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                t = x * 2
+                a = t + y
+                b = a + t
+                # Both writes read b, so they run after the second delegate.
+                torch.ops.propagate_device_test.accumulate(a, b)
+                torch.ops.propagate_device_test.accumulate(t, b)
+                return a, b, t
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            _host_writer_config(False),
+        )
+        nodes = _collect_device_copy_nodes(gm)
+        first, second = nodes.delegate_nodes
+        order = list(gm.graph.nodes)
+        writers = [
+            n
+            for n in order
+            if n.target == torch.ops.propagate_device_test.accumulate.out
+        ]
+        self.assertEqual(len(writers), 2)
+        for writer in writers:
+            self.assertLess(order.index(second), order.index(writer))
+        # Only t and y are copied, and the second delegate reads the first
+        # delegate's output directly.
+        self.assertEqual(len(nodes.h2d_nodes), 2)
+        (shared,) = set(first.args[1:]) & set(second.args[1:])
+        self.assertIn(shared, nodes.h2d_nodes)
+
+    def test_single_tensor_delegate_output_read_on_host(self):
+        """A host op that reads the output of a lowered module returning one
+        tensor reads a host copy of it."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return torch.sin(self.lowered(x, y))
+
+        et = to_edge(export(Model(), inputs)).to_executorch(
+            ExecutorchBackendConfig(
+                emit_stacktrace=False, enable_non_cpu_memory_planning=True
+            )
+        )
+        gm = et.exported_program().graph_module
+        nodes = _collect_device_copy_nodes(gm)
+        (d2h,) = nodes.d2h_nodes
+        self.assertIs(d2h.args[0], nodes.delegate_nodes[0])
+        (sin,) = d2h.users
+        self.assertEqual(sin.target, torch.ops.aten.sin.out)
+        self._assert_nodes_buffer_device(
+            [d2h], et._emitter_output.program, DeviceType.CPU, "host op", "D2H copy"
+        )
+
+    def test_single_tensor_delegate_output_copied_to_host(self):
+        """A lowered module that returns one tensor, called from another module,
+        has no getitem after its call. Its device output still gets a _d2h_copy,
+        and the next call on the same device reads it without a round-trip. With
+        skip_h2d_for_method_inputs, y, read by both calls, is placed once."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return self.lowered(self.lowered(x, y), y)
+
+        configs = (
+            PropagateDeviceConfig(),
+            PropagateDeviceConfig(skip_h2d_for_method_inputs=True),
+            PropagateDeviceConfig(skip_d2h_for_method_outputs=True),
+        )
+        for device_config in configs:
+            skip_h2d = device_config.skip_h2d_for_method_inputs
+            skip_d2h = device_config.skip_d2h_for_method_outputs
+            et = to_edge(export(Model(), inputs)).to_executorch(
+                ExecutorchBackendConfig(
+                    emit_stacktrace=False,
+                    propagate_device_config=device_config,
+                    enable_non_cpu_memory_planning=True,
+                )
+            )
+            program = et._emitter_output.program
+            gm = et.exported_program().graph_module
+            case = f"skip_h2d={skip_h2d}, skip_d2h={skip_d2h}"
+            with self.subTest(case=case):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 2)
+                # Only method inputs are copied to the device, x and y once
+                # each, unless the caller places them.
+                self.assertEqual(len(nodes.h2d_nodes), 0 if skip_h2d else 2)
+                self.assertTrue(
+                    all(n.args[0].op == "placeholder" for n in nodes.h2d_nodes)
+                )
+                cuda_ph, _ = self._collect_placeholders_by_device(gm)
+                self.assertEqual(len(cuda_ph), 2 if skip_h2d else 0)
+                # Only the method output can be copied back to the host.
+                self.assertEqual(len(nodes.d2h_nodes), 0 if skip_d2h else 1)
+                (output,) = gm.graph.output_node().args[0]
+                self.assertEqual(
+                    output.target,
+                    (
+                        executorch_call_delegate
+                        if skip_d2h
+                        else torch.ops.et_copy._d2h_copy.out
+                    ),
+                )
+                self._assert_nodes_buffer_device(
+                    nodes.delegate_nodes, program, DeviceType.CUDA, case, "Delegate"
+                )
+                self._assert_nodes_buffer_device(
+                    nodes.d2h_nodes, program, DeviceType.CPU, case, "D2H copy"
+                )
+
+    def test_host_inplace_ops_on_delegate_output_write_host_copy(self):
+        """Host ops that write a delegate output in place, here relu_ and then
+        mul_ from reinplace_pass, write its host copy. Their results share the
+        copy's spec, as memory planning requires, and the method returns the
+        last one from the host."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Call(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return torch.relu(self.lowered(x, y)) * 2
+
+        class Add(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.relu(x + y) * 2
+
+        cases = {
+            "single tensor": (Call(), None),
+            "getitem": (Add(), PerAddDeviceDelegatePartitioner(["cuda:0"])),
+        }
+        reinplaced = frozenset(
+            {exir_ops.edge.aten.relu.default, exir_ops.edge.aten.mul.Tensor}
+        )
+        for case, (model, partitioner) in cases.items():
+            for skip_d2h in (False, True):
+                edge = to_edge(export(model, inputs))
+                if partitioner is not None:
+                    edge = edge.to_backend(partitioner)
+                et = edge.to_executorch(
+                    ExecutorchBackendConfig(
+                        emit_stacktrace=False,
+                        reinplace_extra_ops=reinplaced,
+                        propagate_device_config=PropagateDeviceConfig(
+                            skip_d2h_for_method_outputs=skip_d2h
+                        ),
+                        enable_non_cpu_memory_planning=True,
+                    )
+                )
+                gm = et.exported_program().graph_module
+                with self.subTest(case=case, skip_d2h=skip_d2h):
+                    (d2h,) = _collect_device_copy_nodes(gm).d2h_nodes
+                    (relu,) = d2h.users
+                    (mul,) = relu.users
+                    self.assertEqual(relu.target, exir_ops.edge.aten.relu_.default)
+                    self.assertEqual(mul.target, exir_ops.edge.aten.mul_.Tensor)
+                    self.assertIs(relu.meta["spec"], d2h.meta["spec"])
+                    self.assertIs(mul.meta["spec"], d2h.meta["spec"])
+                    self.assertEqual(gm.graph.output_node().args[0], (mul,))
+                    self._assert_nodes_buffer_device(
+                        [mul],
+                        et._emitter_output.program,
+                        DeviceType.CPU,
+                        case,
+                        "Output",
+                    )
+
+    def test_skip_d2h_keeps_output_also_read_on_device(self):
+        """With skip_d2h_for_method_outputs, a returned delegate output that a
+        delegate on the same device also reads stays on the device, like the
+        other outputs."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Calls(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                a = self.lowered(x, y)
+                return a, self.lowered(a, y)
+
+        class Adds(torch.nn.Module):
+            def forward(self, x, y):
+                a = torch.add(x, y)
+                return a, torch.add(a, y)
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+        cases = {
+            "single tensor": (Calls(), None),
+            "getitem": (Adds(), PerAddDeviceDelegatePartitioner(["cuda:0"])),
+        }
+        for case, (model, partitioner) in cases.items():
+            edge = to_edge(export(model, inputs))
+            if partitioner is not None:
+                edge = edge.to_backend(partitioner)
+            et = edge.to_executorch(deepcopy(et_config))
+            gm = et.exported_program().graph_module
+            with self.subTest(case=case):
+                self.assertEqual(len(_collect_device_copy_nodes(gm).d2h_nodes), 0)
+                outputs = gm.graph.output_node().args[0]
+                self._assert_nodes_device(outputs, DeviceType.CUDA, case, "Output")
+                self._assert_nodes_buffer_device(
+                    outputs, et._emitter_output.program, DeviceType.CUDA, case, "Output"
+                )
+
+    def test_skip_d2h_keeps_output_also_read_off_device(self):
+        """With skip_d2h_for_method_outputs, a returned delegate output that a
+        host op or a delegate on another device also reads stays on the device.
+        Only that other reader gets the host copy."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+        lowered_cuda_1 = _lower_add_to_device(inputs, "cuda:1")
+
+        class HostReader(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                a = self.lowered(x, y)
+                return a, torch.sin(a)
+
+        class OtherDeviceReader(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+                self.lowered_cuda_1 = lowered_cuda_1
+
+            def forward(self, x, y):
+                a = self.lowered(x, y)
+                return a, self.lowered_cuda_1(a, y)
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+        for case, model in {
+            "host op": HostReader(),
+            "delegate on cuda:1": OtherDeviceReader(),
+        }.items():
+            et = to_edge(export(model, inputs)).to_executorch(deepcopy(et_config))
+            gm = et.exported_program().graph_module
+            with self.subTest(case=case):
+                output = gm.graph.output_node().args[0][0]
+                self.assertEqual(output.target, executorch_call_delegate)
+                self._assert_nodes_device([output], DeviceType.CUDA, case, "Output", 0)
+                self._assert_nodes_buffer_device(
+                    [output],
+                    et._emitter_output.program,
+                    DeviceType.CUDA,
+                    case,
+                    "Output",
+                )
+                (d2h,) = _collect_device_copy_nodes(gm).d2h_nodes
+                self.assertIs(d2h.args[0], output)
+                self.assertNotIn(gm.graph.output_node(), d2h.users)
+
+    def test_skip_d2h_leaves_returned_output_unplanned(self):
+        """With skip_d2h_for_method_outputs and unplanned graph outputs, the
+        caller provides the returned delegate output, while the host copy that
+        a host op reads is still planned."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y
+                return a, torch.sin(a)
+
+        et = (
+            to_edge(export(Model(), (torch.randn(2, 2), torch.randn(2, 2))))
+            .to_backend(PerAddDeviceDelegatePartitioner(["cuda:0"]))
+            .to_executorch(
+                ExecutorchBackendConfig(
+                    emit_stacktrace=False,
+                    propagate_device_config=PropagateDeviceConfig(
+                        skip_d2h_for_method_outputs=True
+                    ),
+                    enable_non_cpu_memory_planning=True,
+                    memory_planning_pass=MemoryPlanningPass(alloc_graph_output=False),
+                )
+            )
+        )
+        gm = et.exported_program().graph_module
+        output = gm.graph.output_node().args[0][0]
+        (d2h,) = _collect_device_copy_nodes(gm).d2h_nodes
+        self.assertIs(d2h.args[0], output)
+        self.assertIsNone(output.meta["spec"].mem_id)
+        self.assertIsNotNone(d2h.meta["spec"].mem_id)
+
+    def test_skip_d2h_returns_device_copy_of_output_written_on_host(self):
+        """With skip_d2h_for_method_outputs, a returned delegate output whose
+        host copy a host op writes in place, directly or through a view, is
+        returned as a device copy of the written host copy, because the device
+        tensor never sees the write. A warning names the op that writes it,
+        since these copies run on every call."""
+
+        class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
+            def forward(self, x, y):
+                a = x + y
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(a.view(-1), y.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(a, y)
+                return a
+
+        for write_view in (False, True):
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                gm = _lower_with_host_writer(
+                    Model(write_view),
+                    (torch.randn(2, 2), torch.randn(2, 2)),
+                    ["cuda:0"],
+                    _host_writer_config(
+                        write_view,
+                        propagate_device_config=PropagateDeviceConfig(
+                            skip_d2h_for_method_outputs=True
+                        ),
+                    ),
+                )
+            with self.subTest(write_view=write_view):
+                (warning,) = logs.output
+                self.assertIn(
+                    "'propagate_device_test.accumulate.default' writes it", warning
+                )
+                (output,) = gm.graph.output_node().args[0]
+                self.assertEqual(output.target, torch.ops.et_copy._h2d_copy.out)
+                self.assertEqual(output.meta["spec"].device, DeviceType.CUDA)
+                self.assertIs(output.args[0], _host_written(gm))
+                nodes = list(gm.graph.nodes)
+                self.assertLess(nodes.index(_host_writer(gm)), nodes.index(output))
+
+    def test_skip_d2h_shares_the_device_copy_of_a_written_output(self):
+        """With skip_d2h_for_method_outputs, a returned output that a host op
+        writes before a later delegate on the same device reads it needs a
+        device copy for both. The method output reads the same copy as that
+        delegate."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y
+                torch.ops.propagate_device_test.accumulate(a, y)
+                return a, a + y
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            _host_writer_config(
+                False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_d2h_for_method_outputs=True
+                ),
+            ),
+        )
+        (copy,) = [
+            n
+            for n in _collect_device_copy_nodes(gm).h2d_nodes
+            if n.args[0] is _host_written(gm)
+        ]
+        _, second = _collect_device_copy_nodes(gm).delegate_nodes
+        self.assertIn(copy, second.args[1:])
+        self.assertIs(gm.graph.output_node().args[0][0], copy)
+
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
         directly-connected delegates must be preserved -- the round-trip is a
@@ -563,14 +1100,14 @@ class TestPropagateDevicePass(unittest.TestCase):
                     4,
                     f"[{pipeline}] expected four delegates",
                 )
-                # a -> {D0, D1} and b -> {D0, D2} give 4 graph-input H2D copies;
-                # the single graph output gives 1 D2H. All inter-delegate
-                # round-trips (including delegate 0's output feeding D1 and D2)
-                # are elided.
+                # a -> {D0, D1} and b -> {D0, D2} give one graph-input H2D copy
+                # each, shared by the delegates that read it; the single graph
+                # output gives 1 D2H. All inter-delegate round-trips (including
+                # delegate 0's output feeding D1 and D2) are elided.
                 self.assertEqual(
                     len(nodes.h2d_nodes),
-                    4,
-                    f"[{pipeline}] expected 4 boundary H2D copies, got "
+                    2,
+                    f"[{pipeline}] expected 2 boundary H2D copies, got "
                     f"{len(nodes.h2d_nodes)}",
                 )
                 self.assertEqual(
@@ -721,6 +1258,47 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"[{pipeline}] the same-device delegate should consume the "
                     f"first delegate's output directly",
                 )
+
+    def test_tensors_shared_by_delegates_on_different_devices(self):
+        """Delegates on cuda:0 and cuda:1 that read the same method input and
+        each other's outputs. The input gets one copy for each device, read by
+        every delegate there, and each output crosses to the other device
+        through the host."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y  # delegate 0 (cuda:0)
+                b = x + a  # delegate 1 (cuda:1)
+                return a, b, x + b  # delegate 2 (cuda:0)
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:1", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                first, second, third = nodes.delegate_nodes
+                x_copies = [n for n in nodes.h2d_nodes if n.args[0].name == "x"]
+                first_x, second_x, third_x = (
+                    next(arg for arg in delegate.args[1:] if arg in x_copies)
+                    for delegate in (first, second, third)
+                )
+                self.assertEqual(len(x_copies), 2)
+                self.assertIs(first_x, third_x)
+                self.assertEqual(first_x.meta["spec"].device_index, 0)
+                self.assertEqual(second_x.meta["spec"].device_index, 1)
+                crossings = sorted(
+                    (
+                        h2d.args[0].args[0].meta["spec"].device_index,
+                        h2d.meta["spec"].device_index,
+                    )
+                    for h2d in nodes.h2d_nodes
+                    if h2d.args[0].target == d2h_out
+                )
+                self.assertEqual(crossings, [(0, 1), (1, 0)])
 
         # ---- Integration tests: device consistency after to_executorch ----
 
@@ -1264,6 +1842,393 @@ class TestPropagateDevicePass(unittest.TestCase):
                     pipeline,
                     "CPU placeholder",
                 )
+
+    def test_constant_feeding_device_delegate_is_copied(self):
+        """A constant feeding a device delegate gets an _h2d_copy into planned device
+        memory, with or without skip_h2d_for_method_inputs: its data lives in the
+        program on the host, so it is not a method input the caller can place."""
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset)
+
+        model = Model()
+        inputs = (torch.randn(2, 2),)
+        for skip in (False, True):
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=skip
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                results = self._get_executorch_program(
+                    model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+                )
+            self.assertIn("Constant 'b_offset' (16 bytes)", logs.output[0])
+            for pipeline, program, gm in results:
+                with self.subTest(pipeline=pipeline, skip=skip):
+                    nodes = _collect_device_copy_nodes(gm)
+                    # Input a is copied only when the caller cannot place it.
+                    self.assertEqual(len(nodes.h2d_nodes), 1 if skip else 2)
+                    cuda_ph, _ = self._collect_placeholders_by_device(gm)
+                    self.assertEqual(len(cuda_ph), int(skip))
+                    self.assertTrue(all(not n.meta["spec"].const for n in cuda_ph))
+                    copies = [n.meta["spec"] for n in nodes.h2d_nodes]
+                    self.assertTrue(all(not spec.const for spec in copies))
+                    self._assert_nodes_buffer_device(
+                        nodes.h2d_nodes, program, DeviceType.CUDA, pipeline, "H2D copy"
+                    )
+
+    def test_constant_copy_keeps_stored_layout(self):
+        """The copy of a constant moves its bytes as they are, so it must use the
+        layout the constant is stored in: contiguous for a transposed parameter,
+        which to_edge makes contiguous, and channels-last for a channels-last
+        one."""
+
+        class Model(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, a):
+                return torch.add(a, self.weight)
+
+        weights = {
+            "transposed": torch.randn(3, 2).t(),
+            "channels_last": torch.randn(1, 2, 3, 3).to(
+                memory_format=torch.channels_last
+            ),
+        }
+        for name, weight in weights.items():
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            for pipeline, _program, gm in self._get_executorch_program(
+                Model(weight),
+                (torch.randn(weight.shape),),
+                DeviceAwarePartitioner("cuda:0"),
+                et_config,
+            ):
+                with self.subTest(pipeline=pipeline, weight=name):
+                    nodes = _collect_device_copy_nodes(gm)
+                    self.assertEqual(len(nodes.h2d_nodes), 1)
+                    h2d = nodes.h2d_nodes[0]
+                    # The emitter rewrites the constant's spec to the stored layout.
+                    stored = h2d.args[0].meta["spec"]
+                    self.assertEqual(h2d.meta["spec"].dim_order, stored.dim_order)
+                    self.assertEqual(
+                        tuple(h2d.meta["spec"].stride), tuple(stored.stride)
+                    )
+
+    def test_constant_with_unstored_layout_is_refused(self):
+        """A constant that is neither contiguous nor channels-last is stored
+        contiguous, so its copy would not match the stored data. A pass that runs
+        after to_edge normalized the constants can create one, and lowering then
+        fails instead of producing wrong results."""
+
+        class StoreWeightTransposed(ExportedProgramPassBase):
+            def call(self, ep):
+                ep.state_dict["w"] = torch.nn.Parameter(
+                    ep.state_dict["w"].t().contiguous().t()
+                )
+                for node in ep.graph.nodes:
+                    if node.name == "p_w":
+                        node.meta["val"] = node.meta["val"].t().contiguous().t()
+                return ExportedProgramPassResult(ep, True)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(2, 3))
+
+            def forward(self, a):
+                return torch.add(a, self.w)
+
+        for skip in (False, True):
+            edge = to_edge_transform_and_lower(
+                export(Model(), (torch.randn(2, 3),)),
+                transform_passes=[StoreWeightTransposed()],
+                partitioner=[DeviceAwarePartitioner("cuda:0")],
+            )
+            et_config = ExecutorchBackendConfig(
+                emit_stacktrace=False,
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=skip
+                ),
+                enable_non_cpu_memory_planning=True,
+            )
+            with self.subTest(skip=skip):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Constant 'p_w' feeds a delegate on cuda:0, but it is neither "
+                    "contiguous nor channels-last",
+                ):
+                    edge.to_executorch(et_config)
+
+    def test_constant_read_by_several_delegates_is_copied_once_per_device(self):
+        """A constant read by several delegates gets one _h2d_copy for each
+        device, not one for each delegate."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = {
+            device: _lower_add_to_device(inputs, device)
+            for device in ("cuda:0", "cuda:1")
+        }
+
+        class Model(torch.nn.Module):
+            def __init__(self, devices):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+                self.first, self.second, self.third = (lowered[d] for d in devices)
+
+            def forward(self, x):
+                return (
+                    self.first(x, self.offset),
+                    self.second(x, self.offset),
+                    self.third(x, self.offset),
+                )
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False, enable_non_cpu_memory_planning=True
+        )
+        cases = {
+            "one device": (("cuda:0", "cuda:0", "cuda:0"), [0]),
+            "two devices": (("cuda:0", "cuda:1", "cuda:0"), [0, 1]),
+        }
+        for case, (devices, copy_indices) in cases.items():
+            with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
+                et = to_edge(export(Model(devices), inputs[:1])).to_executorch(
+                    deepcopy(et_config)
+                )
+            gm = et.exported_program().graph_module
+            with self.subTest(case=case):
+                self.assertEqual(len(logs.output), len(copy_indices))
+                nodes = _collect_device_copy_nodes(gm)
+                offset_copies = [
+                    n for n in nodes.h2d_nodes if n.args[0].name == "b_offset"
+                ]
+                self.assertEqual(
+                    sorted(n.meta["spec"].device_index for n in offset_copies),
+                    copy_indices,
+                )
+                for delegate, device in zip(nodes.delegate_nodes, devices):
+                    offset = delegate.args[2]
+                    self.assertIn(offset, offset_copies)
+                    self.assertEqual(f"cuda:{offset.meta['spec'].device_index}", device)
+
+    def test_tensor_written_on_host_is_copied_for_each_delegate(self):
+        """A tensor that a host op writes in place, directly or through a view,
+        between two delegates on one device gets a new copy for the second
+        delegate, so it reads the new value."""
+
+        class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
+            def forward(self, x, y):
+                t = x * 2
+                a = t + y
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(t.view(-1), a.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(t, a)
+                return a, t + y
+
+        for write_view in (False, True):
+            gm = _lower_with_host_writer(
+                Model(write_view),
+                (torch.randn(2, 2), torch.randn(2, 2)),
+                ["cuda:0", "cuda:0"],
+                _host_writer_config(write_view),
+            )
+            with self.subTest(write_view=write_view):
+                writer = _host_writer(gm)
+                first, second = _collect_device_copy_nodes(gm).delegate_nodes
+                (second_copy,) = [
+                    arg
+                    for arg in second.args[1:]
+                    if arg.target == torch.ops.et_copy._h2d_copy.out
+                    and arg.args[0] is _host_written(gm)
+                ]
+                nodes = list(gm.graph.nodes)
+                self.assertLess(nodes.index(first), nodes.index(writer))
+                self.assertLess(nodes.index(writer), nodes.index(second_copy))
+
+    def test_skip_h2d_for_input_shared_by_device_delegates(self):
+        """With skip_h2d_for_method_inputs=True, a method input read by two
+        delegates on the same device is placed on that device once, with no
+        _h2d_copy."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                c = torch.sin(torch.add(a, b))
+                return torch.add(a, c)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+        for pipeline, program, gm in self._get_executorch_program(
+            model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 2)
+                # Only sin's output, computed on the host, is copied.
+                self.assertEqual(len(nodes.h2d_nodes), 1)
+                cuda_ph, _ = self._collect_placeholders_by_device(gm)
+                self.assertEqual(sorted(n.name for n in cuda_ph), ["a", "b"])
+                self._assert_nodes_buffer_device(
+                    cuda_ph, program, DeviceType.CUDA, pipeline, "Placeholder"
+                )
+
+    def test_skip_h2d_refuses_input_read_off_device(self):
+        """A method input cannot move to a device when a host op, or a delegate
+        on another device, also reads it."""
+
+        class HostOp(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b), torch.sin(a)
+
+        class TwoDelegates(torch.nn.Module):
+            def forward(self, a, b, c):
+                return torch.add(a, b), torch.add(a, c)
+
+        class CopiedIntoBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 2))
+
+            def forward(self, a, b):
+                self.state.copy_(a)
+                return torch.add(a, b)
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+        cases = {
+            "host op": (
+                HostOp(),
+                2,
+                DeviceAwarePartitioner("cuda:0"),
+                "aten_sin_default",
+            ),
+            "other device index": (
+                TwoDelegates(),
+                3,
+                PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:1"]),
+                "executorch_call_delegate_1",
+            ),
+            "other device type": (
+                TwoDelegates(),
+                3,
+                PerAddDeviceDelegatePartitioner(["cuda:0", "cpu"]),
+                "executorch_call_delegate_1",
+            ),
+            # The write-back of the buffer only reads the input.
+            "buffer write-back": (
+                CopiedIntoBuffer(),
+                2,
+                DeviceAwarePartitioner("cuda:0"),
+                "copy_",
+            ),
+        }
+        for case, (model, num_inputs, partitioner, reader) in cases.items():
+            ep = export(model, tuple(torch.randn(2, 2) for _ in range(num_inputs)))
+            # Each pipeline gets its own check, so the first refusal cannot hide
+            # the second pipeline.
+            for pipeline in ("to_edge+to_backend", "to_edge_transform_and_lower"):
+                if pipeline == "to_edge+to_backend":
+                    edge = to_edge(
+                        deepcopy(ep),
+                        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                    ).to_backend(partitioner)
+                else:
+                    edge = to_edge_transform_and_lower(
+                        deepcopy(ep), partitioner=[partitioner]
+                    )
+                with self.subTest(case=case, pipeline=pipeline):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        f"placeholder 'a' on cuda:0, because '{reader}' also reads it",
+                    ):
+                        edge.to_executorch(deepcopy(et_config))
+
+    def test_skip_h2d_refuses_placeholder_written_on_host(self):
+        """A mutated input or mutable buffer is written back on the host, so the
+        refusal says so, also when a host op reads it too."""
+
+        class MutableBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 2))
+
+            def forward(self, a):
+                out = torch.add(a, self.state)
+                self.state.add_(a)
+                return out
+
+        class MutableBufferReadOnHost(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 2))
+
+            def forward(self, a):
+                out = torch.add(a, self.state)
+                read = torch.sin(self.state)
+                self.state.add_(a)
+                return out, read
+
+        class MutatedInput(torch.nn.Module):
+            def forward(self, a, x):
+                out = torch.add(a, x)
+                x.add_(a)
+                return out
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+        cases = {
+            "mutable buffer": (MutableBuffer(), 1, "b_state"),
+            "mutable buffer read on host": (MutableBufferReadOnHost(), 1, "b_state"),
+            "mutated input": (MutatedInput(), 2, "x"),
+        }
+        for case, (model, num_inputs, name) in cases.items():
+            inputs = tuple(torch.randn(2, 2) for _ in range(num_inputs))
+            edge = to_edge(export(model, inputs)).to_backend(
+                DeviceAwarePartitioner("cuda:0")
+            )
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    f"placeholder '{name}' on cuda:0, because 'copy_' writes it "
+                    r"back on the host \(the method mutates it\)",
+                ):
+                    edge.to_executorch(deepcopy(et_config))
 
     def test_tensorspec_repr_includes_device(self):
         spec = TensorSpec(dtype=torch.float32, shape=torch.Size([2, 3]))

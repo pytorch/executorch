@@ -48,18 +48,27 @@ class PropagateDeviceConfig:
 
     # When True, method-level input tensors that feed directly into a device
     # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
-    # already on the target device. Useful for pipelines where inputs are
-    # pre-staged on GPU.
+    # already on the target device. Every reader of such an input must then be
+    # a delegate on that device, or to_executorch raises. Useful for pipelines
+    # where inputs are pre-staged on GPU. Constants are not passed by the
+    # caller, so they are still copied: their data stays on the host, in the
+    # program or in its external data file. That copy runs on every call, once
+    # for each device that reads the constant, and stays in device memory until
+    # the last delegate there has read it.
     #
     # Pair with MemoryPlanningPass(alloc_graph_input=False), or the runtime reserves its own buffer
     # for the input and copies the caller's memory into it, which is what this exists to avoid.
     # A dict can be used to set per-method values, keyed by method name.
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
-    # When True, device delegate outputs that are directly method outputs
-    # are NOT wrapped with _d2h_copy. The method outputs stay on device.
-    # Useful for cross-method GPU pipelines where the next method consumes
-    # GPU tensors directly.
+    # When True, device delegate outputs that the method returns stay on
+    # device: the method output never reads a _d2h_copy of them. When a custom
+    # host op with a mutable argument, such as a KV cache update, writes the
+    # host copy of such an output in place, the method returns a device copy of
+    # the written tensor. That costs a copy to the host and one back on every
+    # call, and the pass logs a warning about it.
+    # Useful for cross-method GPU pipelines where the next method consumes GPU
+    # tensors directly.
     #
     # Pair with MemoryPlanningPass(alloc_graph_output=False) for the same reason as the input flag.
     # A dict can be used to set per-method values, keyed by method name.
