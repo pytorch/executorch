@@ -59,6 +59,10 @@
       "sha256": "33d28e619f35c602866123888931e541087994869d9acca12e3f5cde33cec564",
       "bytes": 18569
     },
+    "benchmark_mg_w4a16_v9.py": {
+      "sha256": "f52526885aa1af1d0ade8007b4518f9b7abc71cd91ceeca54d35612aa6e36401",
+      "bytes": 19709
+    },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
       "bytes": 11061
@@ -300,8 +304,8 @@
       "bytes": 1952
     },
     "native_gemm_oracle_diagnostic.py": {
-      "sha256": "428ad4957420dfb2f58546cbce22275acb1691477de68b19fe843d803299618a",
-      "bytes": 3678
+      "sha256": "11d02e52dcf4b21b289c768e54585346707b46b8c3bce8fc87a405e13d38d398",
+      "bytes": 5771
     },
     "prepare.py": {
       "sha256": "aca3577de5c69965208fa6d20985473ccb25a0bbfadcdaab975bd1bd9346b091",
