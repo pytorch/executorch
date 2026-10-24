@@ -110,6 +110,10 @@ def main():
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--prompts', type=Path, required=True)
     parser.add_argument('--correctness-root', type=Path, required=True)
+    parser.add_argument('--correctness-client-root',type=Path,
+                        help='Isolated quality client root; performance keeps the original input audit')
+    parser.add_argument('--correctness-max-tokens',type=int)
+    parser.add_argument('--correctness-chat-template-kwargs',type=json.loads)
     parser.add_argument('--python', required=True)
     parser.add_argument('--model', required=True)
     parser.add_argument('--lock', type=Path, required=True)
@@ -117,6 +121,8 @@ def main():
     parser.add_argument('--resume-waiting-controller-pid', type=int,
                         help='Resume only an existing waiting selector after its original process has exited')
     args = parser.parse_args()
+    if args.correctness_max_tokens is not None:assert args.correctness_max_tokens>0
+    if args.correctness_chat_template_kwargs is not None:assert isinstance(args.correctness_chat_template_kwargs,dict)
     if args.resume_waiting_controller_pid is None:
         assert not args.output.exists(), 'Preserve previous selection and collection attempts'
         args.output.mkdir(parents=True)
@@ -221,9 +227,13 @@ def main():
                 env['SB_CHECKPOINT'] = str(probe['checkpoint_interval'] if cache=='on' else 0)
                 cmd = [args.python, '-B', str(Path(__file__).with_name('run_matrix_24h.py')),
                        '--wrapper', chosen['wrapper'], '--model', args.model, '--client', str(args.client),
-                       '--prompts', str(args.prompts), '--correctness-root', str(args.correctness_root), '--python', args.python,
+                       '--prompts', str(args.prompts), '--correctness-root', str(args.correctness_client_root if phase=='correctness' and args.correctness_client_root else args.correctness_root), '--python', args.python,
                        '--output', str(args.output/phase/cache), '--lock', str(args.lock), '--port', str(args.port),
                        '--phases', phase, '--variants', 'executorch', '--cache-modes', cache, '--concurrencies', '1', '2', '4', '8', '16']
+                if phase=='correctness' and args.correctness_max_tokens is not None:
+                    cmd+=['--correctness-max-tokens',str(args.correctness_max_tokens)]
+                if phase=='correctness' and args.correctness_chat_template_kwargs is not None:
+                    cmd+=['--correctness-chat-template-kwargs',json.dumps(args.correctness_chat_template_kwargs)]
                 with (args.output/(phase+'-'+cache+'-matrix.log')).open('x') as log:
                     subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
                 assert json.loads((args.output/phase/cache/'progress.json').read_text())['status']=='completed'
