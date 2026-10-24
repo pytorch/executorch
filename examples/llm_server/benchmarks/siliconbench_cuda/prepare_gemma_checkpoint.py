@@ -137,7 +137,7 @@ def main():
                           original_raw_streaming_and_tool_text_preserved=True,
                           no_model_loaded_during_preparation=True, model_correctness_perf_memory_acceptance_pending=True)
             (args.output/'build-provenance.json').write_text(json.dumps(record,indent=2)+'\n')
-        state('completed', isolated_worker_prepared=True, model_acceptance_pending=True)
+        state('completed', isolated_worker_prepared=True)
     except Exception as exc:
         state('failed', error_type=type(exc).__name__, detail=str(exc)[-1200:])
         raise
