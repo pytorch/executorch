@@ -38,6 +38,8 @@ def main():
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--prefix-entries', type=int, choices=[1,16], default=1)
+    parser.add_argument('--checkpoint-interval', type=int, choices=[0,512,1024], default=0)
+    parser.add_argument('--cache-modes', nargs='+', choices=['off','on'], default=['off','on'])
     parser.add_argument('--concurrencies', type=int, nargs='+', default=[1,16])
     parser.add_argument('--port', type=int, default=19084)
     args = parser.parse_args()
@@ -109,23 +111,26 @@ def main():
             wrapper.write_text(body)
             subprocess.run(['bash','-n',str(wrapper)], check=True)
             os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(args.artifact.resolve()),
-                              SB_ET_PREFIX_ENTRIES=str(args.prefix_entries))
+                              SB_ET_PREFIX_ENTRIES=str(args.prefix_entries),
+                              SB_CHECKPOINT=str(args.checkpoint_interval))
             provenance = dict(artifact_audit=audit, required_resident_sequences=required,
                               prefix_entries=args.prefix_entries, wrapper_sha256=digest(wrapper),
-                              total_cases=2 * len(args.concurrencies), final_best_ET_selection_pending=True,
+                              checkpoint_interval=args.checkpoint_interval, cache_modes=args.cache_modes,
+                              total_cases=len(args.cache_modes) * len(args.concurrencies), final_best_ET_selection_pending=True,
                               source_commit_record=json.loads((source / 'source-commit.json').read_text()))
             (args.output / 'evaluation-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
-        state('running-matrix', total_cases=2 * len(args.concurrencies))
+        total_cases = len(args.cache_modes) * len(args.concurrencies)
+        state('running-matrix', total_cases=total_cases)
         command = [args.python,'-B',str(source / 'run_matrix.py'),'--wrapper',str(wrapper),
                    '--model','muse-glimmer-30b','--client',str(args.client),'--prompts',str(args.prompts),
                    '--correctness-root',str(args.preparation_output / 'correctness'),'--python',args.python,
                    '--lock',str(args.lock),'--output',str(args.output / 'matrix'),'--port',str(args.port),
-                   '--variants','executorch','--cache-modes','off','on','--concurrencies',
+                   '--variants','executorch','--cache-modes',*args.cache_modes,'--concurrencies',
                    *[str(c) for c in args.concurrencies]]
         with (args.output / 'matrix-controller.log').open('x') as log:
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
         assert json.loads((args.output / 'matrix/progress.json').read_text())['status'] == 'completed'
-        state('completed', total_cases=2 * len(args.concurrencies),
+        state('completed', total_cases=total_cases,
               performance_correctness_memory_collected=True, final_best_ET_acceptance_pending=True)
     except Exception as exc:
         state('failed', error_type=type(exc).__name__, detail=str(exc)[-1200:])
