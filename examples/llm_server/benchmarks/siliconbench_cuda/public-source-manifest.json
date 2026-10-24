@@ -8,8 +8,8 @@
       "bytes": 63
     },
     "README.md": {
-      "sha256": "1c1347ca222b3e1e32c55d87a561fdd8f817043f41a0b5f839e49284b11ddf82",
-      "bytes": 5632
+      "sha256": "6036f73bdb713727584103cf426ba4bb132f58cf16d3ec276bc8fff7d0e0d560",
+      "bytes": 6207
     },
     "benchmark_candidates.py": {
       "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
@@ -54,6 +54,10 @@
     "correctness/scripts/score_f1.py": {
       "sha256": "33c9ddaf9c7656a30b06d935d70a513e2dd737ca4f4e37f15ca746461a830c03",
       "bytes": 9444
+    },
+    "evaluate_et_memory.py": {
+      "sha256": "72383283581d05f560cafd75fcc237d1d349872f1610be7906745175b3fae785",
+      "bytes": 6977
     },
     "export_gemma_memory.py": {
       "sha256": "5adf26bcee2e6d9cf3018967b5b3ef641b231f517117bd14ee3f7e479b6ee8c1",
