@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/q4gsw/Q4gswLinearWmma.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -634,6 +635,12 @@ void add_q4gsw_linear_tin_w_4x8_node(
 }
 
 void q4gsw_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // Devices of a cooperative-matrix family (CoopmatFamily.h) take the
+  // family's kernels where one of its rows applies.
+  if (try_add_q4gsw_linear_wmma_node(graph, args)) {
+    return;
+  }
+
   int32_t idx = 0;
   const ValueRef fp_input = args.at(idx++);
   const ValueRef weight_data = args.at(idx++);

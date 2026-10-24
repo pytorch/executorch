@@ -41,3 +41,13 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan:vulkan_graph_runtime",
         ],
     )
+
+    runtime.cxx_test(
+        name = "coopmat_family_test",
+        srcs = ["coopmat_family_test.cpp"],
+        platforms = get_platforms(),
+        deps = [
+            "//third-party/googletest:gtest_main",
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
+    )

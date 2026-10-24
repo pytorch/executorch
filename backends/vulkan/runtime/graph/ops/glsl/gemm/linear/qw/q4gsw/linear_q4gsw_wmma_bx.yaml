@@ -1,0 +1,36 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Variants of the texel-wise-staging q4gsw cooperative-matrix linear. Each one
+# is referenced by a row in impl/gemm/linear/qw/CoopmatFamily.cpp, which also
+# carries its tile geometry; the two must stay in sync. Name as in
+# linear_q4gsw_wmma.yaml, plus f32 (ACC_FP32) and c (CSH_IN_ASH).
+
+linear_q4gsw_wmma_bx:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    IO_STORAGE: buffer
+    WEIGHT_STORAGE: texture2d
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 16
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 32
+    ACC_FP32: false
+    CSH_IN_ASH: false
+  shader_variants:
+    # NVIDIA, K > 8192: fp32 accumulation keeps the long-K error in bounds.
+    - NAME: linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d_texture2d_half
+      IO_STORAGE: texture3d
+      WG_TILE_K: 32
+      SG_GRID_X: 4
+      SG_GRID_Y: 2
+      ACC_FP32: true
+      CSH_IN_ASH: true
