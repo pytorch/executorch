@@ -8,8 +8,8 @@
       "bytes": 63
     },
     "README.md": {
-      "sha256": "3856791a658d9d94d56b77e3a236c7a5de133f0091f47636061ce0558599ff15",
-      "bytes": 12965
+      "sha256": "a3d1845a149ab06d86a1b8126d99c23d7b646a59611d1b559a44d93666fce860",
+      "bytes": 13426
     },
     "benchmark_candidates.py": {
       "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
@@ -18,6 +18,18 @@
     "benchmark_candidates_v5.py": {
       "sha256": "d27a81ec75aafd410f9dcdcc9ca7b395bca064ff7d8a4bcd239644c47ccb4312",
       "bytes": 15362
+    },
+    "benchmark_gemma.py": {
+      "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
+      "bytes": 31783
+    },
+    "benchmark_mg.py": {
+      "sha256": "3a748babe2fc62d9f10c08892de65b57954d9661bd0689988ac3d6d5cbabf982",
+      "bytes": 31649
+    },
+    "bootstrap_cpp_shard.py": {
+      "sha256": "6adc8e9eb47177ccac511e2768d4a6a8b9c6492bba597f8c893f3146989b44b4",
+      "bytes": 8974
     },
     "candidates_w4a16_expanded_v5/README.md": {
       "sha256": "0ed115aa02f8d8a41bdce3c58f52892e3a94a2c0d80fb29766926e56604dbe9f",
@@ -123,9 +135,17 @@
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",
       "bytes": 14525
     },
+    "run_case_24h.py": {
+      "sha256": "6cc0d51a2ca1296ebc9d5facedb42ee21e160e6d1a2ccb7d6475e731af4438f1",
+      "bytes": 17440
+    },
     "run_matrix.py": {
       "sha256": "7809e920164afe21dd35a82883e89c34bf2549c020b1d8c8b88fbbd194bfb8ed",
       "bytes": 5524
+    },
+    "run_matrix_24h.py": {
+      "sha256": "dfd18e76234e984ec280b54506474855cb4c7ba20ff46d6715778bf379096373",
+      "bytes": 5835
     },
     "supervise.py": {
       "sha256": "6042dc3ea5c72c1e633fd14433d7791baa1a81bc3fbbe249c3ceb52994f22225",
