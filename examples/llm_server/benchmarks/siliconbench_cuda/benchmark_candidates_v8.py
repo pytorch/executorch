@@ -126,6 +126,7 @@ def main():
             corrected=importlib.util.module_from_spec(spec)
             spec.loader.exec_module(corrected)
             here=Path(__file__).resolve().parent
+            report['public_source_release']=str(here)
             manifest=json.loads((here/'public-source-manifest.json').read_text())
             for name,proof in manifest['files'].items():
                 assert hashlib.sha256((here/name).read_bytes()).hexdigest()==proof['sha256']
@@ -172,14 +173,29 @@ def main():
                 class Candidate(torch.nn.Module):
                     def forward(self,x,q,sc,ss,z,zs):
                         return candidate_op(x,q,sc,ss,z,zs,config_index(bound.config_id))
+                # Use the same registered Triton-op boundary as model export.
+                # Directly tracing the eager launcher specializes isinstance(M,
+                # int) branches at the example M; the fake implementation keeps
+                # the declared dynamic M range visible to export and Inductor.
+                # Native arithmetic, launch config and source remain unchanged.
+                def reference_launch(row_bucket,x,q,sc,ss,z,zs,group_size):
+                    assert row_bucket==bucket and group_size==32
+                    return native_fn(x,q,sc,ss,z,zs)
+                reference_family=family.QuantizedGemmFamily(
+                    'ka_v8_reference_'+role.replace('-','_'),[bucket],
+                    corrected._prototype,reference_launch,corrected._fake,
+                    corrected._unsupported_reason)
+                reference_op=reference_family.op(bucket)
                 class Reference(torch.nn.Module):
                     def forward(self,x,q,sc,ss,z,zs):
-                        return native_fn(x,q,sc,ss,z,zs)
+                        return reference_op(x,q,sc,ss,z,zs,32)
                 inputs=(x,*w)
                 dim=torch.export.Dim('active_M',min=min_m,max=bucket)
                 dynamic=({0:dim},None,None,None,None,None)
                 record=dict(role=role,bucket=bucket,n=n,k=k,config_id=bound.config_id,
-                            reference_metadata=baseline,dynamic_M_min=min_m,dynamic_M_max=bucket,
+                            reference_metadata=baseline,reference_registered_triton_op=True,
+                            native_reference_source_and_arithmetic_unchanged=True,
+                            dynamic_M_min=min_m,dynamic_M_max=bucket,
                             selected_policy=dict(bound.decision.__dict__),packages={},tail_numerics=[])
                 report.setdefault('AOTI_cases',[]).append(record)
                 models={}

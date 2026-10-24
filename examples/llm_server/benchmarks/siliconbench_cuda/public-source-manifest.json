@@ -24,8 +24,8 @@
       "bytes": 16738
     },
     "benchmark_candidates_v8.py": {
-      "sha256": "462eeba1190c9dbdc7720be9ebd95f59a6802c2e24005769d4a6f0d3e1f7fc1f",
-      "bytes": 21173
+      "sha256": "8160805e58c3e78ba39e002cebd8779d312580d14f5f68117accb7af75db2bc7",
+      "bytes": 22287
     },
     "benchmark_gemma.py": {
       "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
