@@ -80,6 +80,7 @@ def main():
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
     from candidates_w4a16_v8.validate import precision_oracle,error_stats
     from aoti_single_capture_timing import time_single_aoti_capture_us,TIMING_POLICY
+    from aoti_explicit_stream import run_aoti_on_current_stream,INVOCATION_POLICY
     try:
         assert torch.cuda.get_device_capability() == (12,0)
         assert digest(a.gguf) == '7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -101,7 +102,7 @@ def main():
         w=tuple(getattr(obj,key).cuda() for key in ['qdata','scale','scale_step','zero_point','zero_point_step'])
         x=torch.randn((8,3840),dtype=torch.bfloat16,device='cuda',generator=torch.Generator(device='cuda').manual_seed(26001))
         def call(label,xx):
-            result=models[label](xx,*w)
+            result=run_aoti_on_current_stream(models[label], [xx,*w])
             if isinstance(result,(tuple,list)):
                 assert len(result)==1;result=result[0]
             return result
@@ -124,7 +125,7 @@ def main():
                     samples[label].append(time_single_aoti_capture_us(lambda label=label:call(label,x)))
         means={label:statistics.mean(values[1:]) for label,values in samples.items()}
         result=dict(validated=True,source_report_sha256=digest(a.reuse_report),packages=record['packages'],
-            GGUF_sha256=digest(a.gguf),timing_policy=TIMING_POLICY,one_AOTI_invocation_per_capture=True,
+            GGUF_sha256=digest(a.gguf),timing_policy=TIMING_POLICY,invocation_policy=INVOCATION_POLICY,one_AOTI_invocation_per_capture=True,
             rounds=4,discarded=[1],averaged=[2,3,4],warmups=3,tail_checks=checks,
             samples_us=samples,means_us=means,orders=orders,
             sample_sd_us={label:statistics.stdev(values[1:]) for label,values in samples.items()},

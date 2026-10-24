@@ -1,9 +1,9 @@
 """Cold-L2 GPU timing with one AOTI invocation per captured graph.
 
-AOTI's model container may query/wait for a pending model on every boxed_run.
-Calling boxed_run repeatedly during one capture can wait for an event that
-belongs to that unfinished capture. ET captures a forward once and replays
-the resulting graph. Use that invocation pattern for both timing controls.
+ET captures a forward once and replays the resulting graph. Use one invocation
+per capture for both timing controls. The supplied function must explicitly
+use the captured CUDA stream. This timer alone does not choose a loader API
+or establish that its completion handling is capture compatible.
 """
 import contextlib
 import math

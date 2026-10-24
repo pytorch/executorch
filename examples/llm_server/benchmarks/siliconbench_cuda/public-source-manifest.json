@@ -11,13 +11,17 @@
       "sha256": "a1477aa1c2bca52aa19c4bd7ddc9fc109edc89e21d96e10a30501c072711407c",
       "bytes": 14327
     },
+    "aoti_explicit_stream.py": {
+      "sha256": "49d5cf1c330978aea3bd330f740aecf20604c5e18d9a3b89681c61b09e3e569e",
+      "bytes": 971
+    },
     "aoti_single_capture_timing.py": {
-      "sha256": "0b10141c5868da24b86f6e6e92dd044a8666cc81dd20c13f7d0d75a528f814ed",
-      "bytes": 2037
+      "sha256": "472d6a6949110773e0200d3a633069fee1ae49445d10c0b55e5db30d94611484",
+      "bytes": 2030
     },
     "audit_aoti_single_capture.py": {
-      "sha256": "adf15137cfe4db702fd55552f2082ad6217a195489e866bb5b257e10a837821d",
-      "bytes": 7581
+      "sha256": "e97d00cd1004aa407ef56e6c434f0f6ed2d105cdb4e4d14dc1ec1e6311b9c646",
+      "bytes": 7729
     },
     "benchmark_candidates.py": {
       "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
