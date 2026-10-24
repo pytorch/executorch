@@ -16,8 +16,8 @@
       "bytes": 14495
     },
     "benchmark_candidates_v5.py": {
-      "sha256": "d27a81ec75aafd410f9dcdcc9ca7b395bca064ff7d8a4bcd239644c47ccb4312",
-      "bytes": 15362
+      "sha256": "bdd5f138eea40f4f8434484c1a47bb8ec234e70da407440fa2395b3a38a165c2",
+      "bytes": 16768
     },
     "benchmark_gemma.py": {
       "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
@@ -184,7 +184,7 @@
       "bytes": 5524
     },
     "run_matrix_24h.py": {
-      "sha256": "293050d34825983a00314448d2479223678563a63c6b20275085e129c0a3946d",
+      "sha256": "87ed5ad757e147471718c83d9f9fc778601705f81ca1064b50195daf975d13b2",
       "bytes": 6163
     },
     "select_et_policies_24h.py": {
@@ -192,7 +192,7 @@
       "bytes": 7582
     },
     "supervise.py": {
-      "sha256": "6042dc3ea5c72c1e633fd14433d7791baa1a81bc3fbbe249c3ceb52994f22225",
+      "sha256": "9da500edfdf99ba404e375c23aa98d59e64e1a082cce0d68cc663c0714584cd9",
       "bytes": 1444
     },
     "wait_for.py": {

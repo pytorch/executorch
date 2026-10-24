@@ -6,6 +6,9 @@ the executable-selected config or a global optimum. A100 acceptance remains
 separate. Every timing pair uses four rounds, discarding the first.
 """
 import argparse
+import datetime
+import signal
+import traceback
 import fcntl
 import hashlib
 import importlib.util
@@ -26,9 +29,12 @@ def main():
     parser.add_argument('--native-configs', type=Path, required=True)
     parser.add_argument('--precision-control', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--buckets', nargs='+', type=int, choices=[1,2,4,8,16], default=[1,2,4,8,16])
+    parser.add_argument('--deadline-utc', required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    cutoff = datetime.datetime.fromisoformat(args.deadline_utc.replace('Z','+00:00'))
     if not args.owned_gpu_worker:
         assert not args.output.exists(), 'Preserve every prior attempt'
         args.output.mkdir(parents=True)
@@ -39,8 +45,20 @@ def main():
         with args.lock.open('a') as owner_lock:
             fcntl.flock(owner_lock,fcntl.LOCK_EX)
             assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-            subprocess.run([sys.executable,'-B',str(Path(__file__).resolve()),*sys.argv[1:],
-                            '--owned-gpu-worker'],check=True)
+            remaining=(cutoff-datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            assert remaining>0,'User tuning cutoff passed; do not start GPU work'
+            with (args.output/'worker.log').open('x') as log:
+                child=subprocess.Popen([sys.executable,'-B',str(Path(__file__).resolve()),*sys.argv[1:],
+                             '--owned-gpu-worker'],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                try:
+                    assert child.wait(timeout=min(7200,remaining))==0,'Inspect preserved worker error'
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid,signal.SIGTERM)
+                    try:child.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(child.pid,signal.SIGKILL);child.wait()
+                    (args.output/'progress.json').write_text(json.dumps(dict(status='failed',reason='User cutoff or two-hour GPU bound'))+'\n')
+                    raise
             deadline=time.monotonic()+60
             while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():
                 assert time.monotonic()<deadline,'GPU context did not disappear after worker exit'
@@ -48,7 +66,7 @@ def main():
         return
     assert json.loads((args.output/'lock-owner.json').read_text())['pid']==os.getppid()
     report = dict(scope=__doc__,rounds=4,discarded=[1],averaged=[2,3,4],warmups=3,
-                  model_and_runtime_unchanged=True,deployment_accepted=False,cases=[])
+                  measured_buckets=args.buckets, model_and_runtime_unchanged=True,deployment_accepted=False,cases=[])
 
     def save(status, **fields):
         pending = args.output/'progress.pending.json'
@@ -86,6 +104,7 @@ def main():
             def idle_except_self():
                 ids=subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).splitlines()
                 assert all(int(v.strip())==os.getpid() for v in ids if v.strip())
+                assert datetime.datetime.now(datetime.timezone.utc)<cutoff,'User tuning deadline reached'
                 assert time.monotonic()-started<7200,'Bounded GPU diagnostic exceeded two hours'
 
             previous=json.loads(args.native_search.read_text())
@@ -159,7 +178,7 @@ def main():
                     save('running-pairs',role=role,m=m,candidate=ident)
 
             with torch.inference_mode(),torch.cuda.stream(torch.cuda.Stream()):
-                for m,n in [(m,n) for m in [1,2,4,8,16] for n in [19968,39936]]:
+                for m,n in [(m,n) for m in args.buckets for n in [19968,39936]]:
                     k=6656
                     w=make_weights(n,k,18000+m+n,torch.device('cuda'))
                     if m in [1,2,4]:
@@ -227,10 +246,11 @@ def main():
                                  dict(baseline,source_tensors=names,kind='Feasible emitted config, executable-selection unproven'),True)
                     del w
                     torch.cuda.empty_cache()
-            assert len(report['cases'])==18
+            assert len(report['cases'])==len(args.buckets)*2+8
             save('completed',candidate_deployment_accepted=False,
                  real_model_F1_and_A100_gate_still_required=True)
         except Exception as exc:
+            (args.output/'exception-traceback.txt').write_text(traceback.format_exc())
             save('failed',error_type=type(exc).__name__,detail=str(exc)[-1200:])
             raise
 

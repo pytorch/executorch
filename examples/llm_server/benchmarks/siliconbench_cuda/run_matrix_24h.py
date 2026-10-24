@@ -51,7 +51,7 @@ def main():
         config.write_text(f'[program:{program}]\ncommand={command_text}\n'
                           'autostart=true\nautorestart=false\nstartsecs=2\nstopasgroup=true\nkillasgroup=true\n'
                           f'stdout_logfile={args.output.parent/(program+".log")}\n'
-                          'stderr_redirect=true\nstdout_logfile_maxbytes=20MB\nstdout_logfile_backups=2\n')
+                          'redirect_stderr=true\nstdout_logfile_maxbytes=20MB\nstdout_logfile_backups=2\n')
         subprocess.run(['supervisorctl','reread'], check=True)
         subprocess.run(['supervisorctl','update',program], check=True)
         subprocess.run(['supervisorctl','status',program], check=True)

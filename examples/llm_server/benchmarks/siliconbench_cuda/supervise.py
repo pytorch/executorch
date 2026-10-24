@@ -19,7 +19,7 @@ assert not config.exists(),'Never overwrite an existing service'
 args.log.parent.mkdir(parents=True,exist_ok=True)
 config.write_text(f'[program:{args.program}]\ncommand={shlex.join(command).replace("%","%%")}\n'
                   'autostart=true\nautorestart=false\nstartsecs=2\nstopasgroup=true\nkillasgroup=true\n'
-                  f'stdout_logfile={args.log}\nstderr_redirect=true\nstdout_logfile_maxbytes=20MB\n'
+                  f'stdout_logfile={args.log}\nredirect_stderr=true\nstdout_logfile_maxbytes=20MB\n'
                   'stdout_logfile_backups=2\n')
 subprocess.run(['supervisorctl','reread'],check=True)
 subprocess.run(['supervisorctl','update',args.program],check=True)
