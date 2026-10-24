@@ -7,27 +7,58 @@
 import inspect
 import itertools
 import logging
-from typing import List, Optional, Type, Union
+import operator
+from typing import Callable, List, Optional, Type, Union
+
+import torch
 
 from executorch.backends.xnnpack.partition.config import ALL_PARTITIONER_CONFIGS
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
+from executorch.backends.xnnpack.utils.utils import is_param_node
 
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     ConfigerationBasedPartitioner,
+    DSJ,
 )
 from executorch.exir.backend.partitioner import DelegationSpec
+from executorch.exir.passes.constant_prop_pass import (
+    constant_prop_pass,
+    custom_meta_key,
+    get_constant_placeholder_dict,
+    is_const,
+)
 from torch.fx.passes.infra.partitioner import Partition
+from torch.utils import _pytree as pytree
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
 class XnnpackPartitioner(ConfigerationBasedPartitioner):
+    # constant_prop_pass skips aten.full at the edge level so that a scalar
+    # fill does not become a stored tensor. Before decomposition the same
+    # fills come from these factory ops: the first group decomposes to
+    # aten.full, the *_like group to aten.full_like.
+    _CONSTANT_PROP_SKIP_TARGETS = frozenset(
+        {
+            torch.ops.aten.full.default,
+            torch.ops.aten.new_full.default,
+            torch.ops.aten.ones.default,
+            torch.ops.aten.new_ones.default,
+            torch.ops.aten.zeros.default,
+            torch.ops.aten.new_zeros.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.ones_like.default,
+            torch.ops.aten.zeros_like.default,
+        }
+    )
+    _CONSTANT_PROP_SKIP_NAMESPACES = ("quantized_decomposed", "torchao")
+
     def __init__(
         self,
         configs: Optional[List[Type[XNNPartitionerConfig]]] = None,
@@ -82,6 +113,310 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                 if "program/_program.py" in filename:
                     return True
         return False
+
+    # Pre-decomposition ops that the GEMM configs partition once decomposed,
+    # keyed to that config: its weight_idx and bias_idx apply to the op, the
+    # conv family takes (input, weight, bias, ...) like aten.convolution and
+    # matmul with a 2-d weight lowers to mm.
+    _GEMM_TARGETS = {
+        torch.ops.aten.linear.default: "linear.default",
+        torch.ops.aten.conv1d.default: "convolution.default",
+        torch.ops.aten.conv1d.padding: "convolution.default",
+        torch.ops.aten.conv2d.default: "convolution.default",
+        torch.ops.aten.conv2d.padding: "convolution.default",
+        torch.ops.aten.conv_transpose1d.default: "convolution.default",
+        torch.ops.aten.conv_transpose2d.input: "convolution.default",
+        torch.ops.aten.convolution.default: "convolution.default",
+        torch.ops.aten.addmm.default: "addmm.default",
+        torch.ops.aten.mm.default: "mm.default",
+        torch.ops.aten.matmul.default: "mm.default",
+    }
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """
+        Fold the computed weights of the GEMM-like ops into constants.
+
+        The GEMM configs require a static weight and bias, so a convolution
+        or a linear whose weight is computed from parameters, for example
+        under torch.nn.utils.parametrizations.weight_norm, would otherwise be
+        left to the portable kernels together with the weight computation.
+        Only those weights are folded: a parameter-only subgraph elsewhere in
+        the graph unlocks no delegation and stays an op.
+        """
+        # A training graph keeps its parameters as inputs: the runtime hands
+        # them to the optimizer through the gradient and parameter outputs.
+        if exported_program.graph_signature.backward_signature is not None:
+            return exported_program
+        # EXIR marks the constants another method of the program also reads.
+        # Their names survive the retrace below; the meta of a lifted
+        # constant does not.
+        fqns = self._constant_fqns(exported_program)
+        shared = {
+            fqns[node.name]
+            for node in exported_program.graph.find_nodes(op="placeholder")
+            if node.meta.get("shared_across_methods") and node.name in fqns
+        }
+        # Decide on the graph as it is. A program with nothing to fold, such
+        # as a quantized model whose weights arrive through a dequantize or a
+        # linear whose weight is an input, leaves the hook without the
+        # retrace below. The one shape this misses is a weight built with an
+        # in-place op, which is impure here and pure only once
+        # functionalized: it stays an op.
+        if not self._nodes_to_fold(exported_program, shared):
+            return exported_program
+
+        # The program is not functionalized yet at this point: a KV-cache
+        # update is still an in-place index_put_ or copy_ on a view of the
+        # buffer, and the graph signature lists no mutated buffers. Folding a
+        # view of a buffer that is written to would leave the write on a
+        # constant. Functionalize first; to_edge_transform_and_lower makes
+        # the same call right after this hook, and the second call is a
+        # no-op on a functional graph.
+        exported_program = exported_program.run_decompositions({})
+
+        nodes_to_fold = self._nodes_to_fold(exported_program, shared)
+        if not nodes_to_fold:
+            return exported_program
+        # Buffers stay out of the fold, and so do the shared parameters and
+        # lifted constants. This hook sees one method at a time: a buffer
+        # this method only reads can be written by another method of the
+        # same program, and a parameter another method reads stays in the
+        # program, so its fold would be a second copy.
+        return constant_prop_pass(
+            exported_program,
+            custom_skip_targets=self._constant_prop_skip_targets(exported_program),
+            fold_buffers=False,
+            nodes_to_fold=nodes_to_fold,
+            register_like_source=True,
+        )
+
+    def _constant_prop_skip_targets(self, exported_program: ExportedProgram) -> set:
+        # Quantization primitives are kept, so that the Q/DQ chain
+        # convert_pt2e or torchao's quantize_ leaves on a weight stays in the
+        # graph. A folded dequantize would hand the delegate a float weight.
+        skip_targets = set(self._CONSTANT_PROP_SKIP_TARGETS)
+        for node in exported_program.graph.nodes:
+            if (
+                node.op == "call_function"
+                and getattr(node.target, "namespace", None)
+                in self._CONSTANT_PROP_SKIP_NAMESPACES
+            ):
+                skip_targets.add(node.target)
+        return skip_targets
+
+    def _computed_gemm_weights(
+        self, exported_program: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        """
+        Returns the weight and bias arguments of the GEMM-like ops that are
+        not static, taken from the positions the enabled configs check.
+        """
+        computed = []
+        for node in exported_program.graph.nodes:
+            if node.op != "call_function":
+                continue
+            config = self.target_partitioner_configs.get(
+                self._GEMM_TARGETS.get(node.target)
+            )
+            if config is None or not config.enabled_precision_types:
+                continue
+            weight_idx, bias_idx = config.weight_idx, config.bias_idx  # pyre-ignore
+            if node.target is torch.ops.aten.matmul.default:
+                # matmul lowers to mm only with a 2-d weight; bmm takes any.
+                weight = node.args[weight_idx]
+                if isinstance(weight, torch.fx.Node) and weight.meta["val"].dim() != 2:
+                    continue
+            for idx in (weight_idx, bias_idx):
+                if idx is None or idx >= len(node.args):
+                    continue
+                arg = node.args[idx]
+                if isinstance(arg, torch.fx.Node) and not is_param_node(
+                    exported_program, arg
+                ):
+                    computed.append(arg)
+        return computed
+
+    @staticmethod
+    def _constant_fqns(exported_program: ExportedProgram) -> dict[str, str]:
+        """
+        Maps the placeholders of the parameters and lifted constants to their
+        fully qualified names.
+        """
+        signature = exported_program.graph_signature
+        return {
+            **signature.inputs_to_parameters,
+            **signature.inputs_to_lifted_tensor_constants,
+        }
+
+    def _constant_only(
+        self, exported_program: ExportedProgram, shared: set[str]
+    ) -> Callable[[torch.fx.Node], bool]:
+        """
+        Returns a predicate for the nodes whose inputs are all parameters,
+        lifted constants or such nodes, and that constant_prop_pass would
+        fold: not a skipped target, not impure, and computed from sources
+        that agree on their custom meta. The constants named in `shared`,
+        which another method also reads, do not count, like buffers.
+        """
+        skip_targets = self._constant_prop_skip_targets(exported_program)
+        fqns = self._constant_fqns(exported_program)
+        constants: dict = {
+            node: None
+            for node in get_constant_placeholder_dict(
+                exported_program, fold_buffers=False
+            )
+            if fqns[node.name] not in shared
+        }
+        source_customs = {
+            node: frozenset({custom_meta_key(node)}) for node in constants
+        }
+        memo: dict = {}
+
+        def constant_only(seed: torch.fx.Node) -> bool:
+            # Post-order over the producers, so that a deep chain does not
+            # reach the recursion limit: a node is decided after its inputs.
+            stack: list[tuple[torch.fx.Node, bool]] = [(seed, False)]
+            while stack:
+                node, inputs_done = stack.pop()
+                if node in memo:
+                    continue
+                if inputs_done:
+                    result = (
+                        all(memo[input_node] for input_node in node.all_input_nodes)
+                        and is_const(node.args, exported_program, constants)
+                        and is_const(node.kwargs, exported_program, constants)
+                    )
+                    if result:
+                        source_customs[node] = frozenset().union(
+                            *(source_customs[n] for n in node.all_input_nodes)
+                        )
+                        result = len(source_customs[node]) <= 1
+                    if result:
+                        constants[node] = None
+                    memo[node] = result
+                elif node.op == "placeholder":
+                    memo[node] = node in constants
+                elif (
+                    node.op != "call_function"
+                    or node.target in skip_targets
+                    or node.is_impure()
+                ):
+                    memo[node] = False
+                else:
+                    stack.append((node, True))
+                    stack.extend(
+                        (input_node, False) for input_node in node.all_input_nodes
+                    )
+            return memo[seed]
+
+        return constant_only
+
+    def _fold_groups(
+        self, exported_program: ExportedProgram, shared: set[str]
+    ) -> List[List[torch.fx.Node]]:
+        """
+        Returns the groups of nodes to fold: each computed weight or bias
+        whose inputs are all constant, with the nodes it is computed from
+        and the placeholders it reads. Folds that share a node or a source
+        are in one group. A multi-output op in the fold, a split or a chunk
+        of a packed weight, brings every output with it: the pass
+        materializes the outputs, one tensor each, never the op.
+        """
+        constant_only = self._constant_only(exported_program, shared)
+        groups = DSJ()
+        for seed in self._computed_gemm_weights(exported_program):
+            if not constant_only(seed):
+                continue
+            stack, seen = [seed], {seed}
+            while stack:
+                node = stack.pop()
+                groups.union(node, seed)
+                neighbours = list(node.all_input_nodes)
+                if not isinstance(node.meta.get("val"), torch.Tensor):
+                    neighbours += [
+                        user for user in node.users if user.target is operator.getitem
+                    ]
+                for neighbour in neighbours:
+                    if neighbour in seen:
+                        continue
+                    seen.add(neighbour)
+                    if neighbour.op != "placeholder":
+                        stack.append(neighbour)
+                    else:
+                        groups.union(neighbour, seed)
+        return groups.gen_groups()
+
+    def _nodes_to_fold(
+        self, exported_program: ExportedProgram, shared: set[str]
+    ) -> set[torch.fx.Node]:
+        """
+        Returns the nodes to fold. A group of folds is applied only if it
+        does not make the program larger: the folded tensors may not take
+        more bytes than the sources the fold erases. A source used outside
+        the fold cannot be erased, so a fold of it would only duplicate it;
+        a tied embedding read by one lookup and one transposed matmul is the
+        common shape.
+        """
+        groups = self._fold_groups(exported_program, shared)
+        folds = {node for group in groups for node in group if node.op != "placeholder"}
+        position = {node: i for i, node in enumerate(exported_program.graph.nodes)}
+        nodes_to_fold: set[torch.fx.Node] = set()
+        for group in groups:
+            members = sorted(
+                (node for node in group if node in folds),
+                key=position.get,
+                reverse=True,
+            )
+            # A value that is not a tensor, the float of aten.item, never
+            # becomes a placeholder. When a consumer outside the fold needs
+            # it the pass keeps the op, and the tensors it is computed from
+            # are materialized instead of erased.
+            kept: set[torch.fx.Node] = set()
+            for node in members:
+                if not self._tensors(node) and self._used_outside(node, folds, kept):
+                    kept.add(node)
+            materialized = [
+                node
+                for node in members
+                if node not in kept and self._used_outside(node, folds, kept)
+            ]
+            if not all(
+                isinstance(node.meta.get("val"), torch.Tensor) for node in materialized
+            ):
+                continue
+            erased = [
+                node
+                for node in group
+                if node not in folds and not self._used_outside(node, folds, kept)
+            ]
+            added = sum(self._nbytes(node) for node in materialized)
+            removed = sum(self._nbytes(node) for node in erased)
+            if added <= removed:
+                nodes_to_fold.update(members)
+        return nodes_to_fold
+
+    @staticmethod
+    def _used_outside(
+        node: torch.fx.Node, folds: set[torch.fx.Node], kept: set[torch.fx.Node]
+    ) -> bool:
+        """Whether a user of `node` stays in the graph after the fold."""
+        return any(user not in folds or user in kept for user in node.users)
+
+    @staticmethod
+    def _tensors(node: torch.fx.Node) -> List[torch.Tensor]:
+        return [
+            leaf
+            for leaf in pytree.tree_leaves(node.meta.get("val"))
+            if isinstance(leaf, torch.Tensor)
+        ]
+
+    @classmethod
+    def _nbytes(cls, node: torch.fx.Node) -> int:
+        return sum(
+            tensor.numel() * tensor.element_size() for tensor in cls._tensors(node)
+        )
 
     def partition(self, exported_program):
         """
