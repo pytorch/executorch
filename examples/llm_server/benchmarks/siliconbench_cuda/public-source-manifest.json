@@ -370,6 +370,10 @@
     "wait_for.py": {
       "sha256": "6bbdd74752e633eaeddad1416e261545c825e67a61bdf3f640e2312b9c2d6211",
       "bytes": 1578
+    },
+    "wait_mg_quality_boundary.py": {
+      "sha256": "1c95b9eb7fa68b1cf5e6340ae54d2509b6006c370795bd1a2073b4f5a770a2b6",
+      "bytes": 3752
     }
   }
 }
