@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--checkpoint-interval', type=int, choices=[0,512,1024], default=0)
     parser.add_argument('--checkpoint-preparation', type=Path)
     parser.add_argument('--checkpoint-program')
+    parser.add_argument('--initial-kv-capacity', type=int, choices=[512,1024,2048,12288], default=12288)
     parser.add_argument('--base-wrapper', type=Path, required=True)
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--prompts', type=Path, required=True)
@@ -123,6 +124,9 @@ def main():
             assert len(matches) == 1 and 'step2048' in matches[0].group(2)
             body = body.replace(marker,'et_prefix_entries=${SB_ET_PREFIX_ENTRIES:-' + str(args.prefix_entries) + '}')
             body = pattern.sub(lambda _: matches[0].group(1) + 'artifact=' + shlex.quote(str(args.artifact.resolve())), body)
+            assert body.count('--initial-kv-capacity 12288') == 1
+            body = body.replace('--initial-kv-capacity 12288',
+                                '--initial-kv-capacity '+str(args.initial_kv_capacity))
             if checkpoint_build:
                 assert checkpoint_build['original_source_and_libraries_unchanged']
                 assert checkpoint_build['static_graphs_enabled_by_default']
@@ -153,12 +157,15 @@ def main():
                               write_budget=args.max_step_tokens, wrapper_sha256=digest(wrapper),
                               checkpoint_interval=args.checkpoint_interval, checkpoint_worker=checkpoint_build,
                               effective_checkpoint_by_cache_mode={'off':0,'on':args.checkpoint_interval},
+                              initial_kv_capacity=args.initial_kv_capacity, maximum_context_unchanged=12288,
                               final_ET_best_policy_selection_pending=True,
                               source_commit_record=json.loads((Path(__file__).parent/'source-commit.json').read_text()))
             (args.output/'evaluation-provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')
         variant=f'executorch-prefix{args.prefix_entries}-step{args.max_step_tokens}'
         if checkpoint_build:
             variant += f'-checkpoint{args.checkpoint_interval}'
+        if args.initial_kv_capacity != 12288:
+            variant += f'-initialkv{args.initial_kv_capacity}'
         for cache in args.cache_modes:
             for concurrency in args.concurrencies:
                 name=f'agent-{variant}-prefix-{cache}-c{concurrency}'

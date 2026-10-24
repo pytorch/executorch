@@ -39,6 +39,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--prefix-entries', type=int, choices=[1,16], default=1)
     parser.add_argument('--checkpoint-interval', type=int, choices=[0,512,1024], default=0)
+    parser.add_argument('--initial-kv-capacity', type=int, choices=[512,1024,2048,12288], default=12288)
     parser.add_argument('--cache-modes', nargs='+', choices=['off','on'], default=['off','on'])
     parser.add_argument('--concurrencies', type=int, nargs='+', default=[1,16])
     parser.add_argument('--port', type=int, default=19084)
@@ -117,6 +118,9 @@ def main():
                                 'et_effective_checkpoint=${SB_CHECKPOINT:-0}\n'
                                 '[ "${SB_PREFIX_CACHE:?}" != off ] || et_effective_checkpoint=0')
             body = body.replace('"${SB_CHECKPOINT:-0}"', '"$et_effective_checkpoint"')
+            assert body.count('--initial-kv-capacity 12288') == 1
+            body = body.replace('--initial-kv-capacity 12288',
+                                '--initial-kv-capacity '+str(args.initial_kv_capacity))
             wrapper.write_text(body)
             subprocess.run(['bash','-n',str(wrapper)], check=True)
             os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(args.artifact.resolve()),
@@ -126,6 +130,7 @@ def main():
                               prefix_entries=args.prefix_entries, wrapper_sha256=digest(wrapper),
                               checkpoint_interval=args.checkpoint_interval, cache_modes=args.cache_modes,
                               effective_checkpoint_by_cache_mode={'off':0,'on':args.checkpoint_interval},
+                              initial_kv_capacity=args.initial_kv_capacity, maximum_context_unchanged=12288,
                               total_cases=len(args.cache_modes) * len(args.concurrencies), final_best_ET_selection_pending=True,
                               source_commit_record=json.loads((source / 'source-commit.json').read_text()))
             (args.output / 'evaluation-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
