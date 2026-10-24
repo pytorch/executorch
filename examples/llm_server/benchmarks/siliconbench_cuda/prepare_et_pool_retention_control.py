@@ -107,6 +107,18 @@ def main():
     memory_snapshot("ready-before-policy");
     auto private_pool = executorch::extension::cuda::CudaAllocator::pool_for_device(0);
     if (FLAGS_pool_retain_mib >= 0) {
+      // KV allocates lazily at the first forward. Create the same allocator's
+      // pool before admission without executing or allocating model KV.
+      if (private_pool == nullptr) {
+        auto seed = executorch::extension::cuda::CudaAllocator::allocate_async(
+            1, 0, cudaStreamPerThread);
+        if (!seed.ok()) throw std::runtime_error("Cannot initialize private CUDA pool");
+        executorch::extension::cuda::CudaAllocator::deallocate_async(
+            seed.get(), 0, cudaStreamPerThread);
+        check_cuda(cudaStreamSynchronize(cudaStreamPerThread));
+        private_pool = executorch::extension::cuda::CudaAllocator::pool_for_device(0);
+        memory_snapshot("policy-pool-initialized-before-admission");
+      }
       if (private_pool == nullptr) throw std::runtime_error("No private CUDA pool to control");
       uint64_t retain_bytes = static_cast<uint64_t>(FLAGS_pool_retain_mib) * 1024 * 1024;
       check_cuda(cudaMemPoolSetAttribute(private_pool, cudaMemPoolAttrReleaseThreshold, &retain_bytes));
