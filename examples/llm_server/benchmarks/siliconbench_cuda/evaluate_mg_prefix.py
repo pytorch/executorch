@@ -107,7 +107,16 @@ def main():
             marker = 'et_prefix_entries=${SB_ET_PREFIX_ENTRIES:-16}'
             assert body.count(marker) == 1
             assert body.count('artifact="${SB_ET_CACHEOFF_ARTIFACT:?Verified updated artifact required}"') == 1
+            assert body.count('et_checkpoint_args=()') == 1
+            assert body.count('"${SB_CHECKPOINT:-0}"') == 1
             body = body.replace(marker, 'et_prefix_entries=${SB_ET_PREFIX_ENTRIES:-' + str(args.prefix_entries) + '}')
+            # The worker rejects positive checkpoint intervals with no cache.
+            # Keep the chosen ON policy, while OFF sends an effective zero.
+            body = body.replace('et_checkpoint_args=()',
+                                'et_checkpoint_args=()\n'
+                                'et_effective_checkpoint=${SB_CHECKPOINT:-0}\n'
+                                '[ "${SB_PREFIX_CACHE:?}" != off ] || et_effective_checkpoint=0')
+            body = body.replace('"${SB_CHECKPOINT:-0}"', '"$et_effective_checkpoint"')
             wrapper.write_text(body)
             subprocess.run(['bash','-n',str(wrapper)], check=True)
             os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(args.artifact.resolve()),
@@ -116,6 +125,7 @@ def main():
             provenance = dict(artifact_audit=audit, required_resident_sequences=required,
                               prefix_entries=args.prefix_entries, wrapper_sha256=digest(wrapper),
                               checkpoint_interval=args.checkpoint_interval, cache_modes=args.cache_modes,
+                              effective_checkpoint_by_cache_mode={'off':0,'on':args.checkpoint_interval},
                               total_cases=len(args.cache_modes) * len(args.concurrencies), final_best_ET_selection_pending=True,
                               source_commit_record=json.loads((source / 'source-commit.json').read_text()))
             (args.output / 'evaluation-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
