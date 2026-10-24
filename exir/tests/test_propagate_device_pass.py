@@ -31,7 +31,11 @@ from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
-from executorch.exir.passes import MemoryPlanningPass, propagate_device_pass
+from executorch.exir.passes import (
+    MemoryPlanningPass,
+    propagate_device_pass,
+    ToOutVarPass,
+)
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
@@ -208,6 +212,25 @@ def _host_writer(gm: torch.fx.GraphModule) -> torch.fx.Node:
         if n.target == torch.ops.propagate_device_test.accumulate.out
     ]
     return writer
+
+
+def _host_written(gm: torch.fx.GraphModule) -> torch.fx.Node:
+    """The tensor that accumulate writes, looking through the view it may write."""
+    written = _host_writer(gm).args[0]
+    if written.target == torch.ops.aten.as_strided.default:
+        return written.args[0]
+    return written
+
+
+def _host_writer_config(write_view: bool, **kwargs) -> ExecutorchBackendConfig:
+    return ExecutorchBackendConfig(
+        emit_stacktrace=False,
+        enable_non_cpu_memory_planning=True,
+        # A write through a view leaves the aten.as_strided that
+        # to_executorch makes for it, which has no out variant.
+        to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure=write_view),
+        **kwargs,
+    )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -562,35 +585,45 @@ class TestPropagateDevicePass(unittest.TestCase):
                 )
 
     def test_same_device_copies_kept_when_host_op_writes_copy(self):
-        """A host op that writes the host copy of a delegate output in place
-        changes what the next delegate on the same device reads, so that
-        round-trip stays."""
+        """A host op that writes the host copy of a delegate output in place,
+        directly or through a view, changes what the next delegate on the same
+        device reads, so that round-trip stays. The input it only reads still
+        gets one copy for both delegates."""
 
         class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
             def forward(self, x, y):
                 a = x + y
-                torch.ops.propagate_device_test.accumulate(a, y)
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(a.view(-1), y.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(a, y)
                 return a + y
 
-        gm = _lower_with_host_writer(
-            Model(),
-            (torch.randn(2, 2), torch.randn(2, 2)),
-            ["cuda:0", "cuda:0"],
-            ExecutorchBackendConfig(
-                emit_stacktrace=False, enable_non_cpu_memory_planning=True
-            ),
-        )
-        written = _host_writer(gm).args[0]
-        self.assertEqual(written.target, torch.ops.et_copy._d2h_copy.out)
-        second = _collect_device_copy_nodes(gm).delegate_nodes[1]
-        self.assertIn(
-            written,
-            [
-                arg.args[0]
-                for arg in second.args[1:]
-                if arg.target == torch.ops.et_copy._h2d_copy.out
-            ],
-        )
+        for write_view in (False, True):
+            gm = _lower_with_host_writer(
+                Model(write_view),
+                (torch.randn(2, 2), torch.randn(2, 2)),
+                ["cuda:0", "cuda:0"],
+                _host_writer_config(write_view),
+            )
+            with self.subTest(write_view=write_view):
+                written = _host_written(gm)
+                self.assertEqual(written.target, torch.ops.et_copy._d2h_copy.out)
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertIn(
+                    written,
+                    [
+                        arg.args[0]
+                        for arg in nodes.delegate_nodes[1].args[1:]
+                        if arg.target == torch.ops.et_copy._h2d_copy.out
+                    ],
+                )
+                y_copies = [n for n in nodes.h2d_nodes if n.args[0].name == "y"]
+                self.assertEqual(len(y_copies), 1)
 
     def test_single_tensor_delegate_output_read_on_host(self):
         """A host op that reads the output of a lowered module returning one
@@ -883,34 +916,42 @@ class TestPropagateDevicePass(unittest.TestCase):
 
     def test_skip_d2h_returns_device_copy_of_output_written_on_host(self):
         """With skip_d2h_for_method_outputs, a returned delegate output whose
-        host copy a host op writes in place is returned as a device copy of the
-        written host copy, because the device tensor never sees the write."""
+        host copy a host op writes in place, directly or through a view, is
+        returned as a device copy of the written host copy, because the device
+        tensor never sees the write."""
 
         class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
             def forward(self, x, y):
                 a = x + y
-                torch.ops.propagate_device_test.accumulate(a, y)
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(a.view(-1), y.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(a, y)
                 return a
 
-        gm = _lower_with_host_writer(
-            Model(),
-            (torch.randn(2, 2), torch.randn(2, 2)),
-            ["cuda:0"],
-            ExecutorchBackendConfig(
-                emit_stacktrace=False,
-                propagate_device_config=PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
+        for write_view in (False, True):
+            gm = _lower_with_host_writer(
+                Model(write_view),
+                (torch.randn(2, 2), torch.randn(2, 2)),
+                ["cuda:0"],
+                _host_writer_config(
+                    write_view,
+                    propagate_device_config=PropagateDeviceConfig(
+                        skip_d2h_for_method_outputs=True
+                    ),
                 ),
-                enable_non_cpu_memory_planning=True,
-            ),
-        )
-        (output,) = gm.graph.output_node().args[0]
-        self.assertEqual(output.target, torch.ops.et_copy._h2d_copy.out)
-        self.assertEqual(output.meta["spec"].device, DeviceType.CUDA)
-        writer = _host_writer(gm)
-        self.assertIs(output.args[0], writer.args[0])
-        nodes = list(gm.graph.nodes)
-        self.assertLess(nodes.index(writer), nodes.index(output))
+            )
+            with self.subTest(write_view=write_view):
+                (output,) = gm.graph.output_node().args[0]
+                self.assertEqual(output.target, torch.ops.et_copy._h2d_copy.out)
+                self.assertEqual(output.meta["spec"].device, DeviceType.CUDA)
+                self.assertIs(output.args[0], _host_written(gm))
+                nodes = list(gm.graph.nodes)
+                self.assertLess(nodes.index(_host_writer(gm)), nodes.index(output))
 
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
@@ -1868,36 +1909,43 @@ class TestPropagateDevicePass(unittest.TestCase):
                     self.assertEqual(f"cuda:{offset.meta['spec'].device_index}", device)
 
     def test_tensor_written_on_host_is_copied_for_each_delegate(self):
-        """A tensor that a host op writes in place between two delegates on one
-        device gets a new copy for the second delegate, so it reads the new
-        value."""
+        """A tensor that a host op writes in place, directly or through a view,
+        between two delegates on one device gets a new copy for the second
+        delegate, so it reads the new value."""
 
         class Model(torch.nn.Module):
+            def __init__(self, write_view):
+                super().__init__()
+                self.write_view = write_view
+
             def forward(self, x, y):
                 t = x * 2
                 a = t + y
-                torch.ops.propagate_device_test.accumulate(t, a)
+                if self.write_view:
+                    torch.ops.propagate_device_test.accumulate(t.view(-1), a.view(-1))
+                else:
+                    torch.ops.propagate_device_test.accumulate(t, a)
                 return a, t + y
 
-        gm = _lower_with_host_writer(
-            Model(),
-            (torch.randn(2, 2), torch.randn(2, 2)),
-            ["cuda:0", "cuda:0"],
-            ExecutorchBackendConfig(
-                emit_stacktrace=False, enable_non_cpu_memory_planning=True
-            ),
-        )
-        writer = _host_writer(gm)
-        first, second = _collect_device_copy_nodes(gm).delegate_nodes
-        (second_copy,) = [
-            arg
-            for arg in second.args[1:]
-            if arg.target == torch.ops.et_copy._h2d_copy.out
-            and arg.args[0] is writer.args[0]
-        ]
-        nodes = list(gm.graph.nodes)
-        self.assertLess(nodes.index(first), nodes.index(writer))
-        self.assertLess(nodes.index(writer), nodes.index(second_copy))
+        for write_view in (False, True):
+            gm = _lower_with_host_writer(
+                Model(write_view),
+                (torch.randn(2, 2), torch.randn(2, 2)),
+                ["cuda:0", "cuda:0"],
+                _host_writer_config(write_view),
+            )
+            with self.subTest(write_view=write_view):
+                writer = _host_writer(gm)
+                first, second = _collect_device_copy_nodes(gm).delegate_nodes
+                (second_copy,) = [
+                    arg
+                    for arg in second.args[1:]
+                    if arg.target == torch.ops.et_copy._h2d_copy.out
+                    and arg.args[0] is _host_written(gm)
+                ]
+                nodes = list(gm.graph.nodes)
+                self.assertLess(nodes.index(first), nodes.index(writer))
+                self.assertLess(nodes.index(writer), nodes.index(second_copy))
 
     def test_skip_h2d_for_input_shared_by_device_delegates(self):
         """With skip_h2d_for_method_inputs=True, a method input read by two

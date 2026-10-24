@@ -20,6 +20,9 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes.convert_constant_dim_order_pass import _should_transform
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    _alias_sets,
+    _contains_node,
+    _schema_paired_args,
     _schema_writes_input,
 )
 
@@ -156,19 +159,49 @@ def _copy_output_spec(
     return new_spec
 
 
+def _schema_aliases_input(
+    node: torch.fx.Node, schema: torch.FunctionSchema, input_node: torch.fx.Node
+) -> bool:
+    """Whether schema marks the result of node as an alias of input_node, as for
+    a view or an in-place op."""
+    returned = set().union(*(_alias_sets(ret.alias_info) for ret in schema.returns))
+    return any(
+        _alias_sets(schema_arg.alias_info) & returned
+        for arg, schema_arg in _schema_paired_args(node, schema)
+        if _contains_node(arg, input_node)
+    )
+
+
 def _is_written_in_place(node: torch.fx.Node) -> bool:
-    """Whether an op that reads *node* also writes it, per the op's schema.
+    """Whether an op writes *node* in place, directly or through a view of it,
+    per the op's schema.
 
     A mutable op left on the host does this once to_executorch has removed
-    auto_functionalized, so a copy of *node* can miss the write. Only direct
-    readers count: a write through a view of *node* is not seen. Custom op
-    schemas are trusted, as functionalization trusts them.
+    auto_functionalized, so a copy of *node* can miss the write. If the op
+    wrote a view of *node* in the model, that removal makes the view again,
+    for example with as_strided. The result of an in-place op is a view of
+    its input too. A view_copy is not: it still makes its own tensor here,
+    and ReplaceViewCopyWithViewPass turns it into a view later only where no
+    write can tell the difference. Custom op schemas are trusted, as
+    functionalization trusts them. The write-back pass trusts only aten
+    schemas, but here that would keep a copy for every custom op on the host,
+    such as a KV cache update. Users without a schema, such as delegate calls
+    and getitem, do not write their inputs.
     """
-    return any(
-        _schema_writes_input(user, user.target._schema, node)  # pyre-ignore[16]
-        for user in node.users
-        if hasattr(user.target, "_schema")
-    )
+    aliases = {node}
+    pending = [node]
+    while pending:
+        alias = pending.pop()
+        for user in alias.users:
+            schema = getattr(user.target, "_schema", None)
+            if schema is None:
+                continue
+            if _schema_writes_input(user, schema, alias):
+                return True
+            if user not in aliases and _schema_aliases_input(user, schema, alias):
+                aliases.add(user)
+                pending.append(user)
+    return False
 
 
 def _replace_spec(
