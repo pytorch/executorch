@@ -46,6 +46,7 @@ def main():
     parser.add_argument('--cache-modes', nargs='+', choices=['off','on'], default=['on'])
     parser.add_argument('--concurrencies', type=int, nargs='+', choices=[1,2,4,8,16], default=[1,16])
     parser.add_argument('--port', type=int, default=19085)
+    parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args = parser.parse_args()
     assert not args.output.exists(), 'Keep prior artifacts and measurements'
     assert args.base_wrapper.is_file()
@@ -107,7 +108,7 @@ def main():
             assert audit['constant_metadata']['get_max_prefill_chunk'] == args.max_step_tokens
             assert audit['selected_output_bound'] == [64,262144]
             assert audit['static_methods'] == [1,2,4,8,16,32,64]
-            assert audit['context'] == 12288 and audit['active_sessions'] == audit['decode_ceiling'] == 16
+            assert audit['context'] == args.max_context and audit['active_sessions'] == audit['decode_ceiling'] == 16
             assert audit['safe_ring_rows'] == 1024 + args.max_step_tokens - 1
             assert audit['AOTI_wrapper_optimization'] == 'O2'
             assert audit['GGUF_sha256'] == '7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -150,6 +151,9 @@ def main():
                 assert body.count('case "$backend" in') == 1
                 body = body.replace('case "$backend" in',guard+'case "$backend" in')
             wrapper = args.output / 'serve-policy.sh'
+            if args.max_context != 12288:
+                from configure_context import configure
+                body = configure(body, args.max_context, args.initial_kv_capacity, args.max_context)
             wrapper.write_text(body)
             subprocess.run(['bash','-n',str(wrapper)], check=True)
             os.environ['SB_ET_PREFIX_ENTRIES'] = str(args.prefix_entries)
@@ -157,7 +161,7 @@ def main():
                               write_budget=args.max_step_tokens, wrapper_sha256=digest(wrapper),
                               checkpoint_interval=args.checkpoint_interval, checkpoint_worker=checkpoint_build,
                               effective_checkpoint_by_cache_mode={'off':0,'on':args.checkpoint_interval},
-                              initial_kv_capacity=args.initial_kv_capacity, maximum_context_unchanged=12288,
+                              initial_kv_capacity=args.initial_kv_capacity, maximum_context=args.max_context,
                               final_ET_best_policy_selection_pending=True,
                               source_commit_record=json.loads((Path(__file__).parent/'source-commit.json').read_text()))
             (args.output/'evaluation-provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')

@@ -8,8 +8,8 @@
       "bytes": 63
     },
     "README.md": {
-      "sha256": "4f2ba937e4df71560137684c96eab6f76d6510f20f63494e83824ef9875a269f",
-      "bytes": 12142
+      "sha256": "3856791a658d9d94d56b77e3a236c7a5de133f0091f47636061ce0558599ff15",
+      "bytes": 12965
     },
     "benchmark_candidates.py": {
       "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
@@ -59,9 +59,13 @@
       "sha256": "c664a902509a5b6527c13bbed04f7c21a8dd677b4211c2e26c00be0e1c2e856e",
       "bytes": 14486
     },
+    "configure_context.py": {
+      "sha256": "36fa29cc9193e84f30019a7696c36d5640c1e18c937c9ed43498036a0021159d",
+      "bytes": 2306
+    },
     "continue_prepared_matrix.py": {
-      "sha256": "46ff83631dde258e5d1f9a00b2f711567f53b873f83b255ad0d70da8b4b363ca",
-      "bytes": 5264
+      "sha256": "e1917d9e74791979b7b181cb84724703b6249259cd288cf72ede88c02c21b9fa",
+      "bytes": 5830
     },
     "correctness/LICENSE": {
       "sha256": "6b8426060d54e9c1416622f5ab3a0aac305946c5a5cde720cb651cfd14fc1615",
@@ -88,20 +92,20 @@
       "bytes": 9616
     },
     "evaluate_gemma_policy.py": {
-      "sha256": "22bd643d0a94b395659d5ee735523ed26e387a774b461466c5a6f2ed90c5581f",
-      "bytes": 12091
+      "sha256": "96d334da56a5f9efaceb03c8604713fed376167e7743bfd5e58116fabf32571d",
+      "bytes": 12392
     },
     "evaluate_mg_prefix.py": {
-      "sha256": "25e929b68d2a24f4b48bdffdb0dc1d5a7a3f2d7d175921744cad4f0e6562a009",
-      "bytes": 9751
+      "sha256": "d15ee54d3e9af57d28bcd9a5e0a9154b84f1fe406d579c7bf251b9e1dd5019a1",
+      "bytes": 10052
     },
     "export_gemma_memory.py": {
-      "sha256": "2cd4e07e4280ba751f3de7a67c0c3e12967a2b5f46a7413bc90fb2acfacc5c3a",
-      "bytes": 11529
+      "sha256": "0875f5dff3440af172b3eed33160e396240d313b01c836763a77ac2aae6e9981",
+      "bytes": 11677
     },
     "export_mg_prefix.py": {
-      "sha256": "144d08c782b9a1bcaf19c151d45bdb9de2b6326185c52aa2bc79d4c7e173bea1",
-      "bytes": 10793
+      "sha256": "51c57b6da2553beaa4f04ed2bcfca91015285ceb891eeb9d20b70cc488e28542",
+      "bytes": 10930
     },
     "make_wrapper.py": {
       "sha256": "bb550a39903ad70348bfdc2fbfa6473ac3e6a27be7ecd859fb90eaf338cc3234",

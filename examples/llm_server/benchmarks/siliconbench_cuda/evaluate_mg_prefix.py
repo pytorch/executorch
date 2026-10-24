@@ -43,6 +43,7 @@ def main():
     parser.add_argument('--cache-modes', nargs='+', choices=['off','on'], default=['off','on'])
     parser.add_argument('--concurrencies', type=int, nargs='+', default=[1,16])
     parser.add_argument('--port', type=int, default=19084)
+    parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve all prior artifacts and results'
     assert len(args.data_revision) == 40
@@ -92,7 +93,7 @@ def main():
             assert audit['constant_metadata']['get_offgraph_kv_max_seqs'] == audit['max_resident_sequences']
             assert audit['supported_prefix_entries_with_16_active'] >= args.prefix_entries
             assert audit['selected_output_bound'] == [64,202048]
-            assert audit['context'] == 12288 and audit['active_sessions'] == audit['decode_ceiling'] == 16
+            assert audit['context'] == args.max_context and audit['active_sessions'] == audit['decode_ceiling'] == 16
             assert audit['static_methods'] == [1,2,4,8,16,32,64]
             assert audit['GGUF_sha256'] == '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
             assert audit['attention_source_sha256'] == '5ce65105639785e625739c90c0b208a77d12f8544208c85aa66e143d34a4e8ea'
@@ -121,6 +122,9 @@ def main():
             assert body.count('--initial-kv-capacity 12288') == 1
             body = body.replace('--initial-kv-capacity 12288',
                                 '--initial-kv-capacity '+str(args.initial_kv_capacity))
+            if args.max_context != 12288:
+                from configure_context import configure
+                body = configure(body, args.max_context, args.initial_kv_capacity, args.max_context)
             wrapper.write_text(body)
             subprocess.run(['bash','-n',str(wrapper)], check=True)
             os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(args.artifact.resolve()),
@@ -130,7 +134,7 @@ def main():
                               prefix_entries=args.prefix_entries, wrapper_sha256=digest(wrapper),
                               checkpoint_interval=args.checkpoint_interval, cache_modes=args.cache_modes,
                               effective_checkpoint_by_cache_mode={'off':0,'on':args.checkpoint_interval},
-                              initial_kv_capacity=args.initial_kv_capacity, maximum_context_unchanged=12288,
+                              initial_kv_capacity=args.initial_kv_capacity, maximum_context=args.max_context,
                               total_cases=len(args.cache_modes) * len(args.concurrencies), final_best_ET_selection_pending=True,
                               source_commit_record=json.loads((source / 'source-commit.json').read_text()))
             (args.output / 'evaluation-provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')

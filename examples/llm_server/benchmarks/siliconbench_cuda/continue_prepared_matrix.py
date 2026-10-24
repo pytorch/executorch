@@ -28,6 +28,9 @@ def main():
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--port', type=int, default=19082)
+    parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
+    parser.add_argument('--initial-kv-capacity', type=int, default=512)
+    parser.add_argument('--cpp-pool-tokens', type=int)
     args = parser.parse_args()
     assert all(c.isalnum() or c in '-_' for c in args.preparation_program)
     assert len(args.data_revision) == 40
@@ -65,6 +68,11 @@ def main():
         wrapper = args.output / 'serve-public-wrapper.sh'
         subprocess.run([sys.executable, '-B', str(source / 'make_wrapper.py'),
                         '--base', str(args.base_wrapper), '--output', str(wrapper)], check=True)
+        if args.max_context != 12288:
+            from configure_context import configure
+            wrapper.write_text(configure(wrapper.read_text(), args.max_context,
+                                         args.initial_kv_capacity, args.cpp_pool_tokens or args.max_context))
+            subprocess.run(['bash', '-n', str(wrapper)], check=True)
         matrix = args.output / 'matrix'
         command = [args.python, '-B', str(source / 'run_matrix.py'), '--wrapper', str(wrapper),
                    '--model', args.model, '--client', str(args.client), '--prompts', str(args.prompts),

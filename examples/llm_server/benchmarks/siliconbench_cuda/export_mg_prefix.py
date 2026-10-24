@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--job-dir', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args = parser.parse_args()
 
     def state(status, **fields):
@@ -118,7 +119,7 @@ def main():
     state('exporting')
     sys.argv = ['export_solo', '--backend', 'cuda', '--gguf', str(args.gguf),
                 '--use-offgraph-kv-cache', '--kv-layout', 'sequence',
-                '--max-kv-seqs', str(args.max_kv_seqs), '--max-seq-len', '12288',
+                '--max-kv-seqs', str(args.max_kv_seqs), '--max-seq-len', str(args.max_context),
                 '--forward-sizes', '1,2,4,8,16,32,64', '--max-step-tokens', str(args.max_step_tokens),
                 '--activation-dtype', 'bfloat16', '--output-dir', str(args.output)]
     runpy.run_module('executorch.examples.models.muse_glimmer.export.export_solo', run_name='__main__')
@@ -141,7 +142,7 @@ def main():
             elif isinstance(value, Bool):
                 metadata[name] = value.bool_val
     assert metadata['get_offgraph_kv_max_seqs'] == args.max_kv_seqs
-    assert metadata['get_max_context_len'] == 12288 and metadata['get_n_caches'] == 52
+    assert metadata['get_max_context_len'] == args.max_context and metadata['get_n_caches'] == 52
     assert metadata['get_activation_dtype'] in [int(ScalarType.BFLOAT16), 'bf16', 'bfloat16']
     assert metadata['get_max_prefill_chunk'] == args.max_step_tokens
     assert metadata['has_vision_encoder'] is False
@@ -154,7 +155,7 @@ def main():
                 if spec.key != 'offgraph_kv_manifest':
                     continue
                 manifest = json.loads(bytes(spec.value))
-                assert manifest['layout'] == 'batched-sequence' and manifest['maximum_capacity'] == 12288
+                assert manifest['layout'] == 'batched-sequence' and manifest['maximum_capacity'] == args.max_context
                 assert manifest['max_seqs'] == args.max_kv_seqs and manifest['max_segments'] == 2 * args.max_kv_seqs
                 assert manifest['max_write'] == args.max_step_tokens and manifest['causal'] is True
                 rings = [layer for layer in manifest['layers'] if layer['policy'] == 'ring']
@@ -171,7 +172,7 @@ def main():
                  attention_source_sha256=digest(kernels / 'sdpa_varlen.py'),
                  max_resident_sequences=args.max_kv_seqs, physical_columns=args.max_kv_seqs+1,
                  supported_prefix_entries_with_16_active=args.max_kv_seqs-16-1,
-                 context=12288, active_sessions=16, decode_ceiling=16, static_methods=[1,2,4,8,16,32,64],
+                 context=args.max_context, active_sessions=16, decode_ceiling=16, static_methods=[1,2,4,8,16,32,64],
                  AOTI_wrapper_optimization='O2', actual_optimized_builds=len(optimized),
                  artifacts={name:dict(sha256=digest(args.output / name),bytes=(args.output / name).stat().st_size)
                             for name in ['model.pte','aoti_cuda_blob.ptd']},
