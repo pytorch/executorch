@@ -686,6 +686,67 @@ class TestPropagateDevicePass(unittest.TestCase):
                     nodes.d2h_nodes, program, DeviceType.CPU, case, "D2H copy"
                 )
 
+    def test_host_inplace_ops_on_delegate_output_write_host_copy(self):
+        """Host ops that write a delegate output in place, here relu_ and then
+        mul_ from reinplace_pass, write its host copy. Their results share the
+        copy's spec, as memory planning requires, and the method returns the
+        last one from the host."""
+
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        lowered = _lower_add_to_device(inputs, "cuda:0")
+
+        class Call(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered
+
+            def forward(self, x, y):
+                return torch.relu(self.lowered(x, y)) * 2
+
+        class Add(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.relu(x + y) * 2
+
+        cases = {
+            "single tensor": (Call(), None),
+            "getitem": (Add(), PerAddDeviceDelegatePartitioner(["cuda:0"])),
+        }
+        reinplaced = frozenset(
+            {exir_ops.edge.aten.relu.default, exir_ops.edge.aten.mul.Tensor}
+        )
+        for case, (model, partitioner) in cases.items():
+            for skip_d2h in (False, True):
+                edge = to_edge(export(model, inputs))
+                if partitioner is not None:
+                    edge = edge.to_backend(partitioner)
+                et = edge.to_executorch(
+                    ExecutorchBackendConfig(
+                        emit_stacktrace=False,
+                        reinplace_extra_ops=reinplaced,
+                        propagate_device_config=PropagateDeviceConfig(
+                            skip_d2h_for_method_outputs=skip_d2h
+                        ),
+                        enable_non_cpu_memory_planning=True,
+                    )
+                )
+                gm = et.exported_program().graph_module
+                with self.subTest(case=case, skip_d2h=skip_d2h):
+                    (d2h,) = _collect_device_copy_nodes(gm).d2h_nodes
+                    (relu,) = d2h.users
+                    (mul,) = relu.users
+                    self.assertEqual(relu.target, exir_ops.edge.aten.relu_.default)
+                    self.assertEqual(mul.target, exir_ops.edge.aten.mul_.Tensor)
+                    self.assertIs(relu.meta["spec"], d2h.meta["spec"])
+                    self.assertIs(mul.meta["spec"], d2h.meta["spec"])
+                    self.assertEqual(gm.graph.output_node().args[0], (mul,))
+                    self._assert_nodes_buffer_device(
+                        [mul],
+                        et._emitter_output.program,
+                        DeviceType.CPU,
+                        case,
+                        "Output",
+                    )
+
     def test_skip_d2h_keeps_output_also_read_on_device(self):
         """With skip_d2h_for_method_outputs, a returned delegate output that a
         delegate on the same device also reads stays on the device, like the
