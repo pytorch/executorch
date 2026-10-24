@@ -269,8 +269,11 @@ def main():
                                         executable_selected_config_unproven=True,
                                         config=dict(kwargs=cfg.kwargs, num_warps=cfg.num_warps, num_stages=cfg.num_stages, num_ctas=cfg.num_ctas))
                         from native_gemm_oracle_diagnostic import diagnose
-                        report['native_oracle_diagnostic']=diagnose(native,x,w,reference,a.output)
                         report['native_selected_config']=metadata
+                        report['native_oracle_context']=dict(role=role,m=m,n=n,k=k,packed_weight_sha256=weight_hashes,
+                            input_dtypes=[str(t.dtype) for t in w],all_GGUF_weights_and_native_source_unchanged=True)
+                        report['native_oracle_diagnostic']=diagnose(native,x,w,reference,a.output,
+                            reference_with_input=lambda xx:native._launch_w4a16(m,xx,*w,32,split_k=split,config=cfg))
                         report['no_candidate_numeric_or_timing_acceptance_claim']=True
                         save('completed-native-oracle-diagnostic',role=role,m=m)
                         return

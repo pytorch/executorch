@@ -4,6 +4,7 @@ This materializes the existing JIT decoder, without editing it, and records
 BF16 differences versus explicit staged eager arithmetic. No tolerance change
 or automatic kernel promotion is performed.
 """
+import json
 import torch
 import triton
 import triton.language as tl
@@ -39,7 +40,7 @@ def native_fma_oracle(x, weights, *, chunk_n=256):
     return torch.cat([torch.nn.functional.linear(x.float(),native_fma_dense(weights,start,min(start+chunk_n,weights[0].shape[0])).float()).bfloat16()
                       for start in range(0,weights[0].shape[0],chunk_n)],1)
 
-def diagnose(native,x,w,reference,output):
+def diagnose(native,x,w,reference,output,*,reference_with_input=None):
     n,k=w[0].shape[0],x.shape[1]
     q,sc,ss,z,zs=w
     def stats(a,b):
@@ -63,6 +64,9 @@ def diagnose(native,x,w,reference,output):
                 native_vs_independent_FMA_oracle=stats(y,native_fma_oracle(x,w)),
                 independent_FMA_oracle_definition='BF16 zero code and step; exact FP32 multiply/subtract, one BF16 rounding; separately rounded BF16 scale; final BF16 product and FP32 GEMM',
                 independent_FMA_vs_staged_dense=stats(fused,staged),controls=[])
+    def persist():
+        path=output/'native-oracle-materialization-results.json'
+        pending=path.with_suffix('.pending.json');pending.write_text(json.dumps(result,indent=2)+'\n');pending.replace(path)
     for fusion in [True,False]:
         dense=torch.empty((n,k),device=x.device,dtype=torch.bfloat16)
         compiled=materialize[(triton.cdiv(n,32),k//256)](q,sc,ss,z,zs,dense,N=n,K=k,
@@ -79,10 +83,40 @@ def diagnose(native,x,w,reference,output):
         result['controls'].append(dict(enable_fp_fusion=fusion,decoder_vs_eager_staged=pointwise,decoder_vs_independent_FMA_dense=stats(dense,fused),
             native_GEMM_vs_materialized_decoder_FP32_linear=stats(y,gemm),mismatch_examples=examples,
             PTX_file=path.name))
+        persist()
         del dense,gemm
     result['native_FMA_numeric_gate_passed']=result['native_vs_independent_FMA_oracle']['finite'] and result['native_vs_independent_FMA_oracle']['relative_rms']<.005
+    assert reference_with_input is not None,'Actual compiled GEMM basis control is required'
+    assert k % x.shape[0] == 0
+    # A full basis sweep reads every effective weight through the unmodified
+    # compiled GEMM. Each BF16 input row has exactly one one and otherwise
+    # zeros. This avoids assuming that a stand-alone decoder compiles with
+    # the same arithmetic contractions as the decoder inside the GEMM.
+    effective=torch.empty_like(fused)
+    for start in range(0,k,x.shape[0]):
+        columns=torch.arange(start,start+x.shape[0],device=x.device)
+        basis=torch.zeros_like(x);basis[torch.arange(x.shape[0],device=x.device),columns]=1
+        response=reference_with_input(basis)
+        effective.index_copy_(1,columns,response.transpose(0,1))
+        if start % (64*x.shape[0])==0:
+            torch.cuda.synchronize()
+            result['basis_columns_completed']=start+x.shape[0];persist()
+    torch.cuda.synchronize()
+    result.update(basis_columns_completed=k,basis_native_GEMM_calls=k//x.shape[0],
+        all_native_weight_elements_observed=n*k,unmodified_native_GEMM_full_basis_sweep=True,
+        native_basis_vs_independent_FMA_dense=stats(effective,fused),
+        native_basis_vs_eager_staged_dense=stats(effective,staged),
+        native_GEMM_vs_basis_FP32_linear=stats(y,torch.nn.functional.linear(x.float(),effective.float()).bfloat16()))
+    result['native_basis_FMA_exact_match']=result['native_basis_vs_independent_FMA_dense']['different_elements']==0
+    mismatch=(effective!=fused).nonzero()[:16].cpu().tolist()
+    result['native_basis_FMA_mismatch_examples']=[dict(n=i,k=j,actual_GEMM_weight=float(effective[i,j]),
+        independent_FMA=float(fused[i,j]),staged=float(staged[i,j]),
+        q_code=int(q[i,j//2]&15 if j%2==0 else q[i,j//2]>>4),
+        scale_code=int(sc[i,j//32]),zero_code=int(z[i,j//32]),
+        scale_step_FP16=float(ss[i,j//256]),zero_step_FP16=float(zs[i,j//256])) for i,j in mismatch]
+    persist()
     torch.testing.assert_close(y.float(),native_fma_oracle(x,w).float(),rtol=.05,atol=4.0)
     assert result['native_FMA_numeric_gate_passed'],'Independent FMA oracle did not resolve the native failure'
-    assert result['controls'][0]['decoder_vs_independent_FMA_dense']['different_elements']==0,'Default native decoder differs from independent FMA weights'
+    assert result['native_basis_FMA_exact_match'],'Actual compiled native GEMM weights differ from independent FMA weights'
     assert result['controls'][1]['decoder_vs_eager_staged']['different_elements']==0,'Explicit nonfusion decoder differs from staged weights'
     return result
