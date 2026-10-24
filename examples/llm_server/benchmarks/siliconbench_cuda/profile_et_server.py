@@ -27,6 +27,7 @@ def main():
     for name in ['wrapper', 'client', 'prompts']:
         p.add_argument('--' + name + '-sha256', required=True)
     p.add_argument('--indices', type=int, nargs='+', required=True)
+    p.add_argument('--concurrency', type=int, choices=[1,16], default=1)
     p.add_argument('--python', required=True)
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--server-env', action='append', default=[])
@@ -40,6 +41,7 @@ def main():
     corpus = json.loads(a.prompts.read_text())
     assert isinstance(corpus, list) and len(corpus) == 100
     chosen = [corpus[i] for i in a.indices]
+    assert len(chosen) >= a.concurrency, 'The subset must fill the requested client concurrency'
     assert all(set(['name', 'messages', 'max_tokens']) <= set(row) for row in chosen)
     a.output.mkdir(parents=True)
     subset = a.output / 'selected-original-prompts.json'
@@ -54,7 +56,7 @@ def main():
                   selected_prompt_names=[row['name'] for row in chosen],
                   source_prompts_sha256=a.prompts_sha256, client_sha256=a.client_sha256,
                   wrapper_sha256=a.wrapper_sha256, rounds=4, discarded=[1], averaged=[2,3,4],
-                  concurrency=1, prefix_cache=False, native_server_unchanged=True,
+                  concurrency=a.concurrency, prefix_cache=False, native_server_unchanged=True,
                   profiling_not_primary_performance=True, measurements=[])
     server = None
     stop = threading.Event()
@@ -119,7 +121,7 @@ def main():
                 target = a.output / ('repeat-' + str(repetition))
                 target.mkdir()
                 client = [a.python, '-B', str(a.client), '--port', str(a.port), '--framework', 'executorch',
-                          '--split', 'agent', '--concurrency', '1', '--requests', str(len(chosen)),
+                          '--split', 'agent', '--concurrency', str(a.concurrency), '--requests', str(len(chosen)),
                           '--warmup', '3', '--prompts', str(subset), '--output', str(target/'metrics.json'),
                           '--outputs', str(target/'outputs.jsonl')]
                 with (target / 'client.log').open('x') as output:
