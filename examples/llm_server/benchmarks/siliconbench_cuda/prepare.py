@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 import urllib.request
@@ -22,6 +23,7 @@ parser.add_argument('--output', type=Path, required=True, help='New preparation 
 parser.add_argument('--python', default='python3')
 parser.add_argument('--reuse-build', action='store_true')
 parser.add_argument('--cpp-build-name', default='build-stock-native-evaluation')
+parser.add_argument('--data-revision', help='Reuse the same pinned public dataset revision across machines')
 args = parser.parse_args()
 ROOT = args.root
 GROUP = args.output
@@ -112,8 +114,8 @@ try:
 
     state('pinning-GMRID-correctness-data', stock_cpp_off_build_completed=True)
     api = 'https://api.github.com/repos/inflaton/llms-at-edge/commits/main'
-    revision = json.loads(fetch(api))['sha']
-    assert len(revision) == 40
+    revision = args.data_revision or json.loads(fetch(api))['sha']
+    assert len(revision) == 40 and all(c in '0123456789abcdef' for c in revision)
     data_dir = GROUP / 'correctness/data'
     data_dir.mkdir(parents=True)
     data_proof = dict(source_repository='inflaton/llms-at-edge', revision=revision, files={})
@@ -167,8 +169,19 @@ try:
                           capture_output=True, text=True, timeout=60)
     if deps.returncode:
         # Install task evaluation dependencies only in our dedicated bench venv.
-        run([str(python), '-m', 'pip', 'install', 'aiohttp>=3.9', 'scikit-learn>=1.3'],
+        pip = subprocess.run([str(python), '-m', 'pip', '--version'], capture_output=True,
+                             text=True, timeout=30)
+        if pip.returncode == 0:
+            install = [str(python), '-m', 'pip', 'install']
+        else:
+            uv = shutil.which('uv')
+            assert uv, 'Dedicated venv lacks pip; uv is required to install evaluation dependencies'
+            install = [uv, 'pip', 'install', '--python', str(python)]
+        run(install + ['aiohttp>=3.9', 'scikit-learn>=1.3'],
             600, 'correctness-dependencies.log')
+        deps = subprocess.run([str(python), '-B', '-c', 'import aiohttp,sklearn; print(aiohttp.__version__,sklearn.__version__)'],
+                              capture_output=True, text=True, check=True, timeout=60)
+    data_proof['evaluation_dependency_versions'] = deps.stdout.strip()
     data_proof['scripts'] = {p.name: digest(p) for p in scripts.iterdir() if p.suffix == '.py'}
     data_proof['scorer_missing_response_policy'] = 'Verify every valid fixture response ID before scoring; never drop runtime errors or missing requests'
     (GROUP/'GMRID-input-audit.json').write_text(json.dumps(data_proof, indent=2)+'\n')
