@@ -17,8 +17,10 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs runtime/test_xnnexecutor.cpp runtime/test_workspace_manager.cpp
-               ${EXECUTORCH_ROOT}/extension/threadpool/test/threadpool_test.cpp
+set(_test_srcs
+    runtime/test_xnnexecutor.cpp runtime/test_workspace_manager.cpp
+    runtime/test_xnn_sequence_cache.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/test/threadpool_test.cpp
 )
 
 et_cxx_test(
