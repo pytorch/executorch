@@ -60,6 +60,8 @@ def main():
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--base-worker-reference', required=True)
     parser.add_argument('--python', required=True)
+    parser.add_argument('--native-muse-worker', action='store_true',
+                        help='Keep the original Muse Python launcher; wrap the isolated worker binary only')
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve earlier controls and results'
     args.output.mkdir(parents=True)
@@ -86,7 +88,9 @@ def main():
         assert 'release_cached_memory' in allocator.read_text()
         state('preparing-isolated-worker')
         text = args.worker_source.read_text()
-        text = replace_once(text, '#include <gflags/gflags.h>',
+        include_marker = '#include <iostream>' if args.native_muse_worker else '#include <gflags/gflags.h>'
+        text = replace_once(text, include_marker,
+                            include_marker+'\n'
                             '#include <gflags/gflags.h>\n'
                             '#include <executorch/extension/cuda/cuda_allocator.h>\n'
                             '#include <chrono>\n#include <thread>\n#include <cuda_runtime_api.h>')
@@ -97,6 +101,10 @@ def main():
         text = replace_once(text, 'gflags::ParseCommandLineFlags(&argc, &argv, true);',
                             'gflags::ParseCommandLineFlags(&argc, &argv, true);\n'
                             '  if (FLAGS_pool_retain_mib < -1 || FLAGS_pool_retain_mib > 1048576) return 1;')
+        if args.native_muse_worker:
+            text = replace_once(text, 'auto batching_runtime = llm::create_muse_glimmer_batching_runtime();',
+                                'auto batching_runtime = llm::create_muse_glimmer_batching_runtime();\n'
+                                '    auto& runtime = *batching_runtime->runtime;')
         marker = '    executorch::examples::llm_server::MultiplexedWorkerConfig transport;'
         text = replace_once(text, marker, r'''
     const auto startup_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
@@ -125,8 +133,9 @@ def main():
     }
     memory_snapshot("ready-after-policy");
 ''' + marker)
-        text = replace_once(text, 'runtime, STDIN_FILENO, output, std::move(transport));',
-                            'runtime, STDIN_FILENO, output, std::move(transport));\n'
+        call_marker = '*batching_runtime->runtime, STDIN_FILENO, output, std::move(transport));' if args.native_muse_worker else 'runtime, STDIN_FILENO, output, std::move(transport));'
+        text = replace_once(text, call_marker,
+                            call_marker+'\n'
                             '    memory_snapshot("after-runtime-shutdown-executor-live");\n'
                             '    if (FLAGS_trim_pool_at_eof) {\n'
                             '      executorch::extension::cuda::CudaAllocator::release_cached_memory(0);\n'
@@ -134,13 +143,16 @@ def main():
                             '    }')
         source = args.output/'et_pool_retention_worker.cpp'
         source.write_text(text)
+        binary = args.output/'et_pool_retention_worker'
+        worker_reference = str(binary.resolve())
         py = args.base_launcher.read_text()
-        py = replace_once(py, 'import argparse', 'import argparse\nimport os')
-        py = replace_once(py, 'f"--prefix_cache_entries={args.prefix_cache_entries}"]',
+        if not args.native_muse_worker:
+            py = replace_once(py, 'import argparse', 'import argparse\nimport os')
+            py = replace_once(py, 'f"--prefix_cache_entries={args.prefix_cache_entries}"]',
                           'f"--prefix_cache_entries={args.prefix_cache_entries}",\n'
                           '        f"--pool_retain_mib={args.pool_retain_mib}",\n'
                           '        f"--trim_pool_at_eof={str(args.trim_pool_at_eof).lower()}"]')
-        py = replace_once(py, 'parser.add_argument("--prefix-cache-entries", type=int, default=16)',
+            py = replace_once(py, 'parser.add_argument("--prefix-cache-entries", type=int, default=16)',
                           'parser.add_argument("--prefix-cache-entries", type=int, default=16)\n'
                           '    parser.add_argument("--pool-retain-mib", type=int, default=int(os.environ.get("SB_ET_POOL_RETAIN_MIB", "-1")))\n'
                           '    parser.add_argument("--trim-pool-at-eof", action="store_true", default=os.environ.get("SB_ET_TRIM_POOL_AT_EOF", "0") == "1")')
@@ -148,9 +160,17 @@ def main():
         launcher = args.output/'serve_et_pool_retention.py'
         launcher.write_text(py)
         wrapper = args.base_wrapper.read_text()
-        wrapper = replace_once(wrapper, str(args.base_launcher), str(launcher.resolve()))
-        binary = args.output/'et_pool_retention_worker'
-        wrapper = replace_once(wrapper, args.base_worker_reference, shlex.quote(str(binary.resolve())))
+        if args.native_muse_worker:
+            shim = args.output/'run-pool-control-worker.sh'
+            shim.write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec '+shlex.quote(str(binary.resolve()))+
+                            ' --pool_retain_mib="${SB_ET_POOL_RETAIN_MIB:--1}"'
+                            ' --trim_pool_at_eof=false "$@"\n')
+            shim.chmod(0o700)
+            subprocess.run(['bash','-n',str(shim)],check=True,timeout=30)
+            worker_reference = str(shim.resolve())
+        else:
+            wrapper = replace_once(wrapper, str(args.base_launcher), str(launcher.resolve()))
+        wrapper = replace_once(wrapper, args.base_worker_reference, shlex.quote(worker_reference))
         generated_wrapper = args.output/'serve-pool-control.sh'
         generated_wrapper.write_text(wrapper)
         generated_wrapper.chmod(0o700)
@@ -200,6 +220,7 @@ def main():
                           optional_trim_only_after_runtime_shutdown_and_device_synchronize=True,
                           no_per_forward_synchronization_added=True,
                           CUDA_graphs_weights_KV_layout_context_and_scheduler_unchanged=True,
+                          original_native_Muse_Python_launcher_unchanged=args.native_muse_worker,
                           no_performance_or_correctness_acceptance=True)
         (args.output/'build-provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')
         state('completed', isolated_worker_prepared=True)
