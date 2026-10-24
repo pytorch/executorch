@@ -171,20 +171,25 @@ def _is_written_in_place(node: torch.fx.Node) -> bool:
     )
 
 
-def _replace_output_spec(
-    node: torch.fx.Node, old_spec: TensorSpec, new_spec: TensorSpec
+def _replace_spec(
+    readers: list[torch.fx.Node], old_spec: TensorSpec, new_spec: TensorSpec
 ) -> None:
-    """Replace *old_spec* with *new_spec* in the spec of the output node reading *node*.
+    """Replace *old_spec* with *new_spec* in *readers*, which now read the
+    tensor with *new_spec*, and in the readers of their results.
 
-    Memory planning finds the graph outputs through the output node's spec, so
-    it has to name the tensor that is actually returned.
+    SpecPropPass gives the output node the spec of each tensor it returns, and
+    an in-place result the spec of the tensor it writes. Memory planning relies
+    on both, so these specs have to follow the tensor that is read now.
     """
-    for user in node.users:
-        if user.op == "output" and "spec" in user.meta:
-            user.meta["spec"] = pytree.tree_map(
-                lambda value: new_spec if value is old_spec else value,
-                user.meta["spec"],
+    pending = list(readers)
+    while pending:
+        node = pending.pop()
+        spec = node.meta.get("spec")
+        if any(value is old_spec for value in pytree.tree_leaves(spec)):
+            node.meta["spec"] = pytree.tree_map(
+                lambda value: new_spec if value is old_spec else value, spec
             )
+            pending.extend(node.users)
 
 
 class PropagateDevicePass(PassBase):
@@ -439,7 +444,7 @@ class PropagateDevicePass(PassBase):
                 d2h_node,
                 delete_user_cb=lambda user, _d2h=d2h_node: user != _d2h,
             )
-            _replace_output_spec(d2h_node, spec, d2h_spec)
+            _replace_spec(list(d2h_node.users), spec, d2h_spec)
 
     def _keep_method_outputs_on_device(
         self,
@@ -474,7 +479,11 @@ class PropagateDevicePass(PassBase):
                 returned.meta["val"] = node.meta.get("val")
                 if "tensor_meta" in node.meta:
                     returned.meta["tensor_meta"] = node.meta["tensor_meta"]
-            _replace_output_spec(node, node.meta["spec"], returned.meta["spec"])
+            _replace_spec(
+                [graph_module.graph.output_node()],
+                node.meta["spec"],
+                returned.meta["spec"],
+            )
             node.replace_all_uses_with(
                 returned, delete_user_cb=lambda user: user.op == "output"
             )
