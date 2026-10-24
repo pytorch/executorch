@@ -8,6 +8,9 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <cstdint>
+#include <limits>
+
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
@@ -218,7 +221,27 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     if (allocation_info == nullptr) {
       NamedData* data = get_data_by_key(fqn, external_constants);
       if (data != nullptr) {
-        return const_cast<void*>(data->buffer.data());
+        auto pointer = data->buffer.data_safe();
+        if (pointer.ok()) {
+          return const_cast<void*>(pointer.get());
+        }
+        auto address = data->buffer.data_uint64_type();
+        if (!address.ok()) {
+          return address.error();
+        }
+        ET_CHECK_OR_RETURN_ERROR(
+            nbytes <= data->buffer.size_uint64(),
+            InvalidExternalData,
+            "External tensor %s exceeds its buffer size",
+            fqn);
+        constexpr auto max_address = std::numeric_limits<uintptr_t>::max();
+        ET_CHECK_OR_RETURN_ERROR(
+            address.get() <= max_address &&
+                (nbytes == 0 || nbytes - 1 <= max_address - address.get()),
+            NotSupported,
+            "External tensor %s is not locally addressable",
+            fqn);
+        return reinterpret_cast<void*>(static_cast<uintptr_t>(address.get()));
       }
       // Should never reach here; these tensors are resolved in
       // Method::parse_external_constants. Any errors should be caught there.
