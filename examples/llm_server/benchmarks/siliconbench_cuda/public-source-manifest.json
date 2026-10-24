@@ -8,8 +8,12 @@
       "bytes": 63
     },
     "README.md": {
-      "sha256": "80d93455bca0e39f58ad856c06ad4211e2c4290362b3ebe6e0f6c521dde1fcb1",
-      "bytes": 4559
+      "sha256": "772f28098600bb945c002d01ca5253c0aa4700363beed885555272a3f3f6ac53",
+      "bytes": 5062
+    },
+    "benchmark_candidates.py": {
+      "sha256": "7bdf37826f6ff51357a3e4d5a0992123ccb6eb9cc9a611c1a1744c0014930594",
+      "bytes": 14495
     },
     "candidates_w4a16_precision_v4/README.md": {
       "sha256": "24b4eb7496fe78577469ce1a6d24eb9756fea4b24d66b92a76d8dfd0df5f2379",
@@ -66,6 +70,10 @@
     "run_matrix.py": {
       "sha256": "7809e920164afe21dd35a82883e89c34bf2549c020b1d8c8b88fbbd194bfb8ed",
       "bytes": 5524
+    },
+    "supervise.py": {
+      "sha256": "6042dc3ea5c72c1e633fd14433d7791baa1a81bc3fbbe249c3ceb52994f22225",
+      "bytes": 1444
     }
   }
 }

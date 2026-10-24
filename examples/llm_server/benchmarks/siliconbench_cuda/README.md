@@ -33,3 +33,5 @@ python -m candidates_w4a16_precision_v4.validate --help
 Generate the public cache/build launch switches from an existing reviewed wrapper using `python make_wrapper.py --base /workspace/base-serve.sh --output /workspace/serve.sh`. The native llama.cpp OFF build may choose quantized activation kernels during prefill; label it as a native-policy comparison rather than A16-confirmed.
 
 The vendored correctness scripts retain the SiliconBench MIT license in `correctness/LICENSE`.
+
+`benchmark_candidates.py` independently measures immutable v4 schedules on RTX5090, using verified existing native search/configuration records and the same Gemma GGUF packer. Its native references are clearly labeled, and candidate output is checked against the independent FP32-affine/BF16 oracle. It does not deploy a kernel. A parent without a CUDA context holds the shared lock until the GPU child has fully exited. `supervise.py` installs one new task-owned job for an explicit reviewed command.
