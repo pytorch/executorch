@@ -9,4 +9,4 @@ pydantic
 slangtorch
 rich
 torcheval==0.0.7
-setuptools==80.10.2
+setuptools==84.1.0
