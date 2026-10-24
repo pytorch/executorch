@@ -27,6 +27,10 @@
       "sha256": "3a748babe2fc62d9f10c08892de65b57954d9661bd0689988ac3d6d5cbabf982",
       "bytes": 31649
     },
+    "benchmark_w6_candidates.py": {
+      "sha256": "270013b221d8611784f9b518fcaf48abe4ba51e7a7d06c0ec931c98df6799352",
+      "bytes": 9069
+    },
     "bootstrap_cpp_shard.py": {
       "sha256": "e558590f50210e65f8d1dbcb6f324352fe524e3d009dd9dbb23e99e9a07f6295",
       "bytes": 9705
@@ -70,6 +74,26 @@
     "candidates_w4a16_precision_v4/validate.py": {
       "sha256": "c664a902509a5b6527c13bbed04f7c21a8dd677b4211c2e26c00be0e1c2e856e",
       "bytes": 14486
+    },
+    "candidates_w6a16_v6/README.md": {
+      "sha256": "08acf40158b643fb703ae808f25adcd4ba36f9ef27951fa881d47d8c817d9f1c",
+      "bytes": 1017
+    },
+    "candidates_w6a16_v6/__init__.py": {
+      "sha256": "1af423fba763cd95dce071b1407799d6a61bbd60baffbc7115d0acb40e8bf758",
+      "bytes": 199
+    },
+    "candidates_w6a16_v6/common.py": {
+      "sha256": "007714be77aadca8883723c5cd8933377777f205d3b279637edaf10ffc58e431",
+      "bytes": 3461
+    },
+    "candidates_w6a16_v6/validate.py": {
+      "sha256": "1ccf32c684e618d8f503dc60879e09e630539a790da9205d606bc768479e1c95",
+      "bytes": 9811
+    },
+    "candidates_w6a16_v6/w6a16_tiles.py": {
+      "sha256": "a7316528ae05951bfc56b1c5aec0887924fd1da2d6475f2837c8d9e09a9a8959",
+      "bytes": 8911
     },
     "configure_context.py": {
       "sha256": "36fa29cc9193e84f30019a7696c36d5640c1e18c937c9ed43498036a0021159d",
