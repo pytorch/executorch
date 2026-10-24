@@ -59,12 +59,21 @@ def main():
         labels = [json.loads(line) for line in (args.correctness_root/'prompts/0shot/labels.jsonl').open()]
         categories = sorted({row['gold_category'] for row in labels})
         assert len(categories) == 8
-        for category in categories:
-            rows = sorted((row for row in labels if row['gold_category']==category),
-                          key=lambda row: hashlib.sha256(('GMRID-fixed-smoke-v1:'+str(row['id'])).encode()).hexdigest())
-            assert len(rows) >= args.smoke_per_category
-            smoke_ids.update(str(row['id']) for row in rows[:args.smoke_per_category])
+        grouped = {category: sorted((row for row in labels if row['gold_category']==category),
+                   key=lambda row: hashlib.sha256(('GMRID-fixed-smoke-v1:'+str(row['id'])).encode()).hexdigest())
+                   for category in categories}
         expected_items = 8*args.smoke_per_category
+        assert len(labels)>=expected_items
+        quotas = {category:min(args.smoke_per_category,len(rows)) for category,rows in grouped.items()}
+        # Rare categories have fewer than eight distinct records. Include all
+        # of them and redistribute the deficit in deterministic category order.
+        while sum(quotas.values())<expected_items:
+            for category in categories:
+                if quotas[category]<len(grouped[category]):
+                    quotas[category]+=1
+                    if sum(quotas.values())==expected_items:break
+        for category,rows in grouped.items():
+            smoke_ids.update(str(row['id']) for row in rows[:quotas[category]])
         assert len(smoke_ids) == expected_items
     assert not args.output.exists(), 'Preserve incomplete cases; use a distinct output for a reviewed retry'
     args.output.mkdir(parents=True)
@@ -123,7 +132,9 @@ def main():
             env['SB_NATIVE_COMPLETION_PROMPTS'] = str(args.native_inputs)
         else:
             env.pop('SB_NATIVE_COMPLETION_PROMPTS', None)
-        settings = dict(selected_smoke_ids=sorted(smoke_ids), model=args.model, backend=args.backend, variant=args.variant,
+        settings = dict(selected_smoke_ids=sorted(smoke_ids),
+                        smoke_category_counts=quotas if smoke_ids else {},
+                        smoke_selection_policy='Up to eight per category, all rare-category items, redistribute deficits in sorted category order', model=args.model, backend=args.backend, variant=args.variant,
                         concurrency=args.concurrency, prefix_cache=args.prefix_cache == 'on',
                         mode=args.mode, quality_scope=args.quality_scope,
                         performance_rounds=4 if args.mode=='performance' else 0,
