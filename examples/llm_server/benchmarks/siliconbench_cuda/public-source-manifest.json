@@ -47,6 +47,10 @@
       "sha256": "1e05292dfa89b45db832012ad237515690fdee72e867cd862a6e67e4626dfe50",
       "bytes": 22034
     },
+    "benchmark_candidates_v9_fused.py": {
+      "sha256": "c8894ed335348936941de579dddd5920dcce62d8b6ddfd050fbd799dd74e0284",
+      "bytes": 22141
+    },
     "benchmark_gemma.py": {
       "sha256": "d2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05",
       "bytes": 31783
