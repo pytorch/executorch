@@ -1182,6 +1182,47 @@ class TestPropagateDevicePass(unittest.TestCase):
                     f"first delegate's output directly",
                 )
 
+    def test_tensors_shared_by_delegates_on_different_devices(self):
+        """Delegates on cuda:0 and cuda:1 that read the same method input and
+        each other's outputs. The input gets one copy for each device, read by
+        every delegate there, and each output crosses to the other device
+        through the host."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y  # delegate 0 (cuda:0)
+                b = x + a  # delegate 1 (cuda:1)
+                return a, b, x + b  # delegate 2 (cuda:0)
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:1", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                first, second, third = nodes.delegate_nodes
+                x_copies = [n for n in nodes.h2d_nodes if n.args[0].name == "x"]
+                first_x, second_x, third_x = (
+                    next(arg for arg in delegate.args[1:] if arg in x_copies)
+                    for delegate in (first, second, third)
+                )
+                self.assertEqual(len(x_copies), 2)
+                self.assertIs(first_x, third_x)
+                self.assertEqual(first_x.meta["spec"].device_index, 0)
+                self.assertEqual(second_x.meta["spec"].device_index, 1)
+                crossings = sorted(
+                    (
+                        h2d.args[0].args[0].meta["spec"].device_index,
+                        h2d.meta["spec"].device_index,
+                    )
+                    for h2d in nodes.h2d_nodes
+                    if h2d.args[0].target == d2h_out
+                )
+                self.assertEqual(crossings, [(0, 1), (1, 0)])
+
         # ---- Integration tests: device consistency after to_executorch ----
 
     def test_device_consistency_cuda_1(self):
