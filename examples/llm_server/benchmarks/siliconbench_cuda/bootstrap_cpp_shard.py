@@ -28,14 +28,23 @@ def main():
     p.add_argument('--template-revision', required=True)
     p.add_argument('--template-sha256', required=True)
     p.add_argument('--data-revision', required=True)
+    p.add_argument('--resume-reviewed-setup', action='store_true')
+    p.add_argument('--repo-instructions-sha256')
     p.add_argument('--port', type=int, default=19082)
     args = p.parse_args()
     r = args.root
-    assert not r.exists(), 'Use a fresh task directory; preserve existing work'
-    r.mkdir(parents=True)
+    if args.resume_reviewed_setup:
+        previous = json.loads((r/'progress.json').read_text())
+        assert previous['status']=='failed' and previous['detail']=='Read repository instructions before building'
+        archive = r/'setup-instructions-review-stop.json'
+        assert not archive.exists()
+        archive.write_text(json.dumps(previous, indent=2)+'\n')
+    else:
+        assert not r.exists(), 'Use a fresh task directory; preserve existing work'
+        r.mkdir(parents=True)
     source = Path(__file__).resolve().parent
     logs = r/'logs'
-    logs.mkdir()
+    logs.mkdir(exist_ok=args.resume_reviewed_setup)
 
     def state(status, **fields):
         pending = r/'progress.pending.json'
@@ -65,15 +74,18 @@ def main():
         state('preparing-public-stock-shard', GPU_work_started=False)
         assert not subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader'], text=True).strip()
         python = r/'.venv/bin/python'
-        run(['uv', 'venv', '--python', '3.12', str(r/'.venv')], 'venv', 120)
-        run(['uv', 'pip', 'install', '--python', str(python), 'aiohttp>=3.9', 'scikit-learn>=1.3'], 'dependencies', 600)
         repo = r/'llama.cpp'
         commit = '620d2225cc436ab0b001e3200e590e3b286ef9ab'
-        run(['git', 'clone', '--filter=blob:none', '--no-checkout', 'https://github.com/ggml-org/llama.cpp.git', str(repo)], 'clone', 600)
-        run(['git', '-C', str(repo), 'fetch', '--depth=1', 'origin', commit], 'fetch', 600)
-        run(['git', '-C', str(repo), 'checkout', '--detach', commit], 'checkout', 120)
+        if not args.resume_reviewed_setup:
+            run(['uv', 'venv', '--python', '3.12', str(r/'.venv')], 'venv', 120)
+            run(['uv', 'pip', 'install', '--python', str(python), 'aiohttp>=3.9', 'scikit-learn>=1.3'], 'dependencies', 600)
+            run(['git', 'clone', '--filter=blob:none', '--no-checkout', 'https://github.com/ggml-org/llama.cpp.git', str(repo)], 'clone', 600)
+            run(['git', '-C', str(repo), 'fetch', '--depth=1', 'origin', commit], 'fetch', 600)
+            run(['git', '-C', str(repo), 'checkout', '--detach', commit], 'checkout', 120)
         assert subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip() == commit
-        assert not (repo/'AGENTS.md').exists(), 'Read repository instructions before building'
+        instructions = repo/'AGENTS.md'
+        if instructions.exists():
+            assert args.repo_instructions_sha256 == hashlib.sha256(instructions.read_bytes()).hexdigest(), 'Read repository instructions before building'
         gguf = r/'models'/args.gguf_file
         template = r/'models/chat_template.jinja'
         prompts = r/'agent_benchmark_prompts.json'
@@ -131,7 +143,7 @@ exec '''+rendered+'\n')
                         for name in ['build-stock-cublas', 'build-stock-native-evaluation']}, inputs=proofs)
         (r/'deployment-audit.json').write_text(json.dumps(audit, indent=2)+'\n')
         state('running-performance-first-matrix', performance_cells=20, full_quality_cells=8, smoke_quality_cells=12)
-        run([str(python), '-B', str(source/'run_matrix_24h.py'), '--wrapper', str(wrapper), '--model', args.model,
+        run([str(python), '-B', str(source/'run_matrix_24h.py'), '--wrapper', str(wrapper), '--model', alias,
              '--client', str(source/('benchmark_mg.py' if is_mg else 'benchmark_gemma.py')),
              '--prompts', str(prompts), '--correctness-root', str(prep/'correctness'), '--python', str(python),
              '--output', str(r/'matrix'), '--lock', str(r/'GPU-benchmark.lock'), '--port', str(args.port),
