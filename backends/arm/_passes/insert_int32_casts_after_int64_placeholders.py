@@ -14,10 +14,10 @@ from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.decompose_embedding_pass import (
     DecomposeEmbeddingPass,
 )
+from executorch.backends.arm.tosa.specification import keeps_int64
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import EdgeOpOverload, ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
-
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeEmbeddingPass}
+
+    def __init__(self, *args, tosa_spec=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tosa_spec = tosa_spec
 
     # Ops that require i64 inputs → positions of args to upcast.
     # Key: op overload; Value: zero-based indices of positional args that must be i64.
@@ -95,6 +99,8 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
                 continue  # Ignore submodule get_attrs
             node_val = node.meta["val"]
             if not self._is_tensor_of_dtype(node_val, torch.int64):
+                continue
+            if self.tosa_spec is not None and keeps_int64(self.tosa_spec):
                 continue
 
             to_copy_op = self._get_decomposition(graph)

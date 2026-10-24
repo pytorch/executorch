@@ -9,11 +9,11 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import keeps_int64_through
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
 from executorch.exir.pass_base import ExportPass, PassResult
-
 
 logger = logging.getLogger(__name__)
 INT32_MIN = torch.iinfo(torch.int32).min
@@ -33,6 +33,10 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+
+    def __init__(self, *args, tosa_spec=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tosa_spec = tosa_spec
 
     torch_ops = [
         torch.ops.aten.full.default,
@@ -59,6 +63,9 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
 
             data = node.target(*node.args, **node.kwargs)
             if data.dtype is not torch.int64:
+                continue
+
+            if keeps_int64_through(node, self.tosa_spec):
                 continue
 
             min_val, max_val = torch.min(data), torch.max(data)
