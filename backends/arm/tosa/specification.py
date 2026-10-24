@@ -496,6 +496,16 @@ def get_context_shape_env() -> ShapeEnv:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
 
 
+def keeps_int64(tosa_spec: "TosaSpecification") -> bool:
+    """Whether int64 tensors are kept 64 bits wide rather than narrowed.
+
+    The extension is valid on both profiles, but only INT has int64
+    lowerings, so FP keeps narrowing.
+
+    """
+    return tosa_spec.support_integer() and tosa_spec.support_extension("int64")
+
+
 def tosa_spec_in_set(spec: TosaSpecification, specs: Set[TosaSpecification]) -> bool:
     """Check if a specification matches any in a set, considering base specs.
 
