@@ -224,12 +224,28 @@
       "bytes": 10272
     },
     "export_gemma_memory.py": {
-      "sha256": "5802baca9bc1c647fb790ca7e0fd3b693ef2b4ae2d390e886ca02e108873d929",
-      "bytes": 11680
+      "sha256": "be55e610d2e1d6f464bcf15d35ae2b65022126e0941fecef5364be6ee4338271",
+      "bytes": 12409
     },
     "export_mg_prefix.py": {
-      "sha256": "5af8f64bea57aaab4c88fba6b688e2f38a9be0a3c625b5afdedcdf37a6984c78",
-      "bytes": 10933
+      "sha256": "7ac367635495f4fe0ce4d426db5387c2986d961406aad01e8ecc8e27c57cba51",
+      "bytes": 11746
+    },
+    "ka_v8_export_hook.py": {
+      "sha256": "ce89c02f66ca492e94005f89d329623c97a7f8cc7a260e169925f8e78205a17d",
+      "bytes": 3652
+    },
+    "ka_v8_family_adapter.py": {
+      "sha256": "bb55854dd6b6c912c32bc8a72e54a0cb662e3437f78bfc795242e9b9cff3df82",
+      "bytes": 2544
+    },
+    "ka_v8_mg_route_gate.py": {
+      "sha256": "a30a53c7b6d4a2f72cb7dc6eba6313ad4719e7549d088a68b0059d8d241f0585",
+      "bytes": 5201
+    },
+    "ka_v8_route_gate.py": {
+      "sha256": "00a3ef758249e960fe732bf20fbc1b5083283925f6b5570d11514c3621f96cbc",
+      "bytes": 5587
     },
     "make_mg_stock_quality_wrapper.py": {
       "sha256": "164388402b6bb409a7c1a357f64d949d9d3719fbc7804344028d8e042338be90",

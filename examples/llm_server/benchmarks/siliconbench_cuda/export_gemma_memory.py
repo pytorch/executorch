@@ -36,6 +36,8 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--job-dir',type=Path,required=True)
     parser.add_argument('--lock',type=Path,required=True)
+    parser.add_argument('--accepted-ka-report',type=Path)
+    parser.add_argument('--a100-control-sha256')
     parser.add_argument('--owned-gpu-worker',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args=parser.parse_args()
@@ -101,6 +103,13 @@ def main():
     corrected=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(corrected)
     native.INT4_QUANTIZED_GEMM=corrected.INT4_QUANTIZED_GEMM
+    ka_receipt=None
+    if args.accepted_ka_report is not None:
+        from ka_v8_export_hook import configure_gemma_export
+        native.INT4_QUANTIZED_GEMM,ka_receipt=configure_gemma_export(
+            native.INT4_QUANTIZED_GEMM,capability=torch.cuda.get_device_capability(),
+            accepted_report=args.accepted_ka_report,candidate_source=Path(__file__).resolve().parent,
+            a100_control_sha256=args.a100_control_sha256,job_dir=args.job_dir)
 
     def dequant_linear(x,qdata,scale,scale_step,zero,zero_step,group_size):
         n,khalf=qdata.shape;k=khalf*2;groups=k//group_size;gps=256//group_size
@@ -182,6 +191,9 @@ def main():
                safe_ring_rows=1024+args.max_step_tokens-1,runtime_and_source_checkout_unchanged=True,
                same_GGUF_and_packer=True,PTD_binary_identity_with_previous_export_not_assumed=True,
                deployment_accepted=False,performance_GMRID_and_sampled_memory_acceptance_pending=True)
+    if ka_receipt is not None:
+        from ka_v8_export_hook import audit_route_log
+        audit['KA_route_receipt']=audit_route_log(args.job_dir,ka_receipt)
     (args.output/'artifact-audit.json').write_text(json.dumps(audit,indent=2)+'\n')
     state('artifact-exported-and-audited',expected_KV_GiB=expected_kv/2**30,
           performance_and_GMRID_acceptance_pending=True)

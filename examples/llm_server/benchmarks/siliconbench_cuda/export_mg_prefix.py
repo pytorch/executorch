@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--job-dir', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--accepted-ka-report',type=Path)
+    parser.add_argument('--a100-control-sha256')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args = parser.parse_args()
@@ -107,6 +109,14 @@ def main():
     import torch
     import torch._inductor.cpp_builder as cpp
     assert torch.cuda.get_device_capability() == (12,0)
+    ka_receipt=None
+    if args.accepted_ka_report is not None:
+        from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
+        from ka_v8_export_hook import configure_mg_export
+        native.INT4_QUANTIZED_GEMM,ka_receipt=configure_mg_export(
+            native.INT4_QUANTIZED_GEMM,capability=torch.cuda.get_device_capability(),
+            accepted_report=args.accepted_ka_report,candidate_source=Path(__file__).resolve().parent,
+            a100_control_sha256=args.a100_control_sha256,job_dir=args.job_dir)
     original_build = cpp.CppBuilder.build
 
     def record_build(self):
@@ -178,6 +188,9 @@ def main():
                             for name in ['model.pte','aoti_cuda_blob.ptd']},
                  checkout_and_weight_source_unchanged=True, deployment_accepted=False,
                  performance_memory_and_GMRID_acceptance_pending=True)
+    if ka_receipt is not None:
+        from ka_v8_export_hook import audit_route_log
+        audit['KA_route_receipt']=audit_route_log(args.job_dir,ka_receipt)
     (args.output / 'artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
     state('artifact-exported-and-audited', supported_prefix_entries=args.max_kv_seqs-16-1)
 
