@@ -248,7 +248,10 @@ class _ExtendedHeader:
 def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
     """Returns the extended header of the program data, if present and valid."""
     try:
-        eh = _ExtendedHeader.from_bytes(program_data[8:])
+        # program_data[8:] would copy the whole file.
+        eh = _ExtendedHeader.from_bytes(
+            program_data[8 : 8 + _ExtendedHeader.EXPECTED_LENGTH]
+        )
         if eh.is_valid():
             return eh
     except ValueError:
