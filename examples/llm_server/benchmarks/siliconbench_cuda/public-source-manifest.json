@@ -155,6 +155,10 @@
       "sha256": "51c57b6da2553beaa4f04ed2bcfca91015285ceb891eeb9d20b70cc488e28542",
       "bytes": 10930
     },
+    "make_mg_stock_quality_wrapper.py": {
+      "sha256": "164388402b6bb409a7c1a357f64d949d9d3719fbc7804344028d8e042338be90",
+      "bytes": 3652
+    },
     "make_wrapper.py": {
       "sha256": "bb550a39903ad70348bfdc2fbfa6473ac3e6a27be7ecd859fb90eaf338cc3234",
       "bytes": 1952
@@ -180,8 +184,8 @@
       "bytes": 5524
     },
     "run_matrix_24h.py": {
-      "sha256": "dfd18e76234e984ec280b54506474855cb4c7ba20ff46d6715778bf379096373",
-      "bytes": 5835
+      "sha256": "293050d34825983a00314448d2479223678563a63c6b20275085e129c0a3946d",
+      "bytes": 6163
     },
     "select_et_policies_24h.py": {
       "sha256": "1b80fef46afca6ff2a6c437d77f82bf2febb067448d9104b14f192c098b26589",

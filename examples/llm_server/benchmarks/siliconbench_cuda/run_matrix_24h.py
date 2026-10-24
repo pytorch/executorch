@@ -30,6 +30,8 @@ def main():
                         default=['llamacpp-off', 'vllm', 'sglang', 'llamacpp-on', 'executorch'])
     parser.add_argument('--cache-modes', nargs='+', choices=['off', 'on'], default=['off', 'on'])
     parser.add_argument('--concurrencies', nargs='+', type=int, choices=[1,2,4,8,16], default=[16,8,4,2,1])
+    parser.add_argument('--quality-concurrencies', nargs='+', type=int, choices=[1,2,4,8,16],
+                        help='Run correctness only at these selected concurrencies; performance coverage is unchanged')
     parser.add_argument('--phases', nargs='+', choices=['performance', 'correctness'], default=['performance', 'correctness'])
     parser.add_argument('--install-supervisor', metavar='PROGRAM')
     parser.add_argument('--supervisor-config-dir', type=Path, default=Path('/etc/supervisor/conf.d'))
@@ -67,7 +69,8 @@ def main():
 
     try:
         cases = [(phase,cache,c,variant) for phase in args.phases for cache in args.cache_modes
-                 for c in args.concurrencies for variant in args.variants]
+                 for c in args.concurrencies for variant in args.variants
+                 if phase=='performance' or args.quality_concurrencies is None or c in args.quality_concurrencies]
         (args.output/'matrix.json').write_text(json.dumps(dict(model=args.model, cases=cases,
                                             acceptance_pending=True),indent=2)+'\n')
         for phase,cache,c,variant in cases:
