@@ -3185,6 +3185,26 @@ class TestPasses(unittest.TestCase):
                 self.assertTrue(placeholder.meta["val"].is_contiguous())
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
+    def test_convert_constant_dim_order_missing_placeholder(self):
+        """
+        Verify that the convert_constant_dim_order_pass names the placeholder it
+        cannot find for a lifted tensor it converts.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return x + self.weight
+
+        ep = torch.export.export(AddParameter(), (torch.randn(4, 5),))
+        spec = next(s for s in ep.graph_signature.input_specs if s.target == "weight")
+        spec.arg = TensorArgument(name="missing")
+        with self.assertRaisesRegex(RuntimeError, "Missing placeholder for missing"):
+            convert_constant_dim_order_pass.convert_constant_dim_order_pass(ep)
+
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
     """
