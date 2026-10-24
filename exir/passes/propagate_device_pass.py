@@ -172,9 +172,9 @@ def _schema_aliases_input(
     )
 
 
-def _in_place_writer(node: torch.fx.Node) -> Optional[torch.fx.Node]:
-    """An op that writes *node* in place, directly or through a view of it,
-    per the op's schema, or None.
+def _in_place_writers(node: torch.fx.Node) -> list[torch.fx.Node]:
+    """The ops that write *node* in place, directly or through a view of it,
+    per the op's schema.
 
     A mutable op left on the host does this once to_executorch has removed
     auto_functionalized, so a copy of *node* can miss the write. If the op
@@ -188,6 +188,7 @@ def _in_place_writer(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     such as a KV cache update. Users without a schema, such as delegate calls
     and getitem, do not write their inputs.
     """
+    writers: dict[torch.fx.Node, None] = {}
     aliases = {node}
     pending = [node]
     while pending:
@@ -197,16 +198,54 @@ def _in_place_writer(node: torch.fx.Node) -> Optional[torch.fx.Node]:
             if schema is None:
                 continue
             if _schema_writes_input(user, schema, alias):
-                return user
+                writers[user] = None
             if user not in aliases and _schema_aliases_input(user, schema, alias):
                 aliases.add(user)
                 pending.append(user)
-    return None
+    return list(writers)
 
 
-def _is_written_in_place(node: torch.fx.Node) -> bool:
-    """Whether an op writes *node* in place; see _in_place_writer."""
-    return _in_place_writer(node) is not None
+def _written_between(
+    node: torch.fx.Node,
+    after: Optional[torch.fx.Node],
+    before: torch.fx.Node,
+) -> bool:
+    """Whether an op writes *node* in place after *after*, or anywhere when it
+    is None, and before *before*, in graph order, which is the order the
+    method runs in. A write outside that range cannot change what a reader at
+    *before* of a copy made at *after* sees."""
+    writers = _in_place_writers(node)
+    if not writers:
+        return False
+    position = {n: i for i, n in enumerate(before.graph.nodes)}
+    start = position[after] if after is not None else -1
+    return any(start < position[writer] < position[before] for writer in writers)
+
+
+def _reusable_copy(
+    tensor: torch.fx.Node,
+    delegate: torch.fx.Node,
+    device_type: schema.DeviceType,
+    device_index: int,
+) -> Optional[torch.fx.Node]:
+    """The _h2d_copy of *tensor* to this device that *delegate* can read too.
+
+    Delegates are visited in graph order, so a copy made for an earlier
+    delegate on this device already comes before *delegate*, and the last such
+    copy is the newest. It is stale when an op writes *tensor* in place between
+    that copy and *delegate*, so then there is none.
+    """
+    copy = None
+    for user in tensor.users:
+        if (
+            user.target == torch.ops.et_copy._h2d_copy.default
+            and user.meta["spec"].device == device_type
+            and user.meta["spec"].device_index == device_index
+        ):
+            copy = user
+    if copy is not None and _written_between(tensor, copy, delegate):
+        return None
+    return copy
 
 
 def _replace_spec(
@@ -238,8 +277,8 @@ class PropagateDevicePass(PassBase):
     When a delegate has a target_device CompileSpec (e.g., "cuda:0"):
     - For each delegate input: insert et_copy._h2d_copy before the delegate call,
       or reuse the one an earlier delegate on the same device reads when no op
-      writes the input in place. A reused copy stays in device memory until its
-      last reader.
+      writes the input in place in between. A reused copy stays in device
+      memory until its last reader.
       The original input node keeps its device; the h2d_copy output is tagged as
       device.
     - For each delegate output: insert et_copy._d2h_copy after each getitem,
@@ -382,21 +421,7 @@ class PropagateDevicePass(PassBase):
                     f"it is created, for example in the pass that adds it."
                 )
 
-            # Delegates are visited in graph order, so a copy made for an earlier
-            # delegate on this device already comes before this one. It can be
-            # stale when an op writes the tensor in place.
-            h2d_node = None
-            if not _is_written_in_place(arg):
-                h2d_node = next(
-                    (
-                        user
-                        for user in arg.users
-                        if user.target == torch.ops.et_copy._h2d_copy.default
-                        and user.meta["spec"].device == target_device_type
-                        and user.meta["spec"].device_index == device_index
-                    ),
-                    None,
-                )
+            h2d_node = _reusable_copy(arg, node, target_device_type, device_index)
             if h2d_node is None:
                 with graph_module.graph.inserting_before(node):
                     h2d_node = graph_module.graph.call_function(
@@ -504,8 +529,8 @@ class PropagateDevicePass(PassBase):
             ):
                 continue
             returned = node.args[0]
-            writer = _in_place_writer(node)
-            if writer is not None:
+            writers = _in_place_writers(node)
+            if writers:
                 device_spec = returned.meta["spec"]
                 with graph_module.graph.inserting_before(
                     graph_module.graph.output_node()
@@ -528,7 +553,7 @@ class PropagateDevicePass(PassBase):
                     device_spec.nbytes(),
                     device_spec.device.name.lower(),
                     device_spec.device_index,
-                    writer.target,
+                    writers[0].target,
                 )
             _replace_spec(
                 [graph_module.graph.output_node()],
@@ -559,8 +584,8 @@ class PropagateDevicePass(PassBase):
         rewires the consumer straight to that device tensor and drops both copies.
         The device comparison is the correctness guard: a genuine cross-device
         move (e.g. ``cuda:0 -> host -> cuda:1``) has differing devices and is left
-        intact. So is a round-trip whose host copy any op writes in place,
-        wherever that write is, because the device tensor never sees it. A D2H
+        intact. So is a round-trip whose host copy an op writes in place before
+        the copy back, because the device tensor never sees that write. A D2H
         feeding other (host) consumers keeps those users and is removed only once
         it becomes dead.
         """
@@ -590,7 +615,7 @@ class PropagateDevicePass(PassBase):
             if (
                 x_spec.device != h2d_spec.device
                 or x_spec.device_index != h2d_spec.device_index
-                or _is_written_in_place(src)
+                or _written_between(src, None, node)
             ):
                 continue
 

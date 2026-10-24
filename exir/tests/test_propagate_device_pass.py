@@ -625,6 +625,45 @@ class TestPropagateDevicePass(unittest.TestCase):
                 y_copies = [n for n in nodes.h2d_nodes if n.args[0].name == "y"]
                 self.assertEqual(len(y_copies), 1)
 
+    def test_host_writes_after_the_device_readers_keep_no_copies(self):
+        """Host ops that write tensors in place only after the delegates on one
+        device have read them cannot change what those delegates read. So the
+        round-trip between the delegates is still removed, and the tensor both
+        delegates read gets one copy."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                t = x * 2
+                a = t + y
+                b = a + t
+                # Both writes read b, so they run after the second delegate.
+                torch.ops.propagate_device_test.accumulate(a, b)
+                torch.ops.propagate_device_test.accumulate(t, b)
+                return a, b, t
+
+        gm = _lower_with_host_writer(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            ["cuda:0", "cuda:0"],
+            _host_writer_config(False),
+        )
+        nodes = _collect_device_copy_nodes(gm)
+        first, second = nodes.delegate_nodes
+        order = list(gm.graph.nodes)
+        writers = [
+            n
+            for n in order
+            if n.target == torch.ops.propagate_device_test.accumulate.out
+        ]
+        self.assertEqual(len(writers), 2)
+        for writer in writers:
+            self.assertLess(order.index(second), order.index(writer))
+        # Only t and y are copied, and the second delegate reads the first
+        # delegate's output directly.
+        self.assertEqual(len(nodes.h2d_nodes), 2)
+        (shared,) = set(first.args[1:]) & set(second.args[1:])
+        self.assertIn(shared, nodes.h2d_nodes)
+
     def test_single_tensor_delegate_output_read_on_host(self):
         """A host op that reads the output of a lowered module returning one
         tensor reads a host copy of it."""
