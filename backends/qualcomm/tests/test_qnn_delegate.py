@@ -3103,6 +3103,19 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(3, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_topk_indices(self):
+        module = TopKIndices()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_on_cpu_and_index(self):
+        # int64 indices from a TopK left on CPU feed the delegated index
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
+        self.lower_module_and_test_output(
+            module, sample_input, skip_node_op_set={"aten.topk.default"}
+        )
+
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
         torch.manual_seed(8)

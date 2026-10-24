@@ -620,8 +620,9 @@ class TestPasses(unittest.TestCase):
             "getitem": 1,
             "getitem_1": 1,
             "aten_view_copy_default": 2,
-            "aten_index_tensor": 3,
-            "aten_add_tensor": 4,
+            "aten__to_copy_default": 3,
+            "aten_index_tensor": 4,
+            "aten_add_tensor": 5,
         }
         module = TopKandIndex()  # noqa: F405
         sample_input = (torch.randn(3, 10),)
