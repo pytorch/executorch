@@ -62,9 +62,11 @@ class PropagateDeviceConfig:
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
     # When True, device delegate outputs that the method returns stay on
-    # device: the method output never reads a _d2h_copy of them. When a host op
-    # writes the host copy of such an output in place, the method returns a
-    # device copy of the written tensor, which costs a copy on every call.
+    # device: the method output never reads a _d2h_copy of them. When a custom
+    # host op with a mutable argument, such as a KV cache update, writes the
+    # host copy of such an output in place, the method returns a device copy of
+    # the written tensor. That costs a copy to the host and one back on every
+    # call, and the pass logs a warning about it.
     # Useful for cross-method GPU pipelines where the next method consumes GPU
     # tensors directly.
     #
