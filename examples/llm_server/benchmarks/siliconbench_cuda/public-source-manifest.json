@@ -247,6 +247,10 @@
       "sha256": "6aa8c9df6bda7f954c04127358550c508eef856eefc99bbb4b6a32253f1a0beb",
       "bytes": 19369
     },
+    "diagnose_native_reducer_warps.py": {
+      "sha256": "8bab1919e62e0090b54a8d1ac1757b1c8622d0015d06592bfa51dd208df7f322",
+      "bytes": 10360
+    },
     "diagnose_v9_aoti_repeats.py": {
       "sha256": "9af2bcff914736147eadff8f98725e31df3771601f5c12ef6a0ddc8b5cc9409b",
       "bytes": 9928
