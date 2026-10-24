@@ -31,6 +31,8 @@ def main():
     p.add_argument('--python', required=True)
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--server-env', action='append', default=[])
+    p.add_argument('--memory-only', action='store_true',
+                   help='Retain CUDA allocation and graph-launch events without expanding every graph node')
     p.add_argument('--deadline-utc', required=True)
     a = p.parse_args()
     cutoff = datetime.datetime.fromisoformat(a.deadline_utc.replace('Z', '+00:00'))
@@ -58,6 +60,7 @@ def main():
                   wrapper_sha256=a.wrapper_sha256, rounds=4, discarded=[1], averaged=[2,3,4],
                   concurrency=a.concurrency, prefix_cache=False, native_server_unchanged=True,
                   profiling_not_primary_performance=True, measurements=[])
+    report['memory_only'] = a.memory_only
     server = None
     stop = threading.Event()
     sampler = None
@@ -96,7 +99,8 @@ def main():
         assert not apps(), 'Existing GPU work must be left untouched'
         sampler = threading.Thread(target=sample, daemon=True)
         sampler.start()
-        command = ['nsys', 'profile', '--trace=cuda,cublas,nvtx', '--cuda-graph-trace=node',
+        command = ['nsys', 'profile', '--trace=cuda' if a.memory_only else '--trace=cuda,cublas,nvtx',
+                   '--cuda-graph-trace=graph' if a.memory_only else '--cuda-graph-trace=node',
                    '--cuda-memory-usage=true', '--cuda-flush-interval=1000', '--sample=none',
                    '--cpuctxsw=none', '-o', str(a.output/'trace'), 'bash', str(a.wrapper), 'executorch']
         report['profile_command'] = command
@@ -134,11 +138,16 @@ def main():
         raise
     finally:
         phase = 'teardown'
+        if len(report['measurements']) == 4:
+            state('finishing-profile-data', requests_completed=sum(
+                row['successful'] for row in report['measurements']))
         if server is not None and server.poll() is None:
             assert os.getpgid(server.pid) == server.pid
             os.killpg(server.pid, signal.SIGINT)
             try:
-                server.wait(timeout=45)
+                # Nsight may need several minutes to finalize allocation data.
+                # Keep the GPU lock until the profiler and its children exit.
+                server.wait(timeout=300)
             except subprocess.TimeoutExpired:
                 os.killpg(server.pid, signal.SIGTERM)
                 try:
