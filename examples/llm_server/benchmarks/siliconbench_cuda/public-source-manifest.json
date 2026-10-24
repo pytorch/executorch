@@ -355,6 +355,10 @@
       "sha256": "0862073146eab3a01d8af0abf214058e3be0687d125b0551a7f5710159f9eb97",
       "bytes": 2375
     },
+    "prepare_vllm_quality_switch_controls.py": {
+      "sha256": "b39339da75fb0e092190ef88ecda68e7da09e51a0619d1942980c0b4ef8f0225",
+      "bytes": 2418
+    },
     "profile_et_server.py": {
       "sha256": "2545b4bdb2ba30ee92609f0657bf40052577ef76055bfa04ec9cfd019b3d12e7",
       "bytes": 10112
