@@ -13,6 +13,7 @@ import time
 import urllib.request
 
 import argparse
+from collections import Counter
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--root', type=Path, required=True, help='Task-owned model/venv directory')
@@ -126,8 +127,27 @@ try:
     categories = json.loads((data_dir/'categories.json').read_text())
     assert len(records) == 1147 and len(categories) == 8
     assert len({str(row['id']) for row in records}) == 1147
-    assert all(row['Headline_Details'].strip() and row['Summarized_label'].strip() in categories
-               for row in records)
+    # Match the unmodified SiliconBench builder's input filtering. Preserve
+    # the source-row audit independently of all runtime request failures.
+    valid = []
+    excluded = []
+    for row in records:
+        reasons = []
+        if not row['Headline_Details'].strip():
+            reasons.append('empty_input')
+        if row['Summarized_label'].strip() not in categories:
+            reasons.append('unknown_gold_label')
+        if reasons:
+            excluded.append(dict(id=str(row['id']), reasons=reasons,
+                                 gold_label=row['Summarized_label'].strip()))
+        else:
+            valid.append(row)
+    assert excluded == [dict(id='5079', reasons=['empty_input'], gold_label='Others')], excluded
+    assert len(valid) == 1146
+    valid_ids = {str(row['id']) for row in valid}
+    data_proof.update(source_rows=len(records), evaluated_items=len(valid), excluded_source_rows=excluded,
+                      filtering_policy='Unmodified SiliconBench build_prompts.py: skip empty input or unknown gold',
+                      gold_label_distribution=dict(Counter(row['Summarized_label'].strip() for row in valid)))
     python = Path(args.python)
     scripts = Path(__file__).resolve().parent / 'correctness/scripts'
     (GROUP/'correctness/scripts').symlink_to(scripts, target_is_directory=True)
@@ -138,11 +158,11 @@ try:
              '--output-dir', str(target)], 60, f'build-prompts-{shots}.log')
         prompts = [json.loads(line) for line in (target/'prompts.jsonl').open()]
         labels = [json.loads(line) for line in (target/'labels.jsonl').open()]
-        assert len(prompts) == len(labels) == 1147
-        assert {str(row['id']) for row in prompts} == {str(row['id']) for row in labels}
+        assert len(prompts) == len(labels) == len(valid)
+        assert {str(row['id']) for row in prompts} == {str(row['id']) for row in labels} == valid_ids
         data_proof.setdefault('prompt_sets', {})[str(shots)] = dict(
             prompts_sha256=digest(target/'prompts.jsonl'), labels_sha256=digest(target/'labels.jsonl'),
-            count=1147, builder_no_think_default=True, max_tokens=256)
+            count=len(valid), builder_no_think_default=True, max_tokens=256)
     deps = subprocess.run([str(python), '-B', '-c', 'import aiohttp,sklearn; print(aiohttp.__version__,sklearn.__version__)'],
                           capture_output=True, text=True, timeout=60)
     if deps.returncode:
@@ -150,10 +170,11 @@ try:
         run([str(python), '-m', 'pip', 'install', 'aiohttp>=3.9', 'scikit-learn>=1.3'],
             600, 'correctness-dependencies.log')
     data_proof['scripts'] = {p.name: digest(p) for p in scripts.iterdir() if p.suffix == '.py'}
-    data_proof['scorer_missing_response_policy'] = 'Verify all 1147 unique response IDs before scoring; never drop missing requests'
+    data_proof['scorer_missing_response_policy'] = 'Verify every valid fixture response ID before scoring; never drop runtime errors or missing requests'
     (GROUP/'GMRID-input-audit.json').write_text(json.dumps(data_proof, indent=2)+'\n')
     state('completed', stock_cpp_off_build_completed=True, correctness_inputs_pinned=True,
-          correctness_items=1147, correctness_shots=[0,5], no_GPU_work_started=True)
+          source_rows=len(records), excluded_source_rows=len(excluded),
+          correctness_items=len(valid), correctness_shots=[0,5], no_GPU_work_started=True)
 except Exception as exc:
     state('failed', error_type=type(exc).__name__, detail=str(exc)[-1200:])
     raise

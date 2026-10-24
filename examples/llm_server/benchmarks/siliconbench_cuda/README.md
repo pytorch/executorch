@@ -6,7 +6,7 @@ The intended matrix is Muse Glimmer 30B agent and Gemma4 12B agent, ExecuTorch/v
 
 Performance means server output tokens divided by complete workload wall time. Run four rounds, discard the first, average the last three. Record output counts, TTFT and sampled memory separately. HTTP TTFT is not pure GPU prefill. The driver records device memory, not allocator allocated/reserved memory. An ExecuTorch memory excess above 15% requires a component audit.
 
-`prepare.py` builds a second stock llama.cpp configuration with only FORCE_CUBLAS changed, pins public GMRID data and builds 0/5-shot prompts. It expects the existing FORCE_CUBLAS build under `build-stock-cublas`. Correctness scripts are from WindChimeRan/SiliconBench commit 55d695bf21060b79498014b5029505fbeb6e54b9. GMRID has 1,147 news items, eight labels, weighted F1. All response IDs are checked before scoring, so missing requests cannot disappear from F1. Error responses are scored as incorrect.
+`prepare.py` builds a second stock llama.cpp configuration with only FORCE_CUBLAS changed, pins public GMRID data and builds 0/5-shot prompts. It expects the existing FORCE_CUBLAS build under `build-stock-cublas`. Correctness scripts are from WindChimeRan/SiliconBench commit 55d695bf21060b79498014b5029505fbeb6e54b9. GMRID has 1,147 source rows and eight labels. One source row (5079, Others) has empty input; the unmodified reference builder excludes it, leaving 1,146 scored fixtures, consistent with the repository's committed reference scores. The input audit records this exclusion. Every fixture response ID is checked before scoring, so missing requests cannot disappear from weighted F1. Runtime errors and unparseable responses are scored as incorrect.
 
 ```bash
 python prepare.py --root /workspace/my-benchmark --cpp-repo /workspace/llama.cpp --output /workspace/my-benchmark/preparation --python /workspace/my-benchmark/.venv/bin/python
@@ -19,6 +19,8 @@ python run_case.py --wrapper /workspace/serve.sh --backend vllm --variant vllm-s
 ```
 
 The default is four full correctness rounds for each shot setting, in addition to the four performance rounds. Raw conversations, token IDs, logs and model files remain in the experiment output and must not be committed.
+
+`run_matrix.py` runs the selected cache/concurrency/variant cells sequentially. It can install a new, task-owned Supervisor program with `--install-supervisor NAME`; its configuration must not already exist. The shared GPU lock is held until each server is fully stopped. A failed cell stops the matrix and preserves its files for inspection. Collection completion is separate from final model quality, memory, cache-policy and best-ET acceptance.
 
 The `candidates_w4a16_precision_v4` package is Triton W4A16/BF16, packed INT4 bytes unchanged, FP32 affine reconstruction, final BF16 weight operand and FP32 accumulation. Runtime source files are unchanged from the KA v4 output. The validation script's source inventory omits a task-private historical hash inventory; numerical validation is unchanged. M8/M16 are the current candidate buckets. Optimizations for M1/M2/M4 are still pending. All new M8/M16 candidates failed the measured A100 no-regression gate. They must not replace the A100 implementation. RTX5090 validation and real-model F1/performance acceptance are still required.
 

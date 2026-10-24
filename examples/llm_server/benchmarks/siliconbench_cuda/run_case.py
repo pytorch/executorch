@@ -39,6 +39,15 @@ def main():
     parser.add_argument('--correctness-rounds', type=int, default=4)
     args = parser.parse_args()
     assert args.correctness_rounds > 0
+    data_audit_path = args.correctness_root.parent/'GMRID-input-audit.json'
+    data_audit = json.loads(data_audit_path.read_text())
+    expected_items = data_audit['evaluated_items']
+    assert expected_items == 1146 and data_audit['source_rows'] == 1147
+    assert data_audit['excluded_source_rows'] == [dict(id='5079', reasons=['empty_input'], gold_label='Others')]
+    for shots in [0, 5]:
+        for name in ['prompts', 'labels']:
+            path = args.correctness_root/f'prompts/{shots}shot/{name}.jsonl'
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == data_audit['prompt_sets'][str(shots)][name+'_sha256']
     assert not args.output.exists(), 'Preserve incomplete cases; use a distinct output for a reviewed retry'
     args.output.mkdir(parents=True)
     started = time.monotonic()
@@ -97,7 +106,9 @@ def main():
         settings = dict(model=args.model, backend=args.backend, variant=args.variant,
                         concurrency=args.concurrency, prefix_cache=args.prefix_cache == 'on',
                         performance_rounds=4, discarded=[1], averaged=[2,3,4], warmup_each_round=3,
-                        correctness_rounds=args.correctness_rounds, correctness_items=1147, shots=[0,5],
+                        correctness_rounds=args.correctness_rounds, correctness_items=expected_items, shots=[0,5],
+                        source_rows=data_audit['source_rows'], excluded_source_rows=data_audit['excluded_source_rows'],
+                        correctness_input_audit_sha256=hashlib.sha256(data_audit_path.read_bytes()).hexdigest(),
                         wrapper_sha256=hashlib.sha256(args.wrapper.read_bytes()).hexdigest(),
                         client_sha256=hashlib.sha256(args.client.read_bytes()).hexdigest(),
                         prompts_sha256=hashlib.sha256(args.prompts.read_bytes()).hexdigest(),
@@ -163,7 +174,7 @@ def main():
                 target.mkdir(parents=True)
                 inputs = args.correctness_root/f'prompts/{shots}shot'
                 prompts = [json.loads(line) for line in (inputs/'prompts.jsonl').open()]
-                assert len(prompts) == 1147
+                assert len(prompts) == expected_items
                 provenance = dict(settings, correctness_round=repetition, shots=shots,
                                   correctness_prompts_sha256=hashlib.sha256((inputs/'prompts.jsonl').read_bytes()).hexdigest())
                 run([args.python, '-B', str(args.correctness_root/'scripts/run_eval.py'),
@@ -171,8 +182,8 @@ def main():
                      '--prompts', str(inputs/'prompts.jsonl'), '--output', str(target/'responses.jsonl'),
                      '--concurrency', str(args.concurrency), '--max-retries', '0'], target/'evaluation.log', 21600)
                 responses = [json.loads(line) for line in (target/'responses.jsonl').open()]
-                assert len(responses) == 1147
-                assert len({str(row['id']) for row in responses}) == 1147
+                assert len(responses) == expected_items
+                assert len({str(row['id']) for row in responses}) == expected_items
                 assert {str(row['id']) for row in responses} == {str(row['id']) for row in prompts}
                 run([args.python, '-B', str(args.correctness_root/'scripts/score_f1.py'),
                      '--responses', str(target/'responses.jsonl'), '--labels', str(inputs/'labels.jsonl'),
@@ -180,13 +191,25 @@ def main():
                      '--output', str(target/'scores.json'), '--provenance', json.dumps(provenance)],
                     target/'scoring.log', 180)
                 score = json.loads((target/'scores.json').read_text())
-                assert score['n_scored'] == 1147 and score['n_missing_responses'] == score['n_extra_responses'] == 0
+                assert score['n_scored'] == expected_items and score['n_missing_responses'] == score['n_extra_responses'] == 0
                 scores.append(dict(round=repetition, shots=shots, **score))
         (args.output/'correctness-scores.json').write_text(json.dumps(scores, indent=2)+'\n')
+        correctness_aggregate = {}
+        for shots in [0,5]:
+            rows = [row for row in scores if row['shots'] == shots]
+            measured = rows[1:] if len(rows) > 1 else rows
+            correctness_aggregate[str(shots)] = {
+                key: dict(mean=statistics.mean(row[key] for row in measured),
+                          sample_stddev=statistics.stdev(row[key] for row in measured) if len(measured)>1 else None,
+                          first_discarded=rows[0][key] if len(rows)>1 else None,
+                          values=[row[key] for row in measured])
+                for key in ['f1_weighted','f1_macro','exact_match','request_errors',
+                            'parse_failures','oov_predictions_after_parse']}
+        (args.output/'correctness-aggregate.json').write_text(json.dumps(correctness_aggregate, indent=2)+'\n')
         phase = 'final-idle'
         stop_sampler.wait(2)
         progress('completed', performance_requests=400,
-                 correctness_requests=args.correctness_rounds*2*1147,
+                 correctness_requests=args.correctness_rounds*2*expected_items,
                  model_quality_outliers_require_review=True)
     except Exception as exc:
         progress('failed', error_type=type(exc).__name__, detail=str(exc)[-1200:])
