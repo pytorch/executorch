@@ -26,7 +26,7 @@ def main():
     original = args.wrapper.read_text()
     runner = 'export VLLM_USE_V2_MODEL_RUNNER=1'
     assert original.count(runner) == 1
-    pattern = re.compile(r"(?m)^([ \t]*)--compilation-config '([^'\n]+)' \\\s*$")
+    pattern = re.compile(r"(?m)^([ \t]*)--compilation-config '([^'\n]+)'([ \t]+\\)?[ \t]*$")
     matches = list(pattern.finditer(original))
     assert len(matches) == 1
     graph = json.loads(matches[0].group(2))
@@ -34,7 +34,7 @@ def main():
     assert graph['cudagraph_capture_sizes'] == [1,2,4,8,16]
     versions = {
         'v1': original.replace(runner, 'export VLLM_USE_V2_MODEL_RUNNER=0'),
-        'v2-eager': pattern.sub(lambda m: m.group(1)+'--enforce-eager '+chr(92), original),
+        'v2-eager': pattern.sub(lambda m: m.group(1)+'--enforce-eager'+(m.group(3) or ''), original),
     }
     args.output.mkdir(parents=True)
     records = []
