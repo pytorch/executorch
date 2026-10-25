@@ -19,18 +19,47 @@ from enforce_owned_tuning_deadline import identity
 
 
 def lock_owner(path):
-    st = path.stat()
-    key = (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino)
+    inode = path.stat().st_ino
     owners = []
     for line in Path('/proc/locks').read_text().splitlines():
         fields = line.split()
         if '->' in fields or len(fields) < 8 or fields[1] != 'FLOCK':
             continue
-        major, minor, inode = fields[5].split(':')
-        if (int(major, 16), int(minor, 16), int(inode)) == key:
-            owners.append(int(fields[4]))
+        if int(fields[5].split(':')[2]) != inode:
+            continue
+        pid = int(fields[4])
+        # A mount can report a different st_dev than the kernel lock entry.
+        # Verify the candidate owner's actual FD refers to this same file,
+        # and its fdinfo contains this exact active kernel lock. An inode
+        # match alone cannot establish ownership across different mounts.
+        try:
+            for fd in Path('/proc', str(pid), 'fd').iterdir():
+                try:
+                    if not os.path.samefile(fd, path):
+                        continue
+                    info = Path('/proc', str(pid), 'fdinfo', fd.name).read_text()
+                    for entry in info.splitlines():
+                        if entry.startswith('lock:') and entry.split()[2:] == fields[1:]:
+                            owners.append(pid)
+                            break
+                    if pid in owners:
+                        break
+                except (FileNotFoundError, ProcessLookupError, PermissionError):
+                    continue
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
     assert len(owners) <= 1
     return owners[0] if owners else None
+
+
+def wait_stopped(pid, expected):
+    end = time.monotonic() + 2
+    while True:
+        assert identity(pid) == expected
+        if Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()[0] == 'T':
+            return
+        assert time.monotonic() < end, 'Owned CPU waiter did not stop'
+        time.sleep(.01)
 
 
 def self_test():
@@ -55,9 +84,11 @@ def self_test():
             code = ('import sys,time,signal;sys.path.insert(0,'
                     + repr(str(Path(__file__).resolve().parent)) + ');'
                     'from handoff_native_c1_quality import ParentHold,interrupted;'
+                    'from prioritize_native_performance import wait_stopped;'
                     'signal.signal(signal.SIGTERM,interrupted)\n'
                     'try:\n with ParentHold(' + str(waiter.pid) + ',' + repr(expected)
-                    + '):\n  print("held",flush=True);time.sleep(60)\n'
+                    + '):\n  wait_stopped(' + str(waiter.pid) + ',' + repr(expected)
+                    + ');print("held",flush=True);time.sleep(60)\n'
                     'except InterruptedError:\n print("restored",flush=True)')
             guard = subprocess.Popen([sys.executable, '-B', '-c', code],
                                      stdout=subprocess.PIPE, text=True)
@@ -166,6 +197,7 @@ def main():
                 save('not-delayed-case-already-owns-GPU-lock', case_pid=pid)
                 return
             with ParentHold(pid, item):
+                wait_stopped(pid, item)
                 if lock_owner(a.lock) == pid or (a.case / 'settings.json').exists():
                     save('not-delayed-case-acquired-lock-during-check', case_pid=pid)
                     return
