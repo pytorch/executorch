@@ -30,6 +30,8 @@ def main():
     p.add_argument('--screen-job', type=Path, required=True)
     p.add_argument('--job-dir', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
+    p.add_argument('--reuse-original-workflow', type=Path,
+                   help='Reuse verified reference artifact and delegate proof; export only the routed public arm')
     a = p.parse_args()
     assert not a.job_dir.exists()
     a.job_dir.mkdir(parents=True)
@@ -90,22 +92,36 @@ def main():
                         child.wait()
                     raise
 
-        delegate = a.job_dir / 'linear-delegate'
-        run([sys.executable, '-B', package / 'probe_public_prefill_ET_delegate.py',
-             '--et-source', a.et_source, '--gguf', a.gguf,
-             '--output', delegate, '--screen-results', a.screen_job / 'results.json',
-             '--lock', a.lock], 'linear-delegate', 7200)
+        if a.reuse_original_workflow:
+            reference = json.loads((a.reuse_original_workflow / 'mini-pair-exports.json').read_text())
+            delegate = a.reuse_original_workflow / 'linear-delegate'
+            run([sys.executable, '-B', package / 'probe_public_prefill_CPU_fake_trace.py',
+                 '--et-source', a.et_source, '--output', a.job_dir / 'CPU-fake-route-proof.json'],
+                'CPU-fake-route', 300)
+        else:
+            delegate = a.job_dir / 'linear-delegate'
+            run([sys.executable, '-B', package / 'probe_public_prefill_ET_delegate.py',
+                 '--et-source', a.et_source, '--gguf', a.gguf,
+                 '--output', delegate, '--screen-results', a.screen_job / 'results.json',
+                 '--lock', a.lock], 'linear-delegate', 7200)
         proof = json.loads((delegate / 'results.json').read_text())
         assert proof['ET_edge_and_CUDA_serialization_pass'] and len(proof['artifacts']) == 4
         artifacts = {}
         for arm in ['original', 'public']:
-            output = a.job_dir / ('mini-' + arm + '-artifact')
-            job = a.job_dir / ('mini-' + arm + '-export')
-            run([sys.executable, '-B', package / 'export_public_prefill_MG_mini.py',
+            if arm == 'original' and a.reuse_original_workflow:
+                output = Path(reference['artifacts'][arm]['path'])
+                job = a.reuse_original_workflow / 'mini-original-export'
+            else:
+                output = a.job_dir / ('mini-' + arm + '-artifact')
+                job = a.job_dir / ('mini-' + arm + '-export')
+                command = [sys.executable, '-B', package / 'export_public_prefill_MG_mini.py',
                  '--et-source', a.et_source, '--gguf', a.gguf,
                  '--delegate-proof', delegate / 'results.json', '--arm', arm,
-                 '--output', output, '--job', job, '--lock', a.lock],
-                'mini-' + arm + '-export', 7500)
+                 '--output', output, '--job', job, '--lock', a.lock]
+                if a.reuse_original_workflow:
+                    command += ['--seed-reference-export-cache',
+                                a.reuse_original_workflow / 'mini-original-export' / 'cache']
+                run(command, 'mini-' + arm + '-export', 7500)
             assert json.loads((job / 'progress.json').read_text())['status'] == 'completed'
             audit = json.loads((output / 'public-prefill-mini-artifact-audit.json').read_text())
             assert audit['n_layers'] == 4 and audit['GGUF_SHA256'] == screen['GGUF_SHA256']

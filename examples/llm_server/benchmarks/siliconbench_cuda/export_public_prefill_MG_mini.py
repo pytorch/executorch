@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import traceback
@@ -35,6 +36,8 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--job', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
+    p.add_argument('--seed-reference-export-cache', type=Path,
+                   help='Copy a completed reference export cache into this new job; never modify the reference')
     p.add_argument('--owned-worker', action='store_true')
     a = p.parse_args()
 
@@ -68,6 +71,17 @@ def main():
     assert sha(a.gguf) == '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
     cache = a.job / 'cache'
     (cache / 'host-zero-backed').mkdir(parents=True)
+    if a.seed_reference_export_cache is not None:
+        assert a.arm == 'public'
+        reference = a.seed_reference_export_cache.resolve()
+        assert reference != cache.resolve()
+        assert json.loads((reference.parent / 'progress.json').read_text())['status'] == 'completed'
+        for name in ['inductor', 'triton']:
+            assert (reference / name).is_dir()
+            shutil.copytree(reference / name, cache / name)
+        (a.job / 'reference-cache-copy.json').write_text(json.dumps(dict(
+            source=str(reference), source_modified=False, hardlinks=False,
+            unchanged_kernel_cache_seed=True, numeric_gate_still_required=True))+'\n')
     os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(cache / 'inductor'),
         TRITON_CACHE_DIR=str(cache / 'triton'), TORCHINDUCTOR_COMPILE_THREADS='1',
         ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
@@ -179,6 +193,7 @@ def main():
         GGUF_SHA256=sha(a.gguf), original_dispatch_source_SHA256=source_sha,
         hook=hook, actual_export_graph_route_audit=graph_audits,
         actual_export_candidate_calls=expected_routes,
+        reference_cache_copied=a.seed_reference_export_cache is not None,
         logical_context=131072, max_step_tokens=2048, max_kv_seqs=32,
         static_forwards=[1, 2, 4, 8, 16, 32, 64], selected_logits=out.sizes,
         runtime_numeric_and_perf_pending=True, full_model_or_HTTP_accepted=False,
