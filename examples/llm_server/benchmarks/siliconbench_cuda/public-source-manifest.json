@@ -511,6 +511,10 @@
       "sha256": "01568afdd13e1dbacd12a6820172c32a6d4de1f892909195a6c5898ea58597ae",
       "bytes": 2710
     },
+    "qualify_existing_nearcap_server.py": {
+      "sha256": "83de70790d21157bc4a11b8ee8bc6bdb2dc6e4307f3d5fd89376dbaaa931cd8c",
+      "bytes": 6180
+    },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
       "bytes": 7675
