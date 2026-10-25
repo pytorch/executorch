@@ -98,7 +98,11 @@ def _gemm(X, Q, SC, SS, Z, ZS, OUT, M, N: tl.constexpr, K: tl.constexpr,
         a = tl.load(X + ms[:, None] * K + k + ks[None, :],
                     mask=ms[:, None] < M, other=0).to(tl.bfloat16)
         b = _weight_tile(Q, SC, SS, Z, ZS, ns, k, N, K, BN, BK, ZERO_FMA)
-        acc += tl.dot(a, tl.trans(b), out_dtype=tl.float32)
+        # Match the original BF16 matmul's FP32 MMA accumulation chain.
+        # With enable_fp_fusion=False, adding a zero-initialized block dot
+        # afterwards is a distinct reduction order and can amplify model
+        # differences. Keep the staged BF16 weight reconstruction unchanged.
+        acc = tl.dot(a, tl.trans(b), acc, out_dtype=tl.float32)
     offset = ms[:, None] * N + ns[None, :]
     if SPLIT == 1:
         tl.store(OUT + offset, acc.to(tl.bfloat16),
