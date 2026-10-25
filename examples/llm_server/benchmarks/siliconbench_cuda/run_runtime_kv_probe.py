@@ -283,6 +283,7 @@ def main():
                         active = [owner]
                         stages = []
                         for index, concurrency in enumerate([1, 2, 4, 8, 16, 1]):
+                            lifecycle_start = time.monotonic_ns()
                             if index == 5:
                                 survivor = active[5]
                                 for id in active:
@@ -331,6 +332,8 @@ def main():
                                     diagnostic_tokens_per_second=64
                                     * concurrency
                                     / ((end - start) / 1e9),
+                                    lifecycle_start_ns=lifecycle_start,
+                                    lifecycle_end_ns=time.monotonic_ns(),
                                     monotonic_start_ns=start,
                                     monotonic_end_ns=end,
                                 )
@@ -371,6 +374,26 @@ def main():
                         time.monotonic() < deadline
                     ), "Wait for owned executor teardown"
                     time.sleep(1)
+            sampled_memory = []
+            for record in records:
+                directory = args.job_dir / f"round-{record['round']}"
+                samples = [
+                    json.loads(line)
+                    for line in (directory / "memory.jsonl").read_text().splitlines()
+                ]
+                measured = [row["GPU_used_MiB"] for row in samples if row["exit"] == 0]
+                assert measured and all(row["exit"] == 0 for row in samples)
+                sampled_memory.append(
+                    dict(
+                        round=record["round"],
+                        samples=len(samples),
+                        whole_process_sampled_peak_MiB=max(measured),
+                        raw_samples_sha256=digest(directory / "memory.jsonl"),
+                    )
+                )
+            peak_values = [
+                row["whole_process_sampled_peak_MiB"] for row in sampled_memory
+            ]
             aggregates = []
             for index, concurrency in enumerate([1, 2, 4, 8, 16, 1]):
                 values = [
@@ -393,6 +416,12 @@ def main():
                 probe_sha256=digest(args.probe),
                 model_PTE_sha256=digest(args.artifact / "model.pte"),
                 weights_blob_sha256=digest(args.artifact / "aoti_cuda_blob.ptd"),
+                sampled_memory_rounds=sampled_memory,
+                whole_process_sampled_peak_MiB=dict(
+                    mean=statistics.mean(peak_values[1:]),
+                    sample_stddev=statistics.stdev(peak_values[1:]),
+                    first_discarded=peak_values[0],
+                ),
                 physical_growth_and_reclamation_observed=args.arm == "runtime",
                 numerical_pair_independent_review_pending=True,
                 graph_recapture_replay_pass=False,
