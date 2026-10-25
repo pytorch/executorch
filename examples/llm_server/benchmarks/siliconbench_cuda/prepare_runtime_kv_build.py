@@ -68,7 +68,12 @@ def main():
         state('isolating-source')
         assert git(args.baseline_source, 'rev-parse', 'HEAD') == spec['base_commit']
         baseline_status = git(args.baseline_source, 'status', '--porcelain')
-        run(['git', 'clone', '--shared', '--no-checkout', args.baseline_source, source])
+        # The existing checkout is a partial clone. Packing its entire local
+        # history can request absent promisor objects; fetch the public base
+        # into an independent clone instead of altering that repository.
+        run(['git', 'clone', '--filter=blob:none', '--depth=1', '--no-checkout',
+             'https://github.com/pytorch/executorch.git', source])
+        run(['git', '-C', source, 'fetch', '--depth=1', 'origin', spec['base_commit']])
         run(['git', '-C', source, 'checkout', '--detach', spec['base_commit']])
         # Preserve current task fixes outside the candidate diff, e.g. the
         # validated allocator policy. Copy tracked source only, never artifacts.
