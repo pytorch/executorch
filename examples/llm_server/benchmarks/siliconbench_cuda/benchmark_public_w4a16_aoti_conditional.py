@@ -1,0 +1,155 @@
+"""Validate a dynamic-M AOTI conditional before any whole-model integration.
+
+Real original GGUF packing is supplied as runtime inputs to both packages,
+preventing a folded permanent dense weight from changing the comparison.
+Small bulk M uses the frozen public candidate; larger M keeps the original
+ET bulk operation. Static decode methods are outside this experiment.
+"""
+import argparse
+from dataclasses import asdict
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+import time
+import traceback
+
+
+def digest(path):
+    h=hashlib.sha256()
+    with Path(path).open('rb') as file:
+        while b:=file.read(8*1024*1024):h.update(b)
+    return h.hexdigest()
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--et-source',type=Path,required=True)
+    p.add_argument('--gguf',type=Path,required=True)
+    p.add_argument('--screen-results',type=Path,required=True)
+    p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--lock',type=Path,required=True)
+    a=p.parse_args();a.output.mkdir(exist_ok=False)
+    report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
+                model_route_changed=False,KA_invoked=False,A100_performance_verified=False,
+                full_model_or_HTTP_accepted=False)
+    def save(status,**fields):
+        (a.output/'results.json').write_text(json.dumps(report,indent=2)+'\n')
+        (a.output/'progress.json').write_text(json.dumps(dict(status=status,controller_pid=os.getpid(),**fields))+'\n')
+    save('waiting-GPU-lock')
+    with a.lock.open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
+        try:
+            os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(a.output/'inductor-cache'),
+                              TRITON_CACHE_DIR=str(a.output/'triton-cache'),
+                              TORCHINDUCTOR_COMPILE_THREADS='1',OMP_NUM_THREADS='2',MAX_JOBS='1')
+            sys.path.insert(0,str(a.et_source.parent))
+            import numpy as np
+            import torch
+            from gguf import GGUFReader,GGMLQuantizationType
+            from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+            from executorch.extension.llm.export.quant import to_default,fuse_along_output
+            from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda
+            from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
+            from executorch.backends.cuda.autotune import cuda_graph_timing as clock
+            from torch._inductor import aoti_compile_and_package,aoti_load_package
+            from public_grouped_w4a16_aoti import candidate_op,config_index
+            from public_grouped_w4a16 import Config
+            assert torch.cuda.get_device_capability()==(12,0)
+            torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
+            assert digest(a.gguf)=='4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
+            screen=json.loads(a.screen_results.read_text())
+            assert len(screen['results'])==16 and not screen['automatic_promotion']
+            report.update(GGUF_sha256=digest(a.gguf),screen_results_sha256=digest(a.screen_results),
+                          bulk_dynamic_range=[5,2048],small_bulk_limit=128,static_decode_changed=False,
+                          arithmetic='Original staged BF16 reconstruction; A16; FP32 GEMM accumulation')
+            reader=GGUFReader(str(a.gguf))
+            def portable(t):
+                assert t.tensor_type==GGMLQuantizationType.Q4_K
+                n,k=tuple(map(int,t.shape[::-1]))
+                raw=torch.from_numpy(np.array(t.data,copy=True)).view(torch.uint8).reshape(n,-1)
+                return to_default(t.name,ExportableGGUFTensor.from_raw(raw,'q4_k',torch.bfloat16))
+            class Linear(torch.nn.Module):
+                def __init__(self,conditional,index):super().__init__();self.conditional=conditional;self.index=index
+                def forward(self,x,q,sc,ss,z,zs):
+                    if self.conditional:
+                        return torch.cond(x.shape[0]<=128,
+                            lambda a,b,c,d,e,f:candidate_op(a,b,c,d,e,f,self.index,False),
+                            lambda a,b,c,d,e,f:_dequant_matmul(a,b,c,d,e,f,32),
+                            (x,q,sc,ss,z,zs))
+                    return _dequant_matmul(x,q,sc,ss,z,zs,32)
+            options={'emulate_precision_casts':True,'max_autotune':True,
+                     'max_autotune_gemm_backends':'TRITON','loop_ordering_after_fusion':False,
+                     'aot_inductor.compile_wrapper_opt_level':'O2',
+                     'aot_inductor.embed_kernel_binary':True}
+            report['compile_options']=options
+            stream=torch.cuda.Stream()
+            with torch.inference_mode(),torch.cuda.stream(stream):
+                for role in ['ffn_gate_up','ffn_down']:
+                    if role=='ffn_gate_up':
+                        gate=next(t for t in reader.tensors if t.name=='blk.0.ffn_gate.weight')
+                        up=next(t for t in reader.tensors if t.name=='blk.0.ffn_up.weight')
+                        tensor=fuse_along_output([portable(gate),portable(up)]);n,k=39936,6656
+                    else:
+                        down=next(t for t in reader.tensors if t.name.endswith('.ffn_down.weight') and t.tensor_type==GGMLQuantizationType.Q4_K)
+                        tensor=portable(down);n,k=tuple(map(int,down.shape[::-1]))
+                    module=torch.nn.Linear(k,n,bias=False,device='meta',dtype=torch.bfloat16)
+                    pack_linear_for_cuda(module,{'weight':tensor})
+                    w=tuple(getattr(module.weight,key).to('cuda').contiguous() for key in ['qdata','scale','scale_step','zero_point','zero_point_step'])
+                    hashes=[hashlib.sha256(t.cpu().numpy().tobytes()).hexdigest() for t in w]
+                    assert hashes==screen['weight_sources'][role]['packed_SHA256']
+                    chosen=next(c for c in screen['results'] if c['role']==role and c['entry']=='bulk72')['best']['config']
+                    index=config_index(Config(**chosen));compiled={}
+                    example=torch.randn((72,k),device='cuda',dtype=torch.bfloat16)
+                    dynamic=({0:torch.export.Dim('bulk_M',min=5,max=2048)},{},{},{},{},{})
+                    for name,conditional in [('reference',False),('conditional',True)]:
+                        save('exporting-dynamic-AOTI',role=role,arm=name)
+                        ep=torch.export.export(Linear(conditional,index),(example,*w),dynamic_shapes=dynamic,strict=True)
+                        assert len(ep.state_dict)==0,'Weights must remain inputs, not folded constants'
+                        torch.export.save(ep,str(a.output/f'{role}-{name}.pt2-export'))
+                        path=a.output/f'{role}-{name}.pt2'
+                        aoti_compile_and_package(ep,package_path=str(path),inductor_configs=options)
+                        compiled[name]=aoti_load_package(str(path),run_single_threaded=True,device_index=0)
+                        report['packages'][role+'-'+name]=dict(sha256=digest(path),bytes=path.stat().st_size,
+                            original_packed_weight_SHA256=hashes,frozen_small_config=chosen)
+                    for m in [8,16,64,72,128,129,512,2048]:
+                        x=torch.randn((m,k),device='cuda',dtype=torch.bfloat16,
+                                      generator=torch.Generator(device='cuda').manual_seed(47000+n+m))
+                        target=_dequant_matmul(x,*w,32)
+                        own=lambda:compiled['conditional'](x,*w)
+                        ref=lambda:compiled['reference'](x,*w)
+                        ys=[own().clone() for _ in range(3)];torch.cuda.synchronize()
+                        assert all(torch.equal(ys[0],y) for y in ys[1:])
+                        delta=ys[0].float()-target.float()
+                        rms=float(delta.square().mean().sqrt()/target.float().square().mean().sqrt())
+                        assert torch.isfinite(ys[0]).all() and rms<.005
+                        torch.testing.assert_close(ys[0].float(),target.float(),rtol=.05,atol=4.)
+                        torch.testing.assert_close(ref().float(),target.float(),rtol=.05,atol=4.)
+                        samples={'reference':[],'conditional':[]}
+                        for round_number in range(4):
+                            order=[('reference',ref),('conditional',own)]
+                            if round_number%2:order.reverse()
+                            for label,fn in order:
+                                for _ in range(3):fn()
+                                samples[label].append(clock.time_with_cuda_graph_us(fn))
+                        means={key:statistics.mean(values[1:]) for key,values in samples.items()}
+                        report['cases'].append(dict(role=role,M=m,N=n,K=k,relative_RMS=rms,deterministic=True,
+                            samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
+                            conditional_over_reference=means['conditional']/means['reference'],
+                            expected_bulk_route='packed' if m<=128 else 'original-dequant-matmul',
+                            timing_scope='GPU graph timing of standalone AOTI linear; not current whole-model kernels or HTTP'))
+                        save('AOTI-case-completed',role=role,M=m)
+                    del compiled,w,module,tensor,example,target,x,ys
+                    torch._dynamo.reset();torch.cuda.empty_cache()
+            save('completed',cases=len(report['cases']))
+        except Exception as error:
+            (a.output/'exception-traceback.txt').write_text(traceback.format_exc())
+            save('failed',error_type=type(error).__name__,error=str(error));raise
+
+
+if __name__=='__main__':main()
