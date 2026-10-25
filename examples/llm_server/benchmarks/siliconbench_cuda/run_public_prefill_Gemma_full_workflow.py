@@ -88,6 +88,7 @@ def main():
         assert sha(a.client) == 'd2f9eba743b583b9b5968d2f8704cb347638a05fe12717797d21a8c938a00b05'
         assert sha(a.prompts) == '76d3ff55f4026a50679fd60becd07a9cad93549dc46d98a59bcd642c90d0f81e'
         assert sha(a.precision_control) == '10affaf3cd36f17a68f8336e764e24b16e54dd509d89577c9009445b2f41cf9b'
+        assert sha(a.correctness_root.parent/'GMRID-input-audit.json') == 'c94ff150d2352e91c9e29d7ace47a75e883041ffc071d7aa2b57aac813d0ae1c'
         cache = a.reference_export_job/'cache'
         cache_bytes = sum(f.stat().st_size for name in ['inductor','triton']
                           for f in (cache/name).rglob('*') if f.is_file())
