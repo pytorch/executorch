@@ -167,7 +167,7 @@ def main():
             '--prompts',a.prompts,'--correctness-root',a.correctness_root,
             '--python',a.benchmark_python,
             '--lock',a.lock,'--port',a.port,'--variants','executorch',
-            '--cache-modes','off','on','--concurrencies','1','2','4','8','16']
+            '--cache-modes','off','on','--concurrencies','16','8','4','2','1']
         assert a.quality_max_tokens > 0 and isinstance(a.quality_chat_template_kwargs,dict)
         run(matrix_command+['--output',a.job_dir/'server-performance','--phases','performance'],
             'full-model-server-performance', 21600)
