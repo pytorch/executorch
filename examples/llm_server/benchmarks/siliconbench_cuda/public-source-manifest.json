@@ -375,6 +375,10 @@
       "sha256": "00a3ef758249e960fe732bf20fbc1b5083283925f6b5570d11514c3621f96cbc",
       "bytes": 5587
     },
+    "kv_near_cap_probe.cpp": {
+      "sha256": "56d348b36c36da833c347277d3657f34e6de9aaffdaec72d1daaca29c1986ab3",
+      "bytes": 8149
+    },
     "make_mg_stock_quality_wrapper.py": {
       "sha256": "164388402b6bb409a7c1a357f64d949d9d3719fbc7804344028d8e042338be90",
       "bytes": 3652
@@ -410,6 +414,10 @@
     "prepare_gemma_checkpoint.py": {
       "sha256": "529899e20859e2a2ba150e4fce7366a52165a5bd7b6fd556058a99a74194e233",
       "bytes": 9427
+    },
+    "prepare_kv_near_cap_build.py": {
+      "sha256": "a225cb8ac372da35bf8e92d571103d565c7441ebe51264af3f3d760170d5c3f9",
+      "bytes": 5827
     },
     "prepare_native_INT4_model_control.py": {
       "sha256": "ac138847b81e2edf6574ce8366ab94f00f956375dbb3660a769998dbe5eff5cc",
@@ -630,6 +638,10 @@
     "wait_full_prefill_zero_history_control.py": {
       "sha256": "346213cc94fd3329fdd4bda5381f229b5f4dd3b74019045ea432d4b51dc14ce6",
       "bytes": 3359
+    },
+    "wait_kv_near_cap_gemma.py": {
+      "sha256": "0307958b78bd732f5e39be21a0bc26187295c9d65950ea1d513e5bd3d33f6c0d",
+      "bytes": 8373
     },
     "wait_mg_quality_boundary.py": {
       "sha256": "1c95b9eb7fa68b1cf5e6340ae54d2509b6006c370795bd1a2073b4f5a770a2b6",
