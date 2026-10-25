@@ -114,8 +114,14 @@ def main():
         cache = a.reference_export_job/'cache'
         cache_bytes = sum(f.stat().st_size for name in ['inductor','triton']
                           for f in (cache/name).rglob('*') if f.is_file())
-        required = reference['artifacts']['aoti_cuda_blob.ptd']['bytes']+cache_bytes+4*1024**3
-        assert shutil.disk_usage(a.job_dir).free > required, 'Insufficient separate storage; retain existing files'
+        # Weight materialization and final serialization temporarily coexist.
+        # Reserve three full blobs plus cache and headroom, not only the final PTD.
+        required = 3*reference['artifacts']['aoti_cuda_blob.ptd']['bytes']+cache_bytes+4*1024**3
+        available = shutil.disk_usage(a.job_dir).free
+        (a.job_dir/'export-storage-preflight.json').write_text(json.dumps(dict(
+            available_bytes=available, required_bytes=required, temporary_full_blob_copies_budgeted=3,
+            reference_cache_bytes=cache_bytes, original_reference_modified=False),indent=2)+'\n')
+        assert available > required, 'Insufficient export staging storage; retain existing files'
         output = a.job_dir/'public-full-artifact'
         export = a.job_dir/'public-full-export'
         run([sys.executable,'-B',package/'export_public_prefill_MG_mini.py',

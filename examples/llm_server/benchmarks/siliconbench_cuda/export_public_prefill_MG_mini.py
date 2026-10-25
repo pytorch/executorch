@@ -95,6 +95,7 @@ def main():
         assert a.reference_full_artifact is None
     cache = a.job / 'cache'
     (cache / 'host-zero-backed').mkdir(parents=True)
+    (cache / 'temporary-serialization').mkdir()
     if a.seed_reference_export_cache is not None:
         assert a.arm == 'public'
         reference = a.seed_reference_export_cache.resolve()
@@ -109,6 +110,7 @@ def main():
     os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(cache / 'inductor'),
         TRITON_CACHE_DIR=str(cache / 'triton'), TORCHINDUCTOR_COMPILE_THREADS='1',
         ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
+        TMPDIR=str(cache / 'temporary-serialization'),
         TORCH_CUDA_ARCH_LIST='12.0', MAX_JOBS='1', OMP_NUM_THREADS='2')
     sys.path.insert(0, str(a.et_source.parent))
     ref = Path(__file__).with_name('mg_main_sdpa_varlen_reference.py')

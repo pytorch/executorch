@@ -79,6 +79,10 @@
       "sha256": "921e7eb334a656dfada932e45d062022fec3c744b88ba7f79e7e7086fa8bc249",
       "bytes": 9919
     },
+    "benchmark_public_prefill_gemma_fp32.py": {
+      "sha256": "e0771111f41783374917a2a73556a8649abb15e70dab9bd5323f1513c4cc4d46",
+      "bytes": 10583
+    },
     "benchmark_public_prefill_prepared_groups.py": {
       "sha256": "fa19396b8db1c93604bab0f4c4ee2255a07f0755e257bec18aeb9e2546f53437",
       "bytes": 9358
@@ -324,8 +328,8 @@
       "bytes": 14259
     },
     "export_public_prefill_MG_mini.py": {
-      "sha256": "9bf49ddad9265b0970cf9721e5957c1686b18946f24a8f67ee27a6e3339aec4c",
-      "bytes": 13594
+      "sha256": "14e8bbc6172acc80f603f04a3ab04e88fbe6c6d0b80f467a70d15114b862f117",
+      "bytes": 13697
     },
     "export_runtime_kv_model.py": {
       "sha256": "43ed01425a90a1719a6ac8e3fa8d49ec03515579f407c7fe7f10c40122a8ac06",
@@ -459,6 +463,10 @@
       "sha256": "6616879e5b9939c788f2735625aae24500f21a6e760c6075f30feb4acb91ba51",
       "bytes": 5759
     },
+    "public_prefill_gemma_fp32.py": {
+      "sha256": "4f163654dfdfbf6bbe5f00b31b7ed57f9845d038687a67b76ce64860ed55aac6",
+      "bytes": 5319
+    },
     "public_prefill_native_branch_control.py": {
       "sha256": "90603e0dd28373d61ffc5ba0f89a3f04feba1d8158851b618d7105d8a29fe78f",
       "bytes": 1627
@@ -548,8 +556,8 @@
       "bytes": 8173
     },
     "run_public_prefill_full_workflow.py": {
-      "sha256": "8b1a3697564cecc4758c12b08fac9a718f7c70c7814e293a7e7345a41e9f832a",
-      "bytes": 11283
+      "sha256": "0efe6cbbbe9be684b75b92bed9d330ded0806a05301dbf76e430aadbdd179c46",
+      "bytes": 11764
     },
     "run_public_prefill_mini_runtime.py": {
       "sha256": "57282b5d16c59773a8e6def97bf8f285d1eec0547d6af4da88800a49003a8a53",
