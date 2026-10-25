@@ -7,6 +7,10 @@
 #pragma once
 
 #include <cuda_runtime_api.h>
+#ifdef ROOFLINE_PROFILE
+#include <cuda_profiler_api.h>
+#include <nvtx3/nvToolsExt.h>
+#endif
 
 #include <chrono>
 #include <cmath>
@@ -86,6 +90,11 @@ inline void print_tokens(std::ostream& out, const std::vector<std::int64_t>& ids
 template <class Forward, class Rewind, class Evidence>
 void measure(std::ostream& out, int repetitions, Forward forward,
              Rewind rewind, Evidence evidence) {
+#ifdef ROOFLINE_PROFILE
+  // Diagnostic builds capture only this measurement section. Model loading
+  // and the initial 32 histories are excluded from the profiler capture.
+  require(cudaProfilerStart() == cudaSuccess, "cudaProfilerStart failed");
+#endif
   out << "\"cases\":[";
   for (std::size_t c = 0; c < kMixes.size(); ++c) {
     const auto& mix = kMixes[c];
@@ -96,11 +105,20 @@ void measure(std::ostream& out, int repetitions, Forward forward,
     for (int i = -3; i < repetitions; ++i) {
       rewind();
       sync();
+#ifdef ROOFLINE_PROFILE
+      std::string label = std::string("mix=") + mix.name +
+          ";phase=" + (i < 0 ? "warmup" : "timed") +
+          ";iteration=" + std::to_string(i);
+      nvtxRangePushA(label.c_str());
+#endif
       auto start = std::chrono::steady_clock::now();
       auto ids = forward(input, mix.decode);
       sync();
       double ms = std::chrono::duration<double, std::milli>(
                       std::chrono::steady_clock::now() - start).count();
+#ifdef ROOFLINE_PROFILE
+      nvtxRangePop();
+#endif
       require(static_cast<int>(ids.size()) == mix.decode,
               "Selected output count differs from decode count");
       if (i == -3) expected = ids;
@@ -129,5 +147,8 @@ void measure(std::ostream& out, int repetitions, Forward forward,
     std::cerr << "MEASURED " << mix.name << '\n';
   }
   out << ']';
+#ifdef ROOFLINE_PROFILE
+  require(cudaProfilerStop() == cudaSuccess, "cudaProfilerStop failed");
+#endif
 }
 } // namespace roofline

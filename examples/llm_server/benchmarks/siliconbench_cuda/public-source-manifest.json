@@ -416,8 +416,8 @@
       "bytes": 5222
     },
     "roofline_common.h": {
-      "sha256": "53ad6f0e96842c5858b79f76eb817b67992f6383f87961cb44bd93a02e447ca3",
-      "bytes": 4245
+      "sha256": "8b40945367d9dbebc66b219beae0976a88fcf76d799fc192a02557c67f37bbf8",
+      "bytes": 4975
     },
     "roofline_cpp.cpp": {
       "sha256": "4adc5687bcf18a0a4149dc39085ff1318e006718a2210fc8a7ab127b00bf8458",
@@ -446,6 +446,10 @@
     "run_mg_roofline.py": {
       "sha256": "13f80de332da5621aa63c09b298e9dcdb81c143da9341022d63c93ef0e979159",
       "bytes": 10170
+    },
+    "run_mg_roofline_profile.py": {
+      "sha256": "70f668190135ba24899380687ebf018fa2585cb94b6dbed3595eb4056a8922f3",
+      "bytes": 8173
     },
     "run_runtime_kv_feasibility.py": {
       "sha256": "9150d138e6fa9a4952db883e1af67a9c035695fba2fab441fccccb4daad7fd60",
