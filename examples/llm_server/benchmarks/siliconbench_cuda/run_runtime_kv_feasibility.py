@@ -34,6 +34,8 @@ def main():
     parser.add_argument("--job-dir", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--nsys", type=Path, required=True)
+    parser.add_argument("--completed-CUDA-tests", type=Path,
+                        help="Reuse only verified tests for identical binaries and source spec")
     args = parser.parse_args()
     assert not args.job_dir.exists()
     args.job_dir.mkdir(parents=True)
@@ -157,19 +159,27 @@ def main():
                 if Path(path).name == "test_cuda_kv_cache"
             )
         )
-        state("running-actual-CUDA-tests", GPU_tests_started=True)
-        run([test, "--gtest_color=no"], "CUDA-cache-tests.log", gpu=True)
-        run(
-            [
-                sys.executable,
-                "-B",
-                "-m",
-                "unittest",
-                "executorch.backends.cuda.tests.test_offgraph_kv_batched_sequence",
-            ],
-            "CUDA-Python-tests.log",
-            gpu=True,
-        )
+        reused = None
+        if args.completed_CUDA_tests:
+            reused = json.loads(args.completed_CUDA_tests.read_text())
+            assert reused['actual_CUDA_tests_passed']
+            assert reused['binary_sha256'] == digest(test)
+            assert reused['source_spec_sha256'] == digest(package / 'runtime_kv_columns_source.json')
+            state('reusing-identical-verified-CUDA-tests', GPU_tests_started=False)
+        else:
+            state("running-actual-CUDA-tests", GPU_tests_started=True)
+            run([test, "--gtest_color=no"], "CUDA-cache-tests.log", gpu=True)
+            run(
+                [
+                    sys.executable,
+                    "-B",
+                    "-m",
+                    "unittest",
+                    "executorch.backends.cuda.tests.test_offgraph_kv_batched_sequence",
+                ],
+                "CUDA-Python-tests.log",
+                gpu=True,
+            )
         (args.job_dir / "CUDA-tests-completed.json").write_text(
             json.dumps(
                 dict(
@@ -178,6 +188,7 @@ def main():
                     source_spec_sha256=digest(
                         package / "runtime_kv_columns_source.json"
                     ),
+                    reused_verified_identical_tests=bool(reused),
                 )
             )
             + "\n"

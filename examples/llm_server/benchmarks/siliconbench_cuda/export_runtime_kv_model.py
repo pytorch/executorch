@@ -117,6 +117,19 @@ def main():
     sys.path.insert(0, str(args.source.parent))
     import torch
     import torch._inductor.cpp_builder as cpp
+    from executorch.backends.cuda.cuda_backend import CudaBackend
+
+    # Match the accepted main artifact's actual wrapper optimization. This
+    # shared entry covers both CUDA lowering paths and updates the cache key;
+    # editing a generated CppBuilder command would miss later compilation.
+    original_options = CudaBackend.get_aoti_compile_options
+
+    def optimized_options(cls, compile_specs):
+        options = dict(original_options(compile_specs))
+        options['aot_inductor.compile_wrapper_opt_level'] = 'O2'
+        return options
+
+    CudaBackend.get_aoti_compile_options = classmethod(optimized_options)
     from executorch.examples.models.muse_glimmer.export import export_solo as exporter
     from executorch.examples.models.muse_glimmer.loaders import checkpoint_loader as loader
     from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
@@ -195,9 +208,12 @@ def main():
                 assert manifest.get('runtime_columns', False) == runtime_columns
                 manifests[name] = manifest
     assert len(manifests) == 8
-    optimized = [json.loads(line) for line in (args.job_dir / 'actual-wrapper-optimization.jsonl').read_text().splitlines()
-                 if json.loads(line)['flags']]
-    assert optimized and all(row['flags'][-1] == '-O2' for row in optimized)
+    builds = [json.loads(line) for line in (args.job_dir / 'actual-wrapper-optimization.jsonl').read_text().splitlines()]
+    optimized = [row for row in builds if row['flags'] and row['flags'][-1] == '-O2']
+    # Torch/Triton CPU helpers keep their ordinary O3. Every actual AOTI
+    # wrapper is O2; no O0 wrapper may enter a numerical/performance pair.
+    assert len(optimized) >= 10
+    assert not any(row['flags'] and row['flags'][-1] == '-O0' for row in builds)
     audit = dict(role=args.role, source_spec_sha256=digest(spec_path),
                  GGUF_sha256=digest(args.gguf), retained_original_layer_indices=list(range(config.n_layers)),
                  mini_is_not_full_model=args.role.startswith('mini-'),
@@ -208,6 +224,7 @@ def main():
                  selected_logit_limit=selected_output.sizes[0], offgraph_manifests=manifests,
                  CUDA_graphs_for_static_runtime=True,
                  bulk_prefill_A16_original_native_decode=True, AOTI_wrapper_optimization='O2',
+                 actual_optimized_builds=len(optimized), O3_helpers_allowed=True,
                  artifacts={name:dict(sha256=digest(args.output / name), bytes=(args.output / name).stat().st_size)
                             for name in ['model.pte', 'aoti_cuda_blob.ptd']},
                  main_acceptance_proof_sha256=digest(args.accepted_main_review),
