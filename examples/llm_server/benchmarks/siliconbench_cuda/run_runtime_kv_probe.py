@@ -334,6 +334,22 @@ def main():
                             request(dict(op="compact", spare_columns=0))
                         for boundary in [513, 2047, 2048, 2049, 4097, 8193, 12289]:
                             fill([owner], boundary, save=True)
+                            if boundary == 8193:
+                                # Clone actual wrapped model caches, including a
+                                # checkpoint one token behind the current owner.
+                                prefix = request(
+                                    dict(op="clone", seq_id=owner, upto=8192)
+                                )["seq_id"]
+                                scratch = request(
+                                    dict(op="clone", seq_id=prefix, upto=8192)
+                                )["seq_id"]
+                                lengths[scratch] = 8192
+                                fill([scratch], 8205, save=True)
+                                request(dict(op="remove", seq_id=scratch))
+                                del lengths[scratch]
+                                request(dict(op="remove", seq_id=prefix))
+                                if args.arm == "runtime":
+                                    request(dict(op="compact", spare_columns=0))
                         active = [owner]
                         stages = []
                         for index, concurrency in enumerate([1, 2, 4, 8, 16, 1]):
