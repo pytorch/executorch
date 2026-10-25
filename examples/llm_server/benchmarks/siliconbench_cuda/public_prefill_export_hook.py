@@ -22,6 +22,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
         return receipt
     assert hashlib.sha256(Path(dispatch.__file__).read_bytes()).hexdigest() == DISPATCH_SHA256
     import torch
+    from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import can_launch_triton
     from public_grouped_w4a16 import Config
     from public_grouped_w4a16_aoti import candidate_op, config_index
     from public_bulk_w4a16_aoti import bulk_op
@@ -41,7 +42,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
         # methods. torch.cond preserves the symbolic runtime-M predicate.
         concrete_eager = not torch.compiler.is_compiling() and isinstance(x.shape[0], int)
         if (concrete_eager or shape not in indices or group_size != 32
-                or x.dtype != torch.bfloat16 or x.device.type != 'cuda'):
+                or x.dtype != torch.bfloat16 or not can_launch_triton(x)):
             return original(x, q, sc, ss, z, zs, group_size)
         index = indices[shape]
         return bulk_op(x, q, sc, ss, z, zs, index)

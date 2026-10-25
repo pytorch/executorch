@@ -132,6 +132,37 @@ def main():
     del atomic
     model = loader._finalize(retained, 'cuda', config, torch.bfloat16)
     del retained
+    # Real model export starts from CPU examples/FakeTensors. Installing a
+    # hook is insufficient: require the candidate operators in the actual
+    # strict exported graph before paying for AOTI compilation.
+    original_export = exporter.export
+    graph_audits = []
+    if a.arm == 'public':
+        from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+        expected_routes = sum(isinstance(getattr(m, 'weight', None), CudaCoalescedInt4Tensor)
+            and (m.weight.qdata.shape[0], m.weight.qdata.shape[1]*2) in {(39936,6656),(6656,19968)}
+            for m in model.modules())
+        assert expected_routes >= 4
+    else:
+        expected_routes = 0
+
+    def traced_export(*args, **kwargs):
+        program = original_export(*args, **kwargs)
+        count = sum(node.op == 'call_function' and 'siliconbench.public_bulk_w4a16' in str(node.target)
+            for module in program.graph_module.modules() if isinstance(module, torch.fx.GraphModule)
+            for node in module.graph.nodes)
+        item = dict(dynamic=kwargs.get('dynamic_shapes') is not None,
+                    candidate_operator_calls=count,
+                    example_devices=[str(t.device) for t in args[1] if isinstance(t, torch.Tensor)])
+        graph_audits.append(item)
+        (a.job / 'actual-strict-export-route-audit.json').write_text(json.dumps(graph_audits, indent=2)+'\n')
+        if count:
+            assert a.arm == 'public' and item['dynamic'] and count == expected_routes
+        if a.arm == 'public' and args[0] is model and item['dynamic'] and args[1][0].ndim == 2 and args[1][0].shape[1] == 2048:
+            assert count == expected_routes, 'Experimental prefill routing missing from actual CPU/FakeTensor model export'
+        return program
+
+    exporter.export = traced_export
     state('exporting-mini')
     exporter.export_cuda_batching(model, config, str(a.output), max_step_tokens=2048,
         max_cells=65536, forward_sizes=[1, 2, 4, 8, 16, 32, 64],
@@ -143,9 +174,12 @@ def main():
     out = methods['forward_others'].values[methods['forward_others'].outputs[0]].val
     assert out.sizes == [64, 202048]
     assert sha(dispatch.__file__) == source_sha
+    assert sum(item['candidate_operator_calls'] for item in graph_audits) == expected_routes
     audit = dict(arm=a.arm, n_layers=4, miniature_not_full_MG=True,
         GGUF_SHA256=sha(a.gguf), original_dispatch_source_SHA256=source_sha,
-        hook=hook, logical_context=131072, max_step_tokens=2048, max_kv_seqs=32,
+        hook=hook, actual_export_graph_route_audit=graph_audits,
+        actual_export_candidate_calls=expected_routes,
+        logical_context=131072, max_step_tokens=2048, max_kv_seqs=32,
         static_forwards=[1, 2, 4, 8, 16, 32, 64], selected_logits=out.sizes,
         runtime_numeric_and_perf_pending=True, full_model_or_HTTP_accepted=False,
         artifacts={n:dict(SHA256=sha(a.output / n), bytes=(a.output / n).stat().st_size)

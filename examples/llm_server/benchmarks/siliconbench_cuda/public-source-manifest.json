@@ -316,8 +316,8 @@
       "bytes": 14259
     },
     "export_public_prefill_MG_mini.py": {
-      "sha256": "b722b8b32dbde1f7f33a1480f7912d5eb36e84605a142740d04013c88e8e8974",
-      "bytes": 7562
+      "sha256": "19bc96993ad7aa536dc72e608c17c6c9014c269c8083bdc6bcb12e68af73dab9",
+      "bytes": 9584
     },
     "export_runtime_kv_model.py": {
       "sha256": "43ed01425a90a1719a6ac8e3fa8d49ec03515579f407c7fe7f10c40122a8ac06",
@@ -411,6 +411,10 @@
       "sha256": "e94032dc2c5c1ce0e3be0bc5337adfdcd1c65b703c079fca6a7a6ce9fee31440",
       "bytes": 11287
     },
+    "probe_public_prefill_CPU_fake_trace.py": {
+      "sha256": "2a97f811cf2bd693ae76bd68a666e6ef15fa90c059f445fd886e66c1a89cbf17",
+      "bytes": 2539
+    },
     "probe_public_prefill_ET_delegate.py": {
       "sha256": "41474704daf1125f68d6767610c6114ca662a3813034a8d23e28ccfc6642bd46",
       "bytes": 8660
@@ -440,8 +444,8 @@
       "bytes": 4638
     },
     "public_prefill_export_hook.py": {
-      "sha256": "f758b43897dac23fb6f35605002c988b16f7c1a9fc8479033f74d18262f8cb4e",
-      "bytes": 2815
+      "sha256": "68c8144e85b0c9249bde4caa0f3650c1c7a4966ca9a38dec8be561b7db0b2cca",
+      "bytes": 2918
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
