@@ -82,6 +82,23 @@ def main():
                  ('p64', 0, 64), ('p128', 0, 128), ('p512', 0, 512),
                  ('p2048', 0, 2048), ('d8p64', 8, 64), ('d8p512', 8, 512)]
         records = []
+        def review_numeric():
+            import numpy as np
+            numeric = []
+            for index, (name, _, _) in enumerate(mixes):
+                left_record = next(r for r in records if r['round'] == 1 and r['arm'] == 'original')['results'][index]['numeric']
+                right_record = next(r for r in records if r['round'] == 1 and r['arm'] == 'public')['results'][index]['numeric']
+                assert len(left_record['logits']) == len(right_record['logits']) == 1
+                left, right = left_record['logits'][0], right_record['logits'][0]
+                assert left['shape'] == right['shape'] and left['selected_indices'] == right['selected_indices']
+                lv = np.fromfile(left['file'], dtype='<f4'); rv = np.fromfile(right['file'], dtype='<f4')
+                assert np.isfinite(lv).all() and np.isfinite(rv).all()
+                rms = float(np.sqrt(np.mean((lv.astype(np.float64)-rv)**2)) / max(np.sqrt(np.mean(lv.astype(np.float64)**2)), 1e-8))
+                numeric.append(dict(mix=name, relative_RMS=rms,
+                    max_abs=float(np.max(np.abs(lv-rv))),
+                    argmax_identical=left_record['argmax'] == right_record['argmax'],
+                    numerical_pass=rms < .005))
+            return numeric
         state('waiting-GPU-lock')
         with a.lock.open('a') as held:
             fcntl.flock(held, fcntl.LOCK_EX)
@@ -190,22 +207,15 @@ def main():
                             selector.close()
                     records.append(dict(round=round_number, arm=arm, ready=ready,
                         results=results, protocol_SHA256=sha(directory / 'protocol.jsonl')))
+                    if round_number == 1 and len(records) == 2:
+                        preflight = dict(raw=records, numerical=review_numeric(),
+                            numerical_gate=.005, full_model_F1_or_HTTP_accepted=False,
+                            model_promoted=False, first_discarded_round_only=True)
+                        (a.job_dir / 'numerical-preflight.json').write_text(json.dumps(preflight, indent=2)+'\n')
+                        assert all(item['numerical_pass'] for item in preflight['numerical']), preflight['numerical']
         # Changed kernels may change accumulation order: retain the established
         # 0.5% RMS numerical gate; report greedy differences instead of hiding them.
-        import numpy as np
-        numeric = []
-        for index, (name, _, _) in enumerate(mixes):
-            originals = [r for r in records if r['round'] == 1 and r['arm'] == 'original'][0]['results'][index]['numeric']
-            publics = [r for r in records if r['round'] == 1 and r['arm'] == 'public'][0]['results'][index]['numeric']
-            assert len(originals['logits']) == len(publics['logits']) == 1
-            left, right = originals['logits'][0], publics['logits'][0]
-            assert left['shape'] == right['shape'] and left['selected_indices'] == right['selected_indices']
-            lv = np.fromfile(left['file'], dtype='<f4'); rv = np.fromfile(right['file'], dtype='<f4')
-            assert np.isfinite(lv).all() and np.isfinite(rv).all()
-            rms = float(np.sqrt(np.mean((lv.astype(np.float64)-rv)**2)) / max(np.sqrt(np.mean(lv.astype(np.float64)**2)), 1e-8))
-            item = dict(mix=name, relative_RMS=rms, max_abs=float(np.max(np.abs(lv-rv))),
-                argmax_identical=originals['argmax'] == publics['argmax'], numerical_pass=rms < .005)
-            numeric.append(item)
+        numeric = review_numeric()
         performance = []
         for index, (name, _, _) in enumerate(mixes):
             arms = {}
