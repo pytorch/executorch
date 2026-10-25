@@ -211,6 +211,10 @@
       "sha256": "a7316528ae05951bfc56b1c5aec0887924fd1da2d6475f2837c8d9e09a9a8959",
       "bytes": 8911
     },
+    "compile_public_grouped_w4a16.py": {
+      "sha256": "3d6591c2dac7decd2df131a28f96a601dfaecaf9d41ae7076f5cafd8454be01e",
+      "bytes": 4490
+    },
     "configure_context.py": {
       "sha256": "36fa29cc9193e84f30019a7696c36d5640c1e18c937c9ed43498036a0021159d",
       "bytes": 2306
@@ -394,6 +398,10 @@
     "profile_et_server.py": {
       "sha256": "58c7d94c0375d062b2db06614f234a7f85111fbcf99742fa0f7a4a309ebc02f7",
       "bytes": 10766
+    },
+    "public_grouped_w4a16.py": {
+      "sha256": "79eaf9b193324bcfc90f903d7f03f5ab87b4a4981f9d3b3f3b671b2e7a1bc835",
+      "bytes": 9192
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
