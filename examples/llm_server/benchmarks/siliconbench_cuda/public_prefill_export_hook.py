@@ -41,8 +41,13 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
         # native family ops before reaching this bulk fallback in static
         # methods. torch.cond preserves the symbolic runtime-M predicate.
         concrete_eager = not torch.compiler.is_compiling() and isinstance(x.shape[0], int)
+        # Strict Dynamo export represents CPU examples symbolically and must
+        # not inline is_fake(), which Dynamo deliberately skips. The CUDA
+        # target is already checked above; outside Dynamo use the native
+        # predicate for FakeTensor/AOTI and preserve ordinary CPU fallback.
+        CUDA_target_trace = torch.compiler.is_compiling() or can_launch_triton(x)
         if (concrete_eager or shape not in indices or group_size != 32
-                or x.dtype != torch.bfloat16 or not can_launch_triton(x)):
+                or x.dtype != torch.bfloat16 or not CUDA_target_trace):
             return original(x, q, sc, ss, z, zs, group_size)
         index = indices[shape]
         return bulk_op(x, q, sc, ss, z, zs, index)
