@@ -50,7 +50,7 @@ jobs:
       with-cuda: enable
       with-cpu: disable
       with-rocm: disable
-      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      python-versions: '["3.11", "3.12", "3.13", "3.14", "3.15"]'
 
   # The same filter the Linux CUDA rows use: only the trains this project supports, and one row
   # on a pull request. It fails rather than emitting an empty matrix, because a workflow with no
@@ -94,7 +94,9 @@ jobs:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      # Avoid the unsatisfiable conda upgrade in the Windows runner's base env.
+      # https://github.com/pytorch/test-infra/pull/9179
+      test-infra-ref: e3d344d886a7281f6a919115d332df2a080da8ad
       build-matrix: ${{ needs.filter-matrix.outputs.matrix }}
       pre-script: ${{ matrix.pre-script }}
       env-script: ${{ matrix.env-script }}

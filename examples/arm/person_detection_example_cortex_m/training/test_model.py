@@ -127,6 +127,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pt", type=Path)
     parser.add_argument("--image", type=Path)
     parser.add_argument(
+        "--output", type=Path, default=RESULTS_DIR / "test_model.predictions.jpg"
+    )
+    parser.add_argument("--no-display", action="store_true")
+    parser.add_argument(
         "--webcam", action="store_true", help="run continuous inference on webcam 0"
     )
     return parser.parse_args()
@@ -206,10 +210,11 @@ def main() -> None:
         label_box = draw.textbbox(coordinates[:2], label)
         draw.rectangle(label_box, fill="red")
         draw.text(coordinates[:2], label, fill="white")
-    output_path = RESULTS_DIR / "test_model.predictions.jpg"
+    output_path = args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
-    image.show(title="µYOLO predictions")
+    if not args.no_display:
+        image.show(title="µYOLO predictions")
     print(f"image: {image_path}")
     print(f"detections: {len(boxes)}")
     report_output(output_path)

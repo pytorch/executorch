@@ -8,11 +8,32 @@
 
 from typing import Any, Callable, Dict, final, List, Optional, Tuple
 
+import executorch.backends.vulkan.utils as vk_utils
+
 import torch
-from executorch.backends.vulkan.op_registry import OpKey
+from executorch.backends.vulkan.op_registry import OpFeatures, OpKey
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
+
+
+def _arange_bounds_are_static(node: torch.fx.Node) -> bool:
+    # A SymInt start/end/step makes the length dynamic, which the WebGPU kernel
+    # does not resize for.
+    return not any(isinstance(arg, torch.fx.Node) for arg in node.args[:3])
+
+
+# Ops whose WebGPU kernels cover less than the Vulkan registry advertises, so the
+# unsupported forms stay on CPU instead of failing at delegate init.
+_WEBGPU_OP_FEATURES: Dict[OpKey, OpFeatures] = {
+    # fp32 and int32 kernels only; int64 is downcast to int32 on device.
+    exir_ops.edge.aten.arange.start_step: OpFeatures(
+        inputs_storage=vk_utils.ANY_STORAGE,
+        inputs_dtypes={torch.float32, torch.int32, torch.int64},
+        are_node_inputs_supported_fn=_arange_bounds_are_static,
+    ),
+}
 
 
 @final
@@ -33,6 +54,7 @@ class WebGPUPartitioner(Partitioner):
             operator_allowlist=operator_allowlist,
             nn_module_blocklist=nn_module_blocklist,
             nn_module_allowlist=nn_module_allowlist,
+            op_features_overrides=_WEBGPU_OP_FEATURES,
         )
 
     def ops_to_not_decompose(

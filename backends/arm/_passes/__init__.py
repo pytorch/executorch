@@ -43,6 +43,7 @@ from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
+from .decompose_bool_equality_pass import DecomposeBoolEqualityPass  # noqa
 from .decompose_choose_qparams_symmetric_pass import (  # noqa
     DecomposeChooseQParamsSymmetricPass,
 )
