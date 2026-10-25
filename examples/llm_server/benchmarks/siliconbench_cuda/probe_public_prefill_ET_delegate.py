@@ -125,7 +125,7 @@ def main():
                                       if isinstance(m, torch.fx.GraphModule))
                     (a.output / f'{role}-{label}-exported-graph.txt').write_text(graph)
                     if label == 'public':
-                        assert 'cond' in graph and 'siliconbench.public_grouped_w4a16' in graph
+                        assert 'siliconbench.public_bulk_w4a16' in graph
                     specs = [CudaBackend.generate_method_name_compile_spec('forward')]
                     edge = to_edge_transform_and_lower(ep, partitioner=[CudaPartitioner(specs)],
                         compile_config=EdgeCompileConfig(_check_ir_validity=False))

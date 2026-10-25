@@ -404,12 +404,16 @@
       "bytes": 11287
     },
     "probe_public_prefill_ET_delegate.py": {
-      "sha256": "93e147464424dbd273eba39f0582ae858b1acfdf7c29c80b7aea12f754e0e7eb",
-      "bytes": 8683
+      "sha256": "41474704daf1125f68d6767610c6114ca662a3813034a8d23e28ccfc6642bd46",
+      "bytes": 8660
     },
     "profile_et_server.py": {
       "sha256": "58c7d94c0375d062b2db06614f234a7f85111fbcf99742fa0f7a4a309ebc02f7",
       "bytes": 10766
+    },
+    "public_bulk_w4a16_aoti.py": {
+      "sha256": "5df921195877ecc3378e5205b77ca8b3979a0d588385b4ff8536676bb616d620",
+      "bytes": 1224
     },
     "public_grouped_w4a16.py": {
       "sha256": "79eaf9b193324bcfc90f903d7f03f5ab87b4a4981f9d3b3f3b671b2e7a1bc835",
@@ -420,8 +424,8 @@
       "bytes": 2552
     },
     "public_prefill_export_hook.py": {
-      "sha256": "2b1aec0bf678c547f65fc54ef49624ae5a7ba519d4ed6a3895cfb3d52497fd00",
-      "bytes": 2949
+      "sha256": "f758b43897dac23fb6f35605002c988b16f7c1a9fc8479033f74d18262f8cb4e",
+      "bytes": 2815
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",

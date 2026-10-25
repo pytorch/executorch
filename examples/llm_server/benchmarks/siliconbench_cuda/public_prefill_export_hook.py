@@ -24,6 +24,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
     import torch
     from public_grouped_w4a16 import Config
     from public_grouped_w4a16_aoti import candidate_op, config_index
+    from public_bulk_w4a16_aoti import bulk_op
     indices = {
         (39936, 6656): config_index(Config(bm=32, bn=64, bk=128, split=1,
                                          warps=4, stages=3, group_m=8)),
@@ -43,10 +44,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
                 or x.dtype != torch.bfloat16 or x.device.type != 'cuda'):
             return original(x, q, sc, ss, z, zs, group_size)
         index = indices[shape]
-        return torch.cond(x.shape[0] <= 128,
-            lambda a, b, c, d, e, f: candidate_op(a, b, c, d, e, f, index, False),
-            lambda a, b, c, d, e, f: original(a, b, c, d, e, f, 32),
-            (x, q, sc, ss, z, zs))
+        return bulk_op(x, q, sc, ss, z, zs, index)
 
     dispatch._dequant_matmul = route
     receipt.update(installed=True, original_dispatch_identical=False,
