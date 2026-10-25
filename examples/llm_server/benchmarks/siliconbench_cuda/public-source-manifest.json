@@ -79,6 +79,10 @@
       "sha256": "921e7eb334a656dfada932e45d062022fec3c744b88ba7f79e7e7086fa8bc249",
       "bytes": 9919
     },
+    "benchmark_public_prefill_prepared_groups.py": {
+      "sha256": "fa19396b8db1c93604bab0f4c4ee2255a07f0755e257bec18aeb9e2546f53437",
+      "bytes": 9358
+    },
     "benchmark_public_w4a16_aoti_conditional.py": {
       "sha256": "25e33a4167231e74ca22b3a06756212dba8892d56eeeefdac2256d7763c08bd3",
       "bytes": 12163
@@ -452,8 +456,12 @@
       "bytes": 2457
     },
     "public_prefill_export_hook.py": {
-      "sha256": "152f4b545d2a9a249e6de7f6ffad419764446f92a22b00aaedd7a5f76354cb3e",
-      "bytes": 3341
+      "sha256": "ef5739c88ef0c770d24f3f53bbeeff0d199ec4963928d2ce78bb446a0df73145",
+      "bytes": 3343
+    },
+    "public_prefill_prepared_groups.py": {
+      "sha256": "27c9b26e2a42690f7464fe19ad8ac4a3666b8cb778e70e09194ce2f3481d723c",
+      "bytes": 5145
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",

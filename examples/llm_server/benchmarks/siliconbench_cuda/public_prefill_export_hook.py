@@ -27,7 +27,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
     from public_grouped_w4a16_aoti import candidate_op, config_index
     from public_bulk_w4a16_aoti import bulk_op
     indices = {
-        (39936, 6656): config_index(Config(bm=32, bn=64, bk=32, split=1,
+        (39936, 6656): config_index(Config(bm=32, bn=64, bk=128, split=1,
                                          warps=4, stages=3, group_m=8)),
         (6656, 19968): config_index(Config(bm=32, bn=64, bk=128, split=8,
                                          warps=4, stages=2, group_m=8)),
@@ -58,5 +58,5 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
                    validated_Q4_shapes=[list(s) for s in indices],
                    other_shapes_and_static_M_use_original=True,
                    bulk_arithmetic='staged BF16 reconstruction without FMA')
-    receipt['experimental_gate_K_tile'] = 32
+    receipt['experimental_gate_K_tile'] = 128
     return receipt
