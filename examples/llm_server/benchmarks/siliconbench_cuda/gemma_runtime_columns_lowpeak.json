@@ -1,0 +1,19 @@
+{
+  "patch_SHA256": "23ea39838b88edae425ed43fa6e9759240f81f5f232e2e6f0d2064df1a3f6029",
+  "files": {
+    "backends/cuda/runtime/cuda_kv_pool.cpp": {
+      "before_SHA256": "fca0e64fb42bcbeb63776e4c4128e9eafb4e840e5701ccdadfb7e55f692a93d8",
+      "after_SHA256": "d06ecbb49f6fdfa7e3cf56c96465fa6ba8b4b44d3527c7a95c46e42eeffdacac"
+    },
+    "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
+      "before_SHA256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
+      "after_SHA256": "24fde211d7c52a6f7a063042017b86cb3970601a9801105e6e093889a040a13c"
+    }
+  },
+  "CPU_compiled": false,
+  "GPU_validated": false,
+  "model_promoted": false,
+  "allocation_strategy": "one layer replacement at a time; reverse retained-owner rollback",
+  "failure_semantics": "recoverable with invalidated graphs if restored; cache poisoned if restoration fails",
+  "nearcap_row_policy_uses_runtime_physical_limit": true
+}

@@ -1,0 +1,210 @@
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -385,7 +385,12 @@
+   };
+   for (size_t index = 0; index < layers_.size(); ++index) {
+     const Layer& layer = layers_[index];
+-    const int64_t rows = std::min(new_rows, physical_limit(layer));
++    const int64_t limit = physical_limit(layer);
++    int64_t rows = std::min(new_rows, limit);
++    if (layer.growable && rows > allocations_.at(index).rows &&
++        limit - rows > 0 && limit - rows <= rows / 32) {
++      rows = limit;
++    }
+     if (!layer.growable || rows <= allocations_.at(index).rows) {
+       continue;
+     }
+@@ -516,61 +521,114 @@
+   }
+
+   const int old_columns = columns_;
+-  std::vector<Allocation> replacements;
+-  replacements.reserve(layers_.size());
+-  auto roll_back = [&]() {
+-    for (size_t index = 0; index < replacements.size(); ++index) {
+-      discard(layers_[index], replacements[index], stream);
+-    }
+-    if (cudaStreamSynchronize(stream) == cudaSuccess && trim_unused) {
++  const int64_t before_bytes = allocated_bytes_;
++  int64_t peak_bytes = before_bytes;
++  size_t migrated = 0;
++  bool bindings_invalidated = false;
++  auto fence_and_trim = [&]() -> Error {
++    if (cudaStreamSynchronize(stream) != cudaSuccess) {
++      return Error::Internal;
++    }
++    if (trim_unused) {
+       CudaAllocator::release_cached_memory(device_);
+     }
++    return Error::Ok;
+   };
+-  for (size_t index = 0; index < layers_.size(); ++index) {
+-    const int64_t logical_rows = allocations_[index].rows / old_columns;
+-    Allocation replacement;
+-    const Error error = allocate_layer(
+-        layers_[index], logical_rows * columns, stream, replacement);
+-    if (error != Error::Ok) {
+-      roll_back();
+-      return error;
+-    }
+-    replacements.push_back(replacement);
+-  }
+-  for (size_t index = 0; index < layers_.size(); ++index) {
+-    const Allocation& current = allocations_[index];
+-    const Allocation& replacement = replacements[index];
++  auto copy_columns = [&](size_t index, const Allocation& current,
++                          Allocation& next, bool reverse) -> Error {
+     const size_t slot = row_bytes(layers_[index]);
+-    const size_t logical_rows = static_cast<size_t>(current.rows / old_columns);
+-    for (const auto& [from, to] : retained_columns) {
++    const int from_width = reverse ? columns : old_columns;
++    const int to_width = reverse ? old_columns : columns;
++    const size_t logical_rows = static_cast<size_t>(current.rows / from_width);
++    for (const auto& [old_column, new_column] : retained_columns) {
++      const int from = reverse ? new_column : old_column;
++      const int to = reverse ? old_column : new_column;
+       for (const auto& [dst, src] :
+-           {std::pair{replacement.k, current.k},
+-            std::pair{replacement.v, current.v}}) {
++           {std::pair{next.k, current.k}, std::pair{next.v, current.v}}) {
+         const cudaError_t error = cudaMemcpy2DAsync(
+-            static_cast<uint8_t*>(dst) + slot * to,
+-            slot * columns,
+-            static_cast<const uint8_t*>(src) + slot * from,
+-            slot * old_columns,
+-            slot,
+-            logical_rows,
+-            cudaMemcpyDeviceToDevice,
+-            stream);
++            static_cast<uint8_t*>(dst) + slot * to, slot * to_width,
++            static_cast<const uint8_t*>(src) + slot * from, slot * from_width,
++            slot, logical_rows, cudaMemcpyDeviceToDevice, stream);
+         if (error != cudaSuccess) {
+-          roll_back();
++          ET_LOG(Error, "offgraph_kv: column copy layer=%zu rollback=%d: %s",
++                 index, reverse, cudaGetErrorString(error));
+           return Error::Internal;
+         }
+       }
+     }
+-  }
+-  if (cudaStreamSynchronize(stream) != cudaSuccess) {
+-    roll_back();
++    return cudaStreamSynchronize(stream) == cudaSuccess ? Error::Ok : Error::Internal;
++  };
++  auto poison = [&]() -> Error {
++    // A partially restored pool must never be used with either owner map.
++    if (committed != nullptr) {
++      *committed = true;
++    }
++    invalidate_bindings();
++    ET_LOG(Error, "offgraph_kv: cannot restore physical columns; cache must be cleared");
+     return Error::Internal;
+-  }
+-  invalidate_bindings();
++  };
++  auto roll_back = [&](Error original_error) -> Error {
++    if (fence_and_trim() != Error::Ok) {
++      return poison();
++    }
++    // Retained owners are an injective map, so inverse copies restore every
++    // live history. Padding and vacant columns carry no observable state.
++    while (migrated > 0) {
++      const size_t index = migrated - 1;
++      Allocation& current = allocations_[index];
++      Allocation restored;
++      const int64_t old_rows = current.rows / columns * old_columns;
++      if (allocate_layer(layers_[index], old_rows, stream, restored) != Error::Ok) {
++        return poison();
++      }
++      peak_bytes = std::max(peak_bytes, allocated_bytes_);
++      if (copy_columns(index, current, restored, true) != Error::Ok) {
++        discard(layers_[index], restored, stream);
++        (void)fence_and_trim();
++        return poison();
++      }
++      discard(layers_[index], current, stream);
++      current = restored;
++      --migrated;
++      if (fence_and_trim() != Error::Ok) {
++        return poison();
++      }
++    }
++    ET_LOG(Info, "offgraph_kv: column migration rolled back columns=%d bytes=%lld peak=%lld",
++           old_columns, static_cast<long long>(allocated_bytes_),
++           static_cast<long long>(peak_bytes));
++    return original_error;
++  };
++  // Only one layer's replacement coexists with its original. Fence before
++  // freeing old pointers and release cached blocks before the next layer.
+   for (size_t index = 0; index < layers_.size(); ++index) {
+-    discard(layers_[index], allocations_[index], stream);
+-  }
+-  allocations_ = std::move(replacements);
++    Allocation& current = allocations_[index];
++    Allocation next;
++    const int64_t new_rows = current.rows / old_columns * columns;
++    const Error allocation_error = allocate_layer(layers_[index], new_rows, stream, next);
++    if (allocation_error != Error::Ok) {
++      return roll_back(allocation_error);
++    }
++    peak_bytes = std::max(peak_bytes, allocated_bytes_);
++    const Error copy_error = copy_columns(index, current, next, false);
++    if (copy_error != Error::Ok) {
++      discard(layers_[index], next, stream);
++      return roll_back(copy_error);
++    }
++    if (!bindings_invalidated) {
++      invalidate_bindings();
++      bindings_invalidated = true;
++    }
++    discard(layers_[index], current, stream);
++    current = next;
++    ++migrated;
++    if (fence_and_trim() != Error::Ok) {
++      return poison();
++    }
++  }
++  ET_LOG(Info, "offgraph_kv: bounded column migration old_bytes=%lld final_bytes=%lld peak_bytes=%lld",
++         static_cast<long long>(before_bytes), static_cast<long long>(allocated_bytes_),
++         static_cast<long long>(peak_bytes));
+   rows_ = rows_ / old_columns * columns;
+   initial_rows_ = initial_rows_ / old_columns * columns;
+   max_rows_ = max_rows_ / old_columns * columns;
+--- a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
+@@ -3035,7 +3035,7 @@
+   kv->forget_handle(&prefill);
+ }
+
+-TEST_F(CudaKVPoolTest, FailedColumnGrowthKeepsOldStorageAndBindingsUsable) {
++TEST_F(CudaKVPoolTest, FailedColumnGrowthRestoresOwnersAndRecapturesMovedBindings) {
+   constexpr int kDeclaredColumns = 1 << 20;
+   constexpr int kHugeDim = 1 << 20;
+   cu::CudaKVPool pool(
+@@ -3069,7 +3069,6 @@
+           history.size() * sizeof(uint16_t),
+           cudaMemcpyHostToDevice),
+       cudaSuccess);
+-  void* old_k = pool.layer_data(0, false);
+   void* old_large_k = pool.layer_data(1, false);
+   const auto before_bytes = pool.allocated_bytes();
+   const int updates = fake.updates;
+@@ -3087,12 +3086,13 @@
+   EXPECT_EQ(pool.columns(), 2);
+   EXPECT_EQ(pool.column_resize_count(), 0);
+   EXPECT_EQ(pool.allocated_bytes(), before_bytes);
+-  EXPECT_EQ(pool.layer_data(0, false), old_k);
+   EXPECT_EQ(pool.layer_data(1, false), old_large_k);
+-  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
++  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
++  EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 1);
+   ASSERT_EQ(pool.bind(&handle), Error::Ok);
+-  EXPECT_EQ(fake.updates, updates);
+-  EXPECT_EQ(read_rows(old_k, 2), history);
++  EXPECT_EQ(fake.updates, updates + 1);
++  const auto restored = read_rows(pool.layer_data(0, false), 2);
++  EXPECT_TRUE(std::equal(history.begin(), history.begin() + kHeads * kDim, restored.begin()));
+   ASSERT_EQ(pool.prepare(2, 1, cudaStreamPerThread), Error::Ok);
+   ASSERT_EQ(pool.mark_step_done(), Error::Ok);
+   pool.forget_handle(&handle);

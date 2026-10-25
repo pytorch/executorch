@@ -95,6 +95,10 @@
       "sha256": "1dca4c90788715dbb4641ea56fb3cbb941ce12179c7b3d45cc960befaf5e617b",
       "bytes": 13187
     },
+    "benchmark_roofline_large_w4a16.py": {
+      "sha256": "44c5cab1c5f344bdc88d8fb60b301a6380e96a2ca6066c52f96d6a67fd6fa765",
+      "bytes": 12165
+    },
     "benchmark_sm80_prefill_fallback.py": {
       "sha256": "33e2b7c9683e66aa9919ae382525b1bc4222d8791b08adf1a7b47a60dfe9e19b",
       "bytes": 5472
@@ -351,6 +355,14 @@
       "sha256": "0e160f98865f10ebedfee19961a8855583d955a2f88053ccc214f8e203f8fe4b",
       "bytes": 4594
     },
+    "gemma_runtime_columns_lowpeak.json": {
+      "sha256": "3f67001979c620dd4423277b9ec5eba8f0b489f55722ce5d99f23b7bece5170a",
+      "bytes": 927
+    },
+    "gemma_runtime_columns_lowpeak.patch": {
+      "sha256": "23ea39838b88edae425ed43fa6e9759240f81f5f232e2e6f0d2064df1a3f6029",
+      "bytes": 8816
+    },
     "gemma_runtime_columns_overlay.json": {
       "sha256": "ec8b0bbf957fa0a76816aa81818e022154a06f7897fa676422dbdfdf37ca9e0d",
       "bytes": 1785
@@ -582,6 +594,10 @@
     "roofline_et.cpp": {
       "sha256": "9f12f60e5a15a07464d1f6efb5d0d51bd9f29f727d247b9e41fe260c102bc205",
       "bytes": 6366
+    },
+    "roofline_large_w4a16.py": {
+      "sha256": "6c643ebab857a0739978dcb4980292e218b6b763a2e37bb34cafca71f14d2187",
+      "bytes": 2621
     },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",
