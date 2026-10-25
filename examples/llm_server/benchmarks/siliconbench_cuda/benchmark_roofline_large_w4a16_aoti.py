@@ -14,6 +14,7 @@ from pathlib import Path
 import statistics
 import subprocess
 import sys
+import time
 import traceback
 
 
@@ -38,7 +39,11 @@ def main():
     try:
         with a.lock.open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
-            assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
+            state('waiting-prior-CUDA-context-teardown')
+            deadline=time.monotonic()+120
+            while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():
+                assert time.monotonic()<deadline,'Existing GPU context remains occupied; leave it untouched'
+                time.sleep(1)
             os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(a.output/'inductor'),TRITON_CACHE_DIR=str(a.output/'triton'),TORCHINDUCTOR_COMPILE_THREADS='1',MAX_JOBS='1',OMP_NUM_THREADS='2')
             sys.path.insert(0,str(a.et_source.parent))
             import numpy as np
