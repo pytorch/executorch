@@ -44,7 +44,7 @@ def main():
             while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():
                 assert time.monotonic()<deadline,'Existing GPU context remains occupied; leave it untouched'
                 time.sleep(1)
-            os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(a.output/'inductor'),TRITON_CACHE_DIR=str(a.output/'triton'),TORCHINDUCTOR_COMPILE_THREADS='1',MAX_JOBS='1',OMP_NUM_THREADS='2')
+            os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(a.output/'inductor'),TRITON_CACHE_DIR=str(a.output/'triton'),TORCHINDUCTOR_COMPILE_THREADS='1',MAX_JOBS='1',OMP_NUM_THREADS='2',AOTI_RUNTIME_CHECK_INPUTS='1')
             sys.path.insert(0,str(a.et_source.parent))
             import numpy as np
             import torch
@@ -57,6 +57,7 @@ def main():
             from torch._inductor import aoti_compile_and_package,aoti_load_package
             from public_grouped_w4a16 import materialize
             from roofline_large_w4a16_aoti import register_policy,large_w4a16_op
+            from aoti_explicit_stream import run_aoti_on_current_stream
             assert torch.cuda.get_device_capability()==(12,0)
             torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
             assert digest(a.gguf)=='4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
@@ -91,6 +92,10 @@ def main():
             stream=torch.cuda.Stream()
             with torch.inference_mode(),torch.cuda.stream(stream),clock.cuda_graph_timing():
                 example=torch.randn((a.max_M,k),device='cuda',dtype=torch.bfloat16)
+                torch._dynamo.mark_dynamic(example,0,min=65,max=a.max_M)
+                report['explicit_dynamic_example_rows']=[65,a.max_M]
+                report['AOTI_runtime_input_guards_enabled']=True
+                report['AOTI_invocation']='official loader.run with explicit current CUDA stream'
                 dynamic=({0:torch.export.Dim('rows',min=65,max=a.max_M)},{},{},{},{},{})
                 packages={}
                 for name,candidate in [('fallback',False),('candidate',True)]:
@@ -110,7 +115,7 @@ def main():
                 for m in sorted(v for v in boundaries if 65<=v<=a.max_M):
                     state('validating-AOTI-boundary',M=m)
                     x=torch.randn((m,k),device='cuda',dtype=torch.bfloat16,generator=torch.Generator(device='cuda').manual_seed(92000+n+m))
-                    functions={name:lambda package=package:package(x,*w) for name,package in packages.items()}
+                    functions={name:lambda package=package:run_aoti_on_current_stream(package,(x,*w))[0] for name,package in packages.items()}
                     ys=[functions['candidate']().clone() for _ in range(3)];torch.cuda.synchronize()
                     assert all(torch.equal(ys[0],v) for v in ys[1:])
                     selected=next((b for b in policy['branches'] if m<=b['max_M']),None)
