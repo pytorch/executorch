@@ -44,6 +44,8 @@ def main():
     parser.add_argument('--a100-control-sha256')
     parser.add_argument('--large-w4a16-policy-file',type=Path,
                         help='Roofline-only measured policies and completed dynamic-AOTI validations')
+    parser.add_argument('--reference-export-job',type=Path,
+                        help='Reuse completed baseline compile caches; preserve the baseline directory')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
@@ -106,6 +108,18 @@ def main():
     assert digest(kernels / 'sdpa_varlen.py') == args.attention_source_sha256
     cache = args.job_dir / 'cache'
     (cache / 'host-zero-backed').mkdir(parents=True)
+    if args.reference_export_job is not None:
+        import shutil
+        previous=json.loads((args.reference_export_job/'progress.json').read_text())
+        assert previous['status']=='completed'
+        previous_audit=json.loads((Path(previous['artifact'])/'artifact-audit.json').read_text())
+        assert previous_audit['GGUF_sha256']==digest(args.gguf)
+        assert previous_audit['quant_source_sha256']==sources
+        assert previous_audit['max_resident_sequences']==args.max_kv_seqs
+        assert previous_audit['constant_metadata']['get_max_prefill_chunk']==args.max_step_tokens
+        assert 'large_W4A16_roofline_route' not in previous_audit
+        for name in ['inductor','triton']:
+            shutil.copytree(args.reference_export_job/'cache'/name,cache/name)
     os.environ.update(CUDA_VISIBLE_DEVICES='0', CUDA_HOME='/usr/local/cuda',
                       TORCH_CUDA_ARCH_LIST='12.0', TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas',
                       ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
@@ -165,6 +179,19 @@ def main():
         from roofline_large_w4a16_aoti import install_export_hook
         large_w4a16_receipt=install_export_hook(int4_dispatch,
             capability=torch.cuda.get_device_capability(),policies=policies)
+        original_export=torch.export.export
+        route_audits=[]
+        def traced_export(*a,**kw):
+            ep=original_export(*a,**kw)
+            count=sum(node.op=='call_function' and 'siliconbench.roofline_native_large_w4a16' in str(node.target)
+                for module in ep.graph_module.modules() if isinstance(module,torch.fx.GraphModule)
+                for node in module.graph.nodes)
+            item=dict(dynamic=kw.get('dynamic_shapes') is not None,native_large_operator_calls=count)
+            if count:assert item['dynamic'],'Original static forwards must retain their operations'
+            route_audits.append(item)
+            (args.job_dir/'actual-strict-export-route-audit.json').write_text(json.dumps(route_audits,indent=2)+'\n')
+            return ep
+        torch.export.export=traced_export
     if args.accepted_ka_report is not None:
         from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
         from ka_v8_export_hook import configure_mg_export
@@ -252,8 +279,12 @@ def main():
         from ka_v8_export_hook import audit_route_log
         audit['KA_route_receipt']=audit_route_log(args.job_dir,ka_receipt)
     if large_w4a16_receipt is not None:
+        assert any(row['native_large_operator_calls']>0 for row in route_audits),'Large routes missing from real model export'
         audit['large_W4A16_roofline_route']=large_w4a16_receipt
         audit['large_W4A16_policy_file_SHA256']=digest(args.large_w4a16_policy_file)
+        audit['actual_strict_export_route_audit']=route_audits
+    if args.reference_export_job is not None:
+        audit['baseline_compile_cache_reused']=True
     (args.output / 'artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
     state('artifact-exported-and-audited', runtime_sessions=32, prefix_caching=False, roofline_measurements_pending=True)
 
