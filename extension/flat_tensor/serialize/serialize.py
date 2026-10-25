@@ -217,7 +217,10 @@ class FlatTensorHeader:
 def _get_extended_header(flat_tensor_data: bytes) -> Optional[FlatTensorHeader]:
     """Returns the extended header of the flat_tensor data, if present and valid."""
     try:
-        eh = FlatTensorHeader.from_bytes(flat_tensor_data[8:])
+        # flat_tensor_data[8:] would copy the whole file.
+        eh = FlatTensorHeader.from_bytes(
+            flat_tensor_data[8 : 8 + FlatTensorHeader.EXPECTED_LENGTH]
+        )
         if eh.is_valid():
             return eh
     except ValueError:
@@ -372,8 +375,8 @@ class FlatTensorSerializer(DataSerializer):
         data = bytes(blob)
 
         # Read header. Verify that it's valid.
-        header = FlatTensorHeader.from_bytes(data[8:])
-        if not header.is_valid():
+        header = _get_extended_header(data)
+        if header is None:
             raise RuntimeError(
                 "Flat tensor header is invalid. File is likely incorrect format or corrupt."
             )
