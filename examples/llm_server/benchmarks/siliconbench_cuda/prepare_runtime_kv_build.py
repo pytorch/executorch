@@ -1,8 +1,9 @@
 """Prepare and compile an isolated runtime-column candidate without GPU work.
 
-Existing source, environments, models, binaries and results remain untouched.
-CUDA devices are hidden for the entire build. This script never runs tests,
-exports a model, starts a server, or accepts the candidate.
+Production source, environments, models, binaries and prior logs stay untouched.
+CUDA devices are hidden for the entire build. CPU toy fixtures may be generated
+by CMake; this script never runs GPU tests, exports MG, starts an inference
+server or accepts the candidate.
 """
 
 import argparse
@@ -33,6 +34,11 @@ def main():
         type=Path,
         help="Read-only public checkout used for Git archives; no network or changes to its files",
     )
+    parser.add_argument(
+        "--prepared-source",
+        type=Path,
+        help="Resume an owned isolated source whose prior build is terminal; preserve its prior logs",
+    )
     parser.add_argument("--jobs", type=int, choices=[1, 2], default=2)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
@@ -42,7 +48,9 @@ def main():
     assert args.baseline_source.is_dir() and args.python.is_file()
     assert not args.output.exists(), "Preserve every prior build and attempt"
     args.output.mkdir(parents=True)
-    source = args.output / "executorch"
+    source = (
+        args.prepared_source if args.prepared_source else args.output / "executorch"
+    )
     env = os.environ.copy()
     env.update(
         CUDA_VISIBLE_DEVICES="",
@@ -71,6 +79,8 @@ def main():
         temp = progress.with_suffix(".pending.json")
         temp.write_text(json.dumps(value, indent=2) + "\n")
         temp.replace(progress)
+        with (args.output / "progress-history.jsonl").open("a") as history:
+            history.write(json.dumps(value) + "\n")
 
     def run(argv, *, cwd=None, timeout=7200):
         with (args.output / "build.log").open("a") as log:
@@ -143,7 +153,23 @@ def main():
                     root, "status", "--porcelain", "--untracked-files=no"
                 ), str(root)
 
-        if args.public_base_cache:
+        prior_preparation = None
+        if args.prepared_source:
+            assert source.is_dir() and not source.resolve().is_relative_to(
+                args.baseline_source.resolve()
+            )
+            prior = json.loads((source.parent / "progress.json").read_text())
+            assert prior["status"] == "failed"
+            assert not Path("/proc", str(prior["controller_pid"])).exists()
+            assert (source / "cmake-out/CMakeCache.txt").is_file()
+            for name, record in spec["changed_files"].items():
+                assert digest(source / name) == record["after_sha256"], name
+            prior_preparation = dict(
+                source=str(source),
+                terminal_prior_progress_sha256=digest(source.parent / "progress.json"),
+                prior_build_logs_preserved=True,
+            )
+        elif args.public_base_cache:
             assert args.public_base_cache.is_dir()
             archive_checkout(args.public_base_cache, spec["base_commit"], source)
         else:
@@ -211,11 +237,12 @@ def main():
             assert (args.baseline_source / name).is_file()
             shutil.copy2(args.baseline_source / name, source / name)
             inherited[name] = digest(source / name)
-        for name, record in spec["changed_files"].items():
-            if record["before_sha256"] is not None:
-                assert digest(source / name) == record["before_sha256"], name
-        run(["git", "-C", source, "apply", "--check", patch])
-        run(["git", "-C", source, "apply", patch])
+        if not args.prepared_source:
+            for name, record in spec["changed_files"].items():
+                if record["before_sha256"] is not None:
+                    assert digest(source / name) == record["before_sha256"], name
+            run(["git", "-C", source, "apply", "--check", patch])
+            run(["git", "-C", source, "apply", patch])
         for name, record in spec["changed_files"].items():
             assert digest(source / name) == record["after_sha256"], name
         controls = {}
@@ -232,6 +259,16 @@ def main():
         else:
             assert not alias.exists()
             alias.symlink_to("muse-glimmer")
+        # Match the source package resource staging in setup.py build_py.
+        resources = {}
+        for name in ["program.fbs", "scalar_type.fbs"]:
+            original = source / "schema" / name
+            dest = source / "exir/_serialize" / name
+            if dest.exists():
+                assert digest(dest) == digest(original)
+            else:
+                shutil.copy2(original, dest)
+            resources[name] = digest(dest)
         torch_prefix = subprocess.check_output(
             [
                 str(args.python),
@@ -249,6 +286,8 @@ def main():
             "building-core",
             source=str(source),
             dependency_archives=dependency_archives,
+            reused_preparation=prior_preparation,
+            package_resources=resources,
             inherited_source=inherited,
             unchanged_quant_source=controls,
         )
@@ -288,6 +327,8 @@ def main():
             "building-probe",
             source=str(source),
             dependency_archives=dependency_archives,
+            reused_preparation=prior_preparation,
+            package_resources=resources,
             inherited_source=inherited,
             unchanged_quant_source=controls,
         )
@@ -328,6 +369,8 @@ def main():
             "CPU-build-completed",
             source=str(source),
             dependency_archives=dependency_archives,
+            reused_preparation=prior_preparation,
+            package_resources=resources,
             inherited_source=inherited,
             unchanged_quant_source=controls,
             patch_sha256=spec["patch_sha256"],
