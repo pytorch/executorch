@@ -69,6 +69,7 @@ def main():
             from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
             from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
             from executorch.backends.cuda.autotune import cuda_graph_timing as clock
+            from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
             from public_grouped_w4a16 import materialize
             from roofline_large_w4a16 import install, configs
             assert torch.cuda.get_device_capability() == (12, 0)
@@ -102,6 +103,13 @@ def main():
             options = dict(max_autotune_gemm=True, max_autotune_gemm_backends='TRITON',
                            emulate_precision_casts=True, **{'triton.cudagraphs': False})
             report['fallback_compile_options'] = options
+            tuning_events = []
+            previous_listener = triton.knobs.autotuning.listener
+            def record_pick(**event):
+                tuning_events.append(event)
+                if previous_listener is not None:
+                    previous_listener(**event)
+            triton.knobs.autotuning.listener = record_pick
             stream = torch.cuda.Stream()
             with torch.inference_mode(), torch.cuda.stream(stream), clock.cuda_graph_timing() as timing_stats:
                 for role in a.roles:
@@ -136,12 +144,16 @@ def main():
                             bounded(); state('autotuning-native-large-bucket', role=role, M=m,
                                              bucket=bucket, split_k=split)
                             try:
+                                tuning_events.clear()
                                 y = native._launch_w4a16(bucket, x, *w, 32, split_k=split)
                                 torch.cuda.synchronize()
-                            except (triton.runtime.errors.OutOfResources, ValueError) as error:
+                            except (triton.runtime.errors.OutOfResources, InvalidLaunchParam) as error:
                                 candidates.append(dict(split_k=split, unsupported=str(error))); continue
                             tuner = (native._W4A16_DIRECT_KERNELS if split == 1 else native._W4A16_SPLIT_KERNELS)[bucket]
-                            config = tuner.best_config
+                            picks = [e for e in tuning_events if tuple(e['key'][:4]) == (m,n,k,split)]
+                            assert picks, 'Capture the actual autotune pick; do not substitute a default'
+                            pick = picks[-1]
+                            config = pick['best_config']
                             fn = lambda split=split, config=config: native._launch_w4a16(
                                 bucket, x, *w, 32, split_k=split, config=config)
                             ys = [fn().clone() for _ in range(3)]
@@ -154,7 +166,9 @@ def main():
                                 config=dict(kwargs=config.kwargs, num_warps=config.num_warps, num_stages=config.num_stages),
                                 declared_autotune_configs=len(configs(bucket)) if bucket >= 128 else len(native.int4_autotune_configs(bucket)),
                                 config_timings=[dict(config=str(c), us=[float(v) for v in times] if isinstance(times,(list,tuple)) else float(times))
-                                                for c,times in tuner.configs_timings.items()]))
+                                                for c,times in pick['configs_timings'].items()],
+                                actual_autotune_key=[str(v) for v in pick['key']],
+                                autotune_pick_from_runtime_listener=True))
                         valid = [v for v in candidates if 'us' in v]
                         assert valid, 'No usable native W4A16 launch'
                         winner = min(valid, key=lambda v: v['us'])

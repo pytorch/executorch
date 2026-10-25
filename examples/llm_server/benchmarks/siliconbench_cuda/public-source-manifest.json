@@ -96,8 +96,8 @@
       "bytes": 13187
     },
     "benchmark_roofline_large_w4a16.py": {
-      "sha256": "71b4e244e8755f8ef75564415a4e486390c07be95ee495415d19455cd585ada7",
-      "bytes": 12291
+      "sha256": "a275725ca2196b430e39794b6fda3ef36e68e77918d203f0509b8c52eb921098",
+      "bytes": 13193
     },
     "benchmark_sm80_prefill_fallback.py": {
       "sha256": "33e2b7c9683e66aa9919ae382525b1bc4222d8791b08adf1a7b47a60dfe9e19b",
