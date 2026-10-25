@@ -42,6 +42,8 @@ def main():
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--accepted-ka-report',type=Path)
     parser.add_argument('--a100-control-sha256')
+    parser.add_argument('--large-w4a16-policy-file',type=Path,
+                        help='Roofline-only measured policies and completed dynamic-AOTI validations')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
@@ -145,6 +147,24 @@ def main():
 
     CudaBackend.get_aoti_compile_options = classmethod(optimized_options)
     ka_receipt=None
+    large_w4a16_receipt=None
+    if args.large_w4a16_policy_file is not None:
+        assert args.accepted_ka_report is None, 'Evaluate one routing change at a time'
+        policy_request=json.loads(args.large_w4a16_policy_file.read_text())
+        policies=policy_request['policies']
+        assert len(policies)==len(policy_request['validation_reports'])
+        for policy,path in zip(policies,policy_request['validation_reports']):
+            path=Path(path)
+            validation=json.loads(path.read_text())
+            assert json.loads((path.parent/'progress.json').read_text())['status']=='completed-pending-full-forward'
+            assert validation['policy']==policy and validation['GGUF_SHA256']==digest(args.gguf)
+            assert validation['dynamic_range']==[65,args.max_step_tokens]
+            assert validation['cases'] and all(c['deterministic'] and c['native_or_fallback_oracle']['finite']
+                and c['native_or_fallback_oracle']['relative_RMS']<.005 for c in validation['cases'])
+        from executorch.backends.cuda.quantize_op_dispatch import int4_dispatch
+        from roofline_large_w4a16_aoti import install_export_hook
+        large_w4a16_receipt=install_export_hook(int4_dispatch,
+            capability=torch.cuda.get_device_capability(),policies=policies)
     if args.accepted_ka_report is not None:
         from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
         from ka_v8_export_hook import configure_mg_export
@@ -231,6 +251,9 @@ def main():
     if ka_receipt is not None:
         from ka_v8_export_hook import audit_route_log
         audit['KA_route_receipt']=audit_route_log(args.job_dir,ka_receipt)
+    if large_w4a16_receipt is not None:
+        audit['large_W4A16_roofline_route']=large_w4a16_receipt
+        audit['large_W4A16_policy_file_SHA256']=digest(args.large_w4a16_policy_file)
     (args.output / 'artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
     state('artifact-exported-and-audited', runtime_sessions=32, prefix_caching=False, roofline_measurements_pending=True)
 

@@ -41,10 +41,12 @@ def main():
 
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', CUDA_HOME='/usr/local/cuda',
                TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas', CUDA_VISIBLE_DEVICES='',
+               CUDAARCHS='120', TORCH_CUDA_ARCH_LIST='12.0',
                MAX_JOBS='8', CMAKE_BUILD_PARALLEL_LEVEL='8', OMP_NUM_THREADS='2',
                UV_CACHE_DIR=str(a.root / 'uv-cache'))
     venv = a.root / 'venv'
     python = venv / 'bin/python'
+    env['PATH'] = str(python.parent) + os.pathsep + env['PATH']
     uv = shutil.which('uv'); assert uv
 
     def run(command, timeout=3600):
