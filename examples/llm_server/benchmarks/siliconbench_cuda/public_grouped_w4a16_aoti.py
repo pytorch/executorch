@@ -10,9 +10,10 @@ import torch
 from torch.library import triton_op, wrap_triton
 import triton
 
-from public_grouped_w4a16 import _gemm, _reduce, _validate, configs
+from public_grouped_w4a16 import Config, _gemm, _reduce, _validate, configs
 
-CONFIGS = tuple(configs(72))
+# Append experimental choices to preserve every previously serialized index.
+CONFIGS = tuple(configs(72)) + (Config(32, 64, 32, stages=3),)
 
 
 @triton_op('siliconbench::public_grouped_w4a16', mutates_args={})

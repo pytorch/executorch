@@ -36,6 +36,12 @@ def main():
     p.add_argument('--lock',type=Path,required=True)
     p.add_argument('--example-M',type=int,choices=[72,2048],default=2048,
                    help="Match the full ET dynamic export example for baseline autotuning")
+    p.add_argument('--gate-bk32',action='store_true',
+                   help='Test a Gate K tile of 32 without changing its eligible M range')
+    p.add_argument('--roles',nargs='+',choices=['ffn_gate_up','ffn_down'],
+                   default=['ffn_gate_up','ffn_down'])
+    p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,128,129,512,2048],
+                   default=[8,16,64,72,128,129,512,2048])
     a=p.parse_args();a.output.mkdir(exist_ok=False)
     report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
                 model_route_changed=False,KA_invoked=False,A100_performance_verified=False,
@@ -102,7 +108,7 @@ def main():
             cpp.CppBuilder.build=record_build
             stream=torch.cuda.Stream()
             with torch.inference_mode(),torch.cuda.stream(stream):
-                for role in ['ffn_gate_up','ffn_down']:
+                for role in a.roles:
                     if role=='ffn_gate_up':
                         gate=next(t for t in reader.tensors if t.name=='blk.0.ffn_gate.weight')
                         up=next(t for t in reader.tensors if t.name=='blk.0.ffn_up.weight')
@@ -116,6 +122,8 @@ def main():
                     hashes=[hashlib.sha256(t.cpu().numpy().tobytes()).hexdigest() for t in w]
                     assert hashes==screen['weight_sources'][role]['packed_SHA256']
                     chosen=next(c for c in screen['results'] if c['role']==role and c['entry']=='bulk72')['best']['config']
+                    if a.gate_bk32 and role=='ffn_gate_up':
+                        chosen=asdict(Config(bm=32,bn=64,bk=32,stages=3))
                     index=config_index(Config(**chosen));compiled={}
                     example=torch.randn((a.example_M,k),device='cuda',dtype=torch.bfloat16)
                     dynamic=({0:torch.export.Dim('bulk_M',min=5,max=2048)},{},{},{},{},{})
@@ -129,7 +137,7 @@ def main():
                         compiled[name]=aoti_load_package(str(path),run_single_threaded=True,device_index=0)
                         report['packages'][role+'-'+name]=dict(sha256=digest(path),bytes=path.stat().st_size,
                             original_packed_weight_SHA256=hashes,frozen_small_config=chosen)
-                    for m in [8,16,64,72,128,129,512,2048]:
+                    for m in a.test_M:
                         x=torch.randn((m,k),device='cuda',dtype=torch.bfloat16,
                                       generator=torch.Generator(device='cuda').manual_seed(47000+n+m))
                         target=_dequant_matmul(x,*w,32)
@@ -144,6 +152,10 @@ def main():
                         ry=ref();reference_rms=float((ry.float()-target.float()).square().mean().sqrt()/target.float().square().mean().sqrt())
                         assert torch.isfinite(ry).all() and reference_rms<.005
                         torch.testing.assert_close(ry.float(),target.float(),rtol=.05,atol=4.)
+                        reference_delta=ys[0].float()-ry.float()
+                        direct_rms=float(reference_delta.square().mean().sqrt()/ry.float().square().mean().sqrt().clamp_min(1e-8))
+                        assert direct_rms<.005
+                        direct_different=int(torch.count_nonzero(ys[0]!=ry))
                         samples={'reference':[],'conditional':[]}
                         for round_number in range(4):
                             order=[('reference',ref),('conditional',own)]
@@ -154,6 +166,8 @@ def main():
                         means={key:statistics.mean(values[1:]) for key,values in samples.items()}
                         report['cases'].append(dict(role=role,M=m,N=n,K=k,relative_RMS=rms,deterministic=True,
                             reference_relative_RMS=reference_rms,
+                            candidate_vs_compiled_reference_RMS=direct_rms,
+                            candidate_vs_compiled_reference_different_elements=direct_different,
                             samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
                             conditional_over_reference=means['conditional']/means['reference'],
                             expected_bulk_route='packed' if m<=128 else 'original-dequant-matmul',
