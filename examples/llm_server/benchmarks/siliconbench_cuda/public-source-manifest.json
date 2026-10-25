@@ -415,6 +415,18 @@
       "sha256": "74ffb427da69a8b69da6d1235dea198f195f4eae7ba7f68a5162cdf6eb7f63cc",
       "bytes": 5222
     },
+    "roofline_common.h": {
+      "sha256": "53ad6f0e96842c5858b79f76eb817b67992f6383f87961cb44bd93a02e447ca3",
+      "bytes": 4245
+    },
+    "roofline_cpp.cpp": {
+      "sha256": "4adc5687bcf18a0a4149dc39085ff1318e006718a2210fc8a7ab127b00bf8458",
+      "bytes": 5936
+    },
+    "roofline_et.cpp": {
+      "sha256": "9f12f60e5a15a07464d1f6efb5d0d51bd9f29f727d247b9e41fe260c102bc205",
+      "bytes": 6366
+    },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",
       "bytes": 14525
@@ -430,6 +442,10 @@
     "run_matrix_24h.py": {
       "sha256": "715af1b7fd8c66a1731d16990bb28dcdf368e00e77705f105305f5227070944b",
       "bytes": 7987
+    },
+    "run_mg_roofline.py": {
+      "sha256": "13f80de332da5621aa63c09b298e9dcdb81c143da9341022d63c93ef0e979159",
+      "bytes": 10170
     },
     "run_runtime_kv_feasibility.py": {
       "sha256": "9150d138e6fa9a4952db883e1af67a9c035695fba2fab441fccccb4daad7fd60",
