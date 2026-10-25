@@ -492,8 +492,8 @@
       "bytes": 14742
     },
     "run_runtime_kv_pitch_control.py": {
-      "sha256": "daa3d3f117a86792fe9317e253a672dc3ac054abc1ea132aec6a3025d110bc2b",
-      "bytes": 7008
+      "sha256": "c02f883bb6e1440e1a595eaad9512125763dd6249f6f58232d0b5c97af126706",
+      "bytes": 7339
     },
     "run_runtime_kv_probe.py": {
       "sha256": "158cca2a1f721066e7fe86dd3de41514669ea4801caa0ac0e91df4a905ac9611",

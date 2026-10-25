@@ -80,15 +80,20 @@ def main():
                             return read()
                         ids=[request({'op':'new'})['seq_id'] for _ in range(owners)]
                         assert ids==list(range(owners))
-                        for owner in ids[1:]:request({'op':'remove','seq_id':owner})
-                        before=request({'op':'metrics'})['snapshot'];assert before['physical_columns']==columns
+                        # Runtime storage materializes at the first write, not
+                        # at owner admission. Keep empty owners through that
+                        # write to establish pitch22, then remove them without
+                        # compacting or changing the survivor's history.
+                        before=request({'op':'metrics'})['snapshot']
                         saved=[]
-                        for value in first_steps:
+                        for index,value in enumerate(first_steps):
                             clean={k:v for k,v in value.items() if k not in ['tag','save']}
                             clean['save_logits']=True
                             answer=request(clean)
                             assert answer['snapshot']['physical_columns']==columns
                             saved.extend(answer['logits'])
+                            if index==0:
+                                for owner in ids[1:]:request({'op':'remove','seq_id':owner})
                         assert len(saved)==2, 'Both actual forward logits must be saved'
                         report['arms'][label]=dict(model_PTE_sha256=digest(artifact/'model.pte'),
                             weights_PTD_sha256=digest(artifact/'aoti_cuda_blob.ptd'),
