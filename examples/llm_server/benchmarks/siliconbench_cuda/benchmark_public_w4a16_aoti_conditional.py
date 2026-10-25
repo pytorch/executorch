@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import statistics
 import subprocess
 import sys
@@ -33,6 +34,8 @@ def main():
     p.add_argument('--screen-results',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--lock',type=Path,required=True)
+    p.add_argument('--example-M',type=int,choices=[72,2048],default=2048,
+                   help="Match the full ET dynamic export example for baseline autotuning")
     a=p.parse_args();a.output.mkdir(exist_ok=False)
     report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
                 model_route_changed=False,KA_invoked=False,A100_performance_verified=False,
@@ -58,6 +61,7 @@ def main():
             from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
             from executorch.backends.cuda.autotune import cuda_graph_timing as clock
             from torch._inductor import aoti_compile_and_package,aoti_load_package
+            import torch._inductor.cpp_builder as cpp
             from public_grouped_w4a16_aoti import candidate_op,config_index
             from public_grouped_w4a16 import Config
             assert torch.cuda.get_device_capability()==(12,0)
@@ -66,6 +70,7 @@ def main():
             screen=json.loads(a.screen_results.read_text())
             assert len(screen['results'])==16 and not screen['automatic_promotion']
             report.update(GGUF_sha256=digest(a.gguf),screen_results_sha256=digest(a.screen_results),
+                          export_example_M=a.example_M,
                           bulk_dynamic_range=[5,2048],small_bulk_limit=128,static_decode_changed=False,
                           arithmetic='Original staged BF16 reconstruction; A16; FP32 GEMM accumulation')
             reader=GGUFReader(str(a.gguf))
@@ -88,6 +93,13 @@ def main():
                      'aot_inductor.compile_wrapper_opt_level':'O2',
                      'aot_inductor.embed_kernel_binary':True}
             report['compile_options']=options
+            original_build=cpp.CppBuilder.build
+            def record_build(builder):
+                flags=re.findall(r'(?:^|\s)(-O[0-3s])(?:\s|$)',builder.get_command_line())
+                with (a.output/'actual-wrapper-optimization.jsonl').open('a') as log:
+                    log.write(json.dumps({'flags':flags,'target':builder._name})+'\n')
+                return original_build(builder)
+            cpp.CppBuilder.build=record_build
             stream=torch.cuda.Stream()
             with torch.inference_mode(),torch.cuda.stream(stream):
                 for role in ['ffn_gate_up','ffn_down']:
@@ -105,7 +117,7 @@ def main():
                     assert hashes==screen['weight_sources'][role]['packed_SHA256']
                     chosen=next(c for c in screen['results'] if c['role']==role and c['entry']=='bulk72')['best']['config']
                     index=config_index(Config(**chosen));compiled={}
-                    example=torch.randn((72,k),device='cuda',dtype=torch.bfloat16)
+                    example=torch.randn((a.example_M,k),device='cuda',dtype=torch.bfloat16)
                     dynamic=({0:torch.export.Dim('bulk_M',min=5,max=2048)},{},{},{},{},{})
                     for name,conditional in [('reference',False),('conditional',True)]:
                         save('exporting-dynamic-AOTI',role=role,arm=name)
@@ -129,7 +141,9 @@ def main():
                         rms=float(delta.square().mean().sqrt()/target.float().square().mean().sqrt())
                         assert torch.isfinite(ys[0]).all() and rms<.005
                         torch.testing.assert_close(ys[0].float(),target.float(),rtol=.05,atol=4.)
-                        torch.testing.assert_close(ref().float(),target.float(),rtol=.05,atol=4.)
+                        ry=ref();reference_rms=float((ry.float()-target.float()).square().mean().sqrt()/target.float().square().mean().sqrt())
+                        assert torch.isfinite(ry).all() and reference_rms<.005
+                        torch.testing.assert_close(ry.float(),target.float(),rtol=.05,atol=4.)
                         samples={'reference':[],'conditional':[]}
                         for round_number in range(4):
                             order=[('reference',ref),('conditional',own)]
@@ -139,6 +153,7 @@ def main():
                                 samples[label].append(clock.time_with_cuda_graph_us(fn))
                         means={key:statistics.mean(values[1:]) for key,values in samples.items()}
                         report['cases'].append(dict(role=role,M=m,N=n,K=k,relative_RMS=rms,deterministic=True,
+                            reference_relative_RMS=reference_rms,
                             samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
                             conditional_over_reference=means['conditional']/means['reference'],
                             expected_bulk_route='packed' if m<=128 else 'original-dequant-matmul',
