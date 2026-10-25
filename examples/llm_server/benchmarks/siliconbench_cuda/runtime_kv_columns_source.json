@@ -1,5 +1,5 @@
 {
-  "base_commit": "fca4fb36c86b21f4363fa66fc6c1e259cbe6fd89",
+  "base_commit": "cb114742f0b6ee0237382f15e0ce13700d9218b6",
   "patch_sha256": "65aed3979c87d8b42c1814baaa337961b20270b5ceecb52d2b56cf8afc6fde9e",
   "changed_files": {
     "backends/cuda/batching/cuda_executor.cpp": {
@@ -111,5 +111,7 @@
     ],
     "new_KA_tuning": false,
     "same_main_GGUF": true
-  }
+  },
+  "patch_generated_from_public_tools_commit": "fca4fb36c86b21f4363fa66fc6c1e259cbe6fd89",
+  "all_changed_runtime_file_bases_identical_to_runtime_commit": true
 }
