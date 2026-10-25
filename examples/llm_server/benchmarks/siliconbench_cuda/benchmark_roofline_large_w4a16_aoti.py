@@ -58,7 +58,7 @@ def main():
             from executorch.backends.cuda.autotune import cuda_graph_timing as clock
             from torch._inductor import aoti_compile_and_package,aoti_load_package
             from public_grouped_w4a16 import materialize
-            from roofline_large_w4a16_aoti import register_policy,large_w4a16_op
+            from roofline_large_w4a16_aoti import register_policy,large_w4a16_route
             from aoti_explicit_stream import run_aoti_on_current_stream
             assert torch.cuda.get_device_capability()==(12,0)
             torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
@@ -87,7 +87,7 @@ def main():
             class Linear(torch.nn.Module):
                 def __init__(self,candidate):super().__init__();self.candidate=candidate
                 def forward(self,x,q,sc,ss,z,zs):
-                    if self.candidate:return large_w4a16_op(x,q,sc,ss,z,zs,index)
+                    if self.candidate:return large_w4a16_route(x,q,sc,ss,z,zs,index)
                     return _dequant_matmul(x,q,sc,ss,z,zs,32)
             options={'emulate_precision_casts':True,'max_autotune':True,'max_autotune_gemm_backends':'TRITON','loop_ordering_after_fusion':False,'aot_inductor.compile_wrapper_opt_level':'O2','aot_inductor.embed_kernel_binary':True}
             report['compile_options']=options
@@ -115,7 +115,9 @@ def main():
                     aoti_compile_and_package(ep,package_path=str(path),inductor_configs=options)
                     with zipfile.ZipFile(path) as archive:
                         wrappers=[archive.read(n).decode() for n in archive.namelist() if n.endswith('.wrapper.cpp')]
-                    assert wrappers and not any(re.search(r'arg0_1_size\[0\]\s*!=\s*'+str(a.max_M)+r'\b',body) for body in wrappers), 'AOTI specialized dynamic rows; reject before GPU execution'
+                    fixed=str(a.max_M)+r'(?:L|LL)?'
+                    static_guard=r'(?:arg0_1_size\[0\]\s*!=\s*'+fixed+r'\b|'+fixed+r'\s*!=\s*arg0_1_size\[0\])'
+                    assert wrappers and not any(re.search(static_guard,body) for body in wrappers), 'AOTI specialized dynamic rows; reject before GPU execution'
                     packages[name]=aoti_load_package(str(path),run_single_threaded=True,device_index=0)
                     report[name+'_package']=dict(SHA256=digest(path),bytes=path.stat().st_size,range_constraints=str(ep.range_constraints),compiler_examples='export graph symbolic FakeTensors',static_hint_guard_absent=True)
                 oracle=materialize(w,arithmetic='native-zero-fma-bf16',bk=128)

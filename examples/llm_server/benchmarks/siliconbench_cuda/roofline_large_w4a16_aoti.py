@@ -72,6 +72,37 @@ def _fake(x,q,sc,ss,z,zs,policy_index):
     return torch.empty((x.shape[0], q.shape[0]), device=x.device, dtype=x.dtype)
 
 
+@triton_op('siliconbench::roofline_native_large_w4a16_leaf', mutates_args={})
+def native_leaf_op(x: torch.Tensor, q: torch.Tensor, sc: torch.Tensor,
+                   ss: torch.Tensor, z: torch.Tensor, zs: torch.Tensor,
+                   policy_index: int, branch_index: int) -> torch.Tensor:
+    """One measured native launch, with control flow exported separately."""
+    _, branches = POLICIES[policy_index]
+    _, bucket, split, config = branches[branch_index]
+    return native._launch_w4a16(bucket,x,q,sc,ss,z,zs,32,split_k=split,config=config)
+
+
+@native_leaf_op.register_fake
+def _native_leaf_fake(x,q,sc,ss,z,zs,policy_index,branch_index):
+    return _fake(x,q,sc,ss,z,zs,policy_index)
+
+
+def large_w4a16_route(x,q,sc,ss,z,zs,policy_index):
+    """Export each row predicate before lowering the native Triton leaf.
+
+    Nested torch.cond inside a decomposed triton_op can specialize direct
+    branches to an example hint. Explicit outer control flow preserves the
+    exported row symbol and lets each leaf lower independently.
+    """
+    _, branches=POLICIES[policy_index]
+    def choose(args,index):
+        if index==len(branches):return original_dequant_matmul(*args,32)
+        return torch.cond(args[0].shape[0]<=branches[index][0],
+            lambda a,b,c,d,e,f:native_leaf_op(a,b,c,d,e,f,policy_index,index),
+            lambda a,b,c,d,e,f:choose((a,b,c,d,e,f),index+1),args)
+    return choose((x,q,sc,ss,z,zs),0)
+
+
 def install_export_hook(dispatch, *, capability, policies):
     assert tuple(capability) == (12, 0)
     assert hashlib.sha256(Path(dispatch.__file__).read_bytes()).hexdigest() == DISPATCH_SHA256
@@ -89,7 +120,7 @@ def install_export_hook(dispatch, *, capability, policies):
         CUDA_trace = torch.compiler.is_compiling() or can_launch_triton(x)
         if eager or not CUDA_trace or group_size != 32 or x.dtype != torch.bfloat16 or shape not in indices:
             return original(x,q,sc,ss,z,zs,group_size)
-        return large_w4a16_op(x,q,sc,ss,z,zs,indices[shape])
+        return large_w4a16_route(x,q,sc,ss,z,zs,indices[shape])
 
     dispatch._dequant_matmul = route
     return dict(policies=policies, installed=True, original_static_methods_retained=True,
