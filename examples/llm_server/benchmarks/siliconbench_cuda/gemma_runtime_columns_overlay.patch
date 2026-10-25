@@ -1,0 +1,535 @@
+--- a/backends/cuda/triton/kernels/sdpa_varlen.py
++++ b/backends/cuda/triton/kernels/sdpa_varlen.py
+@@ -23,10 +23,6 @@
+ * ``col``: the sequence's storage column;
+ * ``kv_end``: one past the logical position of the segment's last row, i.e. the
+   sequence's length once this step's writes land.
+-
+-The runtime-column ABI uses ``Int32[S, 5]``. Its last field is the physical
+-column count, shared by every segment, which sets the K/V row pitch even when
+-the compiled tensor declares a larger maximum number of columns.
+
+ Rows are the segment's newest positions: row ``r`` sits at
+ ``kv_end - q_len + r``. Active segments must be disjoint and in bounds;
+@@ -79,28 +75,48 @@
+     BLOCK_N: tl.constexpr,
+     HEAD_DIM: tl.constexpr,
+     NUM_GROUPS: tl.constexpr,
++    NUM_SEGMENTS: tl.constexpr = 0,
++    COMPACT_GRID: tl.constexpr = False,
++    KV_HEAD_GROUPS: tl.constexpr = 1,
+ ):
+     sm_scale = sm_scale.to(tl.float32)
+     pid0 = tl.program_id(0)
+-    h_kv = tl.program_id(1)
++    program_head = tl.program_id(1)
++    h_kv = program_head // KV_HEAD_GROUPS
+     split = tl.program_id(2)
+-    seg = pid0 // num_qb
+-    qb = pid0 % num_qb
++    if COMPACT_GRID:
++        # Map only the upper bound of useful query tiles. Prefix sums of the
++        # device-resident segment lengths preserve graph replay with new rows.
++        # The previous grid allocated max query tiles for every reserved slot.
++        slots = tl.arange(0, triton.next_power_of_2(NUM_SEGMENTS))
++        lengths = tl.load(Info_ptr + slots * INFO_WIDTH + 1, mask=slots < NUM_SEGMENTS, other=0)
++        tile_counts = tl.cdiv(lengths * NUM_GROUPS, BLOCK_M)
++        tile_ends = tl.cumsum(tile_counts)
++        if pid0 >= tl.sum(tile_counts):
++            return
++        seg = tl.sum(((pid0 >= tile_ends) & (slots < NUM_SEGMENTS)).to(tl.int32))
++        tile_start = tl.sum(tl.where(slots == seg, tile_ends - tile_counts, 0))
++        qb = pid0 - tile_start
++    else:
++        seg = pid0 // num_qb
++        qb = pid0 % num_qb
+
+     q_start = tl.load(Info_ptr + seg * INFO_WIDTH + 0)
+     q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+     col = tl.load(Info_ptr + seg * INFO_WIDTH + 2)
+     kv_end = tl.load(Info_ptr + seg * INFO_WIDTH + 3)
++
+     if INFO_WIDTH == 5:
+-        columns = tl.load(Info_ptr + seg * INFO_WIDTH + 4).to(tl.int64)
++        columns = tl.load(Info_ptr + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+         stride_vr = columns * stride_vc
++
+     if qb * BLOCK_M >= q_len * NUM_GROUPS:
+         return
+
+     offs_p = qb * BLOCK_M + tl.arange(0, BLOCK_M)
+     r = offs_p // NUM_GROUPS
+-    h_q = h_kv * NUM_GROUPS + offs_p % NUM_GROUPS
++    h_q = program_head * NUM_GROUPS + offs_p % NUM_GROUPS
+     row_valid = r < q_len
+     t = q_start + r
+     pos = kv_end - q_len + r
+@@ -115,7 +131,10 @@
+     # The rows this tile may see, before the split divides them.
+     r_last = tl.minimum(q_len - 1, (qb * BLOCK_M + BLOCK_M - 1) // NUM_GROUPS)
+     r_first = (qb * BLOCK_M) // NUM_GROUPS
+-    if RING > 0:
++    if RING > 0 and HEAD_DIM >= 256:
++        # Walk the union of keys visible to this query tile in logical order.
++        # A prefill ring holds window + max_write - 1 rows; scanning every
++        # physical row also scans future and expired rows for this tile.
+         lo = tl.maximum(kv_end - RING, 0)
+         hi = kv_end
+         if IS_CAUSAL:
+@@ -125,6 +144,9 @@
+                 lo = tl.maximum(lo, kv_end - q_len - WINDOW)
+             else:
+                 lo = tl.maximum(lo, kv_end - q_len + r_first - WINDOW + 1)
++    elif RING > 0:
++        lo = 0
++        hi = tl.minimum(kv_end, RING)
+     else:
+         hi = kv_end
+         if IS_CAUSAL:
+@@ -135,7 +157,7 @@
+                 lo = tl.maximum(kv_end - q_len - WINDOW, 0)
+             else:
+                 lo = tl.maximum(kv_end - q_len + r_first - WINDOW + 1, 0)
+-    if RING <= 0:
++    if not (RING > 0 and HEAD_DIM >= 256):
+         hi = tl.minimum(hi, rows_available)
+     span = tl.maximum(hi - lo, 0)
+     chunk = tl.cdiv(tl.cdiv(span, NUM_SPLITS), BLOCK_N) * BLOCK_N
+@@ -148,17 +170,30 @@
+     k_base = K_ptr + col * stride_kc + h_kv * stride_kh
+     v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+
++    if RING > 0 and HEAD_DIM >= 256:
++        physical_start = start % RING
+     for n0 in tl.range(start, stop, BLOCK_N):
+         offs_n = n0 + tl.arange(0, BLOCK_N)
+-        physical_n = offs_n % RING if RING > 0 else offs_n
+-        n_valid = (offs_n < stop) & (physical_n < rows_available)
++        n_valid = offs_n < stop
++        if RING > 0 and HEAD_DIM >= 256:
++            physical_n = physical_start + offs_n - start
++            physical_n = tl.where(physical_n >= RING, physical_n - RING, physical_n)
++            n_valid = n_valid & (physical_n < rows_available)
++        else:
++            physical_n = offs_n
+         k = tl.load(
+             k_base + physical_n[:, None] * stride_kr + offs_d[None, :],
+             mask=n_valid[:, None],
+             other=0.0,
+         )
+         qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
+-        kv_pos = offs_n
++        if RING > 0 and HEAD_DIM >= 256:
++            kv_pos = offs_n
++        elif RING > 0:
++            # The newest logical position that landed in each ring row.
++            kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
++        else:
++            kv_pos = offs_n
+         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
+         if IS_CAUSAL:
+             visible = visible & (kv_pos[None, :] <= pos[:, None])
+@@ -242,20 +277,36 @@
+     h_kv = tl.program_id(1)
+     split = tl.program_id(2)
+
+-    owned = False
+-    q_start = 0
+-    q_len = 0
+-    col = 0
+-    kv_end = 0
+-    for seg in range(NUM_SEGMENTS):
+-        seg_q_start = tl.load(Info_ptr + seg * INFO_WIDTH)
+-        seg_q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+-        take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
+-        owned |= take
+-        q_start = tl.where(take, seg_q_start, q_start)
+-        q_len = tl.where(take, seg_q_len, q_len)
+-        col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
+-        kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
++    if HEAD_DIM >= 256:
++        # One device vector lookup instead of 66 serial segment probes.
++        slots = tl.arange(0, triton.next_power_of_2(NUM_SEGMENTS))
++        starts = tl.load(Info_ptr + slots * INFO_WIDTH, mask=slots < NUM_SEGMENTS, other=0)
++        lengths = tl.load(Info_ptr + slots * INFO_WIDTH + 1, mask=slots < NUM_SEGMENTS, other=0)
++        take = (slots < NUM_SEGMENTS) & (t >= starts) & (t < starts + lengths)
++        owned = tl.sum(take.to(tl.int32)) > 0
++        q_start = tl.sum(tl.where(take, starts, 0))
++        q_len = tl.sum(tl.where(take, lengths, 0))
++        cols = tl.load(Info_ptr + slots * INFO_WIDTH + 2, mask=slots < NUM_SEGMENTS, other=0)
++        ends = tl.load(Info_ptr + slots * INFO_WIDTH + 3, mask=slots < NUM_SEGMENTS, other=0)
++        col = tl.sum(tl.where(take, cols, 0))
++        kv_end = tl.sum(tl.where(take, ends, 0))
++    else:
++        owned = False
++        q_start = 0
++        q_len = 0
++        col = 0
++        kv_end = 0
++        for seg in range(NUM_SEGMENTS):
++            seg_q_start = tl.load(Info_ptr + seg * INFO_WIDTH)
++            seg_q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
++            take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
++            owned |= take
++            q_start = tl.where(take, seg_q_start, q_start)
++            q_len = tl.where(take, seg_q_len, q_len)
++            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
++            kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
++
++
+     if INFO_WIDTH == 5:
+         columns = tl.load(Info_ptr + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+@@ -274,13 +325,8 @@
+
+     pos = kv_end - q_len + t - q_start
+     if RING > 0:
+-        lo = tl.maximum(kv_end - RING, 0)
+-        hi = tl.minimum(kv_end, pos + 1) if IS_CAUSAL else kv_end
+-        if WINDOW > 0:
+-            if CONTEXT_WINDOW:
+-                lo = tl.maximum(lo, kv_end - q_len - WINDOW)
+-            else:
+-                lo = tl.maximum(lo, pos - WINDOW + 1)
++        lo = 0
++        hi = tl.minimum(kv_end, RING)
+     else:
+         hi = pos + 1 if IS_CAUSAL else kv_end
+         lo = 0
+@@ -289,8 +335,7 @@
+                 lo = tl.maximum(kv_end - q_len - WINDOW, 0)
+             else:
+                 lo = tl.maximum(pos - WINDOW + 1, 0)
+-    if RING <= 0:
+-        hi = tl.minimum(hi, rows_available)
++    hi = tl.minimum(hi, rows_available)
+     span = tl.maximum(hi - lo, 0)
+     chunk = tl.cdiv(tl.cdiv(span, NUM_SPLITS), BLOCK_N) * BLOCK_N
+     start = lo + split * chunk
+@@ -303,15 +348,17 @@
+     v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+     for n0 in tl.range(start, stop, BLOCK_N):
+         offs_n = n0 + tl.arange(0, BLOCK_N)
+-        physical_n = offs_n % RING if RING > 0 else offs_n
+-        n_valid = (offs_n < stop) & (physical_n < rows_available)
++        n_valid = offs_n < stop
+         k = tl.load(
+-            k_base + physical_n[:, None] * stride_kr + offs_d[None, :],
++            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
+             mask=n_valid[:, None] & owned,
+             other=0.0,
+         )
+         qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
+-        kv_pos = offs_n
++        if RING > 0:
++            kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
++        else:
++            kv_pos = offs_n
+         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
+         if IS_CAUSAL:
+             visible &= kv_pos[None, :] <= pos
+@@ -328,7 +375,7 @@
+         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
+         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
+         v = tl.load(
+-            v_base + physical_n[:, None] * stride_vr + offs_d[None, :],
++            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
+             mask=n_valid[:, None] & owned,
+             other=0.0,
+         )
+@@ -461,11 +508,7 @@
+         raise ValueError("head dimension must be a power of two in [16, 512]")
+     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
+         raise ValueError("sdpa_varlen needs a contiguous head dimension")
+-    if (
+-        seq_info.dtype != torch.int32
+-        or seq_info.dim() != 2
+-        or seq_info.shape[1] not in (4, 5)
+-    ):
++    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] not in (4, 5):
+         raise ValueError("seq_info must be Int32[S, 4] or runtime-pitch Int32[S, 5]")
+     if seq_info.device != query.device or not seq_info.is_contiguous():
+         raise ValueError("seq_info must be contiguous on the query device")
+@@ -476,20 +519,30 @@
+     # Branching on a symbolic T would guard (and AOTI then pin) the exported
+     # range, so a dynamic step takes the generic path, valid for any T.
+     static = isinstance(T, int)
+-    max_small_query = 16 if D in (128, 512) else _SPLITK_MAX_QUERY
++    max_small_query = 64 if D == 512 else _SPLITK_MAX_QUERY
+     use_decode = static and T <= max_small_query
+     block_m = 16 if static and T * groups <= 16 else 64
++    if D == 256:
++        block_m = 32
+     if D == 512:
+         block_m = 16
+-    num_qb = (T * groups + block_m - 1) // block_m
++    unpack_prefill_heads = D == 256 and (not static or T >= 128)
++    generic_groups = 1 if unpack_prefill_heads else groups
++    num_qb = (T * generic_groups + block_m - 1) // block_m
+     generic_num_stages = 3 if static and T <= 64 else 2
++    if D == 256:
++        generic_num_stages = 2
+     if D == 512:
+         generic_num_stages = 1
+     splits = _num_splits(T, rows) if static else 1
+-    if D in (128, 512) and use_decode:
+-        splits = max(
+-            1, min(_SPLITK_MAX_SPLITS, triton.cdiv(rows, _SPLITK_ROWS_PER_SPLIT))
+-        )
++    if D >= 256 and use_decode:
++        splits = max(1, min(_SPLITK_MAX_SPLITS, triton.cdiv(rows, _SPLITK_ROWS_PER_SPLIT)))
++    if D == 512 and use_decode:
++        # MQA has just one KV head. The previous cap16 left only16 CTAs
++        # for one-session decode, and total packedT32/64 incorrectly missed
++        # the split-K path for16 sessions with2/4 tokens each.
++        splits = max(1, min(128, triton.cdiv(rows, 128),
++                            triton.cdiv(256, T * Hkv)))
+     # The row-complete decode path writes uncovered rows and empty split slots.
+     out = torch.empty_like(query) if use_decode else torch.zeros_like(query)
+     if splits > 1:
+@@ -532,15 +585,16 @@
+             CONTEXT_WINDOW=context_window,
+             WINDOW=window,
+             RING=ring,
+-            BLOCK_N=32 if D == 512 else 128,
++            BLOCK_N=32 if D == 512 else (64 if D == 256 else 128),
+             HEAD_DIM=D,
+             NUM_GROUPS=groups,
+             BLOCK_G=triton.next_power_of_2(groups),
+             num_warps=8 if D == 512 else 4,
+-            num_stages=1 if D == 512 else 2,
+-        )
+-    else:
+-        grid = (seq_info.shape[0] * num_qb, Hkv, splits)
++            num_stages=1 if D >= 256 else 2,
++        )
++    else:
++        grid_tiles = num_qb + seq_info.shape[0] - 1 if D >= 256 else seq_info.shape[0] * num_qb
++        grid = (grid_tiles, Hq if unpack_prefill_heads else Hkv, splits)
+         wrap_triton(_sdpa_varlen_kernel)[grid](
+             query,
+             key,
+@@ -571,10 +625,13 @@
+             CONTEXT_WINDOW=context_window,
+             WINDOW=window,
+             RING=ring,
++            NUM_SEGMENTS=seq_info.shape[0],
++            COMPACT_GRID=D >= 256,
+             BLOCK_M=block_m,
+-            BLOCK_N=32 if D == 512 else 64,
++            BLOCK_N=32 if D >= 256 else 64,
+             HEAD_DIM=D,
+-            NUM_GROUPS=groups,
++            NUM_GROUPS=generic_groups,
++            KV_HEAD_GROUPS=groups if unpack_prefill_heads else 1,
+             num_warps=8 if D == 512 else 4,
+             num_stages=generic_num_stages,
+         )
+--- a/examples/models/gemma4_31b/export_batching.py
++++ b/examples/models/gemma4_31b/export_batching.py
+@@ -89,7 +89,8 @@
+
+
+ def export_cuda_batching(model, output_dir, max_step_tokens=512, max_kv_seqs=33,
+-                         forward_sizes=(1, 2, 4, 8, 16, 32, 64), suppressed_token_ids=()):
++                         forward_sizes=(1, 2, 4, 8, 16, 32, 64), suppressed_token_ids=(),
++                         runtime_kv_columns=False):
+     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+     import torch._inductor.config as inductor_config
+     from executorch.backends.cuda.cuda_backend import CudaBackend
+@@ -109,7 +110,8 @@
+     inductor_config.aot_inductor.compile_wrapper_opt_level = "O2"
+     inductor_config.aot_inductor.precompile_headers = False
+     inductor_config.cpp_cache_precompile_headers = False
+-    manifest = batched_sequence_manifest(model.sequence_manifest(max_step_tokens), max_kv_seqs)
++    manifest = batched_sequence_manifest(model.sequence_manifest(max_step_tokens), max_kv_seqs,
++                                         runtime_columns=runtime_kv_columns)
+     metadata = model.cache_geometry()
+     metadata.update(write_max_context_len(model.config.max_seq_len))
+     metadata.update(write_max_seq_len(max_step_tokens))
+@@ -119,6 +121,8 @@
+     metadata.update({"get_offgraph_kv_max_seqs": max_kv_seqs,
+                      "get_min_prefill_chunk": 5, "get_max_prefill_chunk": max_step_tokens,
+                      "use_sampling": False, "has_vision_encoder": False})
++    if runtime_kv_columns:
++        metadata["get_offgraph_kv_sequence_info_abi"] = 2
+     programs = export_forward_programs(model, max_step_tokens, forward_sizes)
+     forwards = list(programs)
+     del model
+@@ -166,6 +170,8 @@
+     parser.add_argument("--max-seq-len", type=int, default=12288)
+     parser.add_argument("--max-step-tokens", type=int, default=512)
+     parser.add_argument("--max-kv-seqs", type=int, default=33)
++    parser.add_argument("--runtime-kv-columns", action="store_true",
++                        help="Use runtime physical pitch for batched-sequence KV")
+     args = parser.parse_args()
+     config = Gemma4_31BConfig.from_hf_config(args.config)
+     config.max_seq_len = args.max_seq_len
+@@ -197,7 +203,7 @@
+     ), indent=2) + "\n")
+     print("GEMMA_CHECKPOINT_SAMPLER_POLICY", suppressed, flush=True)
+     export_cuda_batching(model, str(output), args.max_step_tokens, args.max_kv_seqs,
+-                        suppressed_token_ids=suppressed)
++                        suppressed_token_ids=suppressed, runtime_kv_columns=args.runtime_kv_columns)
+
+
+ if __name__ == "__main__":
+--- a/extension/llm/batching/executor.h
++++ b/extension/llm/batching/executor.h
+@@ -172,6 +172,11 @@
+   // runner completes every task in it as Failed and poisons their sessions,
+   // because what was written before the failure is unknown.
+   virtual bool execute(const BatchInput& batch, BatchOutput& out) = 0;
++
++  // Called on the engine thread after an idle wait with no queued batch.
++  // New requests may queue while this runs; implementations must preserve
++  // every live session and must not call back into the runner.
++  virtual void on_idle() {}
+ };
+
+ } // namespace batching
+--- a/extension/llm/batching/runner.cpp
++++ b/extension/llm/batching/runner.cpp
+@@ -799,10 +799,14 @@
+       continue; // more work may be ready
+     }
+     std::unique_lock<std::mutex> lock(control_mutex_);
+-    engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
++    const bool ready = engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
+       return lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running ||
+           !inbox_.empty() || scheduler_->has_work();
+     });
++    if (!ready && is_running_() && inbox_.empty() && !scheduler_->has_work()) {
++      lock.unlock();
++      executor_.on_idle();
++    }
+   }
+
+   // Commands that raced the stop still need answering, or a caller waiting on
+--- a/backends/cuda/batching/cuda_executor.h
++++ b/backends/cuda/batching/cuda_executor.h
+@@ -18,6 +18,7 @@
+ // runs the method with the smallest width that holds it; a static method's
+ // extra rows are padding.
+
++#include <chrono>
+ #include <cstddef>
+ #include <cstdint>
+ #include <functional>
+@@ -75,6 +76,9 @@
+   bool cuda_graph_for_static_methods = true;
+   // Other static methods of the program to capture, e.g. a model adapter's.
+   std::vector<std::string> additional_cuda_graph_methods;
++  // Zero keeps explicit-only compaction. Runtime-pitch programs only.
++  int idle_kv_compaction_ms = 0;
++  int idle_kv_spare_columns = 1;
+ };
+
+ struct CudaExecutorConfig {
+@@ -228,6 +232,7 @@
+   // The cache's pool usage, for memory reporting.
+   OffGraphKVMetrics kv_metrics() const;
+   ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
++  void on_idle() override;
+
+   // Every method, narrowest first, with how many forwards it ran. Read it
+   // between executes, not while one runs.
+@@ -302,6 +307,14 @@
+   std::optional<bool> device_logits_;
+   bool initialized_ = false;
+   bool raw_executing_ = false;
++  int idle_kv_compaction_ms_ = 0;
++  int idle_kv_spare_columns_ = 1;
++  bool idle_compaction_attempted_ = false;
++  std::optional<std::chrono::steady_clock::time_point> idle_since_;
++  void note_activity() {
++    idle_since_.reset();
++    idle_compaction_attempted_ = false;
++  }
+ };
+
+ } // namespace executorch::backends::cuda::batching
+--- a/backends/cuda/batching/cuda_executor.cpp
++++ b/backends/cuda/batching/cuda_executor.cpp
+@@ -599,6 +599,12 @@
+       min_selected_rows,
+       has_sampler,
+       has_argmax));
++  ET_CHECK_OR_RETURN_ERROR(
++      options.idle_kv_compaction_ms >= 0 && options.idle_kv_spare_columns >= 0 &&
++          (options.idle_kv_compaction_ms == 0 || sequence_info_abi == 2),
++      InvalidArgument, "CudaExecutor: idle compaction needs runtime-pitch ABI");
++  executor->idle_kv_compaction_ms_ = options.idle_kv_compaction_ms;
++  executor->idle_kv_spare_columns_ = options.idle_kv_spare_columns;
+   executor->embeddings_method_ = embeddings_method;
+   return executor;
+ }
+@@ -650,14 +656,17 @@
+ }
+
+ std::optional<SessionId> CudaExecutor::open_session() {
++  note_activity();
+   return sessions_.open();
+ }
+
+ void CudaExecutor::close_session(SessionId session) {
++  note_activity();
+   sessions_.close(session);
+ }
+
+ std::optional<SessionId> CudaExecutor::clone(SessionId source, Position upto) {
++  note_activity();
+   return sessions_.clone(source, upto);
+ }
+
+@@ -690,6 +699,7 @@
+ bool CudaExecutor::execute_raw(
+     const RawTargetStep& step,
+     const std::function<bool(const RawTargetOutput&)>& consume) {
++  note_activity();
+   if (!initialized_ || raw_executing_ || !consume ||
+       step.tokens.size() >
+           static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+@@ -882,6 +892,7 @@
+ }
+
+ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
++  note_activity();
+   out.outputs.clear();
+   out.outputs.resize(batch.inputs.size());
+
+@@ -1103,6 +1114,33 @@
+   ET_CHECK_OR_RETURN_ERROR(
+       !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
+   return kv_->compact_columns(spare_columns);
++}
++
++void CudaExecutor::on_idle() {
++  if (!initialized_ || idle_kv_compaction_ms_ == 0 || idle_compaction_attempted_) {
++    return;
++  }
++  const auto now = std::chrono::steady_clock::now();
++  if (!idle_since_) {
++    idle_since_ = now;
++    return;
++  }
++  if (now - *idle_since_ < std::chrono::milliseconds(idle_kv_compaction_ms_)) {
++    return;
++  }
++  idle_compaction_attempted_ = true;
++  const auto before = kv_metrics();
++  const auto target = std::min<int64_t>(before.declared_columns - 1,
++      std::max<int64_t>(1, before.live_sequences + idle_kv_spare_columns_)) + 1;
++  if (before.physical_columns <= target) {
++    return;
++  }
++  const Error error = compact_kv_columns(idle_kv_spare_columns_);
++  const auto after = kv_metrics();
++  ET_LOG(Info, "offgraph_kv: idle_compaction status=%d columns=%lld->%lld live=%lld bytes=%lld",
++      static_cast<int>(error), static_cast<long long>(before.physical_columns),
++      static_cast<long long>(after.physical_columns), static_cast<long long>(after.live_sequences),
++      static_cast<long long>(after.allocated_bytes));
+ }
+
+ std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {

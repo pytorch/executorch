@@ -1,0 +1,36 @@
+{
+  "base_runtime_patch": "runtime_kv_columns.patch",
+  "overlay_SHA256": "69f02207ea1263072961b9de72fee576f2517dc1f6a6b7415cccedb8c63561bc",
+  "files": {
+    "backends/cuda/triton/kernels/sdpa_varlen.py": {
+      "before_SHA256": "6fe7426630b1080971a4315afb8e4a3156f6717029e5792218ebf33798791e5d",
+      "after_SHA256": "23dd4b686da50566026355094d14f843829814f65299a0b2dcaba2969ad05eda"
+    },
+    "examples/models/gemma4_31b/export_batching.py": {
+      "before_SHA256": "a9d55272855fd427a6e62ccf916c60327c4dea793078bc0715c5f3cf7ff70cd5",
+      "after_SHA256": "8679249d934733525b4520972801d1fae3d4142f863ee79fe80bb4ea27110335"
+    },
+    "extension/llm/batching/executor.h": {
+      "before_SHA256": "9a82d451b536671a0f1d0c2898e0e1e1b01589ecadb6774bc0556d27b85be25a",
+      "after_SHA256": "f4ce3d251ed10b49524d58a24bce49870e1f0c3cb20334162f3b87030d7d624b"
+    },
+    "extension/llm/batching/runner.cpp": {
+      "before_SHA256": "2a0314b227ba7633fe486e10518a76cffe9ced7effeb35e163b1470b2a61262e",
+      "after_SHA256": "7af3f5d3fc156c006b3d810fa9ee1e578be3ccc92514f0e560827ec7d60600e4"
+    },
+    "backends/cuda/batching/cuda_executor.h": {
+      "before_SHA256": "c1b90cf386b81ee7738daace68e7fdd9bb7b4b697084de5644c0f9c8797e7d62",
+      "after_SHA256": "9396e2c5ea1d2933eed91ee5047cd0743e1765740bce5be4a08160b362e30691"
+    },
+    "backends/cuda/batching/cuda_executor.cpp": {
+      "before_SHA256": "570bc1ca081b4577b75752830b8a611fa2232174ce484bf5adb423226e372d1d",
+      "after_SHA256": "6c4f2afd5fc4fe803462e698cd726564856172677a17c6263881044383103d8a"
+    }
+  },
+  "attention_launch_and_math_preserved": true,
+  "compiled": false,
+  "GPU_validated": false,
+  "low_peak_column_migration_still_required": true,
+  "model_promoted": false,
+  "baseline_sources_modified": false
+}
