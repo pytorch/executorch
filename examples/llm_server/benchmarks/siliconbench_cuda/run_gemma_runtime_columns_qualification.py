@@ -31,6 +31,11 @@ def main():
     p.add_argument('--server-python',required=True)
     p.add_argument('--benchmark-python',required=True)
     p.add_argument('--port',type=int,default=19121)
+    p.add_argument('--phases',nargs='+',choices=['lifecycle','performance','correctness'],
+                   default=['lifecycle','performance','correctness'])
+    p.add_argument('--native-library-dir',type=Path)
+    p.add_argument('--fixed-column-reference',action='store_true')
+    p.add_argument('--quality-concurrencies',nargs='+',type=int,choices=[1,2,4,8,16])
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     package=Path(__file__).resolve().parent
     def state(status,**extra):
@@ -71,7 +76,9 @@ def main():
         assert audit['context']==131072 and audit['safe_ring_rows']==1535
         assert audit['selected_output_bound']==[64,262144]
         assert audit['static_methods']==[1,2,4,8,16,32,64]
-        assert audit.get('runtime_physical_columns') is True or audit.get('runtime_columns') is True
+        dynamic=audit.get('runtime_physical_columns') is True or audit.get('runtime_columns') is True
+        assert dynamic != a.fixed_column_reference,'Explicitly distinguish fixed and runtime physical columns'
+        idle_ms=0 if a.fixed_column_reference else 250
         for name,item in audit['artifacts'].items():assert sha(a.artifact/name)==item['sha256']
         command=[a.server_python,'-B',str(package/'serve_gemma_runtime_columns.py'),
             '--worker-bin',worker['binary'],'--model-path',str(a.artifact/'model.pte'),
@@ -79,24 +86,29 @@ def main():
             '--tokenizer-path',str(a.tokenizer),'--hf-tokenizer',str(a.tokenizer),
             '--max-context','131072','--initial-kv-capacity','512',
             '--max-sessions','16','--max-decode-sequences','16','--max-inflight-requests','16',
-            '--prefix-checkpoint-interval','512','--idle-kv-compaction-ms','250',
+            '--prefix-checkpoint-interval','512','--idle-kv-compaction-ms',str(idle_ms),
             '--idle-kv-spare-columns','1']
         wrapper=a.output/'serve-runtime-columns.sh'
         wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
             'test "${1:?backend}" = executorch\n'
             'entries=0\nif test "${SB_PREFIX_CACHE:-off}" = on; then entries=1; fi\n'
             'export PYTHONDONTWRITEBYTECODE=1\n'
+            +('export LD_LIBRARY_PATH='+shlex.quote(str(a.native_library_dir))+':"${LD_LIBRARY_PATH:-}"\n'
+              if a.native_library_dir else '')+
             'export PYTHONPATH='+shlex.quote(str(a.et_source.parent))+'\n'
             'exec '+shlex.join(command)+' --prefix-cache-entries "$entries" --port "${SB_PORT:?port}"\n')
         subprocess.run(['bash','-n',str(wrapper)],check=True)
         protocol=dict(context=131072,initial_KV=512,active_sessions=16,decode_ceiling=16,
             max_prefill_tokens=512,static_graphs=True,prefix_entries={'off':0,'on':1},
-            checkpoint={'off':0,'on':512},idle_compaction_ms=250,idle_spare_columns=1,
+            checkpoint={'off':0,'on':512},idle_compaction_ms=idle_ms,idle_spare_columns=1,
+            runtime_physical_columns=dynamic,
             wrapper_SHA256=sha(wrapper),client_SHA256=sha(package/'benchmark_gemma.py'),
             prompts_SHA256=sha(a.prompts),worker_provenance=worker,model_promoted=False,
             performance_host_must_match_baseline=True)
+        protocol['phases']=a.phases
+        protocol['native_library_dir']=str(a.native_library_dir) if a.native_library_dir else None
         (a.output/'server-protocol.json').write_text(json.dumps(protocol,indent=2)+'\n')
-        run([a.benchmark_python,'-B',package/'trace_gemma_runtime_http_memory.py',
+        if 'lifecycle' in a.phases:run([a.benchmark_python,'-B',package/'trace_gemma_runtime_http_memory.py',
              '--wrapper',wrapper,'--port',a.port,'--lock',a.lock,'--output',a.output/'lifecycle'],
             'real-HTTP-memory-lifecycle',7200)
         cmd=[a.benchmark_python,'-B',package/'run_matrix_24h.py','--wrapper',wrapper,
@@ -104,10 +116,14 @@ def main():
              '--prompts',a.prompts,'--correctness-root',a.correctness_root,
              '--python',a.benchmark_python,'--lock',a.lock,'--port',a.port,
              '--variants','executorch','--cache-modes','off','on','--concurrencies','16','8','4','2','1']
-        run(cmd+['--output',a.output/'server-performance','--phases','performance'],'server-performance',21600)
-        run(cmd+['--output',a.output/'server-correctness','--phases','correctness'],'server-correctness',57600)
+        if 'performance' in a.phases:run(cmd+['--output',a.output/'server-performance','--phases','performance'],'server-performance',21600)
+        if 'correctness' in a.phases:
+            quality=cmd+['--output',a.output/'server-correctness','--phases','correctness']
+            if a.quality_concurrencies:quality+=['--quality-concurrencies',*[str(v) for v in a.quality_concurrencies]]
+            run(quality,'server-correctness',57600)
         state('completed-pending-independent-selection',real_HTTP=True,
-              performance_memory_and_F1_collected=True)
+              completed_phases=a.phases,
+              performance_memory_and_F1_collected=all(v in a.phases for v in ['performance','correctness']))
     except BaseException as e:state('failed',error=str(e));raise
 
 

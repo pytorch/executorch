@@ -511,6 +511,10 @@
       "sha256": "0862073146eab3a01d8af0abf214058e3be0687d125b0551a7f5710159f9eb97",
       "bytes": 2375
     },
+    "prepare_received_gemma_runtime.py": {
+      "sha256": "6fcfc3605700b7234e66c6b39044b56c73faa6e10010967ec9a5a066020034bb",
+      "bytes": 3572
+    },
     "prepare_roofline_gpu_sdk.py": {
       "sha256": "9085bc3fac2f57cf45db6b94be1f4b1336a5905405cc1404ca66eaa1e5375eb6",
       "bytes": 6318
@@ -604,8 +608,8 @@
       "bytes": 6180
     },
     "receive_verified_model_artifact.py": {
-      "sha256": "3b3ab586025a9c2734b8a6dbe6a962d2f7a66ee04e792b02f1914f0911d0c233",
-      "bytes": 2411
+      "sha256": "ef95734266944f2a0149c588e8f23ff8ddad4f8ceb9ef76ce6da0eb5c72f0c59",
+      "bytes": 2844
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
@@ -684,8 +688,8 @@
       "bytes": 21574
     },
     "run_gemma_runtime_columns_qualification.py": {
-      "sha256": "e49a9c7f27b1140d3ee872127c043e183839c26fa6a67ef3ed9b7380f3c57de3",
-      "bytes": 6337
+      "sha256": "6c646dff73569240a869d390d4800e62eb3061ad632d8af5bbc6b08da1147730",
+      "bytes": 7557
     },
     "run_matrix.py": {
       "sha256": "7809e920164afe21dd35a82883e89c34bf2549c020b1d8c8b88fbbd194bfb8ed",
@@ -764,8 +768,8 @@
       "bytes": 1444
     },
     "trace_gemma_runtime_http_memory.py": {
-      "sha256": "997f216a45cd559b8e1344485f7ba09999a5ca1299c191063289cf70a83c37c5",
-      "bytes": 6099
+      "sha256": "2889c7c714bf1e958cf1c215f85a384f031303583f462fd6b6fe6eca249caded",
+      "bytes": 6201
     },
     "wait_for.py": {
       "sha256": "f9fa316d2904af3f547710e9d6e8ef9138cc6beb6f5fb62aad489a47177e7f05",

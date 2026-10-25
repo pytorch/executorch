@@ -19,7 +19,12 @@ def main():
     p.add_argument('--destination',type=Path,required=True);a=p.parse_args()
     manifest=json.loads(a.manifest.read_text());expected=manifest['files']
     assert manifest['public_GGUF_source_verified']
-    assert set(expected)=={'model.pte','aoti_cuda_blob.ptd','artifact-audit.json','sampler-policy.json'}
+    allowed={'model.pte','aoti_cuda_blob.ptd','artifact-audit.json','sampler-policy.json'}
+    if manifest.get('kind')=='qualified-native-worker':
+        allowed={'gemma_runtime_columns_worker','libaoti_cuda_shims.so',
+                 'libextension_cuda.so','build-provenance.json'}
+        assert manifest['qualified_core_tests_passed'] and manifest['native_source_is_public']
+    assert set(expected)==allowed
     assert not a.destination.exists()
     partial=a.destination.with_name(a.destination.name+'.partial');partial.mkdir(parents=True,exist_ok=False)
     total=sum(r['bytes'] for r in expected.values())
@@ -40,6 +45,8 @@ def main():
         source_manifest_SHA256=hashlib.sha256(a.manifest.read_bytes()).hexdigest(),
         every_received_file_SHA256_verified=True,source_unchanged=True),indent=2)+'\n')
     partial.rename(a.destination)
+    if manifest.get('kind')=='qualified-native-worker':
+        (a.destination/'gemma_runtime_columns_worker').chmod(0o755)
     print('TASK_JSON:'+json.dumps(dict(destination=str(a.destination),bytes=total,
         all_source_hashes_verified=True,existing_model_paths_unmodified=True)),flush=True)
 

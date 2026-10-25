@@ -82,14 +82,15 @@ def main():
                         except Exception:
                             assert time.monotonic()<deadline;stop.wait(2)
                     stage=prefix+'-ready';stop.wait(2)
-                    for c in [1,2,4,8,16,1]:
-                        stage=prefix+'-c'+str(c)+'-active';state('running',prefix=prefix,concurrency=c)
+                    for step,c in enumerate([1,2,4,8,16,1]):
+                        stage=prefix+'-step'+str(step)+'-c'+str(c)+'-active';state('running',prefix=prefix,concurrency=c)
                         barrier=threading.Barrier(c)
                         with concurrent.futures.ThreadPoolExecutor(max_workers=c) as pool:
                             responses=list(pool.map(lambda i:request(barrier,i),range(c)))
                         results.append(dict(prefix=prefix,c=c,responses=responses))
-                        stage=prefix+'-c'+str(c)+'-idle';stop.wait(3)
+                        stage=prefix+'-step'+str(step)+'-c'+str(c)+'-idle';stop.wait(3)
                 finally:
+                    stage=prefix+'-shutting-down'
                     if server.poll() is None:
                         os.killpg(server.pid,signal.SIGTERM)
                         try:server.wait(timeout=120)
