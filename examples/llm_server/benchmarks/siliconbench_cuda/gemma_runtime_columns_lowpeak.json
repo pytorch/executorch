@@ -1,5 +1,5 @@
 {
-  "patch_SHA256": "23ea39838b88edae425ed43fa6e9759240f81f5f232e2e6f0d2064df1a3f6029",
+  "patch_SHA256": "aabda195ae31c208f8bd46f96a8e68814859f27e06e3543ac13c165bef1023e5",
   "files": {
     "backends/cuda/runtime/cuda_kv_pool.cpp": {
       "before_SHA256": "fca0e64fb42bcbeb63776e4c4128e9eafb4e840e5701ccdadfb7e55f692a93d8",
@@ -7,7 +7,7 @@
     },
     "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
       "before_SHA256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
-      "after_SHA256": "24fde211d7c52a6f7a063042017b86cb3970601a9801105e6e093889a040a13c"
+      "after_SHA256": "f995edc6675e98969225e4ec5b4c38dc68de5a0dd31c58d0d6b923579a775ee6"
     }
   },
   "CPU_compiled": false,

@@ -173,16 +173,91 @@
    max_rows_ = max_rows_ / old_columns * columns;
 --- a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
 +++ b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
-@@ -3035,7 +3035,7 @@
+@@ -3035,7 +3035,82 @@
    kv->forget_handle(&prefill);
  }
 
 -TEST_F(CudaKVPoolTest, FailedColumnGrowthKeepsOldStorageAndBindingsUsable) {
++TEST_F(CudaKVPoolTest, GemmaGeometryMigratesEveryOwnerAtRuntimeColumnWidths) {
++  constexpr int kDeclaredCols = 19;
++  constexpr int kLogicalRows = 8;
++  std::vector<cu::CudaKVPool::Layer> layers;
++  FakeContainer fake;
++  for (int layer = 0; layer < 48; ++layer) {
++    const bool full = layer % 6 == 5;
++    const int heads = full ? 1 : 8;
++    const int dim = full ? 512 : 256;
++    const int declared_rows = (full ? 131072 : 1535) * kDeclaredCols;
++    layers.push_back({heads, dim, declared_rows, true});
++    for (const std::string kind : {"k", "v"}) {
++      const auto name = "gemma_" + std::to_string(layer) + "_" + kind;
++      const auto fqn = "__et_offgraph_kv_layer_" + std::to_string(layer) + "_" + kind;
++      fake.internal_names.push_back(name);
++      fake.fqns.push_back(fqn);
++      declare(fake, fqn, slimc10::ScalarType::BFloat16, {1, declared_rows, heads, dim});
++    }
++  }
++  cu::CudaKVPool pool(layers, {}, slimc10::ScalarType::BFloat16,
++                     kLogicalRows * 2, kDeclaredCols, 2);
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(pool.note_handle(&handle).get());
++  ASSERT_EQ(pool.prepare(kLogicalRows * 2, 0, cudaStreamPerThread), Error::Ok);
++  ASSERT_EQ(pool.bind(&handle), Error::Ok);
++  int width = 2;
++  auto read = [&](int layer, bool value, int column) {
++    const size_t stride = layers[layer].n_kv_heads * layers[layer].head_dim;
++    std::vector<uint16_t> data(kLogicalRows * stride);
++    EXPECT_EQ(cudaMemcpy2D(data.data(), stride * sizeof(uint16_t),
++        static_cast<uint16_t*>(pool.layer_data(layer, value)) + column * stride,
++        width * stride * sizeof(uint16_t), stride * sizeof(uint16_t),
++        kLogicalRows, cudaMemcpyDeviceToHost), cudaSuccess);
++    return data;
++  };
++  for (int next_width : {3, 5, 9, 17, 2}) {
++    std::vector<std::pair<int, int>> retained;
++    if (next_width == 2) retained.push_back({width - 2, 0});
++    else for (int owner = 0; owner < width - 1; ++owner) retained.push_back({owner, owner});
++    std::vector<std::vector<uint16_t>> histories;
++    for (int layer = 0; layer < 48; ++layer) {
++      const size_t stride = layers[layer].n_kv_heads * layers[layer].head_dim;
++      for (bool value : {false, true}) {
++        std::vector<uint16_t> data(kLogicalRows * width * stride);
++        for (size_t i = 0; i < data.size(); ++i) data[i] = 1000 + (i + layer * 17 + value * 37) % 50000;
++        ASSERT_EQ(cudaMemcpy(pool.layer_data(layer, value), data.data(),
++            data.size() * sizeof(uint16_t), cudaMemcpyHostToDevice), cudaSuccess);
++        for (const auto& columns : retained) histories.push_back(read(layer, value, columns.first));
++      }
++    }
++    const auto old_bytes = pool.allocated_bytes();
++    const int old_width = width;
++    handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
++    bool committed = false;
++    ASSERT_EQ(pool.resize_columns(next_width, retained, cudaStreamPerThread,
++                                  true, &committed), Error::Ok);
++    ASSERT_TRUE(committed);
++    width = next_width;
++    EXPECT_EQ(pool.columns(), width);
++    EXPECT_EQ(pool.allocated_bytes() * old_width, old_bytes * width);
++    EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
++    ASSERT_EQ(pool.bind(&handle), Error::Ok);
++    size_t index = 0;
++    for (int layer = 0; layer < 48; ++layer) {
++      for (bool value : {false, true}) {
++        for (const auto& columns : retained) EXPECT_EQ(read(layer, value, columns.second), histories[index++]);
++      }
++    }
++    ASSERT_EQ(pool.prepare(kLogicalRows * width, kLogicalRows * width, cudaStreamPerThread), Error::Ok);
++    ASSERT_EQ(pool.mark_step_done(), Error::Ok);
++  }
++  EXPECT_EQ(pool.column_resize_count(), 5);
++  pool.forget_handle(&handle);
++}
++
 +TEST_F(CudaKVPoolTest, FailedColumnGrowthRestoresOwnersAndRecapturesMovedBindings) {
    constexpr int kDeclaredColumns = 1 << 20;
    constexpr int kHugeDim = 1 << 20;
    cu::CudaKVPool pool(
-@@ -3069,7 +3069,6 @@
+@@ -3069,7 +3144,6 @@
            history.size() * sizeof(uint16_t),
            cudaMemcpyHostToDevice),
        cudaSuccess);
@@ -190,7 +265,7 @@
    void* old_large_k = pool.layer_data(1, false);
    const auto before_bytes = pool.allocated_bytes();
    const int updates = fake.updates;
-@@ -3087,12 +3086,13 @@
+@@ -3087,12 +3161,13 @@
    EXPECT_EQ(pool.columns(), 2);
    EXPECT_EQ(pool.column_resize_count(), 0);
    EXPECT_EQ(pool.allocated_bytes(), before_bytes);
