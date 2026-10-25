@@ -339,6 +339,10 @@
       "sha256": "be55e610d2e1d6f464bcf15d35ae2b65022126e0941fecef5364be6ee4338271",
       "bytes": 12409
     },
+    "export_gemma_runtime_columns.py": {
+      "sha256": "a17ffc5f2775ead91f79d297a7d740ddfe1acc755890d644655f0591a75dee5c",
+      "bytes": 13116
+    },
     "export_mg_prefix.py": {
       "sha256": "7ac367635495f4fe0ce4d426db5387c2986d961406aad01e8ecc8e27c57cba51",
       "bytes": 11746
@@ -379,13 +383,37 @@
       "sha256": "69f02207ea1263072961b9de72fee576f2517dc1f6a6b7415cccedb8c63561bc",
       "bytes": 22424
     },
+    "gemma_runtime_columns_worker.cpp": {
+      "sha256": "884c73bbd29cf0510d6545ea0e014fa2f4bf278a614ad4423c5d1a43adecdf41",
+      "bytes": 5387
+    },
     "gemma_runtime_export_baseline.py": {
       "sha256": "a9d55272855fd427a6e62ccf916c60327c4dea793078bc0715c5f3cf7ff70cd5",
       "bytes": 9947
     },
+    "gemma_runtime_precision.py": {
+      "sha256": "10affaf3cd36f17a68f8336e764e24b16e54dd509d89577c9009445b2f41cf9b",
+      "bytes": 54266
+    },
+    "gemma_runtime_python/batching_gguf_loader.py": {
+      "sha256": "4ae63dbb5f7ae2dbf900ea6b6da85d9c03ef2e28f814fb3c07d3231f3b33fcbc",
+      "bytes": 2944
+    },
+    "gemma_runtime_python/batching_model.py": {
+      "sha256": "a3f1ab403eb9e49f1f74ca7842f7f1aad10808ed26ee21664091ee36ff2f1e81",
+      "bytes": 4121
+    },
+    "gemma_runtime_python/cuda_source_transformations.py": {
+      "sha256": "5a3d60a6c6b8c645df54b006c1eda9ac83e880ff7f9de7c489c755a22e7f081c",
+      "bytes": 14384
+    },
     "gemma_runtime_runner_baseline.cpp": {
       "sha256": "2a0314b227ba7633fe486e10518a76cffe9ced7effeb35e163b1470b2a61262e",
       "bytes": 73004
+    },
+    "gemma_runtime_worker_project/CMakeLists.txt": {
+      "sha256": "3c6ee8506baa13a34241ab556824344ed953504719808a9d50a5b61c2b723144",
+      "bytes": 1889
     },
     "handoff_cpp_quality.py": {
       "sha256": "4f70dea79e92a938f11d1cd847c0ff64b76f084c021a4b3902f58b611e18f513",
@@ -462,6 +490,10 @@
     "prepare_gemma_runtime_core.py": {
       "sha256": "062fbc174a56aab9378286cebca6cc50094a1463a2c0b9c5d03d5fb8dd4c75eb",
       "bytes": 5386
+    },
+    "prepare_gemma_runtime_http.py": {
+      "sha256": "b221898725fccd0aa32461d4a5e5134a3ff8339acc49d5811b5bdd02e74e5dcb",
+      "bytes": 4913
     },
     "prepare_kv_near_cap_build.py": {
       "sha256": "a225cb8ac372da35bf8e92d571103d565c7441ebe51264af3f3d760170d5c3f9",
@@ -671,6 +703,10 @@
       "sha256": "336bfa9dbdd952547d92fb622b25c85f08ed0fd197291c2ee04a7df92ded11fa",
       "bytes": 8446
     },
+    "run_roofline_default_comparison.py": {
+      "sha256": "94968dc7ed7bbb8a3abeb6987ac3d349d30d25f1447970fa1dfc4d728dea0fc1",
+      "bytes": 7901
+    },
     "run_runtime_kv_feasibility.py": {
       "sha256": "9d372fb5366b24f9f1565566fa5d95ec3dd33d2f885b75ffa1804f416d02733e",
       "bytes": 15256
@@ -694,6 +730,10 @@
     "select_et_policies_24h.py": {
       "sha256": "941f9b671c10d8a2f2944722ce0d0118f70f63269af3bc869c771995f0f22f62",
       "bytes": 16103
+    },
+    "serve_gemma_runtime_columns.py": {
+      "sha256": "eac36e8459f6f73d4725c72d5e1575f4308abd4362eda6673f07ea8cafcf7161",
+      "bytes": 4548
     },
     "supervise.py": {
       "sha256": "9da500edfdf99ba404e375c23aa98d59e64e1a082cce0d68cc663c0714584cd9",

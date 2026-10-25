@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.24)
+project(siliconbench_gemma_runtime_http LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+find_package(executorch CONFIG REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+find_package(Threads REQUIRED)
+include("${ET_SOURCE}/tools/cmake/Utils.cmake")
+executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(aoti_cuda_backend)
+executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+if(NOT TARGET gflags)
+  set(GFLAGS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(GFLAGS_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(GFLAGS_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+  set(GFLAGS_BUILD_gflags_LIB ON CACHE BOOL "" FORCE)
+  add_subdirectory("${ET_SOURCE}/third-party/gflags" gflags EXCLUDE_FROM_ALL)
+endif()
+add_library(siliconbench_multiplexed_worker STATIC
+  "${ET_SOURCE}/examples/llm_server/cpp/multiplexed_worker.cpp")
+target_include_directories(siliconbench_multiplexed_worker PUBLIC "${ET_SOURCE}/.."
+  "${ET_SOURCE}/extension/llm/tokenizers/third-party/json/single_include")
+target_link_libraries(siliconbench_multiplexed_worker PUBLIC extension_llm_serving Threads::Threads)
+add_executable(gemma_runtime_columns_worker "${CMAKE_CURRENT_SOURCE_DIR}/../gemma_runtime_columns_worker.cpp")
+target_compile_definitions(gemma_runtime_columns_worker PRIVATE EXECUTORCH_BUILD_CUDA)
+target_include_directories(gemma_runtime_columns_worker PRIVATE "${ET_SOURCE}/.." "${ET_SOURCE}/cmake-out/include")
+target_link_libraries(gemma_runtime_columns_worker PRIVATE siliconbench_multiplexed_worker
+  cuda_batching extension_llm_batching extension_llm_cache extension_llm_sampler
+  extension_module extension_tensor executorch optimized_native_cpu_ops_lib
+  aoti_cuda_backend tokenizers::tokenizers gflags CUDA::cudart Threads::Threads)
+target_link_options(gemma_runtime_columns_worker PRIVATE "LINKER:--export-dynamic")
