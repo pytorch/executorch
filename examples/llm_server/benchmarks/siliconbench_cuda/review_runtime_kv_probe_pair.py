@@ -139,6 +139,102 @@ def main():
                 - r[-1]["after"]["device_used_bytes"],
             )
         )
+    # Reconstruct timings from the existing protocol. Separate the first
+    # three calls, which can include recapture, from the following 61 calls.
+    # Both remain diagnostics including IPC and synchronization, not GPU-only
+    # or SiliconBench HTTP throughput. No additional requests are generated.
+    performance = []
+    for stage_index in range(6):
+        arms = {}
+        for name, root, document in [
+            ("fixed", a.fixed, fixed),
+            ("runtime", a.runtime, runtime),
+        ]:
+            rounds = []
+            for number in range(1, 5):
+                entries = [
+                    json.loads(line)
+                    for line in (root / f"round-{number}" / "protocol.jsonl")
+                    .read_text()
+                    .splitlines()
+                ]
+                operations, request = [], None
+                for entry in entries:
+                    if "request" in entry:
+                        request = entry
+                    elif request is not None:
+                        operations.append(
+                            dict(
+                                request=request["request"],
+                                response=entry["response"],
+                                start_ns=request["monotonic_ns"],
+                                end_ns=entry["monotonic_ns"],
+                            )
+                        )
+                        request = None
+                stage = document["rounds"][number - 1]["stages"][stage_index]
+                boundary = [
+                    i
+                    for i, op in enumerate(operations)
+                    if op["request"]["op"] == "metrics"
+                    and op["response"]["snapshot"] == stage["before"]
+                ]
+                assert len(boundary) == 1
+                steps = operations[boundary[0] + 1 : boundary[0] + 65]
+                assert len(steps) == 64 and all(
+                    op["request"]["op"] == "step" for op in steps
+                )
+                assert all(
+                    len(op["request"]["tokens"]) == stage["concurrency"] for op in steps
+                )
+                measured = 64 * stage["concurrency"] / stage["diagnostic_wall_seconds"]
+                assert (
+                    abs(measured - stage["diagnostic_tokens_per_second"])
+                    <= measured * 1e-10
+                )
+                steady = (
+                    61
+                    * stage["concurrency"]
+                    / ((steps[-1]["end_ns"] - steps[3]["start_ns"]) / 1e9)
+                )
+                rounds.append(
+                    dict(
+                        round=number,
+                        whole_64_call_TPS=measured,
+                        after_first_three_calls_TPS=steady,
+                        first_three_call_seconds=(
+                            steps[2]["end_ns"] - steps[0]["start_ns"]
+                        )
+                        / 1e9,
+                    )
+                )
+            arms[name] = dict(
+                rounds=rounds,
+                statistics={
+                    key: dict(
+                        mean=statistics.mean(r[key] for r in rounds[1:]),
+                        sample_stddev=statistics.stdev(r[key] for r in rounds[1:]),
+                        first_discarded=rounds[0][key],
+                    )
+                    for key in [
+                        "whole_64_call_TPS",
+                        "after_first_three_calls_TPS",
+                        "first_three_call_seconds",
+                    ]
+                },
+            )
+        performance.append(
+            dict(
+                stage=stage_index,
+                concurrency=runtime["rounds"][0]["stages"][stage_index]["concurrency"],
+                arms=arms,
+                runtime_to_fixed_ratio={
+                    key: arms["runtime"]["statistics"][key]["mean"]
+                    / arms["fixed"]["statistics"][key]["mean"]
+                    for key in ["whole_64_call_TPS", "after_first_three_calls_TPS"]
+                },
+            )
+        )
     graph_pass = False
     graph = None
     if a.graph_review:
@@ -160,6 +256,8 @@ def main():
         numerical_rounds=comparisons,
         physical_growth_and_reclamation_pass=True,
         memory_rounds=memory,
+        independently_reconstructed_performance=performance,
+        performance_uses_four_rounds_first_discarded=True,
         mean_last3_device_shrink_bytes=statistics.mean(
             x["shrink_device_used_bytes"] for x in memory[1:]
         ),
