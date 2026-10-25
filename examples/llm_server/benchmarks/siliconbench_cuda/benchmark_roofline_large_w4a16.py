@@ -62,6 +62,7 @@ def main():
             import numpy as np
             import torch
             import triton
+            from torch._library.triton import set_wrap_triton_enabled
             from gguf import GGUFReader, GGMLQuantizationType
             from executorch.extension.llm.export.gguf import ExportableGGUFTensor
             from executorch.extension.llm.export.quant import to_default, fuse_along_output
@@ -110,6 +111,11 @@ def main():
                 if previous_listener is not None:
                     previous_listener(**event)
             triton.knobs.autotuning.listener = record_pick
+            def launch_native(*args, **kwargs):
+                # Match ET's launch-parameter tuner: eager wrap_triton would
+                # clone the autotuner on each call and lose its selected cache.
+                with set_wrap_triton_enabled(False):
+                    return native._launch_w4a16(*args, **kwargs)
             stream = torch.cuda.Stream()
             with torch.inference_mode(), torch.cuda.stream(stream), clock.cuda_graph_timing() as timing_stats:
                 for role in a.roles:
@@ -145,7 +151,7 @@ def main():
                                              bucket=bucket, split_k=split)
                             try:
                                 tuning_events.clear()
-                                y = native._launch_w4a16(bucket, x, *w, 32, split_k=split)
+                                y = launch_native(bucket, x, *w, 32, split_k=split)
                                 torch.cuda.synchronize()
                             except (triton.runtime.errors.OutOfResources, InvalidLaunchParam) as error:
                                 candidates.append(dict(split_k=split, unsupported=str(error))); continue
@@ -154,7 +160,7 @@ def main():
                             assert picks, 'Capture the actual autotune pick; do not substitute a default'
                             pick = picks[-1]
                             config = pick['best_config']
-                            fn = lambda split=split, config=config: native._launch_w4a16(
+                            fn = lambda split=split, config=config: launch_native(
                                 bucket, x, *w, 32, split_k=split, config=config)
                             ys = [fn().clone() for _ in range(3)]
                             torch.cuda.synchronize()
@@ -174,7 +180,7 @@ def main():
                         winner = min(valid, key=lambda v: v['us'])
                         c = winner['config']
                         config = triton.Config(c['kwargs'], num_warps=c['num_warps'], num_stages=c['num_stages'])
-                        candidate = lambda: native._launch_w4a16(bucket, x, *w, 32,
+                        candidate = lambda: launch_native(bucket, x, *w, 32,
                             split_k=winner['split_k'], config=config)
                         functions = dict(fallback=lambda: reference(x), candidate=candidate)
                         samples = {name: [] for name in functions}

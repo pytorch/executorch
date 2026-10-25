@@ -96,8 +96,8 @@
       "bytes": 13187
     },
     "benchmark_roofline_large_w4a16.py": {
-      "sha256": "a275725ca2196b430e39794b6fda3ef36e68e77918d203f0509b8c52eb921098",
-      "bytes": 13193
+      "sha256": "0ff9cf82750440b9219ce49bfb408376282642a914ecbf62a4fa1f6199b3ec6f",
+      "bytes": 13565
     },
     "benchmark_sm80_prefill_fallback.py": {
       "sha256": "33e2b7c9683e66aa9919ae382525b1bc4222d8791b08adf1a7b47a60dfe9e19b",
@@ -112,8 +112,8 @@
       "bytes": 9705
     },
     "bootstrap_roofline_shard.py": {
-      "sha256": "a031d13d85799cdf177527e973274566ca8a1469f0cbf01902d6f13bb7f0add7",
-      "bytes": 5678
+      "sha256": "81499b998ef6b283fb78a188497492a1d0982bd68e17269a14c3b88873318df3",
+      "bytes": 6366
     },
     "candidates_w4a16_expanded_v5/README.md": {
       "sha256": "0ed115aa02f8d8a41bdce3c58f52892e3a94a2c0d80fb29766926e56604dbe9f",

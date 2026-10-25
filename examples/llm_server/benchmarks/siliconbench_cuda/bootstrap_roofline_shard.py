@@ -23,8 +23,10 @@ def main():
     p.add_argument('--root', type=Path, required=True)
     p.add_argument('--source', type=Path, required=True)
     p.add_argument('--role', choices=['ffn_gate_up', 'attention_out'], required=True)
+    p.add_argument('--attempt', default='bootstrap-v2')
     a = p.parse_args()
-    job = a.root / 'bootstrap'
+    assert '/' not in a.attempt and a.attempt not in ['', '.', '..']
+    job = a.root / a.attempt
     job.mkdir(exist_ok=False)
     state_lock = threading.Lock()
     status = dict(controller_pid=os.getpid(), role=a.role, phases={}, public_only=True,
@@ -53,12 +55,15 @@ def main():
 
     def setup():
         state('environment', 'installing-isolated-wheels')
-        run([uv, 'venv', '--python', '/usr/bin/python3', venv])
+        if not python.exists():
+            run([uv, 'venv', '--python', '/usr/bin/python3', venv])
         run([uv, 'pip', 'install', '--python', python, '--index-url',
              'https://download.pytorch.org/whl/cu132', 'torch==2.14.0+cu132'])
-        run([uv, 'pip', 'install', '--python', python, '--prerelease=allow',
-             '--extra-index-url', 'https://download.pytorch.org/whl/nightly/cu132',
-             'torchao==0.19.0.dev20260907+cu132', 'transformers==5.20.2', 'gguf==0.19.0',
+        run([uv, 'pip', 'install', '--python', python, '--no-deps',
+             '--index-url', 'https://download.pytorch.org/whl/nightly/cu132',
+             'torchao==0.19.0.dev20260907+cu132'])
+        run([uv, 'pip', 'install', '--python', python, '--index-url',
+             'https://pypi.org/simple', 'transformers==5.20.2', 'gguf==0.19.0',
              'numpy==2.5.4', 'safetensors==0.8.0', 'huggingface-hub==2.2.0',
              'flatbuffers==25.12.19', 'cmake', 'ninja', 'setuptools', 'wheel',
              'packaging', 'ruamel.yaml', 'pyyaml', 'sympy', 'tqdm', 'parameterized',
@@ -74,7 +79,14 @@ def main():
     model = a.root / 'models' / name
     def download():
         model.parent.mkdir(exist_ok=True)
-        assert not model.exists()
+        if model.exists():
+            digest = hashlib.sha256()
+            with model.open('rb') as source:
+                while block := source.read(16 * 1024 * 1024): digest.update(block)
+            assert digest.hexdigest() == '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
+            state('model', 'reused-verified', model_bytes=model.stat().st_size,
+                  GGUF_SHA256=digest.hexdigest())
+            return
         url = ('https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/'
                'b44f1072cf75e918a1b82a3a17b45c4389b076e7/' + name)
         state('model', 'downloading-public-pinned-GGUF')
@@ -95,8 +107,8 @@ def main():
             for future in futures: future.result()
         state('screen', 'running-operator-autotune')
         env['CUDA_VISIBLE_DEVICES'] = '0'
-        lock = a.root / 'gpu-benchmark.lock'; lock.touch(exist_ok=False)
-        result = a.root / ('operator-' + a.role)
+        lock = a.root / 'gpu-benchmark.lock'; lock.touch(exist_ok=True)
+        result = a.root / ('operator-' + a.role + '-' + a.attempt)
         command = [python, '-B', Path(__file__).with_name('benchmark_roofline_large_w4a16.py'),
                    '--et-source', a.source, '--gguf', model, '--output', result, '--lock', lock,
                    '--roles', a.role, '--M', '64', '72', '128', '256', '512', '520', '1024',
