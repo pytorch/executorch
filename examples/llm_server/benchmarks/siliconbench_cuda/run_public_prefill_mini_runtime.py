@@ -39,6 +39,8 @@ def main():
     p.add_argument('--repetitions', type=int, default=12)
     p.add_argument('--expected-n-layers', type=int, choices=[4, 52], default=4)
     p.add_argument('--runtime-sessions', type=int, choices=[16, 32], default=32)
+    p.add_argument('--history-tokens', type=int, choices=[0,1024], default=1024,
+                   help='Zero-history numerical control distinguishes direct kernel differences from changed cached history; default is the original 1K protocol')
     p.add_argument('--workflow-pair-filename', default='mini-pair-exports.json')
     p.add_argument('--numerical-only', action='store_true',
                    help='Collect first-pair complete logits; no performance acceptance or timing averages')
@@ -171,7 +173,7 @@ def main():
                                 owners.clear()
                                 for ordinal in range(count):
                                     reply, _, _ = request(dict(op='new')); owner = reply['seq_id']; owners.append(owner)
-                                    for start in [0, 512]:
+                                    for start in range(0,a.history_tokens,512):
                                         request(dict(op='step', seq_ids=[owner] * 512,
                                             tokens=[token(ordinal, pos) for pos in range(start, start + 512)],
                                             select=[], argmax=False, save_logits=False))
@@ -182,10 +184,10 @@ def main():
                                 def forward(save=False):
                                     ids, tokens, selected = [], [], []
                                     for ordinal in range(decode):
-                                        ids.append(owners[ordinal]); tokens.append(token(ordinal, 1024)); selected.append(len(tokens)-1)
+                                        ids.append(owners[ordinal]); tokens.append(token(ordinal, a.history_tokens)); selected.append(len(tokens)-1)
                                     if prefill:
                                         ids.extend([owners[decode]] * prefill)
-                                        tokens.extend(token(decode, pos) for pos in range(1024, 1024 + prefill))
+                                        tokens.extend(token(decode, pos) for pos in range(a.history_tokens, a.history_tokens + prefill))
                                         selected.append(len(tokens)-1)
                                     before, _, _ = request(dict(op='metrics'))
                                     reply, wall, tag = request(dict(op='step', seq_ids=ids, tokens=tokens,
@@ -207,7 +209,7 @@ def main():
                                 for _ in range(0 if a.numerical_only else a.repetitions): setup(count); samples.append(forward())
                                 assert all(s['argmax'] == numeric['argmax'] for s in samples), 'Rebuilt identical histories must produce stable greedy outputs'
                                 results.append(dict(mix=name, active_owners=count, decode=decode, prefill=prefill,
-                                    history_tokens=1024, numeric=numeric, timed=samples,
+                                    history_tokens=a.history_tokens, numeric=numeric, timed=samples,
                                     mean_executor_seconds=statistics.mean(s['executor_seconds'] for s in samples) if samples else None,
                                     mean_API_IPC_seconds=statistics.mean(s['API_IPC_seconds'] for s in samples) if samples else None))
                             child.stdin.close(); assert child.wait(timeout=300) == 0
@@ -242,7 +244,7 @@ def main():
                 public_over_original=arms['public']['last3_mean_seconds']/arms['original']['last3_mean_seconds']))
         report = dict(four_rounds_first_discarded=not a.numerical_only, raw=records, numerical=numeric,
             n_layers=a.expected_n_layers, runtime_sessions=a.runtime_sessions,
-            numerical_only=a.numerical_only,
+            numerical_only=a.numerical_only,history_tokens=a.history_tokens,
             screen_failure_retained=a.continue_after_numerical_screen_failure,
             mini_numeric_pass=all(r['numerical_pass'] for r in numeric),
             performance=performance, actual_executor_API=True,
