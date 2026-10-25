@@ -287,6 +287,10 @@
       "sha256": "33c9ddaf9c7656a30b06d935d70a513e2dd737ca4f4e37f15ca746461a830c03",
       "bytes": 9444
     },
+    "deduplicate_immutable_weight_copies.py": {
+      "sha256": "6302957000cd49a5bcdd866641e3cbac2f6aa28326aae5a292360774ea5a4028",
+      "bytes": 2774
+    },
     "diagnose_mg_generation_budget.py": {
       "sha256": "f3c3c97ae4e09488edd120a620af6c5503c295f506a6aae645a28db0f6f42edf",
       "bytes": 7749
@@ -598,6 +602,10 @@
     "qualify_existing_nearcap_server.py": {
       "sha256": "83de70790d21157bc4a11b8ee8bc6bdb2dc6e4307f3d5fd89376dbaaa931cd8c",
       "bytes": 6180
+    },
+    "receive_verified_model_artifact.py": {
+      "sha256": "3b3ab586025a9c2734b8a6dbe6a962d2f7a66ee04e792b02f1914f0911d0c233",
+      "bytes": 2411
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
