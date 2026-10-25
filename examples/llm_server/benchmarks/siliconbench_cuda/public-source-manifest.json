@@ -84,8 +84,8 @@
       "bytes": 9358
     },
     "benchmark_public_w4a16_aoti_conditional.py": {
-      "sha256": "25e33a4167231e74ca22b3a06756212dba8892d56eeeefdac2256d7763c08bd3",
-      "bytes": 12163
+      "sha256": "1dca4c90788715dbb4641ea56fb3cbb941ce12179c7b3d45cc960befaf5e617b",
+      "bytes": 13187
     },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
@@ -462,6 +462,10 @@
     "public_prefill_prepared_groups.py": {
       "sha256": "27c9b26e2a42690f7464fe19ad8ac4a3666b8cb778e70e09194ce2f3481d723c",
       "bytes": 5145
+    },
+    "public_prefill_prepared_groups_aoti.py": {
+      "sha256": "b7643b4a6f3e625c3c785eef91d44a59d462ea491a8eed546497eb521806d856",
+      "bytes": 2425
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",

@@ -38,9 +38,11 @@ def main():
                    help="Match the full ET dynamic export example for baseline autotuning")
     p.add_argument('--gate-bk32',action='store_true',
                    help='Test a Gate K tile of 32 without changing its eligible M range')
+    p.add_argument('--prepared-groups',action='store_true',
+                   help='Test temporary prepared-metadata M512/M520; other sizes use original')
     p.add_argument('--roles',nargs='+',choices=['ffn_gate_up','ffn_down'],
                    default=['ffn_gate_up','ffn_down'])
-    p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,128,129,512,2048],
+    p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,128,129,511,512,513,520,521,2048],
                    default=[8,16,64,72,128,129,512,2048])
     a=p.parse_args();a.output.mkdir(exist_ok=False)
     report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
@@ -70,6 +72,9 @@ def main():
             import torch._inductor.cpp_builder as cpp
             from public_grouped_w4a16_aoti import candidate_op,config_index
             from public_grouped_w4a16 import Config
+            if a.prepared_groups:
+                assert not a.gate_bk32
+                from public_prefill_prepared_groups_aoti import prepared_prefill_op
             assert torch.cuda.get_device_capability()==(12,0)
             torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
             assert digest(a.gguf)=='4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
@@ -79,6 +84,9 @@ def main():
                           export_example_M=a.example_M,
                           bulk_dynamic_range=[5,2048],small_bulk_limit=128,static_decode_changed=False,
                           arithmetic='Original staged BF16 reconstruction; A16; FP32 GEMM accumulation')
+            if a.prepared_groups:
+                report.update(small_bulk_limit=None,prepared_metadata_candidate_sizes=[512,520],
+                              preparation_cost_included=True,no_persistent_extra_metadata=True)
             reader=GGUFReader(str(a.gguf))
             def portable(t):
                 assert t.tensor_type==GGMLQuantizationType.Q4_K
@@ -89,6 +97,8 @@ def main():
                 def __init__(self,conditional,index):super().__init__();self.conditional=conditional;self.index=index
                 def forward(self,x,q,sc,ss,z,zs):
                     if self.conditional:
+                        if a.prepared_groups:
+                            return prepared_prefill_op(x,q,sc,ss,z,zs)
                         return torch.cond(x.shape[0]<=128,
                             lambda a,b,c,d,e,f:candidate_op(a,b,c,d,e,f,self.index,False),
                             lambda a,b,c,d,e,f:_dequant_matmul(a,b,c,d,e,f,32),
@@ -124,6 +134,9 @@ def main():
                     chosen=next(c for c in screen['results'] if c['role']==role and c['entry']=='bulk72')['best']['config']
                     if a.gate_bk32 and role=='ffn_gate_up':
                         chosen=asdict(Config(bm=32,bn=64,bk=32,stages=3))
+                    if a.prepared_groups:
+                        chosen=asdict(Config(bm=64,bn=128,bk=128,stages=2) if role=='ffn_gate_up'
+                                      else Config(bm=64,bn=64,bk=128,stages=3))
                     index=config_index(Config(**chosen));compiled={}
                     example=torch.randn((a.example_M,k),device='cuda',dtype=torch.bfloat16)
                     dynamic=({0:torch.export.Dim('bulk_M',min=5,max=2048)},{},{},{},{},{})
@@ -170,7 +183,8 @@ def main():
                             candidate_vs_compiled_reference_different_elements=direct_different,
                             samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
                             conditional_over_reference=means['conditional']/means['reference'],
-                            expected_bulk_route='packed' if m<=128 else 'original-dequant-matmul',
+                            expected_bulk_route=('prepared-metadata' if m in [512,520] else 'original-dequant-matmul')
+                                if a.prepared_groups else ('packed' if m<=128 else 'original-dequant-matmul'),
                             timing_scope='GPU graph timing of standalone AOTI linear; not current whole-model kernels or HTTP'))
                         save('AOTI-case-completed',role=role,M=m)
                     del compiled,w,module,tensor,example,target,x,ys
