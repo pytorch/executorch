@@ -12,7 +12,7 @@ from pathlib import Path
 DISPATCH_SHA256 = '1a3fdadd5dcfe03ef9b6f55f93e4fce9a88b44867839b1316c824f7bd1faaa3e'
 
 
-def install_gemma_prefill_port(dispatch, *, capability, enabled=False):
+def install_gemma_prefill_port(dispatch, *, capability, enabled=False,runtime_chunk_range=False):
     """Separate opt-in experiment for prepared metadata at Gate M128/M512 and Down M128.
 
     Keep the rejected MG experiment separate. All static methods and
@@ -24,12 +24,18 @@ def install_gemma_prefill_port(dispatch, *, capability, enabled=False):
                    weight_encoding_changed=False, A16=True,
                    only_dynamic_bulk=True, candidate_sizes=[128,512],
                    temporary_metadata=True,persistent_extra_model_copy=False)
+    receipt['runtime_chunk_range']=runtime_chunk_range
     if not enabled or tuple(capability) != (12,0):
         return receipt
     assert hashlib.sha256(Path(dispatch.__file__).read_bytes()).hexdigest() == DISPATCH_SHA256
     import torch
     from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import can_launch_triton
-    from public_prefill_gemma_fp32_aoti import prepared_prefill_op
+    if runtime_chunk_range:
+        from public_prefill_gemma_runtime_shapes_aoti import prepared_runtime_prefill_op as prepared_prefill_op
+        operator_name='siliconbench.public_gemma_runtime_prefill_a16'
+    else:
+        from public_prefill_gemma_fp32_aoti import prepared_prefill_op
+        operator_name='siliconbench.public_gemma_fp32_prefill_a16'
 
     def route(x, q, sc, ss, z, zs, group_size):
         shape = (q.shape[0], q.shape[1]*2)
@@ -47,4 +53,8 @@ def install_gemma_prefill_port(dispatch, *, capability, enabled=False):
                    other_shapes_and_static_M_use_original=True,
                    bulk_arithmetic='selected Gemma FP32 reconstruction, final BF16 operands without FMA',
                    optimized_sizes_by_shape={'GateUp':[128,512],'Down':[128]})
+    receipt['operator_name']=operator_name
+    if runtime_chunk_range:
+        receipt['candidate_sizes']=[128,*range(496,513)]
+        receipt['optimized_sizes_by_shape']={'GateUp':[128,*range(496,513)],'Down':[128]}
     return receipt

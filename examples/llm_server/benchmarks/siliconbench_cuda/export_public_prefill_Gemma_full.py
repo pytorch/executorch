@@ -42,6 +42,8 @@ def main():
     parser.add_argument('--reference-export-job',type=Path,required=True)
     parser.add_argument('--gate-AOTI-report',type=Path,required=True)
     parser.add_argument('--down-AOTI-report',type=Path,required=True)
+    parser.add_argument('--runtime-chunk-range',action='store_true',
+                        help='Qualify and export the separate Gate M496..512 route')
     parser.add_argument('--owned-gpu-worker',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[12288,131072], default=12288)
     args=parser.parse_args()
@@ -98,6 +100,11 @@ def main():
     for report in [gate,down]:
         assert all(c['candidate_vs_compiled_reference_RMS']<.005 and c['deterministic'] for c in report['cases'])
     assert all(next(c for c in gate['cases'] if c['role']=='ffn_gate_up' and c['M']==m)['conditional_over_reference']<1 for m in [128,512])
+    if args.runtime_chunk_range:
+        assert gate['runtime_chunk_range'] and gate['scheduler_prefill_chunk']==496
+        assert {c['M'] for c in gate['cases']}=={8,16,64,128,256,495,*range(496,513)}
+        assert all(next(c for c in gate['cases'] if c['M']==m)['conditional_over_reference']<1 for m in range(496,513))
+        assert all(c['candidate_vs_compiled_reference_different_elements']==0 for c in gate['cases'] if c['M'] in [8,16,64,256,495])
     assert next(c for c in down['cases'] if c['role']=='ffn_down' and c['M']==128)['conditional_over_reference']<1
     d512=next(c for c in down['cases'] if c['role']=='ffn_down' and c['M']==512)
     assert d512['expected_bulk_route']=='original-dequant-matmul' and d512['candidate_vs_compiled_reference_different_elements']==0
@@ -149,15 +156,15 @@ def main():
     dispatch_source_SHA=digest(Path(dispatch.__file__))
     from public_prefill_gemma_export_hook import install_gemma_prefill_port
     original=dispatch._dequant_matmul
-    SM80=install_gemma_prefill_port(dispatch,capability=(8,0),enabled=True)
+    SM80=install_gemma_prefill_port(dispatch,capability=(8,0),enabled=True,runtime_chunk_range=args.runtime_chunk_range)
     assert not SM80['installed'] and dispatch._dequant_matmul is original
-    receipt=install_gemma_prefill_port(dispatch,capability=(12,0),enabled=True)
+    receipt=install_gemma_prefill_port(dispatch,capability=(12,0),enabled=True,runtime_chunk_range=args.runtime_chunk_range)
     assert receipt['installed']
     # Prove real strict CPU/FakeTensor model graphs include the candidate.
     original_export=torch.export.export;route_audits=[]
     def traced_export(*a,**kw):
         ep=original_export(*a,**kw)
-        count=sum(node.op=='call_function' and 'siliconbench.public_gemma_fp32_prefill_a16' in str(node.target)
+        count=sum(node.op=='call_function' and receipt['operator_name'] in str(node.target)
             for module in ep.graph_module.modules() if isinstance(module,torch.fx.GraphModule)
             for node in module.graph.nodes)
         item=dict(dynamic=kw.get('dynamic_shapes') is not None,candidate_operator_calls=count,

@@ -36,6 +36,8 @@ def main():
         p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--benchmark-python', required=True)
     p.add_argument('--port', type=int, default=19111)
+    p.add_argument('--runtime-chunk-range',action='store_true',
+                   help='Separate complete qualification for Gate M496..512; retain earlier trials')
     a = p.parse_args()
     assert not a.job_dir.exists(), 'Retain every earlier attempt'
     a.job_dir.mkdir(parents=True)
@@ -98,14 +100,15 @@ def main():
             available_bytes=available,required_bytes=required,temporary_blob_copies_budgeted=3),indent=2)+'\n')
         assert available > required, 'Insufficient export staging space'
         output = a.job_dir/'public-full-artifact'
-        run([sys.executable,'-B',package/'export_public_prefill_Gemma_full.py',
+        export_command=[sys.executable,'-B',package/'export_public_prefill_Gemma_full.py',
             '--et-source',a.et_source,'--gguf',a.gguf,'--config',a.config,
             '--precision-control',a.precision_control,'--max-step-tokens','512',
             '--max-kv-seqs','18','--max-context','131072',
             '--reference-artifact',a.reference_artifact,'--reference-export-job',a.reference_export_job,
             '--gate-AOTI-report',a.gate_AOTI_report,'--down-AOTI-report',down_report,
-            '--output',output,'--job-dir',a.job_dir/'full-export','--lock',a.lock],
-            'full-model-export',22800)
+            '--output',output,'--job-dir',a.job_dir/'full-export','--lock',a.lock]
+        if a.runtime_chunk_range:export_command+=['--runtime-chunk-range']
+        run(export_command,'full-model-export',22800)
         audit = json.loads((output/'artifact-audit.json').read_text())
         assert audit['full_weight_PTD_bytes_identical_with_primary']
         assert audit['constant_metadata'] == reference['constant_metadata']
