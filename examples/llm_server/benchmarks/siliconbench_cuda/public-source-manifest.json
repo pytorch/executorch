@@ -296,8 +296,8 @@
       "bytes": 11746
     },
     "export_mg_roofline.py": {
-      "sha256": "479292acf9502f1304ad63912884bd8366de7b3148781b759d5059acbc10bc9e",
-      "bytes": 13031
+      "sha256": "7dfd4339ec2aaf1162a2e887a97daac7eb7de7dee2b753e19bcf89bd54f5f3f6",
+      "bytes": 14259
     },
     "export_runtime_kv_model.py": {
       "sha256": "54e9674f4c63a1f608baf2e355236d7d20b713f1d1b871135b849ed10024817f",
@@ -342,6 +342,10 @@
     "make_wrapper.py": {
       "sha256": "bb550a39903ad70348bfdc2fbfa6473ac3e6a27be7ecd859fb90eaf338cc3234",
       "bytes": 1952
+    },
+    "mg_main_sdpa_varlen_reference.py": {
+      "sha256": "5ce65105639785e625739c90c0b208a77d12f8544208c85aa66e143d34a4e8ea",
+      "bytes": 19905
     },
     "native_gemm_oracle_diagnostic.py": {
       "sha256": "1e5842fab0a7247479c67727ef0c76407a3a1977b8562d837d60aa86a34a173e",

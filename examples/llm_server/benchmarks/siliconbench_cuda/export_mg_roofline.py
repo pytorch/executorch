@@ -9,6 +9,8 @@ acceptance. A CPU-only parent owns the GPU lock through child process teardown.
 import argparse
 import fcntl
 import hashlib
+import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -109,6 +111,21 @@ def main():
                       OMP_NUM_THREADS='2', TORCHINDUCTOR_COMPILE_THREADS='1', MAX_JOBS='1',
                       PYTHONDONTWRITEBYTECODE='1')
     sys.path.insert(0, str(args.et_source.parent))
+    # Use the verified attention source from the selected MG main artifact.
+    # The C checkout also serves Gemma and has different D128 routing. Load
+    # this module before model imports without changing that checkout.
+    attention_reference = Path(__file__).with_name('mg_main_sdpa_varlen_reference.py')
+    assert digest(attention_reference) == '5ce65105639785e625739c90c0b208a77d12f8544208c85aa66e143d34a4e8ea'
+    parent_name = 'executorch.backends.cuda.triton.kernels'
+    module_name = parent_name + '.sdpa_varlen'
+    parent = importlib.import_module(parent_name)
+    assert module_name not in sys.modules, 'Load selected MG attention before any model imports'
+    spec = importlib.util.spec_from_file_location(module_name, attention_reference)
+    assert spec is not None and spec.loader is not None
+    selected_attention = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = selected_attention
+    spec.loader.exec_module(selected_attention)
+    setattr(parent, 'sdpa_varlen', selected_attention)
     import torch
     import torch._inductor.cpp_builder as cpp
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -200,7 +217,9 @@ def main():
     audit = dict(fresh_export=True, model='muse-glimmer', mode='solo, text only, CUDA batched-sequence offgraph KV',
                  selected_output_bound=output.sizes, constant_metadata=metadata, offgraph_manifests=manifests,
                  GGUF_sha256=digest(args.gguf), quant_source_sha256=sources,
-                 attention_source_sha256=digest(kernels / 'sdpa_varlen.py'),
+                 attention_source_sha256=digest(attention_reference),
+                 unchanged_checkout_attention_sha256=digest(kernels / 'sdpa_varlen.py'),
+                 selected_MG_main_attention_loaded_before_model_imports=True,
                  max_resident_sequences=args.max_kv_seqs, physical_columns=args.max_kv_seqs+1,
                  prefix_caching=False, measured_context_before_step=1024,
                  context=args.max_context, active_sessions=32, decode_ceiling=32, static_methods=[1,2,4,8,16,32,64],
