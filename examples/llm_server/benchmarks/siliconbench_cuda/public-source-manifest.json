@@ -379,6 +379,10 @@
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
       "bytes": 7675
     },
+    "retire_native_input_protocol_queue.py": {
+      "sha256": "77b6278b0538b9de18f0878b5e05b9c70453e19899b6e7ed32c01212059b4cf5",
+      "bytes": 6697
+    },
     "retire_waiting_native_performance_queue.py": {
       "sha256": "69e3ea7a77a3e6f1e9e338eecae35b8fd69639f4402a296137b908e8424a3cf6",
       "bytes": 11029
