@@ -40,6 +40,8 @@ def main():
     parser.add_argument("--accepted-mini-review", type=Path)
     parser.add_argument("--job-dir", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
+    parser.add_argument("--same-artifact-pitch-control", action="store_true",
+                        help="Establish declared pitch in both arms before runtime-only compaction")
     parser.add_argument(
         "--nsys",
         type=Path,
@@ -317,7 +319,16 @@ def main():
                             return last
 
                         # Prefix checkpoint, cloned hit/scratch, cancellation and reuse.
+                        extra_owners = []
+                        if args.same_artifact_pitch_control:
+                            extra_owners = [request({"op": "new"})["seq_id"] for _ in range(20)]
                         fill([owner], 511, save=True)
+                        if args.same_artifact_pitch_control:
+                            assert request({"op":"metrics"})["snapshot"]["physical_columns"] == 22
+                            for extra in extra_owners:
+                                request(dict(op="remove", seq_id=extra))
+                            if args.arm == "runtime":
+                                request(dict(op="compact", spare_columns=0))
                         fill([owner], 512, save=True)
                         prefix = request(dict(op="clone", seq_id=owner, upto=512))[
                             "seq_id"
@@ -537,6 +548,7 @@ def main():
                 )
             result = dict(
                 arm=args.arm,
+                same_artifact_pitch_control=args.same_artifact_pitch_control,
                 role=args.role,
                 rounds=records,
                 performance=aggregates,

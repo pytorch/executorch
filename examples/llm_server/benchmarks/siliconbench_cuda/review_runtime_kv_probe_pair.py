@@ -59,6 +59,13 @@ def main():
     assert fixed["role"] == runtime["role"]
     assert len(fixed["rounds"]) == len(runtime["rounds"]) == 4
     assert fixed["probe_sha256"] == runtime["probe_sha256"]
+    same_artifact = fixed.get("same_artifact_pitch_control", False)
+    assert same_artifact == runtime.get("same_artifact_pitch_control", False)
+    if same_artifact:
+        assert fixed["model_PTE_sha256"] == runtime["model_PTE_sha256"]
+        assert fixed["weights_blob_sha256"] == runtime["weights_blob_sha256"]
+        assert all(stage["after"]["physical_columns"] == 22
+                   for row in fixed["rounds"] for stage in row["stages"])
     # PTD can include generated SO payloads as well as tensor storages.
     # A differing package hash requires a separate per-storage weight review.
     weight_review = None
@@ -249,6 +256,11 @@ def main():
         graph_pass = True
     result = dict(
         role=runtime["role"],
+        same_artifact_pitch_control=same_artifact,
+        fixed_capacity_baseline_scope=(
+            "Identical ABI2 PTE/PTD and kernels; declared22 columns retained without compaction"
+            if same_artifact else "Separate fixed ABI1 artifact; original strict numerical gate"
+        ),
         source_spec_sha256=digest(a.source_spec),
         numerical_checks_pass=True,
         weight_payload_review=weight_review,

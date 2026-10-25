@@ -38,6 +38,8 @@ def main():
                         help="Reuse only verified tests for identical binaries and source spec")
     parser.add_argument("--reuse-mini-export-job", type=Path,
                         help="Reuse unchanged audited O2 mini artifacts; rerun both four-round probes")
+    parser.add_argument("--same-artifact-pitch-control", action="store_true",
+                        help="Use identical runtime PTE/PTD for declared-pitch and grow/reclaim arms")
     args = parser.parse_args()
     assert not args.job_dir.exists()
     args.job_dir.mkdir(parents=True)
@@ -277,6 +279,8 @@ def main():
             ]
             if mini_review:
                 command += ["--accepted-mini-review", mini_review]
+            if args.same_artifact_pitch_control:
+                command += ["--same-artifact-pitch-control"]
             run(command, role + "-" + arm + "-diagnostic-controller.log")
             return job
 
@@ -348,7 +352,11 @@ def main():
             return result
 
         state("exporting-mini-pair", GPU_tests_started=True)
-        mini_fixed, mini_runtime = export("mini-fixed"), export("mini-runtime")
+        if args.same_artifact_pitch_control:
+            mini_runtime = export("mini-runtime")
+            mini_fixed = mini_runtime
+        else:
+            mini_fixed, mini_runtime = export("mini-fixed"), export("mini-runtime")
         fixed_job = diagnose("mini", "fixed", mini_fixed)
         runtime_job = diagnose("mini", "runtime", mini_runtime)
         mini_review = review("mini", mini_fixed, mini_runtime, fixed_job, runtime_job)
@@ -358,10 +366,11 @@ def main():
             GPU_tests_started=True,
         )
         full_runtime = export("full-runtime", mini_review)
-        fixed_job = diagnose("full", "fixed", args.fixed_full_artifact, mini_review)
+        full_fixed = full_runtime if args.same_artifact_pitch_control else args.fixed_full_artifact
+        fixed_job = diagnose("full", "fixed", full_fixed, mini_review)
         runtime_job = diagnose("full", "runtime", full_runtime, mini_review)
         full_review = review(
-            "full", args.fixed_full_artifact, full_runtime, fixed_job, runtime_job
+            "full", full_fixed, full_runtime, fixed_job, runtime_job
         )
         state(
             "full-diagnostic-completed-pending-main-server-review",
