@@ -83,7 +83,7 @@ def main():
         command=[a.server_python,'-B',str(package/'serve_gemma_runtime_columns.py'),
             '--worker-bin',worker['binary'],'--model-path',str(a.artifact/'model.pte'),
             '--data-path',str(a.artifact/'aoti_cuda_blob.ptd'),
-            '--tokenizer-path',str(a.tokenizer),'--hf-tokenizer',str(a.tokenizer),
+            '--tokenizer-path',str(a.tokenizer/'tokenizer.json'),'--hf-tokenizer',str(a.tokenizer),
             '--max-context','131072','--initial-kv-capacity','512',
             '--max-sessions','16','--max-decode-sequences','16','--max-inflight-requests','16',
             '--prefix-checkpoint-interval','512','--idle-kv-compaction-ms',str(idle_ms),

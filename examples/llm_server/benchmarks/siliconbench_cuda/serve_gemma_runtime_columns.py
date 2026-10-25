@@ -46,7 +46,7 @@ def build_app_from_args(args):
             yield ServingChat(runtime, template, args.model_id,
                 max_context=args.max_context, prompt_token_offset=0,
                 tool_detector_cls=_tool_detector(args.tool_parser),
-                content_filter=_strip_gemma_channels,
+                content_filter=(None if args.raw_tool_text else _strip_gemma_channels),
                 content_filter_specials=(_GEMMA_CHANNEL_SPECIALS |
                     {'<tool_call|>', '<tool|>', '<|tool>', '<tool_response|>', '<|tool_call>', '<|"|>'}
                     if args.raw_tool_text else _GEMMA_CHANNEL_SPECIALS))
@@ -87,6 +87,8 @@ def main():
         parser.error("Invalid batching limits")
     if args.initial_kv_capacity != -1 and not 0 < args.initial_kv_capacity <= args.max_context:
         parser.error("Initial KV capacity must fit max context")
+    import logging
+    logging.basicConfig(level=logging.INFO)
     import uvicorn
     uvicorn.run(build_app_from_args(args), host=args.host, port=args.port)
 
