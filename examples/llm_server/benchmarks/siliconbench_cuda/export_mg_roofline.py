@@ -111,7 +111,20 @@ def main():
     sys.path.insert(0, str(args.et_source.parent))
     import torch
     import torch._inductor.cpp_builder as cpp
+    import torch._inductor.config as inductor_config
+    from executorch.backends.cuda.cuda_backend import CudaBackend
     assert torch.cuda.get_device_capability() == (12,0)
+    # Some preserved export checkouts set O0 inside their export entry point.
+    # Apply the compiler option when each delegate is actually lowered, so the
+    # AOTI cache key and actual wrapper compilation both use O2. This affects
+    # only this isolated exporter process; framework sources remain unchanged.
+    original_preprocess = CudaBackend.preprocess
+
+    def optimized_preprocess(*positional, **keywords):
+        with inductor_config.patch({"aot_inductor.compile_wrapper_opt_level": "O2"}):
+            return original_preprocess(*positional, **keywords)
+
+    CudaBackend.preprocess = staticmethod(optimized_preprocess)
     ka_receipt=None
     if args.accepted_ka_report is not None:
         from executorch.backends.cuda.triton.kernels import int4_quantized_gemm as native
@@ -125,7 +138,8 @@ def main():
     def record_build(self):
         flags = re.findall(r'(?:^|\s)(-O[0-3s])(?:\s|$)', self.get_command_line())
         with (args.job_dir / 'actual-compiler-optimization.jsonl').open('a') as log:
-            log.write(json.dumps(dict(optimization_flags=flags, target_name=self._name)) + '\n')
+            log.write(json.dumps(dict(optimization_flags=flags, target_name=self._name,
+                                      command=self.get_command_line())) + '\n')
         return original_build(self)
 
     cpp.CppBuilder.build = record_build
