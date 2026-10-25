@@ -475,6 +475,10 @@
       "sha256": "0862073146eab3a01d8af0abf214058e3be0687d125b0551a7f5710159f9eb97",
       "bytes": 2375
     },
+    "prepare_roofline_gpu_sdk.py": {
+      "sha256": "ac5670b91f5058fefc7cba4ff3402825f1cf6d3ea313189f3c84a2753d363cfd",
+      "bytes": 6221
+    },
     "prepare_runtime_kv_build.py": {
       "sha256": "d8996283009ee418462a5c1c36039866c4d3b02e68b961de9746359e75764523",
       "bytes": 15399
@@ -618,6 +622,10 @@
     "roofline_large_w4a16_aoti.py": {
       "sha256": "b780e3dca047392b34b5f7bda637c40d51e07291a5d59024b8bf1463537b7ed7",
       "bytes": 4568
+    },
+    "roofline_sdk_project/CMakeLists.txt": {
+      "sha256": "e339359f81c1fe88dc28804cf1ea011e40e5e24208397341326c1e12eeb48e3c",
+      "bytes": 946
     },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",

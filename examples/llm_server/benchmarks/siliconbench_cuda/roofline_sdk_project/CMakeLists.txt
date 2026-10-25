@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.24)
+project(siliconbench_roofline_runtime LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+find_package(executorch CONFIG REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+include("${ET_SOURCE}/tools/cmake/Utils.cmake")
+executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(aoti_cuda_backend)
+executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+add_executable(roofline_et "${CMAKE_CURRENT_SOURCE_DIR}/../roofline_active_et.cpp")
+target_include_directories(roofline_et PRIVATE "${ET_SOURCE}/..")
+target_compile_definitions(roofline_et PRIVATE EXECUTORCH_BUILD_CUDA)
+target_link_libraries(roofline_et PRIVATE cuda_batching extension_llm_batching
+  extension_llm_cache extension_llm_sampler extension_module extension_tensor
+  executorch optimized_native_cpu_ops_lib aoti_cuda_backend CUDA::cudart)
+target_link_options(roofline_et PRIVATE "LINKER:--export-dynamic")
