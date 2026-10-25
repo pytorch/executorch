@@ -3,9 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import torch
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _should_transform(tensor: torch.Tensor) -> bool:
@@ -45,7 +49,17 @@ def _update_placeholder_meta(
     if placeholder_node is None:
         raise RuntimeError(f"Missing placeholder for {input_spec.arg.name}.")
 
+    strides = placeholder_node.meta["val"].stride()
     placeholder_node.meta["val"] = placeholder_node.meta["val"].contiguous()
+    logger.warning(
+        "%s '%s' has strides %s, which are neither contiguous nor channels-last. "
+        "to_edge stores it contiguous, so partitioners and delegates see the "
+        "contiguous layout, not the strides in the model. Make it contiguous "
+        "where it is created to avoid this change.",
+        kind.name.replace("_", " ").capitalize(),
+        target,
+        tuple(strides),
+    )
 
 
 def convert_constant_dim_order_pass(

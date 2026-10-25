@@ -3141,11 +3141,21 @@ class TestPasses(unittest.TestCase):
             with self.subTest(description=description):
                 inputs = (torch.randn(weight.shape),)
                 ep = torch.export.export(AddParameter(weight), inputs)
-                modified_ep = (
-                    convert_constant_dim_order_pass.convert_constant_dim_order_pass(
-                        copy.deepcopy(ep)
-                    )
+                logs = (
+                    self.assertLogs(convert_constant_dim_order_pass.logger, "WARNING")
+                    if converted
+                    else self.assertNoLogs(convert_constant_dim_order_pass.logger)
                 )
+                with logs as captured:
+                    modified_ep = (
+                        convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                            copy.deepcopy(ep)
+                        )
+                    )
+                if converted:
+                    self.assertIn(
+                        "Parameter 'weight' has strides (1, 4)", captured.output[0]
+                    )
 
                 torch.testing.assert_close(
                     ep.module()(*inputs), modified_ep.module()(*inputs)
@@ -3176,10 +3186,18 @@ class TestPasses(unittest.TestCase):
         inputs = (torch.randn(4, 5),)
         for skip_dim_order in (False, True):
             with self.subTest(skip_dim_order=skip_dim_order):
-                ep = to_edge(
-                    torch.export.export(model, inputs),
-                    compile_config=EdgeCompileConfig(_skip_dim_order=skip_dim_order),
-                ).exported_program()
+                with self.assertLogs(
+                    convert_constant_dim_order_pass.logger, "WARNING"
+                ) as captured:
+                    ep = to_edge(
+                        torch.export.export(model, inputs),
+                        compile_config=EdgeCompileConfig(
+                            _skip_dim_order=skip_dim_order
+                        ),
+                    ).exported_program()
+                # to_edge runs the pass twice, but only the first run converts.
+                self.assertEqual(len(captured.output), 1)
+                self.assertIn("Parameter 'weight'", captured.output[0])
                 self.assertTrue(ep.state_dict["weight"].is_contiguous())
                 placeholder = next(n for n in ep.graph.nodes if n.name == "p_weight")
                 self.assertTrue(placeholder.meta["val"].is_contiguous())
