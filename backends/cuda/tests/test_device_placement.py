@@ -22,7 +22,11 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes.propagate_device_pass import TARGET_DEVICE_COMPILE_SPEC_KEY
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.propagate_device_pass import (
+    PropagateDeviceConfig,
+    TARGET_DEVICE_COMPILE_SPEC_KEY,
+)
 
 
 class EachAddOnCuda(Partitioner):
@@ -52,8 +56,9 @@ class EachAddOnCuda(Partitioner):
         )
 
 
-def run(model, inputs) -> list[torch.Tensor]:
-    """Lower model with EachAddOnCuda, run it in the runtime, return its outputs."""
+def load(model, inputs, directory, config=None):
+    """Lower model with EachAddOnCuda and load its forward method from a file
+    in directory."""
     from executorch.runtime import Runtime
 
     edge = to_edge_transform_and_lower(
@@ -63,10 +68,15 @@ def run(model, inputs) -> list[torch.Tensor]:
             _check_ir_validity=False, _skip_dim_order=True
         ),
     )
+    path = Path(directory) / "model.pte"
+    path.write_bytes(edge.to_executorch(config or ExecutorchBackendConfig()).buffer)
+    return Runtime.get().load_program(path).load_method("forward")
+
+
+def run(model, inputs) -> list[torch.Tensor]:
+    """Lower model with EachAddOnCuda, run it in the runtime, return its outputs."""
     with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "model.pte"
-        path.write_bytes(edge.to_executorch(ExecutorchBackendConfig()).buffer)
-        method = Runtime.get().load_program(path).load_method("forward")
+        method = load(model, inputs, directory)
         return [output.cpu() for output in method.execute(list(inputs))]
 
 
@@ -111,3 +121,27 @@ class CudaDevicePlacementTest(unittest.TestCase):
         x = torch.arange(6.0).reshape(2, 3) * 10
         for output, expected in zip(run(model, (x,)), model(x), strict=True):
             torch.testing.assert_close(output, expected)
+
+    def test_input_on_device_also_read_on_host(self):
+        """With skip_h2d_for_method_inputs, the caller passes the input on the
+        device. A delegate reads it there, and a host op reads a copy of it in
+        host memory."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.add(x, y), torch.sin(x)
+
+        config = ExecutorchBackendConfig(
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        )
+        model = Model()
+        inputs = (torch.randn(2, 3), torch.randn(2, 3))
+        with tempfile.TemporaryDirectory() as directory:
+            method = load(model, inputs, directory, config)
+            outputs = method.execute([t.cuda() for t in inputs])
+        for output, expected in zip(outputs, model(*inputs), strict=True):
+            torch.testing.assert_close(output.cpu(), expected)

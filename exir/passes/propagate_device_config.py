@@ -48,13 +48,16 @@ class PropagateDeviceConfig:
 
     # When True, method-level input tensors that feed directly into a device
     # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
-    # already on the target device. Every reader of such an input must then be
-    # a delegate on that device, or to_executorch raises. Useful for pipelines
-    # where inputs are pre-staged on GPU. Constants are not passed by the
-    # caller, so they are still copied: their data stays on the host, in the
-    # program or in its external data file. That copy runs on every call, once
-    # for each device that reads the constant, and stays in device memory until
-    # the last delegate there has read it.
+    # already on the target device: the device of the first delegate that
+    # reads the input, in graph order. Any other reader of such an input, such
+    # as a host op or a delegate on another device, reads a copy of it in host
+    # memory, made on every call, and the pass logs a warning. An input that an
+    # op writes in place on the host makes to_executorch raise. Useful for
+    # pipelines where inputs are pre-staged on GPU. Constants are not passed
+    # by the caller, so they are still copied: their data stays on the host,
+    # in the program or in its external data file. That copy runs on every
+    # call, once for each device that reads the constant, and stays in device
+    # memory until the last delegate there has read it.
     #
     # Pair with MemoryPlanningPass(alloc_graph_input=False), or the runtime reserves its own buffer
     # for the input and copies the caller's memory into it, which is what this exists to avoid.

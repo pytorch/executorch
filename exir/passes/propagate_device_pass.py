@@ -42,6 +42,16 @@ logger: logging.Logger = logging.getLogger(__name__)
 # with this key and a value encoding the device string (e.g., b"cuda:0").
 TARGET_DEVICE_COMPILE_SPEC_KEY = "target_device"
 
+# Ops that read only the sizes, strides or offset of a tensor. Those stay in
+# host memory when the data is on a device, so these ops need no copy of it.
+_METADATA_READERS = (
+    torch.ops.aten.sym_size.default,
+    torch.ops.aten.sym_size.int,
+    torch.ops.aten.sym_stride.int,
+    torch.ops.aten.sym_numel.default,
+    torch.ops.aten.sym_storage_offset.default,
+)
+
 
 def _parse_device_spec_value(value: bytes) -> tuple[schema.DeviceType, int]:
     """
@@ -290,10 +300,10 @@ class PropagateDevicePass(PassBase):
     Skip-copy optimizations:
     - skip_h2d_for_method_inputs: If the input is a graph-level placeholder
       feeding a delegate, don't insert H2D; tag the placeholder as device
-      instead (user provides GPU tensor at runtime). Every reader of the
-      placeholder must then be a delegate on that device, or the pass raises.
-      Constants are placeholders too, but their data is stored on the host,
-      so they still get an H2D copy.
+      instead (user provides GPU tensor at runtime). Every other reader of the
+      placeholder reads one D2H copy of it. A placeholder that an op writes in
+      place on the host is refused. Constants are placeholders too, but their
+      data is stored on the host, so they still get an H2D copy.
     - skip_d2h_for_method_outputs: The graph output reads a delegate output
       on device, not its D2H copy; the copy stays only for other readers. When
       one of them writes the copy in place, the graph output reads a device
@@ -365,45 +375,9 @@ class PropagateDevicePass(PassBase):
                 and self._is_placeholder(arg)
                 and not arg_spec.const
             ):
-                # The spec is shared by every reader, so all of them must be
-                # delegates on this same device.
-                other_readers = [
-                    user
-                    for user in arg.users
-                    if self._delegate_device(graph_module, user)
-                    != (target_device_type, device_index)
-                ]
-                if other_readers:
-                    write_back = next(
-                        (
-                            user
-                            for user in other_readers
-                            if user.target == torch.ops.aten.copy_.default
-                            and user.args[0] is arg
-                        ),
-                        None,
-                    )
-                    refusal = (
-                        f"skip_h2d_for_method_inputs=True cannot place placeholder "
-                        f"'{arg.name}' on {target_device_type.name.lower()}:"
-                        f"{device_index}, because "
-                        f"'{(write_back or other_readers[0]).name}'"
-                    )
-                    if write_back is not None:
-                        raise RuntimeError(
-                            f"{refusal} writes it back on the host (the method "
-                            f"mutates it). Either disable "
-                            f"skip_h2d_for_method_inputs, or, for a mutable buffer, "
-                            f"have the partitioner put the buffer and every op that "
-                            f"reads or writes it in the delegate; tag_mutated_buffer "
-                            f"tags the buffer once those ops are there."
-                        )
-                    raise RuntimeError(
-                        f"{refusal} also reads it and is not a delegate on that "
-                        f"device. Either disable skip_h2d_for_method_inputs, or use "
-                        f"the placeholder only from delegates on one device."
-                    )
-                _set_device_on_spec(arg_spec, target_device_type, device_index)
+                self._place_input_on_device(
+                    graph_module, arg, target_device_type, device_index
+                )
                 changed = True
                 continue
 
@@ -451,6 +425,97 @@ class PropagateDevicePass(PassBase):
 
         node.args = tuple(new_args)
         return changed
+
+    def _place_input_on_device(
+        self,
+        graph_module: torch.fx.GraphModule,
+        placeholder: torch.fx.Node,
+        device_type: schema.DeviceType,
+        device_index: int,
+    ) -> None:
+        """Move a method input to the device for skip_h2d_for_method_inputs.
+
+        Delegates on that device read it there, and so do ops that read only
+        its shape. Every other reader, such as a host op, a delegate on the
+        host, a delegate on another device or, without
+        skip_d2h_for_method_outputs, the method output, reads one D2H copy of it
+        instead, made on every call. An
+        input that an op writes in place on the host is refused: the write would
+        go to the copy, and neither the caller nor the delegates would see it.
+        Delegates are visited in graph order, so the first one that reads the
+        input decides its device, and later ones on that device find it placed.
+        """
+        spec = placeholder.meta["spec"]
+        if (spec.device, spec.device_index) == (device_type, device_index):
+            return
+        device = f"{device_type.name.lower()}:{device_index}"
+        writers = _in_place_writers(placeholder)
+        if writers:
+            write_back = next(
+                (
+                    writer
+                    for writer in writers
+                    if writer.target == torch.ops.aten.copy_.default
+                    and writer.args[0] is placeholder
+                ),
+                None,
+            )
+            refusal = (
+                f"skip_h2d_for_method_inputs=True cannot place placeholder "
+                f"'{placeholder.name}' on {device}, because "
+                f"'{(write_back or writers[0]).name}' writes it"
+            )
+            if write_back is not None:
+                raise RuntimeError(
+                    f"{refusal} back on the host (the method mutates it). Either "
+                    f"disable skip_h2d_for_method_inputs, or, for a mutable buffer, "
+                    f"have the partitioner put the buffer and every op that reads "
+                    f"or writes it in the delegate; tag_mutated_buffer tags the "
+                    f"buffer once those ops are there."
+                )
+            raise RuntimeError(
+                f"{refusal} in place on the host. Either disable "
+                f"skip_h2d_for_method_inputs, or have the partitioner put that op "
+                f"in a delegate on {device}."
+            )
+
+        _set_device_on_spec(spec, device_type, device_index)
+        # With skip_d2h_for_method_outputs, the method returns the input where
+        # the caller put it.
+        other_readers = [
+            user
+            for user in placeholder.users
+            if self._delegate_device(graph_module, user) != (device_type, device_index)
+            and user.target not in _METADATA_READERS
+            and not (user.op == "output" and self.skip_d2h_for_method_outputs)
+        ]
+        if not other_readers:
+            return
+        position = {n: i for i, n in enumerate(graph_module.graph.nodes)}
+        first_reader = min(other_readers, key=position.__getitem__)
+        logger.warning(
+            "Method input '%s' (%s bytes) stays on %s for the delegates there, "
+            "but '%s' also reads it, so it is copied to the host on every call. "
+            "Have the partitioner put every reader in a delegate on %s to avoid "
+            "that copy.",
+            placeholder.name,
+            spec.nbytes(),
+            device,
+            first_reader.name,
+            device,
+        )
+        with graph_module.graph.inserting_before(first_reader):
+            d2h_node = graph_module.graph.call_function(
+                torch.ops.et_copy._d2h_copy.default, (placeholder,)
+            )
+        d2h_spec = _copy_output_spec(spec, schema.DeviceType.CPU, 0)
+        d2h_node.meta["spec"] = d2h_spec
+        d2h_node.meta["val"] = placeholder.meta.get("val")
+        if "tensor_meta" in placeholder.meta:
+            d2h_node.meta["tensor_meta"] = placeholder.meta["tensor_meta"]
+        for reader in other_readers:
+            reader.replace_input_with(placeholder, d2h_node)
+        _replace_spec(other_readers, spec, d2h_spec)
 
     def _insert_d2h_for_getitem(
         self,
