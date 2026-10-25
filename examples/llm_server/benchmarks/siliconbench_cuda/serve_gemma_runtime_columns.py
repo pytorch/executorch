@@ -47,7 +47,9 @@ def build_app_from_args(args):
                 max_context=args.max_context, prompt_token_offset=0,
                 tool_detector_cls=_tool_detector(args.tool_parser),
                 content_filter=_strip_gemma_channels,
-                content_filter_specials=_GEMMA_CHANNEL_SPECIALS)
+                content_filter_specials=(_GEMMA_CHANNEL_SPECIALS |
+                    {'<tool_call|>', '<tool|>', '<|tool>', '<tool_response|>', '<|tool_call>', '<|"|>'}
+                    if args.raw_tool_text else _GEMMA_CHANNEL_SPECIALS))
         finally:
             if runtime is None:
                 await SessionRuntime._finish_cleanup(asyncio.create_task(worker.close()))
@@ -72,6 +74,8 @@ def main():
     parser.add_argument("--idle-kv-compaction-ms", type=int, default=250)
     parser.add_argument("--idle-kv-spare-columns", type=int, default=1)
     parser.add_argument("--tool-parser", choices=["none", "gemma"], default="none")
+    parser.add_argument("--raw-tool-text", action="store_true",
+                        help="Preserve generated Gemma tool syntax in raw-output comparisons")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18080)
     args = parser.parse_args()

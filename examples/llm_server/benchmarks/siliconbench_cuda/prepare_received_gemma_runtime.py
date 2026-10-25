@@ -26,6 +26,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for n in ['source','worker','output','expected-python-hashes']:
         p.add_argument('--'+n,type=Path,required=True)
+    p.add_argument('--local-qualified-provenance',type=Path)
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     src=a.source.resolve();dst=a.output/'executorch'
     branch(src,dst,{'examples'})
@@ -41,22 +42,30 @@ def main():
     for name,(old,new) in transformations.items():
         f=dst/'examples/llm_server/python'/name
         if sha(f)==expected[name]:continue
-        text=f.read_text();assert text.count(old)==1,name;f.write_text(text.replace(old,new))
+        text=f.read_text()
+        if text.count(old)==1:changed=text.replace(old,new)
+        else:assert text.count(new)==1,name;changed=text.replace(new,old)
+        f.write_text(changed)
     actual={}
     for name,wanted in expected.items():
         f=(dst/'examples/models/gemma4_31b/serve.py' if name=='Gemma.serve.py'
            else dst/'examples/llm_server/python'/name)
         actual[name]=sha(f);assert actual[name]==wanted,(name,actual[name],wanted)
-    transfer=json.loads((a.worker/'transfer-provenance.json').read_text())
-    assert transfer['every_received_file_SHA256_verified']
-    origin=json.loads((a.worker/'build-provenance.json').read_text())
+    provenance_path=a.local_qualified_provenance or a.worker/'build-provenance.json'
+    if a.local_qualified_provenance:
+        origin=json.loads(provenance_path.read_text())
+        assert origin['qualified_core_SHA256']=='fae8d0f4d55051437b646a379cb3c6751ccd549537dcc4040281a98087eb232e'
+    else:
+        transfer=json.loads((a.worker/'transfer-provenance.json').read_text())
+        assert transfer['every_received_file_SHA256_verified']
+        origin=json.loads(provenance_path.read_text())
     binary=a.worker/'gemma_runtime_columns_worker'
     assert sha(binary)==origin['binary_SHA256']
     env=__import__('os').environ.copy()
     env['LD_LIBRARY_PATH']=str(a.worker)+':'+env.get('LD_LIBRARY_PATH','')
     result=subprocess.run(['ldd',str(binary)],env=env,capture_output=True,text=True,check=True)
     assert 'not found' not in result.stdout,result.stdout
-    original_hash=sha(a.worker/'build-provenance.json')
+    original_hash=sha(provenance_path)
     provenance={**origin,'binary':str(binary),'received_binary_exactly_qualified':True,
                 'origin_provenance':origin,'origin_provenance_SHA256':original_hash,
                 'matched_HTTP_Python_hashes':actual,'ldd':result.stdout}

@@ -87,7 +87,7 @@ def main():
             '--max-context','131072','--initial-kv-capacity','512',
             '--max-sessions','16','--max-decode-sequences','16','--max-inflight-requests','16',
             '--prefix-checkpoint-interval','512','--idle-kv-compaction-ms',str(idle_ms),
-            '--idle-kv-spare-columns','1']
+            '--idle-kv-spare-columns','1','--raw-tool-text']
         wrapper=a.output/'serve-runtime-columns.sh'
         wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
             'test "${1:?backend}" = executorch\n'
@@ -102,6 +102,7 @@ def main():
             max_prefill_tokens=512,static_graphs=True,prefix_entries={'off':0,'on':1},
             checkpoint={'off':0,'on':512},idle_compaction_ms=idle_ms,idle_spare_columns=1,
             runtime_physical_columns=dynamic,
+            raw_tool_text=True,
             wrapper_SHA256=sha(wrapper),client_SHA256=sha(package/'benchmark_gemma.py'),
             prompts_SHA256=sha(a.prompts),worker_provenance=worker,model_promoted=False,
             performance_host_must_match_baseline=True)
