@@ -3,8 +3,9 @@
 Wait for the existing mini trial; never restart it. Preserve the accepted
 primary artifact, cache, native servers and records. Export the public arm
 with the primary 52-layer/21-owner geometry, then check executor numerics.
-Only a passing full-model candidate can enter new server perf and F1 cells.
-All records remain provisional until an independent review selects an arm.
+An explicit option preserves a failed auxiliary RMS screen while collecting
+the user's full-model F1 assessment. All records remain provisional until an
+independent review selects an arm; no gate is silently changed to passing.
 """
 import argparse
 import datetime
@@ -44,6 +45,8 @@ def main():
     p.add_argument('--lock', type=Path, required=True)
     p.add_argument('--job-dir', type=Path, required=True)
     p.add_argument('--port', type=int, default=19110)
+    p.add_argument('--collect-F1-after-numerical-screen-failure', action='store_true',
+                   help='Keep failed auxiliary RMS gates visible and collect full-model F1; no automatic promotion')
     a = p.parse_args()
     assert not a.job_dir.exists(), 'Preserve every earlier attempt'
     a.job_dir.mkdir(parents=True)
@@ -72,15 +75,27 @@ def main():
     try:
         state('waiting-existing-mini-validation')
         deadline = time.monotonic()+20000
-        while not (a.mini_runtime_job / 'results.json').exists():
+        mini_path = a.mini_runtime_job / ('numerical-preflight.json' if a.collect_F1_after_numerical_screen_failure else 'results.json')
+        while not mini_path.exists():
             s = json.loads((a.mini_runtime_job / 'progress.json').read_text())
             assert s['status'] != 'failed', s
             os.kill(s['controller_pid'], 0)
             assert time.monotonic() < deadline, 'Observation expired; do not restart mini trial'
             time.sleep(15)
-        mini = json.loads((a.mini_runtime_job / 'results.json').read_text())
-        assert mini['mini_numeric_pass'] and mini['four_rounds_first_discarded']
-        assert all(r['numerical_pass'] for r in mini['numerical'])
+        mini = json.loads(mini_path.read_text())
+        if not a.collect_F1_after_numerical_screen_failure:
+            assert mini['mini_numeric_pass'] and mini['four_rounds_first_discarded']
+            assert all(r['numerical_pass'] for r in mini['numerical'])
+        else:
+            assert mini['numerical_gate'] == .005
+            assert len(mini['numerical']) == 9 and all(r['argmax_identical'] for r in mini['numerical'])
+            assert len(mini['raw']) == 2 and all(r['round'] == 1 for r in mini['raw'])
+        (a.job_dir/'retained-mini-numerical-screen.json').write_text(json.dumps(dict(
+            source=str(mini_path), SHA256=sha(mini_path),
+            numerical_gate=.005, numerical=mini['numerical'],
+            original_numerical_pass=all(r['numerical_pass'] for r in mini['numerical']),
+            separate_complete_F1_qualification=a.collect_F1_after_numerical_screen_failure,
+            model_promoted=False),indent=2)+'\n')
         delegate = a.mini_workflow_job / 'prepared-linear-delegate/results.json'
         proof = json.loads(delegate.read_text())
         assert proof['port_kind'] == 'prepared-metadata' and proof['ET_edge_and_CUDA_serialization_pass']
@@ -119,29 +134,41 @@ def main():
             full_model_F1_and_HTTP_pending=True, model_promoted=False)
         (a.job_dir/'model-pair-exports.json').write_text(json.dumps(pair,indent=2)+'\n')
         runtime = a.job_dir/'full-runtime'
-        run([sys.executable,'-B',package/'run_public_prefill_mini_runtime.py',
+        runtime_command = [sys.executable,'-B',package/'run_public_prefill_mini_runtime.py',
             '--workflow-job',a.job_dir,'--workflow-pair-filename','model-pair-exports.json',
             '--expected-n-layers','52','--runtime-sessions','16',
             '--CPU-build-progress',a.CPU_build_progress,'--et-source',a.et_source,
             '--accepted-main-review',a.accepted_main_review,'--job-dir',runtime,
-            '--lock',a.lock,'--warmup','5','--repetitions','12'], 'full-model-executor', 21600)
+            '--lock',a.lock,'--warmup','5','--repetitions','12','--numerical-only']
+        if a.collect_F1_after_numerical_screen_failure:
+            runtime_command += ['--continue-after-numerical-screen-failure']
+        run(runtime_command, 'full-model-executor', 21600)
         measured = json.loads((runtime/'results.json').read_text())
-        assert measured['n_layers'] == 52 and measured['mini_numeric_pass']
-        assert all(r['numerical_pass'] for r in measured['numerical'])
+        assert measured['n_layers'] == 52 and measured['numerical_only']
+        if not a.collect_F1_after_numerical_screen_failure:
+            assert measured['mini_numeric_pass'] and all(r['numerical_pass'] for r in measured['numerical'])
+        (a.job_dir/'retained-full-numerical-screen.json').write_text(json.dumps(dict(
+            source=str(runtime/'results.json'), SHA256=sha(runtime/'results.json'),
+            numerical_gate=.005, numerical=measured['numerical'],
+            original_numerical_pass=measured['mini_numeric_pass'],
+            separate_complete_F1_qualification=a.collect_F1_after_numerical_screen_failure,
+            model_promoted=False),indent=2)+'\n')
         # Use the unchanged primary server interface. Only its artifact input
         # differs, and every new result lives below this isolated job directory.
         assert sha(a.client) == '3a748babe2fc62d9f10c08892de65b57954d9661bd0689988ac3d6d5cbabf982'
         assert sha(a.base_wrapper) == '4f115fdea2368ee7ea075b27542d63bf3d7ae61b676751541393d2ff323d935a'
-        os.environ.update(SB_ET_CACHEOFF_ARTIFACT=str(output),SB_ET_PREFIX_ENTRIES='4',SB_CHECKPOINT='0')
+        os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(output),
+                          SB_ET_PREFIX_ENTRIES='4',SB_CHECKPOINT='0')
         run([a.benchmark_python,'-B',package/'run_matrix_24h.py',
-            '--wrapper',a.base_wrapper,'--model','muse-glimmer','--client',a.client,
+            '--wrapper',a.base_wrapper,'--model','muse-glimmer-30b','--client',a.client,
             '--prompts',a.prompts,'--correctness-root',a.correctness_root,
             '--python',a.benchmark_python,'--output',a.job_dir/'server-matrix',
             '--lock',a.lock,'--port',a.port,'--variants','executorch',
             '--cache-modes','off','on','--concurrencies','1','2','4','8','16',
             '--phases','performance','correctness'], 'full-model-server-perf-F1', 57600)
         state('completed-pending-independent-full-model-selection',
-              executor_numeric_pass=True, server_perf_memory_and_F1_collected=True)
+              executor_numeric_pass=measured['mini_numeric_pass'],
+              server_perf_memory_and_F1_collected=True)
     except Exception as exc:
         state('failed', error_type=type(exc).__name__, detail=str(exc)[-2000:])
         raise

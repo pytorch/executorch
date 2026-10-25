@@ -40,6 +40,10 @@ def main():
     p.add_argument('--expected-n-layers', type=int, choices=[4, 52], default=4)
     p.add_argument('--runtime-sessions', type=int, choices=[16, 32], default=32)
     p.add_argument('--workflow-pair-filename', default='mini-pair-exports.json')
+    p.add_argument('--numerical-only', action='store_true',
+                   help='Collect first-pair complete logits; no performance acceptance or timing averages')
+    p.add_argument('--continue-after-numerical-screen-failure', action='store_true',
+                   help='Retain the failed RMS screen and collect broader F1 elsewhere; never promote here')
     a = p.parse_args()
     assert a.warmup >= 5 and a.repetitions >= 4 and not a.job_dir.exists()
     a.job_dir.mkdir(parents=True)
@@ -110,7 +114,7 @@ def main():
         state('waiting-GPU-lock')
         with a.lock.open('a') as held:
             fcntl.flock(held, fcntl.LOCK_EX)
-            for round_number in range(1, 5):
+            for round_number in ([1] if a.numerical_only else range(1, 5)):
                 order = ['original', 'public'] if round_number % 2 else ['public', 'original']
                 for arm in order:
                     assert not subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader'], text=True).strip()
@@ -198,14 +202,14 @@ def main():
                                         actual_method_call_deltas=delta, argmax=reply['argmax'],
                                         logits=reply['logits'], snapshot=reply['snapshot'])
                                 setup(count); numeric = forward(save=round_number == 1)
-                                for _ in range(a.warmup): setup(count); forward()
+                                for _ in range(0 if a.numerical_only else a.warmup): setup(count); forward()
                                 samples = []
-                                for _ in range(a.repetitions): setup(count); samples.append(forward())
+                                for _ in range(0 if a.numerical_only else a.repetitions): setup(count); samples.append(forward())
                                 assert all(s['argmax'] == numeric['argmax'] for s in samples), 'Rebuilt identical histories must produce stable greedy outputs'
                                 results.append(dict(mix=name, active_owners=count, decode=decode, prefill=prefill,
                                     history_tokens=1024, numeric=numeric, timed=samples,
-                                    mean_executor_seconds=statistics.mean(s['executor_seconds'] for s in samples),
-                                    mean_API_IPC_seconds=statistics.mean(s['API_IPC_seconds'] for s in samples)))
+                                    mean_executor_seconds=statistics.mean(s['executor_seconds'] for s in samples) if samples else None,
+                                    mean_API_IPC_seconds=statistics.mean(s['API_IPC_seconds'] for s in samples) if samples else None))
                             child.stdin.close(); assert child.wait(timeout=300) == 0
                         finally:
                             if child.poll() is None:
@@ -218,14 +222,17 @@ def main():
                     if round_number == 1 and len(records) == 2:
                         preflight = dict(raw=records, numerical=review_numeric(),
                             numerical_gate=.005, full_model_F1_or_HTTP_accepted=False,
-                            model_promoted=False, first_discarded_round_only=True)
+                            model_promoted=False, first_discarded_round_only=True,
+                            numerical_only=a.numerical_only,
+                            screen_failure_retained=a.continue_after_numerical_screen_failure)
                         (a.job_dir / 'numerical-preflight.json').write_text(json.dumps(preflight, indent=2)+'\n')
-                        assert all(item['numerical_pass'] for item in preflight['numerical']), preflight['numerical']
+                        if not a.continue_after_numerical_screen_failure:
+                            assert all(item['numerical_pass'] for item in preflight['numerical']), preflight['numerical']
         # Changed kernels may change accumulation order: retain the established
         # 0.5% RMS numerical gate; report greedy differences instead of hiding them.
         numeric = review_numeric()
         performance = []
-        for index, (name, _, _) in enumerate(mixes):
+        for index, (name, _, _) in ([] if a.numerical_only else enumerate(mixes)):
             arms = {}
             for arm in ['original', 'public']:
                 values = [r['results'][index]['mean_executor_seconds'] for r in records if r['arm'] == arm]
@@ -233,15 +240,18 @@ def main():
                     last3_sample_SD_seconds=statistics.stdev(values[1:]), first_discarded=values[0])
             performance.append(dict(mix=name, arms=arms,
                 public_over_original=arms['public']['last3_mean_seconds']/arms['original']['last3_mean_seconds']))
-        report = dict(four_rounds_first_discarded=True, raw=records, numerical=numeric,
+        report = dict(four_rounds_first_discarded=not a.numerical_only, raw=records, numerical=numeric,
             n_layers=a.expected_n_layers, runtime_sessions=a.runtime_sessions,
+            numerical_only=a.numerical_only,
+            screen_failure_retained=a.continue_after_numerical_screen_failure,
             mini_numeric_pass=all(r['numerical_pass'] for r in numeric),
             performance=performance, actual_executor_API=True,
             same_weight_payload_review_SHA256=sha(weight_review),
             numerical_gate=.005, full_model_F1_or_HTTP_accepted=False,
             model_promoted=False, timing='Reported run_step + greedy + CUDA completion; history rebuild and logit saves are untimed. Includes CPU API overhead, not GPU-only or HTTP TTFT.')
         (a.job_dir / 'results.json').write_text(json.dumps(report, indent=2)+'\n')
-        assert report['mini_numeric_pass'], numeric
+        if not a.continue_after_numerical_screen_failure:
+            assert report['mini_numeric_pass'], numeric
         state('completed-mini-runtime-pending-full-model-validation')
     except Exception as e:
         state('failed', error_type=type(e).__name__, detail=str(e)[-2000:])
