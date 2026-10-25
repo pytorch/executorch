@@ -368,8 +368,8 @@
       "bytes": 2439
     },
     "prioritize_native_performance.py": {
-      "sha256": "b836fd430c3c59c051570c6ee57a45b4331be17dad123ffcdd988855182d203f",
-      "bytes": 10885
+      "sha256": "e94032dc2c5c1ce0e3be0bc5337adfdcd1c65b703c079fca6a7a6ce9fee31440",
+      "bytes": 11287
     },
     "profile_et_server.py": {
       "sha256": "58c7d94c0375d062b2db06614f234a7f85111fbcf99742fa0f7a4a309ebc02f7",
@@ -378,6 +378,10 @@
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
       "bytes": 7675
+    },
+    "retire_waiting_native_performance_queue.py": {
+      "sha256": "69e3ea7a77a3e6f1e9e338eecae35b8fd69639f4402a296137b908e8424a3cf6",
+      "bytes": 11029
     },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",

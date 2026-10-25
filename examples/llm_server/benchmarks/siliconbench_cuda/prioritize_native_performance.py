@@ -124,6 +124,7 @@ def main():
     p.add_argument('--prioritized-matrix', type=Path)
     p.add_argument('--lock', type=Path)
     p.add_argument('--run-case-sha256')
+    p.add_argument('--expected-matrix-sha256')
     p.add_argument('--output', type=Path)
     p.add_argument('--max-seconds', type=int, default=28800)
     a = p.parse_args()
@@ -135,11 +136,17 @@ def main():
     assert 1 <= a.max_seconds <= 28800 and not a.output.exists()
     assert a.case.name == 'correctness-agent-vllm-prefix-on-c1'
     plan = json.loads((a.prioritized_matrix / 'matrix.json').read_text())
-    expected_cases = {('performance', cache, c, backend)
+    permitted_cases = {('performance', cache, c, backend)
                       for cache in ['off', 'on'] for c in [1, 2, 4, 8, 16]
                       for backend in ['vllm', 'sglang']}
     assert plan['model'] == 'muse-glimmer-30b'
-    assert {tuple(row) for row in plan['cases']} == expected_cases
+    expected_cases = {tuple(row) for row in plan['cases']}
+    assert len(expected_cases) == len(plan['cases']) and expected_cases <= permitted_cases
+    if a.expected_matrix_sha256:
+        assert hashlib.sha256((a.prioritized_matrix / 'matrix.json').read_bytes()).hexdigest() == a.expected_matrix_sha256
+        assert expected_cases
+    else:
+        assert expected_cases == permitted_cases
     a.output.mkdir(parents=True)
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
@@ -157,7 +164,7 @@ def main():
             return False
         expected = {f'{phase}-agent-{backend}-prefix-{cache}-c{c}'
                     for phase, cache, c, backend in expected_cases}
-        assert len(s['completed']) == 20 and set(s['completed']) == expected
+        assert len(s['completed']) == len(expected_cases) and set(s['completed']) == expected
         for name in expected:
             q = a.prioritized_matrix / name
             assert json.loads((q / 'progress.json').read_text())['status'] == 'completed'
@@ -211,7 +218,7 @@ def main():
                     assert identity(pid) == item and not (a.case / 'settings.json').exists()
                     assert lock_owner(a.lock) != pid, 'Held CPU waiter acquired lock; restore it'
                     time.sleep(5)
-            save('completed', all20_native_performance_cells_complete=True,
+            save('completed', native_performance_cells_complete=len(expected_cases),
                  same_CPU_waiter_resumed=True, case_pid=pid, no_inference_cancelled=True)
             return
         save('completed', performance_already_complete=True, no_case_delayed=True)
