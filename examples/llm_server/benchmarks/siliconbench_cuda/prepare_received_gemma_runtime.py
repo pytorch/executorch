@@ -35,8 +35,8 @@ def main():
     shutil.copytree(src/'examples/llm_server/python',dst/'examples/llm_server/python',
                     ignore=shutil.ignore_patterns('__pycache__'))
     transformations={
-        'serving_chat.py':('gen_stops = self._stops + self._content_specials + self._request_stops(req)',
-                           'gen_stops = self._stops + self._request_stops(req)'),
+        'serving_chat.py':('        else:\n            gen_stops = self._stops + self._content_specials + self._request_stops(req)',
+                           '        else:\n            gen_stops = self._stops + self._request_stops(req)'),
         'chat_template.py':('    "<turn|>",\n    "</s>",','    "<turn|>",\n    "<|tool_response>",\n    "</s>",')}
     expected=json.loads(a.expected_python_hashes.read_text())
     for name,(old,new) in transformations.items():

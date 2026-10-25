@@ -7,6 +7,7 @@ transfers remain in their separate partial directory for inspection.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -16,7 +17,8 @@ import tarfile
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',type=Path,required=True)
-    p.add_argument('--destination',type=Path,required=True);a=p.parse_args()
+    p.add_argument('--destination',type=Path,required=True)
+    p.add_argument('--reuse-local-identical-weights',type=Path);a=p.parse_args()
     manifest=json.loads(a.manifest.read_text());expected=manifest['files']
     assert manifest['public_GGUF_source_verified']
     allowed={'model.pte','aoti_cuda_blob.ptd','artifact-audit.json','sampler-policy.json'}
@@ -28,8 +30,20 @@ def main():
     assert not a.destination.exists()
     partial=a.destination.with_name(a.destination.name+'.partial');partial.mkdir(parents=True,exist_ok=False)
     total=sum(r['bytes'] for r in expected.values())
+    seen=set();reuse=None
+    if a.reuse_local_identical_weights:
+        assert manifest.get('kind')!='qualified-native-worker'
+        name='aoti_cuda_blob.ptd';source=a.reuse_local_identical_weights
+        assert source.is_file() and not source.is_symlink() and source.stat().st_size==expected[name]['bytes']
+        h=hashlib.sha256()
+        with source.open('rb') as f:
+            while b:=f.read(16*1024*1024):h.update(b)
+        assert h.hexdigest()==expected[name]['SHA256']
+        os.link(source,partial/name);seen.add(name)
+        total-=expected[name]['bytes']
+        reuse=dict(source=str(source),bytes=source.stat().st_size,SHA256=h.hexdigest(),
+                   immutable_weight_bytes_unchanged=True)
     assert shutil.disk_usage(partial).free>total+4*1024**3,'Leave staging room for active jobs'
-    seen=set()
     with tarfile.open(fileobj=sys.stdin.buffer,mode='r|*') as archive:
         for member in archive:
             name=member.name
@@ -43,7 +57,8 @@ def main():
     assert seen==set(expected)
     (partial/'transfer-provenance.json').write_text(json.dumps(dict(source_manifest=manifest,
         source_manifest_SHA256=hashlib.sha256(a.manifest.read_bytes()).hexdigest(),
-        every_received_file_SHA256_verified=True,source_unchanged=True),indent=2)+'\n')
+        every_received_file_SHA256_verified=True,source_unchanged=True,
+        reused_exact_local_weight_copy=reuse),indent=2)+'\n')
     partial.rename(a.destination)
     if manifest.get('kind')=='qualified-native-worker':
         (a.destination/'gemma_runtime_columns_worker').chmod(0o755)
