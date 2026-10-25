@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import traceback
 
 
 def digest(path):
@@ -226,8 +227,11 @@ def main():
         # executor. The baseline itself has no _portable_lib Python extension;
         # requiring it here would add an unrelated build prerequisite.
         alias = source / "examples/models/muse_glimmer"
-        assert not alias.exists() and not alias.is_symlink()
-        alias.symlink_to("muse-glimmer")
+        if alias.is_symlink():
+            assert alias.readlink() == Path("muse-glimmer") and alias.exists()
+        else:
+            assert not alias.exists()
+            alias.symlink_to("muse-glimmer")
         torch_prefix = subprocess.check_output(
             [
                 str(args.python),
@@ -331,7 +335,12 @@ def main():
             next_gate="All 100 main performance cells, 40 full and 60 smoke correctness cells independently accepted before any GPU test/export",
         )
     except Exception as error:
-        state("failed", error_type=type(error).__name__, detail=str(error)[-1600:])
+        state(
+            "failed",
+            error_type=type(error).__name__,
+            detail=str(error)[-1600:],
+            traceback=traceback.format_exc()[-2500:],
+        )
         raise
 
 
