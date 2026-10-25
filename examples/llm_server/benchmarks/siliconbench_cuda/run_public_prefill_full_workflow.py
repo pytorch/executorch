@@ -45,6 +45,9 @@ def main():
     p.add_argument('--lock', type=Path, required=True)
     p.add_argument('--job-dir', type=Path, required=True)
     p.add_argument('--port', type=int, default=19110)
+    p.add_argument('--quality-max-tokens', type=int, default=1024)
+    p.add_argument('--quality-chat-template-kwargs', type=json.loads,
+                   default=dict(enable_thinking=False, reasoning_strength='low'))
     p.add_argument('--collect-F1-after-numerical-screen-failure', action='store_true',
                    help='Keep failed auxiliary RMS gates visible and collect full-model F1; no automatic promotion')
     a = p.parse_args()
@@ -159,13 +162,19 @@ def main():
         assert sha(a.base_wrapper) == '4f115fdea2368ee7ea075b27542d63bf3d7ae61b676751541393d2ff323d935a'
         os.environ.update(SB_MODEL='muse-glimmer', SB_ET_CACHEOFF_ARTIFACT=str(output),
                           SB_ET_PREFIX_ENTRIES='4',SB_CHECKPOINT='0')
-        run([a.benchmark_python,'-B',package/'run_matrix_24h.py',
+        matrix_command = [a.benchmark_python,'-B',package/'run_matrix_24h.py',
             '--wrapper',a.base_wrapper,'--model','muse-glimmer-30b','--client',a.client,
             '--prompts',a.prompts,'--correctness-root',a.correctness_root,
-            '--python',a.benchmark_python,'--output',a.job_dir/'server-matrix',
+            '--python',a.benchmark_python,
             '--lock',a.lock,'--port',a.port,'--variants','executorch',
-            '--cache-modes','off','on','--concurrencies','1','2','4','8','16',
-            '--phases','performance','correctness'], 'full-model-server-perf-F1', 57600)
+            '--cache-modes','off','on','--concurrencies','1','2','4','8','16']
+        assert a.quality_max_tokens > 0 and isinstance(a.quality_chat_template_kwargs,dict)
+        run(matrix_command+['--output',a.job_dir/'server-performance','--phases','performance'],
+            'full-model-server-performance', 21600)
+        run(matrix_command+['--output',a.job_dir/'server-correctness','--phases','correctness',
+            '--correctness-max-tokens',a.quality_max_tokens,
+            '--correctness-chat-template-kwargs',json.dumps(a.quality_chat_template_kwargs)],
+            'full-model-server-F1', 57600)
         state('completed-pending-independent-full-model-selection',
               executor_numeric_pass=measured['mini_numeric_pass'],
               server_perf_memory_and_F1_collected=True)
