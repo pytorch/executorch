@@ -40,9 +40,11 @@ def main():
                    help='Test a Gate K tile of 32 without changing its eligible M range')
     p.add_argument('--prepared-groups',action='store_true',
                    help='Test temporary prepared-metadata M128/M512; other sizes use original')
+    p.add_argument('--runtime-chunk-range',action='store_true',
+                   help='Separate opt-in Gate M496..512 qualification for the actual worker chunk size')
     p.add_argument('--roles',nargs='+',choices=['ffn_gate_up','ffn_down'],
                    default=['ffn_gate_up','ffn_down'])
-    p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,127,128,129,256,511,512],
+    p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,127,128,129,256,495,*range(496,513)],
                    default=[8,16,64,72,127,128,129,256,511,512])
     a=p.parse_args();a.output.mkdir(exist_ok=False)
     report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
@@ -75,6 +77,9 @@ def main():
             if a.prepared_groups:
                 assert not a.gate_bk32
                 from public_prefill_gemma_fp32_aoti import prepared_prefill_op
+            if a.runtime_chunk_range:
+                assert a.prepared_groups and not a.gate_bk32
+                from public_prefill_gemma_runtime_shapes_aoti import prepared_runtime_prefill_op as prepared_prefill_op
             assert torch.cuda.get_device_capability()==(12,0)
             torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
             assert digest(a.gguf)=='7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a'
@@ -89,6 +94,11 @@ def main():
             if a.prepared_groups:
                 report.update(small_bulk_limit=None,prepared_metadata_candidate_sizes=[128,512],
                               preparation_cost_included=True,no_persistent_extra_metadata=True)
+            if a.runtime_chunk_range:
+                report.update(runtime_chunk_range=True,
+                    prepared_metadata_candidate_sizes={'ffn_gate_up':[128,*range(496,513)],'ffn_down':[128]},
+                    scheduler_budget=512,scheduler_reserved_decode_tokens=16,scheduler_prefill_chunk=496,
+                    old_exact512_route_kept_as_separate_trial=True)
             reader=GGUFReader(str(a.gguf))
             def portable(t):
                 kind={GGMLQuantizationType.Q4_0:'q4_0',GGMLQuantizationType.Q4_1:'q4_1'}[t.tensor_type]
@@ -175,7 +185,7 @@ def main():
                             candidate_vs_compiled_reference_different_elements=direct_different,
                             samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
                             conditional_over_reference=means['conditional']/means['reference'],
-                            expected_bulk_route=('prepared-metadata' if m==128 or (m==512 and role=='ffn_gate_up') else 'original-dequant-matmul')
+                            expected_bulk_route=('prepared-metadata' if m==128 or (role=='ffn_gate_up' and (496<=m<=512 if a.runtime_chunk_range else m==512)) else 'original-dequant-matmul')
                                 if a.prepared_groups else ('packed' if m<=128 else 'original-dequant-matmul'),
                             timing_scope='GPU graph timing of standalone AOTI linear; not current whole-model kernels or HTTP'))
                         save('AOTI-case-completed',role=role,M=m)

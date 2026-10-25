@@ -84,8 +84,8 @@
       "bytes": 10583
     },
     "benchmark_public_prefill_gemma_fp32_aoti.py": {
-      "sha256": "79adc47270daf94df8fd09dc9b361571b82c38167421560c8bcf1d733d1ba621",
-      "bytes": 12617
+      "sha256": "092797aaa945a9c960945c05c71e525c6ef374d92f5d9e58e2759ca7d97a7c82",
+      "bytes": 13439
     },
     "benchmark_public_prefill_prepared_groups.py": {
       "sha256": "fa19396b8db1c93604bab0f4c4ee2255a07f0755e257bec18aeb9e2546f53437",
@@ -482,6 +482,10 @@
     "public_prefill_gemma_fp32_aoti.py": {
       "sha256": "698408901151997f6cfc8b9703759b6f52e771dfbfba5a6f2bdc2b0bba639322",
       "bytes": 3914
+    },
+    "public_prefill_gemma_runtime_shapes_aoti.py": {
+      "sha256": "6ed38f7467089739597528abfa38d2f6bd9f485db0d05a02b3dbeb6ccd53a06f",
+      "bytes": 1950
     },
     "public_prefill_native_branch_control.py": {
       "sha256": "90603e0dd28373d61ffc5ba0f89a3f04feba1d8158851b618d7105d8a29fe78f",
