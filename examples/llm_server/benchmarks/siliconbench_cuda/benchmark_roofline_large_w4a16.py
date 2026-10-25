@@ -36,6 +36,7 @@ def main():
                    default=['ffn_down', 'ffn_gate_up', 'attention_out'])
     p.add_argument('--M', nargs='+', type=int, default=[64, 72, 128, 256, 512, 520])
     p.add_argument('--max-seconds', type=int, default=21600)
+    p.add_argument('--actual-row-grid', action='store_true')
     a = p.parse_args()
     assert all(5 <= m <= 1024 for m in a.M)
     a.output.mkdir(parents=True, exist_ok=False)
@@ -83,6 +84,10 @@ def main():
                 device=torch.cuda.get_device_name(), torch=torch.__version__, triton=triton.__version__,
                 hardware=subprocess.check_output(['nvidia-smi', '--query-gpu=power.limit,clocks.max.sm,memory.total',
                                                     '--format=csv,noheader'], text=True).strip())
+            report['actual_row_grid'] = a.actual_row_grid
+            if a.actual_row_grid:
+                from roofline_large_row_grid import install as install_row_grid
+                install_row_grid()
             started = time.monotonic()
 
             def bounded():

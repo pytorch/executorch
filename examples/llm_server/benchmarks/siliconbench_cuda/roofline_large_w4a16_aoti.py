@@ -25,6 +25,9 @@ NATIVE_SHA256 = 'fb72d31e6d3f91e076fe9721744eacb7c379ffe0612c57e3c48ae4a25c20027
 def register_policy(policy):
     """Freeze an explicit ordered list of measured row limits and launches."""
     assert hashlib.sha256(Path(native.__file__).read_bytes()).hexdigest() == NATIVE_SHA256
+    if policy.get('actual_row_grid', False):
+        from roofline_large_row_grid import install
+        install()
     shape = tuple(policy['shape'])
     assert len(shape) == 2 and all(isinstance(v, int) and v > 0 for v in shape)
     branches = []
