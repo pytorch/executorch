@@ -126,7 +126,8 @@ def main():
                     (a.output / f'{role}-{label}-exported-graph.txt').write_text(graph)
                     if label == 'public':
                         assert 'cond' in graph and 'siliconbench.public_grouped_w4a16' in graph
-                    edge = to_edge_transform_and_lower(ep, partitioner=[CudaPartitioner([])],
+                    specs = [CudaBackend.generate_method_name_compile_spec('forward')]
+                    edge = to_edge_transform_and_lower(ep, partitioner=[CudaPartitioner(specs)],
                         compile_config=EdgeCompileConfig(_check_ir_validity=False))
                     executable = edge.to_executorch()
                     path = a.output / f'{role}-{label}.pte'
