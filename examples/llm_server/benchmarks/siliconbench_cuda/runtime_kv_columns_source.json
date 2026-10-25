@@ -1,6 +1,6 @@
 {
   "base_commit": "cb114742f0b6ee0237382f15e0ce13700d9218b6",
-  "patch_sha256": "65aed3979c87d8b42c1814baaa337961b20270b5ceecb52d2b56cf8afc6fde9e",
+  "patch_sha256": "49066d6081546aa7f55fc980c9d1185ce16be4c663820a99cc0f56745cf0df7c",
   "changed_files": {
     "backends/cuda/batching/cuda_executor.cpp": {
       "before_sha256": "4db6d9f768fb2c6d280321ebbb1b624a7182527ccb5cca97215d222a93658e4c",
@@ -39,8 +39,8 @@
     },
     "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
       "before_sha256": "df1d9a2e26b8e8f4bfc47ebda4917d179aaed936a5c73c5a01f8cf673e602704",
-      "after_sha256": "67fd44dda5296764bbd7758d3dd77ae46bd4df002672de9778cf4127a8d7b37e",
-      "bytes": 118334
+      "after_sha256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
+      "bytes": 118332
     },
     "backends/cuda/tests/test_offgraph_kv_batched_sequence.py": {
       "before_sha256": "6059514d52ed3c3666757fedf3b90e5ac7372dad57a95724cdfbcbb5e6d1ec84",
@@ -69,8 +69,8 @@
     },
     "examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp": {
       "before_sha256": null,
-      "after_sha256": "a5a476cfca60408bd62c9905e3cb34699208a227e03f58f547659a5f6cc589fe",
-      "bytes": 10006
+      "after_sha256": "d531f98e22aa91a2330702c0aa15ac719116964447964ae8a3a2b3f7a59a9f45",
+      "bytes": 10462
     }
   },
   "unchanged_quant_files": [

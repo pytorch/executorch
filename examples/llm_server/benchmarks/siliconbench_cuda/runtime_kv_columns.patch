@@ -1,5 +1,5 @@
 diff --git a/backends/cuda/batching/cuda_executor.cpp b/backends/cuda/batching/cuda_executor.cpp
-index b33cb49..01e1b51 100644
+index b33cb492f..01e1b5186 100644
 --- a/backends/cuda/batching/cuda_executor.cpp
 +++ b/backends/cuda/batching/cuda_executor.cpp
 @@ -369,6 +369,15 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
@@ -40,7 +40,7 @@ index b33cb49..01e1b51 100644
    std::vector<ForwardMethodCalls> calls;
    calls.reserve(methods_.size() + 1);
 diff --git a/backends/cuda/batching/cuda_executor.h b/backends/cuda/batching/cuda_executor.h
-index 4e0cf7b..48baf7f 100644
+index 4e0cf7bc7..48baf7ffa 100644
 --- a/backends/cuda/batching/cuda_executor.h
 +++ b/backends/cuda/batching/cuda_executor.h
 @@ -227,6 +227,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
@@ -61,7 +61,7 @@ index 4e0cf7b..48baf7f 100644
    std::int32_t vocab_size_;
    int max_session_tokens_;
 diff --git a/backends/cuda/passes/lower_offgraph_kv.py b/backends/cuda/passes/lower_offgraph_kv.py
-index 15c994a..b71f9e4 100644
+index 15c994a97..b71f9e496 100644
 --- a/backends/cuda/passes/lower_offgraph_kv.py
 +++ b/backends/cuda/passes/lower_offgraph_kv.py
 @@ -84,8 +84,8 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
@@ -151,7 +151,7 @@ index 15c994a..b71f9e4 100644
          return fn, call_args, example_args
 
 diff --git a/backends/cuda/runtime/cuda_kv_cache.cpp b/backends/cuda/runtime/cuda_kv_cache.cpp
-index 98bc447..5a716ab 100644
+index 98bc44744..5a716ab33 100644
 --- a/backends/cuda/runtime/cuda_kv_cache.cpp
 +++ b/backends/cuda/runtime/cuda_kv_cache.cpp
 @@ -833,18 +833,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
@@ -488,7 +488,7 @@ index 98bc447..5a716ab 100644
    std::vector<int64_t> layer_rows_;
    CudaKVPool pool_;
 diff --git a/backends/cuda/runtime/cuda_kv_cache.h b/backends/cuda/runtime/cuda_kv_cache.h
-index 3869f9d..adb822b 100644
+index 3869f9dc5..adb822bb6 100644
 --- a/backends/cuda/runtime/cuda_kv_cache.h
 +++ b/backends/cuda/runtime/cuda_kv_cache.h
 @@ -34,6 +34,10 @@ struct OffGraphKVMetrics {
@@ -515,7 +515,7 @@ index 3869f9d..adb822b 100644
 
  // Compile spec naming where a method's inputs carry the step width.
 diff --git a/backends/cuda/runtime/cuda_kv_pool.cpp b/backends/cuda/runtime/cuda_kv_pool.cpp
-index 74fcf6a..46ff31a 100644
+index 74fcf6a2b..46ff31a18 100644
 --- a/backends/cuda/runtime/cuda_kv_pool.cpp
 +++ b/backends/cuda/runtime/cuda_kv_pool.cpp
 @@ -56,14 +56,18 @@ CudaKVPool::CudaKVPool(
@@ -739,7 +739,7 @@ index 74fcf6a..46ff31a 100644
  }
 
 diff --git a/backends/cuda/runtime/cuda_kv_pool.h b/backends/cuda/runtime/cuda_kv_pool.h
-index c78f854..02d8fd1 100644
+index c78f85431..02d8fd114 100644
 --- a/backends/cuda/runtime/cuda_kv_pool.h
 +++ b/backends/cuda/runtime/cuda_kv_pool.h
 @@ -13,6 +13,7 @@
@@ -811,7 +811,7 @@ index c78f854..02d8fd1 100644
    int device_{0};
    bool device_known_{false};
 diff --git a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
-index a0bd421..230d708 100644
+index a0bd421fe..c0bd2beb0 100644
 --- a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
 +++ b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
 @@ -2718,6 +2718,386 @@ TEST_F(CudaBatchedSequenceCacheTest, DFlashQueriesOnlyEachOwnersBlock) {
@@ -1087,7 +1087,7 @@ index a0bd421..230d708 100644
 +  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
 +  EXPECT_EQ(kv->metrics().live_sequences, 0);
 +  EXPECT_EQ(kv->metrics().physical_columns, 2);
-+  cache_ptr->clear();
++  control->clear();
 +  kv->forget_handle(&handle);
 +}
 +
@@ -1202,7 +1202,7 @@ index a0bd421..230d708 100644
    auto no_seqs = sequence_config();
    no_seqs.max_seqs.reset();
 diff --git a/backends/cuda/tests/test_offgraph_kv_batched_sequence.py b/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
-index 257e81d..fcce318 100644
+index 257e81df5..fcce31850 100644
 --- a/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
 +++ b/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
 @@ -261,6 +261,105 @@ class _FlatAndRing(torch.nn.Module):
@@ -1342,7 +1342,7 @@ index 257e81d..fcce318 100644
          lowered = self._lowered()
          graph = lowered.graph_module.graph
 diff --git a/backends/cuda/triton/kernels/sdpa_varlen.py b/backends/cuda/triton/kernels/sdpa_varlen.py
-index bc3ecea..7edcc47 100644
+index bc3ecea56..7edcc47e6 100644
 --- a/backends/cuda/triton/kernels/sdpa_varlen.py
 +++ b/backends/cuda/triton/kernels/sdpa_varlen.py
 @@ -24,10 +24,14 @@ segment of consecutive query rows of one sequence:
@@ -1622,7 +1622,7 @@ index bc3ecea..7edcc47 100644
          )
      if splits > 1:
 diff --git a/examples/models/muse-glimmer/CMakeLists.txt b/examples/models/muse-glimmer/CMakeLists.txt
-index 640b48f..0c6654c 100644
+index 640b48f9d..0c6654cc4 100644
 --- a/examples/models/muse-glimmer/CMakeLists.txt
 +++ b/examples/models/muse-glimmer/CMakeLists.txt
 @@ -144,6 +144,27 @@ target_include_directories(
@@ -1654,7 +1654,7 @@ index 640b48f..0c6654c 100644
  add_executable(
    muse_glimmer_worker
 diff --git a/examples/models/muse-glimmer/export/export_solo.py b/examples/models/muse-glimmer/export/export_solo.py
-index fb1c94d..415c12b 100644
+index fb1c94dcd..415c12be7 100644
 --- a/examples/models/muse-glimmer/export/export_solo.py
 +++ b/examples/models/muse-glimmer/export/export_solo.py
 @@ -126,7 +126,12 @@ def export_and_lower(
@@ -1763,7 +1763,7 @@ index fb1c94d..415c12b 100644
 
 
 diff --git a/extension/llm/cache/cache.h b/extension/llm/cache/cache.h
-index 89c7f5d..56602ee 100644
+index 89c7f5d95..56602eeb3 100644
 --- a/extension/llm/cache/cache.h
 +++ b/extension/llm/cache/cache.h
 @@ -178,6 +178,8 @@ struct ET_EXPERIMENTAL CacheConfig {
@@ -1777,10 +1777,10 @@ index 89c7f5d..56602ee 100644
  ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
 diff --git a/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
 new file mode 100644
-index 0000000..0e7e79b
+index 000000000..ebc1aa57e
 --- /dev/null
 +++ b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,275 @@
 +/*
 + * Copyright (c) Meta Platforms, Inc. and affiliates.
 + * All rights reserved.
@@ -1858,7 +1858,7 @@ index 0000000..0e7e79b
 +  const auto pool =
 +      executorch::extension::cuda::CudaAllocator::pool_for_device(device);
 +  if (pool != nullptr) {
-+    uint64_t used = 0, reserved = 0;
++    uint64_t used = 0, reserved = 0, used_high = 0, reserved_high = 0;
 +    require(
 +        cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &used) ==
 +                cudaSuccess &&
@@ -1866,8 +1866,17 @@ index 0000000..0e7e79b
 +                pool, cudaMemPoolAttrReservedMemCurrent, &reserved) ==
 +                cudaSuccess,
 +        "allocator memory attributes");
++    require(
++        cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemHigh, &used_high) ==
++                cudaSuccess &&
++            cudaMemPoolGetAttribute(
++                pool, cudaMemPoolAttrReservedMemHigh, &reserved_high) ==
++                cudaSuccess,
++        "allocator high water attributes");
 +    result["allocator_used_bytes"] = used;
 +    result["allocator_reserved_bytes"] = reserved;
++    result["allocator_used_high_bytes"] = used_high;
++    result["allocator_reserved_high_bytes"] = reserved_high;
 +  }
 +  result["method_calls"] = Json::array();
 +  for (const auto& method : executor.method_calls()) {
