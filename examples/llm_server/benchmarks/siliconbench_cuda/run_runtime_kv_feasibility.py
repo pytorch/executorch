@@ -183,6 +183,10 @@ def main():
             + "\n"
         )
 
+        # The probe's C++ child inherits visibility. Its driver owns the task
+        # GPU lock before starting that child; the initial wait stays CPU-only.
+        env["CUDA_VISIBLE_DEVICES"] = "0"
+
         def export(role, mini_review=None):
             artifact = args.job_dir / role
             command = [
