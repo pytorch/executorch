@@ -103,7 +103,7 @@ def main():
                            emulate_precision_casts=True, **{'triton.cudagraphs': False})
             report['fallback_compile_options'] = options
             stream = torch.cuda.Stream()
-            with torch.inference_mode(), torch.cuda.stream(stream):
+            with torch.inference_mode(), torch.cuda.stream(stream), clock.cuda_graph_timing() as timing_stats:
                 for role in a.roles:
                     bounded()
                     names = ['blk.0.ffn_gate.weight', 'blk.0.ffn_up.weight'] if role == 'ffn_gate_up' else []
@@ -179,6 +179,7 @@ def main():
                             candidate_vs_fallback=numeric(candidate(), reference(x)),
                             fallback_vs_native_oracle=numeric(reference(x), native_target),
                             numerical_arithmetic_difference_disclosed=True))
+                        report['autotune_graph_timing'] = dict(vars(timing_stats))
                         state('case-completed', role=role, M=m, completed_cases=len(report['cases']))
                     del oracle_weight, w, module, weight
                     torch.cuda.empty_cache()
