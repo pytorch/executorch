@@ -42,9 +42,14 @@ def _candidate_fake(x, q, sc, ss, z, zs):
 @triton_op('siliconbench::public_prepared_prefill_a16', mutates_args={})
 def prepared_prefill_op(x: torch.Tensor, q: torch.Tensor, sc: torch.Tensor,
                         ss: torch.Tensor, z: torch.Tensor, zs: torch.Tensor) -> torch.Tensor:
-    return torch.cond((x.shape[0] == 512) | (x.shape[0] == 520),
+    # Inductor's current symbolic lowering rejects the compound SymPy Or.
+    # Use the same nested exact-size conditions as the verified dense trial.
+    return torch.cond(x.shape[0] == 512,
         lambda a,b,c,d,e,f: prepared_candidate_op(a,b,c,d,e,f),
-        lambda a,b,c,d,e,f: _dequant_matmul(a,b,c,d,e,f,32),
+        lambda a,b,c,d,e,f: torch.cond(a.shape[0] == 520,
+            lambda g,h,i,j,l,p: prepared_candidate_op(g,h,i,j,l,p),
+            lambda g,h,i,j,l,p: _dequant_matmul(g,h,i,j,l,p,32),
+            (a,b,c,d,e,f)),
         (x,q,sc,ss,z,zs))
 
 
