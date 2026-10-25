@@ -15,12 +15,18 @@ parser.add_argument('--progress',type=Path,required=True)
 parser.add_argument('--accepted',nargs='+',default=['completed'])
 parser.add_argument('--lock',type=Path)
 parser.add_argument('--poll-seconds',type=float,default=30)
+parser.add_argument('--allow-missing-progress',action='store_true',help='Wait for an explicitly planned producer to create its progress file')
 parser.add_argument('command',nargs=argparse.REMAINDER)
 args=parser.parse_args()
 command=args.command[1:] if args.command and args.command[0]=='--' else args.command
-assert command and Path(command[0]).is_absolute() and args.progress.exists()
+assert command and Path(command[0]).is_absolute()
+assert args.allow_missing_progress or args.progress.exists()
 assert 5<=args.poll_seconds<=60
 while True:
+    if not args.progress.exists():
+        assert args.allow_missing_progress
+        time.sleep(args.poll_seconds)
+        continue
     state=json.loads(args.progress.read_text())
     if state['status'] in args.accepted:break
     assert state['status'] not in ['failed','cancelled','aborted'],state['status']

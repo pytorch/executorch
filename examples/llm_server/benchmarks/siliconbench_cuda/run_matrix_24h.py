@@ -80,10 +80,13 @@ def main():
                  if phase=='performance' or args.quality_concurrencies is None or c in args.quality_concurrencies]
         if args.case_plan is not None:
             selected=json.loads(args.case_plan.read_text())
-            assert selected['model']==args.model and selected['purpose']=='disjoint correctness continuation'
+            assert selected['model']==args.model
+            assert selected['purpose'] in ['disjoint correctness continuation','disjoint performance continuation']
             chosen=[tuple(row) for row in selected['cases']]
             assert chosen and len(chosen)==len(set(chosen)) and set(chosen)<=set(cases)
-            assert all(row[0]=='correctness' for row in chosen)
+            selected_phase='correctness' if selected['purpose']=='disjoint correctness continuation' else 'performance'
+            assert all(row[0]==selected_phase for row in chosen)
+            assert set(args.phases)=={selected_phase}
             cases=chosen
         (args.output/'matrix.json').write_text(json.dumps(dict(model=args.model, cases=cases,
                                             correctness_request_overrides=dict(max_tokens=args.correctness_max_tokens,
