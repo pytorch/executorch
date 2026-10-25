@@ -33,7 +33,13 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
 
     def route(x, q, sc, ss, z, zs, group_size):
         shape = (q.shape[0], q.shape[1] * 2)
-        if (isinstance(x.shape[0], int) or shape not in indices or group_size != 32
+        # Dynamo models symbolic sizes as Python ints. An isinstance(int)
+        # guard alone silently excludes strict dynamic export. Ordinary eager
+        # concrete calls remain original; quantized_linear already selects
+        # native family ops before reaching this bulk fallback in static
+        # methods. torch.cond preserves the symbolic runtime-M predicate.
+        concrete_eager = not torch.compiler.is_compiling() and isinstance(x.shape[0], int)
+        if (concrete_eager or shape not in indices or group_size != 32
                 or x.dtype != torch.bfloat16 or x.device.type != 'cuda'):
             return original(x, q, sc, ss, z, zs, group_size)
         index = indices[shape]
