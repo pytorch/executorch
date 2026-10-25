@@ -148,17 +148,20 @@ def main():
         and total(shrink_ops, "GraphExecDestroy") + total(shrink_ops, "GraphDestroy")
         > 0
     )
-    final_steps = [op for op in operations if op["request"]["op"] == "step"][-21:]
-    assert len(final_steps) == 21
+    final_steps = [op for op in operations if op["request"]["op"] == "step"][-35:]
+    assert len(final_steps) == 35
     method_evidence = []
     for index, (tokens, width) in enumerate(
         [(1, 1), (2, 2), (3, 4), (7, 8), (13, 16), (32, 32), (63, 64)]
     ):
-        steps = final_steps[index * 3 : index * 3 + 3]
+        steps = final_steps[index * 5 : index * 5 + 5]
         assert all(len(op["request"]["tokens"]) == tokens for op in steps)
         launches = total(steps, "GraphLaunch")
         instantiated = total(steps, "GraphInstantiate")
         assert launches > 0 and (width == 1 or instantiated > 0)
+        assert total(steps[-1:], "GraphLaunch") > 0, (
+            width, "The fifth call must actually replay a captured graph"
+        )
         method_evidence.append(
             dict(
                 actual_tokens=tokens,

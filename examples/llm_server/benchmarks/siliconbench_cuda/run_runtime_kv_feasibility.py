@@ -36,6 +36,8 @@ def main():
     parser.add_argument("--nsys", type=Path, required=True)
     parser.add_argument("--completed-CUDA-tests", type=Path,
                         help="Reuse only verified tests for identical binaries and source spec")
+    parser.add_argument("--reuse-mini-export-job", type=Path,
+                        help="Reuse unchanged audited O2 mini artifacts; rerun both four-round probes")
     args = parser.parse_args()
     assert not args.job_dir.exists()
     args.job_dir.mkdir(parents=True)
@@ -199,6 +201,24 @@ def main():
         env["CUDA_VISIBLE_DEVICES"] = "0"
 
         def export(role, mini_review=None):
+            if args.reuse_mini_export_job and role in ["mini-fixed", "mini-runtime"]:
+                artifact = args.reuse_mini_export_job / role
+                audit_path = artifact / "runtime-column-artifact-audit.json"
+                audit = json.loads(audit_path.read_text())
+                assert audit["role"] == role
+                assert audit["source_spec_sha256"] == digest(package / "runtime_kv_columns_source.json")
+                assert audit["GGUF_sha256"] == digest(args.gguf)
+                assert audit["AOTI_wrapper_optimization"] == "O2"
+                assert audit["main_acceptance_proof_sha256"] == digest(args.accepted_main_review)
+                for name, record in audit["artifacts"].items():
+                    item = artifact / name
+                    assert item.stat().st_size == record["bytes"] and digest(item) == record["sha256"]
+                (args.job_dir / (role + "-reused-artifact.json")).write_text(
+                    json.dumps(dict(artifact=str(artifact), audit_sha256=digest(audit_path),
+                                    source_spec_sha256=audit["source_spec_sha256"],
+                                    reuse_scope="Unchanged PTE/PTD and model; diagnostic warmup-count correction only",
+                                    original_artifacts_modified=False), indent=2) + "\n")
+                return artifact
             artifact = args.job_dir / role
             command = [
                 sys.executable,

@@ -430,7 +430,10 @@ def main():
                             (32, 32),
                             (63, 64),
                         ]:
-                            for replay in range(3):
+                            # A never-used method requires three eager warmups,
+                            # then capture, then an independent replay. Methods
+                            # recaptured after KV movement need fewer calls.
+                            for replay in range(5):
                                 before = request({"op": "metrics"})["snapshot"]
                                 result = step(
                                     [survivor] * count,
@@ -439,7 +442,7 @@ def main():
                                         for i in range(count)
                                     ],
                                     [count - 1],
-                                    save=replay == 2,
+                                    save=replay == 4,
                                 )
                                 lengths[survivor] += count
                                 after = result["snapshot"]
