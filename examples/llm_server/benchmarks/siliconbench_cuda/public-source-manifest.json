@@ -367,6 +367,10 @@
       "sha256": "0862073146eab3a01d8af0abf214058e3be0687d125b0551a7f5710159f9eb97",
       "bytes": 2375
     },
+    "prepare_runtime_kv_build.py": {
+      "sha256": "84297bda45a88faeca1600195d1e67950f15cf26f4bc1c217c875f8c9351d6e7",
+      "bytes": 8390
+    },
     "prepare_vllm_quality_switch_controls.py": {
       "sha256": "a7678c74697ebfb3e07742adc51959ccb39bdb10334fdbed7329c6d737d5f48c",
       "bytes": 2439
@@ -406,6 +410,14 @@
     "run_matrix_24h.py": {
       "sha256": "715af1b7fd8c66a1731d16990bb28dcdf368e00e77705f105305f5227070944b",
       "bytes": 7987
+    },
+    "runtime_kv_columns.patch": {
+      "sha256": "65aed3979c87d8b42c1814baaa337961b20270b5ceecb52d2b56cf8afc6fde9e",
+      "bytes": 82004
+    },
+    "runtime_kv_columns_source.json": {
+      "sha256": "5c80f3d4e7287e0905697596e22ffb610c448dd17520221f95278e5c99f65e34",
+      "bytes": 5094
     },
     "select_et_policies_24h.py": {
       "sha256": "941f9b671c10d8a2f2944722ce0d0118f70f63269af3bc869c771995f0f22f62",

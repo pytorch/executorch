@@ -1,0 +1,2049 @@
+diff --git a/backends/cuda/batching/cuda_executor.cpp b/backends/cuda/batching/cuda_executor.cpp
+index b33cb49..01e1b51 100644
+--- a/backends/cuda/batching/cuda_executor.cpp
++++ b/backends/cuda/batching/cuda_executor.cpp
+@@ -369,6 +369,15 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+       declared_seqs,
+       metadata::detail::read_int_method(*module, kMaxSeqsMethod));
+   const bool sequence_layout = declared_seqs.has_value();
++  ET_ASSIGN_OR_RETURN(
++      sequence_info_abi,
++      metadata::detail::read_int_method(
++          *module, "get_offgraph_kv_sequence_info_abi"));
++  ET_CHECK_OR_RETURN_ERROR(
++      sequence_info_abi.value_or(1) == 1 ||
++          (sequence_layout && sequence_info_abi == 2),
++      InvalidProgram,
++      "CudaExecutor: unsupported sequence-info ABI");
+   std::int64_t max_cells = 0;
+   if (sequence_layout) {
+     ET_CHECK_OR_RETURN_ERROR(
+@@ -527,6 +536,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
+       static_cast<int>(sequence_layout ? max_context_length : max_cells);
+   cfg.kv_dtype = kv_dtype;
+   cfg.max_write = max_step_tokens;
++  cfg.runtime_sequence_columns = sequence_info_abi == 2;
+   if (sequence_layout) {
+     cfg.max_seqs = static_cast<int>(*declared_seqs);
+   }
+@@ -1089,6 +1099,12 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
+   return kv_->metrics();
+ }
+
++Error CudaExecutor::compact_kv_columns(int spare_columns) {
++  ET_CHECK_OR_RETURN_ERROR(
++      !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
++  return kv_->compact_columns(spare_columns);
++}
++
+ std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {
+   std::vector<ForwardMethodCalls> calls;
+   calls.reserve(methods_.size() + 1);
+diff --git a/backends/cuda/batching/cuda_executor.h b/backends/cuda/batching/cuda_executor.h
+index 4e0cf7b..48baf7f 100644
+--- a/backends/cuda/batching/cuda_executor.h
++++ b/backends/cuda/batching/cuda_executor.h
+@@ -227,6 +227,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
+
+   // The cache's pool usage, for memory reporting.
+   OffGraphKVMetrics kv_metrics() const;
++  ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
+
+   // Every method, narrowest first, with how many forwards it ran. Read it
+   // between executes, not while one runs.
+@@ -273,7 +274,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
+   llm_cache::InstallGuard install_guard_;
+   std::unique_ptr<::executorch::extension::Module> module_;
+   llm_cache::BatchControl* const ctl_;
+-  const CudaKVCache* const kv_;
++  CudaKVCache* const kv_;
+   std::string backend_id_;
+   std::int32_t vocab_size_;
+   int max_session_tokens_;
+diff --git a/backends/cuda/passes/lower_offgraph_kv.py b/backends/cuda/passes/lower_offgraph_kv.py
+index 15c994a..b71f9e4 100644
+--- a/backends/cuda/passes/lower_offgraph_kv.py
++++ b/backends/cuda/passes/lower_offgraph_kv.py
+@@ -84,8 +84,8 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
+
+ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
+     manifest = json.loads(value.decode("utf-8"))
+-    if manifest.get("version") != 1:
+-        raise ValueError("off-graph KV manifest version must be 1")
++    if manifest.get("version") not in (1, 2):
++        raise ValueError("off-graph KV manifest version must be 1 or 2")
+     maximum_capacity = manifest.get("maximum_capacity")
+     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
+         raise ValueError("off-graph maximum_capacity must be positive")
+@@ -95,6 +95,16 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
+     layout = manifest.setdefault("layout", "sequence")
+     if layout not in ("sequence", *PACKED_LAYOUTS):
+         raise ValueError(f"invalid off-graph KV layout {layout!r}")
++    runtime_columns = manifest.setdefault("runtime_columns", False)
++    if not isinstance(runtime_columns, bool):
++        raise ValueError("off-graph runtime_columns must be a bool")
++    if manifest["version"] == 2:
++        if layout != "batched-sequence" or not runtime_columns:
++            raise ValueError(
++                "off-graph version 2 requires batched-sequence runtime columns"
++            )
++    elif runtime_columns:
++        raise ValueError("off-graph runtime columns require manifest version 2")
+     if layout == "batched-sequence":
+         for key in ("max_seqs", "max_segments"):
+             if not isinstance(manifest.get(key), int) or manifest[key] <= 0:
+@@ -297,6 +307,7 @@ def batched_sequence_step(
+     causal: bool,
+     out_dtype: torch.dtype | None = None,
+     context_window: bool = False,
++    runtime_columns: bool = False,
+ ) -> torch.Tensor:
+     """Write this step's K/V into each sequence's column, then attend.
+
+@@ -311,9 +322,12 @@ def batched_sequence_step(
+     K/V-width entries. ``k``/``v`` are BHSD; the storage is BSHD.
+     ``context_window`` gives every draft block query the same retained context
+     before the block; ordinary attention uses each query's own window.
++    With ``runtime_columns``, ABI-5 ``seq_info[:, 4]`` supplies the physical
++    pitch for writes and attention; ``columns`` remains the declared maximum.
+     """
+     position = position.reshape(-1)
+-    slots = (position % rows) * columns + seq_cols[: k.shape[2]]
++    pitch = seq_info[0, 4].to(torch.int64) if runtime_columns else columns
++    slots = (position % rows) * pitch + seq_cols[: k.shape[2]]
+     _write(k_storage, slots, k)
+     _write(v_storage, slots, v)
+     heads, dim = k_storage.shape[2], k_storage.shape[3]
+@@ -342,6 +356,7 @@ def _batched_sequence_step_fn(
+     causal: bool,
+     out_dtype,
+     context_window: bool = False,
++    runtime_columns: bool = False,
+ ):
+     def fn(q, k, v, position, k_storage, v_storage, seq_cols, seq_info):
+         return batched_sequence_step(
+@@ -361,6 +376,7 @@ def _batched_sequence_step_fn(
+             causal,
+             out_dtype,
+             context_window,
++            runtime_columns,
+         )
+
+     return fn
+@@ -737,7 +753,10 @@ class LowerOffGraphKVPass:
+         seq_info = self._cell_buffer(
+             exported_program,
+             OFFGRAPH_KV_SEQ_INFO_FQN,
+-            (self._manifest["max_segments"], 4),
++            (
++                self._manifest["max_segments"],
++                5 if self._manifest.get("runtime_columns", False) else 4,
++            ),
+             torch.int32,
+             device,
+         )
+@@ -753,6 +772,7 @@ class LowerOffGraphKVPass:
+             self._manifest["causal"],
+             out_dtype,
+             self._manifest.get("context_window", False),
++            self._manifest.get("runtime_columns", False),
+         )
+         return fn, call_args, example_args
+
+diff --git a/backends/cuda/runtime/cuda_kv_cache.cpp b/backends/cuda/runtime/cuda_kv_cache.cpp
+index 98bc447..5a716ab 100644
+--- a/backends/cuda/runtime/cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/cuda_kv_cache.cpp
+@@ -833,18 +833,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+       : geometry_(geometry),
+         cfg_(cfg),
+         max_seqs_(*cfg.max_seqs),
+-        columns_(*cfg.max_seqs + 1),
++        columns_(cfg.runtime_sequence_columns ? 2 : *cfg.max_seqs + 1),
+         max_write_(*cfg.max_write),
+         max_segments_(batched_sequence_max_segments(*cfg.max_seqs)),
++        info_width_(cfg.runtime_sequence_columns ? 5 : 4),
+         dflash_block_size_(geometry.dflash_block_size),
+         pool_(
+             pool_layers(geometry, cfg),
+             {{kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
+              {kSeqInfoFqn,
+               slimc10::ScalarType::Int,
+-              {batched_sequence_max_segments(*cfg.max_seqs), 4}}},
++              {batched_sequence_max_segments(*cfg.max_seqs),
++               cfg.runtime_sequence_columns ? 5 : 4}}},
+             storage_dtype,
+-            static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1)) {
++            static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1),
++            *cfg.max_seqs + 1,
++            cfg.runtime_sequence_columns ? 2 : *cfg.max_seqs + 1) {
+     for (const cache::LayerGeometry& layer : geometry.layers) {
+       layer_rows_.push_back(rows_of(layer, cfg));
+     }
+@@ -874,7 +878,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+   // nor invalidates captured graphs.
+   void clear() override {
+     std::lock_guard<std::mutex> guard(mutex_);
+-    if (dflash_block_size_ && pool_.allocated()) {
++    if ((dflash_block_size_ || cfg_.runtime_sequence_columns) &&
++        pool_.allocated()) {
+       // A failed forward can be abandoned by a different host thread. Fence
+       // the originating stream before reusing its sequence columns.
+       if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+@@ -888,6 +893,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     step_seq_ids_.clear();
+     pending_owners_.clear();
+     poisoned_ = false;
++    inflight_ = false;
+   }
+
+   bool declare_step(const std::vector<int32_t>& seq_ids) override {
+@@ -929,13 +935,15 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+
+   std::optional<int32_t> seq_new() override {
+     std::lock_guard<std::mutex> guard(mutex_);
+-    const auto column = free_column();
+-    if (!column) {
++    const auto id = free_sequence_id();
++    if (!id) {
+       return std::nullopt;
+     }
+-    seqs_.emplace(
+-        *column, Sequence{*column, cache::SequenceCache(geometry_, cfg_)});
+-    return *column;
++    const int column = cfg_.runtime_sequence_columns
++        ? free_physical_column().value_or(-1)
++        : *id;
++    seqs_.emplace(*id, Sequence{column, cache::SequenceCache(geometry_, cfg_)});
++    return *id;
+   }
+
+   // Copies the retained prefix into a free column: a sequence's history is
+@@ -944,8 +952,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+       override {
+     std::lock_guard<std::mutex> guard(mutex_);
+     const auto source = seqs_.find(src);
+-    const auto column = free_column();
+-    if (source == seqs_.end() || !column || !pool_.allocated()) {
++    const auto id = free_sequence_id();
++    if (source == seqs_.end() || !id || !pool_.allocated() ||
++        (cfg_.runtime_sequence_columns && inflight_)) {
+       return std::nullopt;
+     }
+     // The copies below run on this thread's stream, which may not be the
+@@ -958,17 +967,38 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     const int length = source->second.plan.length();
+     const int keep = std::min(upto.value_or(length), length);
+     cache::SequenceCache plan(source->second.plan);
+-    if (keep <= 0 || !plan.rewind(keep) ||
+-        copy_column(source->second.column, *column, keep) != Error::Ok ||
++    if (keep <= 0 || !plan.rewind(keep)) {
++      return std::nullopt;
++    }
++    const int column = cfg_.runtime_sequence_columns
++        ? free_physical_column().value_or(-1)
++        : *id;
++    seqs_.emplace(*id, Sequence{column, std::move(plan)});
++    if (cfg_.runtime_sequence_columns &&
++        ensure_columns(false, 0, pool_.stream()) != Error::Ok) {
++      seqs_.erase(*id);
++      return std::nullopt;
++    }
++    if (copy_column(source->second.column, seqs_.at(*id).column, keep) !=
++            Error::Ok ||
+         pool_.mark_step_done() != Error::Ok) {
++      if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
++        poisoned_ = true;
++      }
++      seqs_.erase(*id);
+       return std::nullopt;
+     }
+-    seqs_.emplace(*column, Sequence{*column, std::move(plan)});
+-    return *column;
++    return *id;
+   }
+
+   bool seq_rm(int32_t seq_id) override {
+     std::lock_guard<std::mutex> guard(mutex_);
++    if (cfg_.runtime_sequence_columns &&
++        (inflight_ ||
++         std::find(step_seq_ids_.begin(), step_seq_ids_.end(), seq_id) !=
++             step_seq_ids_.end())) {
++      return false;
++    }
+     return seqs_.erase(seq_id) > 0;
+   }
+
+@@ -1017,7 +1047,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     std::lock_guard<std::mutex> guard(mutex_);
+     ET_CHECK_OK_OR_RETURN_ERROR(error_);
+     ET_CHECK_OR_RETURN_ERROR(
+-        !poisoned_ && (!dflash_block_size_ || pending_owners_.empty()),
++        !poisoned_ && (!cfg_.runtime_sequence_columns || !inflight_) &&
++            (!dflash_block_size_ || pending_owners_.empty()),
+         InvalidState,
+         "offgraph_kv: uncommitted or failed draft co-batch; clear required");
+     if (!validated_) {
+@@ -1066,6 +1097,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     for (const auto& [seq_id, end] : ends) {
+       required = std::max<int64_t>(required, end);
+     }
++    if (cfg_.runtime_sequence_columns) {
++      ET_CHECK_OK_OR_RETURN_ERROR(ensure_columns(false, 0, stream));
++    }
+     ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
+         std::min<int64_t>(required, cfg_.capacity) * columns_,
+         live * columns_,
+@@ -1073,17 +1107,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+
+     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
+         static_cast<size_t>(max_write_) * sizeof(int64_t) +
+-        static_cast<size_t>(max_segments_) * 4 * sizeof(int32_t)));
++        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t)));
+     auto* cols = reinterpret_cast<int64_t*>(staging_);
+     auto* info = reinterpret_cast<int32_t*>(cols + max_write_);
+-    std::fill(cols, cols + write_length, static_cast<int64_t>(max_seqs_));
+-    std::fill(info, info + max_segments_ * 4, 0);
++    std::fill(cols, cols + write_length, static_cast<int64_t>(columns_ - 1));
++    std::fill(info, info + max_segments_ * info_width_, 0);
++    if (cfg_.runtime_sequence_columns) {
++      for (int index = 0; index < max_segments_; ++index) {
++        info[index * info_width_ + 4] = columns_;
++      }
++    }
+     int q_start = 0;
+     for (size_t index = 0; index < runs.size(); ++index) {
+       const Run& run = runs[index];
+       const int column = seqs_.at(run.seq_id).column;
+       std::fill(cols + run.start, cols + run.start + run.length, column);
+-      int32_t* row = info + index * 4;
++      int32_t* row = info + index * info_width_;
+       const int end = next[run.seq_id] + run.length;
+       next[run.seq_id] = end;
+       // A draft queries only each owner's block, packed owner by owner.
+@@ -1112,6 +1151,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+       }
+     }
+     step_seq_ids_.clear();
++    inflight_ = cfg_.runtime_sequence_columns;
+     return Error::Ok;
+   }
+
+@@ -1125,6 +1165,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+         InvalidState,
+         "offgraph_kv: uncommitted or failed draft co-batch; clear required");
+     ET_CHECK_OK_OR_RETURN_ERROR(pool_.mark_step_done());
++    inflight_ = false;
+     // A draft's block is scratch: the next draft rewrites it.
+     for (const int32_t owner : pending_owners_) {
+       const auto it = seqs_.find(owner);
+@@ -1151,9 +1192,31 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+         std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
+     metrics.growth_count = pool_.growth_count();
+     metrics.allocated_bytes = pool_.allocated_bytes();
++    metrics.physical_columns = columns_;
++    metrics.declared_columns = max_seqs_ + 1;
++    metrics.live_sequences = seqs_.size();
++    metrics.column_resize_count = pool_.column_resize_count();
+     return metrics;
+   }
+
++  Error compact_columns(int spare_columns) override {
++    std::lock_guard<std::mutex> guard(mutex_);
++    ET_CHECK_OR_RETURN_ERROR(
++        cfg_.runtime_sequence_columns,
++        NotSupported,
++        "offgraph_kv: program uses fixed physical columns");
++    ET_CHECK_OR_RETURN_ERROR(
++        !poisoned_ && !inflight_ && step_seq_ids_.empty() &&
++            pending_owners_.empty(),
++        InvalidState,
++        "offgraph_kv: compact only between committed steps");
++    ET_CHECK_OR_RETURN_ERROR(
++        spare_columns >= 0 && spare_columns <= max_seqs_,
++        InvalidArgument,
++        "offgraph_kv: invalid spare columns");
++    return ensure_columns(true, spare_columns, pool_.stream());
++  }
++
+  protected:
+   void* face(cache::FaceId id) override {
+     return cache::expose<cache::BatchControl, CudaKVCache>(this, id);
+@@ -1193,7 +1256,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     return layers;
+   }
+
+-  std::optional<int> free_column() const {
++  std::optional<int> free_sequence_id() const {
+     for (int column = 0; column < max_seqs_; ++column) {
+       if (seqs_.count(column) == 0) {
+         return column;
+@@ -1202,6 +1265,85 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+     return std::nullopt;
+   }
+
++  std::optional<int> free_physical_column() const {
++    for (int column = 0; column < columns_ - 1; ++column) {
++      bool used = false;
++      for (const auto& [id, sequence] : seqs_) {
++        used |= sequence.column == column;
++      }
++      if (!used) {
++        return column;
++      }
++    }
++    return std::nullopt;
++  }
++
++  Error ensure_columns(bool compact, int spare_columns, cudaStream_t stream) {
++    const int live = static_cast<int>(seqs_.size());
++    const int target = compact
++        ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
++        : std::max(columns_, live + 1);
++    std::map<int32_t, int> next;
++    std::unordered_set<int> used;
++    bool relocate = false;
++    for (const auto& [id, sequence] : seqs_) {
++      if (compact) {
++        const int column = static_cast<int>(next.size());
++        next.emplace(id, column);
++        used.insert(column);
++        relocate |= sequence.column >= 0 && sequence.column != column;
++      } else if (sequence.column >= 0) {
++        ET_CHECK_OR_RETURN_ERROR(
++            sequence.column < target - 1 && used.insert(sequence.column).second,
++            InvalidState,
++            "offgraph_kv: invalid physical owner mapping");
++        next.emplace(id, sequence.column);
++      }
++    }
++    for (const auto& [id, sequence] : seqs_) {
++      if (next.count(id) != 0) {
++        continue;
++      }
++      int column = 0;
++      while (used.count(column) != 0) {
++        ++column;
++      }
++      ET_CHECK_OR_RETURN_ERROR(
++          column < target - 1,
++          InvalidState,
++          "offgraph_kv: missing physical column");
++      next.emplace(id, column);
++      used.insert(column);
++    }
++    if (target != columns_ || relocate || compact) {
++      std::vector<std::pair<int, int>> retained;
++      for (const auto& [id, sequence] : seqs_) {
++        if (sequence.column >= 0) {
++          retained.emplace_back(sequence.column, next.at(id));
++        }
++      }
++      bool committed = false;
++      const Error error = pool_.resize_columns(
++          target, retained, stream, /*trim_unused=*/true, &committed);
++      if (error != Error::Ok && !committed) {
++        return error;
++      }
++      columns_ = target;
++      for (auto& [id, sequence] : seqs_) {
++        sequence.column = next.at(id);
++      }
++      if (error != Error::Ok) {
++        poisoned_ = true;
++        return error;
++      }
++    } else {
++      for (auto& [id, sequence] : seqs_) {
++        sequence.column = next.at(id);
++      }
++    }
++    return Error::Ok;
++  }
++
+   // Copies rows [0, keep) of every flat layer, and a ring layer's whole ring,
+   // from one column to another, ordered behind the previous step: the copies
+   // run on this thread's stream, which may not be the stream that step wrote
+@@ -1257,7 +1399,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+           std::tuple{
+               kSeqInfoBuffer,
+               cols_bytes,
+-              static_cast<size_t>(max_segments_) * 4 * sizeof(int32_t)}}) {
++              static_cast<size_t>(max_segments_) * info_width_ *
++                  sizeof(int32_t)}}) {
+       const cudaError_t error = cudaMemcpyAsync(
+           pool_.side_buffer(index),
+           staging_ + offset,
+@@ -1331,9 +1474,11 @@ class CudaBatchedSequenceCache final : public cache::Cache,
+   const cache::CacheGeometry geometry_;
+   const cache::CacheConfig cfg_;
+   const int max_seqs_;
+-  const int columns_;
++  int columns_;
+   const int max_write_;
+   const int max_segments_;
++  const int info_width_;
++  bool inflight_{false};
+   const std::optional<int> dflash_block_size_;
+   std::vector<int64_t> layer_rows_;
+   CudaKVPool pool_;
+diff --git a/backends/cuda/runtime/cuda_kv_cache.h b/backends/cuda/runtime/cuda_kv_cache.h
+index 3869f9d..adb822b 100644
+--- a/backends/cuda/runtime/cuda_kv_cache.h
++++ b/backends/cuda/runtime/cuda_kv_cache.h
+@@ -34,6 +34,10 @@ struct OffGraphKVMetrics {
+   // so this also identifies the addresses a compiled program was bound to.
+   int64_t growth_count{0};
+   int64_t allocated_bytes{0};
++  int64_t physical_columns{0};
++  int64_t declared_columns{0};
++  int64_t live_sequences{0};
++  int64_t column_resize_count{0};
+ };
+
+ // Backend face of the off-graph KV cache: what the CUDA delegate needs from
+@@ -83,6 +87,11 @@ class CudaKVCache {
+   virtual runtime::Error commit_step(int64_t write_length) = 0;
+
+   virtual OffGraphKVMetrics metrics() const = 0;
++
++  // An explicit idle boundary; callers must serialize this with execution.
++  virtual runtime::Error compact_columns(int) {
++    return runtime::Error::NotSupported;
++  }
+ };
+
+ // Compile spec naming where a method's inputs carry the step width.
+diff --git a/backends/cuda/runtime/cuda_kv_pool.cpp b/backends/cuda/runtime/cuda_kv_pool.cpp
+index 74fcf6a..46ff31a 100644
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -56,14 +56,18 @@ CudaKVPool::CudaKVPool(
+     std::vector<Layer> layers,
+     std::vector<SideBuffer> side_buffers,
+     slimc10::ScalarType storage_dtype,
+-    int64_t initial_rows)
++    int64_t initial_rows,
++    int declared_columns,
++    int initial_columns)
+     : layers_(std::move(layers)),
+       side_specs_(std::move(side_buffers)),
+       storage_dtype_(storage_dtype),
+-      initial_rows_(initial_rows) {
++      initial_rows_(initial_rows / declared_columns * initial_columns),
++      declared_columns_(declared_columns),
++      columns_(initial_columns) {
+   for (const Layer& layer : layers_) {
+     if (layer.growable) {
+-      max_rows_ = std::max(max_rows_, layer.declared_rows);
++      max_rows_ = std::max(max_rows_, physical_limit(layer));
+     }
+   }
+ }
+@@ -220,6 +224,10 @@ size_t CudaKVPool::row_bytes(const Layer& layer) const {
+       slimc10::elementSize(storage_dtype_);
+ }
+
++int64_t CudaKVPool::physical_limit(const Layer& layer) const {
++  return layer.declared_rows / declared_columns_ * columns_;
++}
++
+ // BSHD at the declared rows: no stride depends on the rows, so the storage
+ // behind it may hold fewer.
+ std::vector<int64_t> CudaKVPool::layer_sizes(const Layer& layer) {
+@@ -295,7 +303,7 @@ Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
+   };
+   for (const Layer& layer : layers_) {
+     const int64_t rows = layer.growable
+-        ? std::min(growable_rows, layer.declared_rows)
++        ? std::min(growable_rows, physical_limit(layer))
+         : layer.declared_rows;
+     Allocation allocation;
+     const Error error = allocate_layer(layer, rows, stream, allocation);
+@@ -377,7 +385,7 @@ Error CudaKVPool::grow(
+   };
+   for (size_t index = 0; index < layers_.size(); ++index) {
+     const Layer& layer = layers_[index];
+-    const int64_t rows = std::min(new_rows, layer.declared_rows);
++    const int64_t rows = std::min(new_rows, physical_limit(layer));
+     if (!layer.growable || rows <= allocations_.at(index).rows) {
+       continue;
+     }
+@@ -418,6 +426,19 @@ Error CudaKVPool::grow(
+   }
+   rows_ = new_rows;
+   growth_count_++;
++  invalidate_bindings();
++  ET_LOG(
++      Info,
++      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
++      "growth_count=%lld",
++      static_cast<long long>(old_rows),
++      static_cast<long long>(new_rows),
++      static_cast<long long>(allocated_bytes_),
++      static_cast<long long>(growth_count_));
++  return Error::Ok;
++}
++
++void CudaKVPool::invalidate_bindings() {
+   // Every program sharing this pool now points at freed storage: drop the
+   // bindings so each rebinds before its next run, and any captured CUDA graph
+   // so it is captured again against the new storage. Prefill usually grows
+@@ -437,14 +458,143 @@ Error CudaKVPool::grow(
+       graph.warmup_remaining = std::max(graph.warmup_remaining, 1);
+     }
+   }
++}
++
++Error CudaKVPool::resize_columns(
++    int columns,
++    const std::vector<std::pair<int, int>>& retained_columns,
++    cudaStream_t stream,
++    bool trim_unused,
++    bool* committed) {
++  if (committed != nullptr) {
++    *committed = false;
++  }
++  ET_CHECK_OR_RETURN_ERROR(
++      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_,
++      InvalidArgument,
++      "offgraph_kv: invalid physical columns %d/%d",
++      columns,
++      declared_columns_);
++  std::unordered_set<int> sources;
++  std::unordered_set<int> destinations;
++  bool relocate = false;
++  for (const auto& [from, to] : retained_columns) {
++    ET_CHECK_OR_RETURN_ERROR(
++        from >= 0 && from < columns_ - 1 && to >= 0 && to < columns - 1 &&
++            sources.insert(from).second && destinations.insert(to).second,
++        InvalidArgument,
++        "offgraph_kv: invalid retained column %d->%d",
++        from,
++        to);
++    relocate |= from != to;
++  }
++  for (const Layer& layer : layers_) {
++    ET_CHECK_OR_RETURN_ERROR(
++        layer.growable && layer.declared_rows % declared_columns_ == 0,
++        InvalidArgument,
++        "offgraph_kv: physical-column resizing needs growable whole-row layers");
++  }
++  if (!allocated_) {
++    initial_rows_ = initial_rows_ / columns_ * columns;
++    max_rows_ = max_rows_ / columns_ * columns;
++    columns_ = columns;
++    if (committed != nullptr) {
++      *committed = true;
++    }
++    return Error::Ok;
++  }
++  const auto device = CUDAGuard::create(device_);
++  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
++  // Resize is an explicit boundary, not a synchronization in every forward.
++  ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
++  stream_ = stream;
++  if (trim_unused) {
++    CudaAllocator::release_cached_memory(device_);
++  }
++  if (columns == columns_ && !relocate) {
++    return Error::Ok;
++  }
++
++  const int old_columns = columns_;
++  std::vector<Allocation> replacements;
++  replacements.reserve(layers_.size());
++  auto roll_back = [&]() {
++    for (size_t index = 0; index < replacements.size(); ++index) {
++      discard(layers_[index], replacements[index], stream);
++    }
++    if (cudaStreamSynchronize(stream) == cudaSuccess && trim_unused) {
++      CudaAllocator::release_cached_memory(device_);
++    }
++  };
++  for (size_t index = 0; index < layers_.size(); ++index) {
++    const int64_t logical_rows = allocations_[index].rows / old_columns;
++    Allocation replacement;
++    const Error error = allocate_layer(
++        layers_[index], logical_rows * columns, stream, replacement);
++    if (error != Error::Ok) {
++      roll_back();
++      return error;
++    }
++    replacements.push_back(replacement);
++  }
++  for (size_t index = 0; index < layers_.size(); ++index) {
++    const Allocation& current = allocations_[index];
++    const Allocation& replacement = replacements[index];
++    const size_t slot = row_bytes(layers_[index]);
++    const size_t logical_rows = static_cast<size_t>(current.rows / old_columns);
++    for (const auto& [from, to] : retained_columns) {
++      for (const auto& [dst, src] :
++           {std::pair{replacement.k, current.k},
++            std::pair{replacement.v, current.v}}) {
++        const cudaError_t error = cudaMemcpy2DAsync(
++            static_cast<uint8_t*>(dst) + slot * to,
++            slot * columns,
++            static_cast<const uint8_t*>(src) + slot * from,
++            slot * old_columns,
++            slot,
++            logical_rows,
++            cudaMemcpyDeviceToDevice,
++            stream);
++        if (error != cudaSuccess) {
++          roll_back();
++          return Error::Internal;
++        }
++      }
++    }
++  }
++  if (cudaStreamSynchronize(stream) != cudaSuccess) {
++    roll_back();
++    return Error::Internal;
++  }
++  invalidate_bindings();
++  for (size_t index = 0; index < layers_.size(); ++index) {
++    discard(layers_[index], allocations_[index], stream);
++  }
++  allocations_ = std::move(replacements);
++  rows_ = rows_ / old_columns * columns;
++  initial_rows_ = initial_rows_ / old_columns * columns;
++  max_rows_ = max_rows_ / old_columns * columns;
++  columns_ = columns;
++  column_resize_count_++;
++  if (committed != nullptr) {
++    *committed = true;
++  }
++  if (trim_unused) {
++    ET_CHECK_OR_RETURN_ERROR(
++        cudaStreamSynchronize(stream) == cudaSuccess,
++        Internal,
++        "offgraph_kv: cannot finish freeing obsolete column storage");
++    CudaAllocator::release_cached_memory(device_);
++  }
+   ET_LOG(
+       Info,
+-      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
+-      "growth_count=%lld",
+-      static_cast<long long>(old_rows),
+-      static_cast<long long>(new_rows),
++      "offgraph_kv: resized columns=%d->%d live_columns=%zu "
++      "allocated_bytes=%lld column_resize_count=%lld",
++      old_columns,
++      columns_,
++      retained_columns.size(),
+       static_cast<long long>(allocated_bytes_),
+-      static_cast<long long>(growth_count_));
++      static_cast<long long>(column_resize_count_));
+   return Error::Ok;
+ }
+
+diff --git a/backends/cuda/runtime/cuda_kv_pool.h b/backends/cuda/runtime/cuda_kv_pool.h
+index c78f854..02d8fd1 100644
+--- a/backends/cuda/runtime/cuda_kv_pool.h
++++ b/backends/cuda/runtime/cuda_kv_pool.h
+@@ -13,6 +13,7 @@
+ #include <string>
+ #include <unordered_map>
+ #include <unordered_set>
++#include <utility>
+ #include <vector>
+
+ #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
+@@ -57,7 +58,9 @@ class CudaKVPool final {
+       std::vector<Layer> layers,
+       std::vector<SideBuffer> side_buffers,
+       ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype,
+-      int64_t initial_rows);
++      int64_t initial_rows,
++      int declared_columns = 1,
++      int initial_columns = 1);
+
+   CudaKVPool(const CudaKVPool&) = delete;
+   CudaKVPool& operator=(const CudaKVPool&) = delete;
+@@ -82,6 +85,16 @@ class CudaKVPool final {
+   runtime::Error
+   prepare(int64_t required_rows, int64_t live_rows, cudaStream_t stream);
+
++  // Flattened row counts remain multiples of the current physical width.
++  // Each pair is a retained old column and its new column. Dummy data is not
++  // retained. The operation commits only after every replacement copy passes.
++  runtime::Error resize_columns(
++      int columns,
++      const std::vector<std::pair<int, int>>& retained_columns,
++      cudaStream_t stream,
++      bool trim_unused,
++      bool* committed = nullptr);
++
+   // Records where the step's work ends on its stream, for the next step to
+   // follow if it runs on another.
+   runtime::Error mark_step_done();
+@@ -127,6 +140,12 @@ class CudaKVPool final {
+   int64_t growth_count() const {
+     return growth_count_;
+   }
++  int columns() const {
++    return columns_;
++  }
++  int64_t column_resize_count() const {
++    return column_resize_count_;
++  }
+
+  private:
+   struct Allocation {
+@@ -150,6 +169,8 @@ class CudaKVPool final {
+   };
+
+   size_t row_bytes(const Layer& layer) const;
++  int64_t physical_limit(const Layer& layer) const;
++  void invalidate_bindings();
+   static std::vector<int64_t> layer_sizes(const Layer& layer);
+   runtime::Error allocate_layer(
+       const Layer& layer,
+@@ -174,6 +195,9 @@ class CudaKVPool final {
+   ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype_;
+   int64_t initial_rows_;
+   int64_t max_rows_{0};
++  const int declared_columns_;
++  int columns_;
++  int64_t column_resize_count_{0};
+
+   int device_{0};
+   bool device_known_{false};
+diff --git a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
+index a0bd421..230d708 100644
+--- a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
+@@ -2718,6 +2718,386 @@ TEST_F(CudaBatchedSequenceCacheTest, DFlashQueriesOnlyEachOwnersBlock) {
+   kv->forget_handle(&handle);
+ }
+
++namespace {
++
++class CudaRuntimeColumnCacheTest : public CudaKVCacheTest {
++ protected:
++  static constexpr int kCapacity = 64;
++  static constexpr int kMaxWrite = 32;
++  static constexpr int kMaxSeqs = 21;
++  static constexpr int kDeclaredColumns = kMaxSeqs + 1;
++  static constexpr int kSegments = 2 * kMaxSeqs;
++
++  static std::shared_ptr<cache::Cache> make() {
++    auto cfg = config(kCapacity, 4, kMaxWrite);
++    cfg.max_seqs = kMaxSeqs;
++    cfg.runtime_sequence_columns = true;
++    return cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(2), cfg);
++  }
++
++  static FakeContainer container(int info_width = 5) {
++    auto fake = flat_and_ring_container();
++    fake.internal_names.insert(
++        fake.internal_names.end(), {"seq_cols", "seq_info"});
++    fake.fqns.insert(
++        fake.fqns.end(),
++        {"__et_offgraph_kv_seq_cols", "__et_offgraph_kv_seq_info"});
++    for (size_t index = 0; index < 4; ++index) {
++      declare(
++          fake,
++          fake.fqns[index],
++          slimc10::ScalarType::BFloat16,
++          {1,
++           (index < 2 ? kCapacity : kMaxWrite + 1) * kDeclaredColumns,
++           kHeads,
++           kDim});
++    }
++    declare(fake, fake.fqns[4], slimc10::ScalarType::Long, {kMaxWrite});
++    declare(
++        fake, fake.fqns[5], slimc10::ScalarType::Int, {kSegments, info_width});
++    return fake;
++  }
++
++  static Error step(
++      cache::Cache& cache,
++      cu::CudaDelegateHandle& handle,
++      const std::vector<int32_t>& ids,
++      int width = 0) {
++    auto* control = cache.as<cache::BatchControl>();
++    auto* kv = cache.as<cu::CudaKVCache>();
++    if (!control->declare_step(ids)) {
++      return Error::InvalidArgument;
++    }
++    width = width == 0 ? static_cast<int>(ids.size()) : width;
++    ET_CHECK_OK_OR_RETURN_ERROR(kv->prepare_step(width, cudaStreamPerThread));
++    ET_CHECK_OK_OR_RETURN_ERROR(kv->rebind_for_execute(&handle));
++    return kv->commit_step(width);
++  }
++
++  static std::vector<uint16_t>
++  read_column(void* data, int rows, int columns, int column) {
++    std::vector<uint16_t> out(rows * kRow);
++    EXPECT_EQ(
++        cudaMemcpy2D(
++            out.data(),
++            kRow * sizeof(uint16_t),
++            static_cast<uint16_t*>(data) + column * kRow,
++            columns * kRow * sizeof(uint16_t),
++            kRow * sizeof(uint16_t),
++            rows,
++            cudaMemcpyDeviceToHost),
++        cudaSuccess);
++    return out;
++  }
++
++  static void seed(FakeContainer& fake, int rows, int columns) {
++    for (size_t layer = 0; layer < 4; ++layer) {
++      std::vector<uint16_t> values(rows * columns * kRow);
++      for (int row = 0; row < rows; ++row) {
++        for (int column = 0; column < columns; ++column) {
++          for (int element = 0; element < kRow; ++element) {
++            values[(row * columns + column) * kRow + element] =
++                static_cast<uint16_t>(
++                    1000 * layer + 100 * row + 20 * column + element);
++          }
++        }
++      }
++      EXPECT_EQ(
++          cudaMemcpy(
++              fake.bound[fake.internal_names[layer]].data,
++              values.data(),
++              values.size() * sizeof(uint16_t),
++              cudaMemcpyHostToDevice),
++          cudaSuccess);
++    }
++  }
++};
++
++} // namespace
++
++TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
++  auto cache_ptr = make();
++  ASSERT_NE(cache_ptr, nullptr);
++  auto* control = cache_ptr->as<cache::BatchControl>();
++  auto* kv = cache_ptr->as<cu::CudaKVCache>();
++  auto fake = container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  std::vector<int32_t> ids;
++  int old_columns = 0;
++  for (const int sessions : {1, 2, 4, 8, 16}) {
++    while (ids.size() < static_cast<size_t>(sessions)) {
++      const auto id = control->seq_new();
++      ASSERT_TRUE(id.has_value());
++      ids.push_back(*id);
++    }
++    std::array<std::vector<uint16_t>, 4> retained;
++    if (old_columns != 0) {
++      seed(fake, 4, old_columns);
++      for (size_t layer = 0; layer < 4; ++layer) {
++        retained[layer] = read_column(
++            fake.bound[fake.internal_names[layer]].data, 4, old_columns, 0);
++      }
++    }
++    ASSERT_EQ(step(*cache_ptr, handle, ids), Error::Ok);
++    const auto metrics = kv->metrics();
++    EXPECT_EQ(metrics.physical_columns, sessions + 1);
++    EXPECT_EQ(metrics.declared_columns, kDeclaredColumns);
++    EXPECT_EQ(metrics.live_sequences, sessions);
++    EXPECT_EQ(control->max_seqs(), kMaxSeqs);
++    EXPECT_EQ(
++        fake.bound["flat_k"].sizes,
++        std::vector<int64_t>({1, kCapacity * kDeclaredColumns, kHeads, kDim}));
++    if (old_columns != 0) {
++      for (size_t layer = 0; layer < 4; ++layer) {
++        EXPECT_EQ(
++            read_column(
++                fake.bound[fake.internal_names[layer]].data,
++                4,
++                sessions + 1,
++                0),
++            retained[layer]);
++      }
++    }
++    old_columns = sessions + 1;
++  }
++
++  // Preserve a nonzero logical ID while compacting it into physical column 0.
++  const int32_t survivor = ids[5];
++  const int rows = static_cast<int>(kv->metrics().flat_capacity);
++  seed(fake, rows, old_columns);
++  std::array<std::vector<uint16_t>, 4> retained;
++  for (size_t layer = 0; layer < 4; ++layer) {
++    retained[layer] = read_column(
++        fake.bound[fake.internal_names[layer]].data, rows, old_columns, 5);
++  }
++  const int position = control->pos(survivor);
++  const auto before = kv->metrics();
++  for (const int32_t id : ids) {
++    if (id != survivor) {
++      ASSERT_TRUE(control->seq_rm(id));
++    }
++  }
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  const auto after = kv->metrics();
++  EXPECT_EQ(after.physical_columns, 2);
++  EXPECT_EQ(after.live_sequences, 1);
++  EXPECT_EQ(after.flat_capacity, before.flat_capacity);
++  EXPECT_EQ(control->pos(survivor), position);
++  EXPECT_LT(after.allocated_bytes, before.allocated_bytes);
++  EXPECT_EQ(after.allocated_bytes * 17, before.allocated_bytes * 2);
++  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
++  for (size_t layer = 0; layer < 4; ++layer) {
++    EXPECT_EQ(
++        read_column(fake.bound[fake.internal_names[layer]].data, rows, 2, 0),
++        retained[layer]);
++  }
++  ASSERT_EQ(step(*cache_ptr, handle, {survivor}, 4), Error::Ok);
++  std::array<int64_t, 4> cols{};
++  ASSERT_EQ(
++      cudaMemcpy(
++          cols.data(),
++          fake.bound["seq_cols"].data,
++          sizeof(cols),
++          cudaMemcpyDeviceToHost),
++      cudaSuccess);
++  EXPECT_EQ(cols, (std::array<int64_t, 4>{0, 1, 1, 1}));
++  std::vector<int32_t> info(kSegments * 5);
++  ASSERT_EQ(
++      cudaMemcpy(
++          info.data(),
++          fake.bound["seq_info"].data,
++          info.size() * sizeof(int32_t),
++          cudaMemcpyDeviceToHost),
++      cudaSuccess);
++  EXPECT_EQ(info[2], 0);
++  EXPECT_EQ(info[3], position + 1);
++  for (int row = 0; row < kSegments; ++row) {
++    EXPECT_EQ(info[row * 5 + 4], 2);
++  }
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaRuntimeColumnCacheTest, CloneAndContractionCopyWrappedRingHistory) {
++  auto cache_ptr = make();
++  auto* control = cache_ptr->as<cache::BatchControl>();
++  auto* kv = cache_ptr->as<cu::CudaKVCache>();
++  auto fake = container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const auto source = control->seq_new();
++  ASSERT_TRUE(source.has_value());
++  ASSERT_EQ(
++      step(*cache_ptr, handle, std::vector<int32_t>(32, *source)), Error::Ok);
++  ASSERT_EQ(
++      step(*cache_ptr, handle, std::vector<int32_t>(8, *source)), Error::Ok);
++  for (size_t layer = 0; layer < 4; ++layer) {
++    const int rows = layer < 2 ? 40 : 33;
++    std::vector<uint16_t> values(rows * 2 * kRow, 1234 + layer);
++    ASSERT_EQ(
++        cudaMemcpy(
++            fake.bound[fake.internal_names[layer]].data,
++            values.data(),
++            values.size() * sizeof(uint16_t),
++            cudaMemcpyHostToDevice),
++        cudaSuccess);
++  }
++  const auto clone = control->seq_clone(*source, 40);
++  ASSERT_TRUE(clone.has_value());
++  EXPECT_EQ(kv->metrics().physical_columns, 3);
++  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
++  for (size_t layer = 0; layer < 4; ++layer) {
++    const int rows = layer < 2 ? 40 : 33;
++    EXPECT_EQ(
++        read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 0),
++        read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 1));
++  }
++  ASSERT_TRUE(control->seq_rm(*source));
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
++  EXPECT_EQ(control->pos(*clone), 40);
++  for (size_t layer = 0; layer < 4; ++layer) {
++    const int rows = layer < 2 ? 40 : 33;
++    EXPECT_EQ(
++        read_column(fake.bound[fake.internal_names[layer]].data, rows, 2, 0),
++        std::vector<uint16_t>(rows * kRow, 1234 + layer));
++  }
++  ASSERT_EQ(step(*cache_ptr, handle, {*clone}), Error::Ok);
++  EXPECT_EQ(control->pos(*clone), 41);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaRuntimeColumnCacheTest, PendingStepMustFinishBeforeContraction) {
++  auto cache_ptr = make();
++  auto* control = cache_ptr->as<cache::BatchControl>();
++  auto* kv = cache_ptr->as<cu::CudaKVCache>();
++  auto fake = container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const auto id = control->seq_new();
++  ASSERT_TRUE(id.has_value());
++  ASSERT_TRUE(control->declare_step({*id}));
++  EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
++  EXPECT_FALSE(control->seq_rm(*id));
++  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
++  EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
++  EXPECT_FALSE(control->seq_rm(*id));
++  ASSERT_EQ(kv->commit_step(1), Error::Ok);
++  ASSERT_TRUE(control->seq_rm(*id));
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  EXPECT_EQ(kv->metrics().live_sequences, 0);
++  EXPECT_EQ(kv->metrics().physical_columns, 2);
++  cache_ptr->clear();
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaRuntimeColumnCacheTest, FixedInfoABIIsRejected) {
++  auto cache_ptr = make();
++  auto* kv = cache_ptr->as<cu::CudaKVCache>();
++  auto fake = container(4);
++  auto handle = make_handle(fake);
++  EXPECT_EQ(kv->note_handle(&handle).error(), Error::InvalidProgram);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaRuntimeColumnCacheTest, ContractionInvalidatesEveryGraphAndBinding) {
++  auto cache_ptr = make();
++  auto* control = cache_ptr->as<cache::BatchControl>();
++  auto* kv = cache_ptr->as<cu::CudaKVCache>();
++  auto first = container();
++  auto second = container();
++  auto decode = make_handle(first);
++  auto prefill = make_handle(second);
++  ASSERT_TRUE(kv->note_handle(&decode).get());
++  ASSERT_TRUE(kv->note_handle(&prefill).get());
++  const auto a = control->seq_new();
++  const auto b = control->seq_new();
++  ASSERT_TRUE(a.has_value());
++  ASSERT_TRUE(b.has_value());
++  ASSERT_EQ(step(*cache_ptr, decode, {*a, *b}), Error::Ok);
++  ASSERT_EQ(kv->rebind_for_execute(&prefill), Error::Ok);
++  const int first_updates = first.updates;
++  const int second_updates = second.updates;
++  decode.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
++  prefill.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
++  prefill.cuda_graph_state.warmup_remaining = 0;
++  ASSERT_TRUE(control->seq_rm(*a));
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  EXPECT_EQ(decode.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
++  EXPECT_EQ(decode.cuda_graph_state.warmup_remaining, 1);
++  EXPECT_EQ(prefill.cuda_graph_state.warmup_remaining, 1);
++  ASSERT_EQ(kv->rebind_for_execute(&decode), Error::Ok);
++  ASSERT_EQ(kv->rebind_for_execute(&prefill), Error::Ok);
++  EXPECT_EQ(first.updates, first_updates + 1);
++  EXPECT_EQ(second.updates, second_updates + 1);
++  EXPECT_EQ(first.bound["flat_k"].data, second.bound["flat_k"].data);
++  kv->forget_handle(&decode);
++  kv->forget_handle(&prefill);
++}
++
++TEST_F(CudaKVPoolTest, FailedColumnGrowthKeepsOldStorageAndBindingsUsable) {
++  constexpr int kDeclaredColumns = 1 << 20;
++  constexpr int kHugeDim = 1 << 20;
++  cu::CudaKVPool pool(
++      {{kHeads, kDim, kDeclaredColumns, true},
++       {1, kHugeDim, kDeclaredColumns, true}},
++      {},
++      slimc10::ScalarType::BFloat16,
++      kDeclaredColumns,
++      kDeclaredColumns,
++      2);
++  auto fake = flat_and_ring_container();
++  for (size_t index = 0; index < 4; ++index) {
++    declare(
++        fake,
++        fake.fqns[index],
++        slimc10::ScalarType::BFloat16,
++        {1,
++         kDeclaredColumns,
++         index < 2 ? kHeads : 1,
++         index < 2 ? kDim : kHugeDim});
++  }
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(pool.note_handle(&handle).get());
++  ASSERT_EQ(pool.prepare(2, 0, cudaStreamPerThread), Error::Ok);
++  ASSERT_EQ(pool.bind(&handle), Error::Ok);
++  const auto history = iota_rows(2);
++  ASSERT_EQ(
++      cudaMemcpy(
++          pool.layer_data(0, false),
++          history.data(),
++          history.size() * sizeof(uint16_t),
++          cudaMemcpyHostToDevice),
++      cudaSuccess);
++  void* old_k = pool.layer_data(0, false);
++  void* old_large_k = pool.layer_data(1, false);
++  const auto before_bytes = pool.allocated_bytes();
++  const int updates = fake.updates;
++  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
++  bool committed = true;
++  EXPECT_EQ(
++      pool.resize_columns(
++          kDeclaredColumns,
++          {{0, 0}},
++          cudaStreamPerThread,
++          /*trim_unused=*/true,
++          &committed),
++      Error::MemoryAllocationFailed);
++  EXPECT_FALSE(committed);
++  EXPECT_EQ(pool.columns(), 2);
++  EXPECT_EQ(pool.column_resize_count(), 0);
++  EXPECT_EQ(pool.allocated_bytes(), before_bytes);
++  EXPECT_EQ(pool.layer_data(0, false), old_k);
++  EXPECT_EQ(pool.layer_data(1, false), old_large_k);
++  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
++  ASSERT_EQ(pool.bind(&handle), Error::Ok);
++  EXPECT_EQ(fake.updates, updates);
++  EXPECT_EQ(read_rows(old_k, 2), history);
++  ASSERT_EQ(pool.prepare(2, 1, cudaStreamPerThread), Error::Ok);
++  ASSERT_EQ(pool.mark_step_done(), Error::Ok);
++  pool.forget_handle(&handle);
++}
++
+ TEST_F(CudaBatchedSequenceCacheTest, BuilderValidatesAndIsRegistered) {
+   auto no_seqs = sequence_config();
+   no_seqs.max_seqs.reset();
+diff --git a/backends/cuda/tests/test_offgraph_kv_batched_sequence.py b/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
+index 257e81d..fcce318 100644
+--- a/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
++++ b/backends/cuda/tests/test_offgraph_kv_batched_sequence.py
+@@ -261,6 +261,105 @@ class _FlatAndRing(torch.nn.Module):
+         return flat + ring
+
+
++@unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
++class RuntimeColumnPitchTest(unittest.TestCase):
++    """Check runtime write/read pitch with unchanged AOT tensor dimensions.
++
++    This test reserves the declared maximum tensor and poisons the unused
++    tail. Actual smaller CUDA allocations are tested by the C++ cache and
++    model probe; this numerical test does not establish memory savings.
++    """
++
++    def _run(self, window):
++        torch.manual_seed(125)
++        declared_columns, max_write = 22, 32
++        rows = min(64, window + max_write - 1) if window else 64
++        oracle = _Oracle(128, (window,))
++        self.addCleanup(oracle.close)
++        k_store = torch.full(
++            (1, rows * declared_columns, N_KV_HEADS, HEAD_DIM),
++            float("nan"),
++            dtype=torch.bfloat16,
++            device="cuda",
++        )
++        v_store = torch.full_like(k_store, float("nan"))
++        old_mapping, old_columns = {}, 0
++        positions = {}
++        for active in (1, 2, 4, 8, 16, 1):
++            owners = list(range(active)) if active != 1 or not old_mapping else [5]
++            mapping = {owner: column for column, owner in enumerate(owners)}
++            physical_columns = len(owners) + 1
++            for store in (k_store, v_store):
++                retained = {
++                    owner: store[0, : rows * old_columns]
++                    .view(rows, old_columns, N_KV_HEADS, HEAD_DIM)[:, column]
++                    .clone()
++                    for owner, column in old_mapping.items()
++                    if owner in mapping
++                }
++                store.fill_(float("nan"))
++                compact = store[0, : rows * physical_columns].view(
++                    rows, physical_columns, N_KV_HEADS, HEAD_DIM
++                )
++                compact.zero_()
++                for owner, values in retained.items():
++                    compact[:, mapping[owner]].copy_(values)
++            groups = []
++            for owner in owners:
++                start = positions.get(owner, 0)
++                # Different histories exercise segment boundaries and ring wrap.
++                length = 1 + owner % 2 if active < 16 else 1
++                if not old_mapping:
++                    length = max_write - 1
++                groups.append((owner, start, length))
++                positions[owner] = start + length
++            seq_ids, q, k, v, position = _batch(groups)
++            (expected,) = oracle.step(seq_ids, q, k, v, position)
++            seq_cols, old_info = _plan(
++                seq_ids,
++                position,
++                mapping,
++                max_write,
++                42,
++                physical_columns - 1,
++            )
++            seq_info = torch.cat(
++                [old_info, old_info.new_full((42, 1), physical_columns)], dim=1
++            )
++            # Exercise an uncovered padded row in both split and generic paths.
++            padded_q = torch.cat([q, torch.zeros_like(q[:, :, :1])], dim=2)
++            padded_k = torch.cat([k, torch.zeros_like(k[:, :, :1])], dim=2)
++            padded_v = torch.cat([v, torch.zeros_like(v[:, :, :1])], dim=2)
++            out = batched_sequence_step(
++                padded_q,
++                padded_k,
++                padded_v,
++                torch.cat([position, position.new_zeros(1)]),
++                k_store,
++                v_store,
++                seq_cols,
++                seq_info,
++                SCALE,
++                rows,
++                declared_columns,
++                window,
++                window > 0,
++                True,
++                runtime_columns=True,
++            )
++            self.assertLess(_max_abs_diff(out[:, :, : len(seq_ids)], expected), 2e-2)
++            self.assertTrue((out[:, :, len(seq_ids) :] == 0).all())
++            for store in (k_store, v_store):
++                self.assertTrue(torch.isnan(store[0, rows * physical_columns :]).all())
++            old_mapping, old_columns = mapping, physical_columns
++
++    def test_flat_pitch_and_sparse_survivor(self):
++        self._run(window=0)
++
++    def test_ring_pitch_and_sparse_survivor(self):
++        self._run(window=2)
++
++
+ @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+ class LowerBatchedSequencePassTest(unittest.TestCase):
+     CAPACITY = 32
+@@ -322,6 +421,29 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
+             with self.assertRaises(ValueError):
+                 parse_offgraph_kv_manifest(self.manifest(**bad))
+
++    def test_runtime_pitch_manifest_and_side_buffer(self) -> None:
++        manifest = self.manifest(version=2, runtime_columns=True)
++        parsed = parse_offgraph_kv_manifest(manifest)
++        self.assertTrue(parsed["runtime_columns"])
++        lowered = self._lowered(manifest)
++        buffers = {
++            n.name: tuple(n.meta["val"].shape)
++            for n in lowered.graph_module.graph.nodes
++            if n.op == "placeholder" and n.name.startswith(OFFGRAPH_KV_FQN_PREFIX)
++        }
++        self.assertEqual(buffers[OFFGRAPH_KV_SEQ_INFO_FQN], (self.MAX_SEGMENTS, 5))
++        self.assertEqual(
++            buffers[f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_k"],
++            (1, self.CAPACITY * (self.MAX_SEQS + 1), N_KV_HEADS, HEAD_DIM),
++        )
++        for bad in (
++            self.manifest(version=1, runtime_columns=True),
++            self.manifest(version=2, runtime_columns=False),
++            self.manifest(version=2),
++        ):
++            with self.assertRaises(ValueError):
++                parse_offgraph_kv_manifest(bad)
++
+     def test_declares_column_storage_and_step_buffers(self) -> None:
+         lowered = self._lowered()
+         graph = lowered.graph_module.graph
+diff --git a/backends/cuda/triton/kernels/sdpa_varlen.py b/backends/cuda/triton/kernels/sdpa_varlen.py
+index bc3ecea..7edcc47 100644
+--- a/backends/cuda/triton/kernels/sdpa_varlen.py
++++ b/backends/cuda/triton/kernels/sdpa_varlen.py
+@@ -24,10 +24,14 @@ segment of consecutive query rows of one sequence:
+ * ``kv_end``: one past the logical position of the segment's last row, i.e. the
+   sequence's length once this step's writes land.
+
++The runtime-column ABI uses ``Int32[S, 5]``. Its last field is the physical
++column count, shared by every segment, which sets the K/V row pitch even when
++the compiled tensor declares a larger maximum number of columns.
++
+ Rows are the segment's newest positions: row ``r`` sits at
+ ``kv_end - q_len + r``. Active segments must be disjoint and in bounds;
+ ``seq_info`` is read on the device, so a captured CUDA graph replays it with new
+-contents. Head dimension ``D`` must be a power of two in ``[16, 256]``.
++contents. Head dimension ``D`` must be a power of two in ``[16, 512]``.
+ """
+
+ import torch
+@@ -65,6 +69,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
+     sm_scale,
+     rows_available,
+     num_qb,
++    INFO_WIDTH: tl.constexpr,
+     NUM_SPLITS: tl.constexpr,
+     IS_CAUSAL: tl.constexpr,
+     CONTEXT_WINDOW: tl.constexpr,
+@@ -82,10 +87,14 @@ def _sdpa_varlen_kernel(  # noqa: C901
+     seg = pid0 // num_qb
+     qb = pid0 % num_qb
+
+-    q_start = tl.load(Info_ptr + seg * 4 + 0)
+-    q_len = tl.load(Info_ptr + seg * 4 + 1)
+-    col = tl.load(Info_ptr + seg * 4 + 2)
+-    kv_end = tl.load(Info_ptr + seg * 4 + 3)
++    q_start = tl.load(Info_ptr + seg * INFO_WIDTH + 0)
++    q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
++    col = tl.load(Info_ptr + seg * INFO_WIDTH + 2)
++    kv_end = tl.load(Info_ptr + seg * INFO_WIDTH + 3)
++    if INFO_WIDTH == 5:
++        columns = tl.load(Info_ptr + seg * INFO_WIDTH + 4).to(tl.int64)
++        stride_kr = columns * stride_kc
++        stride_vr = columns * stride_vc
+     if qb * BLOCK_M >= q_len * NUM_GROUPS:
+         return
+
+@@ -107,8 +116,15 @@ def _sdpa_varlen_kernel(  # noqa: C901
+     r_last = tl.minimum(q_len - 1, (qb * BLOCK_M + BLOCK_M - 1) // NUM_GROUPS)
+     r_first = (qb * BLOCK_M) // NUM_GROUPS
+     if RING > 0:
+-        lo = 0
+-        hi = tl.minimum(kv_end, RING)
++        lo = tl.maximum(kv_end - RING, 0)
++        hi = kv_end
++        if IS_CAUSAL:
++            hi = kv_end - q_len + r_last + 1
++        if WINDOW > 0:
++            if CONTEXT_WINDOW:
++                lo = tl.maximum(lo, kv_end - q_len - WINDOW)
++            else:
++                lo = tl.maximum(lo, kv_end - q_len + r_first - WINDOW + 1)
+     else:
+         hi = kv_end
+         if IS_CAUSAL:
+@@ -119,7 +135,8 @@ def _sdpa_varlen_kernel(  # noqa: C901
+                 lo = tl.maximum(kv_end - q_len - WINDOW, 0)
+             else:
+                 lo = tl.maximum(kv_end - q_len + r_first - WINDOW + 1, 0)
+-    hi = tl.minimum(hi, rows_available)
++    if RING <= 0:
++        hi = tl.minimum(hi, rows_available)
+     span = tl.maximum(hi - lo, 0)
+     chunk = tl.cdiv(tl.cdiv(span, NUM_SPLITS), BLOCK_N) * BLOCK_N
+     start = lo + split * chunk
+@@ -133,18 +150,15 @@ def _sdpa_varlen_kernel(  # noqa: C901
+
+     for n0 in tl.range(start, stop, BLOCK_N):
+         offs_n = n0 + tl.arange(0, BLOCK_N)
+-        n_valid = offs_n < stop
++        physical_n = offs_n % RING if RING > 0 else offs_n
++        n_valid = (offs_n < stop) & (physical_n < rows_available)
+         k = tl.load(
+-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
++            k_base + physical_n[:, None] * stride_kr + offs_d[None, :],
+             mask=n_valid[:, None],
+             other=0.0,
+         )
+         qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
+-        if RING > 0:
+-            # The newest logical position that landed in each ring row.
+-            kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
+-        else:
+-            kv_pos = offs_n
++        kv_pos = offs_n
+         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
+         if IS_CAUSAL:
+             visible = visible & (kv_pos[None, :] <= pos[:, None])
+@@ -161,7 +175,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
+         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
+         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
+         v = tl.load(
+-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
++            v_base + physical_n[:, None] * stride_vr + offs_d[None, :],
+             mask=n_valid[:, None],
+             other=0.0,
+         )
+@@ -212,6 +226,7 @@ def _sdpa_varlen_decode_kernel(
+     sm_scale,
+     rows_available,
+     NUM_SEGMENTS: tl.constexpr,
++    INFO_WIDTH: tl.constexpr,
+     NUM_SPLITS: tl.constexpr,
+     IS_CAUSAL: tl.constexpr,
+     CONTEXT_WINDOW: tl.constexpr,
+@@ -233,14 +248,18 @@ def _sdpa_varlen_decode_kernel(
+     col = 0
+     kv_end = 0
+     for seg in range(NUM_SEGMENTS):
+-        seg_q_start = tl.load(Info_ptr + seg * 4)
+-        seg_q_len = tl.load(Info_ptr + seg * 4 + 1)
++        seg_q_start = tl.load(Info_ptr + seg * INFO_WIDTH)
++        seg_q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+         take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
+         owned |= take
+         q_start = tl.where(take, seg_q_start, q_start)
+         q_len = tl.where(take, seg_q_len, q_len)
+-        col = tl.where(take, tl.load(Info_ptr + seg * 4 + 2), col)
+-        kv_end = tl.where(take, tl.load(Info_ptr + seg * 4 + 3), kv_end)
++        col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
++        kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
++    if INFO_WIDTH == 5:
++        columns = tl.load(Info_ptr + 4).to(tl.int64)
++        stride_kr = columns * stride_kc
++        stride_vr = columns * stride_vc
+
+     offs_g = tl.arange(0, BLOCK_G)
+     offs_d = tl.arange(0, HEAD_DIM)
+@@ -255,8 +274,13 @@ def _sdpa_varlen_decode_kernel(
+
+     pos = kv_end - q_len + t - q_start
+     if RING > 0:
+-        lo = 0
+-        hi = tl.minimum(kv_end, RING)
++        lo = tl.maximum(kv_end - RING, 0)
++        hi = tl.minimum(kv_end, pos + 1) if IS_CAUSAL else kv_end
++        if WINDOW > 0:
++            if CONTEXT_WINDOW:
++                lo = tl.maximum(lo, kv_end - q_len - WINDOW)
++            else:
++                lo = tl.maximum(lo, pos - WINDOW + 1)
+     else:
+         hi = pos + 1 if IS_CAUSAL else kv_end
+         lo = 0
+@@ -265,7 +289,8 @@ def _sdpa_varlen_decode_kernel(
+                 lo = tl.maximum(kv_end - q_len - WINDOW, 0)
+             else:
+                 lo = tl.maximum(pos - WINDOW + 1, 0)
+-    hi = tl.minimum(hi, rows_available)
++    if RING <= 0:
++        hi = tl.minimum(hi, rows_available)
+     span = tl.maximum(hi - lo, 0)
+     chunk = tl.cdiv(tl.cdiv(span, NUM_SPLITS), BLOCK_N) * BLOCK_N
+     start = lo + split * chunk
+@@ -278,17 +303,15 @@ def _sdpa_varlen_decode_kernel(
+     v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+     for n0 in tl.range(start, stop, BLOCK_N):
+         offs_n = n0 + tl.arange(0, BLOCK_N)
+-        n_valid = offs_n < stop
++        physical_n = offs_n % RING if RING > 0 else offs_n
++        n_valid = (offs_n < stop) & (physical_n < rows_available)
+         k = tl.load(
+-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
++            k_base + physical_n[:, None] * stride_kr + offs_d[None, :],
+             mask=n_valid[:, None] & owned,
+             other=0.0,
+         )
+         qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
+-        if RING > 0:
+-            kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
+-        else:
+-            kv_pos = offs_n
++        kv_pos = offs_n
+         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
+         if IS_CAUSAL:
+             visible &= kv_pos[None, :] <= pos
+@@ -305,7 +328,7 @@ def _sdpa_varlen_decode_kernel(
+         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
+         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
+         v = tl.load(
+-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
++            v_base + physical_n[:, None] * stride_vr + offs_d[None, :],
+             mask=n_valid[:, None] & owned,
+             other=0.0,
+         )
+@@ -434,12 +457,16 @@ def sdpa_varlen(  # noqa: C901
+         raise ValueError("query, key, and value must be on the same CUDA device")
+     if Hkv == 0 or Hq % Hkv != 0:
+         raise ValueError(f"H_q={Hq} is not a multiple of H_kv={Hkv}")
+-    if D < 16 or D > 256 or D & (D - 1):
+-        raise ValueError("head dimension must be a power of two in [16, 256]")
++    if D < 16 or D > 512 or D & (D - 1):
++        raise ValueError("head dimension must be a power of two in [16, 512]")
+     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
+         raise ValueError("sdpa_varlen needs a contiguous head dimension")
+-    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] != 4:
+-        raise ValueError("seq_info must be Int32[S, 4]")
++    if (
++        seq_info.dtype != torch.int32
++        or seq_info.dim() != 2
++        or seq_info.shape[1] not in (4, 5)
++    ):
++        raise ValueError("seq_info must be Int32[S, 4] or runtime-pitch Int32[S, 5]")
+     if seq_info.device != query.device or not seq_info.is_contiguous():
+         raise ValueError("seq_info must be contiguous on the query device")
+     if context_window and is_causal:
+@@ -449,11 +476,20 @@ def sdpa_varlen(  # noqa: C901
+     # Branching on a symbolic T would guard (and AOTI then pin) the exported
+     # range, so a dynamic step takes the generic path, valid for any T.
+     static = isinstance(T, int)
+-    use_decode = static and T <= _SPLITK_MAX_QUERY
++    max_small_query = 16 if D in (128, 512) else _SPLITK_MAX_QUERY
++    use_decode = static and T <= max_small_query
+     block_m = 16 if static and T * groups <= 16 else 64
++    if D == 512:
++        block_m = 16
+     num_qb = (T * groups + block_m - 1) // block_m
+     generic_num_stages = 3 if static and T <= 64 else 2
++    if D == 512:
++        generic_num_stages = 1
+     splits = _num_splits(T, rows) if static else 1
++    if D in (128, 512) and use_decode:
++        splits = max(
++            1, min(_SPLITK_MAX_SPLITS, triton.cdiv(rows, _SPLITK_ROWS_PER_SPLIT))
++        )
+     # The row-complete decode path writes uncovered rows and empty split slots.
+     out = torch.empty_like(query) if use_decode else torch.zeros_like(query)
+     if splits > 1:
+@@ -490,17 +526,18 @@ def sdpa_varlen(  # noqa: C901
+             scale,
+             available,
+             NUM_SEGMENTS=seq_info.shape[0],
++            INFO_WIDTH=seq_info.shape[1],
+             NUM_SPLITS=splits,
+             IS_CAUSAL=is_causal,
+             CONTEXT_WINDOW=context_window,
+             WINDOW=window,
+             RING=ring,
+-            BLOCK_N=128,
++            BLOCK_N=32 if D == 512 else 128,
+             HEAD_DIM=D,
+             NUM_GROUPS=groups,
+             BLOCK_G=triton.next_power_of_2(groups),
+-            num_warps=4,
+-            num_stages=2,
++            num_warps=8 if D == 512 else 4,
++            num_stages=1 if D == 512 else 2,
+         )
+     else:
+         grid = (seq_info.shape[0] * num_qb, Hkv, splits)
+@@ -528,16 +565,17 @@ def sdpa_varlen(  # noqa: C901
+             scale,
+             available,
+             num_qb,
++            INFO_WIDTH=seq_info.shape[1],
+             NUM_SPLITS=splits,
+             IS_CAUSAL=is_causal,
+             CONTEXT_WINDOW=context_window,
+             WINDOW=window,
+             RING=ring,
+             BLOCK_M=block_m,
+-            BLOCK_N=64,
++            BLOCK_N=32 if D == 512 else 64,
+             HEAD_DIM=D,
+             NUM_GROUPS=groups,
+-            num_warps=4,
++            num_warps=8 if D == 512 else 4,
+             num_stages=generic_num_stages,
+         )
+     if splits > 1:
+diff --git a/examples/models/muse-glimmer/CMakeLists.txt b/examples/models/muse-glimmer/CMakeLists.txt
+index 640b48f..0c6654c 100644
+--- a/examples/models/muse-glimmer/CMakeLists.txt
++++ b/examples/models/muse-glimmer/CMakeLists.txt
+@@ -144,6 +144,27 @@ target_include_directories(
+   dflash_timing_test PUBLIC ${_common_include_directories}
+ )
+
++option(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE "Build isolated CUDA KV diagnostic" OFF)
++if(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE)
++  if(NOT EXECUTORCH_BUILD_CUDA)
++    message(FATAL_ERROR "Runtime KV probe requires the CUDA batching executor")
++  endif()
++  add_executable(muse_glimmer_runtime_kv_probe tests/runtime_kv_columns_probe.cpp)
++  target_include_directories(
++    muse_glimmer_runtime_kv_probe PRIVATE ${_common_include_directories}
++                                         ${_json_include}
++  )
++  target_link_libraries(
++    muse_glimmer_runtime_kv_probe PRIVATE cuda_batching CUDA::cudart
++                                         ${link_libraries}
++  )
++  if(NOT APPLE AND NOT MSVC)
++    target_link_options(
++      muse_glimmer_runtime_kv_probe PRIVATE "LINKER:--export-dynamic"
++    )
++  endif()
++endif()
++
+ # Worker used by the OpenAI-compatible serving harness.
+ add_executable(
+   muse_glimmer_worker
+diff --git a/examples/models/muse-glimmer/export/export_solo.py b/examples/models/muse-glimmer/export/export_solo.py
+index fb1c94d..415c12b 100644
+--- a/examples/models/muse-glimmer/export/export_solo.py
++++ b/examples/models/muse-glimmer/export/export_solo.py
+@@ -126,7 +126,12 @@ def export_and_lower(
+     max_cells: int = 65536,
+     kv_layout: str = "cell",
+     max_kv_seqs: int = 4,
++    runtime_kv_columns: bool = False,
+ ) -> None:
++    if runtime_kv_columns and not (
++        backend == "cuda" and use_offgraph_kv_cache and kv_layout == "sequence"
++    ):
++        raise ValueError("runtime KV columns require CUDA off-graph sequence layout")
+     if use_offgraph_kv_cache and use_turboquant:
+         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+     if backend == "mlx" and use_offgraph_kv_cache:
+@@ -149,6 +154,7 @@ def export_and_lower(
+             device_sampling=sample,
+             kv_layout=kv_layout,
+             max_kv_seqs=max_kv_seqs,
++            runtime_kv_columns=runtime_kv_columns,
+             vision_model=vision_model,
+             pos_embed_table=pos_embed_table,
+             max_vision_patches=max_vision_patches,
+@@ -338,6 +344,7 @@ def batched_sequence_manifest(
+     max_seqs: int,
+     causal: bool = True,
+     context_window: bool = False,
++    runtime_columns: bool = False,
+ ) -> str:
+     """The batched-sequence lowering manifest: one column per sequence."""
+     from executorch.backends.cuda.passes.lower_offgraph_kv import (
+@@ -349,6 +356,9 @@ def batched_sequence_manifest(
+     manifest["max_seqs"] = max_seqs
+     manifest["max_segments"] = batched_sequence_max_segments(max_seqs)
+     manifest["causal"] = causal
++    if runtime_columns:
++        manifest["version"] = 2
++        manifest["runtime_columns"] = True
+     if context_window:
+         manifest["context_window"] = True
+     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+@@ -423,6 +433,7 @@ def export_cuda_batching(  # noqa: C901
+     max_vision_patches: int = 16384,
+     kv_layout: str = "cell",
+     max_kv_seqs: int = 4,
++    runtime_kv_columns: bool = False,
+ ):
+     """Exports the forward methods and writes the artifact.
+
+@@ -464,6 +475,8 @@ def export_cuda_batching(  # noqa: C901
+     if kv_layout not in KV_LAYOUTS:
+         raise ValueError(f"kv_layout must be one of {KV_LAYOUTS}, got {kv_layout!r}")
+     sequence_layout = kv_layout == "sequence"
++    if runtime_kv_columns and (not sequence_layout or dflash_draft is not None):
++        raise ValueError("runtime KV columns require solo sequence-layout export")
+     if sequence_layout and max_kv_seqs <= 0:
+         raise ValueError("the sequence layout needs max_kv_seqs > 0")
+     has_vision = vision_model is not None and pos_embed_table is not None
+@@ -509,7 +522,7 @@ def export_cuda_batching(  # noqa: C901
+         raise ValueError("max_step_tokens must be below the model's context")
+
+     inductor_config.coordinate_descent_tuning = False
+-    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
++    inductor_config.aot_inductor.compile_wrapper_opt_level = "O2"
+     # The PCH path shells out to `openssl sha512` and is flaky; it is only a
+     # compile-time optimization.
+     inductor_config.aot_inductor.precompile_headers = False
+@@ -518,7 +531,9 @@ def export_cuda_batching(  # noqa: C901
+
+     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
+     manifest = (
+-        batched_sequence_manifest(single_manifest, max_kv_seqs)
++        batched_sequence_manifest(
++            single_manifest, max_kv_seqs, runtime_columns=runtime_kv_columns
++        )
+         if sequence_layout
+         else cell_manifest(single_manifest, max_cells)
+     )
+@@ -677,6 +692,8 @@ def export_cuda_batching(  # noqa: C901
+     constant_methods["use_sampling"] = False
+     if sequence_layout:
+         constant_methods[MAX_KV_SEQS_METHOD] = max_kv_seqs
++        if runtime_kv_columns:
++            constant_methods["get_offgraph_kv_sequence_info_abi"] = 2
+     else:
+         constant_methods[MAX_CELLS_METHOD] = max_cells
+     if "draft_forward" in programs:
+@@ -1217,6 +1234,11 @@ def main() -> None:
+         "use, up to this.",
+     )
+     add_kv_layout_arguments(parser)
++    parser.add_argument(
++        "--runtime-kv-columns",
++        action="store_true",
++        help="Export the experimental runtime-pitch ABI for CUDA sequence KV storage.",
++    )
+     parser.add_argument(
+         "--activation-dtype",
+         default=None,
+@@ -1357,6 +1379,7 @@ def main() -> None:
+         max_cells=args.max_cells,
+         kv_layout=args.kv_layout,
+         max_kv_seqs=args.max_kv_seqs,
++        runtime_kv_columns=args.runtime_kv_columns,
+     )
+
+
+diff --git a/extension/llm/cache/cache.h b/extension/llm/cache/cache.h
+index 89c7f5d..56602ee 100644
+--- a/extension/llm/cache/cache.h
++++ b/extension/llm/cache/cache.h
+@@ -178,6 +178,8 @@ struct ET_EXPERIMENTAL CacheConfig {
+   // storage width is fixed when the program is compiled. Unset = no fixed
+   // bound; the capacity they share is the only limit.
+   std::optional<int> max_seqs;
++  // Requires a batched-sequence program with the runtime-pitch ABI.
++  bool runtime_sequence_columns = false;
+ };
+
+ ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
+diff --git a/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
+new file mode 100644
+index 0000000..0e7e79b
+--- /dev/null
++++ b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
+@@ -0,0 +1,266 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ * All rights reserved.
++ *
++ * This source code is licensed under the BSD-style license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++// A serialized diagnostic transport over the actual CUDA batching executor.
++// Raw cache IDs are never mixed with ServingRuntime or SessionTable IDs.
++#include <executorch/backends/cuda/batching/cuda_executor.h>
++#include <executorch/extension/cuda/cuda_allocator.h>
++#include <gflags/gflags.h>
++#include <nlohmann/json.hpp>
++#include <unistd.h>
++
++#include <algorithm>
++#include <chrono>
++#include <cstdint>
++#include <cstdio>
++#include <filesystem>
++#include <fstream>
++#include <iostream>
++#include <map>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++DEFINE_string(pte, "", "Solo text-only CUDA model");
++DEFINE_string(data_path, "", "External weight blob");
++DEFINE_string(
++    output_dir,
++    "",
++    "Existing unique directory for numerical outputs");
++DEFINE_int32(
++    max_sessions,
++    21,
++    "Logical cache admission including snapshot owners");
++DEFINE_int32(max_context, 131072, "Logical model context");
++DEFINE_int32(initial_kv_capacity, 512, "Initial logical rows per column");
++
++namespace cb = executorch::backends::cuda::batching;
++using executorch::runtime::Error;
++using Json = nlohmann::json;
++
++namespace {
++
++void require(bool condition, const char* message) {
++  if (!condition) {
++    throw std::runtime_error(message);
++  }
++}
++
++Json snapshot(cb::CudaExecutor& executor) {
++  require(cudaDeviceSynchronize() == cudaSuccess, "snapshot synchronization");
++  size_t free_bytes = 0, total_bytes = 0;
++  require(
++      cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess,
++      "device memory");
++  int device = 0;
++  require(cudaGetDevice(&device) == cudaSuccess, "device ordinal");
++  const auto kv = executor.kv_metrics();
++  Json result = {
++      {"pid", getpid()},
++      {"physical_columns", kv.physical_columns},
++      {"declared_columns", kv.declared_columns},
++      {"live_sequences", kv.live_sequences},
++      {"logical_length", kv.logical_length},
++      {"flat_capacity", kv.flat_capacity},
++      {"live_KV_bytes", kv.allocated_bytes},
++      {"row_growth_count", kv.growth_count},
++      {"column_resize_count", kv.column_resize_count},
++      {"device_used_bytes", total_bytes - free_bytes},
++  };
++  const auto pool =
++      executorch::extension::cuda::CudaAllocator::pool_for_device(device);
++  if (pool != nullptr) {
++    uint64_t used = 0, reserved = 0;
++    require(
++        cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &used) ==
++                cudaSuccess &&
++            cudaMemPoolGetAttribute(
++                pool, cudaMemPoolAttrReservedMemCurrent, &reserved) ==
++                cudaSuccess,
++        "allocator memory attributes");
++    result["allocator_used_bytes"] = used;
++    result["allocator_reserved_bytes"] = reserved;
++  }
++  result["method_calls"] = Json::array();
++  for (const auto& method : executor.method_calls()) {
++    result["method_calls"].push_back(
++        {{"method", method.name}, {"calls", method.calls}});
++  }
++  return result;
++}
++
++Json run_step(cb::CudaExecutor& executor, const Json& request) {
++  cb::RawTargetStep step;
++  step.tokens = request.at("tokens").get<std::vector<int64_t>>();
++  step.seq_ids = request.at("seq_ids").get<std::vector<int32_t>>();
++  require(
++      !step.tokens.empty() && step.tokens.size() == step.seq_ids.size(),
++      "token and sequence widths");
++  auto& control = executor.cache_control();
++  std::map<int32_t, int64_t> next;
++  for (const auto id : step.seq_ids) {
++    const auto inserted = next.emplace(id, control.pos(id));
++    step.positions.push_back(inserted.first->second++);
++  }
++  step.logit_indices = request.at("select").get<std::vector<int64_t>>();
++  std::vector<int64_t> argmax;
++  Json outputs = Json::array();
++  const bool save_logits = request.value("save_logits", false);
++  const std::string tag = request.value("tag", std::string("step"));
++  require(
++      !tag.empty() && tag.find("..") == std::string::npos &&
++          tag.find_first_not_of(
++              "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.") ==
++              std::string::npos,
++      "diagnostic tag");
++  size_t part = 0;
++  const bool ok =
++      executor.execute_raw(step, [&](const cb::RawTargetOutput& out) {
++        const size_t rows = out.selected_indices.size();
++        if (rows == 0) {
++          return true;
++        }
++        if (save_logits) {
++          const auto& logits = out.logits;
++          require(
++              logits.dim() == 2 &&
++                  logits.scalar_type() == executorch::aten::ScalarType::Float &&
++                  logits.strides()[1] == 1,
++              "expected dense-row FP32 selected logits");
++          const size_t vocab = executor.vocab_size();
++          std::vector<float> host(rows * vocab);
++          if (logits.device_type() == executorch::aten::DeviceType::CUDA) {
++            require(
++                cudaDeviceSynchronize() == cudaSuccess,
++                "logits synchronization");
++            require(
++                cudaMemcpy2D(
++                    host.data(),
++                    vocab * sizeof(float),
++                    logits.const_data_ptr<float>(),
++                    logits.strides()[0] * sizeof(float),
++                    vocab * sizeof(float),
++                    rows,
++                    cudaMemcpyDeviceToHost) == cudaSuccess,
++                "logits device copy");
++          } else {
++            for (size_t row = 0; row < rows; ++row) {
++              std::copy_n(
++                  logits.const_data_ptr<float>() + row * logits.strides()[0],
++                  vocab,
++                  host.data() + row * vocab);
++            }
++          }
++          const auto path = std::filesystem::path(FLAGS_output_dir) /
++              (tag + "-" + std::to_string(part++) + ".f32");
++          require(!std::filesystem::exists(path), "preserve prior logits");
++          std::ofstream file(path, std::ios::binary);
++          file.write(
++              reinterpret_cast<const char*>(host.data()),
++              static_cast<std::streamsize>(host.size() * sizeof(float)));
++          require(file.good(), "write logits");
++          outputs.push_back(
++              {{"file", path.string()},
++               {"shape", {rows, vocab}},
++               {"selected_indices", out.selected_indices}});
++        }
++        if (request.value("argmax", true)) {
++          const auto sampled = executor.argmax_rows(out.logits, rows);
++          require(sampled.has_value(), "device argmax");
++          argmax.insert(argmax.end(), sampled->begin(), sampled->end());
++        }
++        return true;
++      });
++  require(ok, "actual executor step failed; do not continue owners");
++  return {{"argmax", argmax}, {"logits", outputs}};
++}
++
++} // namespace
++
++int main(int argc, char** argv) {
++  gflags::ParseCommandLineFlags(&argc, &argv, true);
++  require(
++      !FLAGS_pte.empty() && std::filesystem::is_directory(FLAGS_output_dir),
++      "model and unique output directory required");
++  const int protocol_fd = dup(STDOUT_FILENO);
++  require(protocol_fd >= 0, "duplicate stdout");
++  require(dup2(STDERR_FILENO, STDOUT_FILENO) >= 0, "route model diagnostics");
++  std::FILE* protocol = fdopen(protocol_fd, "w");
++  require(protocol != nullptr, "protocol output");
++  try {
++    cb::CudaExecutorConfig config;
++    config.model_path = FLAGS_pte;
++    if (!FLAGS_data_path.empty()) {
++      config.data_files.push_back(FLAGS_data_path);
++    }
++    config.max_sessions = FLAGS_max_sessions;
++    config.max_session_tokens = FLAGS_max_context;
++    config.initial_capacity = FLAGS_initial_kv_capacity;
++    config.options.cuda_graph_for_static_methods = true;
++    auto created = cb::CudaExecutor::create(config);
++    require(created.ok(), "create actual CUDA executor");
++    auto executor = std::move(*created);
++    require(executor->initialize(), "initialize actual CUDA executor");
++    std::fprintf(
++        protocol,
++        "%s\n",
++        Json({{"ready", true}, {"snapshot", snapshot(*executor)}})
++            .dump()
++            .c_str());
++    std::fflush(protocol);
++    std::string line;
++    while (std::getline(std::cin, line)) {
++      const auto request = Json::parse(line);
++      const std::string op = request.at("op");
++      Json result;
++      const auto start = std::chrono::steady_clock::now();
++      auto& control = executor->cache_control();
++      if (op == "new") {
++        const auto id = control.seq_new();
++        require(id.has_value(), "new owner");
++        result["seq_id"] = *id;
++      } else if (op == "remove") {
++        require(
++            control.seq_rm(request.at("seq_id").get<int32_t>()),
++            "remove owner");
++      } else if (op == "clone") {
++        const auto id = control.seq_clone(
++            request.at("seq_id").get<int32_t>(), request.at("upto").get<int>());
++        require(id.has_value(), "clone owner");
++        result["seq_id"] = *id;
++      } else if (op == "compact") {
++        require(
++            executor->compact_kv_columns(request.value("spare_columns", 0)) ==
++                Error::Ok,
++            "compact physical KV");
++      } else if (op == "step") {
++        result = run_step(*executor, request);
++      } else if (op != "metrics") {
++        throw std::runtime_error("unknown diagnostic operation");
++      }
++      require(cudaDeviceSynchronize() == cudaSuccess, "operation completion");
++      result["elapsed_seconds"] = std::chrono::duration<double>(
++                                      std::chrono::steady_clock::now() - start)
++                                      .count();
++      result["snapshot"] = snapshot(*executor);
++      result["op"] = op;
++      std::fprintf(protocol, "%s\n", result.dump().c_str());
++      std::fflush(protocol);
++    }
++  } catch (const std::exception& error) {
++    std::fprintf(
++        protocol,
++        "%s\n",
++        Json({{"failed", true}, {"detail", error.what()}}).dump().c_str());
++    std::fflush(protocol);
++    std::fclose(protocol);
++    return 1;
++  }
++  std::fclose(protocol);
++  return 0;
++}

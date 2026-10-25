@@ -1,0 +1,115 @@
+{
+  "base_commit": "fca4fb36c86b21f4363fa66fc6c1e259cbe6fd89",
+  "patch_sha256": "65aed3979c87d8b42c1814baaa337961b20270b5ceecb52d2b56cf8afc6fde9e",
+  "changed_files": {
+    "backends/cuda/batching/cuda_executor.cpp": {
+      "before_sha256": "4db6d9f768fb2c6d280321ebbb1b624a7182527ccb5cca97215d222a93658e4c",
+      "after_sha256": "570bc1ca081b4577b75752830b8a611fa2232174ce484bf5adb423226e372d1d",
+      "bytes": 45222
+    },
+    "backends/cuda/batching/cuda_executor.h": {
+      "before_sha256": "ea130a8a59413775e100c23aa779daad070c60a0f91acbef1500f7f69162bfcf",
+      "after_sha256": "c1b90cf386b81ee7738daace68e7fdd9bb7b4b697084de5644c0f9c8797e7d62",
+      "bytes": 12915
+    },
+    "backends/cuda/passes/lower_offgraph_kv.py": {
+      "before_sha256": "dc1a7b0d3876506efa160b7208b8173fb9985d9f48d20e9bb41bd85497740116",
+      "after_sha256": "97a56f0734c80fe1245c3d70c8ac21339c1ab284a75a87c06d1b197dd5cbad10",
+      "bytes": 34843
+    },
+    "backends/cuda/runtime/cuda_kv_cache.cpp": {
+      "before_sha256": "183a06c7c799045d6f976e11213edccf37c61d8f365620b10e94decdee849ee0",
+      "after_sha256": "e262c9b30d9c2a44e90ce9362fac7fd9b941a314f04c4f721ab7e09c813229d8",
+      "bytes": 60440
+    },
+    "backends/cuda/runtime/cuda_kv_cache.h": {
+      "before_sha256": "4022d4af972d766c5937af10e0fcfbafa8b258e23ccee925d1d947dfa6369f1d",
+      "after_sha256": "170b69c1d1f70573e4b35addc1855473dc8c8ceb107b722e9d98c0cda5a26e70",
+      "bytes": 10035
+    },
+    "backends/cuda/runtime/cuda_kv_pool.cpp": {
+      "before_sha256": "45f9c2937dad2ba75fb65014c740e9538448bcb6b4e00cc27918b8ada3f627d6",
+      "after_sha256": "fca0e64fb42bcbeb63776e4c4128e9eafb4e840e5701ccdadfb7e55f692a93d8",
+      "bytes": 29523
+    },
+    "backends/cuda/runtime/cuda_kv_pool.h": {
+      "before_sha256": "3d7e3f903d7b0f94e1a0546865427f15f26986b331a5f9bd91558a225b5965a3",
+      "after_sha256": "9609d1882a775317086cad311bc202783863e8e245907a21d84f1b3cecc3fad7",
+      "bytes": 7895
+    },
+    "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
+      "before_sha256": "df1d9a2e26b8e8f4bfc47ebda4917d179aaed936a5c73c5a01f8cf673e602704",
+      "after_sha256": "67fd44dda5296764bbd7758d3dd77ae46bd4df002672de9778cf4127a8d7b37e",
+      "bytes": 118334
+    },
+    "backends/cuda/tests/test_offgraph_kv_batched_sequence.py": {
+      "before_sha256": "6059514d52ed3c3666757fedf3b90e5ac7372dad57a95724cdfbcbb5e6d1ec84",
+      "after_sha256": "c44240fb6164de70d9f0c38c0a226d15ff4ab177e995c79cece2203abdf49d2d",
+      "bytes": 20258
+    },
+    "backends/cuda/triton/kernels/sdpa_varlen.py": {
+      "before_sha256": "93a94c27efc4a256324d47b805860c4aab9433fba38b259468f2236c8d1f6e16",
+      "after_sha256": "6fe7426630b1080971a4315afb8e4a3156f6717029e5792218ebf33798791e5d",
+      "bytes": 20766
+    },
+    "examples/models/muse-glimmer/CMakeLists.txt": {
+      "before_sha256": "60f140961bafa674116c7d10addeae27f61f13f196d49f275c49b1c0607e4790",
+      "after_sha256": "d6fcb87a925232507def76ca0421a6981d9833c916f1a534cccf2016dc6907da",
+      "bytes": 14432
+    },
+    "examples/models/muse-glimmer/export/export_solo.py": {
+      "before_sha256": "d0a00dc34ae219de6879b985586d7fc83693d4340f1765a4bd3490361de303ec",
+      "after_sha256": "fac8b0dd3817d3e2e8a48ce4917891eaa47ae78dad3ac3c6914f19542549ec01",
+      "bytes": 53255
+    },
+    "extension/llm/cache/cache.h": {
+      "before_sha256": "8f9a5ad90f1c99c9af76ee5e9aad0f74cea1278e22d1087797e84623a09c9c9a",
+      "after_sha256": "992df6c6bc6b007db46f93245c3d1b946295e1ca1a3a77ecde441113f12e058d",
+      "bytes": 9098
+    },
+    "examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp": {
+      "before_sha256": null,
+      "after_sha256": "a5a476cfca60408bd62c9905e3cb34699208a227e03f58f547659a5f6cc589fe",
+      "bytes": 10006
+    }
+  },
+  "unchanged_quant_files": [
+    "backends/cuda/triton/kernels/int4_quantized_gemm.py",
+    "backends/cuda/triton/kernels/int6_quantized_gemm.py",
+    "backends/cuda/triton/kernels/quantized_gemm_utils.py"
+  ],
+  "selected_baseline_sha256": {
+    "backends/cuda/triton/kernels/sdpa_varlen.py": "5ce65105639785e625739c90c0b208a77d12f8544208c85aa66e143d34a4e8ea",
+    "examples/models/muse-glimmer/export/export_solo.py": "0d15daa77d116b48296cb5f7248e9f6e5b424851d6fa22a7ecdfb8eec835007a"
+  },
+  "existing_selected_source_changes_included": [
+    "Current length-bounded ring attention, D128 decode M1..16 route and existing D512 support",
+    "Current O2 AOTI wrapper optimization"
+  ],
+  "new_runtime_change": "Versioned runtime physical column pitch and explicit safe-boundary storage compaction; original logical admission limit is preserved",
+  "compiled": false,
+  "GPU_tested": false,
+  "model_exported": false,
+  "candidate_accepted": false,
+  "GPU_start_gate": {
+    "performance": 100,
+    "full_quality": 40,
+    "smoke_quality": 60,
+    "all_independently_accepted": true
+  },
+  "invariants": {
+    "logical_context": 131072,
+    "initial_KV": 512,
+    "static_forwards": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "new_KA_tuning": false,
+    "same_main_GGUF": true
+  }
+}
