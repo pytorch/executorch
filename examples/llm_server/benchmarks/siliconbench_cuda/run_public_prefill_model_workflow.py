@@ -30,7 +30,7 @@ def main():
     p.add_argument('--screen-job', type=Path, required=True)
     p.add_argument('--job-dir', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
-    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata','native-branch-control'], default='small-bulk')
     p.add_argument('--reuse-original-workflow', type=Path,
                    help='Reuse verified reference artifact and delegate proof; export only the routed public arm')
     a = p.parse_args()
@@ -45,9 +45,12 @@ def main():
                  'public_prefill_export_hook.py', 'public_bulk_w4a16_aoti.py',
                  'public_grouped_w4a16.py', 'public_grouped_w4a16_aoti.py']:
         assert sha(package / name) == manifest['files'][name]['sha256']
-    if a.port_kind == 'prepared-metadata':
+    if a.port_kind in ['prepared-metadata','native-branch-control']:
         for name in ['public_prefill_prepared_groups.py','public_prefill_prepared_groups_aoti.py']:
             assert sha(package/name) == manifest['files'][name]['sha256']
+    if a.port_kind == 'native-branch-control':
+        name = 'public_prefill_native_branch_control.py'
+        assert sha(package/name) == manifest['files'][name]['sha256']
 
     def state(status, **fields):
         record = dict(status=status, controller_pid=os.getpid(),
@@ -109,13 +112,13 @@ def main():
                  '--et-source', a.et_source, '--gguf', a.gguf,
                  '--output', delegate, '--screen-results', a.screen_job / 'results.json',
                  '--lock', a.lock], 'linear-delegate', 7200)
-        if a.port_kind == 'prepared-metadata':
+        if a.port_kind in ['prepared-metadata','native-branch-control']:
             # A prior small-bulk delegate does not prove this new operator.
             delegate = a.job_dir / 'prepared-linear-delegate'
             run([sys.executable,'-B',package/'probe_public_prefill_ET_delegate.py',
                  '--et-source',a.et_source,'--gguf',a.gguf,'--output',delegate,
                  '--screen-results',a.screen_job/'results.json','--lock',a.lock,
-                 '--prepared-groups'],'prepared-linear-delegate',7200)
+                 '--native-branch-control' if a.port_kind == 'native-branch-control' else '--prepared-groups'],'prepared-linear-delegate',7200)
         proof = json.loads((delegate / 'results.json').read_text())
         assert proof['ET_edge_and_CUDA_serialization_pass'] and len(proof['artifacts']) == 4
         artifacts = {}

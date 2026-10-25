@@ -1,7 +1,8 @@
-"""Export an isolated original/public 4-layer MG prefill integration pair.
+"""Export an isolated original/public MG prefill integration artifact.
 
-Use original GGUF layers 0..3 and complete embeddings/head. This is a
-feasibility model; export success is never full-model quality/perf acceptance.
+The default uses original GGUF layers 0..3 and complete embeddings/head.
+An explicit 52-layer trial verifies the primary artifact and 21-owner geometry.
+Export success is never model quality/performance acceptance.
 Both arms retain static methods, BF16, selected logits, and original packing.
 """
 import argparse
@@ -33,7 +34,11 @@ def main():
     p.add_argument('--gguf', type=Path, required=True)
     p.add_argument('--delegate-proof', type=Path, required=True)
     p.add_argument('--arm', choices=['original', 'public'], required=True)
-    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata','native-branch-control'], default='small-bulk')
+    p.add_argument('--n-layers', type=int, choices=[4, 12, 52], default=4)
+    p.add_argument('--max-kv-seqs', type=int, choices=[21, 32], default=32)
+    p.add_argument('--reference-full-artifact', type=Path,
+                   help='For full-model trials, verify the selected primary artifact and its geometry')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--job', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
@@ -59,7 +64,7 @@ def main():
                 with (a.job / 'export.log').open('x') as f:
                     subprocess.run([sys.executable, '-B', '-u', str(Path(__file__).resolve()),
                         *sys.argv[1:], '--owned-worker'], stdout=f, stderr=subprocess.STDOUT,
-                        check=True, timeout=7200)
+                        check=True, timeout=21600 if a.n_layers == 52 else 7200)
                 assert json.loads((a.job / 'progress.json').read_text())['status'] == 'artifact-audited'
                 state('completed', artifact=str(a.output), numerical_runtime_and_perf_pending=True)
             except Exception as e:
@@ -70,6 +75,24 @@ def main():
     proof = json.loads(a.delegate_proof.read_text())
     assert proof['ET_edge_and_CUDA_serialization_pass'] and len(proof['artifacts']) == 4
     assert sha(a.gguf) == '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
+    reference_full = None
+    if a.n_layers == 52:
+        assert a.arm == 'public' and a.max_kv_seqs == 21
+        assert a.reference_full_artifact is not None
+        reference_full = json.loads((a.reference_full_artifact / 'artifact-audit.json').read_text())
+        assert reference_full['GGUF_sha256'] == sha(a.gguf)
+        assert reference_full['constant_metadata']['get_n_caches'] == 52
+        assert reference_full['constant_metadata']['get_max_prefill_chunk'] == 2048
+        assert reference_full['constant_metadata']['get_max_context_len'] == 131072
+        assert reference_full['constant_metadata']['get_activation_dtype'] == 'bfloat16'
+        assert reference_full['max_resident_sequences'] == 21
+        assert reference_full['physical_columns'] == 22
+        assert reference_full['static_methods'] == [1, 2, 4, 8, 16, 32, 64]
+        assert reference_full['selected_output_bound'] == [64, 202048]
+        for name, record in reference_full['artifacts'].items():
+            assert sha(a.reference_full_artifact / name) == record['sha256']
+    else:
+        assert a.reference_full_artifact is None
     cache = a.job / 'cache'
     (cache / 'host-zero-backed').mkdir(parents=True)
     if a.seed_reference_export_cache is not None:
@@ -110,6 +133,10 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 0)
     torch.set_num_threads(2)
     source_sha = sha(dispatch.__file__)
+    if reference_full:
+        for name, digest in reference_full['quant_source_sha256'].items():
+            assert sha(a.et_source / 'backends/cuda/triton/kernels' / name) == digest
+        assert reference_full['attention_source_sha256'] == sha(ref)
     original_options = CudaBackend.get_aoti_compile_options
 
     def optimized(cls, specs):
@@ -132,6 +159,8 @@ def main():
         from public_prefill_export_hook import install_bulk_prefill_port
         if a.port_kind == 'prepared-metadata':
             from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
+        if a.port_kind == 'native-branch-control':
+            from public_prefill_export_hook import install_native_branch_control as install_bulk_prefill_port
         hook = install_bulk_prefill_port(dispatch, capability=(12, 0), enabled=True)
         assert hook['installed']
     else:
@@ -139,12 +168,12 @@ def main():
         assert 'public_bulk_w4a16_aoti' not in sys.modules
     state('loading-original-GGUF')
     full = MuseGlimmerConfig(max_seq_len=131072)
-    config = replace(full, n_layers=4)
+    config = replace(full, n_layers=a.n_layers)
     atomic = loader._atomic_sd_from_gguf(str(a.gguf), torch.bfloat16)
     retained = {}
     for name, value in atomic.items():
         match = re.match(r'^layers\.(\d+)\.', name)
-        if match is None or int(match.group(1)) < 4:
+        if match is None or int(match.group(1)) < a.n_layers:
             retained[name] = value
     del atomic
     model = loader._finalize(retained, 'cuda', config, torch.bfloat16)
@@ -157,7 +186,7 @@ def main():
     # attribute. The wrapper observes the real strict model export.
     original_export = torch.export.export
     graph_audits = []
-    target = ('siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
+    target = ('siliconbench.public_native_prefill_control' if a.port_kind == 'native-branch-control' else 'siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
               else 'siliconbench.public_bulk_w4a16')
     if a.arm == 'public':
         from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
@@ -185,10 +214,10 @@ def main():
         return program
 
     torch.export.export = traced_export
-    state('exporting-mini')
+    state('exporting-model', n_layers=a.n_layers, max_kv_seqs=a.max_kv_seqs)
     exporter.export_cuda_batching(model, config, str(a.output), max_step_tokens=2048,
         max_cells=65536, forward_sizes=[1, 2, 4, 8, 16, 32, 64],
-        device_sampling=True, kv_layout='sequence', max_kv_seqs=32)
+        device_sampling=True, kv_layout='sequence', max_kv_seqs=a.max_kv_seqs)
     from executorch.exir._serialize._program import deserialize_pte_binary
     program = deserialize_pte_binary((a.output / 'model.pte').read_bytes()).program
     methods = {plan.name: plan for plan in program.execution_plan}
@@ -197,12 +226,15 @@ def main():
     assert out.sizes == [64, 202048]
     assert sha(dispatch.__file__) == source_sha
     assert sum(item['candidate_operator_calls'] for item in graph_audits) == expected_routes
-    audit = dict(arm=a.arm, n_layers=4, miniature_not_full_MG=True,port_kind=a.port_kind,
+    if reference_full:
+        assert sha(a.output / 'aoti_cuda_blob.ptd') == reference_full['artifacts']['aoti_cuda_blob.ptd']['sha256'], 'Full-model weight payload must match the accepted primary artifact'
+    audit = dict(arm=a.arm, n_layers=a.n_layers, miniature_not_full_MG=a.n_layers != 52,port_kind=a.port_kind,
         GGUF_SHA256=sha(a.gguf), original_dispatch_source_SHA256=source_sha,
         hook=hook, actual_export_graph_route_audit=graph_audits,
         actual_export_candidate_calls=expected_routes,
         reference_cache_copied=a.seed_reference_export_cache is not None,
-        logical_context=131072, max_step_tokens=2048, max_kv_seqs=32,
+        logical_context=131072, max_step_tokens=2048, max_kv_seqs=a.max_kv_seqs,
+        primary_full_reference_verified=reference_full is not None,
         static_forwards=[1, 2, 4, 8, 16, 32, 64], selected_logits=out.sizes,
         runtime_numeric_and_perf_pending=True, full_model_or_HTTP_accepted=False,
         artifacts={n:dict(SHA256=sha(a.output / n), bytes=(a.output / n).stat().st_size)

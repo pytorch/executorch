@@ -30,7 +30,9 @@ def main():
     p.add_argument('--screen-results', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
     p.add_argument('--prepared-groups', action='store_true')
+    p.add_argument('--native-branch-control', action='store_true')
     a = p.parse_args()
+    assert not (a.prepared_groups and a.native_branch_control)
     a.output.mkdir(exist_ok=False)
     report = dict(model_accepted=False, HTTP_accepted=False, KA_started=False,
                   cases=[], artifacts={}, controller_pid=os.getpid())
@@ -64,9 +66,11 @@ def main():
             from public_prefill_export_hook import install_bulk_prefill_port
             if a.prepared_groups:
                 from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
-            target = ('siliconbench.public_prepared_prefill_a16' if a.prepared_groups
+            if a.native_branch_control:
+                from public_prefill_export_hook import install_native_branch_control as install_bulk_prefill_port
+            target = ('siliconbench.public_native_prefill_control' if a.native_branch_control else 'siliconbench.public_prepared_prefill_a16' if a.prepared_groups
                       else 'siliconbench.public_bulk_w4a16')
-            report['port_kind'] = 'prepared-metadata' if a.prepared_groups else 'small-bulk'
+            report['port_kind'] = 'native-branch-control' if a.native_branch_control else 'prepared-metadata' if a.prepared_groups else 'small-bulk'
             assert torch.cuda.get_device_capability() == (12, 0)
             torch.set_num_threads(2)
             original = dispatch._dequant_matmul

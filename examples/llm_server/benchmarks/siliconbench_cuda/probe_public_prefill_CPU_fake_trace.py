@@ -15,7 +15,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--et-source', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
-    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata','native-branch-control'], default='small-bulk')
     a = p.parse_args(); assert not a.output.exists()
     sys.path.insert(0,str(a.et_source.parent))
     import torch
@@ -23,7 +23,9 @@ def main():
     from public_prefill_export_hook import install_bulk_prefill_port
     if a.port_kind == 'prepared-metadata':
         from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
-    target = ('siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
+    if a.port_kind == 'native-branch-control':
+        from public_prefill_export_hook import install_native_branch_control as install_bulk_prefill_port
+    target = ('siliconbench.public_native_prefill_control' if a.port_kind == 'native-branch-control' else 'siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
               else 'siliconbench.public_bulk_w4a16')
     original = dispatch._dequant_matmul
     off = install_bulk_prefill_port(dispatch,capability=(8,0),enabled=True)

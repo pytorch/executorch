@@ -1,8 +1,9 @@
-"""Compare original/public mini MG through the actual CUDA executor API.
+"""Compare original/public MG through the actual CUDA executor API.
 
 Every measured forward starts with exactly 1K private history for only its
 active owners. History rebuilding and saved-logit copies are untimed. This is
-four-layer feasibility evidence, never full-model F1 or HTTP acceptance.
+four-layer feasibility evidence by default. A 52-layer trial still requires
+separate full-model F1 and HTTP acceptance.
 """
 import argparse
 import fcntl
@@ -36,6 +37,9 @@ def main():
     p.add_argument('--nsys', type=Path)
     p.add_argument('--warmup', type=int, default=5)
     p.add_argument('--repetitions', type=int, default=12)
+    p.add_argument('--expected-n-layers', type=int, choices=[4, 52], default=4)
+    p.add_argument('--runtime-sessions', type=int, choices=[16, 32], default=32)
+    p.add_argument('--workflow-pair-filename', default='mini-pair-exports.json')
     a = p.parse_args()
     assert a.warmup >= 5 and a.repetitions >= 4 and not a.job_dir.exists()
     a.job_dir.mkdir(parents=True)
@@ -43,7 +47,7 @@ def main():
     def state(status, **fields):
         temp = a.job_dir / 'progress.pending.json'
         temp.write_text(json.dumps(dict(status=status, controller_pid=os.getpid(),
-            mini_model=True, full_model_or_HTTP_accepted=False,
+            mini_model=a.expected_n_layers != 52, full_model_or_HTTP_accepted=False,
             new_KA=False, **fields), indent=2) + '\n')
         temp.replace(a.job_dir / 'progress.json')
     state('waiting-existing-mini-exports')
@@ -52,13 +56,14 @@ def main():
         assert accepted['independently_accepted'] and accepted['correctness_protocol_verified']
         assert [accepted[k] for k in ['performance_cells', 'full_quality_cells', 'smoke_quality_cells']] == [100, 40, 60]
         deadline = time.monotonic() + 20000
-        while not (a.workflow_job / 'mini-pair-exports.json').exists():
+        assert a.workflow_pair_filename in ['mini-pair-exports.json', 'model-pair-exports.json']
+        while not (a.workflow_job / a.workflow_pair_filename).exists():
             s = json.loads((a.workflow_job / 'progress.json').read_text())
             assert s['status'] != 'failed', s
             os.kill(int(s['controller_pid']), 0)
             assert time.monotonic() < deadline, 'Observation expired; do not restart exports'
             time.sleep(15)
-        pair = json.loads((a.workflow_job / 'mini-pair-exports.json').read_text())
+        pair = json.loads((a.workflow_job / a.workflow_pair_filename).read_text())
         build = json.loads(a.CPU_build_progress.read_text())
         assert build['status'] == 'CPU-build-completed'
         probe = Path(next(k for k in build['binaries'] if Path(k).name == 'muse_glimmer_runtime_kv_probe'))
@@ -67,7 +72,9 @@ def main():
         for arm in ['original', 'public']:
             paths[arm] = Path(pair['artifacts'][arm]['path'])
             audit = pair['artifacts'][arm]['audit']
-            assert audit['n_layers'] == 4 and audit['logical_context'] == 131072
+            assert audit['n_layers'] == a.expected_n_layers and audit['logical_context'] == 131072
+            if a.expected_n_layers == 52:
+                assert a.runtime_sessions == 16 and audit['max_kv_seqs'] == 21
             assert audit['static_forwards'] == [1, 2, 4, 8, 16, 32, 64]
             assert audit['selected_logits'] == [64, 202048]
             for name, item in audit['artifacts'].items():
@@ -78,7 +85,8 @@ def main():
             '--source', str(a.et_source), '--fixed', str(paths['original'] / 'aoti_cuda_blob.ptd'),
             '--runtime', str(paths['public'] / 'aoti_cuda_blob.ptd'), '--output', str(weight_review)], check=True)
         assert json.loads(weight_review.read_text())['all_quantized_and_nonquantized_storage_sha256_equal']
-        mixes = [('d1', 1, 0), ('d8', 8, 0), ('d32', 32, 0),
+        largest_decode = a.runtime_sessions
+        mixes = [('d1', 1, 0), ('d8', 8, 0), (f'd{largest_decode}', largest_decode, 0),
                  ('p64', 0, 64), ('p128', 0, 128), ('p512', 0, 512),
                  ('p2048', 0, 2048), ('d8p64', 8, 64), ('d8p512', 8, 512)]
         records = []
@@ -110,7 +118,7 @@ def main():
                     directory.mkdir()
                     command = [str(probe), '--pte=' + str(paths[arm] / 'model.pte'),
                         '--data_path=' + str(paths[arm] / 'aoti_cuda_blob.ptd'),
-                        '--output_dir=' + str(directory), '--max_sessions=32',
+                        '--output_dir=' + str(directory), '--max_sessions=' + str(a.runtime_sessions),
                         '--max_context=131072', '--initial_kv_capacity=512']
                     if a.nsys and round_number == 1:
                         command = [str(a.nsys), 'profile', '--trace=cuda,nvtx',
@@ -226,6 +234,7 @@ def main():
             performance.append(dict(mix=name, arms=arms,
                 public_over_original=arms['public']['last3_mean_seconds']/arms['original']['last3_mean_seconds']))
         report = dict(four_rounds_first_discarded=True, raw=records, numerical=numeric,
+            n_layers=a.expected_n_layers, runtime_sessions=a.runtime_sessions,
             mini_numeric_pass=all(r['numerical_pass'] for r in numeric),
             performance=performance, actual_executor_API=True,
             same_weight_payload_review_SHA256=sha(weight_review),

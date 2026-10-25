@@ -62,7 +62,7 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
     return receipt
 
 
-def install_prepared_prefill_port(dispatch, *, capability, enabled=False):
+def install_prepared_prefill_port(dispatch, *, capability, enabled=False, native_branch_control=False):
     """Separate opt-in experiment for prepared metadata at M512/M520.
 
     Keep the rejected small-bulk experiment separate. All static methods and
@@ -73,13 +73,16 @@ def install_prepared_prefill_port(dispatch, *, capability, enabled=False):
                    original_dispatch_identical=True, static_forwards_changed=False,
                    weight_encoding_changed=False, A16=True,
                    only_dynamic_bulk=True, candidate_sizes=[512,520],
-                   temporary_metadata=True, persistent_extra_model_copy=False)
+                   temporary_metadata=not native_branch_control,
+                   native_branch_control=native_branch_control, persistent_extra_model_copy=False)
     if not enabled or tuple(capability) != (12,0):
         return receipt
     assert hashlib.sha256(Path(dispatch.__file__).read_bytes()).hexdigest() == DISPATCH_SHA256
     import torch
     from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import can_launch_triton
     from public_prefill_prepared_groups_aoti import prepared_prefill_op
+    if native_branch_control:
+        from public_prefill_native_branch_control import native_prefill_control as prepared_prefill_op
 
     def route(x, q, sc, ss, z, zs, group_size):
         shape = (q.shape[0], q.shape[1]*2)
@@ -97,3 +100,8 @@ def install_prepared_prefill_port(dispatch, *, capability, enabled=False):
                    other_shapes_and_static_M_use_original=True,
                    bulk_arithmetic='staged BF16 reconstruction without FMA')
     return receipt
+
+
+def install_native_branch_control(dispatch, *, capability, enabled=False):
+    return install_prepared_prefill_port(dispatch, capability=capability,
+        enabled=enabled, native_branch_control=True)
