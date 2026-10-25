@@ -37,8 +37,11 @@ def main():
     p.add_argument('--M', nargs='+', type=int, default=[64, 72, 128, 256, 512, 520])
     p.add_argument('--max-seconds', type=int, default=21600)
     p.add_argument('--actual-row-grid', action='store_true')
+    p.add_argument('--stop-on-regression', action='store_true',
+                   help='Stop each role at its first measured native slowdown')
     a = p.parse_args()
-    assert all(5 <= m <= 1024 for m in a.M)
+    assert all(5 <= m <= 16384 for m in a.M)
+    if a.stop_on_regression:assert a.M == sorted(set(a.M))
     a.output.mkdir(parents=True, exist_ok=False)
     report = dict(cases=[], rounds=4, discard_first=True, activation='BF16', accumulation='FP32',
                   weights_requantized=False, new_KA=False, model_or_HTTP_accepted=False)
@@ -206,6 +209,12 @@ def main():
                             numerical_arithmetic_difference_disclosed=True))
                         report['autotune_graph_timing'] = dict(vars(timing_stats))
                         state('case-completed', role=role, M=m, completed_cases=len(report['cases']))
+                        if a.stop_on_regression and means['candidate'] > means['fallback']:
+                            report.setdefault('first_measured_regression', {})[role] = {
+                                'M': m, 'candidate_over_complete_fallback': means['candidate']/means['fallback'],
+                                'remaining_larger_M_skipped': [value for value in a.M if value > m]}
+                            state('role-stopped-at-measured-regression', role=role, M=m)
+                            break
                     del oracle_weight, w, module, weight
                     torch.cuda.empty_cache()
             state('completed-operator-screen-pending-full-forward-validation', completed_cases=len(report['cases']))
