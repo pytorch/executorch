@@ -74,6 +74,7 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "model/__init__.py",
                 "model/apply_rope.py",
+                "model/audio_encoder.py",
                 "model/embedding.py",
                 "model/feed_forward.py",
                 "model/layernorm.py",
@@ -82,6 +83,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/examples/qualcomm:utils",
                 "//executorch/examples/models/llama:transformer_modules",
                 "fbsource//third-party/pypi/transformers:transformers",
             ],
@@ -174,10 +176,12 @@ def define_common_targets(is_fbcode = False):
                 "dataset/builders.py",
                 "dataset/collators.py",
                 "dataset/config.py",
+                "dataset/constants.py",
                 "dataset/datasets.py",
                 "dataset/loaders.py",
                 "dataset/preprocessors.py",
                 "dataset/schema.py",
+                "dataset/targets.py",
             ],
             deps = [
                 ":decoder_constants",
@@ -196,14 +200,38 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "quantize/__init__.py",
                 "quantize/ptq.py",
+                "quantize/qat.py",
                 "quantize/strategy.py",
             ],
             deps = [
                 ":decoder_constants",
                 ":inference",
+                ":train",
                 ":utils",
                 "//caffe2:torch",
                 "//executorch/backends/qualcomm/_passes:passes",
+            ],
+        )
+
+        runtime.python_library(
+            name = "train",
+            srcs = [
+                "train/__init__.py",
+                "train/config/__init__.py",
+                "train/config/config.py",
+                "train/loss.py",
+                "train/trainer.py",
+                "train/utils.py",
+            ],
+            resources = [
+                "train/config/lr_config.yaml",
+                "train/config/qad.yaml",
+            ],
+            deps = [
+                ":dataset",
+                "//caffe2:torch",
+                "fbsource//third-party/pypi/pyyaml:pyyaml",
+                "fbsource//third-party/pypi/tqdm:tqdm",
             ],
         )
 
@@ -298,8 +326,10 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/examples/models/codegen:codegen",
                 "//executorch/examples/models/gemma:gemma",
                 "//executorch/examples/models/gemma2:gemma2",
+                "//executorch/examples/models/gemma4:gemma4",
                 "//executorch/examples/models/glm:glm",
                 "//executorch/examples/models/granite:granite",
+                "//executorch/examples/models/granite_speech:granite_speech",
                 "//executorch/examples/models/internvl3:internvl3",
                 "//executorch/examples/models/smolvlm:smolvlm",
                 "//executorch/examples/models/llama:hf_download",

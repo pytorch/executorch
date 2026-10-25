@@ -152,6 +152,16 @@ CQ8750S (soc_id=705) is not in ExecuTorch's SoC table, causing "No Snapdragon SO
 
 **Workaround**: Wait for SDK v2.43 release or manually add the SoC ID mapping.
 
+### Benign "unexpected GraphHtpSettings option 66" on QNN SDK 2.51
+
+**Symptom**: Host-side (x86) AOT lowering logs this once per graph create:
+```
+[ERROR] [Qnn ExecuTorch]:  <E> unexpected GraphHtpSettings option 66
+```
+Only on QNN SDK 2.51 (2.51.0.260929); versions earlier are clean.
+
+**Status**: **no action needed**. The graph finalizes, inference runs, numerics are unaffected.
+
 ## Resolved Issues (Instructive)
 
 ### Conv1dToConv2d Pass IndexError
@@ -205,6 +215,7 @@ Early versions hardcoded SM8650 in the partitioner, causing failures on other So
 - **v2.42+**: SA8797 (V81) support
 - **v2.43+**: CQ8750S support
 - **v2.44+**: Latest features
+- **v2.50 / v2.51**: bumped in-tree for SM8750; 2.51 logs a benign `GraphHtpSettings option 66` error at AOT (see Active Issues above)
 
 Context binaries are not forward-compatible across SDK versions. [Source: #1430, #4155]
 

@@ -62,6 +62,32 @@ void quantized_relu_out(
     const ::executorch::aten::Tensor& out_shift,
     ::executorch::aten::Tensor& output);
 
+void quantized_layer_norm_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& in_scale,
+    const ::executorch::aten::Tensor& in_zero_point,
+    const ::executorch::aten::IntArrayRef normalized_shape,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    double eps,
+    double output_scale,
+    int64_t output_zero_point,
+    ::executorch::aten::Tensor& out);
+
+void quantized_layer_norm_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    double in_scale,
+    int64_t in_zero_point,
+    const ::executorch::aten::IntArrayRef normalized_shape,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    double eps,
+    double output_scale,
+    int64_t output_zero_point,
+    ::executorch::aten::Tensor& out);
+
 void quantized_linear_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
@@ -168,6 +194,11 @@ void quantized_conv2d_nhwc_per_tensor_out(
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& relu_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& log2_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
     ::executorch::aten::Tensor& out);

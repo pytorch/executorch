@@ -24,6 +24,7 @@ from typing import Any, final, List
 
 from executorch.backends.arm._passes import (
     DecomposeQuantNodesPass,
+    EnsureUniqueOutputNodesPass,
     InsertRescaleInt32Pass,
     RewriteConvPass,
 )
@@ -38,6 +39,7 @@ from executorch.backends.arm.tosa.backend import (
 )
 from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
+    GroupIndependentCustomShadersPass,
     InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
@@ -163,6 +165,9 @@ def _register_vgf_rewrite_passes() -> None:
         FuseGridSamplerFlowOffsetPass(),
     )
     _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
+    _register_pass_before(
+        EnsureUniqueOutputNodesPass, GroupIndependentCustomShadersPass()
+    )
 
 
 def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
