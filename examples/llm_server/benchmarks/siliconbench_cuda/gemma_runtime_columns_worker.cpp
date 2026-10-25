@@ -64,8 +64,8 @@ int main(int argc, char** argv) {
     executor_config.max_session_tokens = FLAGS_max_session_tokens;
     executor_config.initial_capacity = FLAGS_initial_kv_capacity;
     executor_config.options.cuda_graph_for_static_methods = FLAGS_cuda_graphs;
-    executor_config.idle_kv_compaction_ms = FLAGS_idle_kv_compaction_ms;
-    executor_config.idle_kv_spare_columns = FLAGS_idle_kv_spare_columns;
+    executor_config.options.idle_kv_compaction_ms = FLAGS_idle_kv_compaction_ms;
+    executor_config.options.idle_kv_spare_columns = FLAGS_idle_kv_spare_columns;
     auto created = cuda::CudaExecutor::create(executor_config);
     if (!created.ok()) {
       throw std::runtime_error("Could not create Gemma CUDA executor: " +

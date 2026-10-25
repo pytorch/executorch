@@ -22,6 +22,8 @@ def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['qualified-core','python','output']:parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--reuse-prepared-Python',action='store_true',
+                        help='Verify already staged exact payloads without writing them again')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
     package=Path(__file__).resolve().parent
     progress=dict(controller_pid=os.getpid(),CPU_only=True,HTTP_accepted=False)
@@ -43,6 +45,10 @@ def main():
         for name,(before,after) in items.items():
             original=base/name;payload=package/'gemma_runtime_python'/name
             assert sha(payload)==after;ast.parse(payload.read_text())
+            if args.reuse_prepared_Python:
+                assert sha(original)==after,name
+                old[name]='already-staged-exact-payload'
+                continue
             if before is None:assert not original.exists(),name
             else:
                 assert sha(original)==before,name
