@@ -46,7 +46,44 @@ def main():
                    default=['ffn_gate_up','ffn_down'])
     p.add_argument('--test-M',nargs='+',type=int,choices=[8,16,64,72,127,128,129,256,495,*range(496,513)],
                    default=[8,16,64,72,127,128,129,256,511,512])
-    a=p.parse_args();a.output.mkdir(exist_ok=False)
+    p.add_argument('--owned-gpu-worker',action='store_true',help=argparse.SUPPRESS)
+    a=p.parse_args()
+    if not a.owned_gpu_worker:
+        a.output.mkdir(exist_ok=False)
+        (a.output/'lock-owner.json').write_text(json.dumps(dict(pid=os.getpid()))+'\n')
+        def parent_state(status,**fields):
+            (a.output/'progress.json').write_text(json.dumps(dict(status=status,
+                controller_pid=os.getpid(),GPU_lock_held_through_context_teardown=True,**fields))+'\n')
+        parent_state('waiting-GPU-lock')
+        try:
+            with a.lock.open('a') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX)
+                assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid',
+                    '--format=csv,noheader'],text=True).strip()
+                with (a.output/'worker.log').open('x') as log:
+                    child=subprocess.Popen([sys.executable,'-B',str(Path(__file__).resolve()),
+                        *sys.argv[1:],'--owned-gpu-worker'],stdout=log,stderr=subprocess.STDOUT)
+                    parent_state('running-owned-GPU-worker',child_pid=child.pid)
+                    try:
+                        assert child.wait(timeout=14400)==0,'Operator worker failed; retain its log'
+                    except BaseException:
+                        if child.poll() is None:
+                            child.terminate()
+                            try:child.wait(timeout=120)
+                            except subprocess.TimeoutExpired:child.kill();child.wait()
+                        raise
+                deadline=time.monotonic()+60
+                while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid',
+                    '--format=csv,noheader'],text=True).strip():
+                    assert time.monotonic()<deadline,'Keep the lock until CUDA context teardown'
+                    time.sleep(1)
+                result=json.loads((a.output/'results.json').read_text())
+                parent_state('completed',cases=len(result['cases']))
+        except BaseException as exc:
+            parent_state('failed',error_type=type(exc).__name__,detail=str(exc)[-2000:])
+            raise
+        return
+    assert json.loads((a.output/'lock-owner.json').read_text())['pid']==os.getppid()
     report=dict(scope=__doc__,controller_pid=os.getpid(),cases=[],packages={},
                 model_route_changed=False,KA_invoked=False,A100_performance_verified=False,
                 full_model_or_HTTP_accepted=False)
@@ -55,7 +92,9 @@ def main():
         (a.output/'progress.json').write_text(json.dumps(dict(status=status,controller_pid=os.getpid(),**fields))+'\n')
     save('waiting-GPU-lock')
     with a.lock.open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX)
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:pass
+        else:raise RuntimeError('The parent must hold the GPU lock throughout the worker lifetime')
         assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
         try:
             os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(a.output/'inductor-cache'),

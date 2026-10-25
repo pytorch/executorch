@@ -84,8 +84,8 @@
       "bytes": 10583
     },
     "benchmark_public_prefill_gemma_fp32_aoti.py": {
-      "sha256": "092797aaa945a9c960945c05c71e525c6ef374d92f5d9e58e2759ca7d97a7c82",
-      "bytes": 13439
+      "sha256": "9fa6a1ceca55099823b7e33107f5083a442a2dcede1c1ad2a3164d3df6b84ea1",
+      "bytes": 15821
     },
     "benchmark_public_prefill_prepared_groups.py": {
       "sha256": "fa19396b8db1c93604bab0f4c4ee2255a07f0755e257bec18aeb9e2546f53437",
