@@ -116,8 +116,8 @@
       "bytes": 9705
     },
     "bootstrap_roofline_shard.py": {
-      "sha256": "750efcd1743c1e60d9a4f80a096989654e1e464629eb794fbac07ed5fc27efcc",
-      "bytes": 6491
+      "sha256": "5911bb11020bf16160d539a78403a295645c12d11bf38a2a0468123a586b9b47",
+      "bytes": 6800
     },
     "candidates_w4a16_expanded_v5/README.md": {
       "sha256": "0ed115aa02f8d8a41bdce3c58f52892e3a94a2c0d80fb29766926e56604dbe9f",
@@ -476,8 +476,8 @@
       "bytes": 2375
     },
     "prepare_roofline_gpu_sdk.py": {
-      "sha256": "ac5670b91f5058fefc7cba4ff3402825f1cf6d3ea313189f3c84a2753d363cfd",
-      "bytes": 6221
+      "sha256": "9085bc3fac2f57cf45db6b94be1f4b1336a5905405cc1404ca66eaa1e5375eb6",
+      "bytes": 6318
     },
     "prepare_runtime_kv_build.py": {
       "sha256": "d8996283009ee418462a5c1c36039866c4d3b02e68b961de9746359e75764523",

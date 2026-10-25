@@ -42,6 +42,7 @@ def main():
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', CUDA_HOME='/usr/local/cuda',
                TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas', CUDA_VISIBLE_DEVICES='',
                CUDAARCHS='120', TORCH_CUDA_ARCH_LIST='12.0',
+               EXECUTORCH_BUILD_MINIMAL='1',
                MAX_JOBS='8', CMAKE_BUILD_PARALLEL_LEVEL='8', OMP_NUM_THREADS='2',
                UV_CACHE_DIR=str(a.root / 'uv-cache'))
     venv = a.root / 'venv'
@@ -69,12 +70,13 @@ def main():
              'numpy==2.5.4', 'safetensors==0.8.0', 'huggingface-hub==2.2.0',
              'flatbuffers==25.12.19', 'cmake', 'ninja', 'setuptools', 'wheel',
              'packaging', 'ruamel.yaml', 'pyyaml', 'sympy', 'tqdm', 'parameterized',
-             'expecttest', 'antlr4-python3-runtime==4.9.3'])
+             'expecttest', 'antlr4-python3-runtime==4.9.3', 'tabulate', 'patchelf',
+             'pillow', 'tiktoken', 'pytorch-tokenizers', 'sentencepiece', 'requests'])
         state('environment', 'building-public-python-package')
         run(['git', '-C', a.source, 'submodule', 'update', '--init', '--recursive', '--depth', '1'], 5400)
         run([uv, 'pip', 'install', '--python', python, '--no-deps', '--no-build-isolation',
              '--editable', a.source], 5400)
-        run([python, '-B', '-c', 'import torch,triton;from executorch.backends.cuda.triton.kernels import int4_quantized_gemm;from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda;print(torch.__version__,triton.__version__)'])
+        run([python, '-B', '-c', 'import torch,triton;from executorch.backends.cuda.triton.kernels import int4_quantized_gemm;from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda;from executorch.backends.cuda.cuda_backend import CudaBackend;from executorch.exir._serialize._program import deserialize_pte_binary;print(torch.__version__,triton.__version__)'])
         state('environment', 'ready')
 
     name = 'Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf'
@@ -114,7 +116,7 @@ def main():
         command = [python, '-B', Path(__file__).with_name('benchmark_roofline_large_w4a16.py'),
                    '--et-source', a.source, '--gguf', model, '--output', result, '--lock', lock,
                    '--roles', a.role, '--M', '64', '72', '128', '256', '512', '520', '1024',
-                   '--max-seconds', '14400']
+                   '--max-seconds', '14400', '--actual-row-grid']
         run(command, 15000)
         state('screen', 'completed-pending-common-GPU-full-forward-validation')
     except BaseException as error:

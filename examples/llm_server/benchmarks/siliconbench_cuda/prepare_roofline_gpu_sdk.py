@@ -24,6 +24,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for n in ['root','et-source','python','setup-progress','output']:p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--cpp-commit',default='620d2225cc436ab0b001e3200e590e3b286ef9ab')
+    p.add_argument('--only-ET',action='store_true')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     assert len(a.cpp_commit)==40 and all(c in '0123456789abcdef' for c in a.cpp_commit)
     status=dict(controller_pid=os.getpid(),phases={},CPU_only=True,CPP_FORCE_CUBLAS=False,main_results_changed=False)
@@ -75,7 +76,8 @@ def main():
         state('CPP','ready',CPP_binary=str(binary))
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures=[pool.submit(ET),pool.submit(CPP)]
+            futures=[pool.submit(ET)]
+            if not a.only_ET:futures.append(pool.submit(CPP))
             for future in futures:future.result()
         state('controller','completed-pending-GPU-runs')
     except BaseException as error:
