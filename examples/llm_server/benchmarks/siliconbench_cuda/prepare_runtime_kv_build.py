@@ -222,21 +222,12 @@ def main():
             assert digest(source / name) == digest(args.baseline_source / name), name
             controls[name] = digest(source / name)
         assert git(args.baseline_source, "status", "--porcelain") == baseline_status
-        # The unchanged Python binding is only used for later export. Its
-        # native ABI is not changed by this patch; no environment is installed.
-        binding_code = "import executorch.extension.pybindings._portable_lib as p; print(p.__file__)"
-        baseline_env = env.copy()
-        baseline_env["PYTHONPATH"] = str(args.baseline_source.parent)
-        binding = Path(
-            subprocess.check_output(
-                [str(args.python), "-B", "-c", binding_code],
-                env=baseline_env,
-                text=True,
-            ).strip()
-        )
-        binding_dest = source / "extension/pybindings" / binding.name
-        assert not binding_dest.exists()
-        binding_dest.symlink_to(binding)
+        # This workflow exports with pure Python and runs the native C++
+        # executor. The baseline itself has no _portable_lib Python extension;
+        # requiring it here would add an unrelated build prerequisite.
+        alias = source / "examples/models/muse_glimmer"
+        assert not alias.exists() and not alias.is_symlink()
+        alias.symlink_to("muse-glimmer")
         torch_prefix = subprocess.check_output(
             [
                 str(args.python),
