@@ -67,6 +67,10 @@
       "sha256": "09ac966aee4cac6aadce814a93b1f2fa6d7101db5461efa5699a809aac50ac1e",
       "bytes": 20301
     },
+    "benchmark_public_grouped_w4a16.py": {
+      "sha256": "90b908045e5c82d4e8408541cf43ddf13e773208ab31b107509179d1253adb69",
+      "bytes": 17139
+    },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
       "bytes": 11061
