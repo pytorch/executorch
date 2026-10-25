@@ -11,11 +11,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import statistics
 import subprocess
 import sys
 import time
 import traceback
+import zipfile
 
 
 def digest(path):
@@ -102,10 +104,20 @@ def main():
                     state('exporting-dynamic-AOTI',arm=name)
                     ep=torch.export.export(Linear(candidate),(example,*w),dynamic_shapes=dynamic,strict=True)
                     assert not ep.state_dict,'Never fold a dense weight into the package'
+                    # This standalone harness has real example_inputs. Supply
+                    # the graph's own symbolic FakeTensors to AOTInductor, as
+                    # the full ET CUDA backend does, so compiler retracing
+                    # cannot replace the exported row symbol with its hint.
+                    symbolic_inputs=tuple(node.meta['val'] for node in ep.graph.nodes if node.op=='placeholder')
+                    assert len(symbolic_inputs)==6 and isinstance(symbolic_inputs[0].shape[0],torch.SymInt)
+                    ep._example_inputs=(symbolic_inputs,{})
                     path=a.output/(name+'.pt2')
                     aoti_compile_and_package(ep,package_path=str(path),inductor_configs=options)
+                    with zipfile.ZipFile(path) as archive:
+                        wrappers=[archive.read(n).decode() for n in archive.namelist() if n.endswith('.wrapper.cpp')]
+                    assert wrappers and not any(re.search(r'arg0_1_size\[0\]\s*!=\s*'+str(a.max_M)+r'\b',body) for body in wrappers), 'AOTI specialized dynamic rows; reject before GPU execution'
                     packages[name]=aoti_load_package(str(path),run_single_threaded=True,device_index=0)
-                    report[name+'_package']=dict(SHA256=digest(path),bytes=path.stat().st_size,range_constraints=str(ep.range_constraints))
+                    report[name+'_package']=dict(SHA256=digest(path),bytes=path.stat().st_size,range_constraints=str(ep.range_constraints),compiler_examples='export graph symbolic FakeTensors',static_hint_guard_absent=True)
                 oracle=materialize(w,arithmetic='native-zero-fma-bf16',bk=128)
                 boundaries={65,72,128,256,512,520,a.max_M}
                 for branch in policy['branches']:boundaries.update([branch['max_M']-1,branch['max_M'],branch['max_M']+1])
