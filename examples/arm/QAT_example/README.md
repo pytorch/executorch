@@ -73,6 +73,21 @@ Use `--model-class` to select a compatible model class from
 `train_log/IFNet_HDv3.py` in your Practical-RIFE checkout. For example,
 add `--model-class IFNetTwoBlock` to the command above.
 
+### Packed Intermediate Warps
+
+The RIFE VGF extension runs `PackRifeWarpsAndConcatPass` after TOSA lowering.
+For the supported integer pattern, one shader samples both images and both
+feature tensors and writes the second block's CONCAT input directly as C32.
+It copies the existing full-resolution mask, features and flow, inserts the
+constant timestep, and adds four dummy channels. Four zero weight columns
+make the following convolution ignore those channels.
+
+The pass checks shader identities, descriptors, matching sampling qparams,
+private warp consumers, and symmetric convolution weights before rewriting.
+Unsupported graphs are left unchanged. Image padding and the first block's
+C15 input are unchanged. State resizing, block tails and final blending stay
+in TOSA. `glslc` must be available when exporting a matching graph.
+
 ## Reference Samples
 
 Keep reference images outside this repository and pass them through
