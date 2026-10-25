@@ -21,7 +21,11 @@ def _pipeline(x, q, sc, ss, z, zs, bn):
     wrap_triton(_materialize)[(triton.cdiv(n, 32), k//128)](
         q, sc, ss, z, zs, weight, N=n, K=k, BN=32, BK=128,
         ZERO_FMA=False, num_warps=4, num_stages=1, enable_fp_fusion=False)
-    tiles = triton.cdiv(m, 64) * triton.cdiv(n, bn)
+    # These branches execute only at M512/M520. Keep STRIDE constexpr for
+    # AOTI; the enclosing operator still accepts a dynamic M and its other
+    # sizes execute the original operation. No static server method is added.
+    candidate_m = 512 if bn == 64 else 520
+    tiles = triton.cdiv(candidate_m, 64) * triton.cdiv(n, bn)
     wrap_triton(_dense)[(tiles,)](x, weight, out, m, N=n, K=k,
         BM=64, BN=bn, BK=128, GROUP=8, STRIDE=tiles, STAGES=3,
         num_warps=4, num_stages=3, enable_fp_fusion=False)
