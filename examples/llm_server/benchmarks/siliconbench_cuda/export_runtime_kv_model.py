@@ -1,0 +1,220 @@
+"""Export the deferred mini/full MG experiment after main-result acceptance.
+
+The mini keeps original GGUF layers 0..3, embeddings and output projection.
+It preserves their full-model RoPE/window pattern and quantized weights.
+Mini results are feasibility evidence, never full-model task results.
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+
+def digest(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as file:
+        while block := file.read(16 * 1024 * 1024):
+            h.update(block)
+    return h.hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--CPU-build-progress', type=Path, required=True)
+    parser.add_argument('--accepted-main-review', type=Path, required=True)
+    parser.add_argument('--accepted-mini-review', type=Path)
+    parser.add_argument('--gguf', type=Path, required=True)
+    parser.add_argument('--role', choices=['mini-fixed', 'mini-runtime', 'full-runtime'], required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--job-dir', type=Path, required=True)
+    parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--owned-GPU-child', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    package = Path(__file__).resolve().parent
+    spec_path = package / 'runtime_kv_columns_source.json'
+    spec = json.loads(spec_path.read_text())
+    accepted = json.loads(args.accepted_main_review.read_text())
+    assert accepted['independently_accepted']
+    assert [accepted[k] for k in ['performance_cells', 'full_quality_cells', 'smoke_quality_cells']] == [100, 40, 60]
+    assert accepted['performance_request_errors'] == 0 and accepted['correctness_protocol_verified']
+    build = json.loads(args.CPU_build_progress.read_text())
+    assert build['status'] == 'CPU-build-completed'
+    assert Path(build['source']).resolve() == args.source.resolve()
+    assert build['patch_sha256'] == spec['patch_sha256']
+    for name, record in spec['changed_files'].items():
+        assert digest(args.source / name) == record['after_sha256'], name
+    for name, expected in build['unchanged_quant_source'].items():
+        assert digest(args.source / name) == expected, name
+    if args.role == 'full-runtime':
+        assert args.accepted_mini_review is not None
+        mini = json.loads(args.accepted_mini_review.read_text())
+        assert mini['numerical_checks_pass'] and mini['graph_recapture_replay_pass']
+        assert mini['physical_growth_and_reclamation_pass']
+        assert mini['source_spec_sha256'] == digest(spec_path)
+
+    def state(status, **fields):
+        temp = args.job_dir / 'progress.pending.json'
+        temp.write_text(json.dumps(dict(status=status, controller_pid=os.getpid(),
+                                       role=args.role, candidate_accepted=False,
+                                       **fields), indent=2) + '\n')
+        temp.replace(args.job_dir / 'progress.json')
+
+    if not args.owned_GPU_child:
+        assert not args.job_dir.exists() and not args.output.exists(), 'Preserve prior attempts'
+        args.job_dir.mkdir(parents=True)
+        state('waiting-GPU-lock')
+        with args.lock.open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            assert not subprocess.check_output(
+                ['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader'], text=True).strip()
+            (args.job_dir / 'GPU-lock-owner.json').write_text(json.dumps({'pid': os.getpid()}) + '\n')
+            try:
+                with (args.job_dir / 'export.log').open('x') as log:
+                    subprocess.run([sys.executable, '-B', '-u', str(Path(__file__).resolve()),
+                                    *sys.argv[1:], '--owned-GPU-child'],
+                                   stdout=log, stderr=subprocess.STDOUT,
+                                   check=True, timeout=21600)
+                child = json.loads((args.job_dir / 'progress.json').read_text())
+                assert child['status'] == 'artifact-exported-and-audited'
+                deadline = time.monotonic() + 120
+                while subprocess.check_output(
+                        ['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader'], text=True).strip():
+                    assert time.monotonic() < deadline, 'CUDA context teardown remains incomplete'
+                    time.sleep(1)
+                state('completed', artifact=str(args.output),
+                      source_spec_sha256=digest(spec_path),
+                      numerical_and_memory_acceptance_pending=True)
+            except Exception as error:
+                state('failed', error_type=type(error).__name__, detail=str(error)[-1600:])
+                raise
+        return
+
+    assert json.loads((args.job_dir / 'GPU-lock-owner.json').read_text())['pid'] == os.getppid()
+    with args.lock.open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise RuntimeError('Export requires its parent to own the benchmark lock')
+    assert not args.output.exists()
+    assert digest(args.gguf) == '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
+    cache = args.job_dir / 'cache'
+    (cache / 'host-zero-backed').mkdir(parents=True)
+    os.environ.update(CUDA_VISIBLE_DEVICES='0', CUDA_HOME='/usr/local/cuda',
+                      TORCH_CUDA_ARCH_LIST='12.0', TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas',
+                      TORCHINDUCTOR_CACHE_DIR=str(cache / 'inductor'),
+                      TRITON_CACHE_DIR=str(cache / 'triton'),
+                      ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
+                      OMP_NUM_THREADS='2', TORCHINDUCTOR_COMPILE_THREADS='1', MAX_JOBS='1')
+    sys.path.insert(0, str(args.source.parent))
+    import torch
+    import torch._inductor.cpp_builder as cpp
+    from executorch.examples.models.muse_glimmer.export import export_solo as exporter
+    from executorch.examples.models.muse_glimmer.loaders import checkpoint_loader as loader
+    from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
+
+    assert torch.cuda.get_device_capability() == (12, 0)
+    torch.set_num_threads(2)
+    baseline_build = cpp.CppBuilder.build
+
+    def record_build(builder):
+        flags = re.findall(r'(?:^|\s)(-O[0-3s])(?:\s|$)', builder.get_command_line())
+        with (args.job_dir / 'actual-wrapper-optimization.jsonl').open('a') as log:
+            log.write(json.dumps({'flags': flags, 'target': builder._name}) + '\n')
+        return baseline_build(builder)
+
+    cpp.CppBuilder.build = record_build
+    state('exporting')
+    full_config = MuseGlimmerConfig(max_seq_len=131072)
+    if args.role.startswith('mini-'):
+        from dataclasses import replace
+        config = replace(full_config, n_layers=4)
+        assert all(config.layer_use_rope(i) == full_config.layer_use_rope(i) and
+                   config.layer_window_size(i) == full_config.layer_window_size(i)
+                   for i in range(4))
+        atomic = loader._atomic_sd_from_gguf(str(args.gguf), torch.bfloat16)
+        retained = {}
+        for name, value in atomic.items():
+            match = re.match(r'^layers\.(\d+)\.', name)
+            if match is None or int(match.group(1)) < 4:
+                retained[name] = value
+        del atomic
+        model = loader._finalize(retained, 'cuda', config, torch.bfloat16)
+        del retained
+    else:
+        model, config = loader.load_gguf_model(
+            str(args.gguf), backend='cuda', max_seq_len=131072,
+            activation_dtype=torch.bfloat16)
+    runtime_columns = args.role != 'mini-fixed'
+    exporter.export_cuda_batching(
+        model, config, str(args.output), max_step_tokens=2048, max_cells=65536,
+        forward_sizes=[1, 2, 4, 8, 16, 32, 64], device_sampling=True,
+        kv_layout='sequence', max_kv_seqs=21, runtime_kv_columns=runtime_columns)
+    from executorch.exir._serialize._program import deserialize_pte_binary
+    from executorch.exir.schema import Int, String
+    program = deserialize_pte_binary((args.output / 'model.pte').read_bytes()).program
+    methods = {plan.name: plan for plan in program.execution_plan}
+    assert {f'forward_{n}' for n in [1, 2, 4, 8, 16, 32, 64]} | {'forward_others', 'sample', 'sample_argmax'} <= set(methods)
+    assert not any(n.startswith(('draft_', 'vision_')) for n in methods)
+    metadata = {}
+    for name, plan in methods.items():
+        if name.startswith('get_') and len(plan.outputs) == 1:
+            value = plan.values[plan.outputs[0]].val
+            if isinstance(value, Int):
+                metadata[name] = value.int_val
+            elif isinstance(value, String):
+                metadata[name] = value.string_val
+    assert metadata['get_offgraph_kv_max_seqs'] == 21
+    assert metadata['get_max_context_len'] == 131072
+    assert metadata['get_n_caches'] == config.n_layers
+    assert metadata['get_max_prefill_chunk'] == 2048
+    assert metadata.get('get_offgraph_kv_sequence_info_abi', 1) == (2 if runtime_columns else 1)
+    selected_output = methods['forward_others'].values[
+        methods['forward_others'].outputs[0]].val
+    assert selected_output.sizes == [64, 202048]
+    manifests = {}
+    for name in [f'forward_{n}' for n in [1, 2, 4, 8, 16, 32, 64]] + ['forward_others']:
+        for delegate in methods[name].delegates:
+            for compile_spec in delegate.compile_specs:
+                if compile_spec.key != 'offgraph_kv_manifest':
+                    continue
+                manifest = json.loads(bytes(compile_spec.value))
+                assert manifest['layout'] == 'batched-sequence'
+                assert manifest['maximum_capacity'] == 131072
+                assert manifest['max_seqs'] == 21 and manifest['max_segments'] == 42
+                assert manifest['max_write'] == 2048 and len(manifest['layers']) == config.n_layers
+                assert manifest['version'] == (2 if runtime_columns else 1)
+                assert manifest.get('runtime_columns', False) == runtime_columns
+                manifests[name] = manifest
+    assert len(manifests) == 8
+    optimized = [json.loads(line) for line in (args.job_dir / 'actual-wrapper-optimization.jsonl').read_text().splitlines()
+                 if json.loads(line)['flags']]
+    assert optimized and all(row['flags'][-1] == '-O2' for row in optimized)
+    audit = dict(role=args.role, source_spec_sha256=digest(spec_path),
+                 GGUF_sha256=digest(args.gguf), retained_original_layer_indices=list(range(config.n_layers)),
+                 mini_is_not_full_model=args.role.startswith('mini-'),
+                 unchanged_quant_source=build['unchanged_quant_source'],
+                 logical_context=131072, initial_runtime_KV=512, declared_owner_limit=21,
+                 static_forwards=[1, 2, 4, 8, 16, 32, 64], runtime_columns=runtime_columns,
+                 metadata=metadata, methods=sorted(methods),
+                 selected_logit_limit=selected_output.sizes[0], offgraph_manifests=manifests,
+                 CUDA_graphs_for_static_runtime=True,
+                 bulk_prefill_A16_original_native_decode=True, AOTI_wrapper_optimization='O2',
+                 artifacts={name:dict(sha256=digest(args.output / name), bytes=(args.output / name).stat().st_size)
+                            for name in ['model.pte', 'aoti_cuda_blob.ptd']},
+                 main_acceptance_proof_sha256=digest(args.accepted_main_review),
+                 numerical_and_memory_acceptance_pending=True, candidate_accepted=False)
+    (args.output / 'runtime-column-artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
+    state('artifact-exported-and-audited', artifact=str(args.output))
+
+
+if __name__ == '__main__':
+    main()
