@@ -1777,10 +1777,9 @@ index 89c7f5d95..56602eeb3 100644
  ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
 diff --git a/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
 new file mode 100644
-index 000000000..ebc1aa57e
 --- /dev/null
 +++ b/examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,289 @@
 +/*
 + * Copyright (c) Meta Platforms, Inc. and affiliates.
 + * All rights reserved.
@@ -1795,6 +1794,7 @@ index 000000000..ebc1aa57e
 +#include <executorch/extension/cuda/cuda_allocator.h>
 +#include <gflags/gflags.h>
 +#include <nlohmann/json.hpp>
++#include <nvtx3/nvToolsExt.h>
 +#include <unistd.h>
 +
 +#include <algorithm>
@@ -1827,6 +1827,18 @@ index 000000000..ebc1aa57e
 +using Json = nlohmann::json;
 +
 +namespace {
++
++class DiagnosticRange final {
++ public:
++  explicit DiagnosticRange(const std::string& label) {
++    nvtxRangePushA(label.c_str());
++  }
++  ~DiagnosticRange() {
++    nvtxRangePop();
++  }
++  DiagnosticRange(const DiagnosticRange&) = delete;
++  DiagnosticRange& operator=(const DiagnosticRange&) = delete;
++};
 +
 +void require(bool condition, const char* message) {
 +  if (!condition) {
@@ -2009,6 +2021,7 @@ index 000000000..ebc1aa57e
 +    while (std::getline(std::cin, line)) {
 +      const auto request = Json::parse(line);
 +      const std::string op = request.at("op");
++      const DiagnosticRange range(request.value("tag", op));
 +      Json result;
 +      const auto start = std::chrono::steady_clock::now();
 +      auto& control = executor->cache_control();

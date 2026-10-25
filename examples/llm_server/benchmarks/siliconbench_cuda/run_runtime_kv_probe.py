@@ -40,6 +40,11 @@ def main():
     parser.add_argument("--accepted-mini-review", type=Path)
     parser.add_argument("--job-dir", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
+    parser.add_argument(
+        "--nsys",
+        type=Path,
+        help="Profile only discarded round 1 for actual CUDA graph evidence",
+    )
     args = parser.parse_args()
     accepted = json.loads(args.accepted_main_review.read_text())
     assert (
@@ -147,6 +152,20 @@ def main():
                     "--max_context=131072",
                     "--initial_kv_capacity=512",
                 ]
+                if args.nsys and round_number == 1:
+                    command = [
+                        str(args.nsys),
+                        "profile",
+                        "--trace=cuda,nvtx",
+                        "--cuda-graph-trace=graph",
+                        "--cuda-memory-usage=true",
+                        "--cuda-flush-interval=1000",
+                        "--sample=none",
+                        "--cpuctxsw=none",
+                        "-o",
+                        str(directory / "cuda-graphs"),
+                        *command,
+                    ]
                 child = None
                 try:
                     with (directory / "stderr.log").open("x") as log, (
@@ -167,11 +186,26 @@ def main():
                             assert selector.select(
                                 timeout
                             ), "Timed out waiting for actual executor"
-                            line = child.stdout.readline()
-                            assert (
-                                line
-                            ), f"Actual executor terminated with code {child.poll()}"
-                            value = json.loads(line)
+                            while True:
+                                line = child.stdout.readline()
+                                assert (
+                                    line
+                                ), f"Actual executor terminated with code {child.poll()}"
+                                try:
+                                    value = json.loads(line)
+                                except ValueError:
+                                    log.write(line)
+                                    log.flush()
+                                    assert selector.select(
+                                        timeout
+                                    ), "Profiler output without executor reply"
+                                    continue
+                                if isinstance(value, dict) and (
+                                    "snapshot" in value or "failed" in value
+                                ):
+                                    break
+                                log.write(line)
+                                log.flush()
                             protocol.write(
                                 json.dumps(
                                     {
@@ -186,11 +220,31 @@ def main():
                             return value
 
                         ready = receive()
-                        assert ready["ready"] and ready["snapshot"]["pid"] == child.pid
+                        assert ready["ready"]
+                        executor_pid = ready["snapshot"]["pid"]
+                        if executor_pid != child.pid:
+                            assert args.nsys and round_number == 1
+                            ancestor = executor_pid
+                            for _ in range(16):
+                                status = (
+                                    Path("/proc") / str(ancestor) / "status"
+                                ).read_text()
+                                ancestor = int(
+                                    next(
+                                        line.split()[1]
+                                        for line in status.splitlines()
+                                        if line.startswith("PPid:")
+                                    )
+                                )
+                                if ancestor == child.pid:
+                                    break
+                            assert (
+                                ancestor == child.pid
+                            ), "Profiled executor must be owned descendant"
                         state(
                             "running-actual-executor",
                             round=round_number,
-                            GPU_pid=child.pid,
+                            GPU_pid=executor_pid,
                         )
                         serial = 0
 
@@ -347,14 +401,68 @@ def main():
                                 stages[-1]["after"]["device_used_bytes"]
                                 < stages[-2]["after"]["device_used_bytes"]
                             )
+                        # Separate post-shrink numerical/graph checks for all seven
+                        # static methods. Padded rows must use the current dummy column.
+                        method_checks = []
+                        survivor = active[0]
+                        for count, width in [
+                            (1, 1),
+                            (2, 2),
+                            (3, 4),
+                            (7, 8),
+                            (13, 16),
+                            (32, 32),
+                            (63, 64),
+                        ]:
+                            for replay in range(3):
+                                before = request({"op": "metrics"})["snapshot"]
+                                result = step(
+                                    [survivor] * count,
+                                    [
+                                        token(survivor, lengths[survivor] + i)
+                                        for i in range(count)
+                                    ],
+                                    [count - 1],
+                                    save=replay == 2,
+                                )
+                                lengths[survivor] += count
+                                after = result["snapshot"]
+                                previous = {
+                                    row["method"]: row["calls"]
+                                    for row in before["method_calls"]
+                                }
+                                delta = {
+                                    row["method"]: row["calls"]
+                                    - previous.get(row["method"], 0)
+                                    for row in after["method_calls"]
+                                    if row["calls"] != previous.get(row["method"], 0)
+                                }
+                                assert delta == {f"forward_{width}": 1}, delta
+                                method_checks.append(
+                                    dict(
+                                        actual_tokens=count,
+                                        static_width=width,
+                                        replay_index=replay,
+                                        method_delta=delta,
+                                        snapshot=after,
+                                    )
+                                )
                         child.stdin.close()
-                        assert child.wait(timeout=120) == 0
+                        # nsys finalizes its trace after the actual executor exits.
+                        assert (
+                            child.wait(
+                                timeout=600 if args.nsys and round_number == 1 else 120
+                            )
+                            == 0
+                        )
                         selector.close()
                     records.append(
                         dict(
                             round=round_number,
                             ready=ready,
                             stages=stages,
+                            post_shrink_method_checks=method_checks,
+                            trace_requested=bool(args.nsys and round_number == 1),
                             protocol_sha256=digest(directory / "protocol.jsonl"),
                         )
                     )

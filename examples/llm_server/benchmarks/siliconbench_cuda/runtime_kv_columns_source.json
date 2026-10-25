@@ -1,6 +1,6 @@
 {
   "base_commit": "cb114742f0b6ee0237382f15e0ce13700d9218b6",
-  "patch_sha256": "49066d6081546aa7f55fc980c9d1185ce16be4c663820a99cc0f56745cf0df7c",
+  "patch_sha256": "47511aeec234f833a88b5b9a0fb6835a87acb97da77f2a8dfb45f13be707cd1a",
   "changed_files": {
     "backends/cuda/batching/cuda_executor.cpp": {
       "before_sha256": "4db6d9f768fb2c6d280321ebbb1b624a7182527ccb5cca97215d222a93658e4c",
@@ -69,8 +69,8 @@
     },
     "examples/models/muse-glimmer/tests/runtime_kv_columns_probe.cpp": {
       "before_sha256": null,
-      "after_sha256": "d531f98e22aa91a2330702c0aa15ac719116964447964ae8a3a2b3f7a59a9f45",
-      "bytes": 10462
+      "after_sha256": "9a4268839819fd43681130f910b70e0a486596e5a8169c584ec51bc28b36314f",
+      "bytes": 10852
     }
   },
   "unchanged_quant_files": [
@@ -95,7 +95,7 @@
     "performance": 100,
     "full_quality": 40,
     "smoke_quality": 60,
-    "all_independently_accepted": true
+    "requires_all_independently_accepted": true
   },
   "invariants": {
     "logical_context": 131072,
@@ -113,5 +113,6 @@
     "same_main_GGUF": true
   },
   "patch_generated_from_public_tools_commit": "fca4fb36c86b21f4363fa66fc6c1e259cbe6fd89",
-  "all_changed_runtime_file_bases_identical_to_runtime_commit": true
+  "all_changed_runtime_file_bases_identical_to_runtime_commit": true,
+  "diagnostic_trace": "NVTX ranges identify serialized actual executor commands; discarded round1 can collect real CUDA graph APIs without affecting measured rounds2-4"
 }
