@@ -40,6 +40,7 @@ def main():
     p.add_argument('--entries', nargs='+', default=['native8', 'native16', 'native64',
                    'bulk64', 'bulk72', 'bulk128', 'bulk512', 'bulk2048'])
     p.add_argument('--max-seconds', type=int, default=5400)
+    p.add_argument('--packed32', action='store_true', help='Read identical quantized bytes as uint32 words; standalone only')
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=False)
     report = dict(scope=__doc__, controller_pid=os.getpid(), entries=a.entries,
@@ -85,7 +86,10 @@ def main():
         from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
         from executorch.backends.cuda.autotune import cuda_graph_timing as clock
         from native_gemm_oracle_diagnostic import native_fma_dense
-        import public_grouped_w4a16 as candidate
+        if a.packed32:
+            import public_grouped_w4a16_packed32 as candidate
+        else:
+            import public_grouped_w4a16 as candidate
         torch.set_num_threads(2)
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.set_float32_matmul_precision('highest')
@@ -102,6 +106,7 @@ def main():
                       bulk_baseline='Unmodified ET _dequant_matmul, isolated Inductor dynamic-M compilation',
                       timing='Existing native cold-L2 cuda_graph_timing.time_with_cuda_graph_us; four paired AB/BA rounds',
                       standalone_not_current_model_AOTI=True)
+        report['uint32_view_of_original_bytes'] = a.packed32
         options = dict(max_autotune_gemm=True, max_autotune_gemm_backends='TRITON',
                        emulate_precision_casts=True, **{'triton.cudagraphs': False})
         report['standalone_bulk_compile_options'] = options
