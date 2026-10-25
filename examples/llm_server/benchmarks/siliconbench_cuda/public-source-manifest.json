@@ -303,6 +303,10 @@
       "sha256": "4f70dea79e92a938f11d1cd847c0ff64b76f084c021a4b3902f58b611e18f513",
       "bytes": 5164
     },
+    "handoff_native_c1_quality.py": {
+      "sha256": "8d5167c2e0e9a243aaf703a362ebe24672f0264cebbf2269200b426693c6e2ac",
+      "bytes": 10991
+    },
     "isolated_aoti_export.py": {
       "sha256": "b6f54f4e0fa52d2e9b1acd1457c83bcb2696385c2e0683e9fac9fd2e48796fa8",
       "bytes": 7453
