@@ -36,6 +36,7 @@ def main():
     p.add_argument('--after-runtime-job', type=Path)
     p.add_argument('--max-seconds', type=int, default=5400)
     p.add_argument('--M', nargs='+', type=int, default=[512, 520, 2048])
+    p.add_argument('--resource-followup', action='store_true')
     a = p.parse_args()
     assert set(a.M) <= {512, 520, 2048} and not a.output.exists()
     a.output.mkdir(parents=True)
@@ -43,7 +44,8 @@ def main():
                   model_dispatch_changed=False, new_KA=False,
                   activation_dtype='BF16', accumulation='FP32',
                   weights_requantized=False, full_model_or_HTTP_accepted=False,
-                  rounds=4, discard_first=True, reference='Unmodified ET staged dequant + Inductor F.linear')
+                  rounds=4, discard_first=True, resource_followup=a.resource_followup,
+                  reference='Unmodified ET staged dequant + Inductor F.linear')
     def state(status, **fields):
         (a.output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
         pending = a.output / 'progress.pending.json'
@@ -173,7 +175,7 @@ def main():
                         full = lambda: full_reference(x, *w, 32)
                         ref_numeric = checked(reference, target); full_numeric = checked(full, target)
                         cases = []
-                        for config in candidate.configs():
+                        for config in candidate.configs(resource_followup=a.resource_followup):
                             bounded(); state('screening-dense', role=role, M=m, config=asdict(config))
                             fn = lambda config=config: candidate.launch(x, dense, out, config)
                             try:

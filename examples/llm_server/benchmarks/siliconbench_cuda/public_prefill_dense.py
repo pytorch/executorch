@@ -75,7 +75,7 @@ def launch(x, weight, out, config):
     assert k == wk and k % config.bk == 0 and out.shape == (m, n)
     assert config.bm in [64, 128] and config.bn in [64, 128]
     assert config.bk in [32, 64, 128] and config.warps in [4, 8]
-    assert config.stages in [2, 3, 4] and config.group_m in [1, 8]
+    assert config.stages in [1, 2, 3, 4] and config.group_m in [1, 8]
     total = triton.cdiv(m, config.bm) * triton.cdiv(n, config.bn)
     stride = min(total, torch.cuda.get_device_properties(x.device).multi_processor_count) if config.persistent else total
     _dense[(stride,)](x, weight, out, m, N=n, K=k, BM=config.bm,
@@ -85,7 +85,16 @@ def launch(x, weight, out, config):
     return out
 
 
-def configs():
+def configs(resource_followup=False):
+    if resource_followup:
+        # Specific first-screen configurations exceed SM120's 101376-byte
+        # shared-memory limit. Reduce pipeline stages without changing math.
+        shapes = [(128, 128, 128, 8, 1), (128, 128, 128, 8, 2),
+                  (128, 128, 64, 8, 2), (128, 64, 128, 4, 2),
+                  (128, 64, 128, 4, 1), (64, 128, 128, 4, 2),
+                  (128, 128, 32, 4, 3)]
+        return [Config(bm, bn, bk, warps, stages, 8, persistent)
+                for bm, bn, bk, warps, stages in shapes for persistent in [False, True]]
     shapes = [(128, 128, 32, 4, 3), (128, 128, 64, 4, 3),
               (128, 128, 128, 8, 3), (128, 128, 64, 8, 4),
               (64, 128, 64, 4, 3), (64, 128, 128, 4, 3),

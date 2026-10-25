@@ -72,8 +72,8 @@
       "bytes": 17139
     },
     "benchmark_public_prefill_dense.py": {
-      "sha256": "19a5229315d05d8dee6bb63320a3152d26a2032278ddf58e69682d51eb2371ce",
-      "bytes": 14061
+      "sha256": "0acf21da10de7d7da13c24c715bd65be028c42000b06c078f3b711d89c749272",
+      "bytes": 14218
     },
     "benchmark_public_w4a16_aoti_conditional.py": {
       "sha256": "0ca822bc2589ab4bc57b2896eee72fa8905ba5334ae94fd16626698bee126570",
@@ -432,8 +432,8 @@
       "bytes": 2552
     },
     "public_prefill_dense.py": {
-      "sha256": "f4bad440720b7f23963c2f395923018943f0433352b1b58331d58a9086f5ee38",
-      "bytes": 4053
+      "sha256": "2f4360058b697865d8abe107b7cba2e765bb1ff302e1e2d27348128613ad22be",
+      "bytes": 4638
     },
     "public_prefill_export_hook.py": {
       "sha256": "f758b43897dac23fb6f35605002c988b16f7c1a9fc8479033f74d18262f8cb4e",
