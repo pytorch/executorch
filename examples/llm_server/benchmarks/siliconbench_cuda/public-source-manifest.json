@@ -95,6 +95,10 @@
       "sha256": "1dca4c90788715dbb4641ea56fb3cbb941ce12179c7b3d45cc960befaf5e617b",
       "bytes": 13187
     },
+    "benchmark_sm80_prefill_fallback.py": {
+      "sha256": "33e2b7c9683e66aa9919ae382525b1bc4222d8791b08adf1a7b47a60dfe9e19b",
+      "bytes": 5472
+    },
     "benchmark_w6_candidates.py": {
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
       "bytes": 11061
