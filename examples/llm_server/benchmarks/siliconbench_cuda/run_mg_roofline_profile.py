@@ -115,9 +115,9 @@ def main():
                 report = args.job / framework
                 result = args.job / (framework + "-profile-driver.json")
                 child = ([str(binary), str(args.artifact / "model.pte"),
-                          str(args.artifact / "aoti_cuda_blob.ptd"), str(result), "3"]
+                          str(args.artifact / "aoti_cuda_blob.ptd"), str(result), "4"]
                          if framework == "ET" else
-                         [str(binary), str(args.gguf), str(result), "3"])
+                         [str(binary), str(args.gguf), str(result), "4"])
                 command = ["nsys", "profile", "--trace=cuda,nvtx", "--sample=none",
                            "--cpuctxsw=none", "--capture-range=cudaProfilerApi",
                            "--capture-range-end=stop", "--cuda-graph-trace=node",
