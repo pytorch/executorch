@@ -308,6 +308,10 @@ class PropagateDevicePass(PassBase):
       on device, not its D2H copy; the copy stays only for other readers. When
       one of them writes the copy in place, the graph output reads a device
       copy of the written tensor instead.
+    - error_on_per_call_copies: Raise instead of logging a warning when a
+      copy that a skip flag asked to avoid has to stay: a constant copied to a
+      device, a method input copied for a reader off its device, or a
+      returned output written on the host.
     """
 
     def __init__(
@@ -315,11 +319,13 @@ class PropagateDevicePass(PassBase):
         skip_h2d_for_method_inputs: bool = False,
         skip_d2h_for_method_outputs: bool = False,
         enable_non_cpu_memory_planning: bool = False,
+        error_on_per_call_copies: bool = False,
     ) -> None:
         super().__init__()
         self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
         self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
         self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
+        self.error_on_per_call_copies = error_on_per_call_copies
 
         if (
             skip_h2d_for_method_inputs or skip_d2h_for_method_outputs
@@ -346,6 +352,15 @@ class PropagateDevicePass(PassBase):
         if lowered_module is None:
             return None
         return _get_target_device_from_compile_specs(lowered_module)
+
+    def _report_per_call_copy(self, message: str, skip_requested: bool) -> None:
+        """Warn about a copy that runs on every call. When a skip flag asked
+        for no such copy and error_on_per_call_copies is set, raise instead."""
+        if skip_requested and self.error_on_per_call_copies:
+            raise RuntimeError(
+                f"{message} Raised because error_on_per_call_copies=True."
+            )
+        logger.warning("%s", message)
 
     def _insert_h2d_copies(
         self,
@@ -398,6 +413,15 @@ class PropagateDevicePass(PassBase):
 
             h2d_node = _reusable_copy(arg, node, target_device_type, device_index)
             if h2d_node is None:
+                if arg_spec.const:
+                    self._report_per_call_copy(
+                        f"Constant '{arg.name}' ({arg_spec.nbytes()} bytes) feeds a "
+                        f"delegate on {target_device_type.name.lower()}:"
+                        f"{device_index} from outside it, so it is copied to the "
+                        f"device on every call. Have the partitioner take it into "
+                        f"the delegate to avoid that copy.",
+                        self.skip_h2d_for_method_inputs,
+                    )
                 with graph_module.graph.inserting_before(node):
                     h2d_node = graph_module.graph.call_function(
                         torch.ops.et_copy._h2d_copy.default,
@@ -409,17 +433,6 @@ class PropagateDevicePass(PassBase):
                     h2d_node.meta["val"] = arg.meta.get("val")
                     if "tensor_meta" in arg.meta:
                         h2d_node.meta["tensor_meta"] = arg.meta["tensor_meta"]
-                if arg_spec.const:
-                    logger.warning(
-                        "Constant '%s' (%d bytes) feeds a delegate on %s:%d from "
-                        "outside it, so it is copied to the device on every call. "
-                        "Have the partitioner take it into the delegate to avoid "
-                        "that copy.",
-                        arg.name,
-                        arg_spec.nbytes(),
-                        target_device_type.name.lower(),
-                        device_index,
-                    )
             new_args[i] = h2d_node
             changed = True
 
@@ -493,16 +506,13 @@ class PropagateDevicePass(PassBase):
             return
         position = {n: i for i, n in enumerate(graph_module.graph.nodes)}
         first_reader = min(other_readers, key=position.__getitem__)
-        logger.warning(
-            "Method input '%s' (%s bytes) stays on %s for the delegates there, "
-            "but '%s' also reads it, so it is copied to the host on every call. "
-            "Have the partitioner put every reader in a delegate on %s to avoid "
-            "that copy.",
-            placeholder.name,
-            spec.nbytes(),
-            device,
-            first_reader.name,
-            device,
+        self._report_per_call_copy(
+            f"Method input '{placeholder.name}' ({spec.nbytes()} bytes) stays on "
+            f"{device} for the delegates there, but '{first_reader.name}' also "
+            f"reads it, so it is copied to the host on every call. Have the "
+            f"partitioner put every reader in a delegate on {device} to avoid "
+            f"that copy.",
+            True,
         )
         with graph_module.graph.inserting_before(first_reader):
             d2h_node = graph_module.graph.call_function(
@@ -615,16 +625,15 @@ class PropagateDevicePass(PassBase):
                     returned.meta["val"] = node.meta.get("val")
                     if "tensor_meta" in node.meta:
                         returned.meta["tensor_meta"] = node.meta["tensor_meta"]
-                logger.warning(
-                    "A method output (%d bytes) comes from a delegate on %s:%d "
-                    "and '%s' writes it in place on the host, so it is copied to "
-                    "the host and back to the device on every call, even with "
-                    "skip_d2h_for_method_outputs. Have the partitioner take that "
-                    "op into the delegate to avoid those copies.",
-                    device_spec.nbytes(),
-                    device_spec.device.name.lower(),
-                    device_spec.device_index,
-                    writers[0].target,
+                self._report_per_call_copy(
+                    f"A method output ({device_spec.nbytes()} bytes) comes from a "
+                    f"delegate on {device_spec.device.name.lower()}:"
+                    f"{device_spec.device_index} and '{writers[0].target}' writes "
+                    f"it in place on the host, so it is copied to the host and back "
+                    f"to the device on every call, even with "
+                    f"skip_d2h_for_method_outputs. Have the partitioner take that "
+                    f"op into the delegate to avoid those copies.",
+                    True,
                 )
             _replace_spec(
                 [graph_module.graph.output_node()],

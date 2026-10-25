@@ -1910,6 +1910,63 @@ class TestPropagateDevicePass(unittest.TestCase):
                         nodes.h2d_nodes, program, DeviceType.CUDA, pipeline, "H2D copy"
                     )
 
+    def test_error_on_per_call_copies(self):
+        """error_on_per_call_copies turns the warning about a copy that a skip
+        flag cannot remove into an error: a constant copied to the device and
+        an input copied for a host reader under skip_h2d_for_method_inputs, and
+        a returned output written on the host under skip_d2h_for_method_outputs.
+        Without the skip flag, a constant copy only logs the warning."""
+
+        class ReadsConstant(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.randn(2, 2))
+
+            def forward(self, a):
+                return torch.add(a, self.offset), self.offset * 2
+
+        class WritesOutputOnHost(torch.nn.Module):
+            def forward(self, x, y):
+                a = x + y
+                torch.ops.propagate_device_test.accumulate(a, y)
+                return a
+
+        class ReadsInputOnHost(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y, torch.sin(x)
+
+        def lower(model, num_inputs, **flags):
+            return _lower_with_host_writer(
+                model,
+                tuple(torch.randn(2, 2) for _ in range(num_inputs)),
+                ["cuda:0"],
+                _host_writer_config(
+                    False,
+                    propagate_device_config=PropagateDeviceConfig(
+                        error_on_per_call_copies=True, **flags
+                    ),
+                ),
+            )
+
+        cases = {
+            "constant": (ReadsConstant(), 1, "skip_h2d_for_method_inputs"),
+            "input read on host": (ReadsInputOnHost(), 2, "skip_h2d_for_method_inputs"),
+            "output written on host": (
+                WritesOutputOnHost(),
+                2,
+                "skip_d2h_for_method_outputs",
+            ),
+        }
+        for case, (model, num_inputs, flag) in cases.items():
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "on every call.*Raised because error_on_per_call_copies=True",
+                ):
+                    lower(model, num_inputs, **{flag: True})
+        with self.assertLogs(propagate_device_pass.logger, "WARNING"):
+            lower(ReadsConstant(), 1)
+
     def test_constant_copy_keeps_stored_layout(self):
         """The copy of a constant moves its bytes as they are, so it must use the
         layout the constant is stored in: contiguous for a transposed parameter,

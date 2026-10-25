@@ -77,11 +77,21 @@ class PropagateDeviceConfig:
     # A dict can be used to set per-method values, keyed by method name.
     skip_d2h_for_method_outputs: Union[bool, Dict[str, bool]] = False
 
+    # When True, the copies that the skip flags above cannot remove make
+    # to_executorch raise instead of logging a warning: with
+    # skip_h2d_for_method_inputs, a constant copied to the device and a method
+    # input copied to the host for a reader off its device, and with
+    # skip_d2h_for_method_outputs, a returned output copied to the host and
+    # back. Each runs on every call. Use it to make sure a program that skips
+    # its boundary copies has none left.
+    error_on_per_call_copies: bool = False
+
     def __hash__(self) -> int:
         return hash(
             (
                 str(self.skip_h2d_for_method_inputs),
                 str(self.skip_d2h_for_method_outputs),
+                self.error_on_per_call_copies,
             )
         )
 
@@ -91,4 +101,5 @@ class PropagateDeviceConfig:
         return (
             self.skip_h2d_for_method_inputs == other.skip_h2d_for_method_inputs
             and self.skip_d2h_for_method_outputs == other.skip_d2h_for_method_outputs
+            and self.error_on_per_call_copies == other.error_on_per_call_copies
         )

@@ -193,6 +193,10 @@ as a KV cache update. It writes the host copy, so `to_executorch` returns a devi
 written tensor. That copies the output to the host and back on every call and logs a warning. Put
 that operator in the delegate to avoid it.
 
+**Set `error_on_per_call_copies=True` in `PropagateDeviceConfig` to turn these warnings into
+errors** when the matching skip flag is set, so `to_executorch` fails instead of adding a copy that
+runs on every call.
+
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer and the runtime copies the caller's memory into it, so the
 copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,
