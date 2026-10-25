@@ -33,6 +33,7 @@ def main():
     p.add_argument('--gguf', type=Path, required=True)
     p.add_argument('--delegate-proof', type=Path, required=True)
     p.add_argument('--arm', choices=['original', 'public'], required=True)
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--job', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
@@ -129,6 +130,8 @@ def main():
     cpp.CppBuilder.build = build
     if a.arm == 'public':
         from public_prefill_export_hook import install_bulk_prefill_port
+        if a.port_kind == 'prepared-metadata':
+            from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
         hook = install_bulk_prefill_port(dispatch, capability=(12, 0), enabled=True)
         assert hook['installed']
     else:
@@ -154,6 +157,8 @@ def main():
     # attribute. The wrapper observes the real strict model export.
     original_export = torch.export.export
     graph_audits = []
+    target = ('siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
+              else 'siliconbench.public_bulk_w4a16')
     if a.arm == 'public':
         from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
         expected_routes = sum(isinstance(getattr(m, 'weight', None), CudaCoalescedInt4Tensor)
@@ -165,7 +170,7 @@ def main():
 
     def traced_export(*args, **kwargs):
         program = original_export(*args, **kwargs)
-        count = sum(node.op == 'call_function' and 'siliconbench.public_bulk_w4a16' in str(node.target)
+        count = sum(node.op == 'call_function' and target in str(node.target)
             for module in program.graph_module.modules() if isinstance(module, torch.fx.GraphModule)
             for node in module.graph.nodes)
         item = dict(dynamic=kwargs.get('dynamic_shapes') is not None,
@@ -192,7 +197,7 @@ def main():
     assert out.sizes == [64, 202048]
     assert sha(dispatch.__file__) == source_sha
     assert sum(item['candidate_operator_calls'] for item in graph_audits) == expected_routes
-    audit = dict(arm=a.arm, n_layers=4, miniature_not_full_MG=True,
+    audit = dict(arm=a.arm, n_layers=4, miniature_not_full_MG=True,port_kind=a.port_kind,
         GGUF_SHA256=sha(a.gguf), original_dispatch_source_SHA256=source_sha,
         hook=hook, actual_export_graph_route_audit=graph_audits,
         actual_export_candidate_calls=expected_routes,

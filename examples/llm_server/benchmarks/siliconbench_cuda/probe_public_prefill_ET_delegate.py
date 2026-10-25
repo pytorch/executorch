@@ -29,6 +29,7 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--screen-results', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
+    p.add_argument('--prepared-groups', action='store_true')
     a = p.parse_args()
     a.output.mkdir(exist_ok=False)
     report = dict(model_accepted=False, HTTP_accepted=False, KA_started=False,
@@ -61,6 +62,11 @@ def main():
             from executorch.exir import to_edge_transform_and_lower, EdgeCompileConfig
             from executorch.exir._serialize._program import deserialize_pte_binary
             from public_prefill_export_hook import install_bulk_prefill_port
+            if a.prepared_groups:
+                from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
+            target = ('siliconbench.public_prepared_prefill_a16' if a.prepared_groups
+                      else 'siliconbench.public_bulk_w4a16')
+            report['port_kind'] = 'prepared-metadata' if a.prepared_groups else 'small-bulk'
             assert torch.cuda.get_device_capability() == (12, 0)
             torch.set_num_threads(2)
             original = dispatch._dequant_matmul
@@ -125,7 +131,7 @@ def main():
                                       if isinstance(m, torch.fx.GraphModule))
                     (a.output / f'{role}-{label}-exported-graph.txt').write_text(graph)
                     if label == 'public':
-                        assert 'siliconbench.public_bulk_w4a16' in graph
+                        assert target in graph
                     specs = [CudaBackend.generate_method_name_compile_spec('forward')]
                     edge = to_edge_transform_and_lower(ep, partitioner=[CudaPartitioner(specs)],
                         compile_config=EdgeCompileConfig(_check_ir_validity=False))

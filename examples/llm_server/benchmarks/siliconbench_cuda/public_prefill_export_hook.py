@@ -60,3 +60,40 @@ def install_bulk_prefill_port(dispatch, *, capability, enabled=False):
                    bulk_arithmetic='staged BF16 reconstruction without FMA')
     receipt['experimental_gate_K_tile'] = 128
     return receipt
+
+
+def install_prepared_prefill_port(dispatch, *, capability, enabled=False):
+    """Separate opt-in experiment for prepared metadata at M512/M520.
+
+    Keep the rejected small-bulk experiment separate. All static methods and
+    other dynamic M values retain their original operations.
+    """
+    original = dispatch._dequant_matmul
+    receipt = dict(enabled=enabled, capability=list(capability), installed=False,
+                   original_dispatch_identical=True, static_forwards_changed=False,
+                   weight_encoding_changed=False, A16=True,
+                   only_dynamic_bulk=True, candidate_sizes=[512,520],
+                   temporary_metadata=True, persistent_extra_model_copy=False)
+    if not enabled or tuple(capability) != (12,0):
+        return receipt
+    assert hashlib.sha256(Path(dispatch.__file__).read_bytes()).hexdigest() == DISPATCH_SHA256
+    import torch
+    from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import can_launch_triton
+    from public_prefill_prepared_groups_aoti import prepared_prefill_op
+
+    def route(x, q, sc, ss, z, zs, group_size):
+        shape = (q.shape[0], q.shape[1]*2)
+        eager = not torch.compiler.is_compiling() and isinstance(x.shape[0],int)
+        CUDA_trace = torch.compiler.is_compiling() or can_launch_triton(x)
+        if (eager or shape not in {(39936,6656),(6656,19968)}
+                or group_size != 32 or x.dtype != torch.bfloat16 or not CUDA_trace):
+            return original(x,q,sc,ss,z,zs,group_size)
+        return prepared_prefill_op(x,q,sc,ss,z,zs)
+
+    dispatch._dequant_matmul = route
+    receipt.update(installed=True, original_dispatch_identical=False,
+                   original_source_SHA256=DISPATCH_SHA256,
+                   validated_Q4_shapes=[[39936,6656],[6656,19968]],
+                   other_shapes_and_static_M_use_original=True,
+                   bulk_arithmetic='staged BF16 reconstruction without FMA')
+    return receipt

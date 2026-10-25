@@ -15,11 +15,16 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--et-source', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
     a = p.parse_args(); assert not a.output.exists()
     sys.path.insert(0,str(a.et_source.parent))
     import torch
     from executorch.backends.cuda.quantize_op_dispatch import int4_dispatch as dispatch
     from public_prefill_export_hook import install_bulk_prefill_port
+    if a.port_kind == 'prepared-metadata':
+        from public_prefill_export_hook import install_prepared_prefill_port as install_bulk_prefill_port
+    target = ('siliconbench.public_prepared_prefill_a16' if a.port_kind == 'prepared-metadata'
+              else 'siliconbench.public_bulk_w4a16')
     original = dispatch._dequant_matmul
     off = install_bulk_prefill_port(dispatch,capability=(8,0),enabled=True)
     assert not off['installed'] and dispatch._dequant_matmul is original
@@ -38,8 +43,8 @@ def main():
     program=torch.export.export(Probe(),args,
         dynamic_shapes=({0:torch.export.Dim('M',min=64,max=2048)},None,None,None,None,None),strict=True)
     targets=[str(node.target) for node in program.graph.nodes if node.op=='call_function']
-    assert sum('siliconbench.public_bulk_w4a16' in name for name in targets)==1
-    result=dict(CPU_examples=True,strict_FakeTensor_export_pass=True,
+    assert sum(target in name for name in targets)==1
+    result=dict(CPU_examples=True,strict_FakeTensor_export_pass=True,port_kind=a.port_kind,
                 experimental_operator_count=1,graph_targets=targets,
                 SM80_original_dispatch_identity=True,CPU_real_eager_not_routed=True,
                 GPU_benchmark=False,full_model_or_HTTP_accepted=False,

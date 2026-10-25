@@ -30,6 +30,7 @@ def main():
     p.add_argument('--screen-job', type=Path, required=True)
     p.add_argument('--job-dir', type=Path, required=True)
     p.add_argument('--lock', type=Path, required=True)
+    p.add_argument('--port-kind', choices=['small-bulk','prepared-metadata'], default='small-bulk')
     p.add_argument('--reuse-original-workflow', type=Path,
                    help='Reuse verified reference artifact and delegate proof; export only the routed public arm')
     a = p.parse_args()
@@ -44,6 +45,9 @@ def main():
                  'public_prefill_export_hook.py', 'public_bulk_w4a16_aoti.py',
                  'public_grouped_w4a16.py', 'public_grouped_w4a16_aoti.py']:
         assert sha(package / name) == manifest['files'][name]['sha256']
+    if a.port_kind == 'prepared-metadata':
+        for name in ['public_prefill_prepared_groups.py','public_prefill_prepared_groups_aoti.py']:
+            assert sha(package/name) == manifest['files'][name]['sha256']
 
     def state(status, **fields):
         record = dict(status=status, controller_pid=os.getpid(),
@@ -96,7 +100,8 @@ def main():
             reference = json.loads((a.reuse_original_workflow / 'mini-pair-exports.json').read_text())
             delegate = a.reuse_original_workflow / 'linear-delegate'
             run([sys.executable, '-B', package / 'probe_public_prefill_CPU_fake_trace.py',
-                 '--et-source', a.et_source, '--output', a.job_dir / 'CPU-fake-route-proof.json'],
+                 '--et-source', a.et_source, '--output', a.job_dir / 'CPU-fake-route-proof.json',
+                 '--port-kind',a.port_kind],
                 'CPU-fake-route', 300)
         else:
             delegate = a.job_dir / 'linear-delegate'
@@ -104,6 +109,13 @@ def main():
                  '--et-source', a.et_source, '--gguf', a.gguf,
                  '--output', delegate, '--screen-results', a.screen_job / 'results.json',
                  '--lock', a.lock], 'linear-delegate', 7200)
+        if a.port_kind == 'prepared-metadata':
+            # A prior small-bulk delegate does not prove this new operator.
+            delegate = a.job_dir / 'prepared-linear-delegate'
+            run([sys.executable,'-B',package/'probe_public_prefill_ET_delegate.py',
+                 '--et-source',a.et_source,'--gguf',a.gguf,'--output',delegate,
+                 '--screen-results',a.screen_job/'results.json','--lock',a.lock,
+                 '--prepared-groups'],'prepared-linear-delegate',7200)
         proof = json.loads((delegate / 'results.json').read_text())
         assert proof['ET_edge_and_CUDA_serialization_pass'] and len(proof['artifacts']) == 4
         artifacts = {}
@@ -117,7 +129,8 @@ def main():
                 command = [sys.executable, '-B', package / 'export_public_prefill_MG_mini.py',
                  '--et-source', a.et_source, '--gguf', a.gguf,
                  '--delegate-proof', delegate / 'results.json', '--arm', arm,
-                 '--output', output, '--job', job, '--lock', a.lock]
+                 '--output', output, '--job', job, '--lock', a.lock,
+                 '--port-kind',a.port_kind]
                 if a.reuse_original_workflow:
                     command += ['--seed-reference-export-cache',
                                 a.reuse_original_workflow / 'mini-original-export' / 'cache']
