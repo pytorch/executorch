@@ -149,7 +149,10 @@ def main():
     # Real model export starts from CPU examples/FakeTensors. Installing a
     # hook is insufficient: require the candidate operators in the actual
     # strict exported graph before paying for AOTI compilation.
-    original_export = exporter.export
+    # export_solo imports torch.export.export inside export_cuda_batching.
+    # Patch the provider before that import, rather than a nonexistent module
+    # attribute. The wrapper observes the real strict model export.
+    original_export = torch.export.export
     graph_audits = []
     if a.arm == 'public':
         from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
@@ -176,7 +179,7 @@ def main():
             assert count == expected_routes, 'Experimental prefill routing missing from actual CPU/FakeTensor model export'
         return program
 
-    exporter.export = traced_export
+    torch.export.export = traced_export
     state('exporting-mini')
     exporter.export_cuda_batching(model, config, str(a.output), max_step_tokens=2048,
         max_cells=65536, forward_sizes=[1, 2, 4, 8, 16, 32, 64],
