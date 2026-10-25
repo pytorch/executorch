@@ -175,7 +175,7 @@ def main():
                             candidate_vs_compiled_reference_different_elements=direct_different,
                             samples_us=samples,mean_last3_us=means,sample_SD_us={key:statistics.stdev(values[1:]) for key,values in samples.items()},
                             conditional_over_reference=means['conditional']/means['reference'],
-                            expected_bulk_route=('prepared-metadata' if m in [128,512] else 'original-dequant-matmul')
+                            expected_bulk_route=('prepared-metadata' if m==128 or (m==512 and role=='ffn_gate_up') else 'original-dequant-matmul')
                                 if a.prepared_groups else ('packed' if m<=128 else 'original-dequant-matmul'),
                             timing_scope='GPU graph timing of standalone AOTI linear; not current whole-model kernels or HTTP'))
                         save('AOTI-case-completed',role=role,M=m)

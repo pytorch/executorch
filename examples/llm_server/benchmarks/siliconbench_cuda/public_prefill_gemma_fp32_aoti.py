@@ -1,6 +1,7 @@
 """Opt-in dynamic AOTI trial for Gemma FP32-decoded A16 prefill.
 
-Measured M128/M512 configurations apply only to this trial. All other
+Gate M128/M512 and Down M128 apply only to this trial.
+Down M512 remains original after its compiled performance regression. All other
 sizes use the original ET operation. Every candidate invocation prepares
 temporary group metadata from the original packing. No model registration.
 """
@@ -55,6 +56,13 @@ def _candidate_fake(x, q, sc, ss, z, zs):
 @triton_op('siliconbench::public_gemma_fp32_prefill_a16', mutates_args={})
 def prepared_prefill_op(x: torch.Tensor, q: torch.Tensor, sc: torch.Tensor,
                         ss: torch.Tensor, z: torch.Tensor, zs: torch.Tensor) -> torch.Tensor:
+    # Compiled AOTI measured Down512 slower than the original operation.
+    # Preserve that original path; retain the verified Down128 candidate.
+    if (q.shape[0],q.shape[1]*2)==(3840,15360):
+        return torch.cond(x.shape[0]==128,
+            lambda a,b,c,d,e,f:prepared_candidate_op(a,b,c,d,e,f),
+            lambda a,b,c,d,e,f:reference_fp32(a,b,c,d,e,f,32),
+            (x,q,sc,ss,z,zs))
     # Inductor's current symbolic lowering rejects the compound SymPy Or.
     # Use the same nested exact-size conditions as the verified dense trial.
     return torch.cond(x.shape[0] == 128,
