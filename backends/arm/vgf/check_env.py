@@ -291,7 +291,7 @@ def _check_python_version(
         "Python version",
         STATUS_WARN,
         f"Python {current_text} detected. Python {recommended_text} is the "
-        "recommended minimum for the ML SDK 0.10 VGF flow.",
+        "recommended minimum for the VGF flow.",
         f"Prefer Python {recommended_text} or newer for VGF export and "
         "host-emulation setup. Older ExecuTorch-supported Python versions may "
         "work, but are not the reference VGF configuration.",

@@ -27,6 +27,19 @@ OFFGRAPH_KV_COMPILE_SPEC = "offgraph_kv_manifest"
 OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC = "offgraph_kv_step_width"
 OFFGRAPH_KV_FQN_PREFIX = "__et_offgraph_kv_"
 
+# Cell layout: every sequence of a batch shares one pool of per-token cells,
+# and the runtime cache writes the step's placement and visibility into these
+# buffers before each forward. Each is declared once per program at a fixed
+# shape, so the runtime binds it at a fixed address that a captured CUDA graph
+# may keep.
+OFFGRAPH_KV_CELLS_FQN = OFFGRAPH_KV_FQN_PREFIX + "cells"
+OFFGRAPH_KV_READ_LEN_FQN = OFFGRAPH_KV_FQN_PREFIX + "read_len"
+
+
+def offgraph_kv_mask_fqn(window: int) -> str:
+    """The step mask shared by every layer of ``window`` (0 = full history)."""
+    return f"{OFFGRAPH_KV_FQN_PREFIX}mask_w{window}"
+
 
 def ring_physical_capacity(window: int, max_write: int) -> int:
     """Slots a ring layer needs to serve one step of up to ``max_write`` tokens.
@@ -46,7 +59,7 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
     return window + max_write - 1
 
 
-def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
+def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     manifest = json.loads(value.decode("utf-8"))
     if manifest.get("version") != 1:
         raise ValueError("off-graph KV manifest version must be 1")
@@ -54,7 +67,18 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
     max_write = manifest.get("max_write")
-    if not isinstance(max_write, int) or not 0 < max_write <= maximum_capacity:
+    if not isinstance(max_write, int) or max_write <= 0:
+        raise ValueError("off-graph max_write must be positive")
+    layout = manifest.setdefault("layout", "sequence")
+    if layout not in ("sequence", "cell"):
+        raise ValueError(f"invalid off-graph KV layout {layout!r}")
+    if layout == "cell":
+        # A cell step packs tokens of several sequences into the shared pool,
+        # so the pool bounds its width, not one sequence's capacity.
+        max_cells = manifest.get("max_cells")
+        if not isinstance(max_cells, int) or max_cells < max_write:
+            raise ValueError("off-graph cell layout needs max_cells >= max_write")
+    elif max_write > maximum_capacity:
         raise ValueError("off-graph max_write must be in [1, maximum_capacity]")
     layers = manifest.get("layers")
     if not isinstance(layers, list) or not layers:
@@ -170,6 +194,61 @@ def offgraph_step(
     return out
 
 
+def cell_step(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    k_pool: torch.Tensor,
+    v_pool: torch.Tensor,
+    cells: torch.Tensor,
+    read_len: torch.Tensor,
+    mask: torch.Tensor,
+    scale: float,
+    out_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """Write this step's K/V into the cells the cache placed it in, then attend.
+
+    Placement and visibility are decided on the host by the runtime cache,
+    which writes them into ``cells``, ``mask`` and ``read_len`` before the
+    forward: token i lands in cell ``cells[i]`` and attends cell j iff
+    ``mask[0, 0, i, j]``. Cells of several sequences interleave in one pool,
+    so no causal alignment describes visibility and the mask is always
+    explicit. ``read_len`` bounds the sweep to the occupied extent.
+
+    ``cells`` and ``mask`` are declared at the widest step; writes use the
+    first K/V-width cells and attention uses the first query-width mask rows.
+    ``k``/``v`` are BHSD; the pools are BSHD. sdpa returns
+    the query's dtype; ``out_dtype`` is the neutral op's requested output dtype.
+    """
+    query_width = q.shape[2]
+    slots = cells[: k.shape[2]]
+    _write(k_pool, slots, k)
+    _write(v_pool, slots, v)
+    out = torch.ops.triton.sdpa(
+        q,
+        k_pool.transpose(1, 2),
+        v_pool.transpose(1, 2),
+        mask[:, :, :query_width, :],
+        0.0,
+        False,
+        scale,
+        True,
+        read_len,
+    )
+    if out_dtype is not None and out.dtype != out_dtype:
+        out = out.to(out_dtype)
+    return out
+
+
+def _cell_step_fn(scale: float, out_dtype):
+    def fn(q, k, v, k_pool, v_pool, cells, read_len, mask):
+        return cell_step(
+            q, k, v, k_pool, v_pool, cells, read_len, mask, scale, out_dtype
+        )
+
+    return fn
+
+
 def _mask_fn(buf_size: int, window: int):
     """Freeze the constants in a closure rather than as default arguments.
 
@@ -241,6 +320,53 @@ def _source_input(node):
     return node
 
 
+def _cell_position_source(node):
+    # Edge conversion emits copy variants of the value-preserving view ops.
+    # Match overloads exactly rather than admitting arbitrary name substrings.
+    preserving = tuple(
+        op
+        for name in (
+            *_VALUE_PRESERVING_OPS,
+            "view_copy",
+            "unsqueeze_copy",
+            "squeeze_copy",
+            "expand_copy",
+            "alias_copy",
+        )
+        for op in (
+            getattr(torch.ops.aten, name).default,
+            getattr(exir_ops.edge.aten, name).default,
+        )
+    )
+    selects = (
+        torch.ops.aten.index_select.default,
+        exir_ops.edge.aten.index_select.default,
+    )
+    width = node.meta["val"].shape[0]
+    selected = False
+    while node.op == "call_function":
+        if node.target in preserving:
+            node = node.args[0]
+        elif node.target in selects and not selected:
+            source, dim, index = node.args
+            shape = source.meta["val"].shape
+            if (
+                dim != 0
+                or shape[0] != width
+                or tuple(node.meta["val"].shape) != tuple(shape)
+                or index.meta["val"].dim() != 1
+                or index.meta["val"].shape[0] != shape[0]
+            ):
+                raise ValueError(
+                    "off-graph cell position index_select must preserve full width on dim 0"
+                )
+            selected = True
+            node = source
+        else:
+            break
+    return node
+
+
 class CheckOffGraphKVStepWidthPass:
     """Check the declared step width against the delegated program.
 
@@ -253,7 +379,10 @@ class CheckOffGraphKVStepWidthPass:
 
     requires_exported_program = True
 
-    def __init__(self, value: bytes) -> None:
+    def __init__(self, value: bytes, layout: str = "sequence") -> None:
+        if layout not in ("sequence", "cell"):
+            raise ValueError(f"invalid off-graph KV layout {layout!r}")
+        self._cell_layout = layout == "cell"
         text = value.decode("utf-8")
         fields = text.split(":")
         if len(fields) != 2 or not all(f.isdigit() for f in fields):
@@ -280,11 +409,16 @@ class CheckOffGraphKVStepWidthPass:
                 )
             declared = inputs[self._input]
             position = node.args[3]
-            if _source_input(position) is not declared:
+            source = (
+                _cell_position_source(position)
+                if self._cell_layout
+                else _source_input(position)
+            )
+            if source is not declared:
                 raise ValueError(
                     f"off-graph KV step width names input {self._input} "
                     f"({declared.name}), but the cache op's position comes "
-                    f"from {_source_input(position).name}"
+                    f"from {source.name}"
                 )
             shape = declared.meta["val"].shape
             width = position.meta["val"].shape[0]
@@ -293,6 +427,12 @@ class CheckOffGraphKVStepWidthPass:
                     f"off-graph KV step width names dim {self._dim} of "
                     f"{declared.name} {tuple(shape)}, which is not the step's "
                     f"{width} positions"
+                )
+            k, v = (arg.meta["val"] for arg in node.args[1:3])
+            if k.shape[2] != width or v.shape[2] != width:
+                raise ValueError(
+                    "off-graph KV step width requires matching K/V extent and "
+                    f"positions, got {k.shape[2]}, {v.shape[2]} and {width}"
                 )
         return exported_program
 
@@ -303,6 +443,11 @@ class LowerOffGraphKVPass:
     def __init__(self, manifest: dict[str, Any]) -> None:
         self._manifest = manifest
         self._masks: dict[tuple[str, int, int], Any] = {}
+        self._cell_buffers: dict[str, Any] = {}
+
+    @property
+    def _cell_layout(self) -> bool:
+        return self._manifest.get("layout", "sequence") == "cell"
 
     @staticmethod
     def _compile_storage(shape, dtype: torch.dtype, device):
@@ -335,6 +480,10 @@ class LowerOffGraphKVPass:
             )
 
     def _layer_capacity(self, layer: dict[str, Any]) -> int:
+        if self._cell_layout:
+            # A window bounds what a query sees, not where its token lives: a
+            # cell layout keeps every layer's history in the one pool.
+            return self._manifest["max_cells"]
         if layer["policy"] == "ring":
             return ring_physical_capacity(layer["window"], self._manifest["max_write"])
         return self._manifest["maximum_capacity"]
@@ -342,7 +491,6 @@ class LowerOffGraphKVPass:
     def _storage_nodes(
         self, exported_program: ExportedProgram, node, layer: dict[str, Any]
     ):
-        graph = exported_program.graph_module.graph
         layer_id = layer["layer_id"]
         # Shape and dtype come from the step's own K, so the storage cannot
         # disagree with what gets written into it. The manifest only carries
@@ -367,21 +515,70 @@ class LowerOffGraphKVPass:
             self._compile_storage(shape, kv.dtype, kv.device),
             self._compile_storage(shape, kv.dtype, kv.device),
         )
-        result = []
-        first_node = next(iter(graph.nodes))
-        for name, value in zip(names, values):
-            with graph.inserting_before(first_node):
-                result.append(
-                    create_constant_placeholder(
-                        exp_program=exported_program,
-                        graph=graph,
-                        name=name,
-                        kind=InputKind.BUFFER,
-                        data=value,
-                        persistent_buffer=False,
-                    )
-                )
-        return result
+        return [
+            self._runtime_buffer(exported_program, name, value)
+            for name, value in zip(names, values)
+        ]
+
+    @staticmethod
+    def _runtime_buffer(exported_program: ExportedProgram, name: str, value):
+        graph = exported_program.graph_module.graph
+        with graph.inserting_before(next(iter(graph.nodes))):
+            return create_constant_placeholder(
+                exp_program=exported_program,
+                graph=graph,
+                name=name,
+                kind=InputKind.BUFFER,
+                data=value,
+                persistent_buffer=False,
+            )
+
+    def _cell_buffer(self, exported_program, name: str, shape, dtype, device):
+        """A step buffer of the cell layout, declared once per program.
+
+        Unlike the pools these are small, so they carry real (zero) bytes at
+        compile time: Inductor reads small constants while it compiles, and
+        they stay runtime-owned regardless, since the weight collector never
+        serializes a runtime-owned FQN.
+        """
+        node = self._cell_buffers.get(name)
+        if node is None:
+            node = self._runtime_buffer(
+                exported_program, name, torch.zeros(shape, dtype=dtype, device=device)
+            )
+            self._cell_buffers[name] = node
+        return node
+
+    def _lower_cell(
+        self, exported_program, node, layer, k_storage, v_storage, out_dtype
+    ):
+        max_write = self._manifest["max_write"]
+        max_cells = self._manifest["max_cells"]
+        device = node.args[1].meta["val"].device
+        window = layer["window"] if layer["policy"] == "ring" else 0
+        cells = self._cell_buffer(
+            exported_program, OFFGRAPH_KV_CELLS_FQN, (max_write,), torch.int64, device
+        )
+        read_len = self._cell_buffer(
+            exported_program, OFFGRAPH_KV_READ_LEN_FQN, (1,), torch.int64, device
+        )
+        mask = self._cell_buffer(
+            exported_program,
+            offgraph_kv_mask_fqn(window),
+            (1, 1, max_write, max_cells),
+            torch.bool,
+            device,
+        )
+        call_args = (
+            *node.args[0:3],  # q, k, v
+            k_storage,
+            v_storage,
+            cells,
+            read_len,
+            mask,
+        )
+        example_args = tuple(n.meta["val"] for n in call_args)
+        return _cell_step_fn(node.args[5], out_dtype), call_args, example_args
 
     def _ring_mask(self, graph, position, buf_size: int, window: int, before):
         """Emit the ring mask once and share it across layers that match.
@@ -404,6 +601,22 @@ class LowerOffGraphKVPass:
         )
         self._masks[key] = mask
         return mask
+
+    def _lower_sequence(self, graph, node, layer, k_storage, v_storage, out_dtype):
+        inputs = list(node.args[0:4])  # q, k, v, position
+        call_args = (*inputs, k_storage, v_storage)
+        example_args = tuple(n.meta["val"] for n in call_args)
+        buf_size = self._layer_capacity(layer)
+        masked = layer["policy"] == "ring"
+        if masked:
+            mask = self._ring_mask(graph, inputs[3], buf_size, layer["window"], node)
+            call_args = (*call_args, mask)
+            example_args = (*example_args, mask.meta["val"])
+        return (
+            _step_fn(node.args[5], buf_size, masked, out_dtype),
+            call_args,
+            example_args,
+        )
 
     @staticmethod
     def _inline(graph, fn, example_args, call_args, before):
@@ -433,8 +646,10 @@ class LowerOffGraphKVPass:
 
     def __call__(self, exported_program: ExportedProgram) -> ExportedProgram:
         graph_module = exported_program.graph_module
-        # Mask nodes belong to one graph; never carry them into another.
+        # Mask and buffer nodes belong to one graph; never carry them into
+        # another.
         self._masks = {}
+        self._cell_buffers = {}
         target = exir_ops.edge.kvcache.update_and_attend.default
         modified = False
         for node in list(graph_module.graph.nodes):
@@ -448,24 +663,18 @@ class LowerOffGraphKVPass:
                 raise ValueError(f"off-graph manifest has no layer {layer_id}")
 
             self._check_supported(node)
-            inputs = list(node.args[0:4])  # q, k, v, position
-            scale = node.args[5]
             out_dtype = (
                 node.args[6] if len(node.args) > 6 else node.kwargs.get("out_dtype")
             )
             k_storage, v_storage = self._storage_nodes(exported_program, node, layer)
-            call_args = (*inputs, k_storage, v_storage)
-            example_args = tuple(n.meta["val"] for n in call_args)
-
-            buf_size = self._layer_capacity(layer)
-            masked = layer["policy"] == "ring"
-            if masked:
-                mask = self._ring_mask(
-                    graph_module.graph, inputs[3], buf_size, layer["window"], node
+            if self._cell_layout:
+                fn, call_args, example_args = self._lower_cell(
+                    exported_program, node, layer, k_storage, v_storage, out_dtype
                 )
-                call_args = (*call_args, mask)
-                example_args = (*example_args, mask.meta["val"])
-            fn = _step_fn(scale, buf_size, masked, out_dtype)
+            else:
+                fn, call_args, example_args = self._lower_sequence(
+                    graph_module.graph, node, layer, k_storage, v_storage, out_dtype
+                )
 
             new_node = self._inline(
                 graph_module.graph, fn, example_args, call_args, node

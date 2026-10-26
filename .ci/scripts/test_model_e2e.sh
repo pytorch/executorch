@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA/Metal/XNNPACK models end-to-end, optionally exporting artifacts first.
+# Test CUDA/Metal/XNNPACK/Vulkan models end-to-end, optionally exporting artifacts first.
 
 show_help() {
   cat << EOF
 Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir] [mode]
 
-Build and run end-to-end tests for CUDA/Metal/XNNPACK models.
+Build and run end-to-end tests for CUDA/Metal/XNNPACK/Vulkan models.
 
 Arguments:
-  device      cuda, metal, or xnnpack (required)
+  device      cuda, metal, xnnpack, or vulkan (required)
 
   hf_model    HuggingFace model ID (required)
               Supported models:
@@ -27,13 +27,18 @@ Arguments:
                 - facebook/dinov2-small-imagenet1k-1-layer
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
                 - meta-models/Muse-Glimmer-30B-GGUF
+                - unsloth/Llama-3.2-1B-Instruct (Vulkan only)
+                - microsoft/Phi-4-mini-instruct (Vulkan only)
 
   quant_name  Quantization type (required)
               Options:
                 - non-quantized
                 - quantized-int4-tile-packed
                 - quantized-int4-weight-only
-                - quantized-8da4w (XNNPACK only)
+                - quantized-8da4w (XNNPACK/Vulkan)
+                - quantized-8da4w-fp16 (Vulkan only)
+                - quantized-8da4w-embedding (Vulkan only)
+                - quantized-8da4w-fp16-embedding (Vulkan only)
                 - kquant-17gb (Muse Glimmer only)
                 - kquant-dynamic (Muse Glimmer only)
 
@@ -46,11 +51,12 @@ Arguments:
                 - vr-streaming: Voxtral Realtime streaming mode
                 - vr-offline: Voxtral Realtime offline mode
                 - solo-text: Muse Glimmer solo text mode
-                - solo-text-offgraph: Muse Glimmer solo text, runtime-owned KV cache
+                - solo-text-batching: Muse Glimmer text on the CUDA batching runtime
                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Environment:
   RUN_EXPORT  Set to 1 to export artifacts with export_model_artifact.sh before testing
+  EXECUTORCH_E2E_RUNNER  Executable runner override; skips requirement setup and build
 
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
@@ -94,6 +100,14 @@ MODE="${5:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUN_EXPORT="${RUN_EXPORT:-0}"
+PREBUILT_RUNNER="${EXECUTORCH_E2E_RUNNER:-}"
+if [ -n "$PREBUILT_RUNNER" ]; then
+  if [ ! -x "$PREBUILT_RUNNER" ]; then
+    echo "Error: EXECUTORCH_E2E_RUNNER is not executable: $PREBUILT_RUNNER"
+    exit 1
+  fi
+  PREBUILT_RUNNER="$(cd "$(dirname "$PREBUILT_RUNNER")" && pwd)/$(basename "$PREBUILT_RUNNER")"
+fi
 if [ "$RUN_EXPORT" = "1" ]; then
   mkdir -p "$MODEL_DIR"
 fi
@@ -112,7 +126,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-offgraph|dflash-image)
+    solo-text|solo-text-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -121,7 +135,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -191,17 +205,33 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH="docs/source/_static/img/et-logo.png"
     ;;
-  Qwen/Qwen3-0.6B)
+  Qwen/Qwen3-0.6B|unsloth/Llama-3.2-1B-Instruct|microsoft/Phi-4-mini-instruct)
     MODEL_NAME="qwen3"
     RUNNER_TARGET="llama_main"
     RUNNER_PATH="llama"
     EXPECTED_OUTPUT="Paris"
     PREPROCESSOR=""
-    TOKENIZER_URL="https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main" # @lint-ignore
+    TOKENIZER_URL="https://huggingface.co/${HF_MODEL}/resolve/main" # @lint-ignore
     TOKENIZER_FILE=""
     AUDIO_URL=""
     AUDIO_FILE=""
     IMAGE_PATH=""
+    if [ "$DEVICE" = "vulkan" ]; then
+      MODEL_NAME="vulkan_llm"
+      TOKENIZER_FILE="tokenizer.json"
+      RUNNER_VARIANTS=""
+      IMAGE_URL=""
+      EXPECTED_OUTPUT="$(cat "$MODEL_DIR/expected_output.txt")"
+      if ! grep -q '[^[:space:]]' "$MODEL_DIR/expected_output.txt"; then
+        echo "Error: expected_output.txt must contain an expected answer"
+        exit 1
+      fi
+      test -f "$MODEL_DIR/prompt.txt"
+      test -f "$MODEL_DIR/tokenizer.json"
+    elif [ "$HF_MODEL" != "Qwen/Qwen3-0.6B" ]; then
+      echo "Error: $HF_MODEL is only supported with Vulkan"
+      exit 1
+    fi
     ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
@@ -286,8 +316,15 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     case "$MODE" in
-      solo-text|solo-text-offgraph)
+      solo-text)
         RUNNER_TARGET="solo_runner"
+        EXPECTED_OUTPUT="Paris"
+        IMAGE_URL=""
+        ;;
+      solo-text-batching)
+        # Built by `make muse-glimmer-batching-cuda` into its own directory.
+        RUNNER_PATH="muse-glimmer-batching"
+        RUNNER_TARGET="muse_glimmer_batching_runner"
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
         ;;
@@ -297,7 +334,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -309,16 +346,23 @@ case "$HF_MODEL" in
     ;;
 esac
 
-echo "::group::Setup ExecuTorch Requirements"
-./install_requirements.sh
-pip list
-echo "::endgroup::"
+if [ "$DEVICE" = "vulkan" ] && [ "$MODEL_NAME" != "vulkan_llm" ]; then
+  echo "Error: Unsupported Vulkan model: $HF_MODEL"
+  exit 1
+fi
+
+if [ -z "$PREBUILT_RUNNER" ]; then
+  echo "::group::Setup ExecuTorch Requirements"
+  ./install_requirements.sh
+  pip list
+  echo "::endgroup::"
+fi
 
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
 
 # Download tokenizer files (skip for models that bundle tokenizer in export or do not use one)
-if [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
+if [ "$MODEL_NAME" != "vulkan_llm" ] && [ "$MODEL_NAME" != "parakeet" ] && [ "$MODEL_NAME" != "voxtral_realtime" ] && [ "$MODEL_NAME" != "sortformer" ] && [ "$MODEL_NAME" != "dinov2" ] && [ "$MODEL_NAME" != "qwen3_5_moe" ] && [ "$MODEL_NAME" != "gemma4_31b" ]; then
   if [ "$TOKENIZER_FILE" != "" ]; then
     curl -L --retry 3 --retry-all-errors $TOKENIZER_URL/$TOKENIZER_FILE -o $MODEL_DIR/$TOKENIZER_FILE
   else
@@ -360,8 +404,8 @@ echo "::endgroup::"
 
 echo "::group::Build $MODEL_NAME Runner"
 
-if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ]; then
-  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', or 'xnnpack'."
+if [ "$DEVICE" != "cuda" ] && [ "$DEVICE" != "metal" ] && [ "$DEVICE" != "xnnpack" ] && [ "$DEVICE" != "vulkan" ]; then
+  echo "Error: Unsupported device '$DEVICE'. Must be 'cuda', 'metal', 'xnnpack', or 'vulkan'."
   exit 1
 fi
 
@@ -371,7 +415,9 @@ if [ "$DEVICE" = "xnnpack" ]; then
 else
   MAKE_TARGET="${RUNNER_PATH}-${DEVICE}"
 fi
-make "${MAKE_TARGET}"
+if [ -z "$PREBUILT_RUNNER" ]; then
+  make "${MAKE_TARGET}"
+fi
 echo "::endgroup::"
 
 echo "::group::Run $MODEL_NAME Runner"
@@ -381,7 +427,7 @@ if [ "$DEVICE" = "cuda" ]; then
 fi
 
 # Build runner command with common arguments
-RUNNER_BIN="cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET"
+RUNNER_BIN="${PREBUILT_RUNNER:-cmake-out/examples/models/$RUNNER_PATH/$RUNNER_TARGET}"
 RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --temperature 0"
 # Patch absolute libomp install name from some torch nightlies to rpath-based
 # lookup so the runner works on macOS images without /opt/llvm-openmp.
@@ -447,18 +493,17 @@ EOF
     ;;
   muse_glimmer)
     PROMPT_FILE="${MODEL_DIR}/muse_glimmer_prompt.txt"
-    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-offgraph" ]; then
+    if [ "$MODE" = "solo-text" ]; then
       printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
     else
       printf '%s' '<|start|>user<|message|>What animal is in this image? <img><|eot|><|start|>assistant' > "$PROMPT_FILE"
     fi
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
-    if [ "$MODE" = "solo-text-offgraph" ]; then
-      # Exercise the same artifact on both decode paths: eager, then the
-      # captured CUDA graph, which is recaptured whenever the cache grows.
-      RUNNER_VARIANTS="--cuda_graph=false --cuda_graph"
-    else
-      RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
+    RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
+    if [ "$MODE" = "solo-text-batching" ]; then
+      # The batching runner goes through ServingRuntime and takes its own flags.
+      printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
+      RUNNER_ARGS="--pte ${MODEL_DIR}/model.pte --data_path ${MODEL_DIR}/aoti_cuda_blob.ptd --tokenizer ${MODEL_DIR}/$TOKENIZER_FILE --prompt \"\$(cat $PROMPT_FILE)\" --max_new_tokens 128 --temperature 0 --max_session_tokens 4096"
     fi
     if [ "$MODE" = "dflash-image" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"
@@ -489,6 +534,21 @@ run_and_validate() {
   VARIANT_ARGS="$1"
   if [ -n "$VARIANT_ARGS" ]; then
     echo "--- Runner pass: $VARIANT_ARGS ---"
+  fi
+
+  if [ "$MODEL_NAME" = "vulkan_llm" ]; then
+    "$RUNNER_BIN" --model_path "$MODEL_DIR/model.pte" \
+      --tokenizer_path "$MODEL_DIR/tokenizer.json" --prompt_file "$MODEL_DIR/prompt.txt" \
+      --temperature 0 --max_new_tokens 50 \
+      > "$MODEL_DIR/runner.stdout" 2> "$MODEL_DIR/runner.stderr" || exit $?
+    set -e
+    cat "$MODEL_DIR/runner.stdout"
+    if ! grep -Fiw -- "$EXPECTED_OUTPUT" "$MODEL_DIR/runner.stdout" > /dev/null; then
+      echo "Expected output '$EXPECTED_OUTPUT' not found in output"
+      exit 1
+    fi
+    cp "$MODEL_DIR/runner.stdout" "$MODEL_DIR/response.txt"
+    return
   fi
 
   set +e
@@ -546,6 +606,123 @@ else
   done
 fi
 echo "::endgroup::"
+
+if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "solo-text-batching" ]; then
+  echo "::group::Run $MODEL_NAME batching serving smoke"
+  # The CI-only correctness tool is not part of the normal serving build.
+  bash .ci/scripts/build_muse_glimmer_batching_smoke.sh
+  # Concurrent staggered requests through ServingRuntime on CudaExecutor.
+  cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_smoke \
+    --pte "${MODEL_DIR}/model.pte" --data_path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
+    --tokenizer "${MODEL_DIR}/$TOKENIZER_FILE" --max_sessions 8 --max_session_tokens 2048 \
+    --mode requests --requests 5 --prompt_tokens 600 --max_new_tokens 64 --stagger_ms 200
+
+  pip install -r examples/llm_server/python/requirements.txt
+  for f in tokenizer_config.json chat_template.jinja; do
+    curl -fL --retry 3 --retry-all-errors "$TOKENIZER_URL/$f" -o "$MODEL_DIR/$f"
+  done
+  PORT=$(python - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind(("127.0.0.1", 0))
+    print(s.getsockname()[1])
+PY
+)
+  SERVER_LOG=$(mktemp)
+  python -u -m executorch.examples.models.muse_glimmer.serving.serve_batching \
+    --backend cuda \
+    --worker-bin cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker \
+    --model-path "${MODEL_DIR}/model.pte" \
+    --data-path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
+    --tokenizer-path "${MODEL_DIR}/$TOKENIZER_FILE" \
+    --hf-tokenizer "${MODEL_DIR}" \
+    --max-context 4096 \
+    --prefix-cache-entries 2 \
+    --host 127.0.0.1 \
+    --port "$PORT" >"$SERVER_LOG" 2>&1 &
+  SERVER_PID=$!
+  cleanup_mg_server() {
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+      kill "$SERVER_PID" 2>/dev/null || true
+      wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    rm -f "$SERVER_LOG"
+  }
+  trap cleanup_mg_server EXIT
+
+  if ! python - "$PORT" "$SERVER_LOG" <<'PY'
+import json
+import sys
+import time
+import urllib.request
+
+port, log_path = sys.argv[1], sys.argv[2]
+base = f"http://127.0.0.1:{port}"
+
+
+def request(path, payload=None):
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base + path, data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        return resp.read().decode("utf-8")
+
+
+last = None
+for _ in range(600):
+    try:
+        request("/health")
+        break
+    except Exception as e:
+        last = e
+        time.sleep(1)
+else:
+    print(open(log_path, encoding="utf-8", errors="replace").read())
+    raise RuntimeError(f"server did not become healthy: {last}")
+
+body = {
+    "model": "muse_glimmer",
+    "messages": [{"role": "user", "content": "What is the capital of France?"}],
+    "max_tokens": 128,
+    "temperature": 0,
+}
+# The second identical request reuses the first one's prompt snapshot.
+for attempt in range(2):
+    resp = json.loads(request("/v1/chat/completions", body))
+    message = resp["choices"][0]["message"]
+    text = (message.get("content") or "") + (message.get("reasoning_content") or "")
+    if "Paris" not in text:
+        raise AssertionError(f"expected Paris in serving response, got: {message!r}")
+    details = resp["usage"].get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens", 0)
+    print(f"request {attempt}: prompt {resp['usage']['prompt_tokens']} cached {cached}")
+if cached == 0:
+    raise AssertionError("the repeated request reused no prompt tokens")
+
+stream = request("/v1/chat/completions", dict(body, stream=True))
+pieces = []
+for line in stream.splitlines():
+    if line.startswith("data: ") and line != "data: [DONE]":
+        delta = json.loads(line[6:])["choices"][0]["delta"]
+        pieces.append((delta.get("content") or "") + (delta.get("reasoning_content") or ""))
+if len([p for p in pieces if p]) < 2 or "Paris" not in "".join(pieces):
+    raise AssertionError(f"expected Paris streamed in several chunks, got: {pieces!r}")
+print("Muse Glimmer CUDA batching serving smoke passed")
+PY
+  then
+    echo "Muse Glimmer batching serving smoke failed; server log:"
+    cat "$SERVER_LOG"
+    exit 1
+  fi
+
+  cleanup_mg_server
+  trap - EXIT
+  echo "::endgroup::"
+fi
 
 if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   echo "::group::Run $MODEL_NAME OpenAI serving smoke"

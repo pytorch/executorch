@@ -42,6 +42,10 @@ class CompileMode(Enum):
 @dataclass(frozen=True)
 class EdgePassesConfig:
     use_im2row_transform: bool = False
+    # Storage width for fully-connected weights. 8 leaves them as-is; 4 and 6
+    # physically pack them, which is only a size win, not an accuracy one - the
+    # values are expected to already be clamped to the narrower range.
+    weight_bits: int = 8
 
 
 # Return the overload packet for the edge or torch op.

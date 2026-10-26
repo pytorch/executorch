@@ -76,6 +76,15 @@ set(XNNPACK_BUILD_ALL_MICROKERNELS
     OFF
     CACHE BOOL ""
 )
+
+# XNNPACK nests variadic macros (XNN_RETURN_IF_ERROR expands to xnn_log_error),
+# which MSVC's default legacy preprocessor mis-expands. Only observable where
+# XNN_LOG_LEVEL is non-zero, i.e. Debug configurations. Not applied to clang-cl,
+# which sets MSVC but already has a conforming preprocessor.
+if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  add_compile_options(/Zc:preprocessor)
+endif()
+
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
 list(APPEND xnnpack_third_party XNNPACK)
