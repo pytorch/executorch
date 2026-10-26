@@ -150,10 +150,11 @@ class TraceExecutor final : public batching::testing::FakeExecutor {
       }
       auto& tokens = it->second;
       tokens.resize(position);
+      const auto& source = *std::get<batching::TokenInputPtr>(input.payload);
       tokens.insert(
           tokens.end(),
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          source.begin() + input.offset,
+          source.begin() + input.offset + input.size);
       if (output.outputs[i] && !output.outputs[i]->tokens.empty()) {
         const auto& generated = output.outputs[i]->tokens;
         tokens.insert(tokens.end(), generated.begin(), generated.end() - 1);

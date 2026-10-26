@@ -44,7 +44,8 @@ struct GenerationRequest {
   // nullopt creates an independent ephemeral session. A named key may be opened
   // implicitly; an unavailable key must be explicitly reset before generation.
   std::optional<std::string> key;
-  std::vector<batching::Token> delta;
+  // Caller-resolved suffix; opaque input is admitted by the Runner's executor.
+  batching::GenerationInput delta;
   batching::GenConfig config;
   // Runs on the shared delivery thread, never on engine/control threads.
   // Calls are ordered, with exactly one terminal unless the sink itself throws.

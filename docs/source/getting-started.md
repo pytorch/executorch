@@ -8,7 +8,7 @@ This section is intended to describe the necessary steps to take a PyTorch model
 ## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
-- Python 3.10 - 3.14
+- Python 3.11 - 3.15
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
@@ -43,6 +43,12 @@ choose the closest lower one with the same major version, because CUDA works
 across minor versions but not across major ones. There is no package for CUDA 12,
 so on CUDA 12 use the `cpu` variant or build from source. On CUDA 13.0 or 13.1 no
 lower variant exists, so use `cu132`.
+
+Without `--index-url`, pip takes both packages from PyPI, which follows the same
+layout for both. On Linux they are the CUDA build, for the CUDA version PyTorch
+publishes there. On macOS and Windows they are the CPU build. The Linux packages
+also work on a machine without a GPU, but they download the CUDA libraries. Use
+the `cpu` variant to skip them.
 
 To get a change that has landed on the `main` branch but is not in a release
 yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front

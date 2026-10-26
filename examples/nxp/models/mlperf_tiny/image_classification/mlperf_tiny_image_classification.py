@@ -8,12 +8,12 @@ import logging
 import torch
 
 from executorch.examples.models.mlperf_tiny import ResNet8
-from executorch.examples.nxp.models.mlperf_tiny.mlperf_tiny_model import MLPerfTinyModel
+from executorch.examples.nxp.models.nxp_test_base_model import NXPTestBaseModel
 
 log = logging.getLogger(__name__)
 
 
-class MLPerfTinyImageClassification(MLPerfTinyModel):
+class MLPerfTinyImageClassification(NXPTestBaseModel):
     """MLPerf Tiny image classification model (ResNet-8)."""
 
     # ResNet-8 specific QAT training hyperparameters.

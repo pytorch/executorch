@@ -214,6 +214,40 @@ class RemoveNopSliceOrViewOpPass(RemoveOrReplacePassInterface):
         return changed
 
 
+class RemoveNopAsStridedCopyOpPass(RemoveOrReplacePassInterface):
+    """Remove as_strided_copy ops that preserve every logical element."""
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.as_strided_copy.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        input_value = cast(torch.Tensor, input_node.meta["val"])
+        size = get_arg(node, "size", list[int])
+        stride = get_arg(node, "stride", list[int])
+        storage_offset = get_arg(node, "storage_offset", Optional[int])
+
+        if tuple(size) != tuple(input_value.shape) or len(stride) != len(size):
+            return False
+        if (
+            storage_offset is not None
+            and storage_offset != input_value.storage_offset()
+        ):
+            return False
+        if not all(
+            dim_size == 1 or output_stride == input_stride
+            for dim_size, output_stride, input_stride in zip(
+                size, stride, input_value.stride()
+            )
+        ):
+            return False
+
+        node.replace_all_uses_with(input_node)
+        return True
+
+
 class RemoveNopLinalgVectorNormOpPass(RemoveOrReplacePassInterface):
     """
     If the norm is applied over a dimension that is size 1, it can be eliminated.
@@ -869,6 +903,7 @@ class CommonRemovePasses:
         RemoveAliasCopyOpPass,
         RemoveNopExpandOpPass,
         RemoveNopSliceOrViewOpPass,
+        RemoveNopAsStridedCopyOpPass,
         RemoveToOpsPass,
         RemoveZeroSizedCatArgsPass,
         RemovePermuteBeforeMeanPass,

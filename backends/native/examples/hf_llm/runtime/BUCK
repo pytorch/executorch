@@ -1,0 +1,113 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "METAL_COMPAT")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# llm_runner_utils and llm_runner are declared for both cells, since the
+# Metal binary below is xplat-only.
+runtime.cxx_library(
+    name = "llm_runner_utils",
+    srcs = ["LlmRunnerUtils.cpp"],
+    exported_headers = ["LlmRunnerUtils.h"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "llm_runner_utils_test",
+    srcs = ["LlmRunnerUtilsTest.cpp"],
+    deps = [":llm_runner_utils"],
+)
+
+# Engine-neutral LLM app logic. Each binary below links exactly one engine.
+runtime.cxx_library(
+    name = "llm_runner",
+    srcs = ["LlmRunner.cpp"],
+    exported_headers = ["LlmRunner.h"],
+    deps = [
+        ":llm_runner_utils",
+        "//executorch/backends/native/examples/runner_utils:runner_utils",
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/graph:scalar_type",
+        "//executorch/examples/models/llama/tokenizer:tiktoken",
+    ],
+    exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_vulkan",
+    srcs = ["run_hf_llm_vulkan.cpp"],
+    deps = [
+        ":llm_runner",
+        "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_ggml_cpu",
+    srcs = ["run_hf_llm_ggml.cpp"],
+    deps = [
+        ":llm_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+    **CPU_COMPAT
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_ggml_cuda",
+    srcs = ["run_hf_llm_ggml.cpp"],
+    deps = [
+        ":llm_runner",
+        # The CUDA device code lives in a shared fatbin. Stage the core shared
+        # library beside the binary. Buck does not stage the CUDA driver stub's
+        # library; add its directory to LD_LIBRARY_PATH when running.
+        "fbsource//third-party/llama.cpp:ggml_base[prefer-shared]",
+        "//executorch/backends/native/runtime/engine:ggml_engine_cuda",
+    ],
+    external_deps = [
+        "gflags",
+        # ggml's VMM pool calls the driver API, which //third-party/cuda:libcuda does not link on fbcode.
+        ("cuda", None, "cuda_driver_api-lazy"),
+    ],
+    visibility = ["PUBLIC"],
+    **CUDA_COMPAT
+)
+
+fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_ggml_hip",
+    srcs = ["run_hf_llm_ggml.cpp"],
+    deps = [
+        ":llm_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_hip",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+    **HIP_COMPAT
+)
+
+# Apple Silicon: ggml-metal with an arm64 CPU fallback. Mac builds go through
+# xplat, so this one is declared for the non-fbcode cell.
+non_fbcode_target(
+    _kind = runtime.cxx_binary,
+    name = "run_hf_llm_ggml_metal",
+    srcs = ["run_hf_llm_ggml.cpp"],
+    deps = [
+        ":llm_runner",
+        "//executorch/backends/native/runtime/engine:ggml_engine_metal",
+    ],
+    external_deps = ["gflags"],
+    visibility = ["PUBLIC"],
+    **METAL_COMPAT
+)
