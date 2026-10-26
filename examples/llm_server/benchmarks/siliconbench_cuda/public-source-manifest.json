@@ -691,6 +691,10 @@
       "sha256": "69e3ea7a77a3e6f1e9e338eecae35b8fd69639f4402a296137b908e8424a3cf6",
       "bytes": 11029
     },
+    "review_independent_session_http_lifecycle.py": {
+      "sha256": "41b6237c32e6719222c72502e68afe019cfcc7aab3fd4e385e8e4061990895ed",
+      "bytes": 11315
+    },
     "review_independent_session_mini_graph_trace.py": {
       "sha256": "6311339db87576ee1c17b3471945b8af6670a50fdbf1700b7d009d078823bf26",
       "bytes": 7819
@@ -912,8 +916,8 @@
       "bytes": 1444
     },
     "test_independent_session_attention.py": {
-      "sha256": "15559e3ea0b5df1d851a555814942b33d24b145d1c9b39dd3c0748133966e81a",
-      "bytes": 17476
+      "sha256": "04fcf399cd51dc93ad81b5826ba45f99439d326791f3df323b2280d8fc7e3e22",
+      "bytes": 17478
     },
     "trace_gemma_runtime_http_memory.py": {
       "sha256": "2889c7c714bf1e958cf1c215f85a384f031303583f462fd6b6fe6eca249caded",

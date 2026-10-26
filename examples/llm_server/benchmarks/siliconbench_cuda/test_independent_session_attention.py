@@ -28,7 +28,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--full-owner-padding', type=int, choices=[0,1,3,8], default=0)
-    parser.add_argument('--independent-full-decode-warps', type=int, choices=[4,8], default=8,
+    parser.add_argument('--independent-full-decode-warps', type=int, choices=[2,4,8], default=8,
                         help='Experimental full-attention launch override; production default is8')
     parser.add_argument('--gemma-production', action='store_true',
                         help='Preserve qualified Gemma kernels and use its actual D256/D512 head counts')
