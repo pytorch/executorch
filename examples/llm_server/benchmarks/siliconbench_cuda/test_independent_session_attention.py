@@ -28,6 +28,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--full-owner-padding', type=int, choices=[0,1,3,8], default=0)
+    parser.add_argument('--independent-full-decode-warps', type=int, choices=[4,8], default=8,
+                        help='Experimental full-attention launch override; production default is8')
     parser.add_argument('--gemma-production', action='store_true',
                         help='Preserve qualified Gemma kernels and use its actual D256/D512 head counts')
     args = parser.parse_args()
@@ -106,11 +108,14 @@ def main():
                       q.stride(1),q.stride(2),k.stride(0),k.stride(1),k.stride(2),
                       v.stride(0),v.stride(1),v.stride(2),out.stride(1),out.stride(2),
                       1/math.sqrt(dim),logical_rows]
+            warps = 8 if dim == 512 else 4
+            if dim == 512 and decode and info.shape[1] == 7:
+                warps = args.independent_full_decode_warps
             kwargs = dict(INFO_WIDTH=info.shape[1], NUM_SPLITS=splits,
                           IS_CAUSAL=True, CONTEXT_WINDOW=False,
                           WINDOW=(1024 if args.gemma_production else 128) if ring else 0, RING=ring,
                           HEAD_DIM=dim, NUM_GROUPS=groups,
-                          num_warps=8 if dim==512 else 4)
+                          num_warps=warps)
             if decode:
                 module._sdpa_varlen_decode_kernel[(tokens,hkv,splits)](
                     *common, **kwargs, NUM_SEGMENTS=info.shape[0],
@@ -265,7 +270,9 @@ def main():
             kernel_SHA256=digest(file),source_spec_SHA256=digest(package/(
                 'gemma_independent_session_attention.json' if args.gemma_production else 'independent_session_capacity_source.json')),
             oracle='FP32 causal per-owner attention over original BF16 K/V',
-            production_launch_geometry=True,gemma_production_geometries=args.gemma_production,
+            production_launch_geometry=args.independent_full_decode_warps == 8,
+            independent_full_decode_warps=args.independent_full_decode_warps,
+            gemma_production_geometries=args.gemma_production,
             all_cases_pass=True,cells=results,
             mini_model_qualified=False,full_models_qualified=False),indent=2)+'\n')
         state('completed',cells=len(results),all_oracles_pass=True)
