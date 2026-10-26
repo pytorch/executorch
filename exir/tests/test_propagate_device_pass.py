@@ -197,10 +197,16 @@ def _lower_with_host_writer(
     et_config: ExecutorchBackendConfig,
 ) -> torch.fx.GraphModule:
     """Delegate each add of a model that also calls accumulate on the host."""
-    edge = to_edge(
-        export(model, inputs),
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
+    # torch._export.config turns off auto_functionalized v2 for export in some
+    # PyTorch builds (see is_fbcode() there). Under v1, a custom op that writes
+    # through a view writes a view_copy and the write is lost, a limitation
+    # that predates these passes. Pin v2 so these tests check the same graph in
+    # every build.
+    with torch._export.config.patch(enable_auto_functionalized_v2_for_export=True):
+        edge = to_edge(
+            export(model, inputs),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
     et = edge.to_backend(PerAddDeviceDelegatePartitioner(devices)).to_executorch(
         et_config
     )
