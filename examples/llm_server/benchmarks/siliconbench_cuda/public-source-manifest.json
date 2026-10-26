@@ -827,6 +827,10 @@
       "sha256": "69e3ea7a77a3e6f1e9e338eecae35b8fd69639f4402a296137b908e8424a3cf6",
       "bytes": 11029
     },
+    "review_full_same_PTE_native_lifecycle.py": {
+      "sha256": "5f1831cce31ce52a239b66fda80b5693c5b6feffb1cd3580d36a6c704b99288c",
+      "bytes": 6951
+    },
     "review_independent_session_actual_rewind.py": {
       "sha256": "460c64208fbedfbdc41544c3688100d9462baac5054051d969b0dc3f49ab3834",
       "bytes": 4759
@@ -982,6 +986,10 @@
     "run_independent_full_after_mini.py": {
       "sha256": "4f6d54181dfd66b6b7e02805acfc01db0c30754ee53bd79c0bac0aef63ce9e16",
       "bytes": 5167
+    },
+    "run_independent_full_mg_quality.py": {
+      "sha256": "ec67ffe9bbae133c6f6a3e3d9b0021b2167ba90b33ccc597686e75ae186c642c",
+      "bytes": 10014
     },
     "run_independent_session_mini_capacity_control.py": {
       "sha256": "24ec420c844d54ef8a29be6e170844ac2934e8909595c02eb844997001127515",
