@@ -1,7 +1,9 @@
 """Roofline-only actual-row grid for the unchanged native W4A16 producer.
 
-Keep the native fixed-size workspace, static strides and deterministic
-reduction. Only the grid extent for newly added buckets is changed. Existing
+Keep static strides and deterministic reduction. Conditional branch kernels
+can be autotuned with the enclosing method's1024-row example even when the
+runtime predicate restricts that branch to128/256 rows. Reserve1024 rows for
+new bucket workspaces; retain actual-row producer/reducer work. Existing
 1..64 operations retain their original launch helper and CUDA graph shapes.
 """
 import torch
@@ -33,7 +35,11 @@ def launch_actual_rows(
     """Keep native workspace and arithmetic; launch only actual M tiles."""
     out = torch.empty((m, n), dtype=torch.bfloat16, device=device)
     if split_k > 1:
-        partial = torch.empty((split_k, bucket, n), dtype=torch.float32, device=device)
+        # Inductor may benchmark an unselected cond branch at the enclosing
+        # method's row hint. A128-row temporary is unsafe with a1024-row
+        # benchmark grid. Keep this pitch constant for AOTI constexpr strides,
+        # while actual runtime M continues to determine producer/reducer work.
+        partial = torch.empty((split_k, max(1024, bucket), n), dtype=torch.float32, device=device)
         stride_os = partial.stride(0)
     else:
         partial = out

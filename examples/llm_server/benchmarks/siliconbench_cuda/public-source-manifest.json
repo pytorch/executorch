@@ -352,8 +352,8 @@
       "bytes": 11746
     },
     "export_mg_roofline.py": {
-      "sha256": "b280be52c7f67512724f5d14c75da782a795e5d4bc6761a9e325bc13afeba8c1",
-      "bytes": 18627
+      "sha256": "21038e62c8135505190055ab1b90829008d87c879622efc14632b09ffeb68aee",
+      "bytes": 20331
     },
     "export_public_prefill_Gemma_full.py": {
       "sha256": "2e343b4027153c17ce0e3de2541c49581a94211ed630019c843a9f1e2fae7f50",
@@ -539,6 +539,10 @@
       "sha256": "11401a968dab6e6f641d38e3530d6c920fcb18711853013f1aab7d382bad7576",
       "bytes": 9500
     },
+    "probe_roofline_cond_workspace.py": {
+      "sha256": "539dc0c4710b508cfb58b70452e7104b6432cde9a62e62a66a12ebb18453e758",
+      "bytes": 4405
+    },
     "profile_et_server.py": {
       "sha256": "58c7d94c0375d062b2db06614f234a7f85111fbcf99742fa0f7a4a309ebc02f7",
       "bytes": 10766
@@ -668,8 +672,8 @@
       "bytes": 6366
     },
     "roofline_large_row_grid.py": {
-      "sha256": "5889142b17d0fa3ee6e2df43a4cd5c5b6e3b63809ddc81fe4f5d0c9060cfd1e8",
-      "bytes": 3052
+      "sha256": "6e17e4af8d6dbc6741df5e4b5023a108ce95cbb33ad327f3da925e9cfb0c3d69",
+      "bytes": 3523
     },
     "roofline_large_w4a16.py": {
       "sha256": "4990b04f8104f718e6a03c0270ec8457e0306bb328eb20076be7410e2d977a54",

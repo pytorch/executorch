@@ -46,6 +46,8 @@ def main():
                         help='Roofline-only measured policies and completed dynamic-AOTI validations')
     parser.add_argument('--reference-export-job',type=Path,
                         help='Reuse completed baseline compile caches; preserve the baseline directory')
+    parser.add_argument('--reference-compile-cache-job',type=Path,
+                        help='Reuse completed static cache entries from a preserved failed dynamic attempt')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
@@ -120,6 +122,24 @@ def main():
         assert 'large_W4A16_roofline_route' not in previous_audit
         for name in ['inductor','triton']:
             shutil.copytree(args.reference_export_job/'cache'/name,cache/name)
+    recovered_cache=None
+    if args.reference_compile_cache_job is not None:
+        import shutil
+        previous=args.reference_compile_cache_job
+        assert json.loads((previous/'progress.json').read_text())['status']=='failed'
+        assert 'illegal memory access' in (previous/'export.log').read_text()
+        routes=json.loads((previous/'actual-strict-export-route-audit.json').read_text())
+        static=[v for v in routes if not v['dynamic']]
+        assert len(static)>=7 and all(v['native_large_operator_calls']==0 for v in static)
+        combined=json.loads((previous.parent/'qualified-policies.json').read_text())
+        for path in combined['validation_reports']:
+            assert json.loads(Path(path).read_text())['GGUF_SHA256']==digest(args.gguf)
+        for name in ['inductor','triton']:
+            shutil.copytree(previous/'cache'/name,cache/name,dirs_exist_ok=True)
+        recovered_cache=dict(source=str(previous),preserved_source=True,
+            strict_route_audit_SHA256=digest(previous/'actual-strict-export-route-audit.json'),
+            terminal_export_log_SHA256=digest(previous/'export.log'),
+            cache_is_not_runtime_or_numerical_acceptance=True)
     os.environ.update(CUDA_VISIBLE_DEVICES='0', CUDA_HOME='/usr/local/cuda',
                       TORCH_CUDA_ARCH_LIST='12.0', TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas',
                       ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
@@ -292,8 +312,12 @@ def main():
         audit['large_W4A16_roofline_route']=large_w4a16_receipt
         audit['large_W4A16_policy_file_SHA256']=digest(args.large_w4a16_policy_file)
         audit['actual_strict_export_route_audit']=route_audits
+        from roofline_large_row_grid import launch_actual_rows
+        audit['large_row_grid_helper_SHA256']=digest(Path(__file__).with_name('roofline_large_row_grid.py'))
+        audit['conditional_autotune_workspace_rows']=1024
     if args.reference_export_job is not None:
         audit['baseline_compile_cache_reused']=True
+    if recovered_cache is not None:audit['preserved_static_compile_cache_reuse']=recovered_cache
     (args.output / 'artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
     state('artifact-exported-and-audited', runtime_sessions=32, prefix_caching=False, roofline_measurements_pending=True)
 
