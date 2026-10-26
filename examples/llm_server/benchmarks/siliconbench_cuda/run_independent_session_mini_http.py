@@ -44,6 +44,8 @@ def main():
     parser.add_argument("--memory-worker-proof", type=Path)
     parser.add_argument('--mini-profile',choices=PROFILES,default=DEFAULT_PROFILE)
     parser.add_argument('--Gemma-source-preparation-job',type=Path)
+    parser.add_argument('--http-python-dependencies-job',type=Path,
+                        help='Verified isolated HTTP dependencies; no change to model environment')
     parser.add_argument("--disable-native-memory-sampling", action="store_true",
                         help="Use the verified memory worker binary with its sampler disabled")
     args = parser.parse_args()
@@ -117,6 +119,22 @@ def main():
         assert digest(worker) == memory_proof["instrumented_worker_SHA256"]
     for name, expected in gate["unchanged_controls"].items():
         assert digest(source / name) == expected, name
+    dependency_path = None
+    if args.http_python_dependencies_job:
+        assert gemma
+        dependency_job=args.http_python_dependencies_job
+        assert json.loads((dependency_job/'progress.json').read_text())['status']=='Gemma-HTTP-Python-dependencies-ready'
+        dependency_proof=json.loads((dependency_job/'proof.json').read_text())
+        dependency_path=Path(dependency_proof['dependency_path'])
+        assert dependency_path.resolve().is_relative_to(dependency_job.resolve())
+        assert dependency_proof['installed_only_into_new_owned_target']
+        assert dependency_proof['base_torch_triton_versions_unchanged'] and dependency_proof['native_SDK_and_models_unchanged']
+        assert dependency_proof['official_server_import_pass']
+        assert dependency_proof['server_source_SHA256']==digest(package/'serve_gemma_runtime_columns.py')
+        assert dependency_proof['Gemma_source_preparation_SHA256']==digest(args.Gemma_source_preparation_job/'source-preparation.json')
+        for name,expected in dependency_proof['files_SHA256'].items():
+            path=dependency_path/name
+            assert path.resolve().is_relative_to(dependency_path.resolve()) and digest(path)==expected,name
     if gemma:
         from prepare_gemma_canonical_tokenizer import FILES
         for name,(expected,count) in FILES.items():
@@ -221,6 +239,8 @@ def main():
                         command.extend(['--raw-tool-text'])
                     (directory / "launch.json").write_text(json.dumps(dict(argv=command), indent=2) + "\n")
                     env = {**os.environ, "PYTHONPATH": str(source.parent), "CUDA_VISIBLE_DEVICES": "0"}
+                    if dependency_path is not None:
+                        env['PYTHONPATH']=str(dependency_path)+os.pathsep+str(source.parent)
                     env.pop("ET_CUDA_BENCH_MEMORY_TRACE", None)
                     if memory_proof and not args.disable_native_memory_sampling:
                         env["ET_CUDA_BENCH_MEMORY_TRACE"] = "1"

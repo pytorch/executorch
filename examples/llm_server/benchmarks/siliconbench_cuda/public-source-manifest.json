@@ -559,6 +559,10 @@
       "sha256": "529899e20859e2a2ba150e4fce7366a52165a5bd7b6fd556058a99a74194e233",
       "bytes": 9427
     },
+    "prepare_gemma_http_python_dependencies.py": {
+      "sha256": "fce55e76db720b120703f7789fb249443dca26fe43c1e91f30bcc06a51bab9e2",
+      "bytes": 3983
+    },
     "prepare_gemma_independent_session_mini_pair.py": {
       "sha256": "43e096254c99b2e0e1b0d4efcf57f2ea22b48d9a04da9d33c67ff7e2dbdcdee3",
       "bytes": 18780
@@ -856,8 +860,8 @@
       "bytes": 7624
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "849cb4831492e0b962b19beec4425948873aa1ef77f70c2811bd3792f17904c2",
-      "bytes": 24182
+      "sha256": "c030ac4686d0d5d1d91a6604eff3e640871e2f2da7f757c7d1519f1f5b0fe831",
+      "bytes": 25713
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "1cb04a5b327f8611ef471f9015d64ae9ee8d20a750c17859617e4651d3ce39a8",
