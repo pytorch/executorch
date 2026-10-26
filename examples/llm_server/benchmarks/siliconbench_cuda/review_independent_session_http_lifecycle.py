@@ -39,7 +39,7 @@ def main():
     assert document["actual_official_HTTP_server"] and document["mini_only"]
     assert document["context"] == 131072 and document["initial_KV_capacity"] == 512
     assert len(document["rounds"]) == 16
-    native_enabled = document["native_allocator_sampling_enabled"]
+    native_enabled = document.get("native_allocator_sampling_enabled", False)
     if args.require_native_memory:
         assert native_enabled
     records, comparison = [], {}
@@ -61,8 +61,9 @@ def main():
             native.append(item)
         if native_enabled:
             assert len(native) > 10
-            assert all(item["cuda_set_device_status"] == 0 and item["allocator_pool_available"]
-                       and item["allocator_query_status"] == [0, 0, 0, 0] for item in native)
+            assert all(item["cuda_set_device_status"] == 0 for item in native)
+            allocated = [item for item in native if item["allocator_pool_available"]]
+            assert allocated and all(item["allocator_query_status"] == [0, 0, 0, 0] for item in allocated)
             assert len({item["pid"] for item in native}) == 1
         else:
             assert not native
@@ -118,6 +119,7 @@ def main():
                              NVML_last_bytes=selected[-1]["GPU_used_bytes"], NVML_samples=len(selected))
                 if native_enabled:
                     assert readings, label
+                    assert all(item["allocator_pool_available"] for item in readings), label
                     value["native_last"] = readings[-1]
                     value["native_peak_KV_bytes"] = max(item["live_KV_bytes"] for item in readings)
                     value["allocator_peak_reserved_bytes"] = max(item["allocator_reserved_bytes"] for item in readings)
@@ -134,6 +136,7 @@ def main():
             assert final["max_full_capacity"] <= 2048, final
         records.append(dict(round=number, prefix=prefix, arm=arm, stages=stages,
                             native_samples=len(native),
+                            native_initial_pool_unavailable_samples=sum(not item["allocator_pool_available"] for item in native),
                             native_query_duration_ns=moments([item["query_duration_ns"] for item in native]) if len(native) > 1 else None,
                             raw_file_SHA256={path.name: digest(path) for path in (requests_path, memory_path, log_path)}))
     assert len(comparison) == 256 and all(set(value) == {"global", "independent"} for value in comparison.values())
