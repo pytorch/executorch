@@ -16,6 +16,7 @@ import re
 
 
 def install_shared_inductor_config_control(output):
+    from torch._inductor import config as inductor_config
     from torch._inductor.runtime.triton_heuristics import CachingAutotuner
     output = Path(output)
     assert not output.exists()
@@ -24,6 +25,12 @@ def install_shared_inductor_config_control(output):
     original_tune = CachingAutotuner.autotune_to_one_config
     signature = inspect.signature(original_init)
     winners, events = {}, []
+    # A previously compiled graph can bypass every tuner hook. Recompile
+    # generated Inductor graphs in this diagnostic process so configuration
+    # sharing is actually observed; ET's native GEMM cache remains unchanged.
+    cache_control=inductor_config.patch({'force_disable_caches': True})
+    cache_control.__enter__()
+    assert inductor_config.force_disable_caches
 
     def config_record(config):
         return dict(kwargs=dict(config.kwargs), num_warps=config.num_warps,
@@ -61,6 +68,7 @@ def install_shared_inductor_config_control(output):
         pending = output.with_suffix('.pending.json')
         pending.write_text(json.dumps(dict(
             exact_source_or_explicit_addressing_control=True,
+            Inductor_caches_disabled_in_this_diagnostic_process=True,
             candidate_accepted=False, runtime_source_changed=False,
             winners=winners, events=events), indent=2) + '\n')
         pending.replace(output)
@@ -120,11 +128,13 @@ def install_shared_inductor_config_control(output):
     CachingAutotuner.__init__ = init
     CachingAutotuner.precompile = precompile
     CachingAutotuner.autotune_to_one_config = tune
+    save()
 
     def restore():
         CachingAutotuner.__init__ = original_init
         CachingAutotuner.precompile = original_precompile
         CachingAutotuner.autotune_to_one_config = original_tune
+        cache_control.__exit__(None, None, None)
         save()
 
     return restore
