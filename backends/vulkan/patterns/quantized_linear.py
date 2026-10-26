@@ -110,9 +110,9 @@ class QuantizedLinearMatch(PatternMatch):
         # fused op takes the N-D input and contracts its last dim, so a reshape that
         # changes the last dim (e.g. merging heads, [S, H, D] -> [S, H * D]) must
         # stay in the graph.
-        if utils.is_view_copy_node(
+        if utils.is_view_copy_node(anchor_primary_input_node) and _keeps_last_dim(
             anchor_primary_input_node
-        ) and _keeps_last_dim(anchor_primary_input_node):
+        ):
             self.all_nodes.append(anchor_primary_input_node)
             anchor_primary_input_node = anchor_primary_input_node.args[
                 0
