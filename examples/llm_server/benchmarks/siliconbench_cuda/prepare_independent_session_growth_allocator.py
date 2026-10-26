@@ -34,6 +34,8 @@ def main():
     parser.add_argument('--baseline-native-gate',type=Path,required=True)
     parser.add_argument('--stable-fastpath',action='store_true',
                         help='Also avoid repeated layout table construction when every owner and capacity is unchanged')
+    parser.add_argument('--stable-metadata-uploads',action='store_true',
+                        help='Also reuse unchanged owner mappings and identical columns/base uploads')
     parser.add_argument('--jobs', type=int, choices=[1, 2, 4], default=2)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
@@ -51,6 +53,13 @@ def main():
         assert fast['allocator_growth_spec_SHA256']==digest(growth_path)
         assert fast['before_SHA256']==growth['after_SHA256'] and fast['file']==growth['file']
         assert digest(fast_patch)==fast['patch_SHA256']
+    uploads_path=package/'independent_session_stable_metadata_uploads_source.json'
+    uploads=json.loads(uploads_path.read_text()) if args.stable_metadata_uploads else None
+    uploads_patch=package/'independent_session_stable_metadata_uploads.patch'
+    if uploads:
+        assert fast and uploads['stable_fastpath_spec_SHA256']==digest(fast_path)
+        assert uploads['before_SHA256']==spec['files'][uploads['file']]['after_SHA256']
+        assert digest(uploads_patch)==uploads['patch_SHA256']
     original_gate=json.loads(args.baseline_native_gate.read_text())
     assert original_gate['native_GPU_tests_pass'] and original_gate['test_count']==74
     assert Path(original_gate['source']).resolve()==args.baseline_source.resolve()
@@ -98,6 +107,9 @@ def main():
             expected=record['after_SHA256']
             if version=='after' and name==growth['file']:expected=growth['after_SHA256']
             if version=='after-fast' and name==growth['file']:expected=fast['after_SHA256']
+            if version=='after-uploads':
+                if name==growth['file']:expected=fast['after_SHA256']
+                if name==uploads['file']:expected=uploads['after_SHA256']
             assert digest(root/name)==expected,name
 
     try:
@@ -127,6 +139,10 @@ def main():
             run(['git','apply','--check',fast_patch],cwd=source)
             run(['git','apply',fast_patch],cwd=source)
             verify(source,'after-fast')
+        if uploads:
+            run(['git','apply','--check',uploads_patch],cwd=source)
+            run(['git','apply',uploads_patch],cwd=source)
+            verify(source,'after-uploads')
         for name, expected in controls.items():
             assert digest(source / name) == expected, name
         cmake = shutil.which('cmake', path=env['PATH'])
@@ -165,7 +181,7 @@ def main():
         binaries = {str(p): digest(p) for p in [binary,
                     model_build / 'muse_glimmer_runtime_kv_probe',
                     model_build / 'muse_glimmer_batching_worker']}
-        verify(source, 'after-fast' if fast else 'after')
+        verify(source, 'after-uploads' if uploads else ('after-fast' if fast else 'after'))
         verify(args.baseline_source, 'before')
         state('waiting-native-GPU-tests', binaries=binaries)
         xml = args.output / 'native-tests.xml'
@@ -189,8 +205,9 @@ def main():
                        independent_session_tests=independent,
                        source_spec_SHA256=digest(spec_path),allocator_growth_spec_SHA256=digest(growth_path), source=str(source),
                        source_spec_is_artifact_ABI_compatibility_reference=True,
-                       actual_native_source_change=(dict(patches=[growth,fast]) if fast else growth),
+                       actual_native_source_change=(dict(patches=[growth,fast,uploads]) if uploads else (dict(patches=[growth,fast]) if fast else growth)),
                        stable_fastpath_spec_SHA256=digest(fast_path) if fast else None,
+                       stable_metadata_uploads_spec_SHA256=digest(uploads_path) if uploads else None,
                        preserved_original_native_gate_SHA256=digest(args.baseline_native_gate),
                        binaries=binaries, unchanged_controls=controls,
                        native_tests_xml_SHA256=digest(xml),

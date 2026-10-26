@@ -165,6 +165,7 @@ def main():
             assert growth['allocator_policy_only']
             assert growth['weight_math_ABI_graph_invalidation_and_sliding_unchanged']
             expected_pool_SHA256=growth['after_SHA256']
+            extra_native_source_hashes={}
             source_changes=growth
             if gate.get('stable_fastpath_spec_SHA256'):
                 fast_path=package/'independent_session_stable_repartition_fastpath_source.json'
@@ -175,6 +176,15 @@ def main():
                 assert fast['model_weights_kernels_ABI_graph_policy_and_sliding_unchanged']
                 expected_pool_SHA256=fast['after_SHA256']
                 source_changes=dict(patches=[growth,fast])
+            if gate.get('stable_metadata_uploads_spec_SHA256'):
+                uploads_path=package/'independent_session_stable_metadata_uploads_source.json'
+                uploads=json.loads(uploads_path.read_text())
+                assert digest(uploads_path)==gate['stable_metadata_uploads_spec_SHA256']
+                assert uploads['stable_fastpath_spec_SHA256']==gate['stable_fastpath_spec_SHA256']
+                assert uploads['native_host_metadata_only'] and uploads['model_weights_kernels_ABI_graph_policy_and_sliding_unchanged']
+                assert source_changes==dict(patches=[growth,fast])
+                source_changes=dict(patches=[growth,fast,uploads])
+                extra_native_source_hashes[uploads['file']]=uploads['after_SHA256']
             if 'actual_native_source_change' in gate:
                 assert gate['actual_native_source_change']==source_changes
                 assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
@@ -193,6 +203,9 @@ def main():
             for name,record in capacity['files'].items():
                 assert digest(Path(original_gate['source'])/name)==record['after_SHA256'],name
                 expected=expected_pool_SHA256 if name==growth['file'] else record['after_SHA256']
+                if name in extra_native_source_hashes:
+                    assert record['after_SHA256']==uploads['before_SHA256']
+                    expected=extra_native_source_hashes[name]
                 assert digest(source/name)==expected,name
             assert gate['unchanged_controls']==original_gate['unchanged_controls']
             for verified_gate in (gate,original_gate):

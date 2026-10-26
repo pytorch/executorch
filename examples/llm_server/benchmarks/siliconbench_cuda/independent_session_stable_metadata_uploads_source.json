@@ -1,0 +1,17 @@
+{
+  "file": "backends/cuda/runtime/cuda_kv_cache.cpp",
+  "before_SHA256": "9e8523d86cfa6eeee16ec9c78aa4eaa30c30efa71046866acf50f9a089c26950",
+  "after_SHA256": "96cd8f2addad94bcb0b32505c96465f3ac87c3f92eb65af2d81732f3c04186d0",
+  "patch_SHA256": "1bc4bc6cecc0b3283b98cb836a86b02cb1a47a29bccefba46015a78e5d1271dc",
+  "stable_fastpath_spec_SHA256": "86057a2a521c55d78deb2cc81dc2d6a74e9abb12884a6419feab89e794a631f6",
+  "native_host_metadata_only": true,
+  "model_weights_kernels_ABI_graph_policy_and_sliding_unchanged": true,
+  "stable_owner_layout_requires_identical_ids_columns_and_full_capacities": true,
+  "migration_uses_current_live_lengths_and_original_pool_validation": true,
+  "unchanged_uploads_require_identical_width_and_exact_all_bytes": true,
+  "sequence_info_is_always_uploaded": true,
+  "clear_invalidates_memoized_state": true,
+  "side_buffers_live_for_pool_lifetime_and_are_read_only_model_inputs": true,
+  "original_global_layout_upload_path_preserved": true,
+  "qualified": false
+}

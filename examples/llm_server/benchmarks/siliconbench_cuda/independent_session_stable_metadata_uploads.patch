@@ -1,0 +1,136 @@
+--- a/backends/cuda/runtime/cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/cuda_kv_cache.cpp
+@@ -888,6 +888,10 @@
+       }
+     }
+     seqs_.clear();
++    stable_owner_ids_.clear();
++    stable_owner_ranges_.clear();
++    uploaded_columns_.clear();
++    uploaded_bases_.clear();
+     step_seq_ids_.clear();
+     pending_owners_.clear();
+     poisoned_ = false;
+@@ -1311,6 +1315,45 @@
+     const int target = compact
+         ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
+         : std::max(columns_, live + 1);
++    // Reuse the validated mapping only while every owner, column and full
++    // capacity is unchanged. Ring growth still enters the pool's normal
++    // migration path with current live lengths and stream dependencies.
++    if (cfg_.independent_sequence_capacity && !compact && pool_.allocated() &&
++        target == columns_ && stable_owner_ids_.size() == seqs_.size() &&
++        stable_owner_ranges_.size() == seqs_.size()) {
++      bool stable = true;
++      int64_t required = 0;
++      size_t index = 0;
++      for (const auto& [id, sequence] : seqs_) {
++        const int64_t live_rows = sequence.plan.length();
++        const auto found = required_ends ? required_ends->find(id) :
++            std::map<int32_t, int>::const_iterator{};
++        const int64_t end = required_ends && found != required_ends->end() ?
++            std::max<int64_t>(live_rows, found->second) : live_rows;
++        ET_CHECK_OR_RETURN_ERROR(end <= cfg_.capacity, InvalidArgument,
++            "offgraph_kv: owner exceeds logical context");
++        auto& range = stable_owner_ranges_[index];
++        if (stable_owner_ids_[index] != id || range.to != sequence.column ||
++            range.capacity != sequence.capacity || sequence.capacity <= 0 ||
++            end > sequence.capacity) {
++          stable = false;
++          break;
++        }
++        range.live = live_rows;
++        required = std::max(required, end);
++        ++index;
++      }
++      if (stable) {
++        bool committed = false;
++        const Error error = pool_.repartition_sequences(
++            target, stable_owner_ranges_, required, stream,
++            /*trim_unused=*/true, &committed);
++        if (error != Error::Ok && committed) {
++          poisoned_ = true;
++        }
++        return error;
++      }
++    }
+     std::map<int32_t, int> next;
+     std::unordered_set<int> used;
+     bool relocate = false;
+@@ -1373,6 +1416,13 @@
+       for (auto& [id, sequence] : seqs_) {
+         sequence.column = next.at(id);
+         sequence.capacity = ranges.at(range_index++).capacity;
++      }
++      stable_owner_ids_.clear();
++      stable_owner_ranges_.clear();
++      for (const auto& [id, sequence] : seqs_) {
++        stable_owner_ids_.push_back(id);
++        stable_owner_ranges_.push_back({sequence.column, sequence.column,
++            sequence.capacity, sequence.plan.length()});
+       }
+       if (error != Error::Ok) {
+         poisoned_ = true;
+@@ -1476,23 +1526,37 @@
+               cols_bytes,
+               static_cast<size_t>(max_segments_) * info_width_ *
+                   sizeof(int32_t)}}) {
+-      const cudaError_t error = cudaMemcpyAsync(
+-          pool_.side_buffer(index),
+-          staging_ + offset,
+-          bytes,
+-          cudaMemcpyHostToDevice,
+-          stream);
+-      ET_CHECK_OR_RETURN_ERROR(
+-          error == cudaSuccess,
+-          Internal,
+-          "offgraph_kv: cannot write the step's sequences: %s",
+-          cudaGetErrorString(error));
++      // Side buffers live for the pool's entire lifetime and are read-only
++      // model inputs. Repeated decode commonly has identical owner columns;
++      // preserve the original global path and skip only proven identical
++      // independent-layout uploads. clear() invalidates the host memo.
++      const auto* current = reinterpret_cast<const int64_t*>(staging_ + offset);
++      const bool unchanged = cfg_.independent_sequence_capacity &&
++          index == kSeqColsBuffer && uploaded_columns_.size() == width &&
++          std::memcmp(uploaded_columns_.data(), current, bytes) == 0;
++      if (!unchanged) {
++        const cudaError_t error = cudaMemcpyAsync(
++            pool_.side_buffer(index), staging_ + offset, bytes,
++            cudaMemcpyHostToDevice, stream);
++        ET_CHECK_OR_RETURN_ERROR(error == cudaSuccess, Internal,
++            "offgraph_kv: cannot write the step's sequences: %s",
++            cudaGetErrorString(error));
++        if (cfg_.independent_sequence_capacity && index == kSeqColsBuffer) {
++          uploaded_columns_.assign(current, current + width);
++        }
++      }
+     }
+     if (cfg_.independent_sequence_capacity) {
+       const size_t offset = cols_bytes + static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t);
+-      ET_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(pool_.side_buffer(kSeqBaseBuffer),
+-          staging_ + offset, width * sizeof(int64_t), cudaMemcpyHostToDevice, stream) == cudaSuccess,
+-          Internal, "offgraph_kv: cannot upload independent owner bases");
++      const auto* current = reinterpret_cast<const int64_t*>(staging_ + offset);
++      const size_t bytes = width * sizeof(int64_t);
++      if (uploaded_bases_.size() != width ||
++          std::memcmp(uploaded_bases_.data(), current, bytes) != 0) {
++        ET_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(pool_.side_buffer(kSeqBaseBuffer),
++            staging_ + offset, bytes, cudaMemcpyHostToDevice, stream) == cudaSuccess,
++            Internal, "offgraph_kv: cannot upload independent owner bases");
++        uploaded_bases_.assign(current, current + width);
++      }
+     }
+     return Error::Ok;
+   }
+@@ -1564,6 +1628,10 @@
+   std::vector<int64_t> layer_rows_;
+   CudaKVPool pool_;
+   std::map<int32_t, Sequence> seqs_;
++  std::vector<int32_t> stable_owner_ids_;
++  std::vector<CudaKVPool::SequenceRange> stable_owner_ranges_;
++  std::vector<int64_t> uploaded_columns_;
++  std::vector<int64_t> uploaded_bases_;
+   std::vector<int32_t> step_seq_ids_;
+   std::vector<int32_t> pending_owners_;
+   uint8_t* staging_{nullptr};
