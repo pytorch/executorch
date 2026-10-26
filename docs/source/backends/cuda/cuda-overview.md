@@ -7,24 +7,29 @@ The CUDA backend is the ExecuTorch solution for running models on NVIDIA GPUs. I
 - **Optimized GPU Execution**: Uses AOTInductor to generate highly optimized CUDA kernels for model operators
 - **Triton Kernel Support**: Leverages Triton for GEMM (General Matrix Multiply), convolution, and SDPA (Scaled Dot-Product Attention) kernels.
 - **Quantization Support**: INT4 weight quantization with tile-packed format for improved performance and reduced memory footprint
-- **Cross-Platform**: Supports both Linux and Windows platforms
+- **Cross-Platform**: Runs on Linux, and on Windows from C++. Programs for Windows are exported on Linux.
 - **Multiple Model Support**: Works with various models including LLMs, vision-language models, and audio models
 
 ## Target Requirements
 
 Below are the requirements for running a CUDA-delegated ExecuTorch model:
 
-- **Hardware**: NVIDIA GPU with CUDA compute capability
-- **CUDA Toolkit**: CUDA 11.x or later (CUDA 12.x recommended)
-- **Operating System**: Linux or Windows
-- **Drivers**: PyTorch-Compatible NVIDIA GPU drivers installed
+- **Hardware**: NVIDIA GPU with compute capability 8.0 (Ampere) or newer. This is the floor the
+  prebuilt packages are built for.
+- **CUDA**: 13 for the prebuilt packages. On Linux they bring the CUDA runtime with them. On
+  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 12.6.
+- **Operating System**: Linux, or Windows from C++ for programs exported on Linux (see
+  [CUDA on Windows](../../using-executorch-cpp.md#cuda-on-windows))
+- **Drivers**: An NVIDIA driver that supports the CUDA version you use: CUDA 13 for the prebuilt
+  packages.
 
 ## Development Requirements
 
 To develop and export models using the CUDA backend:
 
-- **Python**: Python 3.8+
+- **Python**: Python 3.11 to 3.15
 - **PyTorch**: PyTorch with CUDA support
+- **CUDA Toolkit**: export compiles kernels with `nvcc`, the CUDA compiler, so it needs a CUDA toolkit
 - **ExecuTorch**: Install ExecuTorch with CUDA backend support
 
 ## Using the CUDA Backend
@@ -83,7 +88,7 @@ For a complete working example, see the [CUDA export script](https://github.com/
 
 ## Runtime Integration
 
-To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information.
+To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](../../getting-started.md#running-on-device) for more information.
 
 When building from source, pass `-DEXECUTORCH_BUILD_CUDA=ON` when configuring the CMake build to compile the CUDA backend.
 
@@ -118,7 +123,7 @@ exec_program = et_program.to_executorch()
 
 ```python
 # CPU tensors. The runtime copies them to the GPU and copies results back.
-outputs = method([torch.randn(4, 64)])
+outputs = method.execute([torch.randn(4, 64)])
 ```
 
 This is the simplest option and the right default. The cost is a copy in each direction on
@@ -140,24 +145,22 @@ exec_program = et_program.to_executorch(
             skip_d2h_for_method_outputs=True,
         ),
         enable_non_cpu_memory_planning=True,
-        # Required alongside the skips. Memory planning reserves a buffer for graph inputs by
-        # default, and the runtime fills a planned input by copying the caller's memory into that
-        # buffer, which reintroduces the copy you just asked to skip. On device memory that copy is
-        # a host memcpy into a device pointer, which is undefined.
-        # Outputs stay planned, so the runtime allocates them on the device and hands back a
-        # pointer to its own buffer. See the note below for when to unplan them instead.
-        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        # Keeps the method from reserving its own input and output memory.
+        memory_planning_pass=MemoryPlanningPass(
+            alloc_graph_input=False, alloc_graph_output=False
+        ),
     )
 )
 ```
 
 ```python
 # Now the tensors must already be on the GPU. Passing CPU tensors is a caller error.
-outputs = method([torch.randn(4, 64, device="cuda")])
+outputs = method.execute([torch.randn(4, 64, device="cuda")])
 ```
 
 Outputs also stay on the device, which is what you want when the next stage of your pipeline is
-also on the GPU.
+also on the GPU. From Python, each output comes back in GPU memory that the next call does not
+overwrite, unless you pass `clone_outputs=False`.
 
 ### Things worth knowing
 
@@ -170,24 +173,17 @@ it to `False` while asking for either skip raises a `ValueError`, because copy i
 during device-aware memory planning.
 
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
-program reserves its own input buffer and the runtime copies the caller's memory into it, so the
-copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,
-which is undefined, so the program crashes rather than returning a wrong answer.
+program reserves its own input buffer on the device, and the runtime refuses to copy the caller's
+tensor into it. The call fails with error `0x10` (`NotSupported`), and the log says
+`Planned-buffer copy needs host memory on both sides`.
 
-**Outputs have two valid shapes, and which one you want depends on the language.**
-
-Leave outputs planned, which is the default, when the caller cannot supply device memory itself.
-The planned buffer is allocated on the device because `enable_non_cpu_memory_planning` is on, and
-`skip_d2h_for_method_outputs` means nothing copies it back, so the result stays on the device and
-the caller receives a pointer to the runtime's own buffer. That buffer belongs to the method and is
-reused by the next execution, so read or copy the result before running again. This is the shape
-every Python caller wants, and it is what the exporters in this repository use, for example
-`examples/models/gemma4_31b/export.py`.
-
-Set `alloc_graph_output=False` only when the caller supplies the output memory itself, which today
-means a C++ caller handing the runtime a device tensor through `Module::set_output`. The Python
-bindings allocate host memory for an unplanned output, so a device resident method exported this
-way cannot run from Python.
+**Leave outputs unplanned too**, via `alloc_graph_output=False`. Then each result lands in memory
+you own, with no extra copy. A C++ caller must give each unplanned output a buffer once with
+`Module::set_output`, before the first run: GPU memory when the output copy is skipped, host
+memory otherwise. Pass each output's index to `set_output`; the C++ example below sets output 0. If
+you keep outputs planned instead, they live in the method's own memory and the next run overwrites
+them. Python's `execute()` then copies each output on every call, unless you pass
+`clone_outputs=False`.
 
 **Per-method selection is on the outer config, not on the flags.** Pass a dict of
 `PropagateDeviceConfig` keyed by method name:
@@ -221,6 +217,11 @@ device right after the scalar type. Nothing is copied:
 
 ```cpp
 auto input = from_blob(device_data, {rows, columns}, ScalarType::Float, DeviceType::CUDA);
+auto output = from_blob(device_result, {rows, out_columns}, ScalarType::Float, DeviceType::CUDA);
+// Once, before the first run. Every run then writes its result to device_result.
+if (module.set_output(output) != Error::Ok) {
+  return 1;
+}
 auto result = module.forward(input);
 ```
 
@@ -235,6 +236,7 @@ across, which costs one transfer:
 ```cpp
 auto host_input = make_tensor_ptr({rows, columns}, std::move(data));
 auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
+// Set the output with module.set_output first, as above.
 auto result = module.forward(input);
 ```
 
