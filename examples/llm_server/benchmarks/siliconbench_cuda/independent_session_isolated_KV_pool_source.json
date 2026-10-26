@@ -31,8 +31,8 @@
       },
       {
         "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
-        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
-        "after_SHA256": "3f2480bc0a2f824315335355709a58e828b94acfbcb23754513bc7b13a890380",
+        "before_SHA256": "afec52cec8d343f7870dd92a79867004e3c301f9fbb99ca03d5e60a93b71ef43",
+        "after_SHA256": "a31d7ae2088d1b3c34af1cbbc2c64abb90a74ed381e98107e66fd1ad0d04ba97",
         "private_KV_allocator_and_instrumentation_only": true,
         "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
         "qualified": false,
@@ -69,8 +69,8 @@
       },
       {
         "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
-        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
-        "after_SHA256": "3f2480bc0a2f824315335355709a58e828b94acfbcb23754513bc7b13a890380",
+        "before_SHA256": "afec52cec8d343f7870dd92a79867004e3c301f9fbb99ca03d5e60a93b71ef43",
+        "after_SHA256": "a31d7ae2088d1b3c34af1cbbc2c64abb90a74ed381e98107e66fd1ad0d04ba97",
         "private_KV_allocator_and_instrumentation_only": true,
         "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
         "qualified": false,

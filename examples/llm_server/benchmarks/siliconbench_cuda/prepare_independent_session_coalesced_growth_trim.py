@@ -62,7 +62,7 @@ def main():
     records = fix['variants'][args.source_variant]
     for record in records:
         file = source_before / record['file']
-        assert file.is_file() and sha(file) == record['before_SHA256']
+        assert not file.is_symlink() and sha(file) == record['before_SHA256'], record['file']
     assert not args.output.exists(), 'Preserve previous attempts'
     args.output.mkdir(parents=True)
     source = args.output / 'executorch'
@@ -110,24 +110,6 @@ def main():
         before_hashes = {name: sha(source_before / name) for name in spec['files']}
         before_hashes.update({name: sha(source_before / name) for name in controls})
         assert all(sha(source / name) == expected for name, expected in before_hashes.items())
-        # Retained SDKs can link unchanged source files to an older owned
-        # checkout. Materialize only these exact hash-bound patch targets in
-        # this new task copy; never patch a link into the preserved baseline.
-        materialized = []
-        for record in records:
-            file = source / record['file']
-            if file.is_symlink():
-                raw = file.read_bytes()
-                assert hashlib.sha256(raw).hexdigest() == record['before_SHA256']
-                temporary = file.with_name(file.name + '.task-materialized')
-                assert not temporary.exists()
-                temporary.write_bytes(raw)
-                temporary.replace(file)
-                materialized.append(record['file'])
-            assert not file.is_symlink() and sha(file) == record['before_SHA256']
-        (args.output/'materialized-patch-source.json').write_text(json.dumps(dict(
-            materialized_task_copy_paths=materialized, original_source_links_preserved=True,
-            exact_before_hashes_verified=True), indent=2)+'\n')
         run(['git', 'apply', '--check', patch], cwd=source)
         run(['git', 'apply', patch], cwd=source)
         changed = {record['file']: record for record in records}

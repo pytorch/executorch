@@ -524,7 +524,7 @@
       "bytes": 11449
     },
     "independent_session_isolated_KV_pool_source.json": {
-      "sha256": "d65c00a0b0c0ed8a11e1d76370ea0247fa3b2bce91210107eeb866070e34d013",
+      "sha256": "131537b2468e1856a09436d867014442c42128c4ebb5851631fb6e12289a3431",
       "bytes": 5229
     },
     "independent_session_mini_profiles.py": {
@@ -688,8 +688,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_coalesced_growth_trim.py": {
-      "sha256": "9588175637cffafd71746c432c5db918c31f12e37b268dbd32c9e6c8d41473b0",
-      "bytes": 14393
+      "sha256": "921f0045817a49893cd43f68f34d77a32112d0e7579df18deacf7c270c09b11a",
+      "bytes": 13351
     },
     "prepare_independent_session_empty_owner_reuse.py": {
       "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
