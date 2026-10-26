@@ -9,7 +9,7 @@ It does not select a main preset or qualify the full models by itself.
 """
 import argparse,datetime,hashlib,json,os,subprocess,sys,traceback
 from pathlib import Path
-from independent_session_mini_profiles import DEFAULT_PROFILE,PROFILES,validate_mini_audit
+from independent_session_mini_profiles import DEFAULT_PROFILE,PROFILES,FULL_PROFILES,validate_mini_audit,validate_full_audit
 
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -17,6 +17,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  for name in ('preparation-job','output','lock'):p.add_argument('--'+name,type=Path,required=True)
  p.add_argument('--mini-profile',choices=PROFILES,default=DEFAULT_PROFILE)
+ p.add_argument('--full-model-profile',choices=FULL_PROFILES)
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  def state(status,**extra):
   temp=a.output/'progress.pending.json'
@@ -24,12 +25,16 @@ def main():
    'UTC':datetime.datetime.now(datetime.timezone.utc).isoformat(),'full_model_qualified':False,
    'candidate_accepted':False,**extra},indent=2)+'\n');temp.replace(a.output/'progress.json')
  try:
-  prep=json.loads((a.preparation_job/'progress.json').read_text());assert prep['status']=='mini-artifacts-ready'
+  prep=json.loads((a.preparation_job/'progress.json').read_text())
+  assert prep['status']==('full-artifacts-ready-for-qualification' if a.full_model_profile else 'mini-artifacts-ready')
+  if a.full_model_profile:assert prep['mini_gate_passed'] and prep['all_full_artifact_hashes_verified']
   gate_path=a.preparation_job/'native-gate.json';gate=json.loads(gate_path.read_text())
   assert gate['native_GPU_tests_pass'] and gate['test_count']==74
-  artifact=a.preparation_job/'mini-independent-artifact'
-  audit=json.loads((artifact/'independent-mini-artifact-audit.json').read_text())
-  validate_mini_audit(audit,a.mini_profile,True)
+  artifact=a.preparation_job/('full-independent-artifact' if a.full_model_profile else 'mini-independent-artifact')
+  audit_name='independent-full-artifact-audit.json' if a.full_model_profile else 'independent-mini-artifact-audit.json'
+  audit=json.loads((artifact/audit_name).read_text())
+  if a.full_model_profile:validate_full_audit(audit,a.full_model_profile,True)
+  else:validate_mini_audit(audit,a.mini_profile,True)
   assert audit['source_spec_sha256']==gate['source_spec_SHA256']
   probe=a.preparation_job/'model-build/muse_glimmer_runtime_kv_probe'
   assert digest(probe)==gate['binaries'][str(probe)]
@@ -43,6 +48,7 @@ def main():
     '--expected-weights-sha256',audit['artifacts']['aoti_cuda_blob.ptd']['sha256'],
     '--arm','independent','--mini-profile',a.mini_profile,'--automatic-reclaim',
     '--job-dir',str(root),'--lock',str(a.lock),'--diagnostic-initial-KV-capacity',str(capacity)]
+   if a.full_model_profile:command+=['--full-model-profile',a.full_model_profile]
    state('running-same-PTE-capacity-control',arm=name,initial_capacity=capacity)
    with (a.output/(name+'-driver.log')).open('x') as log:
     subprocess.run(command,check=True,stdout=log,stderr=subprocess.STDOUT,timeout=7200,
@@ -92,7 +98,8 @@ def main():
              doc['probe_sha256']==documents['growing512']['probe_sha256'] for doc in documents.values())
   passed=not any(row['argmax_difference_operations'] for row in rounds) and all(row['bitwise_equal'] for row in checks)
   result={'same_PTE_PTD_probe_and_native_SDK':True,'same_token_operations':True,
-    'mini_profile':a.mini_profile,'reference_initial_capacity':16384,'candidate_initial_capacity':512,
+    'mini_profile':a.mini_profile,'full_model_profile':a.full_model_profile,
+    'reference_initial_capacity':16384,'candidate_initial_capacity':512,
     'rounds':rounds,'full_logit_checks':checks,'saved_logits_SHA256':files,
     'bitwise_allocation_equivalence_pass':passed,'compiled_math_changed':False,
     'sliding_policy_changed':False,'full_model_qualified':False,'candidate_accepted':False,

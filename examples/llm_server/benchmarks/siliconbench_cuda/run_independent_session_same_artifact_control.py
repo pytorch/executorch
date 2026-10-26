@@ -16,7 +16,7 @@ import selectors
 import subprocess
 import time
 import traceback
-from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, FULL_PROFILES, validate_mini_audit, validate_full_audit
 from qualified_rewind_probe import qualified_rewind_probe
 
 
@@ -34,6 +34,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--full-model-profile',choices=FULL_PROFILES)
     parser.add_argument('--rewind-probe-job',type=Path,
                         help='Also verify actual native rewind on each cloned model owner')
     parser.add_argument("--after-logit-collision-job", type=Path)
@@ -69,8 +70,9 @@ def main():
         deadline = time.monotonic() + 60 * args.wait_minutes
         while True:
             preparation = json.loads((args.preparation_job / "progress.json").read_text())
-            if preparation["status"] == "mini-artifacts-ready":
+            if preparation["status"] == ("full-artifacts-ready-for-qualification" if args.full_model_profile else "mini-artifacts-ready"):
                 break
+            assert not args.full_model_profile,'Full pair must already be gated and ready'
             assert preparation["status"] != "failed"
             handle = Path("/proc") / str(preparation["controller_pid"])
             assert handle.exists()
@@ -96,10 +98,14 @@ def main():
         for name, expected in gate["unchanged_controls"].items():
             assert digest(Path(gate["source"]) / name) == expected
         artifacts = {}
+        if args.full_model_profile:
+            assert preparation['mini_gate_passed'] and preparation['all_full_artifact_hashes_verified']
+        artifact_prefix='full-' if args.full_model_profile else 'mini-'
+        audit_name='independent-full-artifact-audit.json' if args.full_model_profile else 'independent-mini-artifact-audit.json'
         for arm in ("global", "independent"):
-            artifact = args.preparation_job / ("mini-" + arm + "-artifact")
-            audit = json.loads((artifact / "independent-mini-artifact-audit.json").read_text())
-            geometry = validate_mini_audit(audit, args.mini_profile, arm == 'independent')
+            artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
+            audit = json.loads((artifact / audit_name).read_text())
+            geometry = (validate_full_audit(audit,args.full_model_profile,arm=='independent') if args.full_model_profile else validate_mini_audit(audit, args.mini_profile, arm == 'independent'))
             assert audit["independent_capacity"] == (arm == "independent")
             assert audit["source_spec_sha256"] == gate["source_spec_SHA256"]
             for name in ("model.pte", "aoti_cuda_blob.ptd"):
@@ -248,7 +254,7 @@ def main():
                             child.wait(timeout=120)
         (args.output / "result.json").write_text(json.dumps(dict(
             same_artifact_same_forward_same_tokens=True, all_bitwise_checks_pass=True,
-            mini_profile=args.mini_profile, model_geometry=geometry,
+            mini_profile=args.mini_profile, full_model_profile=args.full_model_profile, model_geometry=geometry,
             actual_rewind_checked=probe_proof is not None,rewind_probe_proof=probe_proof,
             independent_exports_not_compared_here=True, CUDA_graph_mode_enabled=True,
             actual_graph_trace_review_separate=True, performance_qualified=False,

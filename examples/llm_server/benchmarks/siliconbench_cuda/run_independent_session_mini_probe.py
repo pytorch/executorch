@@ -14,7 +14,7 @@ import statistics
 import subprocess
 import threading
 import time
-from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, FULL_PROFILES, validate_mini_audit, validate_full_audit
 
 
 def digest(path):
@@ -34,6 +34,8 @@ def main():
     parser.add_argument("--expected-weights-sha256", required=True)
     parser.add_argument("--arm", choices=["global", "independent"], required=True)
     parser.add_argument("--mini-profile", choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--full-model-profile',choices=FULL_PROFILES,
+                        help='Validate actual full geometry rather than a mini artifact')
     parser.add_argument("--automatic-reclaim", action="store_true",
                         help="Require native automatic contraction; never issue compact operations")
     parser.add_argument("--job-dir", type=Path, required=True)
@@ -55,8 +57,11 @@ def main():
     assert digest(args.probe) == build['binaries'][str(args.probe)]
     assert digest(args.artifact / 'model.pte') == args.expected_PTE_sha256
     assert digest(args.artifact / 'aoti_cuda_blob.ptd') == args.expected_weights_sha256
-    audit = json.loads((args.artifact / 'independent-mini-artifact-audit.json').read_text())
-    geometry = validate_mini_audit(audit, args.mini_profile, args.arm == 'independent')
+    audit_name='independent-full-artifact-audit.json' if args.full_model_profile else 'independent-mini-artifact-audit.json'
+    audit = json.loads((args.artifact / audit_name).read_text())
+    geometry = (validate_full_audit(audit,args.full_model_profile,args.arm=='independent') if args.full_model_profile else validate_mini_audit(audit, args.mini_profile, args.arm == 'independent'))
+    if args.full_model_profile:
+        assert args.mini_profile==('gemma4-first6' if args.full_model_profile=='gemma4-48layers' else DEFAULT_PROFILE)
     assert audit['source_spec_sha256'] == build['source_spec_SHA256']
     assert args.probe.is_file() and not args.job_dir.exists()
     args.job_dir.mkdir(parents=True)
@@ -539,6 +544,7 @@ def main():
             result = dict(
                 arm=args.arm,
                 mini_profile=args.mini_profile,
+                full_model_profile=args.full_model_profile,
                 model_geometry=geometry,
                 same_artifact_pitch_control=args.same_artifact_pitch_control,
                 initial_KV_capacity=initial_capacity,
@@ -546,7 +552,7 @@ def main():
                 heterogeneous_histories=True,
                 automatic_reclaim_requested=args.automatic_reclaim,
                 native_gate_sha256=digest(args.native_gate),
-                role="mini",
+                role="full-qualification" if args.full_model_profile else "mini",
                 rounds=records,
                 performance=aggregates,
                 probe_sha256=digest(args.probe),
