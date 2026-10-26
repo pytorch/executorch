@@ -33,6 +33,20 @@ class HardsigmoidModule(torch.nn.Module):
         return torch.nn.functional.hardsigmoid(x)
 
 
+class ArangeModule(torch.nn.Module):
+    def __init__(self, dtype: torch.dtype) -> None:
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + torch.arange(0, 8, 1, dtype=self.dtype).to(x.dtype)
+
+
+class DynamicArangeModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + torch.arange(0, x.shape[0], 1, dtype=torch.float32)
+
+
 class TestWebGPUPartitioner(unittest.TestCase):
     def _export_add(self) -> ExportedProgram:
         return torch.export.export(
@@ -199,6 +213,61 @@ class TestWebGPUPartitioner(unittest.TestCase):
                 for partitioner in ToEdgeTransformAndLower().partitioners
             )
         )
+
+    def _arange_is_delegated(
+        self,
+        partitioner: Partitioner,
+        module: torch.nn.Module,
+        example_input: torch.Tensor,
+        dynamic_shapes: object = None,
+    ) -> bool:
+        exported_program = torch.export.export(
+            module, (example_input,), dynamic_shapes=dynamic_shapes
+        )
+        result = partitioner.partition(to_edge(exported_program).exported_program())
+        (node,) = [
+            node
+            for node in result.tagged_exported_program.graph.nodes
+            if node.target == exir_ops.edge.aten.arange.start_step
+        ]
+        return "delegation_tag" in node.meta
+
+    def test_arange_supported_forms_are_delegated(self) -> None:
+        for dtype in (torch.float32, torch.int32, torch.int64):
+            with self.subTest(dtype=dtype):
+                self.assertTrue(
+                    self._arange_is_delegated(
+                        WebGPUPartitioner(), ArangeModule(dtype), torch.zeros(8)
+                    )
+                )
+
+    def test_arange_unsupported_forms_stay_on_cpu(self) -> None:
+        # Vulkan implements fp16 and SymInt-bounded arange; the WebGPU kernel does
+        # not, so WebGPU must leave them on CPU rather than fail at delegate init.
+        cases = {
+            "fp16": (
+                ArangeModule(torch.float16),
+                torch.zeros(8, dtype=torch.float16),
+                None,
+            ),
+            "dynamic_end": (
+                DynamicArangeModule(),
+                torch.zeros(8),
+                {"x": {0: torch.export.Dim("n", min=2, max=64)}},
+            ),
+        }
+        for name, (module, example_input, dynamic_shapes) in cases.items():
+            with self.subTest(case=name):
+                self.assertFalse(
+                    self._arange_is_delegated(
+                        WebGPUPartitioner(), module, example_input, dynamic_shapes
+                    )
+                )
+                self.assertTrue(
+                    self._arange_is_delegated(
+                        VulkanPartitioner(), module, example_input, dynamic_shapes
+                    )
+                )
 
 
 if __name__ == "__main__":

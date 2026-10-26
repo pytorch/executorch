@@ -35,6 +35,9 @@ from executorch.backends.native.passes.reinplace import (
     BACKEND_INPLACE_OPS,
     NativeReinplacePass,
 )
+from executorch.backends.native.passes.remove_runtime_asserts import (
+    RemoveRuntimeAssertsPass,
+)
 from executorch.backends.native.passes.replace_copy_with_alias import (
     ReplaceCopyWithAliasPass,
 )
@@ -59,6 +62,7 @@ __all__ = [
     "get_default_passes",
     "NativeReinplacePass",
     "NormalizeSDPAInputRankPass",
+    "RemoveRuntimeAssertsPass",
     "ReplaceCopyWithAliasPass",
 ]
 
@@ -75,6 +79,7 @@ def get_default_passes() -> List[Union[ExportPass, ExportedProgramPassBase]]:
         FuseGQAWithSDPAPass(),
         NormalizeSDPAInputRankPass(),
         FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),
+        RemoveRuntimeAssertsPass(),
         CollapseViewCopyPass(),
         CSEPass(),
         NativeReinplacePass(),

@@ -10,6 +10,14 @@
 
 namespace ptn {
 
+TensorMeta& Value::tensor_meta() {
+  TensorMeta* m = std::get_if<TensorMeta>(&value_);
+  if (m == nullptr) {
+    throw std::runtime_error("Value is not a tensor");
+  }
+  return *m;
+}
+
 const TensorMeta& Value::tensor_meta() const {
   const TensorMeta* m = std::get_if<TensorMeta>(&value_);
   if (m == nullptr) {

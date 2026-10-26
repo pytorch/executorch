@@ -73,7 +73,7 @@ using ::executorch::runtime::KernelRuntimeContext;
     IntArrayRef dilation,
     int64_t groups,
     int64_t input_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,

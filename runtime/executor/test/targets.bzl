@@ -102,6 +102,15 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "method_meta_factory_test",
+        srcs = ["method_meta_factory_test.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -272,6 +281,7 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments-da1024.pte])",
                 "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-nosegments.pte])",
                 "ET_MODULE_ADD_MUL_DELEGATED_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul.pte])",
+                "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH": "$(location fbcode//executorch/test/models:exported_delegated_add_mul[ModuleAddMul-scratch.pte])",
             },
         )
 

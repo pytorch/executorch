@@ -722,6 +722,35 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterf
     def targets(self) -> list[EdgeOpOverload]:
         return [exir_ops.edge.aten.convolution.default]
 
+    def materialize_zero_bias(
+        self,
+        node: torch.fx.Node,
+        weight: torch.fx.Node,
+    ) -> torch.fx.Node:
+        out_val = node.meta["val"]
+        weight_val = weight.meta["val"]
+        out_shape = out_val.shape
+        if len(out_shape) < 2:
+            raise ValueError(
+                f"Expected convolution output rank >= 2, got shape {out_shape}"
+            )
+        # edge.aten.full accepts SymInt[] sizes, so retain symbolic channels.
+        bias_size = out_shape[1]
+        bias_dtype = weight_val.dtype
+        with node.graph.inserting_before(node):
+            zero_bias = node.graph.call_function(
+                exir_ops.edge.aten.full.default,
+                args=([bias_size], 0.0),
+                kwargs={"dtype": bias_dtype},
+            )
+        # Populate per-field rather than aliasing node.meta: "val" has to
+        # describe this bias, and "stack_trace" is the convolution's provenance,
+        # so copying it would misattribute the synthesized constant.
+        zero_bias.meta["val"] = weight_val.new_zeros((bias_size,), dtype=bias_dtype)
+        if "debug_handle" in node.meta:
+            zero_bias.meta["debug_handle"] = node.meta["debug_handle"]
+        return zero_bias
+
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         # There must be 9 total args.
         if len(node.args) != 9:
@@ -770,6 +799,16 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterf
         else:  # len(stride) == 3
             target = exir_ops.edge.cadence.conv3d.default
 
+        # Must reject before the bias is materialized below; bailing out after
+        # would strand the synthesized full node in the graph. Transposed
+        # convolutions accept non-zero output_padding, hence the guard.
+        if not transposed and not all(x == 0 for x in output_padding):
+            return False
+
+        if bias is None:
+            assert isinstance(weight, torch.fx.Node)
+            bias = self.materialize_zero_bias(node, weight)
+
         with node.graph.inserting_before(node):
             if transposed:
                 # Flip the height and width dimensions of weight, since we apply a
@@ -804,10 +843,6 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterf
                     False,
                 )
             else:
-                # Verify that output_padding is 0.
-                if not all(x == 0 for x in output_padding):
-                    return False
-
                 # Keep the original stride to maintain correct output dimensions
                 new_stride = stride
 

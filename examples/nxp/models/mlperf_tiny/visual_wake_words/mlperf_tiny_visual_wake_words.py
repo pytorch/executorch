@@ -8,12 +8,12 @@ import logging
 import torch
 
 from executorch.examples.models.mlperf_tiny import MobileNetV1025
-from executorch.examples.nxp.models.mlperf_tiny.mlperf_tiny_model import MLPerfTinyModel
+from executorch.examples.nxp.models.nxp_test_base_model import NXPTestBaseModel
 
 log = logging.getLogger(__name__)
 
 
-class MLPerfTinyVisualWakeWords(MLPerfTinyModel):
+class MLPerfTinyVisualWakeWords(NXPTestBaseModel):
     """MLPerf Tiny visual wake words model (MobileNetV1 width 0.25)."""
 
     # MobileNetV1 specific QAT training hyperparameters.

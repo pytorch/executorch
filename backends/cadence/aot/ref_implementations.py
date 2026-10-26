@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
+from executorch.backends.cadence.aot.weight_packing import unpack_rows
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -308,7 +309,7 @@ def quantized_add_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -434,7 +435,7 @@ def quantized_mul_per_tensor(
             quantized ranges
         - out_zero_point: The quantized mapping of zero for the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8]
     if X.dtype != Y.dtype:
         raise ValueError("X and Y dtypes need to match")
 
@@ -465,7 +466,7 @@ def quantized_linear_common(
     weight: torch.Tensor,
     bias: torch.Tensor,
     in_zero_point: int,
-    weight_zero_point: torch.Tensor | int,
+    weight_zero_point: torch.Tensor | int | None,
     out_multiplier: int | torch.Tensor,
     out_shift: int | torch.Tensor,
     out_zero_point: int,
@@ -500,6 +501,11 @@ def quantized_linear_common(
     per_channel = isinstance(out_multiplier, torch.Tensor) and (
         out_multiplier.numel() > 1
     )
+
+    # Absent means a symmetric weight, whose zero point is zero by definition;
+    # the AoT side omits the argument rather than emitting a constant of zeros.
+    if weight_zero_point is None:
+        weight_zero_point = 0
 
     if (
         per_channel
@@ -573,7 +579,7 @@ def quantized_linear_variant(
             weight: torch.Tensor,
             bias: torch.Tensor,
             in_zero_point: int,
-            weight_zero_point: torch.Tensor | int,
+            weight_zero_point: torch.Tensor | int | None,
             out_multiplier: torch.Tensor | int,
             out_shift: torch.Tensor | int,
             out_zero_point: int,
@@ -676,6 +682,37 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 @impl_tracked(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantized_fully_connected_packed")
+def quantized_fully_connected_packed(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Sub-byte weights: unpack, then reuse the ordinary quantized path.
+
+    Keeping the arithmetic in `quantized_linear_common` means packing cannot
+    drift from the unpacked operator, which is exactly what the tests assert.
+    """
+    return quantized_linear_common(
+        src,
+        unpack_rows(weight, in_dim, weight_bits),
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+    )
 
 
 @impl_tracked(m, "fully_connected")
@@ -821,14 +858,21 @@ def quantized_layer_norm_per_tensor(
         - output_scale (float): The scale of the output
         - output_zero_point (int): The zero point of the output
     """
-    supported_dtypes = [torch.int8, torch.uint8]
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
     if input_tensor.dtype not in supported_dtypes:
         raise ValueError(
             f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
         )
 
+    quant_min = torch.iinfo(input_tensor.dtype).min
+    quant_max = torch.iinfo(input_tensor.dtype).max
     float_input_tensor = dequantize_per_tensor(
-        input_tensor, X_scale, X_zero_point, -128, 127, input_tensor.dtype
+        input_tensor,
+        X_scale,
+        X_zero_point,
+        quant_min,
+        quant_max,
+        input_tensor.dtype,
     )
     assert isinstance(float_input_tensor, torch.Tensor)
     out = torch.nn.functional.layer_norm(
@@ -839,8 +883,8 @@ def quantized_layer_norm_per_tensor(
         out,
         output_scale,
         output_zero_point,
-        torch.iinfo(input_tensor.dtype).min,
-        torch.iinfo(input_tensor.dtype).max,
+        quant_min,
+        quant_max,
         input_tensor.dtype,
     )
 
@@ -900,7 +944,7 @@ def quantized_conv_common(
     dilation: tuple[int, ...],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -929,7 +973,14 @@ def quantized_conv_common(
         - out_shift (int | Tensor): Unused
     """
     out_channels = weight.shape[0]
-    wzp = _broadcast_over_channels(weight_zero_point, weight.dim(), 0, out_channels)
+    # Absent means a symmetric weight, whose zero point is zero by definition;
+    # the AoT side omits the argument rather than emitting a constant of zeros.
+    wzp = _broadcast_over_channels(
+        0 if weight_zero_point is None else weight_zero_point,
+        weight.dim(),
+        0,
+        out_channels,
+    )
 
     if len(input_tensor.shape) == 3:
         acc = torch.nn.functional.conv1d(
@@ -980,7 +1031,7 @@ def quantized_conv2d_nchw_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1036,7 +1087,7 @@ def quantized_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1127,7 +1178,7 @@ def quantized_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1224,7 +1275,7 @@ def quantized_depthwise_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1278,7 +1329,7 @@ def quantized_depthwise_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1572,9 +1623,15 @@ def quantized_w8a32_gru(
     assert new_hidden.shape == original_hidden_shape
 
     batch_size = inputs.shape[0]
-    input_dim = inputs.shape[1]
     hidden_dim = hidden.shape[-1]
+    if inputs.dim() == 3:
+        # [batch, seq_len, input] with one step: [2, batch, 1, hidden], as the
+        # fake kernel and the HiFi kernel produce. Batch > 1 is rejected
+        # above (the hidden state has one row).
+        step = new_hidden.reshape(batch_size, 1, hidden_dim)
+        return torch.stack([step, step], dim=0)
 
+    input_dim = inputs.shape[1]
     new_hidden_expanded = new_hidden.unsqueeze(1).expand(
         batch_size, input_dim, hidden_dim
     )
@@ -1591,7 +1648,7 @@ def quantized_conv2d_nhwc_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -2998,6 +3055,62 @@ def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
         packed_last = last_dim // 8
         # Reshape packed to match mask shape, with last dim packed to bytes
         return packed.view(*original_shape[:-1], packed_last)
+
+
+@impl_tracked(m, "sdpa_bitwise_causal_mask_gen")
+def sdpa_bitwise_causal_mask_gen(
+    positions: torch.Tensor, key_length: int
+) -> torch.Tensor:
+    """Generate an LSB-first packed causal mask directly from token positions."""
+    assert positions.dtype in (
+        torch.int32,
+        torch.int64,
+    ), "Positions must use int32 or int64"
+    assert positions.dim() == 1, "Positions must be one-dimensional"
+    assert (
+        key_length > 0 and key_length % 8 == 0
+    ), "Key length must be positive and divisible by 8"
+    assert bool(torch.all(positions >= 0)), "Positions must be nonnegative"
+
+    visible_lengths = (
+        torch.clamp(positions.to(torch.int64), max=key_length - 1).unsqueeze(1) + 1
+    )
+    byte_starts = torch.arange(
+        0,
+        key_length,
+        8,
+        dtype=torch.int64,
+        device=positions.device,
+    ).unsqueeze(0)
+    visible_bits = torch.clamp(visible_lengths - byte_starts, min=0, max=8)
+    return torch.bitwise_and(
+        torch.bitwise_left_shift(torch.full_like(visible_bits, 0xFF), visible_bits),
+        0xFF,
+    ).to(torch.uint8)
+
+
+@impl_tracked(m, "sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    """Generate an LSB-first ring mask; set bits represent masked cache slots."""
+    assert positions.dtype in (torch.int32, torch.int64)
+    assert positions.dim() == 1
+    assert cache_length > 0 and cache_length % 8 == 0
+    assert 0 < sliding_window <= cache_length
+    assert bool(torch.all(positions >= 0))
+    absolute = positions.to(torch.int64).unsqueeze(1)
+    slots = torch.arange(
+        0, cache_length, 8, dtype=torch.int64, device=positions.device
+    ).unsqueeze(0)
+    packed = positions.new_zeros(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
+    for bit in range(8):
+        distance = (absolute - (slots + bit)) % cache_length
+        masked = (distance >= sliding_window) | (distance > absolute)
+        packed |= masked.to(torch.uint8) << bit
+    return packed
 
 
 @impl_tracked(m, "slice_scatter_")

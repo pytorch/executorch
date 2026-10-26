@@ -213,11 +213,17 @@ def replace_with_constant_node(
     # If prop_constant_tensor_fqn already exists in the state dict, we need
     # to create a new name. Find the largest suffix of "_prop_tensor_constant",
     # and increment it by 1 to form the new name.
-    if prop_constant_tensor_fqn in exported_program.constants:
+    # A program re-entering this pass can already carry a
+    # `_prop_tensor_constant*` in state_dict from an earlier run. Emission
+    # resolves placeholders against state_dict before constants, so reusing
+    # such a name lets the stale entry shadow the tensor written here. Both
+    # the check and the suffix scan therefore span state_dict too.
+    taken = exported_program.constants.keys() | exported_program.state_dict.keys()
+    if prop_constant_tensor_fqn in taken:
         suffix = 1 + max(
             (
                 int(name[len(prefix) :])
-                for name in exported_program.constants.keys()
+                for name in taken
                 if name.startswith(prefix) and name[len(prefix) :].isdigit()
             ),
             default=-1,

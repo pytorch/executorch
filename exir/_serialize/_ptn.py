@@ -22,6 +22,11 @@ once: the first key owns the safetensors entry and the rest alias to it. An owne
 is always a real safetensors key and never appears in the alias map, so resolution
 is ``owner = aliases.get(key, key)``.
 
+Tensor data is laid out so a reader can map the package and use constants in
+place: the data section of program.safetensors starts 64-byte aligned in the
+file, padded through a zip extra field, and each tensor starts at a multiple of
+its element size.
+
 An alias means only "these keys had identical bytes at save time, so one copy was
 stored". It never asserts that two keys share runtime state, which is why mutable
 keys are excluded from dedup entirely -- see _dedup. Do not overload aliases to
@@ -46,8 +51,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import zipfile
-from typing import IO
 
 import torch
 
@@ -55,6 +60,17 @@ PTG_ENTRY = "program.ptg"
 SAFETENSORS_ENTRY = "program.safetensors"
 ALIASES_ENTRY = "aliases.json"
 _SAFETENSORS_METADATA_KEY = "__metadata__"
+
+# Tensor data starts on this boundary in the file, and each tensor is naturally
+# aligned within it, so a reader that maps the package can use constants in place.
+_DATA_ALIGNMENT = 64
+# Zip extra-field id for padding, as used by Android's zipalign: a u16 alignment
+# followed by zeros.
+_ALIGNMENT_EXTRA_ID = 0xD935
+# Fixed part of a zip local file header, and the zip64 extra field Python's
+# zipfile appends to it when force_zip64 is set.
+_LOCAL_HEADER_SIZE = 30
+_ZIP64_LOCAL_EXTRA_SIZE = 20
 
 # safetensors dtype codes; mirrors safetensors.torch._TYPES inverted.
 _DTYPE_CODES: dict[torch.dtype, str] = {
@@ -196,30 +212,64 @@ def _dedup(
     return owners, aliases
 
 
-def _write_safetensors(stream: IO[bytes], owners: dict[str, torch.Tensor]) -> None:
-    """Emit the safetensors format: header length, JSON header, then tensor data.
+def _safetensors_header(owners: dict[str, torch.Tensor]) -> tuple[bytes, list[str]]:
+    """Encode the safetensors length prefix and JSON header.
 
-    Offsets in the header are relative to the start of the data section, and the
-    header is space-padded so that section begins 8-byte aligned.
+    Returns the encoded bytes and the order to write tensor data in. Data is laid
+    out widest element first, so with the data section aligned every tensor starts
+    at a multiple of its element size without leaving holes, which safetensors
+    forbids. The header is space-padded so the data section begins
+    _DATA_ALIGNMENT-aligned relative to the start of the member.
     """
-    header: dict[str, object] = {}
+    order = sorted(owners, key=lambda key: -owners[key].element_size())
+    offsets: dict[str, tuple[int, int]] = {}
     offset = 0
-    for key, tensor in owners.items():
+    for key in order:
+        tensor = owners[key]
         size = tensor.numel() * tensor.element_size()
-        header[key] = {
-            "dtype": _DTYPE_CODES[tensor.dtype],
-            "shape": list(tensor.shape),
-            "data_offsets": [offset, offset + size],
-        }
+        offsets[key] = (offset, offset + size)
         offset += size
 
+    header = {
+        key: {
+            "dtype": _DTYPE_CODES[tensor.dtype],
+            "shape": list(tensor.shape),
+            "data_offsets": list(offsets[key]),
+        }
+        for key, tensor in owners.items()
+    }
     encoded = json.dumps(header, separators=(",", ":")).encode("utf-8")
-    encoded += b" " * ((8 - len(encoded) % 8) % 8)
+    encoded += b" " * ((-8 - len(encoded)) % _DATA_ALIGNMENT)
+    return len(encoded).to_bytes(8, "little") + encoded, order
 
-    stream.write(len(encoded).to_bytes(8, "little"))
-    stream.write(encoded)
-    for tensor in owners.values():
-        stream.write(_raw(tensor))
+
+def _write_safetensors(pkg: zipfile.ZipFile, owners: dict[str, torch.Tensor]) -> None:
+    """Stream the safetensors member into `pkg` with its data section aligned."""
+    header, order = _safetensors_header(owners)
+    size = len(header) + sum(t.numel() * t.element_size() for t in owners.values())
+    zip64 = size > zipfile.ZIP64_LIMIT
+
+    zinfo = zipfile.ZipInfo(SAFETENSORS_ENTRY, time.localtime(time.time())[:6])
+    local_header_size = (
+        _LOCAL_HEADER_SIZE
+        + len(SAFETENSORS_ENTRY.encode("utf-8"))
+        + (_ZIP64_LOCAL_EXTRA_SIZE if zip64 else 0)
+    )
+    assert pkg.fp is not None
+    # The padding field needs 6 bytes of its own: id, length and the u16.
+    data_start = pkg.fp.tell() + local_header_size + 6
+    padding = (-data_start) % _DATA_ALIGNMENT
+    zinfo.extra = (
+        _ALIGNMENT_EXTRA_ID.to_bytes(2, "little")
+        + (2 + padding).to_bytes(2, "little")
+        + _DATA_ALIGNMENT.to_bytes(2, "little")
+        + bytes(padding)
+    )
+
+    with pkg.open(zinfo, "w", force_zip64=zip64) as stream:
+        stream.write(header)
+        for key in order:
+            stream.write(_raw(owners[key]))
 
 
 def write_ptn(
@@ -258,8 +308,7 @@ def write_ptn(
     with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED, allowZip64=True) as pkg:
         pkg.writestr(PTG_ENTRY, ptg)
         if owners:
-            with pkg.open(SAFETENSORS_ENTRY, "w") as stream:
-                _write_safetensors(stream, owners)
+            _write_safetensors(pkg, owners)
             if aliases:
                 pkg.writestr(
                     ALIASES_ENTRY, json.dumps(aliases, indent=2, sort_keys=True)

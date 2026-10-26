@@ -14,6 +14,7 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
@@ -43,6 +44,7 @@ from torch.export.exported_program import ExportedProgram
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.utils._pytree import tree_leaves
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -72,12 +74,21 @@ class VulkanSupportedOperators(OperatorSupportBase):
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
+        downcast_64_bit: bool = True,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
         super().__init__()
+        # Backends that consume the Vulkan serialization but implement less of an
+        # op than the Vulkan registry advertises supply their own features here.
+        self.op_features_overrides: Dict[OpKey, OpFeatures] = (
+            op_features_overrides if op_features_overrides is not None else {}
+        )
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
+        self.downcast_64_bit = downcast_64_bit
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -87,11 +98,26 @@ class VulkanSupportedOperators(OperatorSupportBase):
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
+        self.unsupported_fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
-            self.fusable_nodes.update(match.all_nodes)
+            nodes = {
+                node for node in match.all_nodes if isinstance(node, torch.fx.Node)
+            }
+            self.fusable_nodes.update(nodes)
+            inputs = {arg for node in nodes for arg in node.all_input_nodes}
+            if not downcast_64_bit and any(
+                isinstance(value, torch.Tensor)
+                and value.dtype in (torch.int64, torch.float64)
+                for node in (nodes | inputs) - (constant_nodes or set())
+                for value in tree_leaves(node.meta.get("val"))
+            ):
+                # Keep the whole pattern outside Vulkan instead of splitting a fusion.
+                # Constant quantization parameters may disappear during fusion.
+                self.unsupported_fusable_nodes.update(nodes)
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
+        self._node_support: Dict[torch.fx.Node, bool] = {}
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -203,10 +229,39 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
-        r = self._is_node_supported(node)
-        return r
+        return self._is_node_supported(node)
 
-    def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+    def _is_node_supported(self, node: torch.fx.Node) -> bool:
+        if node not in self._node_support:
+            self._node_support[node] = self._check_node_support(node)
+        return self._node_support[node]
+
+    def _check_node_support(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        if node in self.unsupported_fusable_nodes:
+            self.log_skip(node, "fusable pattern requires 64-bit tensor downcasting")
+            return False
+
+        # Asserts and the symbolic comparisons feeding them are removed during
+        # preprocessing, so their SymBool values never need to be represented.
+        is_assert_chain = node.target in RemoveAssertsTransform.assert_ops or (
+            len(node.users) > 0
+            and all(
+                user.target in RemoveAssertsTransform.assert_ops for user in node.users
+            )
+        )
+        if not is_assert_chain and any(
+            isinstance(arg.meta.get("val"), (torch.SymFloat, torch.SymBool))
+            for arg in [node, *node.all_input_nodes]
+        ):
+            self.log_skip(node, "symbolic float or bool values are not supported")
+            return False
+
+        if utils.is_symint_node(node) and any(
+            not self._is_node_supported(user) for user in node.users
+        ):
+            self.log_skip(node, "symbolic scalar has an unsupported consumer")
+            return False
+
         # Check if tensor node dtype is supported by vulkan
         if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
             self.log_skip(node, "dtype not supported")
@@ -232,6 +287,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if node in self.fusable_nodes:
                 return True
 
+        if not self.downcast_64_bit:
+            native_dtypes = utils.DtypeSetList(
+                utils.ALL_T - {torch.int64, torch.float64}
+            )
+            dtype_valid, dtype_reason = utils.check_node_dtypes(
+                node, native_dtypes, native_dtypes
+            )
+            if not dtype_valid:
+                self.log_skip(node, f"{dtype_reason} with downcast_64_bit disabled")
+                return False
+
         target = node.target
         if (
             node.target == torch.ops.higher_order.auto_functionalized
@@ -249,17 +315,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        features = None
-        if target not in vulkan_supported_ops:
+        features = self.op_features_overrides.get(target)
+        if features is None:
+            if target in vulkan_supported_ops:
+                features = vulkan_supported_ops[target]
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
+            elif hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")
                 return False
-        else:
-            features = vulkan_supported_ops[target]
 
         assert features is not None
 
@@ -346,7 +412,9 @@ class VulkanPartitioner(Partitioner):
         operator_allowlist: Optional[List[OpKey]] = None,
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
+        self.op_features_overrides = op_features_overrides
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
             self.options = compile_options
@@ -420,6 +488,14 @@ class VulkanPartitioner(Partitioner):
                 fusable_subgraphs=fusable_subgraphs,
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
+                downcast_64_bit=self.options.get("downcast_64_bit", True),
+                op_features_overrides=self.op_features_overrides,
+                constant_nodes={
+                    node
+                    for node in exported_program.graph.nodes
+                    if utils.is_param_node(exported_program, node)
+                    and not utils.is_mutable_buffer_node(node, exported_program)
+                },
             ),
             allows_single_node_partition=True,
         )

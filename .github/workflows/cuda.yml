@@ -2,7 +2,12 @@
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 13.0, 13.4) using the command:
 #   ./install_executorch.sh
-# 
+#
+# It also runs model accuracy (e2e EXPECTED_OUTPUT checks) and, for the perf
+# allowlisted (model, quant) pairs, a CUDA benchmark reusing the same exported
+# .pte/.ptd artifacts. Benchmark results are uploaded to S3 + the HUD dashboard.
+# The retired cuda-perf.yml was merged into this workflow.
+#
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -26,10 +31,33 @@ on:
       - .ci/scripts/test-cuda-build.sh
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
+      - .ci/scripts/cuda_benchmark.py
+      - .ci/scripts/cuda_benchmark_from_e2e.sh
+      - .ci/scripts/cuda_perf_prompts/**
+      - .ci/scripts/build_muse_glimmer_batching_smoke.sh
+      - .ci/scripts/muse_glimmer_batching_smoke.cpp
+      - .ci/scripts/muse_glimmer_batching_workload.h
+      - .ci/scripts/tests/test_muse_glimmer_batching_ci.py
+      - .ci/scripts/tests/test_muse_glimmer_batching_workload.py
+      - .ci/scripts/tests/muse_glimmer_batching_workload_test.cpp
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
   workflow_dispatch:
+    inputs:
+      models:
+        description: Models to be benchmarked (comma-separated HuggingFace model IDs, empty = all allowlisted)
+        required: false
+        type: string
+      quantizations:
+        description: Quantizations to benchmark (comma-separated, empty = all allowlisted)
+        required: false
+        type: string
+      num_runs:
+        description: Number of benchmark runs per model
+        required: false
+        type: string
+        default: "50"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -49,6 +77,46 @@ jobs:
     name: CI run decision
     uses: ./.github/workflows/_ci-run-decision.yml
 
+  benchmark-inputs:
+    name: Validate benchmark dispatch inputs
+    # test-model-cuda-e2e is a reusable-workflow call and cannot take `env:`,
+    # so the dispatch inputs end up in its `script:` text. Only let
+    # allowlisted characters through to rule out shell injection.
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.validate.outputs.models }}
+      quantizations: ${{ steps.validate.outputs.quantizations }}
+      num-runs: ${{ steps.validate.outputs.num-runs }}
+    steps:
+      - name: Validate inputs
+        id: validate
+        shell: bash
+        env:
+          MODELS: ${{ inputs.models }}
+          QUANTIZATIONS: ${{ inputs.quantizations }}
+          NUM_RUNS: ${{ inputs.num_runs || '50' }}
+        run: |
+          set -euo pipefail
+          LIST_RE='^[A-Za-z0-9._/,-]*$'
+          NUM_RE='^[1-9][0-9]{0,3}$'
+          if [[ ! "${MODELS}" =~ ${LIST_RE} ]]; then
+            echo "::error::Invalid models input; allowed characters: A-Z a-z 0-9 . _ / , -"
+            exit 1
+          fi
+          if [[ ! "${QUANTIZATIONS}" =~ ${LIST_RE} ]]; then
+            echo "::error::Invalid quantizations input; allowed characters: A-Z a-z 0-9 . _ / , -"
+            exit 1
+          fi
+          if [[ ! "${NUM_RUNS}" =~ ${NUM_RE} ]]; then
+            echo "::error::Invalid num_runs input; must be an integer in [1, 9999]"
+            exit 1
+          fi
+          {
+            echo "models=${MODELS}"
+            echo "quantizations=${QUANTIZATIONS}"
+            echo "num-runs=${NUM_RUNS}"
+          } >> "${GITHUB_OUTPUT}"
+
   test-cuda-builds:
     needs: [changed-files, run-decision]
     # Path-filtered: mirrors the workflow-level pull_request `paths:`
@@ -58,6 +126,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -83,10 +152,10 @@ jobs:
       script: |
         set -eux
 
-        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
-          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
-          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
-        fi
+        # AOTI model libraries need a newer C++ runtime than the 12.6 image's
+        # system library; the 13.4 image also needs the thread-local cleanup fix.
+        conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -102,6 +171,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -397,7 +467,7 @@ jobs:
           "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
 
   unittest-cuda:
-    name: unittest-cuda
+    name: unittest-cuda (${{ matrix.shard }})
     needs: [changed-files, run-decision]
     # This job runs the pybindings device test, so it also has to fire on the
     # two pybindings paths the workflow filter lists.
@@ -412,6 +482,13 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
+    # kernel: Triton kernels and their autotuning. system: lowering passes, op
+    # dispatch, export/runtime, and model tests. Together they do not fit the
+    # timeout.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [kernel, system]
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -425,6 +502,37 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+        SHARD="${{ matrix.shard }}"
+
+        # The system shard runs everything under backends/cuda/tests that is not
+        # listed here, so a new test lands there unless it is added to this list.
+        KERNEL_TESTS=(
+          backends/cuda/tests/test_triton_sdpa.py
+          backends/cuda/tests/test_triton_sdpa_splitk.py
+          backends/cuda/tests/test_triton_sdpa_nan.py
+          backends/cuda/tests/test_tq4_sdpa.py
+          backends/cuda/tests/test_int4_matmul.py
+          backends/cuda/tests/test_int5_large_quantized_gemm.py
+          backends/cuda/tests/test_quantized_gemm_family.py
+          backends/cuda/tests/test_fused_moe.py
+          backends/cuda/tests/test_fused_deltanet_decode.py
+          backends/cuda/tests/test_chunk_gated_delta_rule.py
+          backends/cuda/tests/test_topk.py
+          backends/cuda/tests/test_autotune_inputs.py
+          backends/cuda/tests/test_autotune_launch_params.py
+          backends/cuda/tests/test_triton_mutation_cache.py
+        )
+        # These run in unittest-cuda-quantized-gemm.
+        QUANTIZED_GEMM_TESTS=(
+          backends/cuda/tests/test_int4_quantized_gemm.py
+          backends/cuda/tests/test_int4_large_quantized_gemm.py
+          backends/cuda/tests/test_int5_quantized_gemm.py
+          backends/cuda/tests/test_int6_quantized_gemm.py
+          backends/cuda/tests/test_int6_large_quantized_gemm.py
+          backends/cuda/tests/test_int8_quantized_gemm.py
+          backends/cuda/tests/test_cuda_graph_timing.py
+        )
+
         # Install executorch in editable mode so custom op libs land in-tree
         bash ./install_executorch.sh
 
@@ -433,52 +541,184 @@ jobs:
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
-        # The pybindings loader only asks for device memory on a build that has
-        # a device allocator registered, so this test cannot run in the CPU
-        # jobs. It needs the install above and nothing built below, so run it
-        # here and fail before the long builds.
-        #
-        # unittest exits 0 when a test skips, and this test skips when the CUDA
-        # backend is missing or no GPU is visible. Both are the prerequisites
-        # this job exists to provide, so treat a skip as a failure rather than
-        # let a packaging regression pass silently. `tee` would otherwise hide
-        # the real exit status behind its own, so read it back explicitly.
-        set +e
-        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device 2>&1 | tee /tmp/pybindings_device_test.log
-        pybindings_device_status=${PIPESTATUS[0]}
-        set -e
-        if [ "${pybindings_device_status}" -ne 0 ]; then
-          echo "::error::the pybindings device test failed"
-          exit "${pybindings_device_status}"
-        fi
-        if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
-          echo "::error::the pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
-          exit 1
+        if [ "${SHARD}" = "system" ]; then
+          # The pybindings loader only asks for device memory on a build that has
+          # a device allocator registered, so these tests cannot run in the CPU
+          # jobs. They need the install above and nothing built below, so run them
+          # here and fail before the long builds.
+          #
+          # unittest exits 0 when a test skips, and these tests skip when the CUDA
+          # backend is missing or no GPU is visible. Both are the prerequisites
+          # this job exists to provide, so treat a skip as a failure rather than
+          # let a packaging regression pass silently. `tee` would otherwise hide
+          # the real exit status behind its own, so read it back explicitly.
+          set +e
+          python -m unittest -v \
+            executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device \
+            executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_unplanned_device_output_is_device_memory \
+            2>&1 | tee /tmp/pybindings_device_test.log
+          pybindings_device_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${pybindings_device_status}" -ne 0 ]; then
+            echo "::error::a pybindings device test failed"
+            exit "${pybindings_device_status}"
+          fi
+          if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
+            echo "::error::a pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+            exit 1
+          fi
         fi
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
 
-        # Build and run CUDA shim tests (C++)
-        pushd backends/cuda/runtime/shims/tests
-        cmake --workflow --preset default
-        popd
+        if [ "${SHARD}" = "system" ]; then
+          # Build and run CUDA shim tests (C++)
+          pushd backends/cuda/runtime/shims/tests
+          cmake --workflow --preset default
+          popd
+        fi
 
         # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
         pip install "flash-linear-attention==0.4.2"
 
-        # Build executor_runner (needed by CUDA backend e2e tests)
+        # Build executor_runner (needed by CUDA backend e2e tests in both shards)
         cmake --build cmake-out --target executor_runner
 
-        # Run CUDA backend Python tests
-        python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
+        if [ "${SHARD}" = "kernel" ]; then
+          python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
+        else
+          IGNORES=()
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}"; do
+            IGNORES+=("--ignore=${t}")
+          done
+          python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \
+            "${IGNORES[@]}"
 
-        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
-        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
+          # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
+          python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
 
-        # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+          # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+          pip install gguf
+          python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+        fi
+
+  unittest-cuda-muse-glimmer-batching:
+    name: unittest-cuda-muse-glimmer-batching
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_ci.py' -v
+        python -m unittest discover -s .ci/scripts/tests -p 'test_muse_glimmer_batching_workload.py' -v
+
+        # The normal serving binaries and the opt-in correctness tool share
+        # CudaExecutor; MG preparation tests also run on Linux.
+        make muse-glimmer-batching-cuda
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
+        cmake --build "${BATCHING_BIN_DIR}" \
+          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+        ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
+        test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_smoke"
+
+        # The batching export on a tiny model, and the CLI's backend dispatch.
         pip install gguf
-        python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
+          examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
+          examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        # CUDA DFlash executor on a tiny exported target + draft. The native
+        # tests skip without the artifact, so fail if any skipped.
+        export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"
+        python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
+          --output-dir "${ET_MUSE_DFLASH_TINY_DIR}"
+        ctest --test-dir "${BATCHING_BIN_DIR}" -R '^muse_glimmer_cuda_dflash$' \
+          --output-on-failure --no-tests=error -V > /tmp/muse_glimmer_cuda_dflash.log 2>&1 \
+          || { cat /tmp/muse_glimmer_cuda_dflash.log; exit 1; }
+        cat /tmp/muse_glimmer_cuda_dflash.log
+        if grep -q "SKIPPED" /tmp/muse_glimmer_cuda_dflash.log; then
+          echo "::error::muse_glimmer_cuda_dflash_test skipped"
+          exit 1
+        fi
+
+  unittest-cuda-quantized-gemm:
+    name: unittest-cuda-quantized-gemm (${{ matrix.shard }})
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: int4
+            tests: backends/cuda/tests/test_int4_quantized_gemm.py
+          # The int4 shard alone takes ~60 min, so the large-M suites go here.
+          - shard: large-int5-int6-int8-graph-timing
+            tests: >-
+              backends/cuda/tests/test_int4_large_quantized_gemm.py
+              backends/cuda/tests/test_int5_quantized_gemm.py
+              backends/cuda/tests/test_int6_quantized_gemm.py
+              backends/cuda/tests/test_int6_large_quantized_gemm.py
+              backends/cuda/tests/test_int8_quantized_gemm.py
+              backends/cuda/tests/test_cuda_graph_timing.py
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m pytest ${{ matrix.tests }} -v -o "addopts=" --durations=20
 
   unittest-cuda-runtime:
     name: unittest-cuda-runtime
@@ -515,10 +755,24 @@ jobs:
           -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache test_cuda_guard test_cuda_stream_guard -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_output_copy test_cuda_sort_rand test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_output_copy --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_sort_rand --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_kv_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_step_plan --output-on-failure -V
+        # CudaExecutor end to end on a toy decoder, against its eager greedy
+        # output. The test skips without the model, so fail if it skipped.
+        export ET_CUDA_BATCHING_TOY_DIR="${RUNNER_TEMP:-/tmp}/cuda_batching_toy"
+        python -m executorch.backends.cuda.batching.test.export_toy_decoder --output-dir "${ET_CUDA_BATCHING_TOY_DIR}"
+        ctest --test-dir cmake-out -R test_cuda_executor --output-on-failure -V > /tmp/test_cuda_executor.log 2>&1 || { cat /tmp/test_cuda_executor.log; exit 1; }
+        cat /tmp/test_cuda_executor.log
+        if grep -q "SKIPPED" /tmp/test_cuda_executor.log; then
+          echo "::error::test_cuda_executor skipped"
+          exit 1
+        fi
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
 
@@ -528,7 +782,7 @@ jobs:
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch CUDA-relevant paths skip
     # this job on non-sampled commits.
-    needs: [changed-files, run-decision]
+    needs: [changed-files, run-decision, benchmark-inputs]
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
@@ -539,6 +793,9 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark_from_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -558,6 +815,8 @@ jobs:
             name: "diar_streaming_sortformer_4spk-v2"
           - repo: "openai"
             name: "whisper-small"
+          - repo: "openai"
+            name: "whisper-medium"
           - repo: "openai"
             name: "whisper-large-v3-turbo"
           - repo: "google"
@@ -638,6 +897,7 @@ jobs:
             quant: "quantized-int4-weight-only"
           # Whisper: cover all quant types and both sizes with minimal combos
           # whisper-small: non-quantized only
+          # whisper-medium: non-quantized only (perf tracking model)
           # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
           - model:
               repo: "openai"
@@ -646,6 +906,14 @@ jobs:
           - model:
               repo: "openai"
               name: "whisper-small"
+            quant: "quantized-int4-weight-only"
+          - model:
+              repo: "openai"
+              name: "whisper-medium"
+            quant: "quantized-int4-tile-packed"
+          - model:
+              repo: "openai"
+              name: "whisper-medium"
             quant: "quantized-int4-weight-only"
           - model:
               repo: "openai"
@@ -677,6 +945,7 @@ jobs:
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       submodules: recursive
+      upload-artifact: cuda-bench-${{ matrix.model.repo }}_${{ matrix.model.name }}-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -717,6 +986,34 @@ jobs:
           "${{ matrix.quant }}" \
           "${MODEL_DIR}"
 
+        # Accuracy passed. Benchmark the same exported artifacts in place
+        # (helper skips non-allowlisted pairs, e.g. sortformer, dinov2).
+        BENCH_RESULTS_DIR="${RUNNER_ARTIFACT_DIR}/bench"
+        mkdir -p "${BENCH_RESULTS_DIR}"
+        if bash .ci/scripts/cuda_benchmark_from_e2e.sh \
+          "${{ matrix.model.repo }}/${{ matrix.model.name }}" \
+          "${{ matrix.quant }}" \
+          "${MODEL_DIR}" \
+          "${BENCH_RESULTS_DIR}" \
+          "${{ needs.benchmark-inputs.outputs.num-runs }}" \
+          "${{ github.sha }}" \
+          "${{ github.run_id }}" \
+          "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          "${{ needs.benchmark-inputs.outputs.models }}" \
+          "${{ needs.benchmark-inputs.outputs.quantizations }}"; then
+          if [ -f "${BENCH_RESULTS_DIR}/benchmark_results.json" ]; then
+            echo "Benchmark results will be uploaded via the job artifact."
+          else
+            echo "Benchmark skipped for this (model, quant) pair."
+            # Keep the artifact non-empty so the aggregation jobs have a
+            # stable download layout; skipped cells are ignored downstream.
+            echo '{"skipped": true}' > "${BENCH_RESULTS_DIR}/benchmark_skipped.json"
+          fi
+        else
+          echo "::error::Benchmark failed for ${{ matrix.model.repo }}/${{ matrix.model.name }} (${{ matrix.quant }})"
+          exit 1
+        fi
+
         if [ -n "${{ matrix.pybind_model }}" ]; then
           echo "::group::Run CUDA model with pybind"
           conda install -y -c conda-forge 'libstdcxx-ng>=12'
@@ -736,10 +1033,146 @@ jobs:
           echo "::endgroup::"
         fi
 
+  upload-benchmark-results:
+    name: upload-benchmark-results
+    # Same gate as test-model-cuda-e2e: only aggregate when e2e itself ran.
+    # `always()` keeps uploading successful cells when some cells fail.
+    needs: [changed-files, run-decision, test-model-cuda-e2e]
+    if: |
+      always() &&
+      needs.test-model-cuda-e2e.result != 'skipped' &&
+      needs.test-model-cuda-e2e.result != 'cancelled' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark_from_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
+    runs-on: ubuntu-22.04
+    environment: upload-benchmark-results
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cuda-bench-*
+          path: all_results/
+
+      - name: Process and display results
+        shell: bash
+        run: |
+          set -eux
+          echo "::group::Benchmark Results Summary"
+
+          for RESULT_JSON in all_results/cuda-bench-*/bench/benchmark_results.json; do
+            [ -e "$RESULT_JSON" ] || continue
+            RESULT_DIR="$(dirname "$(dirname "$RESULT_JSON")")"
+            BENCH_DIR="$(dirname "$RESULT_JSON")"
+            echo ""
+            echo "================================"
+            echo "Results from: $(basename "$RESULT_DIR")"
+            echo "================================"
+
+            # Display benchmark results (mean performance)
+            cat "$RESULT_JSON" | python -m json.tool
+
+            # Display metadata
+            if [ -f "$BENCH_DIR/metadata.json" ]; then
+              echo ""
+              echo "--- Metadata ---"
+              cat "$BENCH_DIR/metadata.json" | python -m json.tool
+            fi
+            echo ""
+          done
+
+          for SKIP_JSON in all_results/cuda-bench-*/bench/benchmark_skipped.json; do
+            [ -e "$SKIP_JSON" ] || continue
+            echo "Skipped: $(basename "$(dirname "$(dirname "$SKIP_JSON")")") (not in perf allowlist)"
+          done
+
+          echo "::endgroup::"
+
+      - name: Authenticate with AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_workflow_upload-benchmark-results
+          role-duration-seconds: 18000
+          aws-region: us-east-1
+
+      - name: Upload to S3
+        shell: bash
+        env:
+          S3_BUCKET: gha-artifacts
+          S3_PREFIX: executorch-cuda-perf/${{ github.run_id }}/${{ github.run_attempt }}
+        run: |
+          set -eux
+          pip install awscli
+
+          echo "Uploading benchmark results to S3..."
+          aws s3 sync all_results/ "s3://${S3_BUCKET}/${S3_PREFIX}/" \
+            --exclude "*" \
+            --include "*.json" \
+            --include "*.log"
+
+          echo "Results uploaded to: s3://${S3_BUCKET}/${S3_PREFIX}/"
+
+      - name: Prepare v3 results for dashboard upload
+        shell: bash
+        run: |
+          set -eux
+          echo "::group::Prepare v3 results"
+
+          mkdir -p benchmark-results/v3
+
+          # Collect all v3 results into a single directory
+          for V3_JSON in all_results/cuda-bench-*/bench/benchmark_results_v3.json; do
+            [ -e "$V3_JSON" ] || continue
+            # Generate unique filename based on directory name
+            FILENAME=$(basename "$(dirname "$(dirname "$V3_JSON")")")
+            cp "$V3_JSON" "benchmark-results/v3/${FILENAME}.json"
+            echo "✓ Copied $FILENAME v3 results"
+          done
+
+          echo "V3 results prepared:"
+          ls -lah benchmark-results/v3/
+          echo "::endgroup::"
+
+      - name: Upload benchmark results to dashboard
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        with:
+          benchmark-results-dir: benchmark-results/v3
+          dry-run: false
+          schema-version: v3
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
     needs: [changed-files, run-decision]
     if: |
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_workload.h') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_ci.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/test_muse_glimmer_batching_workload.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/muse_glimmer_batching_workload_test.cpp') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
@@ -759,6 +1192,8 @@ jobs:
         include:
           - variant: kquant-17gb
             mode: solo-text
+          - variant: kquant-17gb
+            mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic
