@@ -52,13 +52,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   # Pybind library. When the consolidated shared runtime is built, the runtime
   # is resolved from it rather than from the whole-archive-forcing static
   # `executorch` target, so this module shares the one backend registry.
+  #
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
   if(EXECUTORCH_BUILD_SHARED)
-    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump util torch
-                                  extension_training
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump aten_bridge
+                                  torch_cpu_library extension_training
     )
   else()
-    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch
-                                  util torch extension_training
+    set(_pybind_training_dep_libs
+        ${TORCH_PYTHON_LIBRARY} etdump executorch aten_bridge torch_cpu_library
+        extension_training
     )
   endif()
 
