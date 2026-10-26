@@ -24,6 +24,8 @@ def main():
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--attention-source-sha256',required=True)
     p.add_argument('--deadline-UTC',required=True)
+    p.add_argument('--recover-failed-CUDA-export',action='store_true')
+    p.add_argument('--workspace-probe-job',type=Path)
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     deadline=datetime.datetime.fromisoformat(a.deadline_UTC);assert deadline.tzinfo is not None
     package=Path(__file__).resolve().parent
@@ -51,7 +53,16 @@ def main():
         state('waiting-existing-three-arm-comparison-and-profile')
         while True:
             remaining();s=json.loads((a.previous_workflow/'progress.json').read_text())
-            assert s['status']!='failed',s
+            if s['status']=='failed':
+                assert a.recover_failed_CUDA_export,s
+                assert 'illegal memory access' in (a.previous_workflow/'candidate-export/export.log').read_text()
+                assert a.workspace_probe_job is not None
+                probe=json.loads((a.workspace_probe_job/'progress.json').read_text())
+                assert probe['status']=='completed-pending-independent-memory-safety-review'
+                checked={v['arm']:v for v in probe['results']}
+                assert checked['old']['exit_code']!=0 and checked['corrected']['exit_code']==0
+                assert checked['corrected']['report']['status']=='passed' and checked['corrected']['report']['relative_RMS']<.005
+                break
             if s['status']=='completed-pending-independent-review':break
             os.kill(s['controller_pid'],0);time.sleep(20)
         prior=json.loads((a.previous_workflow/'qualified-policies.json').read_text())
@@ -90,6 +101,17 @@ def main():
             static_forward_methods_unchanged=True,Gate_and_Down_policies_unchanged=True)
         (a.output/'runtime-crossover-selection.json').write_text(json.dumps(selection,indent=2)+'\n')
         final=a.output/'attention-final-policy.json';final.write_text(json.dumps(attention,indent=2)+'\n')
+        if a.recover_failed_CUDA_export:
+            # The larger fixed workspace can affect resource use even though
+            # valid-row arithmetic is unchanged. Revalidate both reused roles.
+            for index,role in [(0,'ffn_down'),(1,'ffn_gate_up')]:
+                policy_file=a.output/(role+'-policy.json')
+                policy_file.write_text(json.dumps(policies[index],indent=2)+'\n')
+                target=a.output/(role+'-dynamic-AOTI')
+                run([sys.executable,'-B',package/'benchmark_roofline_large_w4a16_aoti.py',
+                     '--et-source',a.et_source,'--gguf',a.gguf,'--policy',policy_file,'--output',target,
+                     '--lock',a.lock,'--role',role,'--max-M','1024'],role+'-workspace-revalidation')
+                reports[index]=str(target/'results.json')
         validation=a.output/'attention-final-dynamic-AOTI'
         run([sys.executable,'-B',package/'benchmark_roofline_large_w4a16_aoti.py',
              '--et-source',a.et_source,'--gguf',a.gguf,'--policy',final,'--output',validation,
@@ -98,11 +120,13 @@ def main():
         policies[2]=attention;reports[2]=str(validation/'results.json')
         combined=a.output/'qualified-policies.json';combined.write_text(json.dumps(dict(policies=policies,validation_reports=reports),indent=2)+'\n')
         artifact=a.output/'candidate-artifact';export=a.output/'candidate-export'
-        run([sys.executable,'-B',package/'export_mg_roofline.py','--et-source',a.et_source,
+        export_command=[sys.executable,'-B',package/'export_mg_roofline.py','--et-source',a.et_source,
              '--gguf',a.gguf,'--reference-deployment',a.reference_deployment,
              '--attention-source-sha256',a.attention_source_sha256,'--large-w4a16-policy-file',combined,
              '--reference-export-job',a.baseline_export_job,'--output',artifact,'--job-dir',export,
-             '--lock',a.lock],'full-model-refined-candidate-export')
+             '--lock',a.lock]
+        if a.recover_failed_CUDA_export:export_command.extend(['--reference-compile-cache-job',a.previous_workflow/'candidate-export'])
+        run(export_command,'full-model-refined-candidate-export')
         arms=a.output/'comparison-arms.json';arms.write_text(json.dumps(dict(ET_arms=[
             dict(name='ET-baseline',artifact=str(a.baseline_artifact),export_job=str(a.baseline_export_job)),
             dict(name='ET-large',artifact=str(artifact),export_job=str(export))]),indent=2)+'\n')
