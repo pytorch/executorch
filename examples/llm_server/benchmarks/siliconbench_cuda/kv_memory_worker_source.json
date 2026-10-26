@@ -1,7 +1,7 @@
 {
   "official_worker_path": "examples/models/muse-glimmer/runtime/runners/muse_glimmer_batching_worker.cpp",
   "official_worker_SHA256": "c49e7cffda0f76bcc70bdf37383dd299a5ade9c64cced1a2b3ab539d001fc575",
-  "memory_worker_SHA256": "7e34f04b1563d2f16af8d79ef97af91d84f1a51eca654f72dd8b94f0c81624c0",
+  "memory_worker_SHA256": "8357fb61f6a2d7c78ce854a520bcad3ed8ed1c116907f9286e5a79a4be96c456",
   "official_worker_control_flow_preserved": true,
   "inference_math_changed": false,
   "optional_sampler_enabled_only_by_environment": true

@@ -480,15 +480,15 @@
       "bytes": 4189
     },
     "kv_memory_worker.cpp": {
-      "sha256": "7e34f04b1563d2f16af8d79ef97af91d84f1a51eca654f72dd8b94f0c81624c0",
-      "bytes": 1919
+      "sha256": "8357fb61f6a2d7c78ce854a520bcad3ed8ed1c116907f9286e5a79a4be96c456",
+      "bytes": 1967
     },
     "kv_memory_worker_project/CMakeLists.txt": {
       "sha256": "76fe23966b4e5110747471cf8c464fc2c50e952e2f837d41dccdfd95cee04f3c",
       "bytes": 762
     },
     "kv_memory_worker_source.json": {
-      "sha256": "48410e9ad345a8696b5ec7b5c7ef537e744ddc0a22ad6c4afa57004165f3ba32",
+      "sha256": "cb34b8ceca5aaab04416aacafc0cd2983fe6fd53a6d03fbbeba7c629b0adad2e",
       "bytes": 441
     },
     "kv_near_cap_probe.cpp": {
@@ -552,8 +552,8 @@
       "bytes": 4949
     },
     "prepare_kv_memory_worker.py": {
-      "sha256": "de0a14a97b7cf23ccccf273d03d2d1d7653990dc5775f187247822f28974fcbd",
-      "bytes": 6421
+      "sha256": "dca01bb0031357124d2052a9c6790d46815cb8076bfff4493878a57febf7df37",
+      "bytes": 6576
     },
     "prepare_kv_near_cap_build.py": {
       "sha256": "a225cb8ac372da35bf8e92d571103d565c7441ebe51264af3f3d760170d5c3f9",

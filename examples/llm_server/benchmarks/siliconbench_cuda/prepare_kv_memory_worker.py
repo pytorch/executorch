@@ -63,6 +63,8 @@ def main():
         assert digest(package / "kv_memory_worker.cpp") == spec["memory_worker_SHA256"]
         reconstructed = official.read_text().replace('#include <unistd.h>',
                                                      '#include "kv_memory_sampler.h"\n#include <unistd.h>')
+        reconstructed = reconstructed.replace('#include <iostream>',
+            '#include <iostream>\n\nDECLARE_string(backend);\nDECLARE_bool(dflash);')
         needle = '    auto batching_runtime = llm::create_muse_glimmer_batching_runtime();'
         assert reconstructed.count(needle) == 1
         reconstructed = reconstructed.replace(needle, needle +

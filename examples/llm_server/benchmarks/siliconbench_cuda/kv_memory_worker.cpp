@@ -12,6 +12,9 @@
 #include <csignal>
 #include <iostream>
 
+DECLARE_string(backend);
+DECLARE_bool(dflash);
+
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   // Keep model diagnostics out of the JSONL protocol stream.
