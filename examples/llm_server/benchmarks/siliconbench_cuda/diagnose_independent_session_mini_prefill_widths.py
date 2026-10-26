@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import selectors
 import subprocess
+import sys
 import traceback
 
 
@@ -29,6 +30,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('preparation-job', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--baseline-repeat-preparation-job', type=Path,
+        help='Compare two existing global-layout exports to isolate compiler variation')
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve previous diagnostics'
     args.output.mkdir(parents=True)
@@ -47,14 +50,30 @@ def main():
         assert digest(probe) == gate['binaries'][str(probe)]
         artifacts, audits = {}, {}
         for arm in ('global', 'independent'):
-            artifact = args.preparation_job / ('mini-'+arm+'-artifact')
+            repeat = arm == 'independent' and args.baseline_repeat_preparation_job is not None
+            if repeat:
+                other_gate = json.loads((args.baseline_repeat_preparation_job/'native-gate.json').read_text())
+                assert other_gate['native_GPU_tests_pass'] and other_gate['source_spec_SHA256']==gate['source_spec_SHA256']
+                other_probe = args.baseline_repeat_preparation_job/'model-build/muse_glimmer_runtime_kv_probe'
+                assert digest(other_probe)==digest(probe)
+            artifact = (args.baseline_repeat_preparation_job/'mini-global-artifact' if repeat else
+                        args.preparation_job / ('mini-'+arm+'-artifact'))
             audit = json.loads((artifact / 'independent-mini-artifact-audit.json').read_text())
             assert audit['mini_is_not_full_model'] and audit['retained_original_layer_indices'] == [0,1,2,3]
-            assert audit['independent_capacity'] == (arm == 'independent')
+            assert audit['independent_capacity'] == (arm == 'independent' and not repeat)
             assert audit['metadata']['get_max_prefill_chunk'] == 2048
             for name in ('model.pte', 'aoti_cuda_blob.ptd'):
                 assert digest(artifact/name) == audit['artifacts'][name]['sha256']
             artifacts[arm], audits[arm] = artifact, audit
+        weight_review = args.output/'weight-payload-review.json'
+        state('verifying-every-original-weight-storage')
+        package = Path(__file__).resolve().parent
+        with (args.output/'weight-payload-review.log').open('x') as log:
+            subprocess.run([sys.executable,'-B',str(package/'review_runtime_kv_weight_payload.py'),
+                '--source',gate['source'],'--fixed',str(artifacts['global']/'aoti_cuda_blob.ptd'),
+                '--runtime',str(artifacts['independent']/'aoti_cuda_blob.ptd'),'--output',str(weight_review)],
+                stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1800)
+        assert json.loads(weight_review.read_text())['all_quantized_and_nonquantized_storage_sha256_equal']
         import numpy as np
         widths = [1,2,4,8,16,32,64,65,127,128,255,256,511,512,1024]
         results = []
@@ -144,6 +163,10 @@ def main():
                     argmax_equal=l['response']['argmax']==r['response']['argmax'],
                     files=[dict(file=part['file'],SHA256=digest(part['file'])) for part in (lp,rp)]))
         report = dict(rounds=results, comparisons=comparisons, artifacts=audits,
+            comparison_is_two_global_exports=args.baseline_repeat_preparation_job is not None,
+            arm_semantics={'global':'global reference','independent':
+                ('second global export' if args.baseline_repeat_preparation_job else 'independent KV candidate')},
+            every_original_weight_storage_SHA256_verified=True,weight_review_SHA256=digest(weight_review),
             probe_SHA256=digest(probe), same_teacher_forced_inputs=True,
             candidate_accepted=False, numerical_cause_not_established=True,
             no_performance_acceptance=True, no_kernel_or_acceptance_policy_changed=True)
