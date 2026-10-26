@@ -1,0 +1,45 @@
+{
+  "patch_SHA256": "16751e337560ddadb5e2ec4e5301799a668782012aa24d2e3bdd3ee74f75d654",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "173b5bf3becdfb8550c1b6975f90e0b2bdc28824078eb65407fabdd23574a5de",
+        "after_SHA256": "bf829c391d05031f0ad5e98f524db99ca5528531c4b2defe8ce14dbfa5bdeb7f",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "16751e337560ddadb5e2ec4e5301799a668782012aa24d2e3bdd3ee74f75d654"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "5b2b3ae419daff929ac0524e2bcb7877e66b53a9d84840143508fe1dd816017c",
+        "after_SHA256": "d6c4e82ef408e2f6a6bc591edd4ad03b832dd167673a0a7fe8e9bd55146f2bbf",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "16751e337560ddadb5e2ec4e5301799a668782012aa24d2e3bdd3ee74f75d654"
+      }
+    ],
+    "growth-only": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "b7a54a56887b8c222888751c54fa5a987db14fa542ae672ec06fa25fdc241c19",
+        "after_SHA256": "082a4f05deb621a4cc4974e75f84f9aa69b4a5db4c93bc304bd41a3fa23066da",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "16751e337560ddadb5e2ec4e5301799a668782012aa24d2e3bdd3ee74f75d654"
+      }
+    ]
+  },
+  "contraction_eager_release_unchanged": true,
+  "growth_retains_preexisting_workspace_reservation": true,
+  "growth_reclaims_only_added_reservation": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}

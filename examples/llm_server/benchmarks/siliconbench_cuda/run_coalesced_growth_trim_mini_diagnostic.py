@@ -14,7 +14,7 @@ def main():
     for name in ('baseline-native-job','original-mini-preparation','original-rewind-probe',
                  'current-mini-preparation','current-rewind-probe','python','lock','nsys','output'):
         p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--allocator-policy',choices=('coalesced','pool-only'),default='coalesced')
+    p.add_argument('--allocator-policy',choices=('coalesced','pool-only','workspace-preserving'),default='coalesced')
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     package=Path(__file__).resolve().parent
     def state(status,**extra):
@@ -33,6 +33,8 @@ def main():
         baseline=verify_runtime(a.baseline_native_job,package)
         assert baseline.get('empty_owner_reuse_spec_SHA256')
         native=a.output/('pool-only-trim-native' if a.allocator_policy=='pool-only' else 'coalesced-trim-native')
+        if a.allocator_policy=='workspace-preserving':
+            native=a.output/'workspace-preserving-trim-native'
         state('building-coalesced-growth-trim-native')
         run('native','prepare_independent_session_coalesced_growth_trim.py',[
             '--package',package,'--baseline-native-job',a.baseline_native_job,

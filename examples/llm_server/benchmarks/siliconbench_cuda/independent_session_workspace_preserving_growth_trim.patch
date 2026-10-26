@@ -1,0 +1,63 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -130,6 +130,43 @@
+     releases_storage |= target_rows[index] < allocations_[index].rows;
+   }
+   const bool trim_reclaimed_storage = trim_unused && releases_storage;
++  // The pool also contains cached model workspaces. A growth migration
++  // must not return those pages to the driver on the critical forward path.
++  // Remember its reservation before allocating replacement KV. After the
++  // copy, trim only reservation added by that migration. A real contraction
++  // keeps the existing eager release of allocator and unused graph pages.
++#if !defined(EXECUTORCH_USE_HIP)
++  cudaMemPool_t growth_pool = nullptr;
++  uint64_t retained_reservation = 0;
++  if (trim_unused && !trim_reclaimed_storage) {
++    growth_pool = CudaAllocator::pool_for_device(device_);
++    if (growth_pool != nullptr && cudaMemPoolGetAttribute(
++            growth_pool, cudaMemPoolAttrReservedMemCurrent,
++            &retained_reservation) != cudaSuccess) {
++      (void)cudaGetLastError();
++      growth_pool = nullptr;
++    }
++  }
++#endif
++  auto trim_migration_reservation = [&]() {
++#if !defined(EXECUTORCH_USE_HIP)
++    if (growth_pool != nullptr) {
++      uint64_t reserved = 0, used = 0;
++      if (cudaMemPoolGetAttribute(growth_pool, cudaMemPoolAttrReservedMemCurrent,
++                                 &reserved) == cudaSuccess &&
++          cudaMemPoolGetAttribute(growth_pool, cudaMemPoolAttrUsedMemCurrent,
++                                 &used) == cudaSuccess) {
++        const uint64_t floor = std::max(retained_reservation, used);
++        if (reserved > floor && cudaMemPoolTrimTo(growth_pool, floor) != cudaSuccess) {
++          ET_LOG(Error, "offgraph_kv: migration reservation trim failed");
++          (void)cudaGetLastError();
++        }
++      } else {
++        (void)cudaGetLastError();
++      }
++    }
++#endif
++  };
+   auto fence = [&]() -> Error {
+     if (cudaStreamSynchronize(stream) != cudaSuccess) {
+       return Error::Internal;
+@@ -244,6 +281,7 @@
+         return poison();
+       }
+     }
++    trim_migration_reservation();
+     return error;
+   };
+   ET_CHECK_OK_OR_RETURN_ERROR(fence());
+@@ -276,6 +314,8 @@
+       return poison();
+     }
+   }
++  // fence() has observed all copies and frees before this optional trim.
++  trim_migration_reservation();
+   initial_rows_ = initial_rows_ / old_columns * columns;
+   max_rows_ = max_rows_ / old_columns * columns;
+   columns_ = columns;
