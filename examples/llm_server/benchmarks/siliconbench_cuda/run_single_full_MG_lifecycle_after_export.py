@@ -114,7 +114,8 @@ def main():
                 command = handle.read_bytes() if handle.is_file() else b''
                 if not command and qualification.is_file():
                     break
-                assert b'run_MG_allocator_mini_qualification_after_native.py' in command
+                assert any(name in command for name in (b'run_MG_allocator_mini_qualification_after_native.py',
+                                                        b'run_matched_native_control_after_mini.py'))
                 assert str(controller).encode() in command
                 assert time.monotonic() < deadline, 'Preserve verified-live mini qualification after timeout'
                 state('waiting-confirmed-live-replacement-mini-qualification',

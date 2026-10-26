@@ -20,6 +20,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ('before-preparation','after-preparation','before-rewind-probe','after-rewind-probe','lock','nsys','output'):
   p.add_argument('--'+n,type=Path,required=True)
+ p.add_argument('--mini-profile',choices=('muse-glimmer-first4','gemma4-first6'),default='muse-glimmer-first4')
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  def state(status,**extra):
@@ -46,6 +47,8 @@ def main():
   assert proofs['before']['generated_CPP_SHA256']==proofs['after']['generated_CPP_SHA256']
   for layout in ('global','independent'):
    audits=[json.loads((prep/f'mini-{layout}-artifact/independent-mini-artifact-audit.json').read_text()) for prep in preparations.values()]
+   from independent_session_mini_profiles import validate_mini_audit
+   for audit in audits:validate_mini_audit(audit,a.mini_profile,layout=='independent')
    assert audits[0]['artifacts']==audits[1]['artifacts']
   thread=threading.Thread(target=observe,daemon=True);thread.start();parts=[]
   warm_code="""import time,torch
@@ -72,7 +75,7 @@ while time.monotonic()<end:
     child=a.output/f'child-round-{number}-{arm}'
     command=[sys.executable,'-B','-u',str(package/'run_independent_session_mini_model_latency.py'),
      '--preparation-job',str(preparations[arm]),'--rewind-probe-job',str(probes[arm]),
-     '--native-sampler','off','--mini-profile','muse-glimmer-first4',
+     '--native-sampler','off','--mini-profile',a.mini_profile,
      '--diagnostic-round-number',str(number),'--nsys',str(a.nsys),'--lock',str(a.lock),'--output',str(child)]
     current.update(phase='fixed-token-collection',round=number,native=arm);state('collecting-interleaved-native-control',round=number,native=arm)
     with (a.output/f'child-round-{number}-{arm}.log').open('x') as log:
@@ -107,6 +110,7 @@ while time.monotonic()<end:
   stop.set();thread.join(timeout=20)
   assert not sample_errors,sample_errors
   result=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+   mini_profile=a.mini_profile,
    four_rounds_discard_first=True,ABBA_native_order=True,matched_probe_CPP=True,
    unchanged_PTE_PTD_and_tokens=True,native_tests_and_proofs_reverified=True,
    actual_child_results=parts,raw_numerical_review_SHA256=sha(review),

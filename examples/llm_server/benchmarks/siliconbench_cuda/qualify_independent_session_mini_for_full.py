@@ -18,6 +18,8 @@ def main():
   p.add_argument('--'+name,type=Path,required=True)
  p.add_argument('--profile',choices=['muse-glimmer-first4','gemma4-first6'],required=True)
  p.add_argument('--Gemma-source-preparation-job',type=Path)
+ p.add_argument('--matched-native-control-job',type=Path,
+  help='Retained four-round matched-probe ABBA control resolving a consecutive-native signal; thresholds stay unchanged')
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  current=load(a.mini_job/'progress.json')
@@ -42,6 +44,36 @@ def main():
  graph=review('actual-graph','review_independent_session_mini_graph_trace.py',['--runtime-job',a.mini_job/'graph-lifecycle','--sqlite',a.mini_job/'graph-lifecycle/round-1/cuda-graphs.sqlite'])
  http=review('HTTP-memory','review_independent_session_http_lifecycle.py',['--job',a.mini_job/'HTTP-memory','--require-native-memory'])
  native=review('same-artifact-native-change','review_independent_session_same_artifact_native_change.py',['--before-job',a.previous_latency_job,'--after-job',a.mini_job/'model-latency'])
+ consecutive_native = native
+ matched_resolution = None
+ if a.matched_native_control_job:
+  matched_root=a.matched_native_control_job
+  matched=load(matched_root/'result.json')
+  for key in ('four_rounds_discard_first','ABBA_native_order','matched_probe_CPP',
+              'unchanged_PTE_PTD_and_tokens','native_tests_and_proofs_reverified'):
+   assert matched[key],key
+  assert not matched['GPU_clock_settings_changed']
+  assert matched['mini_profile']==a.profile
+  assert not matched['full_model_qualified'] and not matched['main_candidate_accepted']
+  reference={'before':load(a.previous_latency_job/'result.json'),
+             'after':load(a.mini_job/'model-latency/result.json')}
+  for arm in ('before','after'):
+   doc=load(matched_root/arm/'result.json')
+   assert doc['interleaved_native_round_order'] and doc['fixed_teacher_forced_inputs']
+   assert doc['native_gate_sha256']==reference[arm]['native_gate_sha256']
+   assert doc['artifact_audits']==reference[arm]['artifact_audits']
+   for child in doc['all_actual_child_results_verified']:
+    assert sha(child['result'])==child['SHA256']
+  assert sha(matched_root/'GPU-clocks-power.jsonl')==matched['clock_power_samples_SHA256']
+  assert sha(matched_root/'same-PTE-native-independent-review.json')==matched['raw_numerical_review_SHA256']
+  native=review('same-artifact-native-matched-ABBA','review_independent_session_same_artifact_native_change.py',[
+   '--before-job',matched_root/'before','--after-job',matched_root/'after'])
+  assert native['native_change_preserves_observed_model_numerics'] and native['full_saved_FP32_tensors_equal']==18
+  matched_resolution=dict(matched_control_job=str(matched_root.resolve()),
+   matched_result_SHA256=sha(matched_root/'result.json'),
+   original_consecutive_review_SHA256=sha(a.output/'same-artifact-native-change.json'),
+   stronger_matched_ABBA_reference_used=True,original_consecutive_signals_preserved=True,
+   performance_thresholds_changed=False)
  assert capacity['bitwise_allocation_equivalence_verified'] and len(capacity['fresh_native_PIDs'])==8
  assert rewind['raw_logits_protocols_and_actual_rewind_verified'] and len(rewind['checks'])==96 and rewind['invalid_out_of_context_rewinds_rejected']==48
  assert graph['actual_CUDA_trace'] and graph['all_seven_static_methods_after_shrink_verified'] and graph['automatic_reclaim_verified_without_compact_calls']
@@ -63,7 +95,7 @@ def main():
  assert audit['GGUF_sha256']==expected and audit['independent_capacity']
  for name,r in audit['artifacts'].items():assert sha(artifact/name)==r['sha256'],name
  evidence={}
- for directory in (a.mini_job,a.output):
+ for directory in (a.mini_job,a.output,*((a.matched_native_control_job,) if a.matched_native_control_job else ())):
   for path in directory.rglob('*'):
    if path.is_file() and not path.is_symlink() and path.suffix in ('.json','.jsonl','.f32','.sqlite','.nsys-rep') and not any(part in ('model-build','executorch','build') for part in path.relative_to(directory).parts):
     evidence[str(path.resolve())]=sha(path)
@@ -77,6 +109,7 @@ def main():
   'positive_performance_signals':signals,'HTTP_natural_lengths_equal':http['completion_lengths_equal_between_arms'],
   'HTTP_TPS_or_F1_acceptance':False,'cross_export_strict_numerical_equivalence':False,
   'scope':'Mini storage/actual graph/memory and fixed-token cold/steady gate only. Full-model correctness, F1, same-GPU performance and sampled memory remain required. Raw timings discard round1 and use rounds2–4;3SE is a noise heuristic, not a confidence guarantee.'}
+ if matched_resolution:receipt['matched_native_signal_resolution']=matched_resolution
  if gemma:
   assert a.Gemma_source_preparation_job
   prep=a.Gemma_source_preparation_job/'source-preparation.json'
