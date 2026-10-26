@@ -484,8 +484,8 @@
       "bytes": 1919
     },
     "kv_memory_worker_project/CMakeLists.txt": {
-      "sha256": "6ca0df24f59afd97df9e6e65711c7853b92afec6b278966368a519a8bdf4cca7",
-      "bytes": 718
+      "sha256": "76fe23966b4e5110747471cf8c464fc2c50e952e2f837d41dccdfd95cee04f3c",
+      "bytes": 762
     },
     "kv_memory_worker_source.json": {
       "sha256": "48410e9ad345a8696b5ec7b5c7ef537e744ddc0a22ad6c4afa57004165f3ba32",
