@@ -74,6 +74,7 @@ def main():
         build=args.output/'build'
         commands=[[cmake,'-S',str(package/'gemma_runtime_worker_project'),'-B',str(build),
             '-DCMAKE_BUILD_TYPE=Release','-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
             '-DET_SOURCE='+str(source),'-DGEMMA_WORKER_SOURCE='+str(cpp),
             '-DCMAKE_PREFIX_PATH='+str(sdk)+';'+prefix],
             [cmake,'--build',str(build),'--parallel','2','--target','gemma_runtime_columns_worker']]
