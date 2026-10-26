@@ -711,6 +711,10 @@
       "sha256": "d8996283009ee418462a5c1c36039866c4d3b02e68b961de9746359e75764523",
       "bytes": 15399
     },
+    "prepare_verified_native_mini_alias.py": {
+      "sha256": "7596b3ea7fec194981f3bd5be146481b643cc254dcc892945410f0708117d6fb",
+      "bytes": 2782
+    },
     "prepare_vllm_quality_switch_controls.py": {
       "sha256": "a7678c74697ebfb3e07742adc51959ccb39bdb10334fdbed7329c6d737d5f48c",
       "bytes": 2439
