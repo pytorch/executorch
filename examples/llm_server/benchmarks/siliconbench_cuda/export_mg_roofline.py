@@ -48,6 +48,8 @@ def main():
                         help='Reuse completed baseline compile caches; preserve the baseline directory')
     parser.add_argument('--reference-compile-cache-job',type=Path,
                         help='Reuse completed static cache entries from a preserved failed dynamic attempt')
+    parser.add_argument('--slice-copy-recovery-job',type=Path,
+                        help='Retain slice-copy semantics and reuse only unchanged compiled static delegates')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
@@ -180,6 +182,15 @@ def main():
         return options
 
     CudaBackend.get_aoti_compile_options = classmethod(optimized_options)
+    slice_copy_events=None
+    if args.slice_copy_recovery_job is not None:
+        assert args.large_w4a16_policy_file is not None
+        previous=args.slice_copy_recovery_job
+        assert json.loads((previous/'progress.json').read_text())['status']=='failed'
+        assert 'Method forward_others missing fallback kernels' in (previous/'export.log').read_text()
+        from roofline_slice_copy_lowering import install,install_static_compile_reuse
+        slice_copy_events=install(CudaBackend,args.job_dir)
+        install_static_compile_reuse(CudaBackend,previous,slice_copy_events)
     ka_receipt=None
     large_w4a16_receipt=None
     if args.large_w4a16_policy_file is not None:
@@ -318,6 +329,9 @@ def main():
     if args.reference_export_job is not None:
         audit['baseline_compile_cache_reused']=True
     if recovered_cache is not None:audit['preserved_static_compile_cache_reuse']=recovered_cache
+    if slice_copy_events is not None:
+        audit['slice_copy_lowering_and_static_reuse']=slice_copy_events
+        (args.job_dir/'slice-copy-lowering-and-static-reuse.json').write_text(json.dumps(slice_copy_events,indent=2)+'\n')
     (args.output / 'artifact-audit.json').write_text(json.dumps(audit, indent=2) + '\n')
     state('artifact-exported-and-audited', runtime_sessions=32, prefix_caching=False, roofline_measurements_pending=True)
 
