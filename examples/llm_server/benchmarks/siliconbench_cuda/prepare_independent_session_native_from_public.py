@@ -4,11 +4,15 @@ Reuses checked-out public dependencies. Full-model export is unavailable.
 """
 
 import argparse
+import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import traceback
 
 
 def digest(path):
@@ -35,15 +39,15 @@ def main():
                 name.endswith(('.pte','.ptd','.gguf','.log','.nsys-rep'))]
 
     shutil.copytree(args.baseline_source,base,symlinks=True,ignore=ignore)
+    subprocess.run(['git','init','-q',str(base)],check=True)
+    subprocess.run(['git','-C',str(base),'remote','add','origin',
+                    'https://github.com/pytorch/executorch.git'],check=True)
+    subprocess.run(['git','-C',str(base),'fetch','--filter=blob:none','--depth=1',
+                    'origin',spec['base_commit']],check=True,timeout=600)
+    subprocess.run(['git','-C',str(base),'reset','--mixed',spec['base_commit']],
+                   check=True,stdout=subprocess.DEVNULL)
     if any(not (base/'third-party'/name/'CMakeLists.txt').is_file()
            for name in ['googletest','flatbuffers']):
-        subprocess.run(['git','init','-q',str(base)],check=True)
-        subprocess.run(['git','-C',str(base),'remote','add','origin',
-                        'https://github.com/pytorch/executorch.git'],check=True)
-        subprocess.run(['git','-C',str(base),'fetch','--filter=blob:none','--depth=1',
-                        'origin',spec['base_commit']],check=True,timeout=600)
-        subprocess.run(['git','-C',str(base),'reset','--mixed',spec['base_commit']],
-                       check=True,stdout=subprocess.DEVNULL)
         modules = subprocess.check_output(['git','-C',str(base),'show',
                     spec['base_commit']+':.gitmodules'])
         (base/'.gitmodules').write_bytes(modules)
@@ -63,7 +67,7 @@ def main():
                 p.unlink()
             continue
         original[name] = digest(args.baseline_source/name)
-        raw = subprocess.check_output(['git','-C',str(args.baseline_source),
+        raw = subprocess.check_output(['git','-C',str(base),
                                        'show',spec['base_commit']+':'+name])
         assert hashlib.sha256(raw).hexdigest()==expected,name
         p.parent.mkdir(parents=True,exist_ok=True)
@@ -99,4 +103,15 @@ def main():
 
 
 if __name__=='__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        if '--output' in sys.argv:
+            output=Path(sys.argv[sys.argv.index('--output')+1])
+            if output.is_dir():
+                (output/'progress.json').write_text(json.dumps(dict(
+                    status='failed',controller_pid=os.getpid(),
+                    UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    error=str(error),traceback=traceback.format_exc(),
+                    baseline_modified=False,full_model_export_started=False),indent=2)+'\n')
+        raise
