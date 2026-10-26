@@ -50,6 +50,8 @@ def main():
                         help='Reuse completed baseline compile caches; preserve the baseline directory')
     parser.add_argument('--reference-compile-cache-job',type=Path,
                         help='Reuse completed static cache entries from a preserved failed dynamic attempt')
+    parser.add_argument('--serialization-recovery-job',type=Path,
+                        help='Reuse preserved full-model compile caches after a missing schema resource failure')
     parser.add_argument('--slice-copy-recovery-job',type=Path,
                         help='Retain slice-copy semantics while freshly compiling all complete-model delegates')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
@@ -156,6 +158,23 @@ def main():
         assert combined==json.loads(args.large_w4a16_policy_file.read_text())
         for path in combined['validation_reports']:
             assert json.loads(Path(path).read_text())['GGUF_SHA256']==digest(args.gguf)
+        for name in ['inductor','triton']:
+            shutil.copytree(previous/'cache'/name,cache/name,dirs_exist_ok=True)
+        recovered_cache=dict(source=str(previous),preserved_source=True,
+            strict_route_audit_SHA256=digest(previous/'actual-strict-export-route-audit.json'),
+            terminal_export_log_SHA256=digest(previous/'export.log'),
+            cache_is_not_runtime_or_numerical_acceptance=True)
+    if args.serialization_recovery_job is not None:
+        import shutil
+        previous=args.serialization_recovery_job
+        receipt=json.loads((previous/'progress.json').read_text())
+        assert receipt['status']=='failed' and not (Path('/proc')/str(receipt['controller_pid'])).exists()
+        log=(previous/'export.log').read_text()
+        assert 'FileNotFoundError' in log and "exir/_serialize/program.fbs'" in log
+        assert 'edge.to_executorch' in log
+        routes=json.loads((previous/'actual-strict-export-route-audit.json').read_text())
+        assert len([v for v in routes if not v['dynamic']])==len(static_sizes)
+        assert json.loads((previous.parent/'qualified-policies.json').read_text())==json.loads(args.large_w4a16_policy_file.read_text())
         for name in ['inductor','triton']:
             shutil.copytree(previous/'cache'/name,cache/name,dirs_exist_ok=True)
         recovered_cache=dict(source=str(previous),preserved_source=True,

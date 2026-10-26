@@ -54,7 +54,7 @@ def main():
         while True:
             remaining();value=json.loads((a.workflow/'progress.json').read_text())
             assert value['status']!='failed',value
-            if value['status']=='completed-pending-independent-review':break
+            if value['status'] in ['completed-pending-independent-review','comparison-and-profile-completed-awaiting-validation']:break
             os.kill(value['controller_pid'],0);time.sleep(20)
         inputs=json.loads((a.workflow/'full-model-comparison/input-provenance.json').read_text())
         arms=inputs['artifact_arms'];assert {r['name'] for r in arms}=={'ET-baseline','ET-large'}
