@@ -927,8 +927,10 @@ def register_convolution_cpp_ops():
         # 3-D input implies 1D convolution
         if len(x_shape) == 3:
             transpose = node.args[6]
-            # Transposed 1D convolution is not supported yet
-            if transpose:
+            # There is no transposed conv1d shader. Conv1dAsConv2dPass lowers
+            # the ones it can rewrite onto the conv2d transposed path; accept
+            # exactly those.
+            if transpose and not utils.conv1d_transposed_is_rewritable(node):
                 return False
 
         return True

@@ -370,6 +370,78 @@ class TestVulkanPasses(unittest.TestCase):
         self.assertEqual(conv_input_ranks(gm), [3])
         self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
 
+    def test_conv1d_as_conv2d_rewrites_transposed_conv(self):
+        # There is no transposed conv1d shader, so the rewrite is what makes
+        # these delegable at all. Stride, padding and output_padding must carry
+        # over to the width dim of the conv2d transposed.
+        class ConvTranspose1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.ConvTranspose1d(
+                    16, 8, kernel_size=10, stride=5, padding=3, output_padding=1
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        model = ConvTranspose1dModule().eval()
+        sample_inputs = (torch.randn(1, 16, 20),)
+        eager_ref = model(*sample_inputs)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        exported = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _skip_dim_order=False, _check_ir_validity=False
+            ),
+        ).exported_program()
+        conv_pass = Conv1dAsConv2dPass()
+        conv_pass._exported_program = exported
+        gm = conv_pass(exported.graph_module).graph_module
+
+        self.assertEqual(conv_input_ranks(gm), [4])
+        out = exported.module()(*sample_inputs)
+        self.assertEqual(out.shape, eager_ref.shape)
+        self.assertTrue(torch.allclose(out, eager_ref, atol=1e-5, rtol=1e-5))
+
+    def test_transposed_conv1d_partitioning(self):
+        # Delegated exactly when the rewrite applies; otherwise left on CPU, as
+        # there is no 1-D shader to fall back to.
+        from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+            VulkanPartitioner,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+
+        def delegates(model, inputs, dynamic_shapes=None):
+            program = torch.export.export(
+                model.eval(), inputs, dynamic_shapes=dynamic_shapes, strict=True
+            )
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[VulkanPartitioner()],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+            return sum(
+                "executorch_call_delegate" in str(n.target)
+                for n in edge.exported_program().graph.nodes
+            )
+
+        x = torch.randn(1, 16, 20)
+        self.assertEqual(
+            delegates(torch.nn.ConvTranspose1d(16, 8, 4, stride=2), (x,)), 1
+        )
+        self.assertEqual(
+            delegates(torch.nn.ConvTranspose1d(16, 8, 4, stride=2, groups=2), (x,)), 0
+        )
+        self.assertEqual(
+            delegates(
+                torch.nn.ConvTranspose1d(16, 8, 4, stride=2),
+                (torch.randn(2, 16, 20),),
+                dynamic_shapes=({0: torch.export.Dim.AUTO},),
+            ),
+            0,
+        )
+
     def test_fuse_torchao_quantized_embedding(self):
         """A torchao-dialect 4-bit weight-only quantized embedding
         (torchao.dequantize_affine -> aten.embedding) should fuse into a single
