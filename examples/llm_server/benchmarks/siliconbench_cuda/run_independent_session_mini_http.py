@@ -60,12 +60,24 @@ def main():
             break
         assert preparation["status"] != "failed", preparation
         handle = Path("/proc") / str(preparation["controller_pid"])
-        assert handle.exists(), "Preparation handle missing; do not restart"
-        command = (handle / "cmdline").read_bytes()
-        assert (b"prepare_independent_session_mini.py" in command or
+        try:
+            command = (handle / "cmdline").read_bytes()
+        except FileNotFoundError:
+            command = b''
+        confirmed = (b"prepare_independent_session_mini.py" in command or
                 b"export_independent_session_mini_from_native.py" in command or
                 b"prepare_independent_session_shared_autotune_mini.py" in command or
                 (gemma and b"prepare_gemma_independent_session_mini_pair.py" in command))
+        if not confirmed:
+            # The exporter can commit its terminal state and exit between
+            # our state read and /proc read. Re-read authoritative state;
+            # never restart or accept a reused PID based on stale metadata.
+            refreshed = json.loads((args.preparation_job / "progress.json").read_text())
+            if refreshed['status'] == 'mini-artifacts-ready':
+                preparation = refreshed
+                break
+            assert refreshed['status'] != 'failed', refreshed
+            raise RuntimeError('Preparation handle no longer matches its running state; do not restart')
         (args.output / "progress.json").write_text(json.dumps(dict(
             status="waiting-on-confirmed-live-mini-preparation", controller_pid=os.getpid(),
             preparation_pid=preparation["controller_pid"], preparation_status=preparation["status"],
@@ -363,7 +375,12 @@ if __name__ == "__main__":
         if "--output" in sys.argv:
             output = Path(sys.argv[sys.argv.index("--output") + 1])
             if output.is_dir():
-                (output / "failure.json").write_text(json.dumps(dict(
+                failure = dict(
                     status="failed", controller_pid=os.getpid(), error=str(error),
-                    traceback=traceback.format_exc()), indent=2) + "\n")
+                    UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    traceback=traceback.format_exc())
+                (output / "failure.json").write_text(json.dumps(failure, indent=2) + "\n")
+                pending=output/'progress.pending.json'
+                pending.write_text(json.dumps(failure,indent=2)+'\n')
+                pending.replace(output/'progress.json')
         raise

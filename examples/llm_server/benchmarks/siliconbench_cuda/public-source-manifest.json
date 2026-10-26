@@ -476,8 +476,8 @@
       "bytes": 9912
     },
     "independent_session_mini_profiles.py": {
-      "sha256": "ba1e0afb68c9cdd56b241ee3227bfb458bf65cad88249e8dd4e356107f0167f3",
-      "bytes": 2314
+      "sha256": "549cdafd8c44e1bc4efc22530f66782671d0efd9bd10735486d12fe83831c776",
+      "bytes": 2603
     },
     "isolated_aoti_export.py": {
       "sha256": "b6f54f4e0fa52d2e9b1acd1457c83bcb2696385c2e0683e9fac9fd2e48796fa8",
@@ -856,8 +856,8 @@
       "bytes": 7624
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "eb6a11b2e2dcefa4e050501c8dd02864164d648c55646672a2c03ded4e265d36",
-      "bytes": 23250
+      "sha256": "849cb4831492e0b962b19beec4425948873aa1ef77f70c2811bd3792f17904c2",
+      "bytes": 24182
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "1cb04a5b327f8611ef471f9015d64ae9ee8d20a750c17859617e4651d3ce39a8",

@@ -24,7 +24,13 @@ def validate_mini_audit(audit, profile, independent):
     assert metadata['get_n_caches'] == expected['layers']
     assert metadata['get_vocab_size'] == expected['vocab']
     assert metadata['get_max_prefill_chunk'] == expected['max_step']
-    assert metadata['get_activation_dtype'] == 'bfloat16'
+    # Gemma emits the ExecuTorch ScalarType enum; MG emits its dtype name.
+    # schema/scalar_type.fbs and portable_type/scalar_type.h define BF16=15.
+    activation = metadata['get_activation_dtype']
+    if profile == 'gemma4-first6':
+        assert type(activation) is int and activation == 15
+    else:
+        assert activation == 'bfloat16'
     assert metadata['get_max_context_len'] == 131072
     assert metadata['get_offgraph_kv_sequence_info_abi'] == (3 if independent else 2)
     manifests = audit['offgraph_manifests']
