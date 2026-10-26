@@ -1,0 +1,919 @@
+--- a/extension/llm/cache/cache.h
++++ b/extension/llm/cache/cache.h
+@@ -180,6 +180,8 @@
+   std::optional<int> max_seqs;
+   // Requires a batched-sequence program with the runtime-pitch ABI.
+   bool runtime_sequence_columns = false;
++  // Requires sequence-info ABI3: full KV ranges grow per owner.
++  bool independent_sequence_capacity = false;
+ };
+
+ ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
+--- a/backends/cuda/runtime/cuda_kv_pool.h
++++ b/backends/cuda/runtime/cuda_kv_pool.h
+@@ -44,6 +44,7 @@
+     // Rows the compiled program declares for this layer's storage.
+     int64_t declared_rows{0};
+     bool growable{false};
++    bool ring{false};
+   };
+
+   // A constant the program declares by FQN with a fixed, contiguous shape.
+@@ -94,6 +95,28 @@
+       cudaStream_t stream,
+       bool trim_unused,
+       bool* committed = nullptr);
++
++  struct SequenceRange {
++    int from;
++    int to;
++    int64_t capacity;
++    int64_t live;
++  };
++  runtime::Error repartition_sequences(
++      int columns, const std::vector<SequenceRange>& ranges,
++      int64_t required, cudaStream_t stream, bool trim_unused,
++      bool* committed = nullptr);
++  int64_t sequence_capacity(int column) const {
++    return independent_sequences_ && column >= 0 &&
++        column < static_cast<int>(sequence_capacities_.size()) ?
++        sequence_capacities_[column] : 0;
++  }
++  int64_t sequence_offset(int column) const {
++    return sequence_offsets_.at(column);
++  }
++  int64_t layer_allocated_rows(size_t index) const {
++    return allocations_.at(index).rows;
++  }
+
+   // Records where the step's work ends on its stream, for the next step to
+   // follow if it runs on another.
+@@ -198,6 +221,9 @@
+   const int declared_columns_;
+   int columns_;
+   int64_t column_resize_count_{0};
++  bool independent_sequences_{false};
++  std::vector<int64_t> sequence_capacities_;
++  std::vector<int64_t> sequence_offsets_;
+
+   int device_{0};
+   bool device_known_{false};
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -816,4 +816,6 @@
+   return Error::Ok;
+ }
+
++#include "session_capacity_pool.inc"
++
+ } // namespace executorch::backends::cuda
+--- a/backends/cuda/runtime/cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/cuda_kv_cache.cpp
+@@ -821,6 +821,8 @@
+ constexpr char kSeqInfoFqn[] = "__et_offgraph_kv_seq_info";
+ constexpr size_t kSeqColsBuffer = 0;
+ constexpr size_t kSeqInfoBuffer = 1;
++constexpr size_t kSeqBaseBuffer = 2;
++constexpr char kSeqBaseFqn[] = "__et_offgraph_kv_seq_base";
+
+ class CudaBatchedSequenceCache final : public cache::Cache,
+                                        public cache::BatchControl,
+@@ -836,15 +838,11 @@
+         columns_(cfg.runtime_sequence_columns ? 2 : *cfg.max_seqs + 1),
+         max_write_(*cfg.max_write),
+         max_segments_(batched_sequence_max_segments(*cfg.max_seqs)),
+-        info_width_(cfg.runtime_sequence_columns ? 5 : 4),
++        info_width_(cfg.independent_sequence_capacity ? 7 : (cfg.runtime_sequence_columns ? 5 : 4)),
+         dflash_block_size_(geometry.dflash_block_size),
+         pool_(
+             pool_layers(geometry, cfg),
+-            {{kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
+-             {kSeqInfoFqn,
+-              slimc10::ScalarType::Int,
+-              {batched_sequence_max_segments(*cfg.max_seqs),
+-               cfg.runtime_sequence_columns ? 5 : 4}}},
++            side_specs(cfg),
+             storage_dtype,
+             static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1),
+             *cfg.max_seqs + 1,
+@@ -1098,20 +1096,25 @@
+       required = std::max<int64_t>(required, end);
+     }
+     if (cfg_.runtime_sequence_columns) {
+-      ET_CHECK_OK_OR_RETURN_ERROR(ensure_columns(false, 0, stream));
+-    }
+-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
+-        std::min<int64_t>(required, cfg_.capacity) * columns_,
+-        live * columns_,
+-        stream));
++      ET_CHECK_OK_OR_RETURN_ERROR(ensure_columns(false, 0, stream, &ends));
++    }
++    if (!cfg_.independent_sequence_capacity) {
++      ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
++          std::min<int64_t>(required, cfg_.capacity) * columns_, live * columns_, stream));
++    }
+
+     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
+         static_cast<size_t>(max_write_) * sizeof(int64_t) +
+-        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t)));
++        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t) +
++        (cfg_.independent_sequence_capacity ? static_cast<size_t>(max_write_) * sizeof(int64_t) : 0)));
+     auto* cols = reinterpret_cast<int64_t*>(staging_);
+     auto* info = reinterpret_cast<int32_t*>(cols + max_write_);
+     std::fill(cols, cols + write_length, static_cast<int64_t>(columns_ - 1));
+     std::fill(info, info + max_segments_ * info_width_, 0);
++    auto* bases = reinterpret_cast<int64_t*>(info + max_segments_ * info_width_);
++    if (cfg_.independent_sequence_capacity) {
++      std::fill(bases, bases + write_length, pool_.sequence_offset(columns_ - 1));
++    }
+     if (cfg_.runtime_sequence_columns) {
+       for (int index = 0; index < max_segments_; ++index) {
+         info[index * info_width_ + 4] = columns_;
+@@ -1131,6 +1134,11 @@
+       row[1] = queries;
+       row[2] = column;
+       row[3] = end;
++      if (cfg_.independent_sequence_capacity) {
++        row[5] = static_cast<int32_t>(pool_.sequence_offset(column));
++        row[6] = static_cast<int32_t>(pool_.sequence_capacity(column));
++        std::fill(bases + run.start, bases + run.start + run.length, row[5]);
++      }
+       q_start += queries;
+     }
+     const Error enqueued = upload(static_cast<size_t>(write_length), stream);
+@@ -1223,9 +1231,21 @@
+   }
+
+  private:
++  static std::vector<CudaKVPool::SideBuffer> side_specs(const cache::CacheConfig& cfg) {
++    std::vector<CudaKVPool::SideBuffer> specs{
++        {kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
++        {kSeqInfoFqn, slimc10::ScalarType::Int,
++         {batched_sequence_max_segments(*cfg.max_seqs),
++          cfg.independent_sequence_capacity ? 7 : (cfg.runtime_sequence_columns ? 5 : 4)}}};
++    if (cfg.independent_sequence_capacity) {
++      specs.push_back({kSeqBaseFqn, slimc10::ScalarType::Long, {*cfg.max_write}});
++    }
++    return specs;
++  }
+   struct Sequence {
+     int column;
+     cache::SequenceCache plan;
++    int64_t capacity = 0;
+   };
+
+   // A ring never needs more rows than a sequence can hold; it then never wraps.
+@@ -1251,7 +1271,7 @@
+           rows_of(layer, cfg) * (*cfg.max_seqs + 1),
+           // A ring cannot wrap before it holds all its rows, so until then it
+           // grows with the flat layers.
+-          /*growable=*/true});
++          /*growable=*/true, is_ring(layer)});
+     }
+     return layers;
+   }
+@@ -1278,7 +1298,8 @@
+     return std::nullopt;
+   }
+
+-  Error ensure_columns(bool compact, int spare_columns, cudaStream_t stream) {
++  Error ensure_columns(bool compact, int spare_columns, cudaStream_t stream,
++                       const std::map<int32_t, int>* required_ends = nullptr) {
+     const int live = static_cast<int>(seqs_.size());
+     const int target = compact
+         ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
+@@ -1315,6 +1336,42 @@
+       next.emplace(id, column);
+       used.insert(column);
+     }
++    if (cfg_.independent_sequence_capacity) {
++      std::vector<CudaKVPool::SequenceRange> ranges;
++      int64_t required = 0;
++      for (const auto& [id, sequence] : seqs_) {
++        const int64_t live_rows = sequence.plan.length();
++        const int64_t end = required_ends && required_ends->count(id) ?
++            std::max<int64_t>(live_rows, required_ends->at(id)) : live_rows;
++        ET_CHECK_OR_RETURN_ERROR(end <= cfg_.capacity, InvalidArgument,
++            "offgraph_kv: owner exceeds logical context");
++        required = std::max(required, end);
++        int64_t capacity = compact ? 0 : sequence.capacity;
++        capacity = std::max<int64_t>(capacity, std::max(1, cfg_.initial_capacity));
++        while (capacity < end) {
++          capacity = std::min<int64_t>(cfg_.capacity, capacity * 2);
++        }
++        capacity = std::min<int64_t>(capacity, cfg_.capacity);
++        ranges.push_back({sequence.capacity > 0 ? sequence.column : -1,
++            next.at(id), capacity, live_rows});
++      }
++      bool committed = false;
++      const Error error = pool_.repartition_sequences(
++          target, ranges, required, stream, /*trim_unused=*/true, &committed);
++      if (error != Error::Ok && !committed) {
++        return error;
++      }
++      columns_ = target;
++      size_t range_index = 0;
++      for (auto& [id, sequence] : seqs_) {
++        sequence.column = next.at(id);
++        sequence.capacity = ranges.at(range_index++).capacity;
++      }
++      if (error != Error::Ok) {
++        poisoned_ = true;
++      }
++      return error;
++    }
+     if (target != columns_ || relocate || compact) {
+       std::vector<std::pair<int, int>> retained;
+       for (const auto& [id, sequence] : seqs_) {
+@@ -1356,11 +1413,22 @@
+           layer.head_dim * slimc10::elementSize(storage_dtype());
+       const size_t pitch = slot * columns_;
+       const int64_t held =
+-          std::min(layer_rows_[index], pool_.rows() / columns_);
++          std::min(layer_rows_[index], pool_.layer_allocated_rows(index) / columns_);
+       const int64_t rows =
+           is_ring(layer) ? held : std::min<int64_t>(keep, held);
+       for (const bool value : {false, true}) {
+         auto* base = static_cast<uint8_t*>(pool_.layer_data(index, value));
++        if (cfg_.independent_sequence_capacity && !is_ring(layer)) {
++          const cudaError_t error = cudaMemcpyAsync(
++              base + slot * pool_.sequence_offset(to),
++              base + slot * pool_.sequence_offset(from),
++              slot * static_cast<size_t>(keep), cudaMemcpyDeviceToDevice, pool_.stream());
++          if (error != cudaSuccess) {
++            (void)pool_.synchronize();
++            return Error::Internal;
++          }
++          continue;
++        }
+         const cudaError_t error = cudaMemcpy2DAsync(
+             base + slot * to,
+             pitch,
+@@ -1412,6 +1480,12 @@
+           Internal,
+           "offgraph_kv: cannot write the step's sequences: %s",
+           cudaGetErrorString(error));
++    }
++    if (cfg_.independent_sequence_capacity) {
++      const size_t offset = cols_bytes + static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t);
++      ET_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(pool_.side_buffer(kSeqBaseBuffer),
++          staging_ + offset, width * sizeof(int64_t), cudaMemcpyHostToDevice, stream) == cudaSuccess,
++          Internal, "offgraph_kv: cannot upload independent owner bases");
+     }
+     return Error::Ok;
+   }
+@@ -1582,6 +1656,11 @@
+         Error,
+         "offgraph_kv: the batched-sequence layout requires max_seqs and "
+         "max_write");
++    return nullptr;
++  }
++  if (cfg.independent_sequence_capacity &&
++      (!cfg.runtime_sequence_columns || geometry.dflash_block_size)) {
++    ET_LOG(Error, "offgraph_kv: independent capacity requires solo runtime columns");
+     return nullptr;
+   }
+   return std::make_shared<CudaBatchedSequenceCache>(
+--- a/backends/cuda/batching/cuda_executor.cpp
++++ b/backends/cuda/batching/cuda_executor.cpp
+@@ -375,7 +375,7 @@
+           *module, "get_offgraph_kv_sequence_info_abi"));
+   ET_CHECK_OR_RETURN_ERROR(
+       sequence_info_abi.value_or(1) == 1 ||
+-          (sequence_layout && sequence_info_abi == 2),
++          (sequence_layout && (sequence_info_abi == 2 || sequence_info_abi == 3)),
+       InvalidProgram,
+       "CudaExecutor: unsupported sequence-info ABI");
+   std::int64_t max_cells = 0;
+@@ -536,7 +536,8 @@
+       static_cast<int>(sequence_layout ? max_context_length : max_cells);
+   cfg.kv_dtype = kv_dtype;
+   cfg.max_write = max_step_tokens;
+-  cfg.runtime_sequence_columns = sequence_info_abi == 2;
++  cfg.runtime_sequence_columns = sequence_info_abi == 2 || sequence_info_abi == 3;
++  cfg.independent_sequence_capacity = sequence_info_abi == 3;
+   if (sequence_layout) {
+     cfg.max_seqs = static_cast<int>(*declared_seqs);
+   }
+--- a/backends/cuda/passes/lower_offgraph_kv.py
++++ b/backends/cuda/passes/lower_offgraph_kv.py
+@@ -45,6 +45,7 @@
+ # forward. Declared once per program at a fixed shape, like the cell buffers.
+ OFFGRAPH_KV_SEQ_COLS_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_cols"
+ OFFGRAPH_KV_SEQ_INFO_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_info"
++OFFGRAPH_KV_SEQ_BASE_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_base"
+
+ # Layouts whose step packs tokens of several sequences on one axis.
+ PACKED_LAYOUTS = ("cell", "batched-sequence")
+@@ -84,7 +85,7 @@
+
+ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
+     manifest = json.loads(value.decode("utf-8"))
+-    if manifest.get("version") not in (1, 2):
++    if manifest.get("version") not in (1, 2, 3):
+         raise ValueError("off-graph KV manifest version must be 1 or 2")
+     maximum_capacity = manifest.get("maximum_capacity")
+     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
+@@ -98,7 +99,12 @@
+     runtime_columns = manifest.setdefault("runtime_columns", False)
+     if not isinstance(runtime_columns, bool):
+         raise ValueError("off-graph runtime_columns must be a bool")
+-    if manifest["version"] == 2:
++    independent = manifest.setdefault("independent_capacity", False)
++    if not isinstance(independent, bool):
++        raise ValueError("independent_capacity must be a bool")
++    if independent != (manifest["version"] == 3):
++        raise ValueError("independent capacity requires manifest version3")
++    if manifest["version"] in (2, 3):
+         if layout != "batched-sequence" or not runtime_columns:
+             raise ValueError(
+                 "off-graph version 2 requires batched-sequence runtime columns"
+@@ -308,6 +314,8 @@
+     out_dtype: torch.dtype | None = None,
+     context_window: bool = False,
+     runtime_columns: bool = False,
++    independent_capacity: bool = False,
++    seq_base: torch.Tensor | None = None,
+ ) -> torch.Tensor:
+     """Write this step's K/V into each sequence's column, then attend.
+
+@@ -328,6 +336,8 @@
+     position = position.reshape(-1)
+     pitch = seq_info[0, 4].to(torch.int64) if runtime_columns else columns
+     slots = (position % rows) * pitch + seq_cols[: k.shape[2]]
++    if independent_capacity and not ring:
++        slots = position + seq_base[: k.shape[2]]
+     _write(k_storage, slots, k)
+     _write(v_storage, slots, v)
+     heads, dim = k_storage.shape[2], k_storage.shape[3]
+@@ -755,7 +765,8 @@
+             OFFGRAPH_KV_SEQ_INFO_FQN,
+             (
+                 self._manifest["max_segments"],
+-                5 if self._manifest.get("runtime_columns", False) else 4,
++                7 if self._manifest.get("independent_capacity", False) else
++                (5 if self._manifest.get("runtime_columns", False) else 4),
+             ),
+             torch.int32,
+             device,
+@@ -774,6 +785,22 @@
+             self._manifest.get("context_window", False),
+             self._manifest.get("runtime_columns", False),
+         )
++        if self._manifest.get("independent_capacity", False):
++            bases = self._cell_buffer(exported_program, OFFGRAPH_KV_SEQ_BASE_FQN,
++                (self._manifest["max_write"],), torch.int64, device)
++            call_args = (*call_args, bases)
++            example_args = (*example_args, bases.meta["val"])
++            scale = node.args[5]
++            rows = self._layer_capacity(layer)
++            columns = self._columns
++            window = layer["window"] if ring else 0
++            causal = self._manifest["causal"]
++            context_window = self._manifest.get("context_window", False)
++            def independent_fn(q, k, v, position, ks, vs, cols, info, base):
++                return batched_sequence_step(q, k, v, position, ks, vs, cols, info,
++                    scale, rows, columns, window, ring, causal, out_dtype,
++                    context_window, True, True, base)
++            fn = independent_fn
+         return fn, call_args, example_args
+
+     def _ring_mask(self, graph, position, buf_size: int, window: int, before):
+--- a/backends/cuda/triton/kernels/sdpa_varlen.py
++++ b/backends/cuda/triton/kernels/sdpa_varlen.py
+@@ -91,10 +91,15 @@
+     q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+     col = tl.load(Info_ptr + seg * INFO_WIDTH + 2)
+     kv_end = tl.load(Info_ptr + seg * INFO_WIDTH + 3)
+-    if INFO_WIDTH == 5:
++    if INFO_WIDTH >= 5:
+         columns = tl.load(Info_ptr + seg * INFO_WIDTH + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+         stride_vr = columns * stride_vc
++    if INFO_WIDTH == 7 and RING == 0:
++        col = tl.load(Info_ptr + seg * INFO_WIDTH + 5).to(tl.int64)
++        rows_available = tl.load(Info_ptr + seg * INFO_WIDTH + 6)
++        stride_kr = stride_kc
++        stride_vr = stride_vc
+     if qb * BLOCK_M >= q_len * NUM_GROUPS:
+         return
+
+@@ -256,11 +261,17 @@
+         q_len = tl.where(take, seg_q_len, q_len)
+         col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
+         kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
+-    if INFO_WIDTH == 5:
++        if INFO_WIDTH == 7 and RING == 0:
++            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 5), col)
++            rows_available = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 6), rows_available)
++    if INFO_WIDTH >= 5:
+         columns = tl.load(Info_ptr + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+         stride_vr = columns * stride_vc
+
++    if INFO_WIDTH == 7 and RING == 0:
++        stride_kr = stride_kc
++        stride_vr = stride_vc
+     offs_g = tl.arange(0, BLOCK_G)
+     offs_d = tl.arange(0, HEAD_DIM)
+     g_valid = offs_g < NUM_GROUPS
+@@ -464,7 +475,7 @@
+     if (
+         seq_info.dtype != torch.int32
+         or seq_info.dim() != 2
+-        or seq_info.shape[1] not in (4, 5)
++        or seq_info.shape[1] not in (4, 5, 7)
+     ):
+         raise ValueError("seq_info must be Int32[S, 4] or runtime-pitch Int32[S, 5]")
+     if seq_info.device != query.device or not seq_info.is_contiguous():
+--- a/examples/models/muse-glimmer/export/export_solo.py
++++ b/examples/models/muse-glimmer/export/export_solo.py
+@@ -345,6 +345,7 @@
+     causal: bool = True,
+     context_window: bool = False,
+     runtime_columns: bool = False,
++    independent_capacity: bool = False,
+ ) -> str:
+     """The batched-sequence lowering manifest: one column per sequence."""
+     from executorch.backends.cuda.passes.lower_offgraph_kv import (
+@@ -359,6 +360,11 @@
+     if runtime_columns:
+         manifest["version"] = 2
+         manifest["runtime_columns"] = True
++    if independent_capacity:
++        if not runtime_columns:
++            raise ValueError("Independent capacity requires runtime columns")
++        manifest["version"] = 3
++        manifest["independent_capacity"] = True
+     if context_window:
+         manifest["context_window"] = True
+     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+@@ -434,6 +440,7 @@
+     kv_layout: str = "cell",
+     max_kv_seqs: int = 4,
+     runtime_kv_columns: bool = False,
++    independent_capacity: bool = False,
+ ):
+     """Exports the forward methods and writes the artifact.
+
+@@ -532,7 +539,8 @@
+     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
+     manifest = (
+         batched_sequence_manifest(
+-            single_manifest, max_kv_seqs, runtime_columns=runtime_kv_columns
++            single_manifest, max_kv_seqs, runtime_columns=runtime_kv_columns,
++            independent_capacity=independent_capacity
+         )
+         if sequence_layout
+         else cell_manifest(single_manifest, max_cells)
+@@ -693,7 +701,7 @@
+     if sequence_layout:
+         constant_methods[MAX_KV_SEQS_METHOD] = max_kv_seqs
+         if runtime_kv_columns:
+-            constant_methods["get_offgraph_kv_sequence_info_abi"] = 2
++            constant_methods["get_offgraph_kv_sequence_info_abi"] = 3 if independent_capacity else 2
+     else:
+         constant_methods[MAX_CELLS_METHOD] = max_cells
+     if "draft_forward" in programs:
+--- /dev/null
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -0,0 +1,202 @@
++// Copyright (c) Meta Platforms, Inc. and affiliates.
++// This source code is licensed under the BSD-style license in LICENSE.
++
++Error CudaKVPool::repartition_sequences(
++    int columns,
++    const std::vector<SequenceRange>& ranges,
++    int64_t required,
++    cudaStream_t stream,
++    bool trim_unused,
++    bool* committed) {
++  if (committed) {
++    *committed = false;
++  }
++  ET_CHECK_OR_RETURN_ERROR(
++      columns >= 2 && columns <= declared_columns_ && required >= 0,
++      InvalidArgument, "offgraph_kv: invalid independent sequence geometry");
++  std::vector<int64_t> capacities(columns, 0), offsets(columns, 0);
++  std::unordered_set<int> sources, destinations;
++  for (const auto& range : ranges) {
++    ET_CHECK_OR_RETURN_ERROR(
++        range.to >= 0 && range.to < columns - 1 && range.capacity > 0 &&
++            range.live >= 0 && range.live <= range.capacity &&
++            destinations.insert(range.to).second &&
++            (range.from == -1 ||
++             (range.from >= 0 && range.from < columns_ - 1 &&
++              sources.insert(range.from).second)),
++        InvalidArgument, "offgraph_kv: invalid independent owner range");
++    capacities[range.to] = range.capacity;
++  }
++  // Static padding writes only position zero into this private dummy range.
++  capacities.back() = 1;
++  for (int col = 1; col < columns; ++col) {
++    offsets[col] = offsets[col - 1] + capacities[col - 1];
++  }
++  const int64_t total = offsets.back() + capacities.back();
++  std::vector<int64_t> target_rows;
++  bool changed = !independent_sequences_ || columns != columns_ ||
++      capacities != sequence_capacities_;
++  for (size_t index = 0; index < layers_.size(); ++index) {
++    const auto& layer = layers_[index];
++    const int64_t limit = layer.declared_rows / declared_columns_;
++    for (const auto& range : ranges) {
++      ET_CHECK_OR_RETURN_ERROR(
++          layer.ring || range.capacity <= limit,
++          InvalidArgument, "offgraph_kv: owner exceeds compiled context");
++      changed |= range.from != range.to;
++    }
++    const int64_t previous = allocated_ ? allocations_[index].rows / columns_ :
++        initial_rows_ / columns_;
++    const int64_t ring_rows = std::min(limit,
++        required > previous ? std::max(required, previous * 2) : previous);
++    target_rows.push_back(layer.ring ? std::max<int64_t>(1, ring_rows) * columns : total);
++    changed |= !allocated_ || target_rows.back() != allocations_[index].rows;
++  }
++  if (!changed) {
++    const auto device = CUDAGuard::create(device_);
++    ET_CHECK_OK_OR_RETURN_ERROR(device.error());
++    ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
++    stream_ = stream;
++    return Error::Ok;
++  }
++  const auto device = CUDAGuard::create(device_);
++  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
++  ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
++  stream_ = stream;
++  if (!allocated_) {
++    ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(0, stream));
++  }
++  const int old_columns = columns_;
++  const bool old_independent = independent_sequences_;
++  const auto old_capacities = sequence_capacities_;
++  const auto old_offsets = sequence_offsets_;
++  std::vector<int64_t> old_rows;
++  for (const auto& allocation : allocations_) {
++    old_rows.push_back(allocation.rows);
++  }
++  auto fence = [&]() -> Error {
++    if (cudaStreamSynchronize(stream) != cudaSuccess) {
++      return Error::Internal;
++    }
++    if (trim_unused) {
++      CudaAllocator::release_cached_memory(device_);
++    }
++    return Error::Ok;
++  };
++  auto copy = [&](size_t index, const Allocation& src,
++                  Allocation& dst, bool reverse) -> Error {
++    const auto& layer = layers_[index];
++    const size_t bytes = row_bytes(layer);
++    for (const auto& range : ranges) {
++      if (range.from < 0) {
++        continue;
++      }
++      const int old_col = range.from, new_col = range.to;
++      const int src_col = reverse ? new_col : old_col;
++      const int dst_col = reverse ? old_col : new_col;
++      const int src_width = reverse ? columns : old_columns;
++      const int dst_width = reverse ? old_columns : columns;
++      const bool src_packed = !layer.ring && (reverse || old_independent);
++      const bool dst_packed = !layer.ring && (!reverse || old_independent);
++      const int64_t src_base = src_packed ?
++          (reverse ? offsets[new_col] : old_offsets[old_col]) : src_col;
++      const int64_t dst_base = dst_packed ?
++          (reverse ? old_offsets[old_col] : offsets[new_col]) : dst_col;
++      const int64_t rows = layer.ring ?
++          std::min(src.rows / src_width, dst.rows / dst_width) : range.live;
++      if (rows == 0) {
++        continue;
++      }
++      for (const auto& pair : {std::pair{dst.k, src.k}, std::pair{dst.v, src.v}}) {
++        const cudaError_t error = cudaMemcpy2DAsync(
++            static_cast<uint8_t*>(pair.first) + bytes * dst_base,
++            bytes * (dst_packed ? 1 : dst_width),
++            static_cast<const uint8_t*>(pair.second) + bytes * src_base,
++            bytes * (src_packed ? 1 : src_width), bytes,
++            static_cast<size_t>(rows), cudaMemcpyDeviceToDevice, stream);
++        if (error != cudaSuccess) {
++          return Error::Internal;
++        }
++      }
++    }
++    return cudaStreamSynchronize(stream) == cudaSuccess ? Error::Ok : Error::Internal;
++  };
++  std::vector<size_t> migrated;
++  auto poison = [&]() -> Error {
++    if (committed) {
++      *committed = true;
++    }
++    invalidate_bindings();
++    ET_LOG(Error, "offgraph_kv: independent owner migration cannot be restored");
++    return Error::Internal;
++  };
++  auto rollback = [&](Error error) -> Error {
++    if (fence() != Error::Ok) {
++      return poison();
++    }
++    while (!migrated.empty()) {
++      const size_t index = migrated.back();
++      Allocation restored;
++      if (allocate_layer(layers_[index], old_rows[index], stream, restored) != Error::Ok) {
++        return poison();
++      }
++      if (copy(index, allocations_[index], restored, true) != Error::Ok) {
++        discard(layers_[index], restored, stream);
++        return poison();
++      }
++      discard(layers_[index], allocations_[index], stream);
++      allocations_[index] = restored;
++      migrated.pop_back();
++      if (fence() != Error::Ok) {
++        return poison();
++      }
++    }
++    return error;
++  };
++  ET_CHECK_OK_OR_RETURN_ERROR(fence());
++  invalidate_bindings();
++  for (size_t index = 0; index < layers_.size(); ++index) {
++    // A flat range can move at unchanged total size, so compare ownership too.
++    bool needs_copy = target_rows[index] != allocations_[index].rows ||
++        columns != old_columns || !old_independent ||
++        (!layers_[index].ring && capacities != old_capacities);
++    for (const auto& range : ranges) {
++      needs_copy |= range.from != range.to;
++    }
++    if (!needs_copy) {
++      continue;
++    }
++    Allocation next;
++    const Error alloc_error = allocate_layer(layers_[index], target_rows[index], stream, next);
++    if (alloc_error != Error::Ok) {
++      return rollback(alloc_error);
++    }
++    const Error copy_error = copy(index, allocations_[index], next, false);
++    if (copy_error != Error::Ok) {
++      discard(layers_[index], next, stream);
++      return rollback(copy_error);
++    }
++    discard(layers_[index], allocations_[index], stream);
++    allocations_[index] = next;
++    migrated.push_back(index);
++    if (fence() != Error::Ok) {
++      return poison();
++    }
++  }
++  initial_rows_ = initial_rows_ / old_columns * columns;
++  max_rows_ = max_rows_ / old_columns * columns;
++  columns_ = columns;
++  sequence_capacities_ = std::move(capacities);
++  sequence_offsets_ = std::move(offsets);
++  independent_sequences_ = true;
++  rows_ = *std::max_element(sequence_capacities_.begin(), sequence_capacities_.end()) * columns;
++  ++growth_count_;
++  ++column_resize_count_;
++  if (committed) {
++    *committed = true;
++  }
++  ET_LOG(Info, "offgraph_kv: independent owners=%zu columns=%d flat_capacity_sum=%lld bytes=%lld",
++      ranges.size(), columns, static_cast<long long>(total),
++      static_cast<long long>(allocated_bytes_));
++  return mark_step_done();
++}
+--- /dev/null
++++ b/backends/cuda/runtime/test/independent_session_capacity_tests.inc
+@@ -0,0 +1,226 @@
++// Copyright (c) Meta Platforms, Inc. and affiliates.
++// This source code is licensed under the BSD-style license in LICENSE.
++
++namespace {
++class CudaIndependentSessionCacheTest : public CudaRuntimeColumnCacheTest {
++ protected:
++  static std::shared_ptr<cache::Cache> independent() {
++    auto cfg = config(kCapacity, 4, kMaxWrite);
++    cfg.max_seqs = kMaxSeqs;
++    cfg.runtime_sequence_columns = true;
++    cfg.independent_sequence_capacity = true;
++    return cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(2), cfg);
++  }
++  static FakeContainer independent_container() {
++    auto fake = container(7);
++    fake.internal_names.push_back("seq_base");
++    fake.fqns.push_back("__et_offgraph_kv_seq_base");
++    declare(fake, fake.fqns.back(), slimc10::ScalarType::Long, {kMaxWrite});
++    return fake;
++  }
++  static std::vector<int32_t> info(FakeContainer& fake) {
++    std::vector<int32_t> values(kSegments * 7);
++    EXPECT_EQ(cudaMemcpy(values.data(), fake.bound["seq_info"].data,
++        values.size() * sizeof(int32_t), cudaMemcpyDeviceToHost), cudaSuccess);
++    return values;
++  }
++  static std::vector<uint16_t> read_flat(FakeContainer& fake, int offset, int rows) {
++    std::vector<uint16_t> values(rows * kRow);
++    EXPECT_EQ(cudaMemcpy(values.data(),
++        static_cast<uint16_t*>(fake.bound["flat_k"].data) + offset * kRow,
++        values.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost), cudaSuccess);
++    return values;
++  }
++  static void seed_flat(FakeContainer& fake, int offset, int rows, uint16_t value) {
++    std::vector<uint16_t> values(rows * kRow, value);
++    ASSERT_EQ(cudaMemcpy(
++        static_cast<uint16_t*>(fake.bound["flat_k"].data) + offset * kRow,
++        values.data(), values.size() * sizeof(uint16_t), cudaMemcpyHostToDevice), cudaSuccess);
++  }
++};
++}
++
++TEST_F(CudaIndependentSessionCacheTest, LongOwnerDoesNotGrowShortOwnerCapacity) {
++  auto object = independent();
++  auto* control = object->as<cache::BatchControl>();
++  auto* kv = object->as<cu::CudaKVCache>();
++  auto fake = independent_container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const int a = *control->seq_new(), b = *control->seq_new();
++  ASSERT_EQ(step(*object, handle, {a,a,a,a,a,a,b}), Error::Ok);
++  auto metadata = info(fake);
++  EXPECT_EQ(metadata[6], 8);
++  EXPECT_EQ(metadata[7 + 6], 4);
++  seed_flat(fake, metadata[5], 6, 123);
++  seed_flat(fake, metadata[7 + 5], 1, 456);
++  const int64_t before = kv->metrics().allocated_bytes;
++  ASSERT_EQ(step(*object, handle, {a,a,a,b}), Error::Ok);
++  metadata = info(fake);
++  EXPECT_EQ(metadata[6], 16);
++  EXPECT_EQ(metadata[7 + 6], 4);
++  EXPECT_EQ(read_flat(fake, metadata[5], 6), std::vector<uint16_t>(6*kRow,123));
++  EXPECT_EQ(read_flat(fake, metadata[7+5],1), std::vector<uint16_t>(kRow,456));
++  EXPECT_GT(kv->metrics().allocated_bytes, before);
++  EXPECT_EQ(control->pos(a),9);
++  EXPECT_EQ(control->pos(b),2);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, CloneCompactionAndReusedIdPreserveIndependentOwnership) {
++  auto object = independent();
++  auto* control = object->as<cache::BatchControl>();
++  auto* kv = object->as<cu::CudaKVCache>();
++  auto fake = independent_container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const int a = *control->seq_new(), b = *control->seq_new();
++  ASSERT_EQ(step(*object, handle, {a,a,a,a,a,a,b}), Error::Ok);
++  auto metadata = info(fake);
++  seed_flat(fake, metadata[5], 6,123);
++  seed_flat(fake, metadata[7+5], 1,456);
++  const auto clone = control->seq_clone(a,5);
++  ASSERT_TRUE(clone.has_value());
++  ASSERT_EQ(step(*object, handle, {*clone}), Error::Ok);
++  metadata = info(fake);
++  EXPECT_EQ(metadata[6],8);
++  EXPECT_EQ(read_flat(fake,metadata[5],5),std::vector<uint16_t>(5*kRow,123));
++  EXPECT_TRUE(control->seq_rm(a));
++  EXPECT_TRUE(control->seq_rm(b));
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  ASSERT_EQ(step(*object,handle,{*clone}),Error::Ok);
++  metadata=info(fake);
++  EXPECT_EQ(metadata[2],0);
++  EXPECT_EQ(metadata[4],2);
++  EXPECT_EQ(read_flat(fake,metadata[5],5),std::vector<uint16_t>(5*kRow,123));
++  const int reused=*control->seq_new();
++  EXPECT_EQ(reused,a);
++  ASSERT_EQ(step(*object,handle,{reused}),Error::Ok);
++  EXPECT_EQ(info(fake)[6],4);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, SparseSixteenOwnersContractAndPaddingUsesDummyRange) {
++  auto object=independent();
++  auto* control=object->as<cache::BatchControl>();
++  auto* kv=object->as<cu::CudaKVCache>();
++  auto fake=independent_container();
++  auto handle=make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  std::vector<int32_t> ids;
++  for(int i=0;i<16;++i)ids.push_back(*control->seq_new());
++  ASSERT_EQ(step(*object,handle,ids,32),Error::Ok);
++  auto metadata=info(fake);
++  EXPECT_EQ(metadata[4],17);
++  for(int i=0;i<16;++i)EXPECT_EQ(metadata[i*7+6],4);
++  std::vector<int64_t> bases(32);
++  ASSERT_EQ(cudaMemcpy(bases.data(),fake.bound["seq_base"].data,
++      bases.size()*sizeof(int64_t),cudaMemcpyDeviceToHost),cudaSuccess);
++  for(int i=16;i<32;++i)EXPECT_EQ(bases[i],64);
++  const int64_t before=kv->metrics().allocated_bytes;
++  for(int i=0;i<16;++i)if(i!=5)ASSERT_TRUE(control->seq_rm(ids[i]));
++  ASSERT_EQ(kv->compact_columns(0),Error::Ok);
++  ASSERT_EQ(step(*object,handle,{ids[5]}),Error::Ok);
++  EXPECT_EQ(info(fake)[4],2);
++  EXPECT_LT(kv->metrics().allocated_bytes,before);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, StableDecodeKeepsBindingsAndReplayUntilOwnerGrowth) {
++  auto object=independent();
++  auto* control=object->as<cache::BatchControl>();
++  auto* kv=object->as<cu::CudaKVCache>();
++  auto fake=independent_container();
++  auto handle=make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const int a=*control->seq_new();
++  ASSERT_EQ(step(*object,handle,{a}),Error::Ok);
++  handle.cuda_graph_state.phase=cu::CudaGraphPhase::Replay;
++  const int updates=fake.updates;
++  ASSERT_EQ(step(*object,handle,{a}),Error::Ok);
++  EXPECT_EQ(fake.updates,updates);
++  EXPECT_EQ(handle.cuda_graph_state.phase,cu::CudaGraphPhase::Replay);
++  ASSERT_EQ(step(*object,handle,{a,a,a}),Error::Ok);
++  EXPECT_GT(fake.updates,updates);
++  EXPECT_NE(handle.cuda_graph_state.phase,cu::CudaGraphPhase::Replay);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, RewindAndCloneIntoFreedSlotKeepRetainedPrefix) {
++  auto object = independent();
++  auto* control = object->as<cache::BatchControl>();
++  auto* kv = object->as<cu::CudaKVCache>();
++  auto fake = independent_container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const int a = *control->seq_new(), b = *control->seq_new();
++  ASSERT_EQ(step(*object, handle, {a,a,a,a,a,a,b}), Error::Ok);
++  const auto metadata = info(fake);
++  seed_flat(fake, metadata[5], 6, 123);
++  ASSERT_TRUE(control->seq_rm(b));
++  const auto clone = control->seq_clone(a, 5);
++  ASSERT_TRUE(clone.has_value());
++  EXPECT_EQ(*clone, b);
++  ASSERT_TRUE(control->rewind(*clone, 3));
++  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
++  ASSERT_EQ(step(*object, handle, {*clone}), Error::Ok);
++  const auto copied = info(fake);
++  EXPECT_EQ(copied[6], 4);
++  EXPECT_EQ(read_flat(fake, copied[5], 3), std::vector<uint16_t>(3*kRow,123));
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, CapturedCopyReplaysAfterOwnerGrowthAndRecapture) {
++  auto object = independent();
++  auto* control = object->as<cache::BatchControl>();
++  auto* kv = object->as<cu::CudaKVCache>();
++  auto fake = independent_container();
++  auto handle = make_handle(fake);
++  ASSERT_TRUE(kv->note_handle(&handle).get());
++  const int a = *control->seq_new();
++  ASSERT_EQ(step(*object, handle, {a}), Error::Ok);
++  seed_flat(fake, info(fake)[5], 1, 321);
++  cudaStream_t stream = nullptr;
++  ASSERT_EQ(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
++  void* output = nullptr;
++  ASSERT_EQ(cudaMalloc(&output, kRow*sizeof(uint16_t)), cudaSuccess);
++  auto capture = [&]() {
++    auto& graph = handle.cuda_graph_state;
++    const auto base = info(fake)[5];
++    EXPECT_EQ(cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed), cudaSuccess);
++    EXPECT_EQ(cudaMemcpyAsync(output,
++        static_cast<uint16_t*>(fake.bound["flat_k"].data) + base*kRow,
++        kRow*sizeof(uint16_t), cudaMemcpyDeviceToDevice, stream), cudaSuccess);
++    EXPECT_EQ(cudaStreamEndCapture(stream, &graph.graph), cudaSuccess);
++    EXPECT_EQ(cudaGraphInstantiate(&graph.graph_exec, graph.graph, 0), cudaSuccess);
++    graph.phase = cu::CudaGraphPhase::Replay;
++  };
++  auto replay = [&]() {
++    EXPECT_EQ(cudaGraphLaunch(handle.cuda_graph_state.graph_exec, stream), cudaSuccess);
++    EXPECT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
++    std::vector<uint16_t> values(kRow);
++    EXPECT_EQ(cudaMemcpy(values.data(), output, values.size()*sizeof(uint16_t),
++        cudaMemcpyDeviceToHost), cudaSuccess);
++    EXPECT_EQ(values, std::vector<uint16_t>(kRow,321));
++  };
++  capture();
++  replay();
++  ASSERT_EQ(step(*object, handle, {a}), Error::Ok);
++  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
++  replay();
++  ASSERT_EQ(step(*object, handle, {a,a,a}), Error::Ok);
++  EXPECT_EQ(handle.cuda_graph_state.graph_exec, nullptr);
++  capture();
++  replay();
++  handle.cuda_graph_state.release();
++  ASSERT_EQ(cudaFree(output), cudaSuccess);
++  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
++  kv->forget_handle(&handle);
++}
++
++TEST_F(CudaIndependentSessionCacheTest, RejectIndependentCapacityWithoutRuntimeColumns) {
++  auto cfg = config(kCapacity, 4, kMaxWrite);
++  cfg.max_seqs = kMaxSeqs;
++  cfg.independent_sequence_capacity = true;
++  EXPECT_EQ(cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(2), cfg), nullptr);
++}
+--- a/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
++++ b/backends/cuda/runtime/test/test_cuda_kv_cache.cpp
+@@ -3118,3 +3118,5 @@
+   EXPECT_NE(built.get()->as<cache::BatchControl>(), nullptr);
+   EXPECT_NE(built.get()->as<cu::CudaKVCache>(), nullptr);
+ }
++
++#include "independent_session_capacity_tests.inc"

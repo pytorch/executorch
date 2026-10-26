@@ -347,6 +347,10 @@
       "sha256": "a17ffc5f2775ead91f79d297a7d740ddfe1acc755890d644655f0591a75dee5c",
       "bytes": 13116
     },
+    "export_independent_session_mini.py": {
+      "sha256": "36b3890f9fbff59e04df223ab88abae3fcba7ea5a3aa6ffe3b51c9c217baca73",
+      "bytes": 11869
+    },
     "export_mg_prefix.py": {
       "sha256": "7ac367635495f4fe0ce4d426db5387c2986d961406aad01e8ecc8e27c57cba51",
       "bytes": 11746
@@ -427,6 +431,18 @@
       "sha256": "8d5167c2e0e9a243aaf703a362ebe24672f0264cebbf2269200b426693c6e2ac",
       "bytes": 10991
     },
+    "independent_session_capacity.patch": {
+      "sha256": "7d3e19765210023588fa4b00da960884568d89c8fb1f4982955ebffbc7425b3c",
+      "bytes": 38952
+    },
+    "independent_session_capacity_source.json": {
+      "sha256": "5bfaeb4013fe9cd97a3e38ed3d1bf68dfdd8283e79d567dc6fafb33c7a3dff53",
+      "bytes": 2881
+    },
+    "independent_session_capacity_tests.inc": {
+      "sha256": "c34acf2799de2de74ab66a1ae554a1391021592edb8255b659ca6e583e8a1e03",
+      "bytes": 9723
+    },
     "isolated_aoti_export.py": {
       "sha256": "b6f54f4e0fa52d2e9b1acd1457c83bcb2696385c2e0683e9fac9fd2e48796fa8",
       "bytes": 7453
@@ -498,6 +514,10 @@
     "prepare_gemma_runtime_http.py": {
       "sha256": "3eb65117bc32009d3de694a7603c7cc75fc208db6e1eeddb1ea80bb3bbe85037",
       "bytes": 5254
+    },
+    "prepare_independent_session_mini.py": {
+      "sha256": "929f2208a2826421db1e445dda01448576df3b807c2faf4fcc10b303aabc2141",
+      "bytes": 9071
     },
     "prepare_kv_near_cap_build.py": {
       "sha256": "a225cb8ac372da35bf8e92d571103d565c7441ebe51264af3f3d760170d5c3f9",
@@ -810,6 +830,10 @@
     "serve_gemma_runtime_columns.py": {
       "sha256": "d422a75b57dcfe6264c2fc6d8280268215edcee988844bfe9a89024d8c0a0359",
       "bytes": 4983
+    },
+    "session_capacity_pool.inc": {
+      "sha256": "4f3c7c7e80cbfbc61b873828bd7824140876e6bc82d29b80a428fc2a1c3a80b7",
+      "bytes": 7997
     },
     "supervise.py": {
       "sha256": "9da500edfdf99ba404e375c23aa98d59e64e1a082cce0d68cc663c0714584cd9",

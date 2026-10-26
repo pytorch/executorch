@@ -1,0 +1,55 @@
+{
+  "files": {
+    "extension/llm/cache/cache.h": {
+      "before_SHA256": "992df6c6bc6b007db46f93245c3d1b946295e1ca1a3a77ecde441113f12e058d",
+      "after_SHA256": "c4e6309a54c0238d117b1ece0a56d325c2d7a8c328467b9a4c7ed4775330fb57"
+    },
+    "backends/cuda/runtime/cuda_kv_pool.h": {
+      "before_SHA256": "9609d1882a775317086cad311bc202783863e8e245907a21d84f1b3cecc3fad7",
+      "after_SHA256": "bc112451eff97828e1f3477ae3642c880d0c40c0c1c3f147f7ba2aebd2a5574d"
+    },
+    "backends/cuda/runtime/cuda_kv_pool.cpp": {
+      "before_SHA256": "fca0e64fb42bcbeb63776e4c4128e9eafb4e840e5701ccdadfb7e55f692a93d8",
+      "after_SHA256": "c360d9d3728af22d4809c099ca690da32978453bb08908daddc375a399eff868"
+    },
+    "backends/cuda/runtime/cuda_kv_cache.cpp": {
+      "before_SHA256": "e262c9b30d9c2a44e90ce9362fac7fd9b941a314f04c4f721ab7e09c813229d8",
+      "after_SHA256": "dedda087e80c540ffda652c0fdf30457118b4394c0e72a1a338606792f951708"
+    },
+    "backends/cuda/batching/cuda_executor.cpp": {
+      "before_SHA256": "570bc1ca081b4577b75752830b8a611fa2232174ce484bf5adb423226e372d1d",
+      "after_SHA256": "e4a5a1044cfac364d9d11c06220e1cdc04568471fe2c39b88814a5ae9d68a209"
+    },
+    "backends/cuda/passes/lower_offgraph_kv.py": {
+      "before_SHA256": "97a56f0734c80fe1245c3d70c8ac21339c1ab284a75a87c06d1b197dd5cbad10",
+      "after_SHA256": "450a6f19ab06723e2f2b888cc5eecac337fe4c3fd10a77a28955f09f410287e3"
+    },
+    "backends/cuda/triton/kernels/sdpa_varlen.py": {
+      "before_SHA256": "6fe7426630b1080971a4315afb8e4a3156f6717029e5792218ebf33798791e5d",
+      "after_SHA256": "580444e0a1e45984f3e1e2920e30a6c0ede56ec095741a73eecbad52e02e63ba"
+    },
+    "examples/models/muse-glimmer/export/export_solo.py": {
+      "before_SHA256": "fac8b0dd3817d3e2e8a48ce4917891eaa47ae78dad3ac3c6914f19542549ec01",
+      "after_SHA256": "324b9430a9eb6a99b20d9728aedd4216e13efa2e803d9d3fc2eb89b8d0f16c64"
+    },
+    "backends/cuda/runtime/session_capacity_pool.inc": {
+      "before_SHA256": null,
+      "after_SHA256": "4f3c7c7e80cbfbc61b873828bd7824140876e6bc82d29b80a428fc2a1c3a80b7"
+    },
+    "backends/cuda/runtime/test/independent_session_capacity_tests.inc": {
+      "before_SHA256": null,
+      "after_SHA256": "c34acf2799de2de74ab66a1ae554a1391021592edb8255b659ca6e583e8a1e03"
+    },
+    "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
+      "before_SHA256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
+      "after_SHA256": "8e9c6c06986a5b1ad7eb9188af2b3aabe9b0eb20893021d2a5fbca7f2db878c7"
+    }
+  },
+  "patch_SHA256": "7d3e19765210023588fa4b00da960884568d89c8fb1f4982955ebffbc7425b3c",
+  "sequence_info_ABI": 3,
+  "mini_GPU_qualified": false,
+  "full_models_exported": false,
+  "performance_qualified": false,
+  "ring_policy_unchanged": true,
+  "implementation": "independent full-KV owner ranges; shared batched forward; compact full arena"
+}
