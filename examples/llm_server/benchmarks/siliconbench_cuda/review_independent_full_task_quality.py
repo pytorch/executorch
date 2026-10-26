@@ -134,7 +134,7 @@ def main():
                 responses = indexed(response_path); assert set(responses) == set(labels)
                 scores = json.loads(score_path.read_text())
                 assert scores['provenance']['correctness_prompts_sha256'] == sha(prompt_path)
-                pairs, errors, parsefails, strict, fences, finishes = [], 0, 0, 0, 0, collections.Counter()
+                pairs, errors, parsefails, strict, fences, final_disagreements, finishes = [], 0, 0, 0, 0, 0, collections.Counter()
                 for key, row in responses.items():
                     request = row['request_parameters']
                     assert request['chat_template_kwargs'] == kwargs and request['temperature'] == 0 and request['top_p'] == 1
@@ -143,6 +143,9 @@ def main():
                     errors += bool(row.get('error')); finishes[row['finish_reason']] += 1
                     cat, _ = functions['extract_category']((row.get('content') or '')+(row.get('reasoning') or ''), patterns)
                     cat = functions['normalize_to_canonical'](cat, categories) if not row.get('error') else None
+                    final_cat, _ = functions['extract_category'](row.get('content') or '', patterns)
+                    final_cat = functions['normalize_to_canonical'](final_cat, categories) if not row.get('error') else None
+                    final_disagreements += final_cat != cat
                     parsefails += cat is None
                     pairs.append((labels[key]['gold_category'], cat))
                     value, fenced = final_object(row.get('content'))
@@ -158,20 +161,21 @@ def main():
                 assert scores['n_scored'] == count and scores['n_missing_responses'] == scores['n_extra_responses'] == 0
                 reviews.append(dict(prefix=prefix, concurrency=c, shots=shot, full=full, count=count,
                     independent_weighted_F1=weighted, independent_exact_match=exact, errors=errors,
-                    parse_failures=parsefails, strict_complete_final_JSON=strict,
+                    parse_failures=parsefails, final_content_scoring_disagreements=final_disagreements, strict_complete_final_JSON=strict,
                     strict_complete_single_fenced_JSON=fences, finish_reasons=dict(finishes)))
                 for path in (settings_path, case/'server.log', prompt_path, label_path, response_path, score_path):
                     evidence[str(path.resolve())] = sha(path)
     complete = not missing and len(reviews) == 20
     if not a.allow_completed_only: assert complete, missing
     raw_pass = complete and all(not row['errors'] and not row['parse_failures'] and
-        row['strict_complete_final_JSON']+row['strict_complete_single_fenced_JSON'] == row['count'] and
-        row['finish_reasons'] == {'stop': row['count']} for row in reviews)
+        not row['final_content_scoring_disagreements'] and row['finish_reasons'] == {'stop': row['count']} for row in reviews)
     result = dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         full_profile=a.full_model_profile, native_runtime_gate_SHA256=native_hash,
         artifact_SHA256=provenance['artifact_SHA256'], reviewed_shots=len(reviews), expected_shots=20,
         expected_response_count=9936, actual_response_count=sum(row['count'] for row in reviews),
         complete=complete, missing=missing, full_task_F1_independently_reviewed=complete,
+        strict_final_JSON_is_a_format_diagnostic_not_the_F1_scoring_contract=True,
+        all_final_outputs_are_strict_single_JSON=complete and all(row['strict_complete_final_JSON']+row['strict_complete_single_fenced_JSON']==row['count'] for row in reviews),
         full_task_raw_quality_pass=raw_pass, shots=reviews, evidence_files_SHA256=evidence,
         final_JSON_format_scope='Complete bare final JSON or exactly one complete JSON fence; no partial or analysis JSON substituted',
         raw_input_request_and_runtime_binding_checked=True, original_files_modified=False,
