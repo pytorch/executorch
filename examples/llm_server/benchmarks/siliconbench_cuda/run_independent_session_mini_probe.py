@@ -40,12 +40,16 @@ def main():
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--same-artifact-pitch-control", action="store_true",
                         help="Establish declared pitch in both arms before runtime-only compaction")
+    parser.add_argument('--diagnostic-initial-KV-capacity',type=int,choices=[512,16384],
+                        help='Same independent PTE allocation control; never a main preset')
     parser.add_argument(
         "--nsys",
         type=Path,
         help="Profile only discarded round 1 for actual CUDA graph evidence",
     )
     args = parser.parse_args()
+    assert args.diagnostic_initial_KV_capacity is None or args.arm=='independent'
+    initial_capacity=args.diagnostic_initial_KV_capacity or 512
     build = json.loads(args.native_gate.read_text())
     assert build['native_GPU_tests_pass'] and build['test_count'] >= 29
     assert digest(args.probe) == build['binaries'][str(args.probe)]
@@ -133,7 +137,7 @@ def main():
                     "--output_dir=" + str(directory),
                     "--max_sessions=21",
                     "--max_context=131072",
-                    "--initial_kv_capacity=512",
+                    "--initial_kv_capacity="+str(initial_capacity),
                 ]
                 if args.nsys and round_number == 1:
                     command = [
@@ -537,6 +541,8 @@ def main():
                 mini_profile=args.mini_profile,
                 model_geometry=geometry,
                 same_artifact_pitch_control=args.same_artifact_pitch_control,
+                initial_KV_capacity=initial_capacity,
+                same_independent_PTE_initial_capacity_diagnostic=args.diagnostic_initial_KV_capacity is not None,
                 heterogeneous_histories=True,
                 automatic_reclaim_requested=args.automatic_reclaim,
                 native_gate_sha256=digest(args.native_gate),
