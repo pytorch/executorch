@@ -31,6 +31,30 @@ logits={}
 requests={}
 raw_hashes={}
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
+if document.get('interleaved_native_round_order'):
+ # The ABBA collector retains four separately hashed child results instead
+ # of publishing aggregates. Reconstruct from their protocols, and require
+ # that the combined document contains those exact child round records.
+ children=document['all_actual_child_results_verified']
+ assert len(children)==4 and [row['round'] for row in children]==[1,2,3,4]
+ assert len({row['native'] for row in children})==1
+ assert document['four_rounds_first_discarded'] and not document['aggregates']
+ child_rounds=[]
+ for row in children:
+  path=Path(row['result'])
+  if not path.is_file():
+   # A downloaded, immutable raw archive retains each child directory name.
+   path=root.parent/path.parent.name/'result.json'
+  assert path.is_file() and digest(path)==row['SHA256'],path
+  child=json.loads(path.read_text())
+  assert child['diagnostic_single_round']==row['round']
+  assert child['native_gate_sha256']==document['native_gate_sha256']
+  assert child['artifact_audits']==document['artifact_audits']
+  assert len(child['rounds'])==2
+  assert {r['arm'] for r in child['rounds']}=={'global','independent'}
+  assert {r['round'] for r in child['rounds']}=={row['round']}
+  child_rounds.extend(child['rounds'])
+ assert child_rounds==document['rounds']
 def token(owner,position):return 100+(owner*101+position*37)%149000
 def counters(snapshot):return {item['method']:item['calls'] for item in snapshot['method_calls']}
 def moments(values):return {'mean':statistics.mean(values),'sample_SD':statistics.stdev(values),'values':values}
@@ -132,9 +156,12 @@ for index,(label,widths) in enumerate(cases):
  fields={}
  for key in ('cold_first_four_seconds','mean_all_measured_native_ms','mean_stable_native_ms'):
   arms={arm:moments([row['cases'][index][key] for row in sorted((r for r in records if r['arm']==arm),key=lambda r:r['round'])[1:]]) for arm in ('global','independent')}
-  for arm in arms:
-   published=next(row['statistics'][key] for row in document['aggregates'] if row['arm']==arm and row['case']==label)
-   assert published['mean']==arms[arm]['mean'] and published['sample_SD']==arms[arm]['sample_SD']
+  if document['aggregates']:
+   for arm in arms:
+    published=next(row['statistics'][key] for row in document['aggregates'] if row['arm']==arm and row['case']==label)
+    assert published['mean']==arms[arm]['mean'] and published['sample_SD']==arms[arm]['sample_SD']
+  else:
+   assert document.get('interleaved_native_round_order')
   a,b=arms['global'],arms['independent']
   fields[key]={'arms':arms,'delta_percent':100*(b['mean']/a['mean']-1),
                'combined_3SE':3*math.sqrt((a['sample_SD']**2+b['sample_SD']**2)/3)}
