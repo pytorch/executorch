@@ -61,9 +61,10 @@ class RmsNormVisitor(NodeVisitor):
         axes = [node.args[0].meta["val"].dim() - 1]
         axes_shape = [len(axes)]
 
-        has_weight = len(node.args) > 2 and node.args[2] is not None
+        weight = node.args[2] if len(node.args) > 2 else node.kwargs.get("weight")
+        has_weight = weight is not None
         if has_weight:
-            weight_node = self.get_node(node.args[2])
+            weight_node = self.get_node(weight)
             weight_tensor = get_parameter(weight_node, self.edge_program)
         else:
             # elementwise_affine=False: use all-ones weight as identity
@@ -111,8 +112,9 @@ class RmsNormVisitor(NodeVisitor):
         )
 
         epsilon = torch.finfo(torch.float32).eps
-        if len(node.args) > 3:
-            epsilon = node.args[3]
+        eps = node.args[3] if len(node.args) > 3 else node.kwargs.get("eps")
+        if eps is not None:
+            epsilon = eps
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
