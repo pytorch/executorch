@@ -11,6 +11,7 @@
 #include "NeuronLog.h"
 #include "NeuronPayloadHeader.h"
 #include "api/NeuronAdapter.h"
+#include "api/NeuronBackendInit.h"
 
 #include <executorch/runtime/executor/pte_data_map.h>
 #include "executorch/runtime/core/error.h"
@@ -45,6 +46,30 @@ Result<DelegateHandle*> NeuronBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  const auto adapter_init = validateNeuronAdapterForInit(
+      compile_specs,
+      configureAdapterLibraryMajor,
+      [](NeuronRuntimeVersion* version) { return Neuron_getVersion(version); });
+  if (adapter_init.error != Error::Ok) {
+    if (adapter_init.versionQueried) {
+      LogError(
+          "NeuronBackend",
+          "Requested Neuron adapter major %d, runtime reported %u (error %d)",
+          adapter_init.requestedMajor,
+          static_cast<unsigned>(adapter_init.runtimeVersion.major),
+          adapter_init.versionStatus);
+    }
+    return adapter_init.error;
+  }
+  if (adapter_init.requestedMajor > 0) {
+    LogInfo(
+        "NeuronBackend",
+        "Using Neuron adapter version %u.%u.%u",
+        static_cast<unsigned>(adapter_init.runtimeVersion.major),
+        static_cast<unsigned>(adapter_init.runtimeVersion.minor),
+        static_cast<unsigned>(adapter_init.runtimeVersion.patch));
+  }
+
   NeuronDelegateSetting setting;
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
   NeuronExecuTorchDelegate* delegate =
@@ -65,6 +90,9 @@ Result<DelegateHandle*> NeuronBackend::init(
           "NeuronBackend",
           "IsImportForever Enable : %d",
           setting.mImportForever);
+    } else if (
+        std::strcmp(compile_spec.key, kNeuronAdapterMajorKey.data()) == 0) {
+      continue;
     } else if (std::strcmp(compile_spec.key, kSharedWeightsKey) == 0) {
       setting.mSharedWeights = true;
       std::string shared_weights_key(
@@ -130,14 +158,27 @@ Result<DelegateHandle*> NeuronBackend::init(
       Payload.Header.DataLen,
       processed->size());
 
-  int res = delegate->LoadCompiledNetwork(Payload, setting);
-  return res == NEURON_NO_ERROR ? delegate : nullptr;
+  const auto network_load = loadCompiledNetworkForInit(
+      [&]() { return delegate->LoadCompiledNetwork(Payload, setting); },
+      [&]() { delegate->~NeuronExecuTorchDelegate(); });
+  if (network_load.error != Error::Ok) {
+    LogError(
+        "NeuronBackend",
+        "Failed to load compiled network: Neuron status %d mapped to %s",
+        network_load.status,
+        runtime::to_string(network_load.error));
+    return network_load.error;
+  }
+  return delegate;
 }
 
 Error NeuronBackend::execute(
     ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
     Span<EValue*> args) const {
+  if (handle == nullptr) {
+    return Error::DelegateInvalidHandle;
+  }
   NeuronExecuTorchDelegate* delegate =
       reinterpret_cast<NeuronExecuTorchDelegate*>(handle);
   return delegate->execute(context, args);

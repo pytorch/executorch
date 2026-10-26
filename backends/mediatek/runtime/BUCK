@@ -11,6 +11,56 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_adapter_library_selector_test",
+    srcs = [
+        "test/NeuronAdapterLibrarySelectorTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronAdapterLibrarySelector.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "//executorch/runtime/backend:interface",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_backend_init_test",
+    srcs = [
+        "test/NeuronBackendInitTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronAdapterLibrarySelector.h",
+        "include/api/NeuronBackendInit.h",
+        "include/api/NeuronError.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:core",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_error_test",
+    srcs = [
+        "test/NeuronErrorTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronError.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
+        "//executorch/runtime/core:core",
+    ],
+)
+
+non_fbcode_target(
     _kind = runtime.cxx_library,
     name = "neuron_backend",
     srcs = [
@@ -26,6 +76,7 @@ non_fbcode_target(
     deps = [
         "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
         "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:core",
         "//executorch/runtime/core:memory_allocator",
         "//executorch/runtime/executor:pte_data_map",
     ],
