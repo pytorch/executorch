@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 if(NOT APPLE)
-  message(FATAL_ERROR "Core AI host tests require Apple platforms")
+  message(FATAL_ERROR "Core AI requires Apple platforms")
 endif()
 
 enable_language(OBJCXX)
@@ -25,17 +25,13 @@ function(coreai_configure_objc_target target)
   )
 endfunction()
 
-if(EXECUTORCH_BUILD_TESTS)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    message(FATAL_ERROR "Core AI host tests require a macOS build")
-  endif()
+if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   add_executable(
     coreai_host_test
     runtime/test/coreai_host_test.mm runtime/test/coreai_manifest_test.mm
     ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
-  target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
   target_link_libraries(
     coreai_host_test PRIVATE executorch GTest::gtest

@@ -10,7 +10,11 @@ on:
   pull_request:
     paths:
       - .github/workflows/coreai.yml
+      - .clang-format
+      - CMakeLists.txt
       - backends/apple/coreai/**
+      - runtime/**
+      - tools/cmake/**
   workflow_dispatch:
 
 concurrency:
@@ -61,6 +65,18 @@ jobs:
         ${CONDA_RUN} python install_executorch.py --editable > /dev/null
         ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt "cmake>=3.31,<4" ninja
         ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        echo "::group::Check Core AI formatting configuration"
+        ${CONDA_RUN} python - <<'PY'
+        from pathlib import Path
+        import yaml
+
+        root = yaml.safe_load(Path(".clang-format").read_text())
+        coreai = yaml.safe_load(Path("backends/apple/coreai/.clang-format").read_text())
+        root.pop("Language")
+        assert coreai == root, "Sync the Core AI clang-format configuration with the root style (without Language)"
+        PY
         echo "::endgroup::"
 
         echo "::group::Run Core AI export tests"

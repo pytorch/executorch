@@ -44,20 +44,19 @@ These are Core AI architecture names, not CPU names such as `arm64`.
 
 ## Host Tests
 
-`EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON` registers the
-standalone `coreai_host_test` executable with CTest. It compiles the runtime
-sources without Swift or CoreAI, routing any SDK calls through a fake bridge, so
-it also runs on macOS 26. Host tests do not establish real SDK behavior.
+On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
+registers the standalone `coreai_host_test` executable with CTest. It tests
+manifest parsing and AOT asset selection using Foundation, without Swift or
+CoreAI SDK calls. The host test target is omitted for Apple cross-builds.
 
-From the repository root:
+CI builds and runs these tests on macOS 27. To use the same configuration from
+the repository root:
 
 ```bash
 cmake -S . -B <build-dir> -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=27.0 \
   -DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_TESTS=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-  -DEXECUTORCH_ENABLE_PROGRAM_VERIFICATION=ON \
-  -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF
-cmake --build <build-dir> --target coreai_host_test
-ctest --test-dir <build-dir> -R '^coreai_host_test$' --output-on-failure
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+cmake --build <build-dir> --target backends/apple/coreai/all
+ctest --test-dir <build-dir>/backends/apple/coreai --output-on-failure --no-tests=error
 ```

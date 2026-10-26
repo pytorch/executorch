@@ -141,6 +141,108 @@ TEST_P(CoreAIManifestMetadataTest, RequiresExactBundleCoverage) {
   }
 }
 
+TEST_P(CoreAIManifestMetadataTest, RejectsInvalidHashes) {
+  auto missing = manifest();
+  [missing removeObjectForKey:@"hash"];
+  EXPECT_EQ(parse_manifest(encode(missing)).error(), Error::InvalidProgram);
+  for (id hash in @[ @"", @"g", @"AB", @"../x", @"a/b", @1, NSNull.null ]) {
+    SCOPED_TRACE([hash description].UTF8String);
+    auto dict = manifest();
+    dict[@"hash"] = hash;
+    if (GetParam()) {
+      dict[@"archs"] = @{
+        @"arch_a" :
+            [NSString stringWithFormat:@"%@/model.arch_a.aimodelc", hash],
+        @"arch_b" :
+            [NSString stringWithFormat:@"%@/model.arch_b.aimodelc", hash]
+      };
+    } else {
+      dict[@"path"] = [NSString stringWithFormat:@"%@/model.aimodel", hash];
+    }
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST_P(CoreAIManifestMetadataTest, RejectsFilesForUndeclaredBundles) {
+  auto dict = manifest();
+  NSMutableDictionary* files = [dict[@"files"] mutableCopy];
+  files[@"model.undeclared.aimodelc/graph.bin"] = @1;
+  dict[@"files"] = files;
+  EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+}
+
+TEST_P(CoreAIManifestMetadataTest, RequiresFilesForEveryDeclaredBundle) {
+  auto valid = manifest();
+  for (NSString* bundle in valid[@"bundle_digests"]) {
+    SCOPED_TRACE(bundle.UTF8String);
+    NSMutableDictionary* dict = [valid mutableCopy];
+    NSMutableDictionary* files = [dict[@"files"] mutableCopy];
+    NSString* prefix = [bundle stringByAppendingString:@"/"];
+    for (NSString* file in dict[@"files"]) {
+      if ([file hasPrefix:prefix]) {
+        [files removeObjectForKey:file];
+      }
+    }
+    dict[@"files"] = files;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST(CoreAIManifestTest, RequiresAotPlatform) {
+  auto dict = aot_manifest_dict();
+  [dict removeObjectForKey:@"platform"];
+  EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  for (id platform in @[ @"", @1, @[], @{}, NSNull.null ]) {
+    SCOPED_TRACE([platform description].UTF8String);
+    dict[@"platform"] = platform;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST(CoreAIManifestTest, RequiresNonemptyAotArchitectureMap) {
+  auto dict = aot_manifest_dict();
+  [dict removeObjectForKey:@"archs"];
+  EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  for (id archs in @[ @{}, @[], @"arch_a", @1, NSNull.null ]) {
+    SCOPED_TRACE([archs description].UTF8String);
+    dict[@"archs"] = archs;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST(CoreAIManifestTest, RejectsUnsafeAotArchitectureNames) {
+  for (NSString* arch in @[ @"", @".", @"..", @"../arch_a", @"a/b", @"a\\b" ]) {
+    SCOPED_TRACE(arch.UTF8String);
+    auto dict = aot_manifest_dict();
+    NSString* bundle = [NSString stringWithFormat:@"model.%@.aimodelc", arch];
+    dict[@"archs"] = @{arch : [@"ab/" stringByAppendingString:bundle]};
+    dict[@"files"] = @{[bundle stringByAppendingString:@"/graph.bin"] : @1};
+    dict[@"bundle_digests"] = @{bundle : fixture_identity('a')};
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST(CoreAIManifestTest, RejectsInvalidAotBundlePaths) {
+  for (id path in @[
+         @"",
+         @"../model.arch_a.aimodelc",
+         @"/ab/model.arch_a.aimodelc",
+         @"ab/../model.arch_a.aimodelc",
+         @"xx/model.arch_a.aimodelc",
+         @"ab/model.arch_b.aimodelc",
+         @"ab/model.aimodel",
+         @1,
+         NSNull.null
+       ]) {
+    SCOPED_TRACE([path description].UTF8String);
+    auto dict = aot_manifest_dict();
+    NSMutableDictionary* archs = [dict[@"archs"] mutableCopy];
+    archs[@"arch_a"] = path;
+    dict[@"archs"] = archs;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Delivery, CoreAIManifestMetadataTest, ::testing::Bool(),
     [](const ::testing::TestParamInfo<bool>& info) {

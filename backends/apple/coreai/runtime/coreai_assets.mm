@@ -280,12 +280,6 @@ Result<Manifest> select_assets(
       files[file] = manifest.files[file];
     }
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      files.count > 0,
-      InvalidProgram,
-      "Core AI manifest has no files for selected device architecture %s; "
-      "re-export the model",
-      device_architecture.UTF8String);
   selected.files = files;
   selected.bundle_digests = @{
     path.lastPathComponent : manifest.bundle_digests[path.lastPathComponent]
