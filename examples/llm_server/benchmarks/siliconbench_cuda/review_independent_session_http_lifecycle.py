@@ -36,7 +36,18 @@ def main():
             return
         time.sleep(20)
     document = json.loads((args.job / "result.json").read_text())
-    assert document["actual_official_HTTP_server"] and document["mini_only"]
+    assert document["actual_official_HTTP_server"]
+    full_profile=document.get('full_model_profile')
+    if full_profile:
+        assert not document['mini_only'] and full_profile=='gemma4-48layers'
+        from independent_session_mini_profiles import validate_full_audit
+        for arm,audit in document['artifact_audits'].items():
+            validate_full_audit(audit,full_profile,arm=='independent')
+        assert document['prefix_entries_on']==1 and document['prefix_checkpoint_interval_on']==512
+        assert document['Gemma_model_source_binding']['actual_sources_binaries_and_tests_reverified']
+    else:
+        assert document['mini_only']
+
     assert document["context"] == 131072 and document["initial_KV_capacity"] == 512
     assert len(document["rounds"]) == 16
     native_enabled = document.get("native_allocator_sampling_enabled", False)
@@ -186,7 +197,7 @@ def main():
                                       mean_TTFT_seconds=(moments([row["stages"][index]["mean_TTFT_seconds"] for row in rows[1:]]) if all(row["stages"][index]["mean_TTFT_seconds"] is not None for row in rows[1:]) else None),
                                       empty_first_EOS_requests=[row["stages"][index]["empty_first_EOS_requests"] for row in rows[1:]],
                                       NVML_idle_last_bytes=moments([row["stages"][index]["lifecycle"]["stage-" + str(index) + "-c" + str(row["stages"][index]["concurrency"]) + "-idle"]["NVML_last_bytes"] for row in rows[1:]])))
-    result = dict(raw_streams_usage_timestamps_and_hashes_verified=True, matched_requests=len(comparison),
+    result = dict(full_model_profile=full_profile, mini_only=not full_profile, raw_streams_usage_timestamps_and_hashes_verified=True, matched_requests=len(comparison),
                   completion_lengths_equal_between_arms=lengths_equal,
                   all_outputs_reached_limit=all(value[arm]["completion_tokens"] == 64 for value in comparison.values() for arm in value),
                   output_differences=differences, natural_output_texts_identical=not differences,

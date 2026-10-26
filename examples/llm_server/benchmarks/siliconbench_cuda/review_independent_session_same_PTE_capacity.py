@@ -103,10 +103,11 @@ assert all(r['steps']==(489 if docs[arms[0]]['mini_profile']=='gemma4-first6' el
 out=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
     raw_protocol_tensor_and_result_SHA256_verified=True,same_artifact_and_native_binary_hashes_verified=True,
     bitwise_allocation_equivalence_verified=True,original_model_tolerance_unchanged=True,
+    full_model_profile=docs[arms[0]].get('full_model_profile'),
     model_geometry=docs[arms[0]]['model_geometry'],artifact_hashes={k:docs[arms[0]][k] for k in keys if 'sha256' in k},
     rounds=rounds,full_logit_checks=checks,full_logit_shapes=sorted(shapes),fresh_native_PIDs=sorted(pids),
     source_result_SHA256=sha(root/'result.json'),
     actual_graph_trace_not_in_this_control=True,full_model_qualified=False,candidate_promoted=False,
-    limitations='Same compiled independent-layout mini PTE at two initial capacities. Full FP32 logits saved in round1 only; all four rounds verify every selected argmax and native one-forward routing. Aggregate full-capacity snapshots do not expose each owner; separate native tests prove per-owner allocation. Actual argv was not saved; effective runtime capacities and provenance are verified from raw native responses. Rewind and CUDA graph tracing are separate retained tests. This control is not cross-export numerical acceptance or task F1.')
+    limitations='Same compiled independent-layout PTE at two initial capacities; actual model geometry and full profile are recorded above. Full FP32 logits saved in round1 only; all four rounds verify every selected argmax and native one-forward routing. Aggregate full-capacity snapshots do not expose each owner; separate native tests prove per-owner allocation. Actual argv was not saved; effective runtime capacities and provenance are verified from raw native responses. Rewind and CUDA graph tracing are separate retained tests. This control is not cross-export numerical acceptance or task F1.')
 a.output.write_text(json.dumps(out,indent=2)+'\n')
 print(json.dumps({k:out[k] for k in ('bitwise_allocation_equivalence_verified','fresh_native_PIDs','full_model_qualified')}))
