@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     const int history_chunk = argc >= 5 ? std::stoi(argv[4]) : 512;
     const bool teacher_forced = argc >= 6 && std::stoi(argv[5]) != 0;
     const bool dump_logits = argc >= 7 && std::stoi(argv[6]) != 0;
-    roofline::require(history_chunk == 512 || history_chunk == 1024, "History chunk must be 512 or 1024");
+    roofline::require(history_chunk == 128 || history_chunk == 256 || history_chunk == 512 || history_chunk == 1024, "History chunk must be128/256/512/1024");
     const int history_tokens = argc >= 8 ? std::stoi(argv[7]) : 1024;
     roofline::require(history_tokens == 0 || history_tokens == 1024, "History length must be zero or1024");
     struct Dump { std::string file; int rows; int vocab; std::string format; };
@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
       const auto& mix = roofline::kMixes[i];
       for (auto owner : owners) roofline::require(cache.seq_rm(owner), "Previous owner release failed");
       owners.clear(); int count = mix.decode + (mix.prefill ? 1 : 0);
+      const auto history_before = executor->method_calls();
       for (int owner = 0; owner < count; ++owner) {
         auto id = cache.seq_new(); roofline::require(id.has_value(), "Owner allocation failed"); owners.push_back(*id);
         for (int start = 0; start < history_tokens; start += history_chunk) {
@@ -88,6 +89,7 @@ int main(int argc, char** argv) {
           run(input, 0);
         }
       }
+      const auto history_after = executor->method_calls();
       const std::size_t dump_start = dumps.size();
       auto before = executor->method_calls(); auto input = roofline::rows(mix);
       for (auto& row : input) row.position += history_tokens - 1024;
@@ -97,7 +99,16 @@ int main(int argc, char** argv) {
       auto ids = run(input, count); auto after = executor->method_calls();
       std::uint64_t calls = 0;
       if (i) out << ',';
-      out << "{\"mix\":\"" << mix.name << "\",\"requested_rows\":" << count << ",\"first_forward_deltas\":{";
+      out << "{\"mix\":\"" << mix.name << "\",\"requested_rows\":" << count << ",\"history_forward_deltas\":{";
+      std::uint64_t history_calls = 0;
+      for (std::size_t m = 0; m < history_after.size(); ++m) {
+        if (m) out << ',';
+        const auto delta = history_after[m].calls - history_before[m].calls;
+        history_calls += delta;
+        out << '"' << history_after[m].name << "\":" << delta;
+      }
+      roofline::require(history_calls == static_cast<std::uint64_t>(count * (history_tokens / history_chunk)), "History chunk route count differs");
+      out << "},\"first_forward_deltas\":{";
       for (std::size_t m = 0; m < after.size(); ++m) {
         if (m) out << ',';
         auto delta = after[m].calls - before[m].calls; calls += delta;

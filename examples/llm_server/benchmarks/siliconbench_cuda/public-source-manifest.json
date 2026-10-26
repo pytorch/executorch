@@ -784,8 +784,8 @@
       "bytes": 6412
     },
     "roofline_prefill_validation.cpp": {
-      "sha256": "6e88c596f58c608d99c8279202ff89224eb89ed085f01eb5251ec8e84b284c6c",
-      "bytes": 7788
+      "sha256": "2ecd221cc1ae941c239183f26d8f5475a61b18ac65deffcce3e2548a7aed9225",
+      "bytes": 8464
     },
     "roofline_profile_project/CMakeLists.txt": {
       "sha256": "b443cfdaf21931c2d6d53e05ebf8caa84a804b86c68efd45e32a7bd30f2efa1c",
@@ -944,8 +944,8 @@
       "bytes": 6201
     },
     "validate_roofline_prefill_outputs.py": {
-      "sha256": "b3fb17a68956cf9907a3ac2e080a56ad656e0e112f70e773a9d4acf10bb9e4e2",
-      "bytes": 5760
+      "sha256": "e13e50fbaecbd6e34ce4d8686832ad2280109566c8009cb4ecf6bb4c90b499f3",
+      "bytes": 6621
     },
     "wait_for.py": {
       "sha256": "f9fa316d2904af3f547710e9d6e8ef9138cc6beb6f5fb62aad489a47177e7f05",

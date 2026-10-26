@@ -24,6 +24,8 @@ def main():
     for name in ['workflow','ET-SDK-job','et-source','python','lock','output']:
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--deadline-UTC',required=True)
+    p.add_argument('--history-chunk',type=int,choices=[128,256,512,1024],default=512)
+    p.add_argument('--require-static-history',action='store_true')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     deadline=datetime.datetime.fromisoformat(a.deadline_UTC);assert deadline.tzinfo is not None
     package=Path(__file__).resolve().parent
@@ -69,9 +71,16 @@ def main():
                     assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
                     state('running-full-model-prefill-validation',round=round_id,arm=arm['name'])
                     with out.with_suffix('.log').open('x') as log:
-                        subprocess.run([str(binary),str(artifact/'model.pte'),str(artifact/'aoti_cuda_blob.ptd'),str(out)],
+                        subprocess.run([str(binary),str(artifact/'model.pte'),str(artifact/'aoti_cuda_blob.ptd'),str(out),str(a.history_chunk)],
                             env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=remaining())
                     data=json.loads(out.read_text());assert data['completed'] and len(data['cases'])==7
+                    assert data['history_chunk']==a.history_chunk
+                    if a.require_static_history:
+                        assert a.history_chunk in [128,256,512]
+                        for case in data['cases']:
+                            calls={name:count for name,count in case['history_forward_deltas'].items() if count}
+                            expected='forward_'+str(a.history_chunk) if arm['name']=='ET-large' else 'forward_others'
+                            assert calls=={expected:case['requested_rows']*(data['history_tokens']//a.history_chunk)},calls
                     records.append(dict(round=round_id,arm=arm['name'],file=out.name,SHA256=sha(out)))
                     until=time.monotonic()+60
                     while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():
@@ -84,6 +93,7 @@ def main():
         result=dict(records=records,comparison=comparison,binary_SHA256=sha(binary),
             input_provenance=inputs,validation_source_SHA256=sha(package/'roofline_prefill_validation.cpp'),
             selected_prefill_logits_and_four_followup_decode_steps=True,
+            history_chunk=a.history_chunk,static_history_execution_verified=a.require_static_history,
             no_performance_measurement_promoted=True,rounds=4)
         (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n')
         state('completed-pending-independent-output-review',all_equal=all(v['all_fresh_rounds_and_ET_arms_equal'] for v in comparison))
