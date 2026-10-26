@@ -141,6 +141,16 @@ def run_tests(model_tests: List[ModelTest]) -> None:
         print(f"✗ Failed to import _C: {e}")
         raise
 
+    # Type checkers need the stub under the extension's own name, and the marker
+    # that says the package is typed.
+    from executorch.extension.pybindings import _C
+
+    bindings_dir = os.path.dirname(_C.__file__)
+    for name in ("_C.pyi", "py.typed"):
+        path = os.path.join(bindings_dir, name)
+        assert os.path.isfile(path), f"{path} is missing from the wheel"
+    print("✓ The _C type stub and py.typed ship beside _C")
+
     # Why are we doing this envvar shenanigans? Since we build the testers, which
     # uses buck, we cannot run as root. This is a sneaky of getting around that
     # test.

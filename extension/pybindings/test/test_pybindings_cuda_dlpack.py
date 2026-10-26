@@ -80,7 +80,9 @@ class CudaDLPackTest(unittest.TestCase):
         )
 
     @classmethod
-    def _export_delegate(cls, name, inputs_on_device=True):
+    def _export_delegate(
+        cls, name, inputs_on_device=True, outputs_on_device=True, plan_outputs=False
+    ):
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
         from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -107,11 +109,11 @@ class CudaDLPackTest(unittest.TestCase):
             config=ExecutorchBackendConfig(
                 propagate_device_config=PropagateDeviceConfig(
                     skip_h2d_for_method_inputs=inputs_on_device,
-                    skip_d2h_for_method_outputs=True,
+                    skip_d2h_for_method_outputs=outputs_on_device,
                 ),
                 enable_non_cpu_memory_planning=True,
                 memory_planning_pass=MemoryPlanningPass(
-                    alloc_graph_input=False, alloc_graph_output=False
+                    alloc_graph_input=False, alloc_graph_output=plan_outputs
                 ),
             )
         )
@@ -120,14 +122,14 @@ class CudaDLPackTest(unittest.TestCase):
             raise AssertionError("test model must execute a CUDA delegate")
         for index in (*plan.inputs, *plan.outputs):
             tensor = plan.values[index].val
-            if tensor.allocation_info is not None:
-                raise AssertionError(
-                    "test must cover borrowed inputs and unplanned outputs"
-                )
-            if (inputs_on_device or index in plan.outputs) and (
-                tensor.extra_tensor_info.device_type != DeviceType.CUDA
-            ):
-                raise AssertionError("test must retain CUDA inputs and outputs")
+            is_output = index in plan.outputs
+            on_device = outputs_on_device if is_output else inputs_on_device
+            info = tensor.extra_tensor_info
+            if on_device != (info is not None and info.device_type == DeviceType.CUDA):
+                raise AssertionError("test program has a wrong device")
+            planned = tensor.allocation_info is not None
+            if planned != (plan_outputs and is_output):
+                raise AssertionError("test program is planned differently")
 
         directory = Path(cls.directory.name) / name
         directory.mkdir()
@@ -140,14 +142,10 @@ class CudaDLPackTest(unittest.TestCase):
             directory / (data_names[0] + ".ptd") if data_names else None
         )
 
-    def _load_method(self, host_inputs=False):
+    def _load_method(self, program=None):
         from executorch.runtime import Runtime
 
-        program_path, data_path = (
-            self.host_input_program
-            if host_inputs
-            else (self.program_path, self.data_path)
-        )
+        program_path, data_path = program or (self.program_path, self.data_path)
         return (
             Runtime.get()
             .load_program(program_path, data_path=data_path)
@@ -258,26 +256,39 @@ class CudaDLPackTest(unittest.TestCase):
         # wait for that write.
         method = self._load_method()
         stream = torch.cuda.current_stream(self.device)
-        # A module reads it back: it writes each call into new memory, so only
-        # the wait for its input can order the read. Its first run sets it up
-        # and waits for the whole device, so it runs once before the write. Its
-        # output stays alive, since freeing it in the next call waits as well.
-        program = self.program_path.read_bytes()
-        data = self.data_path.read_bytes() if self.data_path else None
-        module = self.bindings._load_for_executorch_from_buffer(program, data)
-        kept = module.forward(
-            [CudaDLPackOnly(torch.zeros(self.shape, device=self.device), stream)]
+        # The reader's outputs are on the host, so only the wait for its input
+        # can order the read. Its first run sets it up, allocates its outputs,
+        # and waits for the whole device, so it runs once before the write.
+        reader = self._load_method(
+            self._export_delegate(
+                "host_outputs", outputs_on_device=False, plan_outputs=True
+            )
         )
+        reader(torch.zeros(self.shape, device=self.device))
         value = torch.full(self.shape, 1.0, device=self.device)
         written = method(CudaDLPackOnly(value, stream), clone_outputs=False)[0]
         passed = method.get_outputs(clone_outputs=False)[0]
         writer = torch.cuda.Stream(self.device)
         with torch.cuda.stream(writer):
             shared = torch.from_dlpack(written)
-            torch.cuda._sleep(50_000_000)
+            torch.cuda._sleep(1_000_000_000)
             shared.fill_(41.0)
-        self._assert_ready_value(module.forward([passed])[0], 84.0)
-        del kept
+        output = reader(passed)[0]
+        writer.synchronize()
+        torch.testing.assert_close(
+            torch.from_dlpack(output), torch.full(self.shape, 84.0)
+        )
+
+    def test_device_inputs_with_unplanned_host_outputs(self):
+        # The delegate writes a device tensor that the method then copies into
+        # the caller's host output, so that device tensor must still be planned.
+        method = self._load_method(
+            self._export_delegate("unplanned_host_outputs", outputs_on_device=False)
+        )
+        output = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        torch.testing.assert_close(
+            torch.from_dlpack(output), torch.full(self.shape, 4.0)
+        )
 
     def test_clone_roundtrip_and_borrowed_output_lifetime(self):
         method = self._load_method()
@@ -578,7 +589,9 @@ print("Input on a non-current device was read")
 
         for host_inputs, make_input in ((False, on_device), (True, on_host)):
             with self.subTest(host_inputs=host_inputs):
-                method = self._load_method(host_inputs=host_inputs)
+                method = self._load_method(
+                    self.host_input_program if host_inputs else None
+                )
                 first, second = make_input(1.0), make_input(5.0)
                 torch.cuda.synchronize(self.device)
                 result = method(first)[0]
@@ -592,6 +605,32 @@ print("Input on a non-current device was read")
                 del result, view
                 gc.collect()
                 method(second)
+                reader.synchronize()
+                torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
+
+    def test_planned_output_memory_waits_for_pending_readers(self):
+        # Each run writes a memory-planned output again, so it must wait for a
+        # read another library still has queued there. The inputs are on the
+        # host, so only the wait for the output's device can order it.
+        program_path, data_path = self._export_delegate(
+            "planned_outputs", inputs_on_device=False, plan_outputs=True
+        )
+        module = self.bindings._load_for_executorch_from_buffer(
+            program_path.read_bytes(), data_path.read_bytes() if data_path else None
+        )
+        method = self._load_method((program_path, data_path))
+        for name, run in (("method", method), ("module", module.forward)):
+            with self.subTest(executor=name):
+                result = run(torch.full(self.shape, 1.0), clone_outputs=False)[0]
+                # Imported before the read is queued: an ExecuTorchResult waits
+                # for the device in __dlpack__, which would finish the read.
+                view = self._tensor(result)
+                snapshot = torch.empty_like(view)
+                reader = torch.cuda.Stream(self.device)
+                with torch.cuda.stream(reader):
+                    torch.cuda._sleep(1_000_000_000)
+                    snapshot.copy_(view)
+                run(torch.full(self.shape, 5.0), clone_outputs=False)
                 reader.synchronize()
                 torch.testing.assert_close(snapshot.cpu(), torch.full(self.shape, 4.0))
 
@@ -716,6 +755,38 @@ print("Input on a non-current device was read")
         torch.testing.assert_close(torch.from_dlpack(back), value)
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
+
+    def _device_waits(self, body):
+        from torch.profiler import profile, ProfilerActivity
+
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as trace:
+            body()
+        return sum(
+            event.count
+            for event in trace.key_averages()
+            if event.key == "cudaDeviceSynchronize"
+        )
+
+    def test_dlpack_export_keywords(self):
+        if not self.executorch_output:
+            self.skipTest("__dlpack__ keywords are an ExecuTorchResult feature")
+        method = self._load_method()
+        result = method(torch.full(self.shape, 1.0, device=self.device))[0]
+        # The profiler waits for the device itself when it stops.
+        idle = self._device_waits(lambda: None)
+        # A consumer that passes stream=-1 orders the work itself.
+        self.assertEqual(self._device_waits(lambda: result.__dlpack__(stream=-1)), idle)
+        self.assertEqual(
+            self._device_waits(lambda: result.__dlpack__(stream=1)), idle + 1
+        )
+        copied = torch.from_dlpack(result.__dlpack__(max_version=(1, 0), copy=True))
+        self.assertNotEqual(copied.data_ptr(), torch.from_dlpack(result).data_ptr())
+        torch.testing.assert_close(copied.cpu(), torch.full(self.shape, 4.0))
+        host = torch.from_dlpack(
+            result.__dlpack__(max_version=(1, 0), dl_device=(1, 0), copy=True)
+        )
+        self.assertEqual(host.device, torch.device("cpu"))
+        torch.testing.assert_close(host, torch.full(self.shape, 4.0))
 
     def test_device_chain_waits_for_the_device_twice_per_call(self):
         # Feeding each output into the next call, with a host upload per call.

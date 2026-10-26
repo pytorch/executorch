@@ -272,6 +272,76 @@ else:
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
                 np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
 
+    def test_dlpack_export_keywords(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        values = np.array([1.0], dtype=np.float32)
+        result = method((values, values))[0]
+        if not isinstance(result, runtime.ExecuTorchResult):
+            self.skipTest("torch output mode returns torch tensors")
+
+        self.assertEqual(result.device, "cpu")
+        shared = np.from_dlpack(result, copy=False)
+        self.assertTrue(np.shares_memory(shared, np.from_dlpack(result)))
+        copied = np.from_dlpack(result, copy=True)
+        self.assertFalse(np.shares_memory(copied, shared))
+        np.testing.assert_array_equal(copied, shared)
+        np.testing.assert_array_equal(np.from_dlpack(result, device="cpu"), shared)
+        self.assertIn(
+            '"dltensor_versioned"', repr(result.__dlpack__(max_version=(1, 0)))
+        )
+        self.assertIn('"dltensor"', repr(result.__dlpack__()))
+        with self.assertRaises(BufferError):
+            result.__dlpack__(dl_device=(2, 0), copy=False)
+        with self.assertRaises(TypeError):
+            result.__dlpack__(stream="default")
+
+    def test_raw_dlpack_capsule_inputs(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        first = np.array([1.0], dtype=np.float32)
+        second = np.array([2.0], dtype=np.float32)
+        read_only = second.copy()
+        read_only.flags.writeable = False
+        for executor in (module, method):
+            for capsules in (
+                (first.__dlpack__(), second.__dlpack__()),
+                (
+                    first.__dlpack__(max_version=(1, 0)),
+                    read_only.__dlpack__(max_version=(1, 0)),
+                ),
+            ):
+                with self.subTest(executor=type(executor), capsules=capsules):
+                    output = executor(capsules)[0]
+                    np.testing.assert_array_equal(np.from_dlpack(output), [3.0])
+
+        # A producer that knows DLPack 1.0 is asked for a versioned capsule.
+        class VersionedProducer:
+            def __init__(self, array: np.ndarray) -> None:
+                self.array = array
+                self.requests = []
+
+            def __dlpack_device__(self):
+                return self.array.__dlpack_device__()
+
+            def __dlpack__(self, stream=None, max_version=None):
+                self.requests.append(max_version)
+                return self.array.__dlpack__(stream=stream, max_version=max_version)
+
+        producer = VersionedProducer(read_only)
+        np.testing.assert_array_equal(
+            np.from_dlpack(method((first, producer))[0]), [3.0]
+        )
+        self.assertEqual(producer.requests, [(1, 0)])
+        # A capsule gives its tensor away once.
+        used = first.__dlpack__()
+        method((used, second))
+        with self.assertRaisesRegex(ValueError, "already consumed"):
+            method((used, second))
+
     def test_bfloat16_raw_buffer_input_and_output(self) -> None:
         with open(
             os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"
@@ -343,23 +413,38 @@ else:
             def __dlpack__(self, stream=None):
                 raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
 
+        class FailingDevice(np.ndarray):
+            def __dlpack_device__(self):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
             program_data = program_file.read()
         module = runtime._load_for_executorch_from_buffer(program_data)
         method = runtime._load_program_from_buffer(program_data).load_method("forward")
         value = np.array([1.0], dtype=np.float32)
         for executor in (module, method):
+            # A Python error keeps its type, even one whose constructor takes
+            # more than a message, and carries the name as a note. Choosing how
+            # to read an input can raise too.
+            for failing in (FailingProducer(), value.view(FailingDevice)):
+                with self.subTest(executor=type(executor), input=type(failing)):
+                    with self.assertRaises(UnicodeDecodeError) as caught:
+                        executor((failing, value))
+                    self.assertIn(
+                        "Input 0 of method 'forward'",
+                        getattr(caught.exception, "__notes__", []),
+                    )
             with self.subTest(executor=type(executor)):
-                # A Python error keeps its type, even one whose constructor takes
-                # more than a message, and carries the name as a note.
-                with self.assertRaises(UnicodeDecodeError) as caught:
-                    executor((FailingProducer(), value))
-                self.assertIn("Input 0 of method 'forward'", caught.exception.__notes__)
-        # A method reads every input before it checks their count.
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^Input 0 of method 'forward': unsupported python type",
+                ):
+                    executor((object(), value))
+        # The count is checked before any input is read.
         with self.assertRaisesRegex(
-            RuntimeError, "Input 2 of method 'forward': not a tensor input"
+            RuntimeError, r"^Method 'forward' takes 2 inputs, but got 3$"
         ):
-            method((value, value, value))
+            method((value, value, object()))
 
     def test_mixed_dlpack_and_buffer_inputs(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:

@@ -1154,15 +1154,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module
@@ -2346,6 +2342,12 @@ class CustomBuildPy(build_py):
                 (
                     "tools/cmake/executorch-wheel-config.cmake",
                     "lib/cmake/executorch/executorch-config.cmake",
+                ),
+                # Type checkers find a stub only under the module's own name, so
+                # the extension's stub ships as _C.pyi, as the Buck build names it.
+                (
+                    "extension/pybindings/pybindings.pyi",
+                    "extension/pybindings/_C.pyi",
                 ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator

@@ -418,10 +418,50 @@ print("all calls finished")
 
     def test_method_rejects_tensor_for_scalar_input(self):
         exported_program, inputs = create_program(ModuleAddScalar())
+        module = self.load_fn(exported_program.buffer)
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
 
-        with self.assertRaises(RuntimeError):
-            method.set_inputs([inputs[0], torch.ones(1)])
+        for run in (module.forward, method.set_inputs):
+            with self.subTest(run=run):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^Input 1 of method 'forward': the method expects Double, "
+                    r"but got <class 'torch\.Tensor'>$",
+                ):
+                    run([inputs[0], torch.ones(1)])
+
+    def test_method_rejects_aliased_input_whose_storage_changed(self):
+        # An output that is the input itself is returned as a view of the
+        # caller's tensor, which must still be the storage the method read.
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings return a view of the input")
+        from executorch.extension.pybindings import _C
+
+        if _C._tensor_output != "torch":
+            self.skipTest("only torch output mode returns a view of the input")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        value = torch.ones(2, 2)
+        program = to_edge(export(Identity(), (value,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        method.set_inputs([value])
+        method.execute()
+        value.set_(torch.zeros(2, 2))
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Input 0 of method 'forward': its storage changed before the output "
+            r"was read; pass it again$",
+        ):
+            method.get_outputs(clone_outputs=False)
 
     def test_dlpack_inputs(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -762,6 +802,13 @@ print("CUDA DLPack roundtrip preserved device storage")
                 ):
                     with self.assertRaisesRegex(BufferError, "contiguous byte buffers"):
                         executor([noncontiguous, raw_inputs[1]])
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "^Input 0 of method 'forward': raw bfloat16 input has "
+                    f"{len(raw_inputs[0]) - 2} bytes, but the method expects "
+                    f"{len(raw_inputs[0])}$",
+                ):
+                    executor([raw_inputs[0][:-2], raw_inputs[1]])
 
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
@@ -789,6 +836,17 @@ print("CUDA DLPack roundtrip preserved device storage")
                     output = executor(mixed_inputs)[0]
                     self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
+    def test_raw_dlpack_capsule_is_a_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(inputs[0].numpy().__dlpack__())[0]
+                torch.testing.assert_close(
+                    torch.from_dlpack(output), inputs[0] + inputs[0]
+                )
+
     def test_non_dense_numpy_input_is_rejected(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -811,6 +869,29 @@ print("CUDA DLPack roundtrip preserved device storage")
         output = executorch_module(values)[0]
 
         np.testing.assert_array_equal(np.asarray(output), values)
+
+    def test_complex_half_dlpack_input(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings read DLPack inputs themselves")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        value = torch.tensor([1 + 2j, 3 - 4j], dtype=torch.complex32)
+        program = to_edge(export(Identity(), (value,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        output = torch.from_dlpack(method(DLPackOnly(value))[0])
+        self.assertEqual(output.dtype, torch.complex32)
+        self.assertTrue(
+            torch.equal(output.view(torch.float16), value.view(torch.float16))
+        )
 
     def test_unsupported_buffer_format_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -962,14 +1043,12 @@ print("CUDA DLPack roundtrip preserved device storage")
         with RedirectedStderr() as out:
             try:
                 exported_program, inputs = create_program(ModuleAdd())
-                method = self.load_prog_fn(exported_program.buffer).load_method(
-                    "forward"
-                )
-                method.set_inputs((*inputs, 1))
+                executorch_module = self.load_fn(exported_program.buffer)
+                executorch_module.run_method("missing", inputs)
                 self.assertFalse(True)  # should be unreachable
             except Exception:
                 # The runtime's own log, routed to Python's stderr.
-                self.assertIn("Invalid number of inputs provided", str(out))
+                self.assertIn("No method named 'missing' in program", str(out))
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -1174,9 +1253,7 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1582,7 +1659,8 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
                     values[0].resize((64, 64), refcheck=False)
 
                 with self.assertRaisesRegex(
-                    ValueError, "Input 0 storage changed.*call set_inputs"
+                    ValueError,
+                    "Input 0 of method 'forward': its storage changed.*pass it again",
                 ):
                     method.execute()
 
@@ -1621,14 +1699,12 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
 
         with RedirectedStderr() as out:
             try:
-                program, inputs = create_program(ModuleAdd())
+                program, _ = create_program(ModuleAdd())
                 executorch_program = self.load_prog_fn(program.buffer)
-                executorch_method = executorch_program.load_method("forward")
-                inputs = (*inputs, 1)
-                executorch_output = executorch_method(inputs)[0]  # noqa
+                executorch_program.load_method("missing")
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertIn("Invalid number of inputs provided", str(out))
+                self.assertIn("No method named 'missing' in program", str(out))
 
     def test_method_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -1807,9 +1883,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_outputs(), 1)
         self.assertEqual(meta.num_attributes(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
 
         float_dtype = 6
         self.assertEqual(
@@ -1861,9 +1935,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = (
-            "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
-        )
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1890,6 +1962,117 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+    def test_constant_attribute_is_never_writable(self):
+        # A constant from the data file can sit in read-only pages, so a write
+        # through a borrowed view would crash the process.
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings return borrowed attributes")
+        eager_module = ModuleLinear()
+        program = to_edge(
+            export(eager_module, eager_module.get_inputs(), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(external_constants=True))
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "linear.pte")
+            ptd_path = os.path.join(directory, "linear.ptd")
+            with open(pte_path, "wb") as file:
+                file.write(program.buffer)
+            with open(ptd_path, "wb") as file:
+                file.write(bytes(program._tensor_data["_default_external_constant"]))
+            method = self.runtime._load_program(
+                pte_path, data_path=ptd_path
+            ).load_method("forward")
+            weight = method.get_attribute("linear.weight")
+            expected = eager_module.linear.weight.detach()
+            if isinstance(weight, torch.Tensor):
+                # A torch tensor cannot be read-only, so it is a copy.
+                self.assertNotEqual(
+                    weight.data_ptr(), method.get_attribute("linear.weight").data_ptr()
+                )
+                torch.testing.assert_close(weight, expected)
+            else:
+                self.assertTrue(memoryview(weight).readonly)
+                self.assertFalse(np.asarray(weight).flags.writeable)
+                np.testing.assert_array_equal(np.asarray(weight), expected.numpy())
+            # The method maps the data file, and Windows cannot delete a mapped
+            # file, so drop it before the directory goes away.
+            del weight, method
+            gc.collect()
+            # torch ignores the DLPack read-only flag, so a DLPack export must be
+            # a copy that it can write. Checked in ExecuTorchResult output mode.
+            script = """
+import sys
+
+import numpy as np
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+method = runtime._load_program(sys.argv[1], data_path=sys.argv[2]).load_method(
+    "forward"
+)
+weight = method.get_attribute("linear.weight")
+assert isinstance(weight, runtime.ExecuTorchResult)
+before = np.asarray(weight).copy()
+torch.from_dlpack(weight).add_(1)
+assert (np.asarray(weight) == before).all()
+print("the constant was not written")
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", script, pte_path, ptd_path],
+                env=dict(os.environ, EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT="executorch"),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("the constant was not written", completed.stdout)
+
+    def test_method_keeps_its_event_tracer_alive(self):
+        # The program is dropped right away, while its method keeps running.
+        # glibc's MALLOC_PERTURB_ overwrites freed memory, so a method still
+        # pointing at a freed tracer crashes instead of passing by luck.
+        if self.kernel_mode != "portable" or not sys.platform.startswith("linux"):
+            self.skipTest("needs the portable bindings and glibc")
+        script = """
+import gc
+import sys
+
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+method = runtime._load_program_from_buffer(
+    data, enable_etdump=True, debug_buffer_size=1 << 16
+).load_method("forward")
+gc.collect()
+junk = [bytearray(256) for _ in range(20000)]
+for _ in range(5):
+    method([torch.ones(2, 2), torch.ones(2, 2)])
+print("ran after its program was dropped")
+"""
+        exported_program, _ = create_program(ModuleAdd())
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "add.pte")
+            with open(path, "wb") as file:
+                file.write(exported_program.buffer)
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path],
+                env=dict(os.environ, MALLOC_PERTURB_="165"),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("ran after its program was dropped", completed.stdout)
 
     def test_program_data_separation(self) -> None:
         eager_module = ModuleLinear()
@@ -2679,9 +2862,65 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
                                         cloned.data_ptr(), value.data_ptr()
                                     )
 
-    def test_torch_input_device_must_match_method(self):
+    def test_method_meta_reports_tensor_devices(self):
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        program = to_edge(export(Identity(), (torch.ones(2, 2),))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        host_meta = self.load_prog_fn(program.buffer).method_meta("forward")
+        self.assertEqual(host_meta.input_tensor_meta(0).device(), "cpu")
+        self.assertEqual(host_meta.output_tensor_meta(0).device(), "cpu")
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=3
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+        for meta in (
+            self.load_prog_fn(data).method_meta("forward"),
+            self.load_fn(data).method_meta("forward"),
+        ):
+            self.assertEqual(meta.input_tensor_meta(0).device(), "cuda:3")
+            self.assertEqual(meta.output_tensor_meta(0).device(), "cuda:3")
+            self.assertIn("device=cuda:3", repr(meta.input_tensor_meta(0)))
+
+        # A named buffer reports its device too.
+        eager_module = ModuleAddWithAttributes()
+        program = to_edge(
+            export(eager_module, eager_module.get_inputs(), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(emit_mutable_buffer_names=True))
+        schema = program.executorch_program
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA,
+                    device_index=3,
+                    fully_qualified_name=(
+                        entry.val.extra_tensor_info.fully_qualified_name
+                        if entry.val.extra_tensor_info
+                        else None
+                    ),
+                )
+        meta = self.load_prog_fn(
+            bytes(serialize_pte_binary(PTEFile(schema)))
+        ).method_meta("forward")
+        self.assertEqual(meta.num_attributes(), 1)
+        self.assertEqual(meta.attribute_tensor_meta(0).device(), "cuda:3")
+
+    def test_input_device_must_match_method(self):
         if self.kernel_mode != "portable":
-            self.skipTest("only portable bindings inspect Torch device metadata")
+            self.skipTest("only portable bindings inspect input device metadata")
 
         from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
         from executorch.exir.schema import ExtraTensorInfo, Tensor
@@ -2705,9 +2944,22 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         data = bytes(serialize_pte_binary(PTEFile(schema)))
         module = self.load_fn(data)
         method = self.load_prog_fn(data).load_method("forward")
+        # A host buffer would otherwise be read as device memory.
         for executor in (module, method):
-            with self.assertRaisesRegex(ValueError, "cpu.*expects cuda:3"):
-                executor(value)
+            for host_input in (
+                value,
+                DLPackOnly(value),
+                value.numpy(),
+                memoryview(value.numpy()),
+            ):
+                with self.subTest(executor=type(executor), input=type(host_input)):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        r"^Input 0 of method 'forward' is on device cpu, but the "
+                        r"method expects cuda:3\. Pass device memory instead, such "
+                        r"as ExecuTorchResult\.from_host\(\.\.\.\) or a CUDA tensor$",
+                    ):
+                        executor(host_input)
 
     def test_device_planned_method_allocates_on_the_device(self):
         # The other device test covers the refusal. This one covers what the

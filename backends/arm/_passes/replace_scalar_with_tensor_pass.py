@@ -84,11 +84,6 @@ _preserve_in_tfa = {
     exir_ops.edge.aten.remainder.Scalar,
 }
 
-_preserve_quantized_leaky_relu_ops = {
-    exir_ops.edge.aten.leaky_relu.default,
-    torch.ops.aten.leaky_relu.default,
-}
-
 
 class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPass):
     """Profile-aware scalar-to-tensor replacement pass for binary ops."""
@@ -133,14 +128,9 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
             input_qparams = meta.data.get("input_qparams", {})
             output_qparams = meta.data.get("output_qparams", {})
             if len(input_qparams) > 0 and len(output_qparams) > 0:
-                if op in _preserve_quantized_leaky_relu_ops:
-                    # Route through ArmPass to avoid PyTorch fake/meta
-                    # execution rejecting int-like inputs with float
-                    # negative_slope for quantized leaky_relu.
-                    # Do not handle; forward unchanged.
-                    return ArmPass.call_operator(self, op, args, kwargs, meta)
-                # Do not handle; forward unchanged.
-                return ExportPass.call_operator(self, op, args, kwargs, meta)
+                return self._call_quantized_op_without_fake_kernel(
+                    op, args, kwargs, meta
+                )
 
         if op in included_ops:
             # Include this op based on the current profile.

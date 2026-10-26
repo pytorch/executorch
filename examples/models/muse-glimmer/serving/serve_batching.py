@@ -118,8 +118,6 @@ def _validate_backend(parser, args):
         parser.error("--backend cuda requires --data-path (aoti_cuda_blob.ptd)")
     if args.pos_embed_path is not None:
         parser.error("--backend cuda serves text only; omit --pos-embed-path")
-    if args.dflash:
-        parser.error("--dflash is not supported with --backend cuda")
 
 
 def _validate_paths(parser, args):
