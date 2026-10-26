@@ -75,6 +75,12 @@ test_data_tensor = {
     "ne_tensor_rank3_randn": op_ne_tensor_rank3_randn,
     "ne_tensor_rank4_randn": op_ne_tensor_rank4_randn,
 }
+test_data_tensor_bool = {
+    "ne_bool": NotEqual(
+        torch.tensor([[True], [False], [True]]),
+        torch.tensor([[True, False, True]]),
+    ),
+}
 
 test_data_scalar = {
     "ne_scalar_rank1_ones": op_ne_scalar_rank1_ones,
@@ -85,7 +91,7 @@ test_data_scalar = {
 }
 
 
-@common.parametrize("test_module", test_data_tensor)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_bool)
 def test_ne_tensor_tosa_FP(test_module):
     pipeline = TosaPipelineFP[input_t](
         test_module, test_module.get_inputs(), NotEqual.aten_op_Tensor, NotEqual.exir_op

@@ -9,13 +9,23 @@ ExecuTorch and Arm development dependencies installed.
 
 ## Generate support tables
 
-Generate the table for the backend you changed:
+Generate all committed support tables in one command:
+
+```bash
+python backends/arm/scripts/docgen/generate_op_support.py --backend all
+```
+
+To regenerate only one backend, select it explicitly:
 
 ```bash
 python backends/arm/scripts/docgen/generate_op_support.py --backend vgf
 python backends/arm/scripts/docgen/generate_op_support.py --backend u55
 python backends/arm/scripts/docgen/generate_op_support.py --backend u85
 ```
+
+`--backend all` uses each backend's default output path. It cannot be combined
+with `--output` or `--explain`. Options such as `--debug` and `--html` apply to
+every selected backend.
 
 The generated files are:
 
@@ -32,10 +42,10 @@ Use `--check` to validate that backend-supported operator/profile pairs
 have the expected static test evidence:
 
 ```bash
-python backends/arm/scripts/docgen/generate_op_support.py --backend vgf --check
-python backends/arm/scripts/docgen/generate_op_support.py --backend u55 --check
-python backends/arm/scripts/docgen/generate_op_support.py --backend u85 --check
+python backends/arm/scripts/docgen/generate_op_support.py --backend all --check
 ```
+
+To check only one backend, replace `all` with `vgf`, `u55`, or `u85`.
 
 This checks test definitions; it does not execute the tests, regenerate
 the tables, or check whether committed tables are up to date.
@@ -65,13 +75,10 @@ reports to `/tmp` without replacing the committed support table.
 Pull request CI checks operator coverage and regenerates all three
 support tables to compare them with the committed versions.
 
-If CI reports outdated documentation, regenerate the tables:
+If CI reports outdated documentation, regenerate all committed tables:
 
 ```bash
-for backend in vgf u55 u85; do
-  python backends/arm/scripts/docgen/generate_op_support.py \
-    --backend "$backend" || break
-done
+python backends/arm/scripts/docgen/generate_op_support.py --backend all
 ```
 
 Review the changes:

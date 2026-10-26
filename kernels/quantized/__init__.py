@@ -5,7 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 
 try:
+    import os
+    import sys
     from pathlib import Path
+
+    # The library depends on the shipped runtime and quantized kernels DLLs in
+    # executorch/lib, and Windows records no search path in a DLL. Not resolved:
+    # in an editable install this directory is a symlink, and executorch/lib
+    # sits beside the link.
+    _lib_dir = os.path.abspath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, "lib"
+        )
+    )
+    if sys.platform == "win32" and os.path.isdir(_lib_dir):
+        os.add_dll_directory(_lib_dir)
+    del os, sys, _lib_dir
 
     libs = list(Path(__file__).parent.resolve().glob("**/*quantized_ops_aot_lib.*"))
     del Path

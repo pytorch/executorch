@@ -51,13 +51,13 @@ void add_grid_sampler_2d_node(
   VK_CHECK_COND(
       graph.extract_scalar<int64_t>(interpolation_mode) == 0,
       "Vulkan grid_sampler_2d only supports bilinear interpolation");
-  // padding_mode: 0 = zeros, 1 = border, 2 = reflection
+  // padding_mode: 0 = zeros, 1 = border, 2 = reflection. Reflection would need
+  // a different coordinate fold and is not implemented.
+  const int64_t padding_mode_val = graph.extract_scalar<int64_t>(padding_mode);
   VK_CHECK_COND(
-      graph.extract_scalar<int64_t>(padding_mode) == 1,
-      "Vulkan grid_sampler_2d only supports border padding");
-  VK_CHECK_COND(
-      graph.get_bool(align_corners),
-      "Vulkan grid_sampler_2d requires align_corners=true");
+      padding_mode_val == 0 || padding_mode_val == 1,
+      "Vulkan grid_sampler_2d only supports zeros and border padding");
+  const int32_t align_corners_val = graph.get_bool(align_corners) ? 1 : 0;
 
   // Defense-in-depth layout validation. The partitioner enforces these
   // layouts via `inputs_storage` in op_registry.py::register_grid_sampler_2d,
@@ -103,9 +103,13 @@ void add_grid_sampler_2d_node(
       {graph.meta_ubo(out), graph.meta_ubo(in)},
       // Push Constants
       {},
-      // Specialization Constants — pass the output tensor's hashed layout so
-      // the shader can specialize on packed_dim at pipeline creation time.
-      {graph.hashed_layout_of(out)},
+      // Specialization Constants — the output tensor's hashed layout lets the
+      // shader specialize on packed_dim at pipeline creation time, and the
+      // padding/align_corners pair folds the configuration branches away so
+      // the four supported combinations share one shader variant.
+      {graph.hashed_layout_of(out),
+       static_cast<int32_t>(padding_mode_val),
+       align_corners_val},
       // Resize Args
       {},
       // Resizing Logic
