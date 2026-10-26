@@ -123,6 +123,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     PartitionNode,
     PowerNode,
     ProdNode,
+    PutAlongAxisNode,
     RandomBitsNode,
     ReciprocalNode,
     RemainderNode,
@@ -2626,6 +2627,152 @@ def _scatter_add_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             indices=P.slot_to_tid(indices),
             updates=P.slot_to_tid(src),
+            out=P.slot_to_tid(out),
+            axis=dim,
+        )
+    )
+    return out
+
+
+def _slice_to_shape(
+    P: MLXProgramBuilder,
+    x: Slot,
+    x_shape,
+    target_shape,
+    skip_axis: Optional[int],
+    op_name: str,
+) -> Slot:
+    """Narrow ``x`` to ``target_shape`` on every axis but ``skip_axis``.
+
+    aten.gather and aten.scatter allow the index to be smaller than the
+    tensor it is applied to (``index.size(d) <= self.size(d)`` for ``d != dim``,
+    and ``index.size(d) <= src.size(d)`` for every ``d``), and read only the
+    leading ``index.size(d)`` entries of the larger tensor. MLX broadcasts the
+    two operands instead, so the larger tensor is sliced down first. A static
+    target size can always be sliced to; a symbolic one has to be the same
+    symbol on both sides, since the slice stop is fixed at export time.
+    """
+    for axis, (have, want) in enumerate(zip(x_shape, target_shape)):
+        if axis == skip_axis:
+            continue
+        if isinstance(want, int):
+            if isinstance(have, int) and have == want:
+                continue
+        elif str(have) == str(want):
+            continue
+        else:
+            raise ValueError(
+                f"{op_name}: symbolic index size must match the input on axis "
+                f"{axis}, got {have} vs {want}"
+            )
+        _, sliced = P.make_tmp_slot()
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(sliced),
+                axis=P.to_int_or_vid(axis),
+                start=P.to_int_or_vid(0),
+                stop=P.to_int_or_vid(want),
+            )
+        )
+        x = sliced
+    return x
+
+
+@REGISTRY.register(target=[torch.ops.aten.gather.default])
+def _gather_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.gather: out[i][j][k] = x[index[i][j][k]][j][k] for dim=0.
+
+    gather(self, dim, index, *, sparse_grad=False) -> Tensor
+
+    Maps to mlx::take_along_axis(a, indices, axis). The output takes the shape
+    of ``index``, so an index that is smaller than ``self`` on the other axes is
+    handled by narrowing ``self`` to the index shape first.
+    """
+    args = P.args(n)
+    kwargs = P.kwargs(n)
+    require_args(args, 3, 3, "aten.gather")
+    require_kwargs(kwargs, {"sparse_grad"}, "aten.gather")
+    if kwargs.get("sparse_grad", False):
+        raise ValueError("aten.gather: sparse_grad=True is not supported")
+    x, dim, index = args
+
+    x_meta = n.args[0].meta.get("val")
+    index_meta = n.args[2].meta.get("val")
+    if x_meta is None or index_meta is None:
+        raise ValueError("aten.gather requires input and index shape metadata")
+    ndim = len(x_meta.shape)
+    if ndim == 0 or len(index_meta.shape) != ndim:
+        raise ValueError(
+            f"aten.gather: index must have the same non-zero rank as input, got "
+            f"{len(index_meta.shape)} vs {ndim}"
+        )
+    dim = dim % ndim
+
+    x = _slice_to_shape(P, x, x_meta.shape, index_meta.shape, dim, "aten.gather")
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TakeAlongAxisNode(
+            x=P.slot_to_tid(x),
+            indices=P.slot_to_tid(index),
+            out=P.slot_to_tid(out),
+            axis=dim,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.scatter.src, torch.ops.aten.scatter.value])
+def _scatter_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.scatter: out = self; out[index[i][j]][j] = src[i][j] for dim=0.
+
+    scatter.src(self, dim, index, src) -> Tensor
+    scatter.value(self, dim, index, value) -> Tensor
+
+    Maps to mlx::put_along_axis(a, indices, values, axis). ``src`` may be larger
+    than ``index`` (only its leading ``index.shape`` block is read), so it is
+    narrowed to the index shape; a scalar ``value`` becomes a 0-D constant that
+    MLX broadcasts. An index smaller than ``self`` on the non-scatter axes is
+    handled by the runtime (see exec_put_along_axis). With duplicate indices
+    along ``dim`` aten leaves the result unspecified; MLX keeps one of the
+    writes.
+    """
+    args = P.args(n)
+    require_args(args, 4, 4, "aten.scatter")
+    require_kwargs(P.kwargs(n), set(), "aten.scatter")
+    x, dim, index, src = args
+
+    x_meta = n.args[0].meta.get("val")
+    index_meta = n.args[2].meta.get("val")
+    if x_meta is None or index_meta is None:
+        raise ValueError("aten.scatter requires input and index shape metadata")
+    ndim = len(x_meta.shape)
+    if ndim == 0 or len(index_meta.shape) != ndim:
+        raise ValueError(
+            f"aten.scatter: index must have the same non-zero rank as input, got "
+            f"{len(index_meta.shape)} vs {ndim}"
+        )
+    if x_meta.dtype.itemsize == 8:
+        # mlx ScatterAxis has no GPU kernel for 8-byte element types.
+        raise ValueError(f"aten.scatter: {x_meta.dtype} input is not supported")
+    dim = dim % ndim
+
+    if isinstance(src, Slot):
+        src_meta = n.args[3].meta.get("val")
+        if src_meta is None:
+            raise ValueError("aten.scatter requires src shape metadata")
+        src = _slice_to_shape(
+            P, src, src_meta.shape, index_meta.shape, None, "aten.scatter"
+        )
+    else:
+        src = emit_lifted_constant(P, src, x_meta.dtype)
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        PutAlongAxisNode(
+            x=P.slot_to_tid(x),
+            indices=P.slot_to_tid(index),
+            values=P.slot_to_tid(src),
             out=P.slot_to_tid(out),
             axis=dim,
         )
