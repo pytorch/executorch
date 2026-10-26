@@ -1,0 +1,93 @@
+{
+  "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "bf829c391d05031f0ad5e98f524db99ca5528531c4b2defe8ce14dbfa5bdeb7f",
+        "after_SHA256": "269a66cdddbae677fdbc3d8b930d43556e7b0ee9e5d57cff861f07a8fe52050b",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "bc112451eff97828e1f3477ae3642c880d0c40c0c1c3f147f7ba2aebd2a5574d",
+        "after_SHA256": "71d85cb458b77bbed4afc5a4391aba061c4f91e1c514cf012f9f66316fb11629",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "c360d9d3728af22d4809c099ca690da32978453bb08908daddc375a399eff868",
+        "after_SHA256": "4cd4d678b95c629a37bee174d4c4829929cf6f599b53032179a29cdf41d2e5e2",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
+        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
+        "after_SHA256": "3f2480bc0a2f824315335355709a58e828b94acfbcb23754513bc7b13a890380",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "d6c4e82ef408e2f6a6bc591edd4ad03b832dd167673a0a7fe8e9bd55146f2bbf",
+        "after_SHA256": "3ccc2a8b172861caca232abd0595aaa12d7c9040d14d5ba41fa54bf71d03ba63",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "bc112451eff97828e1f3477ae3642c880d0c40c0c1c3f147f7ba2aebd2a5574d",
+        "after_SHA256": "71d85cb458b77bbed4afc5a4391aba061c4f91e1c514cf012f9f66316fb11629",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "c360d9d3728af22d4809c099ca690da32978453bb08908daddc375a399eff868",
+        "after_SHA256": "4cd4d678b95c629a37bee174d4c4829929cf6f599b53032179a29cdf41d2e5e2",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      },
+      {
+        "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
+        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
+        "after_SHA256": "3f2480bc0a2f824315335355709a58e828b94acfbcb23754513bc7b13a890380",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3"
+      }
+    ]
+  },
+  "private_KV_pool_only_in_independent_sequence_mode": true,
+  "global_layout_shared_allocator_unchanged": true,
+  "per_session_capacity_initial512_and_growth_unchanged": true,
+  "sliding_capacity_writes_and_attention_unchanged": true,
+  "unchanged_PTE_PTD_kernels_and_graph_invalidation": true,
+  "private_pool_destroyed_after_all_streams_and_frees_synchronized": true,
+  "growth_trims_only_KV_pool_after_migration_fence": true,
+  "contraction_shared_allocator_and_graph_release_unchanged": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}

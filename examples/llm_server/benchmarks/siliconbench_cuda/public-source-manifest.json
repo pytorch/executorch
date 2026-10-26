@@ -519,6 +519,14 @@
       "sha256": "05ee859b572bdd5ff2698979f388ea9189e3a1842855a35ed69bdd5bc2db9c1a",
       "bytes": 649
     },
+    "independent_session_isolated_KV_pool.patch": {
+      "sha256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3",
+      "bytes": 11489
+    },
+    "independent_session_isolated_KV_pool_source.json": {
+      "sha256": "f4e0bfae96c9534671c2757d8df90bebcac0268ff0df112e7ca514bc24dd8bc2",
+      "bytes": 5229
+    },
     "independent_session_mini_profiles.py": {
       "sha256": "62d2f097c033d8840f042fa937be3250e95ed2c8bda2e128e803381598df07f1",
       "bytes": 4742
@@ -580,8 +588,8 @@
       "bytes": 5587
     },
     "kv_memory_sampler.h": {
-      "sha256": "8f9e7ac2037ad6a254c5135de37a3a07b2524de4e9923db9d86c88c5caca0e20",
-      "bytes": 4189
+      "sha256": "faac1edf7ded6abd8d6f5ffdae5f9817f1cd2a6540e6a987c2c7f05a39f8e0d7",
+      "bytes": 6284
     },
     "kv_memory_worker.cpp": {
       "sha256": "8357fb61f6a2d7c78ce854a520bcad3ed8ed1c116907f9286e5a79a4be96c456",
@@ -680,8 +688,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_coalesced_growth_trim.py": {
-      "sha256": "cb2fd1f312f9fc1e27404a13adf02f479601348208023e8566a865d0d9ab0057",
-      "bytes": 13165
+      "sha256": "62dc53c6407064684c0e5000863547df2f30d88f61ce4fa6c18a1e83b8066e39",
+      "bytes": 13335
     },
     "prepare_independent_session_empty_owner_reuse.py": {
       "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
@@ -1072,8 +1080,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "35f6491b80cf0ae0c721688b1c962b3c4cea4e5be094dfa75a96b12044e14e4c",
-      "bytes": 40703
+      "sha256": "1771783d3067a22382c24c063ee953bd8605e7f602722ef8c405427a5f628d2a",
+      "bytes": 42443
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "d6832838288088b6e799c59e56c89f9687ac375777ddf7bdb1247c7ec2e8b3d3",

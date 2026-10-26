@@ -1,0 +1,307 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -111,6 +111,7 @@
+   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+   ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
+   stream_ = stream;
++  ET_CHECK_OK_OR_RETURN_ERROR(ensure_sequence_memory_pool());
+   if (!allocated_) {
+     ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(0, stream));
+   }
+@@ -130,43 +131,9 @@
+     releases_storage |= target_rows[index] < allocations_[index].rows;
+   }
+   const bool trim_reclaimed_storage = trim_unused && releases_storage;
+-  // The pool also contains cached model workspaces. A growth migration
+-  // must not return those pages to the driver on the critical forward path.
+-  // Remember its reservation before allocating replacement KV. After the
+-  // copy, trim only reservation added by that migration. A real contraction
+-  // keeps the existing eager release of allocator and unused graph pages.
+-#if !defined(EXECUTORCH_USE_HIP)
+-  cudaMemPool_t growth_pool = nullptr;
+-  uint64_t retained_reservation = 0;
+-  if (trim_unused && !trim_reclaimed_storage) {
+-    growth_pool = CudaAllocator::pool_for_device(device_);
+-    if (growth_pool != nullptr && cudaMemPoolGetAttribute(
+-            growth_pool, cudaMemPoolAttrReservedMemCurrent,
+-            &retained_reservation) != cudaSuccess) {
+-      (void)cudaGetLastError();
+-      growth_pool = nullptr;
+-    }
+-  }
+-#endif
+-  auto trim_migration_reservation = [&]() {
+-#if !defined(EXECUTORCH_USE_HIP)
+-    if (growth_pool != nullptr) {
+-      uint64_t reserved = 0, used = 0;
+-      if (cudaMemPoolGetAttribute(growth_pool, cudaMemPoolAttrReservedMemCurrent,
+-                                 &reserved) == cudaSuccess &&
+-          cudaMemPoolGetAttribute(growth_pool, cudaMemPoolAttrUsedMemCurrent,
+-                                 &used) == cudaSuccess) {
+-        const uint64_t floor = std::max(retained_reservation, used);
+-        if (reserved > floor && cudaMemPoolTrimTo(growth_pool, floor) != cudaSuccess) {
+-          ET_LOG(Error, "offgraph_kv: migration reservation trim failed");
+-          (void)cudaGetLastError();
+-        }
+-      } else {
+-        (void)cudaGetLastError();
+-      }
+-    }
+-#endif
+-  };
++  // Growth frees belong to a private KV allocator. Returning unused KV
++  // pages cannot evict shared model workspaces or graph allocations.
++  auto trim_migration_reservation = [&]() { trim_sequence_memory_pool(); };
+   auto fence = [&]() -> Error {
+     if (cudaStreamSynchronize(stream) != cudaSuccess) {
+       return Error::Internal;
+--- a/backends/cuda/runtime/cuda_kv_pool.h
++++ b/backends/cuda/runtime/cuda_kv_pool.h
+@@ -70,6 +70,19 @@
+
+   ~CudaKVPool();
+
++  // Current private-KV reservation, summed over this process on `device`.
++  // Sampling holds the registry lock; pools cannot disappear during a query.
++  struct SequenceMemoryStatistics {
++    bool available{false};
++    bool query_ok{true};
++    uint64_t used_bytes{0};
++    uint64_t reserved_bytes{0};
++    uint64_t used_high_bytes{0};
++    uint64_t reserved_high_bytes{0};
++  };
++  static SequenceMemoryStatistics sequence_memory_pool_statistics(int device);
++
++
+   // Load time. Discovers this program's storage constants; false = it carries
+   // none. A program carrying some layers but not all, or layers without every
+   // side buffer, is rejected as disagreeing with the pool's geometry.
+@@ -200,6 +213,8 @@
+       int64_t rows,
+       cudaStream_t stream,
+       Allocation& out);
++  runtime::Error ensure_sequence_memory_pool();
++  void trim_sequence_memory_pool();
+   void release(void* ptr, cudaStream_t stream);
+   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
+   runtime::Error allocate_initial(int64_t required_rows, cudaStream_t stream);
+@@ -221,6 +236,9 @@
+   const int declared_columns_;
+   int columns_;
+   int64_t column_resize_count_{0};
++#if !defined(EXECUTORCH_USE_HIP)
++  cudaMemPool_t sequence_memory_pool_{nullptr};
++#endif
+   bool independent_sequences_{false};
+   std::vector<int64_t> sequence_capacities_;
+   std::vector<int64_t> sequence_offsets_;
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -10,6 +10,7 @@
+
+ #include <algorithm>
+ #include <limits>
++#include <mutex>
+ #include <utility>
+
+ #include <executorch/backends/aoti/slim/c10/core/Device.h>
+@@ -49,6 +50,19 @@
+   return ::executorch::runtime::tensor_shape_to_c_string(
+       ::executorch::runtime::Span<const int64_t>(sizes.data(), sizes.size()));
+ }
++
++#if !defined(EXECUTORCH_USE_HIP)
++// This registry contains KV pools only. It never changes the shared model
++// allocator, and protects sampling against concurrent pool destruction.
++struct SequenceMemoryPools {
++  std::mutex mutex;
++  std::unordered_map<cudaMemPool_t, int> devices;
++};
++SequenceMemoryPools& sequence_memory_pools() {
++  static auto* pools = new SequenceMemoryPools();
++  return *pools;
++}
++#endif
+
+ } // namespace
+
+@@ -95,6 +109,17 @@
+   if (last_step_done_ != nullptr) {
+     (void)cudaEventDestroy(last_step_done_);
+   }
++#if !defined(EXECUTORCH_USE_HIP)
++  if (sequence_memory_pool_ != nullptr) {
++    auto& registry = sequence_memory_pools();
++    const std::lock_guard<std::mutex> lock(registry.mutex);
++    registry.devices.erase(sequence_memory_pool_);
++    if (cudaMemPoolDestroy(sequence_memory_pool_) != cudaSuccess) {
++      ET_LOG(Error, "offgraph_kv: private sequence pool destruction failed");
++      (void)cudaGetLastError();
++    }
++  }
++#endif
+ }
+
+ runtime::Result<bool> CudaKVPool::note_handle(CudaDelegateHandle* handle) {
+@@ -234,12 +259,122 @@
+   return {1, layer.declared_rows, layer.n_kv_heads, layer.head_dim};
+ }
+
++Error CudaKVPool::ensure_sequence_memory_pool() {
++#if !defined(EXECUTORCH_USE_HIP)
++  if (sequence_memory_pool_ != nullptr) {
++    return Error::Ok;
++  }
++  cudaMemPoolProps props{};
++  props.allocType = cudaMemAllocationTypePinned;
++  props.handleTypes = cudaMemHandleTypeNone;
++  props.location.type = cudaMemLocationTypeDevice;
++  props.location.id = device_;
++  cudaMemPool_t pool = nullptr;
++  if (cudaMemPoolCreate(&pool, &props) != cudaSuccess) {
++    (void)cudaGetLastError();
++    return Error::MemoryAllocationFailed;
++  }
++  uint64_t threshold = std::numeric_limits<uint64_t>::max();
++  if (cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold,
++                              &threshold) != cudaSuccess) {
++    (void)cudaMemPoolDestroy(pool);
++    (void)cudaGetLastError();
++    return Error::Internal;
++  }
++  auto& registry = sequence_memory_pools();
++  {
++    const std::lock_guard<std::mutex> lock(registry.mutex);
++    registry.devices.emplace(pool, device_);
++  }
++  sequence_memory_pool_ = pool;
++#endif
++  return Error::Ok;
++}
++
++void CudaKVPool::trim_sequence_memory_pool() {
++#if !defined(EXECUTORCH_USE_HIP)
++  if (sequence_memory_pool_ == nullptr) {
++    return;
++  }
++  // Called only after the migration fence has observed every copy and free.
++  // This pool has no model workspace or graph allocation to evict.
++  uint64_t used = 0, reserved = 0;
++  if (cudaMemPoolGetAttribute(sequence_memory_pool_,
++          cudaMemPoolAttrUsedMemCurrent, &used) != cudaSuccess ||
++      cudaMemPoolGetAttribute(sequence_memory_pool_,
++          cudaMemPoolAttrReservedMemCurrent, &reserved) != cudaSuccess ||
++      (reserved > used &&
++       cudaMemPoolTrimTo(sequence_memory_pool_, used) != cudaSuccess)) {
++    ET_LOG(Error, "offgraph_kv: private sequence pool trim failed");
++    (void)cudaGetLastError();
++  }
++#endif
++}
++
++CudaKVPool::SequenceMemoryStatistics
++CudaKVPool::sequence_memory_pool_statistics(int device) {
++  SequenceMemoryStatistics stats;
++#if !defined(EXECUTORCH_USE_HIP)
++  auto& registry = sequence_memory_pools();
++  const std::lock_guard<std::mutex> lock(registry.mutex);
++  for (const auto& entry : registry.devices) {
++    if (entry.second != device) {
++      continue;
++    }
++    stats.available = true;
++    uint64_t values[4] = {};
++    const cudaMemPoolAttr attributes[] = {cudaMemPoolAttrUsedMemCurrent,
++        cudaMemPoolAttrReservedMemCurrent, cudaMemPoolAttrUsedMemHigh,
++        cudaMemPoolAttrReservedMemHigh};
++    bool ok = true;
++    for (size_t index = 0; index < 4; ++index) {
++      if (cudaMemPoolGetAttribute(entry.first, attributes[index],
++                                  &values[index]) != cudaSuccess) {
++        (void)cudaGetLastError();
++        ok = false;
++      }
++    }
++    stats.query_ok &= ok;
++    if (ok) {
++      stats.used_bytes += values[0];
++      stats.reserved_bytes += values[1];
++      // The sum of component highs is an upper bound, not a sampled peak.
++      stats.used_high_bytes += values[2];
++      stats.reserved_high_bytes += values[3];
++    }
++  }
++#else
++  (void)device;
++#endif
++  return stats;
++}
++
+ Error CudaKVPool::allocate_layer(
+     const Layer& layer,
+     int64_t rows,
+     cudaStream_t stream,
+     Allocation& out) {
+   const size_t bytes = row_bytes(layer) * static_cast<size_t>(rows);
++#if !defined(EXECUTORCH_USE_HIP)
++  if (sequence_memory_pool_ != nullptr) {
++    void* k = nullptr;
++    void* v = nullptr;
++    if (cudaMallocFromPoolAsync(&k, bytes, sequence_memory_pool_, stream) !=
++        cudaSuccess) {
++      (void)cudaGetLastError();
++      return Error::MemoryAllocationFailed;
++    }
++    if (cudaMallocFromPoolAsync(&v, bytes, sequence_memory_pool_, stream) !=
++        cudaSuccess) {
++      (void)cudaFreeAsync(k, stream);
++      (void)cudaGetLastError();
++      return Error::MemoryAllocationFailed;
++    }
++    out = Allocation{k, v, rows};
++    allocated_bytes_ += static_cast<int64_t>(2 * bytes);
++    return Error::Ok;
++  }
++#endif
+   auto k = CudaAllocator::allocate_async(bytes, device_, stream);
+   ET_CHECK_OK_OR_RETURN_ERROR(k.error());
+   auto v = CudaAllocator::allocate_async(bytes, device_, stream);
+--- a/backends/cuda/runtime/test/independent_session_capacity_tests.inc
++++ b/backends/cuda/runtime/test/independent_session_capacity_tests.inc
+@@ -54,6 +54,13 @@
+   EXPECT_EQ(metadata[7 + 6], 4);
+   seed_flat(fake, metadata[5], 6, 123);
+   seed_flat(fake, metadata[7 + 5], 1, 456);
++#if !defined(EXECUTORCH_USE_HIP)
++  const auto private_before = cu::CudaKVPool::sequence_memory_pool_statistics(0);
++  ASSERT_TRUE(private_before.available);
++  ASSERT_TRUE(private_before.query_ok);
++  EXPECT_GT(private_before.used_bytes, 0u);
++  EXPECT_GE(private_before.reserved_bytes, private_before.used_bytes);
++#endif
+   const int64_t before = kv->metrics().allocated_bytes;
+   ASSERT_EQ(step(*object, handle, {a,a,a,b}), Error::Ok);
+   metadata = info(fake);
+@@ -62,9 +69,21 @@
+   EXPECT_EQ(read_flat(fake, metadata[5], 6), std::vector<uint16_t>(6*kRow,123));
+   EXPECT_EQ(read_flat(fake, metadata[7+5],1), std::vector<uint16_t>(kRow,456));
+   EXPECT_GT(kv->metrics().allocated_bytes, before);
++#if !defined(EXECUTORCH_USE_HIP)
++  const auto private_after = cu::CudaKVPool::sequence_memory_pool_statistics(0);
++  ASSERT_TRUE(private_after.query_ok);
++  EXPECT_GE(private_after.reserved_bytes, private_after.used_bytes);
++  EXPECT_GT(private_after.used_bytes, private_before.used_bytes);
++#endif
++
+   EXPECT_EQ(control->pos(a),9);
+   EXPECT_EQ(control->pos(b),2);
+   kv->forget_handle(&handle);
++  object.reset();
++#if !defined(EXECUTORCH_USE_HIP)
++  EXPECT_FALSE(cu::CudaKVPool::sequence_memory_pool_statistics(0).available);
++#endif
++
+ }
+
+ TEST_F(CudaIndependentSessionCacheTest, CloneCompactionAndReusedIdPreserveIndependentOwnership) {

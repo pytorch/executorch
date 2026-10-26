@@ -34,7 +34,7 @@ def main():
     for name in ('package', 'baseline-native-job', 'python', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--source-variant', choices=('MG-empty-owner-reuse', 'Gemma-empty-owner-reuse', 'growth-only'), required=True)
-    parser.add_argument('--allocator-policy', choices=('coalesced', 'pool-only', 'workspace-preserving'), default='coalesced')
+    parser.add_argument('--allocator-policy', choices=('coalesced', 'pool-only', 'workspace-preserving', 'isolated-KV'), default='coalesced')
     parser.add_argument('--mini-preparation-job', type=Path)
     parser.add_argument('--mini-profile', choices=('muse-glimmer-first4', 'gemma4-first6'), required=True)
     parser.add_argument('--jobs', type=int, choices=(1, 2, 4), default=2)
@@ -52,6 +52,9 @@ def main():
     if args.allocator_policy == 'workspace-preserving':
         policy = 'independent_session_workspace_preserving_growth_trim'
         policy_key = 'workspace_preserving_growth_trim_spec_SHA256'
+    if args.allocator_policy == 'isolated-KV':
+        policy = 'independent_session_isolated_KV_pool'
+        policy_key = 'isolated_KV_pool_spec_SHA256'
     fix_path = resources / (policy + '_source.json')
     fix = json.loads(fix_path.read_text())
     patch = resources / (policy + '.patch')

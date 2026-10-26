@@ -59,6 +59,25 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
             assert record['weights_math_ABI_and_live_graph_invalidation_unchanged']
         changes = dict(patches=changes['patches'] + records)
         expected_pool = record['after_SHA256']
+    if gate.get('isolated_KV_pool_spec_SHA256'):
+        policy = 'independent_session_isolated_KV_pool'
+        spec_path = package/(policy + '_source.json'); spec = json.loads(spec_path.read_text())
+        assert digest(spec_path) == gate['isolated_KV_pool_spec_SHA256']
+        assert digest(package/(policy + '.patch')) == spec['patch_SHA256']
+        records = spec['variants'][variant]
+        assert {r['file'] for r in records} == {pool_file,
+            'backends/cuda/runtime/cuda_kv_pool.cpp', 'backends/cuda/runtime/cuda_kv_pool.h',
+            'backends/cuda/runtime/test/independent_session_capacity_tests.inc'}
+        assert len(records) == 4 and records[0]['file'] == pool_file
+        assert records[0]['before_SHA256'] == expected_pool
+        assert spec['growth_trims_only_KV_pool_after_migration_fence']
+        assert spec['contraction_shared_allocator_and_graph_release_unchanged']
+        for record in records:
+            assert record['patch_SHA256'] == spec['patch_SHA256']
+            assert record['private_KV_allocator_and_instrumentation_only']
+            assert record['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
+        changes = dict(patches=changes['patches'] + records)
+        expected_pool = records[0]['after_SHA256']
     return changes, expected_pool
 
 
@@ -288,13 +307,18 @@ def main():
                 original_gate=json.loads(original_gate_path.read_text())
                 assert original_gate==receipt['original_native_gate']
                 assert gate['test_count']==original_gate['test_count']==74
+                expected_native_source = {name:record['after_SHA256'] for name,record in capacity['files'].items()}
+                for change in source_changes['patches']:
+                    assert change['file'] in expected_native_source
+                    assert expected_native_source[change['file']] == change['before_SHA256']
+                    expected_native_source[change['file']] = change['after_SHA256']
                 for name,record in capacity['files'].items():
                     assert digest(Path(original_gate['source'])/name)==record['after_SHA256'],name
                     expected=expected_pool_SHA256 if name==growth['file'] else record['after_SHA256']
                     if name in extra_native_source_hashes:
                         assert record['after_SHA256']==extra_native_original_hashes[name]
                         expected=extra_native_source_hashes[name]
-                    assert digest(source/name)==expected,name
+                    assert digest(source/name)==expected_native_source[name],name
                 assert gate['unchanged_controls']==original_gate['unchanged_controls']
                 for verified_gate in (gate,original_gate):
                     for name,expected in verified_gate['binaries'].items():assert digest(Path(name))==expected,name
