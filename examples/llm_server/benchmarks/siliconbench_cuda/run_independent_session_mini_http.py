@@ -185,6 +185,16 @@ def main():
                 assert source_changes==dict(patches=[growth,fast])
                 source_changes=dict(patches=[growth,fast,uploads])
                 extra_native_source_hashes[uploads['file']]=uploads['after_SHA256']
+            if gate.get('flat_migration_copy_spec_SHA256'):
+                copies_path=package/'independent_session_flat_migration_copy_source.json'
+                copies=json.loads(copies_path.read_text())
+                assert digest(copies_path)==gate['flat_migration_copy_spec_SHA256']
+                assert copies['before_SHA256']==expected_pool_SHA256
+                assert copies['file']==growth['file'] and copies['native_copy_scheduling_only']
+                assert copies['model_weights_kernels_ABI_graph_policy_and_sliding_unchanged']
+                assert source_changes==dict(patches=[growth,fast,uploads])
+                source_changes=dict(patches=[growth,fast,uploads,copies])
+                expected_pool_SHA256=copies['after_SHA256']
             if 'actual_native_source_change' in gate:
                 assert gate['actual_native_source_change']==source_changes
                 assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']

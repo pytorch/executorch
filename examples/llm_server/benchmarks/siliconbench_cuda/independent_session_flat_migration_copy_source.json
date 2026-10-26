@@ -1,0 +1,14 @@
+{
+  "file": "backends/cuda/runtime/session_capacity_pool.inc",
+  "before_SHA256": "b61260c08b73ee8c3b808197a2d9528e472803b150d4db798d8eb6ccc33faf03",
+  "after_SHA256": "218260b08c9dbb375ca7c339072d8a4f0ef1701a03a79f90a470b07156d05816",
+  "patch_SHA256": "add4d6de1207f304fd411882d51220b912fb09f8fbbb11144d4cfc9567b8080b",
+  "stable_fastpath_spec_SHA256": "86057a2a521c55d78deb2cc81dc2d6a74e9abb12884a6419feab89e794a631f6",
+  "native_copy_scheduling_only": true,
+  "model_weights_kernels_ABI_graph_policy_and_sliding_unchanged": true,
+  "same_allocations_capacities_owner_offsets_and_live_bytes": true,
+  "coalescing_requires_equal_live_rows_and_adjacent_equal_strides": true,
+  "nonmatching_ranges_and_ring_layout_use_original_per_owner_copy": true,
+  "reverse_rollback_uses_reversed_strides": true,
+  "qualified": false
+}

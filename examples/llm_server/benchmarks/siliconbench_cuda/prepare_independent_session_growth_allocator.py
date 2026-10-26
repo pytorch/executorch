@@ -36,6 +36,8 @@ def main():
                         help='Also avoid repeated layout table construction when every owner and capacity is unchanged')
     parser.add_argument('--stable-metadata-uploads',action='store_true',
                         help='Also reuse unchanged owner mappings and identical columns/base uploads')
+    parser.add_argument('--coalesce-flat-migration-copies',action='store_true',
+                        help='Combine adjacent equal-length packed owner copies during KV migration')
     parser.add_argument('--jobs', type=int, choices=[1, 2, 4], default=2)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
@@ -60,6 +62,13 @@ def main():
         assert fast and uploads['stable_fastpath_spec_SHA256']==digest(fast_path)
         assert uploads['before_SHA256']==spec['files'][uploads['file']]['after_SHA256']
         assert digest(uploads_patch)==uploads['patch_SHA256']
+    copies_path=package/'independent_session_flat_migration_copy_source.json'
+    copies=json.loads(copies_path.read_text()) if args.coalesce_flat_migration_copies else None
+    copies_patch=package/'independent_session_flat_migration_copy.patch'
+    if copies:
+        assert fast and uploads and copies['stable_fastpath_spec_SHA256']==digest(fast_path)
+        assert copies['before_SHA256']==fast['after_SHA256'] and copies['file']==fast['file']
+        assert digest(copies_patch)==copies['patch_SHA256'] and copies['native_copy_scheduling_only']
     original_gate=json.loads(args.baseline_native_gate.read_text())
     assert original_gate['native_GPU_tests_pass'] and original_gate['test_count']==74
     assert Path(original_gate['source']).resolve()==args.baseline_source.resolve()
@@ -107,9 +116,10 @@ def main():
             expected=record['after_SHA256']
             if version=='after' and name==growth['file']:expected=growth['after_SHA256']
             if version=='after-fast' and name==growth['file']:expected=fast['after_SHA256']
-            if version=='after-uploads':
+            if version in ('after-uploads','after-copies'):
                 if name==growth['file']:expected=fast['after_SHA256']
                 if name==uploads['file']:expected=uploads['after_SHA256']
+            if version=='after-copies' and name==copies['file']:expected=copies['after_SHA256']
             assert digest(root/name)==expected,name
 
     try:
@@ -143,6 +153,10 @@ def main():
             run(['git','apply','--check',uploads_patch],cwd=source)
             run(['git','apply',uploads_patch],cwd=source)
             verify(source,'after-uploads')
+        if copies:
+            run(['git','apply','--check',copies_patch],cwd=source)
+            run(['git','apply',copies_patch],cwd=source)
+            verify(source,'after-copies')
         for name, expected in controls.items():
             assert digest(source / name) == expected, name
         cmake = shutil.which('cmake', path=env['PATH'])
@@ -181,7 +195,7 @@ def main():
         binaries = {str(p): digest(p) for p in [binary,
                     model_build / 'muse_glimmer_runtime_kv_probe',
                     model_build / 'muse_glimmer_batching_worker']}
-        verify(source, 'after-uploads' if uploads else ('after-fast' if fast else 'after'))
+        verify(source, 'after-copies' if copies else ('after-uploads' if uploads else ('after-fast' if fast else 'after')))
         verify(args.baseline_source, 'before')
         state('waiting-native-GPU-tests', binaries=binaries)
         xml = args.output / 'native-tests.xml'
@@ -205,9 +219,10 @@ def main():
                        independent_session_tests=independent,
                        source_spec_SHA256=digest(spec_path),allocator_growth_spec_SHA256=digest(growth_path), source=str(source),
                        source_spec_is_artifact_ABI_compatibility_reference=True,
-                       actual_native_source_change=(dict(patches=[growth,fast,uploads]) if uploads else (dict(patches=[growth,fast]) if fast else growth)),
+                       actual_native_source_change=(dict(patches=[growth,fast,uploads,copies]) if copies else (dict(patches=[growth,fast,uploads]) if uploads else (dict(patches=[growth,fast]) if fast else growth))),
                        stable_fastpath_spec_SHA256=digest(fast_path) if fast else None,
                        stable_metadata_uploads_spec_SHA256=digest(uploads_path) if uploads else None,
+                       flat_migration_copy_spec_SHA256=digest(copies_path) if copies else None,
                        preserved_original_native_gate_SHA256=digest(args.baseline_native_gate),
                        binaries=binaries, unchanged_controls=controls,
                        native_tests_xml_SHA256=digest(xml),

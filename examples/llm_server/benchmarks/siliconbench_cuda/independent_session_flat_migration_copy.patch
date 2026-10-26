@@ -1,0 +1,69 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -137,7 +137,8 @@
+                   Allocation& dst, bool reverse) -> Error {
+     const auto& layer = layers_[index];
+     const size_t bytes = row_bytes(layer);
+-    for (const auto& range : ranges) {
++    for (size_t owner = 0; owner < ranges.size(); ++owner) {
++      const auto& range = ranges[owner];
+       if (range.from < 0) {
+         continue;
+       }
+@@ -157,17 +158,53 @@
+       if (rows == 0) {
+         continue;
+       }
++      // Packed full-attention owners have contiguous rows within each
++      // private capacity. A run of adjacent owners with equal live lengths
++      // and strides can be one pitched copy: width is live bytes, height is
++      // owner count. Capacity padding remains unread and unwritten. Keep
++      // the original per-owner path for rings, permutations, unequal live
++      // lengths/strides, new owners and the initial interleaved layout.
++      size_t owners = 1;
++      int64_t src_stride = 1, dst_stride = 1;
++      if (src_packed && dst_packed) {
++        src_stride = reverse ? capacities[new_col] : old_capacities[old_col];
++        dst_stride = reverse ? old_capacities[old_col] : capacities[new_col];
++        for (size_t next = owner + 1; next < ranges.size(); ++next) {
++          const auto& candidate = ranges[next];
++          if (candidate.from < 0 || candidate.live != rows) {
++            break;
++          }
++          const int64_t next_src_base = reverse ? offsets[candidate.to] :
++              old_offsets[candidate.from];
++          const int64_t next_dst_base = reverse ? old_offsets[candidate.from] :
++              offsets[candidate.to];
++          const int64_t next_src_stride = reverse ? capacities[candidate.to] :
++              old_capacities[candidate.from];
++          const int64_t next_dst_stride = reverse ? old_capacities[candidate.from] :
++              capacities[candidate.to];
++          if (next_src_stride != src_stride || next_dst_stride != dst_stride ||
++              next_src_base != src_base + int64_t(owners) * src_stride ||
++              next_dst_base != dst_base + int64_t(owners) * dst_stride) {
++            break;
++          }
++          ++owners;
++        }
++      }
++      const bool coalesced = owners > 1;
+       for (const auto& pair : {std::pair{dst.k, src.k}, std::pair{dst.v, src.v}}) {
+         const cudaError_t error = cudaMemcpy2DAsync(
+             static_cast<uint8_t*>(pair.first) + bytes * dst_base,
+-            bytes * (dst_packed ? 1 : dst_width),
++            bytes * (coalesced ? dst_stride : (dst_packed ? 1 : dst_width)),
+             static_cast<const uint8_t*>(pair.second) + bytes * src_base,
+-            bytes * (src_packed ? 1 : src_width), bytes,
+-            static_cast<size_t>(rows), cudaMemcpyDeviceToDevice, stream);
++            bytes * (coalesced ? src_stride : (src_packed ? 1 : src_width)),
++            bytes * (coalesced ? rows : 1),
++            coalesced ? owners : static_cast<size_t>(rows),
++            cudaMemcpyDeviceToDevice, stream);
+         if (error != cudaSuccess) {
+           return Error::Internal;
+         }
+       }
++      owner += owners - 1;
+     }
+     return cudaStreamSynchronize(stream) == cudaSuccess ? Error::Ok : Error::Internal;
+   };
