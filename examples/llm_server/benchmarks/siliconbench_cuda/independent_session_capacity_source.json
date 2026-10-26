@@ -14,7 +14,7 @@
     },
     "backends/cuda/runtime/cuda_kv_cache.cpp": {
       "before_SHA256": "e262c9b30d9c2a44e90ce9362fac7fd9b941a314f04c4f721ab7e09c813229d8",
-      "after_SHA256": "dedda087e80c540ffda652c0fdf30457118b4394c0e72a1a338606792f951708"
+      "after_SHA256": "9e8523d86cfa6eeee16ec9c78aa4eaa30c30efa71046866acf50f9a089c26950"
     },
     "backends/cuda/batching/cuda_executor.cpp": {
       "before_SHA256": "570bc1ca081b4577b75752830b8a611fa2232174ce484bf5adb423226e372d1d",
@@ -26,7 +26,7 @@
     },
     "backends/cuda/triton/kernels/sdpa_varlen.py": {
       "before_SHA256": "6fe7426630b1080971a4315afb8e4a3156f6717029e5792218ebf33798791e5d",
-      "after_SHA256": "580444e0a1e45984f3e1e2920e30a6c0ede56ec095741a73eecbad52e02e63ba"
+      "after_SHA256": "727df52b527420362bade0a9dc1f638e8c13850d7035e006e27cff8659d40df8"
     },
     "examples/models/muse-glimmer/export/export_solo.py": {
       "before_SHA256": "fac8b0dd3817d3e2e8a48ce4917891eaa47ae78dad3ac3c6914f19542549ec01",
@@ -38,14 +38,14 @@
     },
     "backends/cuda/runtime/test/independent_session_capacity_tests.inc": {
       "before_SHA256": null,
-      "after_SHA256": "c34acf2799de2de74ab66a1ae554a1391021592edb8255b659ca6e583e8a1e03"
+      "after_SHA256": "d3da0120ff7f2cb08cf4155a44ccbc5e71161a0441de078f69dd0424cf87c486"
     },
     "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
       "before_SHA256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
       "after_SHA256": "8e9c6c06986a5b1ad7eb9188af2b3aabe9b0eb20893021d2a5fbca7f2db878c7"
     }
   },
-  "patch_SHA256": "7d3e19765210023588fa4b00da960884568d89c8fb1f4982955ebffbc7425b3c",
+  "patch_SHA256": "82d20d5641471a37fb00e0204c7697af7d37fc4b89f78907496f92b8a693d19b",
   "sequence_info_ABI": 3,
   "mini_GPU_qualified": false,
   "full_models_exported": false,

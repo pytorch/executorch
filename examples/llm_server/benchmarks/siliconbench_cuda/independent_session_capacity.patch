@@ -96,7 +96,18 @@
              storage_dtype,
              static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1),
              *cfg.max_seqs + 1,
-@@ -1098,20 +1096,25 @@
+@@ -894,6 +892,10 @@
+     pending_owners_.clear();
+     poisoned_ = false;
+     inflight_ = false;
++    if (cfg_.independent_sequence_capacity && pool_.allocated() &&
++        ensure_columns(true, 0, pool_.stream()) != Error::Ok) {
++      poisoned_ = true;
++    }
+   }
+
+   bool declare_step(const std::vector<int32_t>& seq_ids) override {
+@@ -1098,20 +1100,25 @@
        required = std::max<int64_t>(required, end);
      }
      if (cfg_.runtime_sequence_columns) {
@@ -129,7 +140,7 @@
      if (cfg_.runtime_sequence_columns) {
        for (int index = 0; index < max_segments_; ++index) {
          info[index * info_width_ + 4] = columns_;
-@@ -1131,6 +1134,11 @@
+@@ -1131,6 +1138,11 @@
        row[1] = queries;
        row[2] = column;
        row[3] = end;
@@ -141,7 +152,7 @@
        q_start += queries;
      }
      const Error enqueued = upload(static_cast<size_t>(write_length), stream);
-@@ -1223,9 +1231,21 @@
+@@ -1223,9 +1235,21 @@
    }
 
   private:
@@ -163,7 +174,7 @@
    };
 
    // A ring never needs more rows than a sequence can hold; it then never wraps.
-@@ -1251,7 +1271,7 @@
+@@ -1251,7 +1275,7 @@
            rows_of(layer, cfg) * (*cfg.max_seqs + 1),
            // A ring cannot wrap before it holds all its rows, so until then it
            // grows with the flat layers.
@@ -172,7 +183,7 @@
      }
      return layers;
    }
-@@ -1278,7 +1298,8 @@
+@@ -1278,8 +1302,12 @@
      return std::nullopt;
    }
 
@@ -180,9 +191,13 @@
 +  Error ensure_columns(bool compact, int spare_columns, cudaStream_t stream,
 +                       const std::map<int32_t, int>* required_ends = nullptr) {
      const int live = static_cast<int>(seqs_.size());
++    if (cfg_.independent_sequence_capacity && live < columns_ - 1) {
++      compact = true;
++    }
      const int target = compact
          ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
-@@ -1315,6 +1336,42 @@
+         : std::max(columns_, live + 1);
+@@ -1315,6 +1343,42 @@
        next.emplace(id, column);
        used.insert(column);
      }
@@ -225,7 +240,7 @@
      if (target != columns_ || relocate || compact) {
        std::vector<std::pair<int, int>> retained;
        for (const auto& [id, sequence] : seqs_) {
-@@ -1356,11 +1413,22 @@
+@@ -1356,11 +1420,22 @@
            layer.head_dim * slimc10::elementSize(storage_dtype());
        const size_t pitch = slot * columns_;
        const int64_t held =
@@ -249,7 +264,7 @@
          const cudaError_t error = cudaMemcpy2DAsync(
              base + slot * to,
              pitch,
-@@ -1412,6 +1480,12 @@
+@@ -1412,6 +1487,12 @@
            Internal,
            "offgraph_kv: cannot write the step's sequences: %s",
            cudaGetErrorString(error));
@@ -262,7 +277,7 @@
      }
      return Error::Ok;
    }
-@@ -1582,6 +1656,11 @@
+@@ -1582,6 +1663,11 @@
          Error,
          "offgraph_kv: the batched-sequence layout requires max_seqs and "
          "max_write");
@@ -392,32 +407,36 @@
          stride_vr = columns * stride_vc
 +    if INFO_WIDTH == 7 and RING == 0:
 +        col = tl.load(Info_ptr + seg * INFO_WIDTH + 5).to(tl.int64)
-+        rows_available = tl.load(Info_ptr + seg * INFO_WIDTH + 6)
++        rows_available = kv_end
 +        stride_kr = stride_kc
 +        stride_vr = stride_vc
      if qb * BLOCK_M >= q_len * NUM_GROUPS:
          return
 
-@@ -256,11 +261,17 @@
+@@ -254,13 +259,20 @@
+         owned |= take
+         q_start = tl.where(take, seg_q_start, q_start)
          q_len = tl.where(take, seg_q_len, q_len)
-         col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
-         kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
--    if INFO_WIDTH == 5:
+-        col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
 +        if INFO_WIDTH == 7 and RING == 0:
 +            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 5), col)
-+            rows_available = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 6), rows_available)
++        else:
++            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
+         kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
+-    if INFO_WIDTH == 5:
 +    if INFO_WIDTH >= 5:
          columns = tl.load(Info_ptr + 4).to(tl.int64)
          stride_kr = columns * stride_kc
          stride_vr = columns * stride_vc
 
 +    if INFO_WIDTH == 7 and RING == 0:
++        rows_available = kv_end
 +        stride_kr = stride_kc
 +        stride_vr = stride_vc
      offs_g = tl.arange(0, BLOCK_G)
      offs_d = tl.arange(0, HEAD_DIM)
      g_valid = offs_g < NUM_GROUPS
-@@ -464,7 +475,7 @@
+@@ -464,7 +476,7 @@
      if (
          seq_info.dtype != torch.int32
          or seq_info.dim() != 2
@@ -682,7 +701,7 @@
 +}
 --- /dev/null
 +++ b/backends/cuda/runtime/test/independent_session_capacity_tests.inc
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,231 @@
 +// Copyright (c) Meta Platforms, Inc. and affiliates.
 +// This source code is licensed under the BSD-style license in LICENSE.
 +
@@ -804,10 +823,15 @@
 +  for(int i=16;i<32;++i)EXPECT_EQ(bases[i],64);
 +  const int64_t before=kv->metrics().allocated_bytes;
 +  for(int i=0;i<16;++i)if(i!=5)ASSERT_TRUE(control->seq_rm(ids[i]));
-+  ASSERT_EQ(kv->compact_columns(0),Error::Ok);
 +  ASSERT_EQ(step(*object,handle,{ids[5]}),Error::Ok);
 +  EXPECT_EQ(info(fake)[4],2);
 +  EXPECT_LT(kv->metrics().allocated_bytes,before);
++  object->clear();
++  EXPECT_EQ(kv->metrics().live_sequences,0);
++  EXPECT_EQ(kv->metrics().physical_columns,2);
++  const int fresh = *control->seq_new();
++  ASSERT_EQ(step(*object,handle,{fresh}),Error::Ok);
++  EXPECT_EQ(info(fake)[6],4);
 +  kv->forget_handle(&handle);
 +}
 +

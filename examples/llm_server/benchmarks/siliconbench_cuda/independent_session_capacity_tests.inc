@@ -119,10 +119,15 @@ TEST_F(CudaIndependentSessionCacheTest, SparseSixteenOwnersContractAndPaddingUse
   for(int i=16;i<32;++i)EXPECT_EQ(bases[i],64);
   const int64_t before=kv->metrics().allocated_bytes;
   for(int i=0;i<16;++i)if(i!=5)ASSERT_TRUE(control->seq_rm(ids[i]));
-  ASSERT_EQ(kv->compact_columns(0),Error::Ok);
   ASSERT_EQ(step(*object,handle,{ids[5]}),Error::Ok);
   EXPECT_EQ(info(fake)[4],2);
   EXPECT_LT(kv->metrics().allocated_bytes,before);
+  object->clear();
+  EXPECT_EQ(kv->metrics().live_sequences,0);
+  EXPECT_EQ(kv->metrics().physical_columns,2);
+  const int fresh = *control->seq_new();
+  ASSERT_EQ(step(*object,handle,{fresh}),Error::Ok);
+  EXPECT_EQ(info(fake)[6],4);
   kv->forget_handle(&handle);
 }
 
