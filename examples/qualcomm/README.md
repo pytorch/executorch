@@ -13,6 +13,8 @@ We have separated the example scripts into the following subfolders, please refe
 
 4. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
 
+5. training: A minimal, self-contained on-device training example using a QNN/HTP-delegated joint forward+backward graph. See [training/toy_model/README.md](training/toy_model/README.md) for details.
+
 
 
 Please check helper of each examples for detailed arguments.
