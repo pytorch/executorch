@@ -306,8 +306,8 @@ class PropagateDevicePass(PassBase):
       data is stored on the host, so they still get an H2D copy.
     - skip_d2h_for_method_outputs: The graph output reads a delegate output
       on device, not its D2H copy; the copy stays only for other readers. When
-      one of them writes the copy in place, the graph output reads a device
-      copy of the written tensor instead.
+      one of them writes the copy in place, the graph output reads the written
+      host copy instead.
     - error_on_per_call_copies: Raise instead of logging a warning when a
       copy that a skip flag asked to avoid has to stay: a constant copied to a
       device, a method input copied for a reader off its device, or a
@@ -593,8 +593,8 @@ class PropagateDevicePass(PassBase):
 
         The copy stays for its other users, such as a host op. When one of them
         writes the copy in place, the device tensor never sees that write, so the
-        output reads a new device copy of the written host copy instead, and a
-        warning says so.
+        output keeps reading the written host copy, and a warning says so.
+        Copying it back to the device would add a second copy on every call.
         """
         d2h = torch.ops.et_copy._d2h_copy.default
         for node in list(graph_module.graph.nodes):
@@ -608,33 +608,17 @@ class PropagateDevicePass(PassBase):
             writers = _in_place_writers(node)
             if writers:
                 device_spec = returned.meta["spec"]
-                output_node = graph_module.graph.output_node()
-                # A later delegate on this device may already read a device copy
-                # of the written host copy.
-                returned = _reusable_copy(
-                    node, output_node, device_spec.device, device_spec.device_index
-                )
-                if returned is None:
-                    with graph_module.graph.inserting_before(output_node):
-                        returned = graph_module.graph.call_function(
-                            torch.ops.et_copy._h2d_copy.default, (node,)
-                        )
-                    returned.meta["spec"] = _copy_output_spec(
-                        node.meta["spec"], device_spec.device, device_spec.device_index
-                    )
-                    returned.meta["val"] = node.meta.get("val")
-                    if "tensor_meta" in node.meta:
-                        returned.meta["tensor_meta"] = node.meta["tensor_meta"]
                 self._report_per_call_copy(
                     f"A method output ({device_spec.nbytes()} bytes) comes from a "
                     f"delegate on {device_spec.device.name.lower()}:"
                     f"{device_spec.device_index} and '{writers[0].target}' writes "
-                    f"it in place on the host, so it is copied to the host and back "
-                    f"to the device on every call, even with "
+                    f"it in place on the host, so it is copied to the host on every "
+                    f"call and returned there, even with "
                     f"skip_d2h_for_method_outputs. Have the partitioner take that "
-                    f"op into the delegate to avoid those copies.",
+                    f"op into the delegate to avoid that copy.",
                     True,
                 )
+                continue
             _replace_spec(
                 [graph_module.graph.output_node()],
                 node.meta["spec"],

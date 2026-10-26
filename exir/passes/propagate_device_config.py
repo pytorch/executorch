@@ -65,11 +65,11 @@ class PropagateDeviceConfig:
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
     # When True, device delegate outputs that the method returns stay on
-    # device: the method output never reads a _d2h_copy of them. When a custom
-    # host op with a mutable argument, such as a KV cache update, writes the
-    # host copy of such an output in place, the method returns a device copy of
-    # the written tensor. That costs a copy to the host and one back on every
-    # call, and the pass logs a warning about it.
+    # device, with one exception: when a custom host op with a mutable
+    # argument, such as a KV cache update, writes the host copy of such an
+    # output in place, the method returns that host copy, since the device
+    # tensor never sees the write. The copy to the host runs on every call,
+    # and the pass logs a warning about it.
     # Useful for cross-method GPU pipelines where the next method consumes GPU
     # tensors directly.
     #
@@ -81,9 +81,9 @@ class PropagateDeviceConfig:
     # to_executorch raise instead of logging a warning: with
     # skip_h2d_for_method_inputs, a constant copied to the device and a method
     # input copied to the host for a reader off its device, and with
-    # skip_d2h_for_method_outputs, a returned output copied to the host and
-    # back. Each runs on every call. Use it to make sure a program that skips
-    # its boundary copies has none left.
+    # skip_d2h_for_method_outputs, a returned output copied to the host for a
+    # host op that writes it. Each runs on every call. Use it to make sure a
+    # program that skips its boundary copies has none left.
     error_on_per_call_copies: bool = False
 
     def __hash__(self) -> int:

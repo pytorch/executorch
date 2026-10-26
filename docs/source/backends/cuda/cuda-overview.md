@@ -217,7 +217,8 @@ the graph in the delegate.
 - A constant, such as a weight, that a delegate reads from outside is copied to each device that
   reads it.
 - A returned output that a custom operator outside the delegate writes in place, such as a KV
-  cache update, is copied to the host and back.
+  cache update, is copied to the host and returned there. The method metadata gives the device
+  of each output.
 
 Add `error_on_per_call_copies=True` to `PropagateDeviceConfig` to make `to_executorch` fail
 instead of warning. It fails only on a copy that one of the skip flags you set was meant to remove.

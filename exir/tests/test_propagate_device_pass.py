@@ -978,12 +978,12 @@ class TestPropagateDevicePass(unittest.TestCase):
         self.assertIsNone(output.meta["spec"].mem_id)
         self.assertIsNotNone(d2h.meta["spec"].mem_id)
 
-    def test_skip_d2h_returns_device_copy_of_output_written_on_host(self):
+    def test_skip_d2h_returns_output_written_on_host_from_host(self):
         """With skip_d2h_for_method_outputs, a returned delegate output whose
         host copy a host op writes in place, directly or through a view, is
-        returned as a device copy of the written host copy, because the device
-        tensor never sees the write. A warning names the op that writes it,
-        since these copies run on every call."""
+        returned as that written host copy, because the device tensor never
+        sees the write. No copy goes back to the device. A warning names the
+        op that writes it, since the copy to the host runs on every call."""
 
         class Model(torch.nn.Module):
             def __init__(self, write_view):
@@ -1017,17 +1017,22 @@ class TestPropagateDevicePass(unittest.TestCase):
                     "'propagate_device_test.accumulate.default' writes it", warning
                 )
                 (output,) = gm.graph.output_node().args[0]
-                self.assertEqual(output.target, torch.ops.et_copy._h2d_copy.out)
-                self.assertEqual(output.meta["spec"].device, DeviceType.CUDA)
-                self.assertIs(output.args[0], _host_written(gm))
-                nodes = list(gm.graph.nodes)
-                self.assertLess(nodes.index(_host_writer(gm)), nodes.index(output))
+                self.assertIs(output, _host_written(gm))
+                self.assertEqual(output.target, torch.ops.et_copy._d2h_copy.out)
+                (output_spec,) = gm.graph.output_node().meta["spec"]
+                self.assertEqual(output_spec.device, DeviceType.CPU)
+                self.assertFalse(
+                    any(
+                        copy.args[0] is output
+                        for copy in _collect_device_copy_nodes(gm).h2d_nodes
+                    )
+                )
 
-    def test_skip_d2h_shares_the_device_copy_of_a_written_output(self):
+    def test_skip_d2h_copies_a_written_output_only_for_a_later_delegate(self):
         """With skip_d2h_for_method_outputs, a returned output that a host op
-        writes before a later delegate on the same device reads it needs a
-        device copy for both. The method output reads the same copy as that
-        delegate."""
+        writes before a later delegate on the same device reads it is copied
+        back to the device for that delegate only. The method returns the
+        written host copy."""
 
         class Model(torch.nn.Module):
             def forward(self, x, y):
@@ -1053,7 +1058,7 @@ class TestPropagateDevicePass(unittest.TestCase):
         ]
         _, second = _collect_device_copy_nodes(gm).delegate_nodes
         self.assertIn(copy, second.args[1:])
-        self.assertIs(gm.graph.output_node().args[0][0], copy)
+        self.assertIs(gm.graph.output_node().args[0][0], _host_written(gm))
 
     def test_cross_device_copies_preserved(self):
         """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
