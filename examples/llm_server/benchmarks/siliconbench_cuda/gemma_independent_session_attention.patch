@@ -1,0 +1,65 @@
+--- a/backends/cuda/triton/kernels/sdpa_varlen.py
++++ b/backends/cuda/triton/kernels/sdpa_varlen.py
+@@ -103,13 +103,19 @@
+
+     q_start = tl.load(Info_ptr + seg * INFO_WIDTH + 0)
+     q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+-    col = tl.load(Info_ptr + seg * INFO_WIDTH + 2)
++    col = tl.load(Info_ptr + seg * INFO_WIDTH + (5 if INFO_WIDTH == 7 and RING == 0 else 2))
+     kv_end = tl.load(Info_ptr + seg * INFO_WIDTH + 3)
+
+-    if INFO_WIDTH == 5:
++    if INFO_WIDTH >= 5:
+         columns = tl.load(Info_ptr + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+         stride_vr = columns * stride_vc
++
++    if INFO_WIDTH == 7 and RING == 0:
++        col = col.to(tl.int64)
++        rows_available = kv_end
++        stride_kr = stride_kc
++        stride_vr = stride_vc
+
+     if qb * BLOCK_M >= q_len * NUM_GROUPS:
+         return
+@@ -286,7 +292,7 @@
+         owned = tl.sum(take.to(tl.int32)) > 0
+         q_start = tl.sum(tl.where(take, starts, 0))
+         q_len = tl.sum(tl.where(take, lengths, 0))
+-        cols = tl.load(Info_ptr + slots * INFO_WIDTH + 2, mask=slots < NUM_SEGMENTS, other=0)
++        cols = tl.load(Info_ptr + slots * INFO_WIDTH + (5 if INFO_WIDTH == 7 and RING == 0 else 2), mask=slots < NUM_SEGMENTS, other=0)
+         ends = tl.load(Info_ptr + slots * INFO_WIDTH + 3, mask=slots < NUM_SEGMENTS, other=0)
+         col = tl.sum(tl.where(take, cols, 0))
+         kv_end = tl.sum(tl.where(take, ends, 0))
+@@ -303,14 +309,20 @@
+             owned |= take
+             q_start = tl.where(take, seg_q_start, q_start)
+             q_len = tl.where(take, seg_q_len, q_len)
+-            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
++            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + (5 if INFO_WIDTH == 7 and RING == 0 else 2)), col)
+             kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
+
+
+-    if INFO_WIDTH == 5:
++    if INFO_WIDTH >= 5:
+         columns = tl.load(Info_ptr + 4).to(tl.int64)
+         stride_kr = columns * stride_kc
+         stride_vr = columns * stride_vc
++
++    if INFO_WIDTH == 7 and RING == 0:
++        col = col.to(tl.int64)
++        rows_available = kv_end
++        stride_kr = stride_kc
++        stride_vr = stride_vc
+
+     offs_g = tl.arange(0, BLOCK_G)
+     offs_d = tl.arange(0, HEAD_DIM)
+@@ -508,7 +520,7 @@
+         raise ValueError("head dimension must be a power of two in [16, 512]")
+     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
+         raise ValueError("sdpa_varlen needs a contiguous head dimension")
+-    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] not in (4, 5):
++    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] not in (4, 5, 7):
+         raise ValueError("seq_info must be Int32[S, 4] or runtime-pitch Int32[S, 5]")
+     if seq_info.device != query.device or not seq_info.is_contiguous():
+         raise ValueError("seq_info must be contiguous on the query device")

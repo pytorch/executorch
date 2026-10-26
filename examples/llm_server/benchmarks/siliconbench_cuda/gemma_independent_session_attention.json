@@ -1,0 +1,15 @@
+{
+  "base_overlay": "gemma_runtime_columns_overlay.patch",
+  "patch_SHA256": "d6b963ac7badddece8600c26e2b55cb30b4a6151c52145a0c8d0f0429a20592f",
+  "files": {
+    "backends/cuda/triton/kernels/sdpa_varlen.py": {
+      "before_SHA256": "23dd4b686da50566026355094d14f843829814f65299a0b2dcaba2969ad05eda",
+      "after_SHA256": "db8233510aeae0c0bfdc07d7b6bc44942767b1ea7a1946468f401951b0bb8b59"
+    }
+  },
+  "production_launch_heuristics_preserved": true,
+  "vectorized_decode_owner_lookup_preserved": true,
+  "sliding_window_union_logic_preserved": true,
+  "GPU_validated": false,
+  "full_model_promoted": false
+}
