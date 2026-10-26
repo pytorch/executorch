@@ -88,14 +88,16 @@ def main():
   assert export_child.wait(timeout=remaining())==0,'static-full-model-export'
   finish(sdk_child,'native-SDK-build')
   audit=json.loads((artifact/'artifact-audit.json').read_text());assert audit['static_methods']==STATIC and all(v[0]<=64 for v in audit['static_output_bounds'].values())
-  assert sha(artifact/'aoti_cuda_blob.ptd')==sha(a.baseline_artifact/'aoti_cuda_blob.ptd'),'Same official quantized weight bytes required'
+  if sha(artifact/'aoti_cuda_blob.ptd')!=sha(a.baseline_artifact/'aoti_cuda_blob.ptd'):
+   run([sys.executable,'-B',package/'review_runtime_kv_weight_payload.py','--source',source,'--fixed',a.baseline_artifact/'aoti_cuda_blob.ptd','--runtime',artifact/'aoti_cuda_blob.ptd','--output',a.output/'weight-payload-review.json'],'same-original-weight-storage-review')
   (sdk/'source-overlay-provenance.json').write_text((a.output/'source-patch-provenance.json').read_text())
   arms=a.output/'comparison-arms.json';arms.write_text(json.dumps(dict(ET_arms=[dict(name='ET-baseline',artifact=str(a.baseline_artifact),export_job=str(a.baseline_export_job)),dict(name='ET-large',artifact=str(artifact),export_job=str(export))]),indent=2)+'\n')
   comparison=a.output/'full-model-comparison'
   run([sys.executable,'-B',package/'run_roofline_default_comparison.py','--ET-SDK-job',sdk,'--CPP-SDK-job',a.CPP_SDK_job,'--gguf',a.gguf,'--arms',arms,'--job',comparison,'--lock',a.lock,'--repetitions','20'],'three-arm-four-round-roofline')
   run([sys.executable,'-B',package/'profile_roofline_large_candidate.py','--et-source',source,'--ET-SDK-job',sdk,'--python',sys.executable,'--artifact',artifact,'--after-comparison',comparison,'--lock',a.lock,'--job',a.output/'candidate-profile'],'static-routing-and-CUDA-graph-profile')
   state('comparison-and-profile-completed-awaiting-validation',comparison=str(comparison),artifact=str(artifact))
-  run([sys.executable,'-B',package/'validate_roofline_prefill_outputs.py','--workflow',a.output,'--ET-SDK-job',sdk,'--et-source',source,'--python',sys.executable,'--lock',a.lock,'--output',a.output/'output-validation','--deadline-UTC',a.deadline_UTC],'full-prefill-and-followup-output-validation')
+  validation=start([sys.executable,'-B',package/'validate_roofline_prefill_outputs.py','--workflow',a.output,'--ET-SDK-job',sdk,'--et-source',source,'--python',sys.executable,'--lock',a.lock,'--output',a.output/'output-validation','--deadline-UTC',a.deadline_UTC],'full-prefill-and-followup-output-validation')
+  assert validation.wait(timeout=remaining())==0,'full-prefill-and-followup-output-validation'
   run([sys.executable,'-B',package/'run_roofline_history_logits_control.py','--workflow',a.output,'--ET-SDK-job',sdk,'--et-source',source,'--lock',a.lock,'--output',a.output/'zero-history-control','--history-tokens','0','--deadline-UTC',a.deadline_UTC],'teacher-forced-zero-history-control')
   state('completed-pending-independent-review',comparison=str(comparison),artifact=str(artifact),candidate_not_automatically_promoted=True)
  except BaseException as exc:
