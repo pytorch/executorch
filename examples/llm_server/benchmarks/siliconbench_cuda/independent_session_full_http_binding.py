@@ -5,8 +5,119 @@ It preserves export-source, runtime-source and sampler provenance separately.
 """
 import json
 from pathlib import Path
-from independent_session_full_native_binding import verify_runtime, sha
+from independent_session_full_native_binding import verify_runtime, verify_qualification, sha
 from independent_session_mini_profiles import validate_full_audit
+
+
+def verified_mg_full_http(args, package):
+    """Bind real full52 MG HTTP to its qualified mini and full native evidence."""
+    assert args.full_model_profile == 'muse-glimmer-52layers'
+    assert args.mini_profile == 'muse-glimmer-first4' and args.arm == 'independent'
+    assert args.full_native_job and args.full_MG_native_lifecycle_job
+    assert args.full_MG_mini_qualification and args.memory_worker_proof
+    assert args.preserved_global_HTTP_failure_job is None
+    actual = verify_runtime(args.full_native_job, package)
+    verify_qualification(args.full_MG_mini_qualification, args.mini_profile,
+        '4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e', args.full_native_job)
+    lifecycle = args.full_MG_native_lifecycle_job
+    state = json.loads((lifecycle/'progress.json').read_text())
+    assert state['status'] == 'full-MG-single-artifact-native-controls-collected'
+    result = json.loads((lifecycle/'result.json').read_text())
+    assert result['full_profile'] == args.full_model_profile
+    assert result['full_independent_storage_and_observed_numerics_pass']
+    assert result['actual_runtime_native_gate_SHA256'] == sha(args.full_native_job/'native-gate.json')
+    assert Path(result['actual_runtime_job']).resolve() == args.full_native_job.resolve()
+    assert args.preparation_job.resolve() == (lifecycle/'after-full-artifact').resolve()
+    for name, expected in result['raw_reviews_SHA256'].items():
+        assert sha(lifecycle/name) == expected, name
+    reviews = {k: json.loads((lifecycle/(k+'-independent-review.json')).read_text())
+               for k in ('capacity', 'rewind', 'graph')}
+    native = json.loads((lifecycle/'same-PTE-native-independent-review.json').read_text())
+    assert native['full_model_profile'] == args.full_model_profile
+    assert native['full_saved_FP32_tensors_equal'] == 9 and native['selected_argmax_values_equal'] == 3376
+    assert native['native_change_preserves_observed_model_numerics']
+    assert reviews['capacity']['bitwise_allocation_equivalence_verified']
+    assert len(reviews['rewind']['checks']) == 48
+    assert reviews['rewind']['invalid_out_of_context_rewinds_rejected'] == 24
+    assert reviews['graph']['all_seven_static_methods_after_shrink_verified']
+    assert reviews['graph']['automatic_reclaim_verified_without_compact_calls']
+    root = args.preparation_job
+    prep = json.loads((root/'progress.json').read_text())
+    assert prep['status'] == 'full-artifacts-ready-for-qualification'
+    assert prep['mini_gate_passed'] and prep['all_full_artifact_hashes_verified']
+    gate_path = root/'native-gate.json'
+    gate = json.loads(gate_path.read_text())
+    for key in ('source', 'source_spec_SHA256', 'native_tests_xml_SHA256',
+                'unchanged_controls', 'actual_native_source_change'):
+        assert gate[key] == actual[key], key
+    for name, expected in gate['binaries'].items():
+        assert sha(name) == expected, name
+    assert gate['artifact_export_and_native_SDK_sources_are_separately_verified']
+    artifact = root/'full-independent-artifact'
+    audit_path = artifact/'independent-full-artifact-audit.json'
+    audit = json.loads(audit_path.read_text())
+    validate_full_audit(audit, args.full_model_profile, True)
+    assert sha(audit_path) == prep['full_audit_SHA256']['independent']
+    assert audit['bulk_prefill_A16_original_native_decode']
+    assert audit['artifacts'] == native['artifacts'][0]['artifacts']
+    for name, record in audit['artifacts'].items():
+        assert sha(artifact/name) == record['sha256'], name
+    assert reviews['graph']['model_PTE_sha256'] == sha(artifact/'model.pte')
+    assert reviews['graph']['probe_sha256'] == sha(root/'model-build/muse_glimmer_runtime_kv_probe')
+    source = Path(actual['source'])
+    memory = json.loads(args.memory_worker_proof.read_text())
+    assert memory['native_gate_SHA256'] == sha(args.full_native_job/'native-gate.json')
+    assert memory['source'] == str(source)
+    assert memory['original_worker_SHA256'] == sha(root/'model-build/muse_glimmer_batching_worker')
+    for key in ('official_control_flow_preserved', 'no_inference_kernel_change',
+                'sampler_does_not_synchronize_GPU'):
+        assert memory[key], key
+    assert memory['optional_sampler_header_SHA256'] == sha(package/'kv_memory_sampler.h')
+    sampler = (package/'kv_memory_sampler.h').read_text()
+    assert 'if (value == nullptr || std::string(value) != "1")' in sampler
+    worker = Path(memory['instrumented_worker'])
+    assert sha(worker) == memory['instrumented_worker_SHA256']
+    for name, expected in memory['unchanged_SDK_libraries'].items():
+        assert sha(name) == expected, name
+    assert args.http_python_dependencies_job
+    dependency_job = args.http_python_dependencies_job
+    assert json.loads((dependency_job/'progress.json').read_text())['status'] == 'MG-HTTP-Python-dependencies-ready'
+    dependency = json.loads((dependency_job/'proof.json').read_text())
+    dependency_path = Path(dependency['dependency_path'])
+    assert dependency_path.resolve().is_relative_to(dependency_job.resolve())
+    assert dependency['native_gate_SHA256'] == sha(args.full_native_job/'native-gate.json')
+    assert dependency['server_source_SHA256'] == sha(source/'examples/models/muse-glimmer/serving/serve_batching.py')
+    for key in ('installed_only_into_new_owned_target', 'base_torch_triton_versions_unchanged',
+                'native_SDK_and_models_unchanged', 'official_server_import_pass'):
+        assert dependency[key], key
+    for name, expected in dependency['files_SHA256'].items():
+        path = dependency_path/name
+        assert path.resolve().is_relative_to(dependency_path.resolve()) and sha(path) == expected, name
+    from prepare_mg_canonical_tokenizer import FILES
+    for name, (expected, count) in FILES.items():
+        path = args.tokenizer/name
+        assert path.stat().st_size == count and sha(path) == expected, name
+    assert 'int initial_capacity = 512;' in (source/'extension/llm/cache/cache.h').read_text()
+    factory = (source/'examples/models/muse-glimmer/runtime/backend_factory.cpp').read_text()
+    explicit_initial = 'executor_config.initial_capacity' in factory
+    if explicit_initial:
+        assert 'executor_config.initial_capacity = config.initial_kv_capacity;' in factory
+        assert '"--initial-kv-capacity"' in (source/'examples/models/muse-glimmer/serving/serve_batching.py').read_text()
+    else:
+        assert 'initial_capacity' not in factory
+    binding = dict(actual_full_profile=args.full_model_profile,
+        actual_sources_binaries_and_tests_reverified=True,
+        current_native_source=str(source), native_runtime_gate_SHA256=sha(args.full_native_job/'native-gate.json'),
+        mini_qualification_SHA256=sha(args.full_MG_mini_qualification),
+        full_native_lifecycle_result_SHA256=sha(lifecycle/'result.json'),
+        independent_full_model_only=True, global_layout_comparison_collected=False,
+        fixed_token_same_PTE_runtime_performance_pass=result['fixed_token_same_PTE_runtime_performance_pass'],
+        positive_performance_signals=result['positive_performance_signals'],
+        full_model_qualified=False, main_candidate_accepted=False)
+    return dict(gate_path=gate_path, gate=gate, source=source, worker=worker,
+        memory_proof=memory, dependency_path=dependency_path,
+        Gemma_model_source_binding=binding, artifacts={'independent': artifact},
+        audits={'independent': audit}, explicit_initial=explicit_initial)
 
 
 def verified_gemma_full_http(args, package):

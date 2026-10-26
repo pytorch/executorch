@@ -69,8 +69,10 @@ def main():
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument("--memory-worker-proof", type=Path)
     parser.add_argument('--mini-profile',choices=PROFILES,default=DEFAULT_PROFILE)
-    parser.add_argument('--full-model-profile', choices=['gemma4-48layers'])
+    parser.add_argument('--full-model-profile', choices=['gemma4-48layers', 'muse-glimmer-52layers'])
     parser.add_argument('--full-native-job',type=Path)
+    parser.add_argument('--full-MG-native-lifecycle-job', type=Path)
+    parser.add_argument('--full-MG-mini-qualification', type=Path)
     parser.add_argument('--arm', choices=['both', 'independent'], default='both',
                         help='Full-model candidate-only collection requires a preserved failed global HTTP run')
     parser.add_argument('--preserved-global-HTTP-failure-job', type=Path)
@@ -91,15 +93,19 @@ def main():
     collected_arms=['global','independent'] if args.arm=='both' else ['independent']
     preserved_global_HTTP_failure=None
     if args.arm=='independent':
-        assert full_profile=='gemma4-48layers' and args.preserved_global_HTTP_failure_job is not None
-        from independent_session_preserved_http_failure import verify_failed_global_HTTP
-        preserved_global_HTTP_failure=verify_failed_global_HTTP(
-            args.preserved_global_HTTP_failure_job,args.preparation_job)
+        if full_profile == 'muse-glimmer-52layers':
+            assert args.full_MG_native_lifecycle_job and args.full_MG_mini_qualification
+            assert args.preserved_global_HTTP_failure_job is None
+        else:
+            assert full_profile=='gemma4-48layers' and args.preserved_global_HTTP_failure_job is not None
+            from independent_session_preserved_http_failure import verify_failed_global_HTTP
+            preserved_global_HTTP_failure=verify_failed_global_HTTP(
+                args.preserved_global_HTTP_failure_job,args.preparation_job)
     else:
         assert args.preserved_global_HTTP_failure_job is None
     if full_profile:
-        from independent_session_full_http_binding import verified_gemma_full_http
-        verified=verified_gemma_full_http(args,package)
+        from independent_session_full_http_binding import verified_gemma_full_http, verified_mg_full_http
+        verified=(verified_gemma_full_http if gemma else verified_mg_full_http)(args,package)
         gate_path,gate,source,worker=(verified[k] for k in ('gate_path','gate','source','worker'))
         memory_proof,dependency_path,Gemma_model_source_binding=(verified[k] for k in
             ('memory_proof','dependency_path','Gemma_model_source_binding'))
@@ -364,8 +370,8 @@ def main():
                                      headers={"Content-Type": "application/json"})
         return urllib.request.urlopen(req, timeout=timeout)
 
-    prefix_entries_on=1 if full_profile else 4
-    prefix_interval_on=512
+    prefix_entries_on=1 if full_profile=='gemma4-48layers' else 4
+    prefix_interval_on=0 if full_profile=='muse-glimmer-52layers' else 512
     records = []
     state("waiting-GPU-lock")
     with args.lock.open("a") as lock:
@@ -402,7 +408,7 @@ def main():
                     sampler.start()
                     artifact = artifacts[arm]
                     model_id='gemma4-first6-mini' if gemma else 'mg-four-layer-mini'
-                    if full_profile:model_id='gemma4-12b-it'
+                    if full_profile:model_id='gemma4-12b-it' if gemma else 'muse-glimmer-30b'
                     command = ([str(args.python),'-B',str(package/'serve_gemma_runtime_columns.py')]
                         if gemma else [str(args.python), "-B", "-m",
                                "executorch.examples.models.muse_glimmer.serving.serve_batching",
@@ -569,7 +575,8 @@ def main():
                   limitations="Named-session lifecycle diagnostic. Natural outputs are retained, not forced. "
                               "Prefix ON retains checkpoint owners after named-session deletion. "
                               "This does not replace full-model SiliconBench or task F1.",
-                  fresh_global_export_is_a_layout_control_not_the_previous_accepted_PTE=bool(full_profile))
+                  full_model_source_binding=Gemma_model_source_binding if full_profile else None,
+                  fresh_global_export_is_a_layout_control_not_the_previous_accepted_PTE=full_profile=='gemma4-48layers')
     (args.output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     state("HTTP-lifecycle-completed-pending-independent-review", server_runs=len(records))
     print(json.dumps(dict(server_runs=len(records), candidate_promoted=False)))

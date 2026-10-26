@@ -41,11 +41,12 @@ def main():
     assert document["actual_official_HTTP_server"]
     full_profile=document.get('full_model_profile')
     if full_profile:
-        assert not document['mini_only'] and full_profile=='gemma4-48layers'
+        assert not document['mini_only'] and full_profile in ('gemma4-48layers', 'muse-glimmer-52layers')
         from independent_session_mini_profiles import validate_full_audit
         for arm,audit in document['artifact_audits'].items():
             validate_full_audit(audit,full_profile,arm=='independent')
-        assert document['prefix_entries_on']==1 and document['prefix_checkpoint_interval_on']==512
+        expected = (4, 0) if full_profile == 'muse-glimmer-52layers' else (1, 512)
+        assert (document['prefix_entries_on'], document['prefix_checkpoint_interval_on']) == expected
         assert document['Gemma_model_source_binding']['actual_sources_binaries_and_tests_reverified']
     else:
         assert document['mini_only']
@@ -55,12 +56,19 @@ def main():
     assert collected_arms in (['global','independent'],['independent'])
     paired=len(collected_arms)==2
     if not paired:
-        assert full_profile=='gemma4-48layers'
-        preserved=document['preserved_global_HTTP_failure']
-        assert preserved['actual_failed_global_HTTP_preserved'] and preserved['failed_global_test_is_not_a_pass']
-        failure_root=args.preserved_failure_local_root or Path(preserved['path'])
-        for name,expected in preserved['raw_files_SHA256'].items():
-            assert digest(failure_root/name)==expected,name
+        if full_profile == 'muse-glimmer-52layers':
+            binding = document['full_model_source_binding']
+            assert binding['actual_sources_binaries_and_tests_reverified']
+            assert binding['independent_full_model_only'] and not binding['global_layout_comparison_collected']
+            assert document['preserved_global_HTTP_failure'] is None
+            assert args.preserved_failure_local_root is None
+        else:
+            assert full_profile=='gemma4-48layers'
+            preserved=document['preserved_global_HTTP_failure']
+            assert preserved['actual_failed_global_HTTP_preserved'] and preserved['failed_global_test_is_not_a_pass']
+            failure_root=args.preserved_failure_local_root or Path(preserved['path'])
+            for name,expected in preserved['raw_files_SHA256'].items():
+                assert digest(failure_root/name)==expected,name
     else:
         assert args.preserved_failure_local_root is None
     assert len(document["rounds"]) == 8*len(collected_arms)
@@ -225,7 +233,7 @@ def main():
                   automatic_OFF_c16_to_c1_reclaim_verified=native_enabled,
                   source_result_SHA256=digest(args.job / "result.json"), rounds=records, summaries=summaries,
                   native_sampler_overhead_not_qualified=True, model_performance_qualified=False, candidate_promoted=False,
-                  limitations="HTTP lifecycle diagnostic, not task F1 or main performance acceptance. NVML includes all device allocations; the ET allocator pool does not measure graph-private pools. Candidate-only collection has no paired output or timing comparison; the failed global run remains a failure.")
+                  limitations="HTTP lifecycle diagnostic, not task F1 or main performance acceptance. NVML includes all device allocations; the ET allocator pool does not measure graph-private pools. Candidate-only collection has no paired output or timing comparison; any preserved failed global run remains a failure.")
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({key: result[key] for key in ("matched_requests", "completion_lengths_equal_between_arms", "all_outputs_reached_limit", "native_allocator_memory_verified", "automatic_OFF_c16_to_c1_reclaim_verified")}))
 

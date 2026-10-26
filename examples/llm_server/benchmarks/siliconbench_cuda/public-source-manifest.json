@@ -504,8 +504,8 @@
       "bytes": 823
     },
     "independent_session_full_http_binding.py": {
-      "sha256": "ab0f4e2c44c769b08177881e86b03cbaa8322d0267d98dbc3f936b713c7fb5ce",
-      "bytes": 7379
+      "sha256": "c432848595de2929feddb6cdba8cdcc65c7b091be3c8271b6c99cca411ecabf5",
+      "bytes": 14923
     },
     "independent_session_full_native_binding.py": {
       "sha256": "97d9fed1e2354ce4c8a8f74a76e1324d1345936cd1be39eeb0004386befcee00",
@@ -876,8 +876,8 @@
       "bytes": 8728
     },
     "review_independent_session_http_lifecycle.py": {
-      "sha256": "b0aa155af1f80eedfc9de295c8a131e9726e2575cff55830262d73e0565d872b",
-      "bytes": 16152
+      "sha256": "5d87e5cbae2ed770b33aee6e1a085c8a46fe316e8ad6ad8feb2214e3402fc15d",
+      "bytes": 16744
     },
     "review_independent_session_mg_fixed_latency.py": {
       "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",
@@ -1003,6 +1003,10 @@
       "sha256": "8c22083e4ecd8fb9fe5a02fd04bb850ca3852aaf826b933e0e54d21f99b5ce13",
       "bytes": 5242
     },
+    "run_full_MG_HTTP_after_native.py": {
+      "sha256": "a47d3ef310fc0f833bf913d6bc360530eb8ee7316fb53734225a8fad302a27a0",
+      "bytes": 6326
+    },
     "run_full_independent_session_fixed_qualification.py": {
       "sha256": "cb7fe73a86ace11ca2b834f0fb3373a04fbf1f6a8f96bf3646fdc856756b1cd0",
       "bytes": 9598
@@ -1052,8 +1056,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "b1d65a6a6d2aeedff1104be6776e4beb211f6967e91e8bbf24812a766ff097ee",
-      "bytes": 39861
+      "sha256": "eacba4649581151423f7e456896b4bc4586739c67c28062b4bf5293780667bca",
+      "bytes": 40531
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "d6832838288088b6e799c59e56c89f9687ac375777ddf7bdb1247c7ec2e8b3d3",
