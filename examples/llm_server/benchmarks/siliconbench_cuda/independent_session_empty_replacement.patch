@@ -1,0 +1,60 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -22,7 +22,13 @@
+     bool stable = true;
+     uint64_t seen = 0;
+     for (const auto& range : ranges) {
+-      if (range.from != range.to || range.to < 0 || range.to >= columns - 1 ||
++      // A removed owner can be replaced without changing any storage when
++      // the new owner has no history and exactly the same private capacity.
++      // Every retained owner must still use its previous physical slot.
++      const bool retained_in_place = range.from == range.to;
++      const bool empty_replacement = range.from == -1 && range.live == 0;
++      if ((!retained_in_place && !empty_replacement) ||
++          range.to < 0 || range.to >= columns - 1 ||
+           range.capacity <= 0 || range.live < 0 || range.live > range.capacity ||
+           range.capacity != sequence_capacities_[range.to]) {
+         stable = false;
+--- a/backends/cuda/runtime/test/independent_session_capacity_tests.inc
++++ b/backends/cuda/runtime/test/independent_session_capacity_tests.inc
+@@ -138,13 +138,38 @@
+   auto fake=independent_container();
+   auto handle=make_handle(fake);
+   ASSERT_TRUE(kv->note_handle(&handle).get());
+-  const int a=*control->seq_new();
+-  ASSERT_EQ(step(*object,handle,{a}),Error::Ok);
++  const int a=*control->seq_new(), b=*control->seq_new();
++  ASSERT_EQ(step(*object,handle,{a,b}),Error::Ok);
++  const int retained_offset = info(fake)[7+5];
++  seed_flat(fake, retained_offset, 1, 456);
+   handle.cuda_graph_state.phase=cu::CudaGraphPhase::Replay;
+   const int updates=fake.updates;
+   ASSERT_EQ(step(*object,handle,{a}),Error::Ok);
+   EXPECT_EQ(fake.updates,updates);
+   EXPECT_EQ(handle.cuda_graph_state.phase,cu::CudaGraphPhase::Replay);
++  // Reuse the freed id at identical capacity while another owner's
++  // history remains live. Sequence length resets; physical bindings and
++  // captured work remain valid because storage geometry does not change.
++  const int64_t bytes = kv->metrics().allocated_bytes;
++  const void* flat_pointer = fake.bound["flat_k"].data;
++  ASSERT_TRUE(control->seq_rm(a));
++  const auto reused = control->seq_new();
++  ASSERT_TRUE(reused.has_value());
++  EXPECT_EQ(*reused, a);
++  EXPECT_EQ(control->pos(*reused), 0);
++  ASSERT_EQ(step(*object, handle, {*reused}), Error::Ok);
++  EXPECT_EQ(control->pos(*reused), 1);
++  EXPECT_EQ(info(fake)[3], 1);
++  EXPECT_EQ(info(fake)[6], 4);
++  EXPECT_EQ(fake.updates, updates);
++  EXPECT_EQ(fake.bound["flat_k"].data, flat_pointer);
++  EXPECT_EQ(kv->metrics().allocated_bytes, bytes);
++  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
++  EXPECT_EQ(control->pos(b), 1);
++  EXPECT_EQ(read_flat(fake, retained_offset, 1), std::vector<uint16_t>(kRow,456));
++  ASSERT_EQ(step(*object, handle, {*reused}), Error::Ok);
++  EXPECT_EQ(fake.updates, updates);
++  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+   ASSERT_EQ(step(*object,handle,{a,a,a}),Error::Ok);
+   EXPECT_GT(fake.updates,updates);
+   EXPECT_NE(handle.cuda_graph_state.phase,cu::CudaGraphPhase::Replay);

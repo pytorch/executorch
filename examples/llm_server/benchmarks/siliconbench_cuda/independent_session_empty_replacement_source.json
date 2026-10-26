@@ -1,0 +1,51 @@
+{
+  "patch_SHA256": "7d6e83fb24af031f2ea2fd655e2e0bb576322cbea645b57185d011a3895b3593",
+  "variants": {
+    "MG-flat-copy": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "218260b08c9dbb375ca7c339072d8a4f0ef1701a03a79f90a470b07156d05816",
+        "after_SHA256": "173b5bf3becdfb8550c1b6975f90e0b2bdc28824078eb65407fabdd23574a5de",
+        "patch_SHA256": "7d6e83fb24af031f2ea2fd655e2e0bb576322cbea645b57185d011a3895b3593",
+        "native_empty_owner_reuse_only": true,
+        "weights_math_ABI_sliding_and_genuine_storage_change_graph_invalidation_unchanged": true,
+        "qualified": false
+      },
+      {
+        "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
+        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
+        "after_SHA256": "afec52cec8d343f7870dd92a79867004e3c301f9fbb99ca03d5e60a93b71ef43",
+        "patch_SHA256": "7d6e83fb24af031f2ea2fd655e2e0bb576322cbea645b57185d011a3895b3593",
+        "native_empty_owner_reuse_only": true,
+        "weights_math_ABI_sliding_and_genuine_storage_change_graph_invalidation_unchanged": true,
+        "qualified": false
+      }
+    ],
+    "Gemma-stable-metadata": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "b61260c08b73ee8c3b808197a2d9528e472803b150d4db798d8eb6ccc33faf03",
+        "after_SHA256": "5b2b3ae419daff929ac0524e2bcb7877e66b53a9d84840143508fe1dd816017c",
+        "patch_SHA256": "7d6e83fb24af031f2ea2fd655e2e0bb576322cbea645b57185d011a3895b3593",
+        "native_empty_owner_reuse_only": true,
+        "weights_math_ABI_sliding_and_genuine_storage_change_graph_invalidation_unchanged": true,
+        "qualified": false
+      },
+      {
+        "file": "backends/cuda/runtime/test/independent_session_capacity_tests.inc",
+        "before_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
+        "after_SHA256": "afec52cec8d343f7870dd92a79867004e3c301f9fbb99ca03d5e60a93b71ef43",
+        "patch_SHA256": "7d6e83fb24af031f2ea2fd655e2e0bb576322cbea645b57185d011a3895b3593",
+        "native_empty_owner_reuse_only": true,
+        "weights_math_ABI_sliding_and_genuine_storage_change_graph_invalidation_unchanged": true,
+        "qualified": false
+      }
+    ]
+  },
+  "same_capacity_zero_history_replacement_only": true,
+  "retained_owners_require_identical_slots_and_capacities": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}
