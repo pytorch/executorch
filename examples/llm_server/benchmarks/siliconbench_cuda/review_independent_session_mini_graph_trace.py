@@ -137,12 +137,17 @@ def main():
             )
         )
     assert [s["physical_columns"] for s in stage_evidence] == [2, 3, 5, 9, 17, 2]
-    shrink_ops = [
-        op
-        for op in operations
-        if op["request"]["op"] == "compact"
-        and op["response"]["snapshot"]["physical_columns"] == 2
-    ]
+    automatic = result.get("automatic_reclaim_requested", False)
+    if automatic:
+        assert not any(op["request"]["op"] == "compact" for op in operations)
+        shrink_ops = [op for previous, op in zip(operations, operations[1:])
+                      if op["request"]["op"] == "step"
+                      and previous["response"]["snapshot"]["physical_columns"] > 2
+                      and op["response"]["snapshot"]["physical_columns"] == 2]
+    else:
+        shrink_ops = [op for op in operations
+                      if op["request"]["op"] == "compact"
+                      and op["response"]["snapshot"]["physical_columns"] == 2]
     assert (
         shrink_ops
         and total(shrink_ops, "GraphExecDestroy") + total(shrink_ops, "GraphDestroy")
@@ -180,6 +185,7 @@ def main():
         protocol_sha256=digest(protocol_path),
         sqlite_sha256=digest(args.sqlite),
         first_discarded_round_only=True,
+        automatic_reclaim_verified_without_compact_calls=automatic,
         stage_evidence=stage_evidence,
         post_shrink_method_evidence=method_evidence,
         acceptance_scope="Actual graph instantiate/launch/destroy API events inside owned executor NVTX command ranges; numerical and memory acceptance are separate",

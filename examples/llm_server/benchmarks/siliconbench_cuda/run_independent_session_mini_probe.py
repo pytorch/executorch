@@ -32,6 +32,8 @@ def main():
     parser.add_argument("--expected-PTE-sha256", required=True)
     parser.add_argument("--expected-weights-sha256", required=True)
     parser.add_argument("--arm", choices=["global", "independent"], required=True)
+    parser.add_argument("--automatic-reclaim", action="store_true",
+                        help="Require native automatic contraction; never issue compact operations")
     parser.add_argument("--job-dir", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--same-artifact-pitch-control", action="store_true",
@@ -305,7 +307,7 @@ def main():
                             assert request({"op":"metrics"})["snapshot"]["physical_columns"] == 22
                             for extra in extra_owners:
                                 request(dict(op="remove", seq_id=extra))
-                            if args.arm == "independent":
+                            if args.arm == "independent" and not args.automatic_reclaim:
                                 request(dict(op="compact", spare_columns=0))
                         fill([owner], 512, save=True)
                         prefix = request(dict(op="clone", seq_id=owner, upto=512))[
@@ -319,7 +321,7 @@ def main():
                         request(dict(op="remove", seq_id=scratch))
                         del lengths[scratch]
                         request(dict(op="remove", seq_id=prefix))
-                        if args.arm == "independent":
+                        if args.arm == "independent" and not args.automatic_reclaim:
                             request(dict(op="compact", spare_columns=0))
                         for boundary in [513, 2047, 2048, 2049, 4097, 8193, 12289]:
                             fill([owner], boundary, save=True)
@@ -337,7 +339,7 @@ def main():
                                 request(dict(op="remove", seq_id=scratch))
                                 del lengths[scratch]
                                 request(dict(op="remove", seq_id=prefix))
-                                if args.arm == "independent":
+                                if args.arm == "independent" and not args.automatic_reclaim:
                                     request(dict(op="compact", spare_columns=0))
                         active = [owner]
                         stages = []
@@ -350,7 +352,7 @@ def main():
                                         request(dict(op="remove", seq_id=id))
                                         del lengths[id]
                                 active = [survivor]
-                                if args.arm == "independent":
+                                if args.arm == "independent" and not args.automatic_reclaim:
                                     request(dict(op="compact", spare_columns=0))
                             else:
                                 added = []
@@ -530,6 +532,7 @@ def main():
                 arm=args.arm,
                 same_artifact_pitch_control=args.same_artifact_pitch_control,
                 heterogeneous_histories=True,
+                automatic_reclaim_requested=args.automatic_reclaim,
                 native_gate_sha256=digest(args.native_gate),
                 role="mini",
                 rounds=records,

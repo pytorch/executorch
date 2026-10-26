@@ -59,6 +59,12 @@ def main():
     assert fixed["role"] == runtime["role"]
     assert len(fixed["rounds"]) == len(runtime["rounds"]) == 4
     assert fixed["probe_sha256"] == runtime["probe_sha256"]
+    automatic = runtime.get("automatic_reclaim_requested", False)
+    assert automatic == fixed.get("automatic_reclaim_requested", False)
+    if automatic:
+        assert not any(json.loads(line).get("request", {}).get("op") == "compact"
+                       for root in (a.fixed, a.runtime) for number in range(1,5)
+                       for line in (root / f"round-{number}" / "protocol.jsonl").read_text().splitlines())
     same_artifact = fixed.get("same_artifact_pitch_control", False)
     assert same_artifact == runtime.get("same_artifact_pitch_control", False)
     if same_artifact:
@@ -251,6 +257,8 @@ def main():
             and graph["recapture_after_growth_and_shrink_verified"]
         )
         assert graph["replay_after_growth_and_shrink_verified"]
+        if automatic:
+            assert graph["automatic_reclaim_verified_without_compact_calls"]
         assert graph["probe_sha256"] == runtime["probe_sha256"]
         assert graph["model_PTE_sha256"] == runtime["model_PTE_sha256"]
         graph_pass = True
@@ -270,6 +278,7 @@ def main():
         all_saved_logits_bitwise_equal=exact,
         numerical_rounds=comparisons,
         physical_growth_and_reclamation_pass=True,
+        automatic_reclamation_without_compact_calls_verified=automatic,
         memory_rounds=memory,
         independently_reconstructed_performance=performance,
         performance_uses_four_rounds_first_discarded=True,

@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--nsys', type=Path, required=True)
     parser.add_argument('--wait-minutes', type=int, default=240)
+    parser.add_argument('--automatic-reclaim', action='store_true')
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve prior attempts'
     args.output.mkdir(parents=True)
@@ -49,7 +50,8 @@ def main():
             handle = Path('/proc')/str(progress['controller_pid'])
             assert handle.exists(), 'Preparation handle missing; inspect terminal evidence, never restart here'
             command = (handle/'cmdline').read_bytes().replace(b'\0',b' ')
-            assert b'prepare_independent_session_mini.py' in command
+            assert (b'prepare_independent_session_mini.py' in command or
+                    b'export_independent_session_mini_from_native.py' in command)
             state('waiting-on-confirmed-live-mini-preparation',
                   preparation_pid=progress['controller_pid'],preparation_status=progress['status'])
             if time.monotonic()>=deadline:
@@ -69,7 +71,7 @@ def main():
                  '--expected-PTE-sha256',audit['artifacts']['model.pte']['sha256'],
                  '--expected-weights-sha256',audit['artifacts']['aoti_cuda_blob.ptd']['sha256'],
                  '--arm',arm,'--job-dir',args.output/arm,'--lock',args.lock,
-                 '--nsys',args.nsys],arm+'-probe')
+                 '--nsys',args.nsys,*(['--automatic-reclaim'] if args.automatic_reclaim else [])],arm+'-probe')
         state('reviewing-model-weight-storages')
         weights = args.output/'weight-payload-review.json'
         run([sys.executable,'-B',package/'review_runtime_kv_weight_payload.py',
@@ -91,6 +93,9 @@ def main():
              '--source-spec',package/'independent_session_capacity_source.json',
              '--graph-review',graph,'--weight-payload-review',weights,
              '--output',args.output/'mini-review.json'],'raw-review',timeout=1800)
+        run([sys.executable,'-B',package/'review_independent_session_native_latency.py',
+             '--global-job',args.output/'global','--independent-job',args.output/'independent',
+             '--output',args.output/'native-latency-review.json'],'native-latency-review',timeout=1800)
         state('mini-raw-review-completed-performance-and-HTTP-gates-pending',
               raw_review=str(args.output/'mini-review.json'))
     except Exception as error:

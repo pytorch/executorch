@@ -52,7 +52,9 @@ def main():
         assert preparation["status"] != "failed", preparation
         handle = Path("/proc") / str(preparation["controller_pid"])
         assert handle.exists(), "Preparation handle missing; do not restart"
-        assert b"prepare_independent_session_mini.py" in (handle / "cmdline").read_bytes()
+        command = (handle / "cmdline").read_bytes()
+        assert (b"prepare_independent_session_mini.py" in command or
+                b"export_independent_session_mini_from_native.py" in command)
         (args.output / "progress.json").write_text(json.dumps(dict(
             status="waiting-on-confirmed-live-mini-preparation", controller_pid=os.getpid(),
             preparation_pid=preparation["controller_pid"], preparation_status=preparation["status"],
