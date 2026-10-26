@@ -2464,6 +2464,35 @@ print("ran after its program was dropped")
         output = executorch_module.forward([values, torch.tensor([3])])
         torch.testing.assert_close(torch.as_tensor(np.asarray(output[0])), values[3:4])
 
+    def test_planned_inputs_are_installed_again_at_each_run(self):
+        class Accumulate(torch.nn.Module):
+            def forward(self, x, state):
+                state.add_(x)
+                return state * 1
+
+        x = torch.arange(4, dtype=torch.float32) + 1
+        state = torch.zeros(4)
+        # Each run writes the planned copy of state, so the next run has to
+        # install the caller's tensor again.
+        program = to_edge(export(Accumulate(), (x, state), strict=True)).to_executorch()
+
+        method = self.load_prog_fn(program.buffer).load_method("forward")
+        method.set_inputs([x, state])
+        for _ in range(2):
+            method.execute()
+            torch.testing.assert_close(method.get_outputs()[0], x)
+
+        module = self.load_fn(program.buffer)
+        torch.testing.assert_close(module.forward([x, state])[0], x)
+        torch.testing.assert_close(module.forward([x])[0], x)
+
+        # The inputs are read again, so a change to their storage is refused.
+        state.resize_(64, 64)
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            method.execute()
+        with self.assertRaisesRegex(ValueError, "storage changed"):
+            module.forward([x])
+
     def test_module_keeps_a_temporary_program_buffer_alive(self):
         exported_program, inputs = create_program(ModuleAdd())
         data = bytes(bytearray(exported_program.buffer))

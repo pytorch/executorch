@@ -2415,6 +2415,10 @@ struct PyModule final {
     py::object torch;
 #endif
     std::optional<BorrowedInput> validation;
+    // Set for a memory-planned input. A run may give that memory to other
+    // values or write the input in place, so a later call that omits the
+    // input installs it again from here.
+    TensorPtr planned;
   };
 
   py::object native_output_owner() {
@@ -2515,9 +2519,7 @@ struct PyModule final {
             method_meta, i, at_tensor.scalar_type(), tensor_sizes);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
-          new_input_owners[i].validation.emplace(i, python_input);
-        }
+        new_input_owners[i].validation.emplace(i, python_input);
 #else
         torch_inputs.push_back(read_input(method_meta, i, [&] {
           return std::make_shared<TorchTensorView>(python_input, i);
@@ -2547,9 +2549,7 @@ struct PyModule final {
             tensor->device().type(),
             tensor->device().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
-          new_input_owners[i].validation.emplace(i, tensor->owner());
-        }
+        new_input_owners[i].validation.emplace(i, tensor->owner());
 #endif
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
@@ -2609,8 +2609,7 @@ struct PyModule final {
             buffer->nbytes());
 #endif
         validate_buffer_input(method_meta, i, *buffer);
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned() &&
-            buffer->borrows_data()) {
+        if (buffer->borrows_data()) {
           new_input_owners[i].validation.emplace(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -2647,6 +2646,22 @@ struct PyModule final {
       }
     }
 
+    for (size_t i = 0; i < inputs_size; ++i) {
+      if (!cpp_inputs[i].isTensor()) {
+        continue;
+      }
+      const auto input_meta = method_meta.input_tensor_meta(i);
+      if (input_meta.ok() && input_meta->is_memory_planned()) {
+#ifdef USE_ATEN_LIB
+        // Shares the caller's tensor, because the aliasing make_tensor_ptr
+        // aborts on the non-dense layouts an ATen input may have.
+        new_input_owners[i].planned =
+            std::make_shared<at::Tensor>(cpp_inputs[i].toTensor());
+#else
+        new_input_owners[i].planned = make_tensor_ptr(cpp_inputs[i].toTensor());
+#endif
+      }
+    }
     // Module keeps installed inputs for calls with an omitted or partial
     // input list, so their owners stay alive with it. A call that fails while
     // installing keeps nothing: it may have installed a prefix, but later
@@ -2681,6 +2696,22 @@ struct PyModule final {
     // calls installed, since the runtime does not roll back a prefix.
     for (size_t i = 0; i < inputs_size; ++i) {
       const auto status = module_->set_input(method_name, cpp_inputs[i], i);
+      if (status != Error::Ok) {
+        failed_methods_.insert(method_name);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set input %zu of method %s, error: 0x%" PRIx32,
+            i,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
+    for (size_t i = inputs_size; i < retained.size(); ++i) {
+      if (!retained[i].planned) {
+        continue;
+      }
+      const auto status =
+          module_->set_input(method_name, retained[i].planned, i);
       if (status != Error::Ok) {
         failed_methods_.insert(method_name);
         THROW_IF_ERROR(
@@ -3289,6 +3320,12 @@ struct PyMethod final {
             std::move(state),
             std::move(method))) {
     inputs_set_ = storage_->method->inputs_size() == 0;
+    const auto& meta = storage_->method->method_meta();
+    for (size_t i = 0; i < meta.num_inputs(); ++i) {
+      const auto tag = meta.input_tag(i);
+      has_planned_inputs_ |= tag.ok() && tag.get() == Tag::Tensor &&
+          meta.input_tensor_meta(i)->is_memory_planned();
+    }
   }
 
   void set_inputs(const py::object& python_inputs) {
@@ -3348,11 +3385,7 @@ struct PyMethod final {
             i,
             at_tensor.scalar_type(),
             tensor_sizes);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_input);
-        }
+        borrowed_inputs.emplace_back(i, python_input);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
@@ -3373,13 +3406,9 @@ struct PyMethod final {
                                .input_tensor_meta(i)
                                ->dim_order());
         });
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          // Watch the tensor the method reads: after a layout conversion that
-          // is the copy, which an output aliasing the input can expose.
-          borrowed_inputs.emplace_back(i, view->owner());
-        }
+        // Watch the tensor the method reads: after a layout conversion that
+        // is the copy, which an output aliasing the input can expose.
+        borrowed_inputs.emplace_back(i, view->owner());
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -3410,11 +3439,7 @@ struct PyMethod final {
             at_tensor.scalar_type(),
             std::vector<int>(
                 at_tensor.sizes().begin(), at_tensor.sizes().end()));
-        if (!storage_->method->method_meta()
-                 .input_tensor_meta(i)
-                 ->is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_tensor);
-        }
+        borrowed_inputs.emplace_back(i, python_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
         dlpack_inputs.push_back(
@@ -3458,10 +3483,7 @@ struct PyMethod final {
             buffer->nbytes());
 #endif
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i);
-        if (input_meta.ok() && !input_meta->is_memory_planned() &&
-            buffer->borrows_data()) {
+        if (buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -3511,6 +3533,7 @@ struct PyMethod final {
     }
     inputs_failed_ = false;
     inputs_set_ = true;
+    inputs_ = std::move(cpp_inputs);
     // An output can share memory with an input, by value or through memory
     // planning, so it would now show data no execute() produced.
     outputs_valid_ = false;
@@ -3526,6 +3549,10 @@ struct PyMethod final {
   }
 
   void execute() {
+    execute_installed(/*inputs_just_installed=*/false);
+  }
+
+  void execute_installed(bool inputs_just_installed) {
     ObjectLock lock(mutex_);
     // The output setup below reads inputs through Method::get_input(), which
     // marks them as set and so hides the runtime's own check for unset inputs.
@@ -3546,6 +3573,21 @@ struct PyMethod final {
     handed_outputs_.clear();
     for (const auto& input : borrowed_inputs_) {
       input.validate(storage_->method->method_meta().name());
+    }
+    // Each run reads the caller's inputs, like inputs that are not memory
+    // planned, since an earlier run may have reused or written their planned
+    // copy.
+    if (has_planned_inputs_ && !inputs_just_installed) {
+      const Error status = storage_->method->set_inputs(
+          executorch::aten::ArrayRef<EValue>(inputs_.data(), inputs_.size()));
+      if (status != Error::Ok) {
+        inputs_failed_ = true;
+        THROW_IF_ERROR(
+            status,
+            "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
+            storage_->method->method_meta().name(),
+            static_cast<uint32_t>(status));
+      }
     }
     const auto num_outputs = storage_->method->outputs_size();
     allocate_output_storages();
@@ -3611,7 +3653,7 @@ struct PyMethod final {
   py::list call(const py::object& inputs, bool clone_outputs = true) {
     ObjectLock lock(mutex_);
     set_inputs(inputs);
-    execute();
+    execute_installed(/*inputs_just_installed=*/true);
     return get_outputs(clone_outputs);
   }
 
@@ -3665,6 +3707,12 @@ struct PyMethod final {
   bool inputs_failed_ = false;
   // True only after the last execute() succeeded.
   bool outputs_valid_ = false;
+  // True if any input is memory planned, so its planned memory holds a copy
+  // that each run installs again from inputs_.
+  bool has_planned_inputs_ = false;
+  // What the last successful set_inputs() installed. The tensors point at
+  // memory the members below keep alive.
+  std::vector<EValue> inputs_;
   // Borrowed results retain native storage without retaining this wrapper's
   // Python input owners, which could point back to those same results.
   struct Storage final {

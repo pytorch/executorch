@@ -79,6 +79,16 @@ Calls on a shared method or module are serialized. A sequence of separate
 held by the caller around the whole sequence: `set_inputs` hides the outputs
 until the next `execute`, so another thread's call can land in between.
 
+A run may reuse the memory of inputs that export planned, or write an input in
+place. So each `execute` installs such inputs again from what the caller
+passed, or from the copy the bindings made when an input needed converting. A
+module does the same for inputs kept from an earlier call. A change to the
+storage of a torch tensor or buffer input is then refused; a DLPack producer
+must keep its memory in place while the bindings hold it. A result returned
+with `clone_outputs=False` lives in the method's output memory, so passing it
+back in as an input means each run reads what the run before it wrote there;
+pass a copied result instead.
+
 To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
 environment variable before importing the bindings. The setting is fixed when
 the extension loads, so importing PyTorch later does not change the output type.
