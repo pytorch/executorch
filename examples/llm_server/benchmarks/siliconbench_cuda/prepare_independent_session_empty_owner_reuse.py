@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 import xml.etree.ElementTree as ET
 
@@ -164,6 +165,22 @@ def main():
         binding.verify_runtime(args.output, args.package)
         verify_preserved_baseline()
         if args.mini_preparation_job:
+            deadline = time.monotonic() + 4 * 3600
+            while True:
+                mini_state = json.loads((args.mini_preparation_job / 'progress.json').read_text())
+                if mini_state['status'] == 'mini-artifacts-ready':
+                    break
+                assert mini_state['status'] != 'failed', mini_state
+                pid = mini_state['controller_pid']
+                command = Path('/proc') / str(pid) / 'cmdline'
+                assert command.is_file(), 'Preserve terminal mini export for review'
+                actual_command = command.read_bytes()
+                assert b'export_independent_session_mini_from_native.py' in actual_command
+                assert str(args.mini_preparation_job).encode() in actual_command
+                assert time.monotonic() < deadline, 'Confirmed-live mini export observation expired'
+                state('waiting-on-confirmed-live-mini-artifacts', mini_PID=pid,
+                      mini_status=mini_state['status'], native_tests_passed=True)
+                time.sleep(20)
             alias = args.output / 'same-artifact-mini-preparation'
             alias.mkdir()
             aliases = dict(receipt)

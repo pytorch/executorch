@@ -652,8 +652,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_empty_owner_reuse.py": {
-      "sha256": "da2b188c91d76044f8e8842bb02c3a6a58a4f86fed303bbea9680e3351f9872e",
-      "bytes": 11418
+      "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
+      "bytes": 12484
     },
     "prepare_independent_session_growth_allocator.py": {
       "sha256": "63a6b47df69adc06f80d90cfbd7dc8121f2703f3d9c77d3fe2d058e29a343812",
