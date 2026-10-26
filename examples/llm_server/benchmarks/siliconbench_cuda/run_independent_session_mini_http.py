@@ -142,17 +142,21 @@ def main():
             assert digest(source / name) == expected, name
         dependency_path = None
         if args.http_python_dependencies_job:
-            assert gemma
             dependency_job=args.http_python_dependencies_job
-            assert json.loads((dependency_job/'progress.json').read_text())['status']=='Gemma-HTTP-Python-dependencies-ready'
+            assert json.loads((dependency_job/'progress.json').read_text())['status']==(
+                'Gemma-HTTP-Python-dependencies-ready' if gemma else 'MG-HTTP-Python-dependencies-ready')
             dependency_proof=json.loads((dependency_job/'proof.json').read_text())
             dependency_path=Path(dependency_proof['dependency_path'])
             assert dependency_path.resolve().is_relative_to(dependency_job.resolve())
             assert dependency_proof['installed_only_into_new_owned_target']
             assert dependency_proof['base_torch_triton_versions_unchanged'] and dependency_proof['native_SDK_and_models_unchanged']
             assert dependency_proof['official_server_import_pass']
-            assert dependency_proof['server_source_SHA256']==digest(package/'serve_gemma_runtime_columns.py')
-            assert dependency_proof['Gemma_source_preparation_SHA256']==digest(args.Gemma_source_preparation_job/'source-preparation.json')
+            if gemma:
+                assert dependency_proof['server_source_SHA256']==digest(package/'serve_gemma_runtime_columns.py')
+                assert dependency_proof['Gemma_source_preparation_SHA256']==digest(args.Gemma_source_preparation_job/'source-preparation.json')
+            else:
+                assert dependency_proof['native_gate_SHA256']==root_gate_SHA256
+                assert dependency_proof['server_source_SHA256']==digest(source/'examples/models/muse-glimmer/serving/serve_batching.py')
             for name,expected in dependency_proof['files_SHA256'].items():
                 path=dependency_path/name
                 assert path.resolve().is_relative_to(dependency_path.resolve()) and digest(path)==expected,name
@@ -178,6 +182,7 @@ def main():
                 assert growth['weight_math_ABI_graph_invalidation_and_sliding_unchanged']
                 expected_pool_SHA256=growth['after_SHA256']
                 extra_native_source_hashes={}
+                extra_native_original_hashes={}
                 source_changes=growth
                 if gate.get('stable_fastpath_spec_SHA256'):
                     fast_path=package/'independent_session_stable_repartition_fastpath_source.json'
@@ -197,6 +202,7 @@ def main():
                     assert source_changes==dict(patches=[growth,fast])
                     source_changes=dict(patches=[growth,fast,uploads])
                     extra_native_source_hashes[uploads['file']]=uploads['after_SHA256']
+                    extra_native_original_hashes[uploads['file']]=uploads['before_SHA256']
                 if gate.get('flat_migration_copy_spec_SHA256'):
                     copies_path=package/'independent_session_flat_migration_copy_source.json'
                     copies=json.loads(copies_path.read_text())
@@ -207,6 +213,18 @@ def main():
                     assert source_changes==dict(patches=[growth,fast,uploads])
                     source_changes=dict(patches=[growth,fast,uploads,copies])
                     expected_pool_SHA256=copies['after_SHA256']
+                if gate.get('empty_owner_reuse_spec_SHA256'):
+                    empty_path=package/'independent_session_empty_replacement_source.json'
+                    empty=json.loads(empty_path.read_text())
+                    assert digest(empty_path)==gate['empty_owner_reuse_spec_SHA256']
+                    assert digest(package/'independent_session_empty_replacement.patch')==empty['patch_SHA256']
+                    changes=empty['variants']['Gemma-stable-metadata']
+                    assert len(changes)==2 and changes[0]['file']==growth['file']
+                    assert changes[0]['before_SHA256']==expected_pool_SHA256
+                    source_changes=dict(patches=source_changes['patches']+changes)
+                    expected_pool_SHA256=changes[0]['after_SHA256']
+                    extra_native_source_hashes[changes[1]['file']]=changes[1]['after_SHA256']
+                    extra_native_original_hashes[changes[1]['file']]=changes[1]['before_SHA256']
                 if 'actual_native_source_change' in gate:
                     assert gate['actual_native_source_change']==source_changes
                     assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
@@ -226,7 +244,7 @@ def main():
                     assert digest(Path(original_gate['source'])/name)==record['after_SHA256'],name
                     expected=expected_pool_SHA256 if name==growth['file'] else record['after_SHA256']
                     if name in extra_native_source_hashes:
-                        assert record['after_SHA256']==uploads['before_SHA256']
+                        assert record['after_SHA256']==extra_native_original_hashes[name]
                         expected=extra_native_source_hashes[name]
                     assert digest(source/name)==expected,name
                 assert gate['unchanged_controls']==original_gate['unchanged_controls']
@@ -241,7 +259,9 @@ def main():
                     for t in tests)
                 assert gate['source_spec_SHA256']==receipt['original_native_gate']['source_spec_SHA256']
                 assert digest(source/growth['file'])==expected_pool_SHA256
-                original_mini=Path(preparation['original_mini_preparation'])
+                original_mini=Path(preparation.get('original_mini_preparation',
+                    str((args.preparation_job/'mini-independent-artifact').resolve().parent)))
+                assert (args.preparation_job/'mini-global-artifact').resolve().parent==original_mini.resolve()
                 original_model_gate=json.loads((original_mini/'native-gate.json').read_text())
                 assert original_model_gate['Gemma_source_preparation_SHA256']==receipt_SHA256
                 assert original_model_gate['source']==receipt['original_native_gate']['source']

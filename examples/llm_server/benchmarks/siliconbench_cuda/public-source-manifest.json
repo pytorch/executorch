@@ -683,6 +683,10 @@
       "sha256": "a1d9cc7607fc96c67ce9af55f47c43b466591fe66855c34ce9a87463b1503131",
       "bytes": 2703
     },
+    "prepare_mg_http_python_dependencies.py": {
+      "sha256": "3c330ba424d710f9b519efe2c55dee89950ce48a7deb5fa58b7eb51c4e697264",
+      "bytes": 4309
+    },
     "prepare_native_INT4_model_control.py": {
       "sha256": "ac138847b81e2edf6574ce8366ab94f00f956375dbb3660a769998dbe5eff5cc",
       "bytes": 5389
@@ -814,6 +818,10 @@
     "receive_verified_model_artifact.py": {
       "sha256": "91e649c0334066c129d7abd53ff4d6fc9a0b2fc474a86b03789e5e578312608f",
       "bytes": 3672
+    },
+    "resume_independent_session_mini_after_HTTP_failure.py": {
+      "sha256": "d15113d914efca2c86a6f40239442e7694e28def91d6ab7775f99cda530eeef9",
+      "bytes": 8189
     },
     "resume_matrix_24h.py": {
       "sha256": "b111d9a30c4a3540bc797478020f47eb9fe5214c97bd6102279109c87cc7b69f",
@@ -996,8 +1004,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "e941e14554753b1adc2d68b1c66bcaa02b83c3bb056d1887960270cdeea71d82",
-      "bytes": 35501
+      "sha256": "9b1cbd37a79fa3ac6a0fbd1cfb3960559b44ce1f59ab998c72daba94899d6a6d",
+      "bytes": 37151
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "f296b5afe6bfed0ecba7a8f18310bc7c573eed12668a7d4e40aa7dff479bc1d4",
