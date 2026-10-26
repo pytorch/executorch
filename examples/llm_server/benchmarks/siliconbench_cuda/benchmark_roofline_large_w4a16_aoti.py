@@ -32,7 +32,10 @@ def main():
     for n in ['et-source','gguf','policy','output','lock']:p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--role',choices=['ffn_down','ffn_gate_up','attention_out'],required=True)
     p.add_argument('--max-M',type=int,default=1024)
+    p.add_argument('--additional-M',type=int,nargs='*',default=[],
+                   help='Extra same-policy runtime rows for crossover refinement')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
+    assert all(65<=m<=a.max_M for m in a.additional_M)
     report=dict(cases=[],rounds=4,discard_first=True,model_accepted=False,main_results_changed=False)
     def state(status,**extra):
         (a.output/'results.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -64,7 +67,7 @@ def main():
             torch.set_num_threads(2);torch.backends.cuda.matmul.allow_tf32=False
             assert digest(a.gguf)=='4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e'
             policy=json.loads(a.policy.read_text());index=register_policy(policy)
-            report.update(policy=policy,policy_SHA256=digest(a.policy),GGUF_SHA256=digest(a.gguf),dynamic_range=[65,a.max_M],activation='BF16',weights_are_explicit_inputs=True)
+            report.update(policy=policy,policy_SHA256=digest(a.policy),GGUF_SHA256=digest(a.gguf),dynamic_range=[65,a.max_M],activation='BF16',weights_are_explicit_inputs=True,additional_runtime_rows=a.additional_M)
             def portable(raw):
                 assert raw.tensor_type==GGMLQuantizationType.Q4_K
                 n=int(raw.shape[-1]);data=torch.from_numpy(np.array(raw.data,copy=True)).view(torch.uint8).reshape(n,-1)
@@ -122,6 +125,7 @@ def main():
                     report[name+'_package']=dict(SHA256=digest(path),bytes=path.stat().st_size,range_constraints=str(ep.range_constraints),compiler_examples='export graph symbolic FakeTensors',static_hint_guard_absent=True)
                 oracle=materialize(w,arithmetic='native-zero-fma-bf16',bk=128)
                 boundaries={65,72,128,256,512,520,a.max_M}
+                boundaries.update(a.additional_M)
                 for branch in policy['branches']:boundaries.update([branch['max_M']-1,branch['max_M'],branch['max_M']+1])
                 def numeric(y,target):
                     delta=y.float()-target.float()
