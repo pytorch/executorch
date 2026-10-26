@@ -31,6 +31,7 @@ def main():
     for name in ("preparation-job", "lock", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
+    parser.add_argument("--after-logit-collision-job", type=Path)
     args = parser.parse_args()
     assert not args.output.exists()
     args.output.mkdir(parents=True)
@@ -44,6 +45,22 @@ def main():
 
     records = []
     try:
+        if args.after_logit_collision_job:
+            previous = args.after_logit_collision_job
+            until = time.monotonic() + 60 * args.wait_minutes
+            while True:
+                old = json.loads((previous / "progress.json").read_text())
+                handle = Path("/proc") / str(old["controller_pid"])
+                if old["status"] == "failed" and not handle.exists():
+                    assert "preserve prior logits" in old["error"], old
+                    break
+                assert handle.exists()
+                assert b"run_independent_session_same_artifact_control.py" in (handle / "cmdline").read_bytes()
+                state("waiting-on-confirmed-owned-diagnostic", previous_pid=old["controller_pid"])
+                if time.monotonic() >= until:
+                    state("observation-timeout", previous_still_running=True)
+                    return
+                time.sleep(20)
         deadline = time.monotonic() + 60 * args.wait_minutes
         while True:
             preparation = json.loads((args.preparation_job / "progress.json").read_text())
@@ -118,8 +135,12 @@ def main():
                                     log.write(line)
 
                             assert receive()["ready"]
+                            serial = 0
 
                             def request(value):
+                                nonlocal serial
+                                serial += 1
+                                value["tag"] = "command-" + str(serial)
                                 protocol.write(json.dumps(dict(request=value)) + "\n")
                                 protocol.flush()
                                 child.stdin.write(json.dumps(value) + "\n")
