@@ -84,3 +84,12 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
       $<TARGET_FILE_DIR:nemotron3_diarization_runner>
   )
 endif()
+if(EXECUTORCH_BUILD_VULKAN)
+  if(NOT TARGET vulkan_backend)
+    message(
+      FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_VULKAN=ON"
+    )
+  endif()
+  executorch_target_link_options_shared_lib(vulkan_backend)
+  target_link_libraries(nemotron3_diarization PUBLIC vulkan_backend)
+endif()

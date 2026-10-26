@@ -11,6 +11,10 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
+# The reusable smoke installer selects PyTorch's index; ET also needs PyPI packages.
+export PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:+${PIP_EXTRA_INDEX_URL} }https://pypi.org/simple"
+echo "PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}" >> "${GITHUB_ENV}"
+
 # Initialize submodules here instead of during checkout so we can use OpenSSL
 # on Windows (schannel fails with SEC_E_ILLEGAL_MESSAGE on some gitlab hosts).
 UNAME_S=$(uname -s)
@@ -33,6 +37,15 @@ fi
 popd
 
 if [[ "$(uname -m)" == "aarch64" ]]; then
+  # pip's SentencePiece source build also links -latomic, but the manylinux
+  # image only has the versioned runtime library.
+  atomic_lib=$(cc -print-file-name=libatomic.so.1)
+  if [[ -f "${atomic_lib}" ]]; then
+    atomic_link_dir=$(mktemp -d)
+    ln -s "${atomic_lib}" "${atomic_link_dir}/libatomic.so"
+    export LIBRARY_PATH="${atomic_link_dir}${LIBRARY_PATH:+:${LIBRARY_PATH}}"
+  fi
+
   # On some Linux aarch64 systems, the "atomic" library is not found during linking.
   # To work around this, replace "atomic" with the literal ${ATOMIC_LIB} so the
   # build system uses the full path to the atomic library.
@@ -116,6 +129,23 @@ else
     export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=ON"
     echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
     echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' is a CUDA row, requiring the CUDA build"
+    # The Linux rows take the row's GPU list from envvar_cuda_linux.sh. Windows has no env-var
+    # script slot, so the same list is resolved here; without it the build compiles device
+    # code only for whatever GPU the builder has. The reusable workflow writes its own list
+    # into BUILD_ENV_FILE, which the build step sources after this hook and which would
+    # otherwise win, so the row's list is appended there as well as to GITHUB_ENV.
+    # Also needed for the ninja the Windows CUDA build generates with.
+    if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+        source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
+        TORCH_CUDA_ARCH_LIST="$(EXECUTORCH_BUILD_CUDA=1 executorch_cuda_arch_list)"
+        export TORCH_CUDA_ARCH_LIST
+        echo "TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}" >> "${GITHUB_ENV}"
+        if [[ -n "${BUILD_ENV_FILE:-}" ]]; then
+            echo "export TORCH_CUDA_ARCH_LIST='${TORCH_CUDA_ARCH_LIST}'" >> "${BUILD_ENV_FILE}"
+        fi
+        echo "building device code for: ${TORCH_CUDA_ARCH_LIST}"
+        pip install --quiet ninja
+    fi
 fi
 
 # On Windows, enable symlinks and re-checkout the current revision to create
@@ -125,14 +155,6 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     git config core.symlinks true
     git checkout -f HEAD
 
-    # Windows wheels are CPU-only (build-wheels-windows.yml sets
-    # with-cuda: disabled), but the Windows CI image ships a CUDA toolkit on
-    # PATH, which makes setup.py auto-enable EXECUTORCH_BUILD_CUDA. That bakes a
-    # CUDA _C into the CPU wheel, which then fails its DLL load in the
-    # smoke test ("DLL load failed while importing _C"). Force a
-    # CPU-only build.
-    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
-    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
 
 # Manually install build requirements because `python setup.py bdist_wheel` does
@@ -141,6 +163,21 @@ fi
 # able to see the installed torch package.
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
+
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
+  PYTHON_BIN=$(command -v python || command -v python3)
+  if "${PYTHON_BIN}" -c 'import sys; sys.exit(sys.version_info < (3, 15))'; then
+    # No cp315 tokenizer wheel is published. Build the pinned source with the
+    # existing build dependencies and Visual Studio environment before smoke install.
+    # MSBuild's file tracker needs a short path even during CMake compiler checks.
+    tokenizer_source_dir=$(mktemp -d /c/et-tok.XXXXXX)
+    # Dereference submodule symlinks because MSYS cannot recreate them on every runner.
+    cp -RL extension/llm/tokenizers/. "${tokenizer_source_dir}"
+    cmd //c '.ci\scripts\wheel\vc_env_helper.bat' python -m pip install \
+      --no-build-isolation "$(cygpath -w "${tokenizer_source_dir}")"
+    rm -rf "${tokenizer_source_dir}"
+  fi
+fi
 
 # Enable VGF in pybind wheel builds when the platform-specific build input is
 # available from pip.
@@ -202,7 +239,8 @@ if [[ "${EXECUTORCH_BUILD_VULKAN:-0}" != "0" \
     echo "glslc installed: $(command -v glslc)"
   fi
 else
-  # This is the Vulkan equivalent of the Windows CUDA force-off above (#20527).
+  # Off unless asked for: a builder with the Vulkan SDK would otherwise turn it on
+  # for a wheel that does not ship it, as a CUDA toolkit once did for Windows (#20527).
   export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_VULKAN=OFF"
   echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi

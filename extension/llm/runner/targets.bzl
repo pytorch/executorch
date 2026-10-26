@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -148,6 +148,7 @@ def define_common_targets():
                 "llm_runner_helper.cpp",
                 "multimodal_runner.cpp",
             ],
+            headers = ["multimodal_runner.h"] if not runtime.is_oss and not is_xplat() else [],
             visibility = ["PUBLIC"],
             compiler_flags = [
                 "-Wno-missing-prototypes",
