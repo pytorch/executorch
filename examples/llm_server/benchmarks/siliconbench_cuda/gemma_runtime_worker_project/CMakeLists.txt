@@ -20,9 +20,12 @@ add_library(siliconbench_multiplexed_worker STATIC
 target_include_directories(siliconbench_multiplexed_worker PUBLIC "${ET_SOURCE}/.."
   "${ET_SOURCE}/extension/llm/tokenizers/third-party/json/single_include")
 target_link_libraries(siliconbench_multiplexed_worker PUBLIC extension_llm_serving Threads::Threads)
-add_executable(gemma_runtime_columns_worker "${CMAKE_CURRENT_SOURCE_DIR}/../gemma_runtime_columns_worker.cpp")
+if(NOT GEMMA_WORKER_SOURCE)
+  set(GEMMA_WORKER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../gemma_runtime_columns_worker.cpp")
+endif()
+add_executable(gemma_runtime_columns_worker "${GEMMA_WORKER_SOURCE}")
 target_compile_definitions(gemma_runtime_columns_worker PRIVATE EXECUTORCH_BUILD_CUDA)
-target_include_directories(gemma_runtime_columns_worker PRIVATE "${ET_SOURCE}/.." "${ET_SOURCE}/cmake-out/include")
+target_include_directories(gemma_runtime_columns_worker PRIVATE "${ET_SOURCE}/.." "${ET_SOURCE}/cmake-out/include" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(gemma_runtime_columns_worker PRIVATE siliconbench_multiplexed_worker
   cuda_batching extension_llm_batching extension_llm_cache extension_llm_sampler
   extension_module extension_tensor executorch optimized_native_cpu_ops_lib

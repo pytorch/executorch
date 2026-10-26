@@ -452,8 +452,8 @@
       "bytes": 73004
     },
     "gemma_runtime_worker_project/CMakeLists.txt": {
-      "sha256": "3c6ee8506baa13a34241ab556824344ed953504719808a9d50a5b61c2b723144",
-      "bytes": 1889
+      "sha256": "936d34533651834f9404b4a8f79c61422382c3c1b1b5baa6a1d830d2b536c092",
+      "bytes": 2010
     },
     "handoff_cpp_quality.py": {
       "sha256": "4f70dea79e92a938f11d1cd847c0ff64b76f084c021a4b3902f58b611e18f513",
@@ -551,6 +551,10 @@
       "sha256": "134b634bc1f11f8005074fc53d8d29aa10df7260bbba28cd7befdc1dcde821a2",
       "bytes": 13980
     },
+    "prepare_gemma_canonical_tokenizer.py": {
+      "sha256": "a93bbd3ea26f9c7d89c183cf7bc07bb72bc11bb015051e9e5a465bb765f4edc5",
+      "bytes": 2715
+    },
     "prepare_gemma_checkpoint.py": {
       "sha256": "529899e20859e2a2ba150e4fce7366a52165a5bd7b6fd556058a99a74194e233",
       "bytes": 9427
@@ -562,6 +566,10 @@
     "prepare_gemma_independent_session_mini_source.py": {
       "sha256": "141474269ec45b797995ea42b17686d29601c74b5bd67d6c4ca523a0e8bf1700",
       "bytes": 9469
+    },
+    "prepare_gemma_kv_memory_worker.py": {
+      "sha256": "e5fc74d4293e38ece2d4c388d2daad5c139104d9e287ca352a4fba8b23388794",
+      "bytes": 5955
     },
     "prepare_gemma_lowpeak_core.py": {
       "sha256": "0b653db77970063dfc9427b07f651050876464ee13314037bf8e43285d1df933",
@@ -848,8 +856,8 @@
       "bytes": 7624
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "9ba4fb4a2374ab12da9f8a95a3908df0edfcefd3a59f91910a6f60c2e46653a9",
-      "bytes": 21109
+      "sha256": "eb6a11b2e2dcefa4e050501c8dd02864164d648c55646672a2c03ded4e265d36",
+      "bytes": 23250
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "1cb04a5b327f8611ef471f9015d64ae9ee8d20a750c17859617e4651d3ce39a8",

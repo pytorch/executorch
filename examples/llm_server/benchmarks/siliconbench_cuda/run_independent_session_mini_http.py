@@ -24,6 +24,7 @@ import traceback
 import urllib.request
 
 from trace_gemma_runtime_http_memory import NVML
+from independent_session_mini_profiles import DEFAULT_PROFILE, PROFILES, validate_mini_audit
 
 
 def digest(path):
@@ -41,9 +42,13 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument("--memory-worker-proof", type=Path)
+    parser.add_argument('--mini-profile',choices=PROFILES,default=DEFAULT_PROFILE)
+    parser.add_argument('--Gemma-source-preparation-job',type=Path)
     parser.add_argument("--disable-native-memory-sampling", action="store_true",
                         help="Use the verified memory worker binary with its sampler disabled")
     args = parser.parse_args()
+    gemma=args.mini_profile=='gemma4-first6'
+    assert not gemma or (args.Gemma_source_preparation_job is not None and args.memory_worker_proof is not None)
     assert not args.disable_native_memory_sampling or args.memory_worker_proof is not None
     assert 1024 <= args.port <= 65535
     assert not args.output.exists()
@@ -58,7 +63,9 @@ def main():
         assert handle.exists(), "Preparation handle missing; do not restart"
         command = (handle / "cmdline").read_bytes()
         assert (b"prepare_independent_session_mini.py" in command or
-                b"export_independent_session_mini_from_native.py" in command)
+                b"export_independent_session_mini_from_native.py" in command or
+                b"prepare_independent_session_shared_autotune_mini.py" in command or
+                (gemma and b"prepare_gemma_independent_session_mini_pair.py" in command))
         (args.output / "progress.json").write_text(json.dumps(dict(
             status="waiting-on-confirmed-live-mini-preparation", controller_pid=os.getpid(),
             preparation_pid=preparation["controller_pid"], preparation_status=preparation["status"],
@@ -74,29 +81,48 @@ def main():
     gate = json.loads(gate_path.read_text())
     assert gate["native_GPU_tests_pass"] and gate["test_count"] >= 29
     source = Path(gate["source"])
+    package=Path(__file__).resolve().parent
     worker = args.preparation_job / "model-build/muse_glimmer_batching_worker"
     assert digest(worker) == gate["binaries"][str(worker)]
     memory_proof = None
     if args.memory_worker_proof:
         memory_proof = json.loads(args.memory_worker_proof.read_text())
         assert memory_proof["native_gate_SHA256"] in (
-            digest(gate_path), gate.get("imported_native_gate_SHA256"))
-        assert memory_proof["original_worker_SHA256"] == digest(worker)
+            digest(gate_path), gate.get("imported_native_gate_SHA256"),
+            digest(source.parent/'native-gate.json') if gemma else None)
+        if not gemma:
+            assert memory_proof["original_worker_SHA256"] == digest(worker)
+        else:
+            assert memory_proof['existing_Gemma_llm_server_adapter_preserved']
+            assert memory_proof['scheduler_stops_tokenizer_transport_unchanged']
+            assert memory_proof['original_source_and_SDK_unchanged']
+            assert memory_proof['original_Gemma_worker_source_SHA256']==digest(package/'gemma_runtime_columns_worker.cpp')
         assert memory_proof["source"] == gate["source"]
-        assert memory_proof["official_control_flow_preserved"] and memory_proof["no_inference_kernel_change"]
+        assert (gemma or memory_proof["official_control_flow_preserved"]) and memory_proof["no_inference_kernel_change"]
         for name, expected in memory_proof["unchanged_SDK_libraries"].items():
             assert digest(Path(name)) == expected, name
         worker = Path(memory_proof["instrumented_worker"])
         assert digest(worker) == memory_proof["instrumented_worker_SHA256"]
     for name, expected in gate["unchanged_controls"].items():
         assert digest(source / name) == expected, name
+    if gemma:
+        from prepare_gemma_canonical_tokenizer import FILES
+        for name,(expected,count) in FILES.items():
+            assert (args.tokenizer/name).stat().st_size==count and digest(args.tokenizer/name)==expected,name
+        receipt_path=args.Gemma_source_preparation_job/'source-preparation.json'
+        receipt=json.loads(receipt_path.read_text())
+        assert digest(receipt_path)==gate['Gemma_source_preparation_SHA256']
+        assert receipt['original_native_gate']['source']==gate['source']
+        assert receipt['original_source_and_binaries_unchanged']
+        source=Path(receipt['new_source'])
+        for name,expected in receipt['source_files'].items():assert digest(source/name)==expected,name
     assert args.python.is_file() and (args.tokenizer / "tokenizer.json").is_file()
     cache_config = (source / "extension/llm/cache/cache.h").read_text()
     assert "int initial_capacity = 512;" in cache_config
     factory = (source / "examples/models/muse-glimmer/runtime/backend_factory.cpp").read_text()
     assert "CudaExecutorConfig executor_config;" in factory
-    explicit_initial = "executor_config.initial_capacity" in factory
-    if explicit_initial:
+    explicit_initial = gemma or "executor_config.initial_capacity" in factory
+    if explicit_initial and not gemma:
         assert "executor_config.initial_capacity = config.initial_kv_capacity;" in factory
         bootstrap = (source / "examples/models/muse-glimmer/runtime/runners/batching_bootstrap.cpp").read_text()
         assert 'DEFINE_int32(initial_kv_capacity, -1,' in bootstrap
@@ -107,8 +133,7 @@ def main():
     for arm in ("global", "independent"):
         artifact = args.preparation_job / ("mini-" + arm + "-artifact")
         audit = json.loads((artifact / "independent-mini-artifact-audit.json").read_text())
-        assert audit["mini_is_not_full_model"] and audit["retained_original_layer_indices"] == [0, 1, 2, 3]
-        assert audit["runtime_columns"] and audit["independent_capacity"] == (arm == "independent")
+        validate_mini_audit(audit,args.mini_profile,arm=='independent')
         assert audit["source_spec_sha256"] == gate["source_spec_SHA256"]
         for name in ("model.pte", "aoti_cuda_blob.ptd"):
             assert digest(artifact / name) == audit["artifacts"][name]["sha256"]
@@ -163,12 +188,14 @@ def main():
                     sampler = threading.Thread(target=sample, daemon=True)
                     sampler.start()
                     artifact = artifacts[arm]
-                    command = [str(args.python), "-B", "-m",
+                    model_id='gemma4-first6-mini' if gemma else 'mg-four-layer-mini'
+                    command = ([str(args.python),'-B',str(package/'serve_gemma_runtime_columns.py')]
+                        if gemma else [str(args.python), "-B", "-m",
                                "executorch.examples.models.muse_glimmer.serving.serve_batching",
-                               "--worker-bin", str(worker), "--model-path", str(artifact / "model.pte"),
+                        ]) + ["--worker-bin", str(worker), "--model-path", str(artifact / "model.pte"),
                                "--data-path", str(artifact / "aoti_cuda_blob.ptd"),
                                "--tokenizer-path", str(args.tokenizer), "--hf-tokenizer", str(args.tokenizer),
-                               "--backend", "cuda", "--model-id", "mg-four-layer-mini",
+                               "--model-id", model_id,
                                "--max-context", "131072", "--max-sessions", "16",
                                "--max-decode-sequences", "16", "--max-inflight-requests", "16",
                                "--prefix-cache-entries", "4" if prefix == "on" else "0",
@@ -176,6 +203,10 @@ def main():
                                "--tool-parser", "none", "--host", "127.0.0.1", "--port", str(args.port)]
                     if explicit_initial:
                         command.extend(["--initial-kv-capacity", "512"])
+                    if not gemma:
+                        command.extend(['--backend','cuda'])
+                    else:
+                        command.extend(['--raw-tool-text'])
                     (directory / "launch.json").write_text(json.dumps(dict(argv=command), indent=2) + "\n")
                     env = {**os.environ, "PYTHONPATH": str(source.parent), "CUDA_VISIBLE_DEVICES": "0"}
                     env.pop("ET_CUDA_BENCH_MEMORY_TRACE", None)
@@ -208,7 +239,7 @@ def main():
                                 count = 12200 if owner == 0 else 128 + owner * 43
                                 content = (" orange" * count if owner == 0 else " blue" * count)
                                 content += "\nContinue with the word green."
-                                body = dict(model="mg-four-layer-mini", session_id="mini-" + str(owner),
+                                body = dict(model=model_id, session_id="mini-" + str(owner),
                                             messages=[dict(role="user", content=content)],
                                             stream=True, stream_options=dict(include_usage=True),
                                             max_tokens=64, temperature=0, top_p=1)
@@ -304,6 +335,7 @@ def main():
                                        mean_TPS=statistics.mean(values[1:]),
                                        sample_SD_TPS=statistics.stdev(values[1:]), first_discarded_TPS=values[0]))
     result = dict(actual_official_HTTP_server=True, mini_only=True, context=131072,
+                  mini_profile=args.mini_profile,uses_existing_Gemma_llm_server_adapter=gemma,
                   initial_KV_capacity=512, concurrency_sequence=[1, 2, 4, 8, 16, 1],
                   prefix_modes=["off", "on"], prefix_entries_on=4, prefix_checkpoint_interval_on=512,
                   four_rounds_first_discarded=True, alternating_arm_order=True,
