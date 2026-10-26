@@ -159,11 +159,16 @@ GIL. On an idle device a wait is short:
 synchronization has no C++ ATen dependency.
 
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
-method. Bfloat16 results expose flat bytes through the buffer protocol because
-NumPy and PEP 3118 do not define that numeric dtype. DLPack consumers receive the
-original bfloat16 dtype and tensor shape. A bfloat16 result passed back in is
-read through DLPack too, so it keeps its own shape and dim order instead of
-taking the method's.
+method. NumPy and PEP 3118 do not define bfloat16, so the buffer protocol shows
+a bfloat16 result as 16-bit unsigned integers in its real shape and layout.
+Other dtypes NumPy lacks, such as float8, are shown the same way, as integers of
+the same width. NumPy converts that view as integers, so
+`np.asarray(out, dtype=np.float32)` gives the bit patterns as numbers, not the
+bfloat16 values. DLPack consumers, such as `torch.from_dlpack(out)`, receive the
+original bfloat16 dtype. A bfloat16 result passed back in is read through DLPack
+too, so it keeps its dtype, shape, and dim order. A bfloat16 input does not
+accept 16-bit integers, so that integer data is never read as bfloat16 by
+mistake; pass the result itself or raw bytes.
 
 ```python
 import cupy as cp

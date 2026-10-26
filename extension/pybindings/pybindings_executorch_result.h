@@ -50,9 +50,9 @@ inline const PyTensorDType& python_dtype(
       {ScalarType::ComplexFloat, "complex64", "complex64", "Zf"},
       {ScalarType::ComplexDouble, "complex128", "complex128", "Zd"},
       {ScalarType::Bool, "bool", "bool", "?"},
-      {ScalarType::QInt8, "qint8", nullptr, nullptr},
+      {ScalarType::QInt8, "qint8", nullptr, "b"},
       {ScalarType::QUInt8, "quint8", nullptr, nullptr},
-      {ScalarType::QInt32, "qint32", nullptr, nullptr},
+      {ScalarType::QInt32, "qint32", nullptr, "i"},
       {ScalarType::BFloat16, "bfloat16", nullptr, nullptr},
       {ScalarType::QUInt4x2, "quint4x2", nullptr, nullptr},
       {ScalarType::QUInt2x4, "quint2x4", nullptr, nullptr},
@@ -176,11 +176,6 @@ class PyExecuTorchResult final
 
   py::buffer_info buffer() {
     require_cpu_buffer();
-    // PEP 3118 has no bfloat16 format. Expose its physical bytes without
-    // advertising a different numeric dtype; DLPack preserves the real dtype.
-    if (scalar_type_ == executorch::aten::ScalarType::BFloat16) {
-      return flat_buffer();
-    }
     std::vector<py::ssize_t> shape(sizes_.begin(), sizes_.end());
     std::vector<py::ssize_t> byte_strides;
     const auto itemsize = executorch::runtime::elementSize(scalar_type_);
@@ -192,7 +187,7 @@ class PyExecuTorchResult final
     return py::buffer_info(
         data_,
         itemsize,
-        require_buffer_format(),
+        buffer_format(),
         ndim,
         std::move(shape),
         std::move(byte_strides),
@@ -661,15 +656,27 @@ class PyExecuTorchResult final
     }
   }
 
-  const char* require_buffer_format() const {
+  // PEP 3118 has no format for dtypes such as bfloat16. An unsigned integer of
+  // the same width keeps the real shape and layout; dtype_name says how to read
+  // each element.
+  const char* buffer_format() const {
     const auto* format = python_dtype(scalar_type_).buffer_format;
-    if (format == nullptr) {
-      throw py::buffer_error(
-          std::string("ExecuTorch result dtype ") +
-          executorch::runtime::toString(scalar_type_) +
-          " cannot use the Python buffer protocol");
+    if (format != nullptr) {
+      return format;
     }
-    return format;
+    switch (executorch::runtime::elementSize(scalar_type_)) {
+      case 1:
+        return "B";
+      case 2:
+        return "H";
+      case 4:
+        return "I";
+      default:
+        throw py::buffer_error(
+            std::string("ExecuTorch result dtype ") +
+            executorch::runtime::toString(scalar_type_) +
+            " cannot use the Python buffer protocol");
+    }
   }
 
   void* data_ = nullptr;

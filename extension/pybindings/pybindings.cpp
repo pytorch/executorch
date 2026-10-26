@@ -1618,8 +1618,8 @@ bool prefer_dlpack_input(const py::handle& value) {
     return true;
   }
   // A result of these bindings always takes the DLPack path, which keeps its
-  // real dtype, shape, and strides. A bfloat16 result exports flat bytes
-  // instead, which the buffer path would read in the method's layout.
+  // real dtype, shape, and strides. Its buffer view of a dtype such as bfloat16
+  // is an unsigned integer, which a bfloat16 input would refuse.
   if (py::isinstance<PyExecuTorchResult>(value)) {
     return true;
   }
