@@ -1031,6 +1031,10 @@
       "sha256": "a47d3ef310fc0f833bf913d6bc360530eb8ee7316fb53734225a8fad302a27a0",
       "bytes": 6326
     },
+    "run_full_MG_matched_native_after_controls.py": {
+      "sha256": "92102a379bc52ae44ff7f85cc5450d79582c7237b56815e9b5cf56491f87350c",
+      "bytes": 5670
+    },
     "run_full_independent_session_fixed_qualification.py": {
       "sha256": "65560eeeb54405116de1357127dadbb1ed64cd8cc99f34b8b200cb91cb0e3d7e",
       "bytes": 9647
@@ -1104,8 +1108,8 @@
       "bytes": 17288
     },
     "run_interleaved_native_clock_control.py": {
-      "sha256": "44764008fb56a6b43a0c237884a10f8eb94c1b2f6d55ff6863d15490d053fc1a",
-      "bytes": 9792
+      "sha256": "216a45e84afa30107a153d0a07afe0aa2603a18be1e46574a6ccbfa98d6c4543",
+      "bytes": 9809
     },
     "run_matched_native_control_after_mini.py": {
       "sha256": "bb3a5b2976c196b2b783a4f294b15275aa0e4cf3514e4274e0ba3791f7557d2e",

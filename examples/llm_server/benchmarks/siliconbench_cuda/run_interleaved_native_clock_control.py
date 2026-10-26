@@ -110,7 +110,7 @@ while time.monotonic()<end:
    docs=[json.loads(Path(r['result']).read_text()) for r in selected]
    result={k:v for k,v in docs[0].items() if k not in ('rounds','aggregates','diagnostic_single_round','actual_profiled_rounds')}
    result.update(rounds=[r for d in docs for r in d['rounds']],aggregates=[],
-    diagnostic_single_round=None,four_rounds_first_discarded=True,actual_profiled_rounds=[1,1],
+    diagnostic_single_round=None,four_rounds_first_discarded=True,actual_profiled_rounds=[1]*len(selected_arms),
     interleaved_native_round_order=True,all_actual_child_results_verified=selected)
    for r in selected:
     child=Path(r['result']).parent;(dest/f"round-{r['round']}").symlink_to(child/f"round-{r['round']}")
