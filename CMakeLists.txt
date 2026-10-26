@@ -328,6 +328,9 @@ else()
   set(BUILD_TESTING OFF)
 endif()
 
+if(EXECUTORCH_BUILD_NATIVE)
+  set(JSON_Install ON)
+endif()
 add_subdirectory(third-party)
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
@@ -781,6 +784,22 @@ elseif(EXECUTORCH_BUILD_CUDA)
          "find_dependency(CUDAToolkit)\n"
   )
 endif()
+if(EXECUTORCH_BUILD_NATIVE)
+  string(APPEND _executorch_backend_dependencies
+         "find_dependency(libzip CONFIG)\n"
+         "find_dependency(nlohmann_json CONFIG)\n" "find_dependency(Threads)\n"
+  )
+endif()
+if(EXECUTORCH_BUILD_NATIVE_GGML)
+  string(
+    APPEND _executorch_backend_dependencies
+    "find_dependency(ggml 0.27 CONFIG)\n" "if(NOT TARGET executorch_ggml)\n"
+    "  add_library(executorch_ggml ALIAS ggml::ggml)\n" "endif()\n"
+  )
+endif()
+if(EXECUTORCH_BUILD_VULKAN)
+  string(APPEND _executorch_backend_dependencies "find_dependency(Threads)\n")
+endif()
 configure_file(
   tools/cmake/executorch-backend-dependencies.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake @ONLY
@@ -788,7 +807,10 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
-if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+if(EXECUTORCH_BUILD_VULKAN
+   OR EXECUTORCH_BUILD_VGF
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
 endif()
 
@@ -1417,7 +1439,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
     )
     add_library(
-      aten_bridge
+      aten_bridge STATIC
       ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
     )
     set_target_properties(aten_bridge PROPERTIES CXX_STANDARD 20)
@@ -1428,11 +1450,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       aten_bridge PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
     )
     target_compile_options(aten_bridge PUBLIC ${_pybind_compile_options})
+    # aten_bridge is static, so _training_lib gets this link. torch would record
+    # libtorch_cuda with a CUDA build of PyTorch; torch_cpu_library does not.
     if(EXECUTORCH_BUILD_SHARED)
-      target_link_libraries(aten_bridge PRIVATE torch c10 executorch_shared)
+      target_link_libraries(
+        aten_bridge PRIVATE torch_cpu_library c10 executorch_shared
+      )
     else()
       target_link_libraries(
-        aten_bridge PRIVATE torch c10 executorch extension_tensor
+        aten_bridge PRIVATE torch_cpu_library c10 executorch extension_tensor
       )
     endif()
   endif()
@@ -1591,6 +1617,10 @@ endif()
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
   list(APPEND _executorch_backends vulkan_backend vulkan_schema)
+endif()
+
+if(EXECUTORCH_BUILD_NATIVE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/native)
 endif()
 
 if(EXECUTORCH_BUILD_WEBGPU)
