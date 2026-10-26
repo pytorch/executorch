@@ -9,43 +9,75 @@ load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 
 def define_common_targets(is_fbcode = False):
     if not is_fbcode:
-        runtime.cxx_library(
-            name = "runner_lib",
-            srcs = glob(
-                [
-                    "runner/*.cpp",
+        # `runner_lib` links the upstream QNN backend. `runner_lib_no_backend`
+        # leaves `QnnBackend` and the `QnnExecuTorch*CustomMem` functions to the
+        # binary, so another QNN runtime (e.g. BoltNN) can run the same runner.
+        for suffix, backend_deps in (
+            ("", ["//executorch/backends/qualcomm/runtime:runtime"]),
+            ("_no_backend", ["//executorch/backends/qualcomm/runtime:qnn_executorch_api"]),
+        ):
+            runtime.cxx_library(
+                name = "runner_lib" + suffix,
+                srcs = glob(
+                    [
+                        "runner/*.cpp",
+                    ],
+                ),
+                exported_headers = glob([
+                    "runner/*.h",
+                ]),
+                compiler_flags = [
+                    "-Wno-global-constructors",
+                    "-Wunused-command-line-argument",
                 ],
-            ),
-            exported_headers = glob([
-                "runner/*.h",
-            ]),
+                deps = [
+                    "//executorch/extension/llm/runner:stats",
+                    "//executorch/extension/tensor:tensor",
+                    "//executorch/kernels/quantized:generated_lib",
+                    qnn_third_party_dep("api"),
+                ],
+                exported_deps = [
+                    "//executorch/extension/module:module",
+                    "//executorch/extension/llm/sampler:sampler",
+                    "//executorch/examples/models/llama/runner:runner",
+                    "//executorch/examples/models/llama/tokenizer:tiktoken",
+                    "//executorch/extension/evalue_util:print_evalue",
+                    "//executorch/extension/llm/runner:runner_lib",
+                    "//pytorch/tokenizers:llama2c_tokenizer",
+                    "//pytorch/tokenizers:hf_tokenizer",
+                    "//pytorch/tokenizers:regex_lookahead",
+                    "//pytorch/tokenizers:tiktoken",
+                ] + backend_deps,
+                external_deps = [
+                    "gflags",
+                ],
+                platforms = [ANDROID],
+                **get_oss_build_kwargs()
+            )
+
+        # `qnn_llama_runner`'s CLI with its entry point renamed to
+        # `qnn_llama_runner_main`, for a binary that sets up its own QNN runtime
+        # before handing over.
+        runtime.cxx_library(
+            name = "qnn_llama_runner_main_no_backend",
+            srcs = [
+                "qnn_llama_runner.cpp",
+            ],
             compiler_flags = [
                 "-Wno-global-constructors",
-                "-Wunused-command-line-argument",
             ],
-            deps = [
-                "//executorch/extension/llm/runner:stats",
-                "//executorch/extension/tensor:tensor",
-                "//executorch/kernels/quantized:generated_lib",
-                qnn_third_party_dep("api"),
+            preprocessor_flags = [
+                "-Dmain=qnn_llama_runner_main",
             ],
             exported_deps = [
-                "//executorch/extension/module:module",
-                "//executorch/extension/llm/sampler:sampler",
-                "//executorch/examples/models/llama/runner:runner",
-                "//executorch/examples/models/llama/tokenizer:tiktoken",
-                "//executorch/extension/evalue_util:print_evalue",
-                "//executorch/backends/qualcomm/runtime:runtime",
-                "//executorch/extension/llm/runner:runner_lib",
-                "//pytorch/tokenizers:llama2c_tokenizer",
-                "//pytorch/tokenizers:hf_tokenizer",
-                "//pytorch/tokenizers:regex_lookahead",
-                "//pytorch/tokenizers:tiktoken",
+                ":runner_lib_no_backend",
+                "//executorch/extension/threadpool:threadpool",
             ],
             external_deps = [
                 "gflags",
             ],
             platforms = [ANDROID],
+            visibility = ["PUBLIC"],
             **get_oss_build_kwargs()
         )
 
