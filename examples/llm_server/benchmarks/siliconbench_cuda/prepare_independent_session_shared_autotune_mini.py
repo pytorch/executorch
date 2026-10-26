@@ -107,7 +107,7 @@ def main():
                     "--native-gate", str(args.output / "native-gate.json"), "--gguf", str(args.gguf),
                     "--role", role, "--output", str(args.output / (role + "-artifact")),
                     "--job-dir", str(job), "--lock", str(args.lock), "--owned-GPU-child"]
-        (job / "cache/host-zero-backed").mkdir(parents=True)
+        (job / "cache").mkdir(parents=True)
         os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(job / "cache/inductor"), TRITON_CACHE_DIR=str(job / "cache/triton"))
         import torch
         import triton

@@ -5,6 +5,7 @@ This never exports full models or replaces accepted main results.
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,10 +23,12 @@ def main():
     parser.add_argument('--nsys', type=Path, required=True)
     parser.add_argument('--wait-minutes', type=int, default=240)
     parser.add_argument('--automatic-reclaim', action='store_true')
+    parser.add_argument('--source-spec', type=Path)
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve prior attempts'
     args.output.mkdir(parents=True)
     package = Path(__file__).resolve().parent
+    source_spec = args.source_spec or package / 'independent_session_capacity_source.json'
 
     def state(status, **fields):
         value = dict(status=status,pid=os.getpid(),
@@ -51,7 +54,8 @@ def main():
             assert handle.exists(), 'Preparation handle missing; inspect terminal evidence, never restart here'
             command = (handle/'cmdline').read_bytes().replace(b'\0',b' ')
             assert (b'prepare_independent_session_mini.py' in command or
-                    b'export_independent_session_mini_from_native.py' in command)
+                    b'export_independent_session_mini_from_native.py' in command or
+                    b'prepare_independent_session_shared_autotune_mini.py' in command)
             state('waiting-on-confirmed-live-mini-preparation',
                   preparation_pid=progress['controller_pid'],preparation_status=progress['status'])
             if time.monotonic()>=deadline:
@@ -61,6 +65,7 @@ def main():
             time.sleep(30)
         source = Path(progress['source'])
         native_gate = args.preparation_job/'native-gate.json'
+        assert hashlib.sha256(source_spec.read_bytes()).hexdigest() == json.loads(native_gate.read_text())['source_spec_SHA256']
         probe = args.preparation_job/'model-build/muse_glimmer_runtime_kv_probe'
         for arm in ['global','independent']:
             artifact = args.preparation_job/('mini-'+arm+'-artifact')
@@ -90,7 +95,7 @@ def main():
         state('reviewing-matched-raw-mini-tokens-and-logits')
         run([sys.executable,'-B',package/'review_independent_session_mini_pair.py',
              '--fixed',args.output/'global','--runtime',args.output/'independent',
-             '--source-spec',package/'independent_session_capacity_source.json',
+             '--source-spec',source_spec,
              '--graph-review',graph,'--weight-payload-review',weights,
              '--output',args.output/'mini-review.json'],'raw-review',timeout=1800)
         run([sys.executable,'-B',package/'review_independent_session_native_latency.py',
