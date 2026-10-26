@@ -29,7 +29,8 @@ def main():
     parser.add_argument('--python', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
-    parser.add_argument('--mini-preparation-job',type=Path,required=True)
+    parser.add_argument('--mini-preparation-job',type=Path,
+                        help='Optional exact mini artifacts to alias; omit for native SDK preparation only')
     parser.add_argument('--baseline-native-gate',type=Path,required=True)
     parser.add_argument('--jobs', type=int, choices=[1, 2, 4], default=2)
     args = parser.parse_args()
@@ -46,8 +47,9 @@ def main():
     assert Path(original_gate['source']).resolve()==args.baseline_source.resolve()
     assert original_gate['source_spec_SHA256']==digest(spec_path)
     for name,expected in original_gate['binaries'].items():assert digest(name)==expected
-    original_mini=json.loads((args.mini_preparation_job/'progress.json').read_text())
-    assert original_mini['status']=='mini-artifacts-ready'
+    if args.mini_preparation_job:
+        original_mini=json.loads((args.mini_preparation_job/'progress.json').read_text())
+        assert original_mini['status']=='mini-artifacts-ready'
 
     assert args.python.is_file() and args.baseline_source.is_dir()
     assert not args.output.exists(), 'Preserve previous attempts'
@@ -172,6 +174,9 @@ def main():
         receipt = dict(native_GPU_tests_pass=True, test_count=len(tests),
                        independent_session_tests=independent,
                        source_spec_SHA256=digest(spec_path),allocator_growth_spec_SHA256=digest(growth_path), source=str(source),
+                       source_spec_is_artifact_ABI_compatibility_reference=True,
+                       actual_native_source_change=growth,
+                       preserved_original_native_gate_SHA256=digest(args.baseline_native_gate),
                        binaries=binaries, unchanged_controls=controls,
                        native_tests_xml_SHA256=digest(xml),
                        model_numerics_pass=False, model_performance_pass=False,
@@ -180,6 +185,11 @@ def main():
         receipt_path.write_text(json.dumps(receipt, indent=2) + '\n')
         state('native-GPU-tests-passed', native_gate=str(receipt_path),
               test_count=len(tests), independent_session_tests=independent)
+        if args.mini_preparation_job is None:
+            state('native-GPU-tests-passed', native_gate=str(receipt_path),
+                  native_preparation_only=True,
+                  next_gate='Reuse independently qualified model artifacts; this receipt does not qualify a full model')
+            return
         # Reuse the exact compiled mini graphs; only the native pool changes.
         alias=args.output/'same-artifact-mini-preparation';alias.mkdir()
         aliases=dict(receipt);aliases['binaries']=dict(receipt['binaries'])

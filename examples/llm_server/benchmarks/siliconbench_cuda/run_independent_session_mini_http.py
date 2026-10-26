@@ -153,9 +153,37 @@ def main():
             growth_path=package/'independent_session_growth_allocator_source.json'
             growth=json.loads(growth_path.read_text())
             assert gate['allocator_growth_spec_SHA256']==digest(growth_path)
-            assert gate['actual_native_source_change']==growth and growth['allocator_policy_only']
+            assert growth['allocator_policy_only']
             assert growth['weight_math_ABI_graph_invalidation_and_sliding_unchanged']
-            assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
+            if 'actual_native_source_change' in gate:
+                assert gate['actual_native_source_change']==growth
+                assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
+            # Older qualified allocator builds predate those descriptive
+            # fields. Verify the actual preserved sources, binaries and XML;
+            # never edit their existing receipts or infer compatibility from
+            # the common ABI reference alone.
+            capacity_path=package/'independent_session_capacity_source.json'
+            capacity=json.loads(capacity_path.read_text())
+            assert digest(capacity_path)==growth['original_session_source_spec_SHA256']
+            original_gate_path=Path(receipt['SDK']).parent.parent/'native-gate.json'
+            assert digest(original_gate_path)==receipt['original_native_gate_SHA256']
+            original_gate=json.loads(original_gate_path.read_text())
+            assert original_gate==receipt['original_native_gate']
+            assert gate['test_count']==original_gate['test_count']==74
+            for name,record in capacity['files'].items():
+                assert digest(Path(original_gate['source'])/name)==record['after_SHA256'],name
+                expected=growth['after_SHA256'] if name==growth['file'] else record['after_SHA256']
+                assert digest(source/name)==expected,name
+            assert gate['unchanged_controls']==original_gate['unchanged_controls']
+            for verified_gate in (gate,original_gate):
+                for name,expected in verified_gate['binaries'].items():assert digest(Path(name))==expected,name
+            xml=source.parent/'native-tests.xml'
+            assert digest(xml)==gate['native_tests_xml_SHA256']
+            import xml.etree.ElementTree as ET
+            tests=list(ET.parse(xml).getroot().iter('testcase'))
+            assert len(tests)==74 and not any(
+                t.find('failure') is not None or t.find('error') is not None or t.find('skipped') is not None
+                for t in tests)
             assert gate['source_spec_SHA256']==receipt['original_native_gate']['source_spec_SHA256']
             assert digest(source/growth['file'])==growth['after_SHA256']
             original_mini=Path(preparation['original_mini_preparation'])
@@ -172,6 +200,11 @@ def main():
             Gemma_model_source_binding=dict(original_compiled_models_and_Python_source_reused=True,
                 allocator_only_native_control_verified=True,
                 allocator_growth_spec_SHA256=digest(growth_path),
+                actual_native_source_change=growth,
+                original_native_gate_SHA256=digest(original_gate_path),
+                actual_native_tests_XML_SHA256=digest(xml),
+                actual_sources_binaries_and_tests_reverified=True,
+                original_receipts_preserved=True,
                 original_model_native_source=original_model_gate['source'],
                 current_native_source=gate['source'],model_source_preparation_SHA256=receipt_SHA256)
         assert receipt['original_source_and_binaries_unchanged']
