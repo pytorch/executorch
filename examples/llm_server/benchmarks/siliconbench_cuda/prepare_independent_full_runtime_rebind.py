@@ -19,15 +19,25 @@ def records(gate):
     return change['patches'] if 'patches' in change else [change]
 
 
-def verify_transition(before_job, after_job, package, variant):
+def verify_transition(before_job, after_job, package, variant, transition='empty-owner-reuse'):
     before = verify_runtime(before_job, package)
     after = verify_runtime(after_job, package)
-    fix_path = package/'independent_session_empty_replacement_source.json'
+    assert transition in ('empty-owner-reuse', 'coalesced-growth-trim')
+    policy = ('independent_session_empty_replacement' if transition == 'empty-owner-reuse'
+              else 'independent_session_coalesced_growth_trim')
+    key = ('empty_owner_reuse_spec_SHA256' if transition == 'empty-owner-reuse'
+           else 'coalesced_growth_trim_spec_SHA256')
+    fix_path = package/(policy + '_source.json')
     fix = json.loads(fix_path.read_text())
-    assert sha(package/'independent_session_empty_replacement.patch') == fix['patch_SHA256']
+    assert sha(package/(policy + '.patch')) == fix['patch_SHA256']
     assert after['preserved_preceding_native_gate_SHA256'] == sha(before_job/'native-gate.json')
-    assert after['empty_owner_reuse_spec_SHA256'] == sha(fix_path)
+    assert after[key] == sha(fix_path)
     assert records(after) == records(before) + fix['variants'][variant]
+    if transition == 'coalesced-growth-trim':
+        assert before.get('empty_owner_reuse_spec_SHA256')
+        assert after['empty_owner_reuse_spec_SHA256'] == before['empty_owner_reuse_spec_SHA256']
+        assert all(r['allocator_policy_only'] and r['weights_math_ABI_sliding_and_graph_invalidation_unchanged']
+                   for r in fix['variants'][variant])
     assert after['source_spec_SHA256'] == before['source_spec_SHA256']
     assert after['unchanged_controls'] == before['unchanged_controls']
     assert after['independent_session_tests'] == before['independent_session_tests']
@@ -62,13 +72,14 @@ def verify_export(artifact, export_job, before, profile, arm):
 def verify_rebind(proof_path, runtime_job, package):
     """Recheck actual old/new source chains and immutable artifacts at use time."""
     proof = json.loads(Path(proof_path).read_text())
-    assert proof['only_empty_owner_native_replacement']
+    transition = proof.get('native_transition', 'empty-owner-reuse')
+    assert proof['only_empty_owner_native_replacement'] == (transition == 'empty-owner-reuse')
     assert not proof['full_model_qualified'] and not proof['main_candidate_accepted']
     assert Path(runtime_job).resolve() == Path(proof['runtime_job']).resolve()
     for name, expected in proof['evidence_files_SHA256'].items():
         assert sha(name) == expected, name
     before, after = verify_transition(Path(proof['export_runtime_job']),
-        Path(runtime_job), Path(package), proof['source_variant'])
+        Path(runtime_job), Path(package), proof['source_variant'], transition)
     profile = proof['full_model_profile']
     mini_profile = 'gemma4-first6' if profile == 'gemma4-48layers' else 'muse-glimmer-first4'
     verify_qualification(proof['mini_qualification'], mini_profile,
@@ -88,14 +99,18 @@ def main():
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--global-artifact', type=Path)
     parser.add_argument('--global-export-job', type=Path)
+    parser.add_argument('--native-transition', choices=('empty-owner-reuse', 'coalesced-growth-trim'),
+                        default='empty-owner-reuse')
     parser.add_argument('--full-model-profile', choices=FULL_PROFILES, required=True)
     args = parser.parse_args()
     assert bool(args.global_artifact) == bool(args.global_export_job)
     package = args.package.resolve()
     profile = args.full_model_profile
     gemma = profile == 'gemma4-48layers'
-    variant = 'Gemma-stable-metadata' if gemma else 'MG-flat-copy'
-    before, after = verify_transition(args.export_runtime_job, args.runtime_job, package, variant)
+    variant = ('Gemma-stable-metadata' if gemma else 'MG-flat-copy') if args.native_transition == 'empty-owner-reuse' else (
+        'Gemma-empty-owner-reuse' if gemma else 'MG-empty-owner-reuse')
+    before, after = verify_transition(args.export_runtime_job, args.runtime_job, package, variant,
+                                     args.native_transition)
     qualification = verify_qualification(args.mini_qualification,
         'gemma4-first6' if gemma else 'muse-glimmer-first4',
         FULL_PROFILES[profile]['GGUF_SHA256'], args.runtime_job)
@@ -111,7 +126,10 @@ def main():
     evidence = {str(args.mini_qualification.resolve()): sha(args.mini_qualification),
         str(args.export_runtime_job.resolve()/'native-gate.json'): sha(args.export_runtime_job/'native-gate.json'),
         str(args.runtime_job.resolve()/'native-gate.json'): sha(args.runtime_job/'native-gate.json'),
-        str(package/'independent_session_empty_replacement_source.json'): sha(package/'independent_session_empty_replacement_source.json')}
+        str(package/('independent_session_empty_replacement_source.json' if args.native_transition == 'empty-owner-reuse'
+                    else 'independent_session_coalesced_growth_trim_source.json')):
+        sha(package/('independent_session_empty_replacement_source.json' if args.native_transition == 'empty-owner-reuse'
+                    else 'independent_session_coalesced_growth_trim_source.json'))}
     for item in artifacts.values():
         for path in (Path(item['artifact'])/'independent-full-artifact-audit.json',
                      Path(item['export_job'])/'native-gate.json'):
@@ -123,7 +141,8 @@ def main():
         mini_qualification=str(args.mini_qualification.resolve()),
         native_runtime_gate_SHA256=sha(args.runtime_job/'native-gate.json'),
         artifacts=artifacts, evidence_files_SHA256=evidence,
-        only_empty_owner_native_replacement=True,
+        native_transition=args.native_transition,
+        only_empty_owner_native_replacement=args.native_transition == 'empty-owner-reuse',
         original_models_and_export_SDK_preserved=True,
         no_GEMM_attention_or_model_method_change=True,
         full_model_qualified=False, main_candidate_accepted=False)

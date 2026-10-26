@@ -42,7 +42,11 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('export-controller','original-native-job','native-job','lock','nsys','output'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--replacement-native-job', type=Path)
+    p.add_argument('--replacement-mini-qualification', type=Path,
+                   help='Complete same-runtime mini qualification for the compatible allocator replacement')
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
+    assert bool(a.replacement_native_job) == bool(a.replacement_mini_qualification)
     package=Path(__file__).resolve().parent;profile='muse-glimmer-52layers'
     def state(status,**extra):
         t=a.output/'progress.pending.json'
@@ -97,8 +101,39 @@ def main():
         provenance = verify_original_export_native_gate(
             a.original_native_job/'native-gate.json', export_job/'export-source-native-gate.json')
         (a.output/'original-export-native-provenance-review.json').write_text(json.dumps(provenance,indent=2)+'\n')
+        runtime_job = a.native_job
+        if a.replacement_native_job:
+            qualification = a.replacement_mini_qualification
+            controller = qualification.parent.parent
+            deadline = time.monotonic() + 4*3600
+            while not qualification.is_file():
+                current = json.loads((controller/'progress.json').read_text())
+                assert current['status'] not in ('failed', 'mini-performance-gate-not-passed'), current
+                handle = Path('/proc')/str(current['controller_pid'])/'cmdline'
+                command = handle.read_bytes() if handle.is_file() else b''
+                if not command and qualification.is_file():
+                    break
+                assert b'run_MG_allocator_mini_qualification_after_native.py' in command
+                assert str(controller).encode() in command
+                assert time.monotonic() < deadline, 'Preserve verified-live mini qualification after timeout'
+                state('waiting-confirmed-live-replacement-mini-qualification',
+                      mini_status=current['status'], mini_PID=current['controller_pid'])
+                time.sleep(20)
+            verify_qualification(qualification, 'muse-glimmer-first4',
+                                 FULL_PROFILES[profile]['GGUF_SHA256'], a.replacement_native_job)
+            from prepare_independent_full_runtime_rebind import verify_transition
+            before_replacement, replacement = verify_transition(a.native_job,
+                a.replacement_native_job, package, 'MG-empty-owner-reuse', 'coalesced-growth-trim')
+            assert before_replacement == after
+            runtime_job, after = a.replacement_native_job, replacement
+            (a.output/'replacement-mini-and-native-binding.json').write_text(json.dumps(dict(
+                export_runtime_job=str(a.native_job), replacement_runtime_job=str(runtime_job),
+                export_runtime_gate_SHA256=sha(a.native_job/'native-gate.json'),
+                replacement_runtime_gate_SHA256=sha(runtime_job/'native-gate.json'),
+                mini_qualification_SHA256=sha(qualification),
+                transition='coalesced-growth-trim', full_model_qualified=False), indent=2)+'\n')
         aliases={}
-        for arm,job,gate in (('before',a.original_native_job,original),('after',a.native_job,after)):
+        for arm,job,gate in (('before',a.original_native_job,original),('after',runtime_job,after)):
             alias=a.output/(arm+'-full-artifact');alias.mkdir();aliases[arm]=alias
             if arm=='after':alias_runtime(job,package,alias,original['source'])
             else:
@@ -162,6 +197,8 @@ def main():
             fixed_token_same_PTE_runtime_performance_pass=not signals,positive_performance_signals=signals,
             full_model_qualified=False,main_candidate_accepted=False,
             raw_reviews_SHA256={name:sha(a.output/name) for name in ('same-PTE-native-independent-review.json','capacity-independent-review.json','rewind-independent-review.json','graph-independent-review.json')},
+            actual_runtime_job=str(runtime_job), actual_runtime_native_gate_SHA256=sha(runtime_job/'native-gate.json'),
+            export_runtime_job=str(a.native_job), compatible_allocator_replacement=bool(a.replacement_native_job),
             global_layout_comparison_not_collected=True,HTTP_F1_and_main_pending=True),indent=2)+'\n')
         state('full-MG-single-artifact-native-controls-collected',positive_performance_signals=signals)
     except Exception as e:

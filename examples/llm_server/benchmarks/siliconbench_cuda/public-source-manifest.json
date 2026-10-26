@@ -664,8 +664,8 @@
       "bytes": 5254
     },
     "prepare_independent_full_runtime_rebind.py": {
-      "sha256": "cf31c8b3db2c1e12db42c38fc45b548cb1dcbeedc155d529e7e30d0639777a34",
-      "bytes": 8355
+      "sha256": "23dc1068b997d1c302711ea73b08c0cf6cf1c9eab9ae752644e6f1c7453913d5",
+      "bytes": 9866
     },
     "prepare_independent_main_public_inputs.py": {
       "sha256": "ccb1e6e2db158a70076fb76e0b7ce8df973eed790a65c07810f1575b69fae07e",
@@ -1152,8 +1152,8 @@
       "bytes": 27694
     },
     "run_single_full_MG_lifecycle_after_export.py": {
-      "sha256": "8a7cb99f1820b879fda81888d13b82f106554dd2ad61c4530db4e7b0e9fa8333",
-      "bytes": 12894
+      "sha256": "e5e92934758e97a23668906a780a6e93009361c38226737d66e1cf76201f0cc4",
+      "bytes": 15670
     },
     "runtime_kv_columns.patch": {
       "sha256": "47511aeec234f833a88b5b9a0fb6835a87acb97da77f2a8dfb45f13be707cd1a",
