@@ -72,6 +72,66 @@ class PybindingsTest(unittest.TestCase):
         self.load_prog_fn = runtime._load_program_from_buffer
         self.runtime = runtime
 
+    def test_bundled_channels_last_input_and_output(self) -> None:
+        input_tensor = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        model = ModuleChannelsLast()
+        expected = model(input_tensor)
+        self.assertTrue(expected.is_contiguous(memory_format=torch.channels_last))
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundled_program = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward",
+                    [
+                        MethodTestCase((input_tensor,), (expected,)),
+                        MethodTestCase(
+                            (input_tensor.contiguous(),), (expected.contiguous(),)
+                        ),
+                    ],
+                )
+            ],
+        )
+        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+        for test_index in range(2):
+            output = bundled_module.verify_result_with_bundled_expected_output(
+                "forward", test_index
+            )[0]
+            self.assertEqual(output.stride(), expected.stride())
+            self.assertTrue(torch.equal(output, expected))
+
+    def test_bundled_permute_output(self) -> None:
+        class Permute(torch.nn.Module):
+            def forward(self, x):
+                return x.permute(0, 2, 3, 1)
+
+        model = Permute()
+        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 3, 4, 5)
+        expected = model(input_tensor)
+        self.assertFalse(expected.is_contiguous())
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundle = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward", [MethodTestCase((input_tensor,), (expected,))]
+                )
+            ],
+        )
+        bundled_module = self.runtime._load_bundled_program_from_buffer(
+            serialize_from_bundled_program_to_flatbuffer(bundle)
+        )
+        output = bundled_module.verify_result_with_bundled_expected_output(
+            "forward", 0
+        )[0]
+        self.assertTrue(torch.equal(output, expected))
+
     def test_e2e(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -347,66 +407,6 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
-
-    def test_bundled_channels_last_input_and_output(self) -> None:
-        input_tensor = (
-            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
-            .reshape(2, 3, 4, 5)
-            .contiguous(memory_format=torch.channels_last)
-        )
-        model = ModuleChannelsLast()
-        expected = model(input_tensor)
-        self.assertTrue(expected.is_contiguous(memory_format=torch.channels_last))
-        program = to_edge(export(model, (input_tensor,))).to_executorch()
-        bundled_program = BundledProgram(
-            program,
-            [
-                MethodTestSuite(
-                    "forward",
-                    [
-                        MethodTestCase((input_tensor,), (expected,)),
-                        MethodTestCase(
-                            (input_tensor.contiguous(),), (expected.contiguous(),)
-                        ),
-                    ],
-                )
-            ],
-        )
-        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
-        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
-
-        for test_index in range(2):
-            output = bundled_module.verify_result_with_bundled_expected_output(
-                "forward", test_index
-            )[0]
-            self.assertEqual(output.stride(), expected.stride())
-            self.assertTrue(torch.equal(output, expected))
-
-    def test_bundled_permute_output(self) -> None:
-        class Permute(torch.nn.Module):
-            def forward(self, x):
-                return x.permute(0, 2, 3, 1)
-
-        model = Permute()
-        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 3, 4, 5)
-        expected = model(input_tensor)
-        self.assertFalse(expected.is_contiguous())
-        program = to_edge(export(model, (input_tensor,))).to_executorch()
-        bundle = BundledProgram(
-            program,
-            [
-                MethodTestSuite(
-                    "forward", [MethodTestCase((input_tensor,), (expected,))]
-                )
-            ],
-        )
-        bundled_module = self.runtime._load_bundled_program_from_buffer(
-            serialize_from_bundled_program_to_flatbuffer(bundle)
-        )
-        output = bundled_module.verify_result_with_bundled_expected_output(
-            "forward", 0
-        )[0]
-        self.assertTrue(torch.equal(output, expected))
 
     def test_unsupported_dim_order(self) -> None:
         model = ModuleChannelsLast()
