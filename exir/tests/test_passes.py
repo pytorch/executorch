@@ -3195,7 +3195,8 @@ class TestPasses(unittest.TestCase):
                             _skip_dim_order=skip_dim_order
                         ),
                     ).exported_program()
-                # to_edge runs the pass twice, but only the first run converts.
+                # Only one run of the pass converts: the first, or with
+                # _skip_dim_order the only one.
                 self.assertEqual(len(captured.output), 1)
                 self.assertIn("Parameter 'weight'", captured.output[0])
                 self.assertTrue(ep.state_dict["weight"].is_contiguous())
