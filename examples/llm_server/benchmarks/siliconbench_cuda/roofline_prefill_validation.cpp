@@ -12,11 +12,13 @@ namespace batching = executorch::backends::cuda::batching;
 
 int main(int argc, char** argv) {
   try {
-    roofline::require(argc >= 4 && argc <= 7, "Usage: roofline_prefill_validation model.pte weights.ptd output.json [history_chunk] [teacher_forced] [dump_logits]");
+    roofline::require(argc >= 4 && argc <= 8, "Usage: roofline_prefill_validation model.pte weights.ptd output.json [history_chunk] [teacher_forced] [dump_logits] [history_tokens]");
     const int history_chunk = argc >= 5 ? std::stoi(argv[4]) : 512;
     const bool teacher_forced = argc >= 6 && std::stoi(argv[5]) != 0;
     const bool dump_logits = argc >= 7 && std::stoi(argv[6]) != 0;
     roofline::require(history_chunk == 512 || history_chunk == 1024, "History chunk must be 512 or 1024");
+    const int history_tokens = argc >= 8 ? std::stoi(argv[7]) : 1024;
+    roofline::require(history_tokens == 0 || history_tokens == 1024, "History length must be zero or1024");
     struct Dump { std::string file; int rows; int vocab; std::string format; };
     std::vector<Dump> dumps;
     executorch::runtime::runtime_init();
@@ -71,7 +73,7 @@ int main(int argc, char** argv) {
       roofline::sync(); return sampled;
     };
     std::ofstream out(argv[3]); roofline::require(out.good(), "Cannot write validation outputs");
-    out << "{\"history_chunk\":" << history_chunk << ",\"teacher_forced\":" << (teacher_forced ? "true" : "false") << ",\"history_tokens\":1024,\"prefix_reuse\":false,\"initial_KV\":512,"
+    out << "{\"history_chunk\":" << history_chunk << ",\"teacher_forced\":" << (teacher_forced ? "true" : "false") << ",\"history_tokens\":" << history_tokens << ",\"prefix_reuse\":false,\"initial_KV\":512,"
         << "\"runtime_capacity\":2048,\"static_cuda_graph_requested\":true,"
         << "\"timing_used_for_performance\":false,\"cases\":[";
     for (std::size_t i = 0; i < roofline::kMixes.size(); ++i) {
@@ -80,7 +82,7 @@ int main(int argc, char** argv) {
       owners.clear(); int count = mix.decode + (mix.prefill ? 1 : 0);
       for (int owner = 0; owner < count; ++owner) {
         auto id = cache.seq_new(); roofline::require(id.has_value(), "Owner allocation failed"); owners.push_back(*id);
-        for (int start = 0; start < 1024; start += history_chunk) {
+        for (int start = 0; start < history_tokens; start += history_chunk) {
           std::vector<roofline::Row> input;
           for (int pos = start; pos < start + history_chunk; ++pos) input.push_back({roofline::token(owner, pos), pos, owner, false});
           run(input, 0);
@@ -88,6 +90,7 @@ int main(int argc, char** argv) {
       }
       const std::size_t dump_start = dumps.size();
       auto before = executor->method_calls(); auto input = roofline::rows(mix);
+      for (auto& row : input) row.position += history_tokens - 1024;
       // The performance harness selects decode outputs only. This separate
       // check also requests the prefill owner's last logits and follows its KV.
       if (mix.prefill) input.back().output = true;
@@ -105,7 +108,7 @@ int main(int argc, char** argv) {
       for (int step = 0; step < 4; ++step) {
         std::vector<roofline::Row> next;
         for (int owner = 0; owner < count; ++owner) {
-          int expected = 1024 + (owner < mix.decode ? 1 : mix.prefill) + step;
+          int expected = history_tokens + (owner < mix.decode ? 1 : mix.prefill) + step;
           roofline::require(cache.pos(owners[owner]) == expected, "History advancement differs");
           next.push_back({teacher_forced ? roofline::token(owner, expected) : ids[owner], expected, owner, true});
         }

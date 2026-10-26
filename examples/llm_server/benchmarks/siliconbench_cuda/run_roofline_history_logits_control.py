@@ -15,7 +15,7 @@ def sha(p):
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  for name in ['workflow','ET-SDK-job','et-source','lock','output']:p.add_argument('--'+name,type=Path,required=True)
- p.add_argument('--deadline-UTC',required=True);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
+ p.add_argument('--deadline-UTC',required=True);p.add_argument('--history-tokens',type=int,choices=[0,1024],default=1024);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
  deadline=datetime.datetime.fromisoformat(a.deadline_UTC);assert deadline.tzinfo
  package=Path(__file__).resolve().parent
  def remaining():
@@ -34,13 +34,13 @@ def main():
   with a.lock.open('a') as lock:
    fcntl.flock(lock,fcntl.LOCK_EX)
    for round_id in [1,2,3,4]:
-    for chunk in [1024,512]:
+    for chunk in ([1024,512] if a.history_tokens else [1024]):
      for arm in arms:
       assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
       state('running-history-and-teacher-forced-logit-control',round=round_id,history_chunk=chunk,arm=arm['name'])
       output=a.output/(arm['name']+'-history'+str(chunk)+'-round'+str(round_id)+'.json');artifact=Path(arm['artifact'])
-      with output.with_suffix('.log').open('x') as log:subprocess.run([str(binary),str(artifact/'model.pte'),str(artifact/'aoti_cuda_blob.ptd'),str(output),str(chunk),'1','1'],env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=remaining())
-      value=json.loads(output.read_text());assert value['completed'] and value['teacher_forced'] and len(value['cases'])==7
+      with output.with_suffix('.log').open('x') as log:subprocess.run([str(binary),str(artifact/'model.pte'),str(artifact/'aoti_cuda_blob.ptd'),str(output),str(chunk),'1','1',str(a.history_tokens)],env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=remaining())
+      value=json.loads(output.read_text());assert value['history_tokens']==a.history_tokens and value['completed'] and value['teacher_forced'] and len(value['cases'])==7
       records.append(dict(round=round_id,history_chunk=chunk,arm=arm['name'],file=output.name,SHA256=sha(output)))
   state('computing-local-CPU-numerical-differences')
   def load(row):
@@ -57,7 +57,7 @@ def main():
     assert len(c['logit_dumps'])==5
     for dump in c['logit_dumps']:
      f=Path(dump['file']);files[f.name]=dict(bytes=f.stat().st_size,SHA256=sha(f))
-  for chunk in [1024,512]:
+  for chunk in ([1024,512] if a.history_tokens else [1024]):
    for rid in [1,2,3,4]:
     for gold_case,test_case in zip(summaries['ET-baseline',chunk,rid]['cases'],summaries['ET-large',chunk,rid]['cases']):
      assert gold_case['mix']==test_case['mix'];steps=[]
@@ -70,7 +70,7 @@ def main():
        two=np.partition(gold[row],-2)[-2:];margins.append(dict(row=int(row),baseline_top1=int(top_gold[row]),candidate_top1=int(top_test[row]),baseline_top2_margin=float(two.max()-two.min()),baseline_score_of_candidate_top1=float(gold[row,top_test[row]]),baseline_top1_score=float(gold[row,top_gold[row]])))
       steps.append(dict(step=step,relative_RMS=rms,max_abs=float(np.max(np.abs(diff))),bitwise_logits_equal=bool(np.array_equal(gold,test)),top1_mismatches=len(mismatch),rows=len(gold),mismatch_margins=margins))
      comparison.append(dict(history_chunk=chunk,round=rid,mix=gold_case['mix'],steps=steps))
-  result=dict(records=records,comparison=comparison,files=files,source_binary_SHA256=sha(binary),validation_source_SHA256=sha(package/'roofline_prefill_validation.cpp'),input_provenance=provenance,same_PTD_bytes=True,teacher_forced_tokens_identical=True,performance_and_F1_not_measured=True,rounds=4,no_numerical_acceptance_threshold_invented=True)
+  result=dict(records=records,comparison=comparison,files=files,source_binary_SHA256=sha(binary),validation_source_SHA256=sha(package/'roofline_prefill_validation.cpp'),input_provenance=provenance,history_tokens=a.history_tokens,same_PTD_bytes=True,teacher_forced_tokens_identical=True,performance_and_F1_not_measured=True,rounds=4,no_numerical_acceptance_threshold_invented=True)
   (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n');state('completed-pending-independent-numerical-review')
  except BaseException as e:state('failed',error=str(e));raise
 if __name__=='__main__':main()
