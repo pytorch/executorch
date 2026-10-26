@@ -1,8 +1,10 @@
 """Build the existing Gemma multiplexed worker with optional KV sampling.
 
 Use the qualified unchanged native SDK and the existing Gemma llm_server
-adapter. Add only a lifetime-bound sampler disabled unless explicitly enabled.
-Preserve tokenizer, scheduler, stops, transport, original sources and SDK.
+adapter. Add a lifetime-bound sampler disabled unless explicitly enabled.
+Omit obsolete idle option assignments when the qualified SDK handles
+independent reclamation inside its native cache. Preserve tokenizer,
+scheduler, stops, transport, original sources and SDK.
 """
 import argparse
 import datetime
@@ -60,6 +62,21 @@ def main():
         modified=modified.replace(include,'#include "kv_memory_sampler.h"\n'+include)
         modified=modified.replace(initialize,initialize+
             '\n    siliconbench::KVMemorySampler memory_sampler(*executor, "cuda", false);')
+        header=source/'backends/cuda/batching/cuda_executor.h'
+        option_names=('idle_kv_compaction_ms','idle_kv_spare_columns')
+        available=[name in header.read_text() for name in option_names]
+        assert all(available) or not any(available), 'Unsupported partial idle option ABI'
+        legacy_idle_options_omitted=not any(available)
+        if legacy_idle_options_omitted:
+            capacity_spec=json.loads((package/'independent_session_capacity_source.json').read_text())
+            cache_name='backends/cuda/runtime/cuda_kv_cache.cpp'
+            assert digest(source/cache_name)==capacity_spec['files'][cache_name]['after_SHA256']
+            cache=(source/cache_name).read_text()
+            assert 'cfg_.independent_sequence_capacity && live < columns_ - 1' in cache
+            for name in option_names:
+                assignment=f'    executor_config.options.{name} = FLAGS_{name};\n'
+                assert modified.count(assignment)==1
+                modified=modified.replace(assignment,'')
         cpp=args.output/'gemma_kv_memory_worker.cpp'
         cpp.write_text(modified)
         sampler=(package/'kv_memory_sampler.h').read_text()
@@ -98,6 +115,9 @@ def main():
             scheduler_stops_tokenizer_transport_unchanged=True,
             no_inference_kernel_change=True,sampler_does_not_synchronize_GPU=True,
             optional_native_sampler_defaults_off=True,sample_interval_ms=250,
+            legacy_idle_option_assignments_omitted=legacy_idle_options_omitted,
+            native_independent_reclamation_policy_unchanged=True,
+            qualified_executor_options_header_SHA256=digest(header),
             original_source_and_SDK_unchanged=True,CUDA_hidden_during_build=True,
             HTTP_and_sampling_performance_validation_pending=True,
             compile_commands_SHA256=digest(build/'compile_commands.json'))
