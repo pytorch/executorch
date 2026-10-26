@@ -1,0 +1,3 @@
+# Only the paths listed below will be considered for automatic injection
+
+skills/fb/executorch-oss-export/SKILL.md
