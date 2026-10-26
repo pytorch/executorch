@@ -30,6 +30,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("preparation-job", "exporter-package", "gguf", "output", "lock"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument('--share-inductor-configs', action='store_true',
+        help='Diagnostic reuse of legal generated reduction/pointwise configuration winners')
     parser.add_argument("--owned-GPU-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -101,6 +103,10 @@ def main():
     exporter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(exporter)
     snapshots = []
+    restore_inductor = None
+    if args.share_inductor_configs:
+        from shared_inductor_config_control import install_shared_inductor_config_control
+        restore_inductor = install_shared_inductor_config_control(args.output/'shared-inductor-config-control.json')
     for role in ("mini-global", "mini-independent"):
         job = args.output / (role + "-export")
         sys.argv = [str(package / "export_independent_session_mini.py"), "--source", str(source),
@@ -143,12 +149,20 @@ def main():
     for kernel, choices in first["module_tuner_picks"].items():
         assert all(second["module_tuner_picks"][kernel][key] == value for key, value in choices.items())
     assert all(digest(source / name) == expected for name, expected in controls.items())
+    if restore_inductor is not None:
+        restore_inductor()
     proof = dict(existing_launch_picks_unchanged=True, existing_module_autotune_picks_unchanged=True,
                  original_launch_pick_count=len(first["launch_picks"]), final_launch_pick_count=len(second["launch_picks"]),
                  unchanged_source_controls=controls, source_spec_SHA256=gate["source_spec_SHA256"],
                  snapshots_SHA256=digest(args.output / "shared-autotune-cache-snapshots.json"),
                  actual_compiled_choices_not_yet_verified=True, candidate_accepted=False,
                  full_model_export_started=False, native_gate_SHA256=digest(args.output / "native-gate.json"))
+    if args.share_inductor_configs:
+        control_path = args.output/'shared-inductor-config-control.json'
+        control = json.loads(control_path.read_text())
+        assert any(event['action']=='reuse' for event in control['events'])
+        proof['shared_inductor_config_control_SHA256'] = digest(control_path)
+        proof['generated_kernel_choices_reused_diagnostic_only'] = True
     (args.output / "shared-autotune-cache-review.json").write_text(json.dumps(proof, indent=2) + "\n")
 
 
