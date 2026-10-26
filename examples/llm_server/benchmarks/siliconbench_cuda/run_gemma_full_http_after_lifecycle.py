@@ -37,7 +37,7 @@ def main():
             if d['status']==terminal:break
             assert d['status']!='failed',d
             proc=Path('/proc')/str(d['controller_pid'])/'cmdline'
-            assert proc.is_file() and b'run_gemma_full_lifecycle_after_fixed.py' in proc.read_bytes()
+            assert proc.is_file() and any(name in proc.read_bytes() for name in (b'run_gemma_full_lifecycle_after_fixed.py',b'run_full_independent_session_lifecycle_after_fixed.py'))
             assert time.monotonic()<deadline,'Preserve verified-live work; observation deadline reached'
             state('waiting-confirmed-live-full-lifecycle',PID=d['controller_pid'],lifecycle_status=d['status'])
             time.sleep(20)
@@ -68,6 +68,8 @@ def main():
             HTTP_review_SHA256=sha(a.output/'HTTP-independent-review.json'),
             lifecycle_result_SHA256=sha(a.lifecycle_job/'result.json'),
             natural_HTTP_outputs_are_not_task_F1_acceptance=True,
+            rewind_test_arms=result.get('rewind_test_arms',['global','independent']),
+            preserved_global_rewind_failure=result.get('preserved_global_rewind_failure'),
             full_model_qualified=False,main_candidate_accepted=False,
             remaining_gates=['full 0/5-shot F1 and balanced checks','main comparison'])
         (a.output/'result.json').write_text(json.dumps(final,indent=2)+'\n')

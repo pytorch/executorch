@@ -980,12 +980,16 @@
       "bytes": 6828
     },
     "run_gemma_full_http_after_lifecycle.py": {
-      "sha256": "5cb8637c7bdf45ee3f6c43b36656edf91aa0e765d5b1018247f0aa6673660f92",
-      "bytes": 4994
+      "sha256": "17865aa55b1b605db8ee73a977a2501b0974032dec12bef55d3bc8875110f150",
+      "bytes": 5252
     },
     "run_gemma_full_lifecycle_after_fixed.py": {
       "sha256": "920b91a84d466373a2fe7f5e272f42c6ccaa826c2176062aebb565597439151e",
       "bytes": 6160
+    },
+    "run_gemma_independent_full_main.py": {
+      "sha256": "1ac5062a2ae27cc3da18618970c3aec06853d3f02527f19c728d1508fe14df47",
+      "bytes": 13792
     },
     "run_gemma_runtime_columns_qualification.py": {
       "sha256": "8c138d800e7923f415dc028870ad5e9deef345af79b91f57eef9b36d3142a0c2",
