@@ -543,6 +543,10 @@
       "sha256": "529899e20859e2a2ba150e4fce7366a52165a5bd7b6fd556058a99a74194e233",
       "bytes": 9427
     },
+    "prepare_gemma_independent_session_mini_pair.py": {
+      "sha256": "51607d676b7ce13a5597ce16c975c2409951014d959d73552178e41b485495b4",
+      "bytes": 17923
+    },
     "prepare_gemma_independent_session_mini_source.py": {
       "sha256": "141474269ec45b797995ea42b17686d29601c74b5bd67d6c4ca523a0e8bf1700",
       "bytes": 9469
