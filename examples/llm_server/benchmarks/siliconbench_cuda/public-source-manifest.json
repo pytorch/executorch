@@ -908,8 +908,8 @@
       "bytes": 10111
     },
     "review_independent_session_http_lifecycle.py": {
-      "sha256": "5d87e5cbae2ed770b33aee6e1a085c8a46fe316e8ad6ad8feb2214e3402fc15d",
-      "bytes": 16744
+      "sha256": "32726eb8a4eb6aec8108b624c15c1b871d6baf1eb55ea748bf3a53e4450cc15e",
+      "bytes": 18421
     },
     "review_independent_session_mg_fixed_latency.py": {
       "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",
@@ -1036,8 +1036,8 @@
       "bytes": 5383
     },
     "run_full_MG_HTTP_after_native.py": {
-      "sha256": "a47d3ef310fc0f833bf913d6bc360530eb8ee7316fb53734225a8fad302a27a0",
-      "bytes": 6326
+      "sha256": "486a1491592792108baf53cafcb98b78c8a5eea2a98351ab2ba011030d5623ca",
+      "bytes": 8843
     },
     "run_full_MG_matched_native_after_controls.py": {
       "sha256": "92102a379bc52ae44ff7f85cc5450d79582c7237b56815e9b5cf56491f87350c",

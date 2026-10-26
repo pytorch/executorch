@@ -132,22 +132,35 @@ def main():
                 content_events = [choice.get("delta", {}).get("content", "")
                                   for event in events for choice in event.get("choices", [])
                                   if choice.get("delta", {}).get("content")]
+                reasoning_events = [choice.get("delta", {}).get("reasoning_content", "")
+                                    for event in events for choice in event.get("choices", [])
+                                    if choice.get("delta", {}).get("reasoning_content")]
                 assert item["start_ns"] < item["end_ns"]
                 assert item["seconds"] == (item["end_ns"] - item["start_ns"]) / 1e9
                 if content_events:
                     assert item["start_ns"] < item["first_content_ns"] <= item["end_ns"]
                     assert item["TTFT_seconds"] == (item["first_content_ns"] - item["start_ns"]) / 1e9
                 else:
-                    # First-token EOS has no visible content. Preserve missing TTFT.
+                    # This collector times final content, not reasoning. Preserve
+                    # absent content TTFT for an actual reasoning-only response.
                     assert item["first_content_ns"] is None and item["TTFT_seconds"] is None
-                    assert finishes == ["stop"] and usage["completion_tokens"] == 1
+                    if reasoning_events:
+                        assert full_profile == 'muse-glimmer-52layers'
+                        assert 0 < usage["completion_tokens"] <= original["body"]["max_tokens"]
+                        assert finishes == ["stop"] or (
+                            finishes == ["length"] and usage["completion_tokens"] == original["body"]["max_tokens"])
+                    else:
+                        # A content-free, reasoning-free response must be EOS.
+                        assert finishes == ["stop"] and usage["completion_tokens"] == 1
                 if prefix == "off":
                     assert usage["prompt_tokens_details"]["cached_tokens"] == 0
                 text = "".join(choice.get("delta", {}).get("content", "") for event in events for choice in event.get("choices", []))
                 key = (number, prefix, index, item["owner"])
                 value = dict(body=original["body"], prompt_tokens=usage["prompt_tokens"],
                              completion_tokens=usage["completion_tokens"], finish_reason=finishes[0],
-                             output_text_sha256=hashlib.sha256(text.encode()).hexdigest())
+                             output_text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                             reasoning_text_sha256=hashlib.sha256("".join(reasoning_events).encode()).hexdigest(),
+                             reasoning_only=bool(reasoning_events) and not content_events)
                 comparison.setdefault(key, {})[arm] = value
             tokens = sum(item["usage"]["completion_tokens"] for item in raw)
             elapsed = (stage["end_ns"] - stage["start_ns"]) / 1e9
@@ -183,11 +196,13 @@ def main():
                         value["native_limitation"] = "No250ms native sample within this short active interval; no active native peak is claimed"
                 lifecycle[label] = value
             ttft = [item["TTFT_seconds"] for item in raw if item["TTFT_seconds"] is not None]
+            reasoning_only = sum(comparison[(number, prefix, index, item['owner'])][arm]['reasoning_only'] for item in raw)
             stages.append(dict(stage=index, concurrency=concurrency, seconds=elapsed,
                                output_tokens=tokens, TPS=tokens / elapsed,
                                timed_NVML_samples=len(timed),
                                mean_TTFT_seconds=statistics.mean(ttft) if ttft else None,
-                               visible_content_requests=len(ttft), empty_first_EOS_requests=len(raw)-len(ttft),
+                               visible_content_requests=len(ttft), reasoning_only_requests=reasoning_only,
+                               empty_first_EOS_requests=len(raw)-len(ttft)-reasoning_only,
                                lifecycle=lifecycle))
         assert cursor == len(raw_requests)
         after = stages[-1]["lifecycle"]["stage-5-c1-idle"]
@@ -221,6 +236,7 @@ def main():
                                       TPS=moments([row["stages"][index]["TPS"] for row in rows[1:]]),
                                       mean_TTFT_seconds=(moments([row["stages"][index]["mean_TTFT_seconds"] for row in rows[1:]]) if all(row["stages"][index]["mean_TTFT_seconds"] is not None for row in rows[1:]) else None),
                                       empty_first_EOS_requests=[row["stages"][index]["empty_first_EOS_requests"] for row in rows[1:]],
+                                      reasoning_only_requests=[row["stages"][index]["reasoning_only_requests"] for row in rows[1:]],
                                       NVML_idle_last_bytes=moments([row["stages"][index]["lifecycle"]["stage-" + str(index) + "-c" + str(row["stages"][index]["concurrency"]) + "-idle"]["NVML_last_bytes"] for row in rows[1:]])))
     result = dict(full_model_profile=full_profile, mini_only=not full_profile, raw_streams_usage_timestamps_and_hashes_verified=True,
                   collected_arms=collected_arms,server_runs=len(records),actual_requests=256*len(collected_arms),
@@ -232,6 +248,9 @@ def main():
                   native_allocator_memory_verified=native_enabled,
                   automatic_OFF_c16_to_c1_reclaim_verified=native_enabled,
                   source_result_SHA256=digest(args.job / "result.json"), rounds=records, summaries=summaries,
+                  TTFT_definition='First final-content delta; reasoning-only responses retain null content TTFT.',
+                  reasoning_only_requests=sum(value[arm]['reasoning_only'] for value in comparison.values() for arm in value),
+                  task_F1_acceptance=False,
                   native_sampler_overhead_not_qualified=True, model_performance_qualified=False, candidate_promoted=False,
                   limitations="HTTP lifecycle diagnostic, not task F1 or main performance acceptance. NVML includes all device allocations; the ET allocator pool does not measure graph-private pools. Candidate-only collection has no paired output or timing comparison; any preserved failed global run remains a failure.")
     args.output.write_text(json.dumps(result, indent=2) + "\n")
