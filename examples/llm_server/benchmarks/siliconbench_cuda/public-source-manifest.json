@@ -608,8 +608,8 @@
       "bytes": 9469
     },
     "prepare_gemma_kv_memory_worker.py": {
-      "sha256": "c45b23ca217c2774c4df3a8b859ef7aedfdbbc0d2f116e370ab1823dd387364f",
-      "bytes": 7359
+      "sha256": "d2bee6b71acc90b8746004119786dd303474e946d5cac1ca194d5b0cbdf0b399",
+      "bytes": 8025
     },
     "prepare_gemma_lowpeak_core.py": {
       "sha256": "0b653db77970063dfc9427b07f651050876464ee13314037bf8e43285d1df933",

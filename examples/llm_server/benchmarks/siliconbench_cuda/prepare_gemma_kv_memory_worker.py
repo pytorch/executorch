@@ -70,7 +70,15 @@ def main():
         if legacy_idle_options_omitted:
             capacity_spec=json.loads((package/'independent_session_capacity_source.json').read_text())
             cache_name='backends/cuda/runtime/cuda_kv_cache.cpp'
-            assert digest(source/cache_name)==capacity_spec['files'][cache_name]['after_SHA256']
+            expected_cache_SHA256=capacity_spec['files'][cache_name]['after_SHA256']
+            if gate.get('stable_metadata_uploads_spec_SHA256'):
+                uploads_path=package/'independent_session_stable_metadata_uploads_source.json'
+                uploads=json.loads(uploads_path.read_text())
+                assert digest(uploads_path)==gate['stable_metadata_uploads_spec_SHA256']
+                assert uploads['file']==cache_name and uploads['before_SHA256']==expected_cache_SHA256
+                assert uploads['native_host_metadata_only'] and uploads['model_weights_kernels_ABI_graph_policy_and_sliding_unchanged']
+                expected_cache_SHA256=uploads['after_SHA256']
+            assert digest(source/cache_name)==expected_cache_SHA256
             cache=(source/cache_name).read_text()
             assert 'cfg_.independent_sequence_capacity && live < columns_ - 1' in cache
             for name in option_names:
