@@ -17,8 +17,11 @@ def main():
                  'http-python-dependencies-job','tokenizer','preserved-global-rewind-failure-job',
                  'preserved-global-HTTP-failure-job','lock','nsys','output'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--native-transition', choices=('workspace-preserving-growth-trim','isolated-KV-pool'), default='workspace-preserving-growth-trim')
+    p.add_argument('--transition-via-native-job', type=Path)
     p.add_argument('--port',type=int,required=True)
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
+    assert not a.transition_via_native_job or a.native_transition == 'isolated-KV-pool'
     package=Path(__file__).resolve().parent
     def state(status,**extra):
         f=a.output/'progress.pending.json'
@@ -55,13 +58,16 @@ def main():
         rebind=a.output/'full-runtime-rebind';fixed=a.output/'full-fixed'
         lifecycle=a.output/'full-lifecycle';HTTP=a.output/'full-HTTP'
         state('rebinding-retained-full48-artifacts-after-mini-pass')
-        run('rebind','prepare_independent_full_runtime_rebind.py',[
+        rebind_args=[
             '--package',package,'--export-runtime-job',a.preceding_native_job,'--runtime-job',a.native_job,
-            '--mini-qualification',qpath,'--native-transition','workspace-preserving-growth-trim',
+            '--mini-qualification',qpath,'--native-transition',a.native_transition,
             '--preceding-full-rebind-proof',a.preceding_full_rebind_proof,
             '--independent-artifact',ind/'full-independent-artifact','--independent-export-job',ind,
             '--global-artifact',glob/'full-global-artifact','--global-export-job',glob,
-            '--full-model-profile','gemma4-48layers','--output',rebind])
+            '--full-model-profile','gemma4-48layers','--output',rebind]
+        if a.transition_via_native_job:
+            rebind_args += ['--transition-via-native-job',a.transition_via_native_job]
+        run('rebind','prepare_independent_full_runtime_rebind.py',rebind_args)
         state('collecting-full48-fixed-token-performance')
         run('fixed','run_full_independent_session_fixed_qualification.py',[
             '--package',package,'--native-job',a.native_job,'--runtime-rebind-job',rebind,

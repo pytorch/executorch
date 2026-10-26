@@ -45,9 +45,11 @@ def main():
     p.add_argument('--replacement-native-job', type=Path)
     p.add_argument('--replacement-mini-qualification', type=Path,
                    help='Complete same-runtime mini qualification for the compatible allocator replacement')
-    p.add_argument('--replacement-native-transition', choices=('coalesced-growth-trim', 'workspace-preserving-growth-trim'), default='coalesced-growth-trim')
+    p.add_argument('--replacement-native-transition', choices=('coalesced-growth-trim', 'workspace-preserving-growth-trim', 'isolated-KV-pool'), default='coalesced-growth-trim')
+    p.add_argument('--replacement-transition-via-native-job', type=Path)
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     assert bool(a.replacement_native_job) == bool(a.replacement_mini_qualification)
+    assert not a.replacement_transition_via_native_job or (a.replacement_native_job and a.replacement_native_transition == 'isolated-KV-pool')
     package=Path(__file__).resolve().parent;profile='muse-glimmer-52layers'
     def state(status,**extra):
         t=a.output/'progress.pending.json'
@@ -123,9 +125,10 @@ def main():
                 time.sleep(20)
             verify_qualification(qualification, 'muse-glimmer-first4',
                                  FULL_PROFILES[profile]['GGUF_SHA256'], a.replacement_native_job)
-            from prepare_independent_full_runtime_rebind import verify_transition
-            before_replacement, replacement = verify_transition(a.native_job,
-                a.replacement_native_job, package, 'MG-empty-owner-reuse', a.replacement_native_transition)
+            from prepare_independent_full_runtime_rebind import verify_transition_chain
+            before_replacement, replacement = verify_transition_chain(a.native_job,
+                a.replacement_native_job, package, 'MG-empty-owner-reuse', a.replacement_native_transition,
+                a.replacement_transition_via_native_job)
             assert before_replacement == after
             runtime_job, after = a.replacement_native_job, replacement
             (a.output/'replacement-mini-and-native-binding.json').write_text(json.dumps(dict(
@@ -133,7 +136,10 @@ def main():
                 export_runtime_gate_SHA256=sha(a.native_job/'native-gate.json'),
                 replacement_runtime_gate_SHA256=sha(runtime_job/'native-gate.json'),
                 mini_qualification_SHA256=sha(qualification),
-                transition=a.replacement_native_transition, full_model_qualified=False), indent=2)+'\n')
+                transition=a.replacement_native_transition,
+                transition_via_native_job=str(a.replacement_transition_via_native_job) if a.replacement_transition_via_native_job else None,
+                transition_via_native_gate_SHA256=sha(a.replacement_transition_via_native_job/'native-gate.json') if a.replacement_transition_via_native_job else None,
+                full_model_qualified=False), indent=2)+'\n')
         aliases={}
         for arm,job,gate in (('before',a.original_native_job,original),('after',runtime_job,after)):
             alias=a.output/(arm+'-full-artifact');alias.mkdir();aliases[arm]=alias
