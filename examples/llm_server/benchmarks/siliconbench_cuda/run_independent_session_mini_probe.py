@@ -1,4 +1,4 @@
-"""Exercise two four-layer mini arms with heterogeneous session histories.
+"""Exercise geometry-checked mini arms with heterogeneous session histories.
 
 Model numerical comparison and graph trace review remain independent gates.
 No full-model artifacts or main-result replacement are accepted here.
@@ -14,6 +14,7 @@ import statistics
 import subprocess
 import threading
 import time
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
 
 
 def digest(path):
@@ -32,6 +33,7 @@ def main():
     parser.add_argument("--expected-PTE-sha256", required=True)
     parser.add_argument("--expected-weights-sha256", required=True)
     parser.add_argument("--arm", choices=["global", "independent"], required=True)
+    parser.add_argument("--mini-profile", choices=PROFILES, default=DEFAULT_PROFILE)
     parser.add_argument("--automatic-reclaim", action="store_true",
                         help="Require native automatic contraction; never issue compact operations")
     parser.add_argument("--job-dir", type=Path, required=True)
@@ -50,8 +52,7 @@ def main():
     assert digest(args.artifact / 'model.pte') == args.expected_PTE_sha256
     assert digest(args.artifact / 'aoti_cuda_blob.ptd') == args.expected_weights_sha256
     audit = json.loads((args.artifact / 'independent-mini-artifact-audit.json').read_text())
-    assert audit['mini_is_not_full_model'] and audit['retained_original_layer_indices'] == [0,1,2,3]
-    assert audit['runtime_columns'] and audit['independent_capacity'] == (args.arm == 'independent')
+    geometry = validate_mini_audit(audit, args.mini_profile, args.arm == 'independent')
     assert audit['source_spec_sha256'] == build['source_spec_SHA256']
     assert args.probe.is_file() and not args.job_dir.exists()
     args.job_dir.mkdir(parents=True)
@@ -278,7 +279,7 @@ def main():
                                 remaining = [
                                     id for id in owners if lengths[id] < target
                                 ]
-                                budget = max(1, 2048 // len(remaining))
+                                budget = max(1, geometry['max_step'] // len(remaining))
                                 ids, tokens, select = [], [], []
                                 for id in remaining:
                                     size = min(budget, target - lengths[id])
@@ -323,7 +324,10 @@ def main():
                         request(dict(op="remove", seq_id=prefix))
                         if args.arm == "independent" and not args.automatic_reclaim:
                             request(dict(op="compact", spare_columns=0))
-                        for boundary in [513, 2047, 2048, 2049, 4097, 8193, 12289]:
+                        boundaries = [513, 2047, 2048, 2049, 4097, 8193, 12289]
+                        if args.mini_profile == 'gemma4-first6':
+                            boundaries = [513, 1023, 1024, 1025, 2047, 2048, 2049, 4097, 8193, 12289]
+                        for boundary in boundaries:
                             fill([owner], boundary, save=True)
                             if boundary == 8193:
                                 # Clone actual wrapped model caches, including a
@@ -530,6 +534,8 @@ def main():
                 )
             result = dict(
                 arm=args.arm,
+                mini_profile=args.mini_profile,
+                model_geometry=geometry,
                 same_artifact_pitch_control=args.same_artifact_pitch_control,
                 heterogeneous_histories=True,
                 automatic_reclaim_requested=args.automatic_reclaim,

@@ -57,6 +57,7 @@ def main():
     runtime = json.loads((a.runtime / "result.json").read_text())
     assert fixed["arm"] == "global" and runtime["arm"] == "independent"
     assert fixed["role"] == runtime["role"]
+    assert fixed.get('mini_profile','muse-glimmer-first4') == runtime.get('mini_profile','muse-glimmer-first4')
     assert len(fixed["rounds"]) == len(runtime["rounds"]) == 4
     assert fixed["probe_sha256"] == runtime["probe_sha256"]
     automatic = runtime.get("automatic_reclaim_requested", False)
@@ -273,6 +274,7 @@ def main():
         numerical_checks_pass=True,
         model_performance_qualified=False,
         HTTP_overhead_qualified=False,
+        mini_profile=runtime.get('mini_profile','muse-glimmer-first4'),
         independent_session_capacity_scope="Full-attention ranges; sliding-window storage policy preserved",
         weight_payload_review=weight_review,
         all_saved_logits_bitwise_equal=exact,

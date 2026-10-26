@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import traceback
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE
 
 
 def main():
@@ -24,6 +25,7 @@ def main():
     parser.add_argument('--wait-minutes', type=int, default=240)
     parser.add_argument('--automatic-reclaim', action='store_true')
     parser.add_argument('--source-spec', type=Path)
+    parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
     args = parser.parse_args()
     assert not args.output.exists(), 'Preserve prior attempts'
     args.output.mkdir(parents=True)
@@ -55,7 +57,9 @@ def main():
             command = (handle/'cmdline').read_bytes().replace(b'\0',b' ')
             assert (b'prepare_independent_session_mini.py' in command or
                     b'export_independent_session_mini_from_native.py' in command or
-                    b'prepare_independent_session_shared_autotune_mini.py' in command)
+                    b'prepare_independent_session_shared_autotune_mini.py' in command or
+                    (args.mini_profile == 'gemma4-first6' and
+                     b'prepare_gemma_independent_session_mini_pair.py' in command))
             state('waiting-on-confirmed-live-mini-preparation',
                   preparation_pid=progress['controller_pid'],preparation_status=progress['status'])
             if time.monotonic()>=deadline:
@@ -76,6 +80,7 @@ def main():
                  '--expected-PTE-sha256',audit['artifacts']['model.pte']['sha256'],
                  '--expected-weights-sha256',audit['artifacts']['aoti_cuda_blob.ptd']['sha256'],
                  '--arm',arm,'--job-dir',args.output/arm,'--lock',args.lock,
+                 '--mini-profile',args.mini_profile,
                  '--nsys',args.nsys,*(['--automatic-reclaim'] if args.automatic_reclaim else [])],arm+'-probe')
         state('reviewing-model-weight-storages')
         weights = args.output/'weight-payload-review.json'

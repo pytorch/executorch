@@ -16,6 +16,7 @@ import selectors
 import subprocess
 import time
 import traceback
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
 
 
 def digest(path):
@@ -31,6 +32,7 @@ def main():
     for name in ("preparation-job", "lock", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
+    parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
     parser.add_argument("--after-logit-collision-job", type=Path)
     args = parser.parse_args()
     assert not args.output.exists()
@@ -70,7 +72,11 @@ def main():
             handle = Path("/proc") / str(preparation["controller_pid"])
             assert handle.exists()
             command = (handle / "cmdline").read_bytes()
-            assert b"prepare_independent_session_mini.py" in command or b"export_independent_session_mini_from_native.py" in command
+            assert (b"prepare_independent_session_mini.py" in command or
+                    b"export_independent_session_mini_from_native.py" in command or
+                    b"prepare_independent_session_shared_autotune_mini.py" in command or
+                    (args.mini_profile == 'gemma4-first6' and
+                     b"prepare_gemma_independent_session_mini_pair.py" in command))
             state("waiting-on-confirmed-live-preparation", preparation_pid=preparation["controller_pid"])
             if time.monotonic() >= deadline:
                 state("observation-timeout", preparation_still_running=True)
@@ -86,7 +92,7 @@ def main():
         for arm in ("global", "independent"):
             artifact = args.preparation_job / ("mini-" + arm + "-artifact")
             audit = json.loads((artifact / "independent-mini-artifact-audit.json").read_text())
-            assert audit["mini_is_not_full_model"] and audit["retained_original_layer_indices"] == [0, 1, 2, 3]
+            geometry = validate_mini_audit(audit, args.mini_profile, arm == 'independent')
             assert audit["independent_capacity"] == (arm == "independent")
             assert audit["source_spec_sha256"] == gate["source_spec_SHA256"]
             for name in ("model.pte", "aoti_cuda_blob.ptd"):
@@ -151,7 +157,7 @@ def main():
 
                             def fill(owner, current, target):
                                 while current < target:
-                                    end = min(target, current + 2048)
+                                    end = min(target, current + geometry['max_step'])
                                     request(dict(op="step", seq_ids=[owner] * (end - current),
                                                  tokens=[100 + (37 * p) % 149000 for p in range(current, end)],
                                                  select=[end - current - 1], argmax=True, save_logits=False))
@@ -217,6 +223,7 @@ def main():
                             child.wait(timeout=120)
         (args.output / "result.json").write_text(json.dumps(dict(
             same_artifact_same_forward_same_tokens=True, all_bitwise_checks_pass=True,
+            mini_profile=args.mini_profile, model_geometry=geometry,
             independent_exports_not_compared_here=True, CUDA_graph_mode_enabled=True,
             actual_graph_trace_review_separate=True, performance_qualified=False,
             full_model_qualified=False, rounds=records), indent=2) + "\n")

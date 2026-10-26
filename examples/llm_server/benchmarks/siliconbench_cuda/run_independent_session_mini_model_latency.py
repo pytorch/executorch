@@ -16,6 +16,7 @@ import statistics
 import subprocess
 import time
 import traceback
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
 
 
 def digest(path):
@@ -31,6 +32,7 @@ def main():
     for name in ("preparation-job", "output", "lock"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=240)
+    parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
     args = parser.parse_args()
     assert not args.output.exists()
     args.output.mkdir(parents=True)
@@ -54,7 +56,9 @@ def main():
             command = (Path("/proc") / str(pid) / "cmdline").read_bytes()
             assert (b"prepare_independent_session_mini.py" in command or
                     b"export_independent_session_mini_from_native.py" in command or
-                    b"prepare_independent_session_shared_autotune_mini.py" in command)
+                    b"prepare_independent_session_shared_autotune_mini.py" in command or
+                    (args.mini_profile == 'gemma4-first6' and
+                     b"prepare_gemma_independent_session_mini_pair.py" in command))
             state("waiting-on-confirmed-live-mini-preparation", preparation_pid=pid)
             if time.monotonic() >= deadline:
                 state("observation-timeout", preparation_pid=pid, preparation_still_running=True)
@@ -69,7 +73,7 @@ def main():
         for arm in ("global", "independent"):
             artifact = args.preparation_job / ("mini-" + arm + "-artifact")
             audit = json.loads((artifact / "independent-mini-artifact-audit.json").read_text())
-            assert audit["mini_is_not_full_model"] and audit["retained_original_layer_indices"] == [0,1,2,3]
+            geometry = validate_mini_audit(audit, args.mini_profile, arm == 'independent')
             assert audit["source_spec_sha256"] == gate["source_spec_SHA256"]
             assert audit["independent_capacity"] == (arm == "independent")
             for name in ("model.pte", "aoti_cuda_blob.ptd"):
@@ -79,6 +83,10 @@ def main():
         cases += [("prefill64", [64]), ("prefill512", [512]),
                   ("decode8-prefill64", [1]*8+[64]),
                   ("decode8-prefill512", [1]*8+[512])]
+        if geometry['max_step'] == 512:
+            # Keep this qualification a single mixed forward, within the
+            # actual artifact limit. The MG roofline's520 case is separate.
+            cases[-1] = ('decode8-prefill504', [1]*8+[504])
         state("waiting-GPU-lock")
         with args.lock.open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -138,8 +146,8 @@ def main():
                                 ids = [owner for owner in owners for _ in range(1024)]
                                 values = [token(i,p) for i in range(len(owners)) for p in range(1024)]
                                 # Native execute_raw splits this teacher-forced setup at the exported width.
-                                for offset in range(0,len(ids),2048):
-                                    size = min(2048,len(ids)-offset)
+                                for offset in range(0,len(ids),geometry['max_step']):
+                                    size = min(geometry['max_step'],len(ids)-offset)
                                     request(dict(op="step",seq_ids=ids[offset:offset+size],
                                                  tokens=values[offset:offset+size],select=[size-1],argmax=True))
                                 positions = [1024] * len(owners)
@@ -155,11 +163,18 @@ def main():
                                     reply = request(dict(op="step",seq_ids=seq_ids,tokens=tokens,select=select,
                                                          argmax=True,save_logits=number==1 and cycle==15))
                                     current = reply["snapshot"]
+                                    previous_counts = {row['method']:row['calls'] for row in before['method_calls']}
+                                    delta = {row['method']:row['calls']-previous_counts.get(row['method'],0)
+                                             for row in current['method_calls']
+                                             if row['calls'] != previous_counts.get(row['method'],0)}
+                                    method = 'forward_'+str(next((m for m in (1,2,4,8,16,32,64) if m >= sum(widths)), 'others'))
+                                    assert delta == {method:1}, (label, delta)
                                     changed = any(current[key] != before[key] for key in
                                                   ("live_KV_bytes","row_growth_count","column_resize_count"))
                                     calls.append(dict(cycle=cycle,native_seconds=reply["elapsed_seconds"],
                                                       storage_changed=changed, before=before,after=current,
-                                                      selected_argmax=reply["argmax"],logits=reply["logits"]))
+                                                      selected_argmax=reply["argmax"],logits=reply["logits"],
+                                                      actual_method=method, actual_model_forwards=1))
                                     before = current
                                 stable = [call["native_seconds"] for call in calls[4:] if not call["storage_changed"]]
                                 assert stable, "No stable calls; preserve and inspect raw growth data"
@@ -196,7 +211,8 @@ def main():
                               first_discarded=selected[0]["cases"][index][key])
                     for key in ("cold_first_four_seconds","mean_all_measured_native_ms","mean_stable_native_ms")}))
         (args.output / "result.json").write_text(json.dumps(dict(
-            mini_only=True,rounds=records,aggregates=aggregates,artifact_audits=audits,
+            mini_only=True,mini_profile=args.mini_profile,model_geometry=geometry,
+            rounds=records,aggregates=aggregates,artifact_audits=audits,
             native_gate_sha256=digest(gate_path),probe_sha256=digest(probe),
             fixed_teacher_forced_inputs=True,native_intervals_exclude_IPC_and_snapshots=True,
             native_intervals_include_host_preparation_argmax_and_CUDA_synchronization=True,
