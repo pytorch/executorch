@@ -38,14 +38,14 @@
     },
     "backends/cuda/runtime/test/independent_session_capacity_tests.inc": {
       "before_SHA256": null,
-      "after_SHA256": "d3da0120ff7f2cb08cf4155a44ccbc5e71161a0441de078f69dd0424cf87c486"
+      "after_SHA256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20"
     },
     "backends/cuda/runtime/test/test_cuda_kv_cache.cpp": {
       "before_SHA256": "e87ad8bba7e5bb0cc89cfe684b944e1f45b1b41daf502f2a27e9adcbed5343e1",
       "after_SHA256": "8e9c6c06986a5b1ad7eb9188af2b3aabe9b0eb20893021d2a5fbca7f2db878c7"
     }
   },
-  "patch_SHA256": "82d20d5641471a37fb00e0204c7697af7d37fc4b89f78907496f92b8a693d19b",
+  "patch_SHA256": "b56dcfe40592d3578fd494eba450f87d2f1aa0212d2fe2ef85bec56cc41ba3c1",
   "sequence_info_ABI": 3,
   "mini_GPU_qualified": false,
   "full_models_exported": false,

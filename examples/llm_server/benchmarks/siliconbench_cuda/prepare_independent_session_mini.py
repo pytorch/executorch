@@ -28,6 +28,9 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--gguf', type=Path)
+    parser.add_argument('--prepared-source', type=Path,
+                        help='Resume only a terminal owned build; preserve prior modified files')
+    parser.add_argument('--previous-source-spec', type=Path)
     parser.add_argument('--jobs', type=int, choices=[1, 2, 4], default=2)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
@@ -38,7 +41,7 @@ def main():
     assert args.python.is_file() and args.baseline_source.is_dir()
     assert not args.output.exists(), 'Preserve previous attempts'
     args.output.mkdir(parents=True)
-    source = args.output / 'executorch'
+    source = args.prepared_source if args.prepared_source else args.output / 'executorch'
     progress = args.output / 'progress.json'
     env = os.environ.copy()
     env.update(CUDA_VISIBLE_DEVICES='', CUDAARCHS='120',
@@ -88,14 +91,34 @@ def main():
             p = args.baseline_source / name
             if p.is_file():
                 controls[name] = digest(p)
-        state('copying-isolated-source')
+        state('resuming-terminal-owned-source' if args.prepared_source else 'copying-isolated-source')
 
         def ignore(directory, names):
             return [name for name in names if name in
                     ['.git', 'cmake-out', '__pycache__', '.pytest_cache'] or
                     name.endswith(('.pte', '.ptd', '.gguf', '.log', '.nsys-rep'))]
 
-        shutil.copytree(args.baseline_source, source, symlinks=True, ignore=ignore)
+        if args.prepared_source:
+            assert args.previous_source_spec is not None
+            previous = json.loads(args.previous_source_spec.read_text())
+            previous_state = json.loads((source.parent / 'progress.json').read_text())
+            assert previous_state['status'] == 'failed'
+            assert not Path('/proc', str(previous_state['controller_pid'])).exists()
+            assert not source.resolve().is_relative_to(args.baseline_source.resolve())
+            assert set(previous['files']) == set(spec['files'])
+            before_dir = args.output / 'before-resume'
+            for name, record in previous['files'].items():
+                assert digest(source / name) == record['after_SHA256'], name
+                if record['after_SHA256'] != spec['files'][name]['after_SHA256']:
+                    target = before_dir / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source / name, target)
+            previous_patch = args.previous_source_spec.parent / 'independent_session_capacity.patch'
+            assert digest(previous_patch) == previous['patch_SHA256']
+            run(['git', 'apply', '--check', '-R', previous_patch], cwd=source)
+            run(['git', 'apply', '-R', previous_patch], cwd=source)
+        else:
+            shutil.copytree(args.baseline_source, source, symlinks=True, ignore=ignore)
         verify(source, 'before')
         run(['git', 'apply', '--check', patch], cwd=source)
         run(['git', 'apply', patch], cwd=source)
@@ -116,7 +139,16 @@ def main():
              '-DCMAKE_INSTALL_PREFIX=' + str(build), '-DCMAKE_PREFIX_PATH=' + prefix,
              '-DPYTHON_EXECUTABLE=' + str(args.python)])
         run([cmake, '--build', build, '--parallel', args.jobs,
-             '--target', 'test_cuda_kv_cache', 'install'])
+             '--target', 'test_cuda_kv_cache'])
+        test_binary = build / 'backends/cuda/test_cuda_kv_cache'
+        test_binary_SHA256 = digest(test_binary)
+        backend_lib = build / 'backends/cuda/libcuda_backend.a'
+        backend_SHA256 = digest(backend_lib)
+        run([cmake, '-S', source, '-B', build,
+             '-DEXECUTORCH_BUILD_TESTS=OFF', '-DBUILD_TESTING=OFF'])
+        run([cmake, '--build', build, '--parallel', args.jobs, '--target', 'install'])
+        assert digest(test_binary) == test_binary_SHA256
+        assert digest(backend_lib) == backend_SHA256, 'Native test backend changed during SDK install'
         model_build = args.output / 'model-build'
         state('building-mini-runtime-probe')
         run([cmake, '-S', source / 'examples/models/muse-glimmer', '-B', model_build,

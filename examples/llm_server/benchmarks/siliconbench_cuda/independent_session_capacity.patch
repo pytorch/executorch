@@ -826,7 +826,7 @@
 +  ASSERT_EQ(step(*object,handle,{ids[5]}),Error::Ok);
 +  EXPECT_EQ(info(fake)[4],2);
 +  EXPECT_LT(kv->metrics().allocated_bytes,before);
-+  object->clear();
++  control->clear();
 +  EXPECT_EQ(kv->metrics().live_sequences,0);
 +  EXPECT_EQ(kv->metrics().physical_columns,2);
 +  const int fresh = *control->seq_new();
