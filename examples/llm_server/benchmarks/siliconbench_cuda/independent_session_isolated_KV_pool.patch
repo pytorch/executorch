@@ -8,7 +8,7 @@
    if (!allocated_) {
      ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(0, stream));
    }
-@@ -130,43 +131,9 @@
+@@ -130,42 +131,12 @@
      releases_storage |= target_rows[index] < allocations_[index].rows;
    }
    const bool trim_reclaimed_storage = trim_unused && releases_storage;
@@ -30,7 +30,9 @@
 -    }
 -  }
 -#endif
--  auto trim_migration_reservation = [&]() {
++  // Growth frees belong to a private KV allocator. Returning unused KV
++  // pages cannot evict shared model workspaces or graph allocations.
+   auto trim_migration_reservation = [&]() {
 -#if !defined(EXECUTORCH_USE_HIP)
 -    if (growth_pool != nullptr) {
 -      uint64_t reserved = 0, used = 0;
@@ -48,13 +50,12 @@
 -      }
 -    }
 -#endif
--  };
-+  // Growth frees belong to a private KV allocator. Returning unused KV
-+  // pages cannot evict shared model workspaces or graph allocations.
-+  auto trim_migration_reservation = [&]() { trim_sequence_memory_pool(); };
++    if (trim_unused) {
++      trim_sequence_memory_pool();
++    }
+   };
    auto fence = [&]() -> Error {
      if (cudaStreamSynchronize(stream) != cudaSuccess) {
-       return Error::Internal;
 --- a/backends/cuda/runtime/cuda_kv_pool.h
 +++ b/backends/cuda/runtime/cuda_kv_pool.h
 @@ -70,6 +70,19 @@

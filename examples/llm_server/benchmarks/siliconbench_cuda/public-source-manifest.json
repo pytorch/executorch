@@ -520,11 +520,11 @@
       "bytes": 649
     },
     "independent_session_isolated_KV_pool.patch": {
-      "sha256": "45aa6dbc5cd10a053e30ff8794419a8ca0115df3aa477fd4d31019860ddd61f3",
-      "bytes": 11489
+      "sha256": "382d14127871a17989da7cefa0779f8795cf9f455732ed4f0b1bd8a58c00839d",
+      "bytes": 11449
     },
     "independent_session_isolated_KV_pool_source.json": {
-      "sha256": "f4e0bfae96c9534671c2757d8df90bebcac0268ff0df112e7ca514bc24dd8bc2",
+      "sha256": "d65c00a0b0c0ed8a11e1d76370ea0247fa3b2bce91210107eeb866070e34d013",
       "bytes": 5229
     },
     "independent_session_mini_profiles.py": {
