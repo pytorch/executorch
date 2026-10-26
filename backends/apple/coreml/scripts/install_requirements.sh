@@ -13,7 +13,7 @@ SCRIPT_DIR_PATH="$(
 )"
 
 # TODO(jathu): remove the need to fetch coremltools to build deps for coreml_executor_runner.
-# Keep this version in sync with: pyproject.toml
+# Keep this version in sync with setup.py, and re-check the pip install below when bumping it.
 COREMLTOOLS_VERSION="9.0"
 
 # Safe colors (no TERM noise in CI)
@@ -75,12 +75,14 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 echo "${green}ExecuTorch: Installing coremltools dependencies.${reset}"
+# Not coremltools' reqs/build.pip, whose old numpy pin would downgrade the caller's numpy.
+# Its CMake build only needs numpy (for the include path) and setuptools (to build kmeans1d).
 SDKROOT="$HOST_SDKROOT" \
 CC="$HOST_CC" \
 CXX="$HOST_CXX" \
 CFLAGS="$HOST_CFLAGS" \
 CXXFLAGS="$HOST_CXXFLAGS" \
-python -m pip install -r "$COREMLTOOLS_DIR_PATH/reqs/build.pip"
+python -m pip install numpy setuptools
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools dependencies.${reset}"

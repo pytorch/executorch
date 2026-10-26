@@ -738,6 +738,21 @@ class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
         if node.target in (
+            torch.ops.aten.linear.default,
+            exir_ops.edge.aten.linear.default,
+        ):
+            if any(
+                isinstance(dim, int) and dim == 0
+                for tensor_node in (*node.all_input_nodes, node)
+                for dim in get_first_fake_tensor(tensor_node).shape
+            ):
+                self.reporter.report_reject(
+                    node,
+                    "TOSA linear requires nonempty input, weight and output tensors.",
+                )
+                return False
+
+        if node.target in (
             torch.ops.aten.argmax.default,
             exir_ops.edge.aten.argmax.default,
         ):
@@ -1605,6 +1620,12 @@ class CheckFPComparisonInputs(OperatorSupportBase):
             if input_node.op != "get_attr"
         ]
         if all(dtype in self.supported_dtypes for dtype in input_dtypes):
+            return True
+
+        if node.target in {
+            exir_ops.edge.aten.eq.Tensor,
+            exir_ops.edge.aten.ne.Tensor,
+        } and all(dtype == torch.bool for dtype in input_dtypes):
             return True
 
         if node.target in self.comparison_ops and all(
