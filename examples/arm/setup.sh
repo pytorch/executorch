@@ -289,7 +289,7 @@ function warn_if_mlsdk_python_is_untested() {
     py_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
     if ! python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
         log_step "mlsdk" \
-            "Warning: Python 3.12 is the recommended minimum for ML SDK 0.10 VGF; detected Python ${py_version}."
+            "Warning: Python 3.12 is the recommended minimum for the VGF flow; detected Python ${py_version}."
         log_step "mlsdk" \
             "Older ExecuTorch-supported Python versions may work, but are not the reference VGF configuration."
     fi

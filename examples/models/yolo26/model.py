@@ -18,7 +18,8 @@ class YOLO26Model(EagerModelBase):
         self.yolo = YOLO(model_name)
         self.dummy_frame = torch.randn((320, 320, 3)).to(torch.uint8).numpy()
         self.yolo.predict(self.dummy_frame, imgsz=(320, 320), verbose=False)
-        self.model = self.yolo.model.eval()
+        # ultralytics 8.4.133-8.4.139 switch to channels_last in predict(); undo it.
+        self.model = self.yolo.model.eval().to(memory_format=torch.contiguous_format)
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading " + self.model_name + " model")

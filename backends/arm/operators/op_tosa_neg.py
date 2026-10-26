@@ -54,10 +54,8 @@ class NegVisitor(NodeVisitor):
         ]
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target, [*inputs, output], supported_dtypes, self.tosa_spec
-        )
+        validate_same_dtype(self.target, [*inputs, output])
+        validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
 
         input_zp, output_zp = get_negate_zero_points(
             node, inputs[0].dtype == ts.DType.INT8
