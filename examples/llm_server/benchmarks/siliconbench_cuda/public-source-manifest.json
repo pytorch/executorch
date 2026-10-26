@@ -1055,6 +1055,10 @@
       "sha256": "735aa9a20d8403c49a17f0115c07a40b390f8128cb4f15f0e066711285861bcd",
       "bytes": 5383
     },
+    "run_full_Gemma_main_after_fresh_quality.py": {
+      "sha256": "b311c7fb63339cd429d142ccd4befc92e07b5a66570aa29331ee18c11721340b",
+      "bytes": 4831
+    },
     "run_full_Gemma_quality_after_allocator_controls.py": {
       "sha256": "62e5c09a92cd44b9993c7e7c0ad924aed0ed9ab5f2878b7d7222df35099a1411",
       "bytes": 7618
@@ -1100,8 +1104,8 @@
       "bytes": 6160
     },
     "run_gemma_independent_full_main.py": {
-      "sha256": "9fc7c1d6e5b25b168f2cbf6b9757c8f658dc7fb5b9d143d73d8aa3e997f96347",
-      "bytes": 15815
+      "sha256": "6c3abc3c7fbca9aebb34bed076dfd4873c213fa1b3bb5563b97e50c554e094ac",
+      "bytes": 15794
     },
     "run_gemma_runtime_columns_qualification.py": {
       "sha256": "8c138d800e7923f415dc028870ad5e9deef345af79b91f57eef9b36d3142a0c2",
@@ -1314,6 +1318,10 @@
     "wait_mg_quality_boundary.py": {
       "sha256": "1c95b9eb7fa68b1cf5e6340ae54d2509b6006c370795bd1a2073b4f5a770a2b6",
       "bytes": 3752
+    },
+    "write_Gemma_full_independent_KV_qualification.py": {
+      "sha256": "5381cec7325121de1f3570f39f5e26141184c759e9735c4f782585305d7fa4b0",
+      "bytes": 12248
     },
     "write_MG_full_independent_KV_qualification.py": {
       "sha256": "f5f97c32265e6dc9c0361b5a27ac8c4b672f1833ee95ffa4d991f43276d622b2",

@@ -90,9 +90,6 @@ def main():
         parent=json.loads((a.HTTP_job/'result.json').read_text())
         assert parent['full_profile']==a.full_model_profile and parent['full_HTTP_memory_pass']
         assert sha(a.HTTP_job/'HTTP-independent-review.json')==parent['HTTP_review_SHA256']
-        if parent['positive_performance_signals'] and a.phase=='performance' and gemma:
-            state('full-performance-gate-not-passed',positive_performance_signals=parent['positive_performance_signals'])
-            return
         binding=verify_http(a,a.package)
         artifact=binding['artifacts']['independent']
         input_progress=json.loads((a.public_inputs/'progress.json').read_text())
@@ -123,7 +120,10 @@ def main():
             assert not qualification['unresolved_correctness_or_performance_signals']
             for name,expected in qualification['evidence_files_SHA256'].items():
                 assert sha(name)==expected,name
-            if not gemma:
+            if gemma:
+                from write_Gemma_full_independent_KV_qualification import verify_Gemma_full_qualification
+                verify_Gemma_full_qualification(a.full_qualification_receipt,a,binding)
+            else:
                 from write_MG_full_independent_KV_qualification import verify_MG_full_qualification
                 verify_MG_full_qualification(a.full_qualification_receipt,a,binding)
         # This generated wrapper remains in the owned experiment output only.
