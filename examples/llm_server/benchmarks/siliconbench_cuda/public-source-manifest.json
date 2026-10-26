@@ -679,6 +679,10 @@
       "sha256": "c20578c318bd70a275b87d91510e0c747ac53c7bd1204ac6552b93e6ce2f77d4",
       "bytes": 6006
     },
+    "roofline_prefill_validation.cpp": {
+      "sha256": "578e4fa884350004ff14d0c0d20b50b290ccf17be6635ebeba284ce04285fa9a",
+      "bytes": 5154
+    },
     "roofline_profile_project/CMakeLists.txt": {
       "sha256": "b443cfdaf21931c2d6d53e05ebf8caa84a804b86c68efd45e32a7bd30f2efa1c",
       "bytes": 1020
@@ -686,6 +690,10 @@
     "roofline_sdk_project/CMakeLists.txt": {
       "sha256": "e339359f81c1fe88dc28804cf1ea011e40e5e24208397341326c1e12eeb48e3c",
       "bytes": 946
+    },
+    "roofline_validation_project/CMakeLists.txt": {
+      "sha256": "ae4679dfe4bf4ce0f0178abfad8a52d7d803bdad6e36a255f5319cccea9a38d2",
+      "bytes": 1038
     },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",
@@ -778,6 +786,10 @@
     "trace_gemma_runtime_http_memory.py": {
       "sha256": "2889c7c714bf1e958cf1c215f85a384f031303583f462fd6b6fe6eca249caded",
       "bytes": 6201
+    },
+    "validate_roofline_prefill_outputs.py": {
+      "sha256": "10bb2c233e13c515276cfaceb22002fb93370421f79e345dd4f5bbe057c7dd04",
+      "bytes": 5701
     },
     "wait_for.py": {
       "sha256": "f9fa316d2904af3f547710e9d6e8ef9138cc6beb6f5fb62aad489a47177e7f05",
