@@ -516,8 +516,8 @@
       "bytes": 5254
     },
     "prepare_independent_session_mini.py": {
-      "sha256": "b1ed5c19b4447d77d179570232e1ad65b930eaf5afd16bca401ae98c3781a63f",
-      "bytes": 11392
+      "sha256": "1d8f6daac1fa0866c9ab5140ac78a519d43e91a8591a24598d75691c1a84664a",
+      "bytes": 11397
     },
     "prepare_independent_session_native_from_public.py": {
       "sha256": "42dcedc0dc041d90ec8012d057cd2556a9eda38403242c51d5282b97d5f0a55c",

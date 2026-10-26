@@ -142,7 +142,7 @@ def main():
              '--target', 'test_cuda_kv_cache'])
         test_binary = build / 'backends/cuda/test_cuda_kv_cache'
         test_binary_SHA256 = digest(test_binary)
-        backend_lib = build / 'backends/cuda/libcuda_backend.a'
+        backend_lib = build / 'backends/cuda/libaoti_cuda_backend.a'
         backend_SHA256 = digest(backend_lib)
         run([cmake, '-S', source, '-B', build,
              '-DEXECUTORCH_BUILD_TESTS=OFF', '-DBUILD_TESTING=OFF'])
