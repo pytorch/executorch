@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 
 
-def install_shared_inductor_config_control(output):
+def install_shared_inductor_config_control(output, generated_gemm_backends=None):
     from torch._inductor import config as inductor_config
     from torch._inductor.runtime.triton_heuristics import CachingAutotuner
     output = Path(output)
@@ -28,7 +28,11 @@ def install_shared_inductor_config_control(output):
     # A previously compiled graph can bypass every tuner hook. Recompile
     # generated Inductor graphs in this diagnostic process so configuration
     # sharing is actually observed; ET's native GEMM cache remains unchanged.
-    cache_control=inductor_config.patch({'force_disable_caches': True})
+    assert generated_gemm_backends in (None, 'ATEN')
+    compiler_options={'force_disable_caches': True}
+    if generated_gemm_backends is not None:
+        compiler_options['max_autotune_gemm_backends']=generated_gemm_backends
+    cache_control=inductor_config.patch(compiler_options)
     cache_control.__enter__()
     assert inductor_config.force_disable_caches
 
@@ -69,6 +73,8 @@ def install_shared_inductor_config_control(output):
         pending.write_text(json.dumps(dict(
             exact_source_or_explicit_addressing_control=True,
             Inductor_caches_disabled_in_this_diagnostic_process=True,
+            generated_gemm_backends_diagnostic=generated_gemm_backends,
+            native_quantized_GEMM_source_and_policy_unchanged=True,
             candidate_accepted=False, runtime_source_changed=False,
             winners=winners, events=events), indent=2) + '\n')
         pending.replace(output)
