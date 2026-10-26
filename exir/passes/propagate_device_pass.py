@@ -509,9 +509,10 @@ class PropagateDevicePass(PassBase):
         self._report_per_call_copy(
             f"Method input '{placeholder.name}' ({spec.nbytes()} bytes) stays on "
             f"{device} for the delegates there, but '{first_reader.name}' also "
-            f"reads it, so it is copied to the host on every call. Have the "
-            f"partitioner put every reader in a delegate on {device} to avoid "
-            f"that copy.",
+            f"reads it, so it is copied to the host on every call, and from there "
+            f"to any other device that reads it. To avoid that, have the "
+            f"partitioner put every op that reads it in a delegate on {device}, "
+            f"and set skip_d2h_for_method_outputs if the method returns it.",
             True,
         )
         with graph_module.graph.inserting_before(first_reader):

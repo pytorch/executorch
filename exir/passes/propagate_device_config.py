@@ -50,10 +50,12 @@ class PropagateDeviceConfig:
     # delegate are NOT wrapped with _h2d_copy. The user must provide tensors
     # already on the target device: the device of the first delegate that
     # reads the input, in graph order. Any other reader of such an input, such
-    # as a host op or a delegate on another device, reads a copy of it in host
-    # memory, made on every call, and the pass logs a warning. An input that an
-    # op writes in place on the host makes to_executorch raise. Useful for
-    # pipelines where inputs are pre-staged on GPU. Constants are not passed
+    # as a host op, a delegate on another device, or the method output without
+    # skip_d2h_for_method_outputs, reads a copy of it in host memory, made on
+    # every call, and the pass logs a warning. A delegate on another device
+    # then gets a second copy, from the host. An input that an op writes in
+    # place on the host makes to_executorch raise. Useful for pipelines where
+    # inputs are pre-staged on GPU. Constants are not passed
     # by the caller, so they are still copied: their data stays on the host,
     # in the program or in its external data file. That copy runs on every
     # call, once for each device that reads the constant, and stays in device
@@ -65,11 +67,11 @@ class PropagateDeviceConfig:
     skip_h2d_for_method_inputs: Union[bool, Dict[str, bool]] = False
 
     # When True, device delegate outputs that the method returns stay on
-    # device, with one exception: when a custom host op with a mutable
-    # argument, such as a KV cache update, writes the host copy of such an
-    # output in place, the method returns that host copy, since the device
-    # tensor never sees the write. The copy to the host runs on every call,
-    # and the pass logs a warning about it.
+    # device, with one exception: when an op outside the delegate, such as a
+    # KV cache update, writes the host copy of such an output in place, the
+    # method returns that host copy, since the device tensor never sees the
+    # write. The copy to the host runs on every call, and the pass logs a
+    # warning about it.
     # Useful for cross-method GPU pipelines where the next method consumes GPU
     # tensors directly.
     #

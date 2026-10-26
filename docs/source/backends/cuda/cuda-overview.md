@@ -213,11 +213,13 @@ that runs on every call and logs a warning. To remove the copy, have the partiti
 the graph in the delegate.
 
 - An input stays on the device of the first delegate that reads it. Other readers, such as an
-  operator outside the delegate or a delegate on another device, read a copy in host memory.
+  operator outside the delegate, a delegate on another device, or the method output without
+  `skip_d2h_for_method_outputs`, read a copy in host memory. A delegate on another device then
+  gets a second copy, from the host.
 - A constant, such as a weight, that a delegate reads from outside is copied to each device that
   reads it.
-- A returned output that a custom operator outside the delegate writes in place, such as a KV
-  cache update, is copied to the host and returned there. The method metadata gives the device
+- A returned output that an operator outside the delegate writes in place, such as a KV cache
+  update, is copied to the host and returned there. The method metadata gives the device
   of each output.
 
 Add `error_on_per_call_copies=True` to `PropagateDeviceConfig` to make `to_executorch` fail
