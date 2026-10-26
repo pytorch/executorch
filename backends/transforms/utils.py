@@ -269,8 +269,7 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
     # Edit the spec list in place: ExportedProgramPassManager runs passes on a
     # shallow copy of the program, which would not see a replaced signature.
     input_specs = exp_program.graph_signature.input_specs
-    for spec in [spec for spec in input_specs if spec.arg.name == node.name]:
-        input_specs.remove(spec)
+    input_specs[:] = [spec for spec in input_specs if spec.arg.name != node.name]
 
     # Remove node from graph
     node.graph.erase_node(node)
