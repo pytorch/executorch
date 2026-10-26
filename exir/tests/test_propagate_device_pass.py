@@ -541,6 +541,29 @@ class TestPropagateDevicePass(unittest.TestCase):
                 self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
                 self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
 
+    def test_no_copy_nodes_for_cpu_target_device(self):
+        """A delegate whose target device is the CPU reads and writes host
+        memory, so it gets no copies, like a delegate without a target device."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False, enable_non_cpu_memory_planning=True
+        )
+        for pipeline, gm in _lower_model_to_executorch(
+            Model(),
+            (torch.randn(2, 2), torch.randn(2, 2)),
+            PerAddDeviceDelegatePartitioner(["cpu"]),
+            et_config,
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 1)
+                self.assertEqual(nodes.h2d_nodes, [])
+                self.assertEqual(nodes.d2h_nodes, [])
+
     def test_redundant_same_device_copies_elided(self):
         """Two directly-connected delegates on the *same* device must not leave a
         redundant device->host->device round-trip between them. The

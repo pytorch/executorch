@@ -274,7 +274,8 @@ class PropagateDevicePass(PassBase):
     After to_backend, walk the graph and insert H2D/D2H copy ops at delegate
     boundaries based on partitioner-assigned device info.
 
-    When a delegate has a target_device CompileSpec (e.g., "cuda:0"):
+    When a delegate has a target_device CompileSpec (e.g., "cuda:0") other
+    than the CPU:
     - For each delegate input: insert et_copy._h2d_copy before the delegate call,
       or reuse the one an earlier delegate on the same device reads when no op
       writes the input in place in between. A reused copy stays in device
@@ -639,7 +640,8 @@ class PropagateDevicePass(PassBase):
         #            H2D copy nodes before delegate inputs, or reuse the copy an
         #            earlier delegate on the same device reads, and tag the delegate
         #            output specs with the target device.  Delegates without a
-        #            target_device are left untouched (no copies, specs stay CPU).
+        #            target_device, or with the CPU as their target_device, are
+        #            left untouched (no copies, specs stay CPU).
         #   Pass 2 – For each getitem that extracts from a device-tagged delegate
         #            (tracked in device_delegates), propagate the device onto the
         #            getitem spec and insert a D2H copy after it so downstream
@@ -664,7 +666,8 @@ class PropagateDevicePass(PassBase):
                     )
 
                 result = _get_target_device_from_compile_specs(lowered_module)
-                if result is None:
+                # A delegate on the host reads and writes host memory directly.
+                if result is None or result[0] == schema.DeviceType.CPU:
                     continue
 
                 target_device_type, device_index = result
