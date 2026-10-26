@@ -25,11 +25,28 @@ def main():
     parser.add_argument('--python', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--previous-independent-package', type=Path,
+                        help='Verify and reverse an earlier independent patch only in the new copy')
+    parser.add_argument('--previous-native-gate', type=Path)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
     spec = json.loads((package/'runtime_kv_columns_source.json').read_text())
     assert not args.output.exists() and args.baseline_source.is_dir()
     assert digest(package/'runtime_kv_columns.patch') == spec['patch_sha256']
+    prior = None
+    if args.previous_independent_package:
+        assert args.previous_native_gate is not None
+        prior_path=args.previous_independent_package/'independent_session_capacity_source.json'
+        prior=json.loads(prior_path.read_text())
+        gate=json.loads(args.previous_native_gate.read_text())
+        assert gate['native_GPU_tests_pass'] and gate['test_count']==74
+        assert Path(gate['source']).resolve()==args.baseline_source.resolve()
+        assert digest(prior_path)==gate['source_spec_SHA256']
+        assert digest(args.previous_independent_package/'independent_session_capacity.patch')==prior['patch_SHA256']
+        for name,record in prior['files'].items():
+            assert digest(args.baseline_source/name)==record['after_SHA256'],name
+    else:
+        assert args.previous_native_gate is None
     args.output.mkdir(parents=True)
     base = args.output/'ABI2-base'
 
@@ -46,6 +63,15 @@ def main():
                     'origin',spec['base_commit']],check=True,timeout=600)
     subprocess.run(['git','-C',str(base),'reset','--mixed',spec['base_commit']],
                    check=True,stdout=subprocess.DEVNULL)
+    if prior:
+        previous_patch=args.previous_independent_package/'independent_session_capacity.patch'
+        assert base.resolve()!=args.baseline_source.resolve()
+        subprocess.run(['git','apply','--check','-R',str(previous_patch)],cwd=base,check=True)
+        subprocess.run(['git','apply','-R',str(previous_patch)],cwd=base,check=True)
+        for name,record in prior['files'].items():
+            path=base/name
+            if record['before_SHA256'] is None:assert not path.exists(),name
+            else:assert digest(path)==record['before_SHA256'],name
     if any(not (base/'third-party'/name/'CMakeLists.txt').is_file()
            for name in ['googletest','flatbuffers']):
         modules = subprocess.check_output(['git','-C',str(base),'show',
@@ -88,6 +114,9 @@ def main():
         assert digest(base/name)==record['after_sha256'],name
     for name,sha in original.items():
         assert digest(args.baseline_source/name)==sha,name
+    if prior:
+        for name,record in prior['files'].items():
+            assert digest(args.baseline_source/name)==record['after_SHA256'],name
     argv=[str(args.python),'-B','-u',str(package/'prepare_independent_session_mini.py'),
           '--baseline-source',str(base),'--python',str(args.python),
           '--output',str(args.output/'native-build'),'--lock',str(args.lock),'--jobs','4']
@@ -97,6 +126,7 @@ def main():
     receipt=dict(native_controller_pid=child.pid,argv=argv,
                  public_base_commit=spec['base_commit'],
                  preserved_baseline_hashes=original,baseline_modified=False,
+                 prior_independent_patch_reversed_only_in_new_copy=bool(prior),
                  full_model_export_started=False)
     (args.output/'deployment.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(json.dumps(receipt))
