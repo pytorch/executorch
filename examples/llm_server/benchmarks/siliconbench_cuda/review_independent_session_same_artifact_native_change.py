@@ -11,6 +11,7 @@ a=p.parse_args();roots=[a.before_job,a.after_job];out=a.output
 assert not out.exists()
 docs=[json.loads((r/'result.json').read_text()) for r in roots]
 assert all(d['native_sampler_mode']=='off' for d in docs)
+assert all(d.get('performance_rounds_unprofiled',True) for d in docs)
 def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def ops(p):
  operations=[];pending=None;ready=[]
@@ -80,6 +81,6 @@ result={'cells':cells,'same_compiled_artifacts':True,'both_native_sampler_OFF':T
         'native_gate_SHA256':[d['native_gate_sha256'] for d in docs],
         'probe_SHA256':[d['probe_sha256'] for d in docs],
         'original_results_SHA256':[digest(root/'result.json') for root in roots],
-        'limitations':'Four-round fixed teacher-forced mini control, identical compiled PTE/PTD per arm; native SDK versions differ. Saved full logits in round 1 only. No profiler in any round. Native model intervals include host work, argmax and CUDA completion; exclude snapshot/IPC. Native-change timing signals are reported without asserting zero overhead. Full-model and HTTP/F1 qualification remain separate.'}
+        'limitations':'Four-round fixed teacher-forced mini control, identical compiled PTE/PTD per arm; native SDK versions differ. Saved full logits in round 1 only. Round1 may include the explicitly recorded trace; all averaged performance rounds2-4 are unprofiled. Native model intervals include host work, argmax and CUDA completion; exclude snapshot/IPC. Native-change timing signals are reported without asserting zero overhead. Full-model and HTTP/F1 qualification remain separate.'}
 out.write_text(json.dumps(result,indent=2)+'\n')
 print(json.dumps({'same_PTE_and_PTD':True,'argmax_values_equal':argmax_count,'full_saved_tensors_bitwise_equal':len(full)}))

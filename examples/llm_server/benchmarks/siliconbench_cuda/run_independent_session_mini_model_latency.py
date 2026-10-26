@@ -34,6 +34,8 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=240)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--diagnostic-round-number',type=int,choices=(1,2,3,4),
+                        help='Collect one labelled diagnostic round for an interleaved native control; not standalone qualification')
     parser.add_argument('--full-model-profile', choices=FULL_PROFILES,
                         help='Require separately gated full artifacts and record their actual full geometry')
     parser.add_argument('--rewind-probe-job',type=Path)
@@ -112,7 +114,7 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX)
             assert not subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid",
                                                 "--format=csv,noheader,nounits"], text=True).strip()
-            for number in range(1,5):
+            for number in ([args.diagnostic_round_number] if args.diagnostic_round_number else range(1,5)):
                 for arm in (("global","independent") if number%2 else ("independent","global")):
                     directory = args.output / ("round-" + str(number)) / arm
                     directory.mkdir(parents=True)
@@ -252,15 +254,16 @@ def main():
                             assert time.monotonic() < deadline, "Owned executor teardown incomplete"
                             time.sleep(1)
         aggregates = []
-        for arm in ("global","independent"):
-            selected = [row for row in records if row["arm"] == arm]
-            assert [row["round"] for row in selected] == [1,2,3,4]
-            for index,(label,widths) in enumerate(cases):
-                aggregates.append(dict(arm=arm,case=label,widths=widths,statistics={
-                    key: dict(mean=statistics.mean(row["cases"][index][key] for row in selected[1:]),
-                              sample_SD=statistics.stdev(row["cases"][index][key] for row in selected[1:]),
-                              first_discarded=selected[0]["cases"][index][key])
-                    for key in ("cold_first_four_seconds","mean_all_measured_native_ms","mean_stable_native_ms")}))
+        if args.diagnostic_round_number is None:
+            for arm in ("global","independent"):
+                selected = [row for row in records if row["arm"] == arm]
+                assert [row["round"] for row in selected] == [1,2,3,4]
+                for index,(label,widths) in enumerate(cases):
+                    aggregates.append(dict(arm=arm,case=label,widths=widths,statistics={
+                        key: dict(mean=statistics.mean(row["cases"][index][key] for row in selected[1:]),
+                                  sample_SD=statistics.stdev(row["cases"][index][key] for row in selected[1:]),
+                                  first_discarded=selected[0]["cases"][index][key])
+                        for key in ("cold_first_four_seconds","mean_all_measured_native_ms","mean_stable_native_ms")}))
         (args.output / "result.json").write_text(json.dumps(dict(
             mini_only=not bool(args.full_model_profile),full_model_profile=args.full_model_profile,
             full_model_qualification_control=bool(args.full_model_profile),mini_profile=args.mini_profile,model_geometry=geometry,
@@ -272,7 +275,8 @@ def main():
             native_gate_sha256=digest(gate_path),probe_sha256=digest(probe),
             fixed_teacher_forced_inputs=True,native_intervals_exclude_IPC_and_snapshots=True,
             native_intervals_include_host_preparation_argmax_and_CUDA_synchronization=True,
-            four_rounds_first_discarded=True,alternating_arm_order=True,
+            four_rounds_first_discarded=args.diagnostic_round_number is None,alternating_arm_order=True,
+            diagnostic_single_round=args.diagnostic_round_number,
             numerical_and_route_review_pending=True,model_performance_qualified=False,
             candidate_promoted=False),indent=2) + "\n")
         state("model-latency-collected-pending-independent-review",cases=9,processes=len(records))
