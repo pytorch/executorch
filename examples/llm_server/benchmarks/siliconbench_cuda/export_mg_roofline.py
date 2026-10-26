@@ -179,6 +179,10 @@ def main():
         from roofline_large_w4a16_aoti import install_export_hook
         large_w4a16_receipt=install_export_hook(int4_dispatch,
             capability=torch.cuda.get_device_capability(),policies=policies)
+        from roofline_cond_placeholder_compat import install as install_cond_naming
+        naming_receipt=install_cond_naming(args.job_dir)
+        (args.job_dir/'cond-placeholder-naming-compatibility.json').write_text(
+            json.dumps(naming_receipt,indent=2)+'\n')
         original_export=torch.export.export
         route_audits=[]
         def traced_export(*a,**kw):
@@ -280,6 +284,11 @@ def main():
         audit['KA_route_receipt']=audit_route_log(args.job_dir,ka_receipt)
     if large_w4a16_receipt is not None:
         assert any(row['native_large_operator_calls']>0 for row in route_audits),'Large routes missing from real model export'
+        literal_events=Path(naming_receipt['actual_literal_events'])
+        assert literal_events.exists() and literal_events.stat().st_size>0
+        audit['cond_placeholder_naming_compatibility']=dict(naming_receipt,
+            actual_literal_events_SHA256=digest(literal_events),
+            actual_literal_event_count=len(literal_events.read_text().splitlines()))
         audit['large_W4A16_roofline_route']=large_w4a16_receipt
         audit['large_W4A16_policy_file_SHA256']=digest(args.large_w4a16_policy_file)
         audit['actual_strict_export_route_audit']=route_audits
