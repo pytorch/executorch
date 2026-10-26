@@ -3,11 +3,6 @@
 Retain fresh-copy semantics, including consumers that mutate or take views.
 This isolated export pass applies only to the roofline forward_others method.
 """
-import contextlib
-import contextvars
-import hashlib
-import json
-from pathlib import Path
 
 import torch
 from executorch.exir.dialects._ops import ops
@@ -50,55 +45,3 @@ def install(backend,job):
         return result
     backend.get_custom_passes=classmethod(passes)
     return events
-
-
-def install_static_compile_reuse(backend,previous,events):
-    """Reuse only unchanged static delegates from the preserved terminal run.
-
-    The caller preserves the source/GGUF/shape configuration and validates all
-    complete-model outputs after export. Never reuse the failed dynamic graph.
-    """
-    import shlex
-    previous=Path(previous)
-    assert 'Method forward_others missing fallback kernels' in (previous/'export.log').read_text()
-    routes=json.loads((previous/'actual-strict-export-route-audit.json').read_text())
-    static=[v for v in routes if not v['dynamic']]
-    assert len(static)==7 and all(v['native_large_operator_calls']==0 for v in static)
-    records=[json.loads(line) for line in (previous/'actual-compiler-optimization.jsonl').read_text().splitlines()]
-    wrappers=[]
-    for v in records:
-        if not v['target_name'].endswith('.wrapper'):continue
-        command=shlex.split(v['command'])
-        cpp_args=[Path(s) for s in command if s.endswith('.wrapper.cpp')]
-        if not cpp_args:continue  # The wrapper link record has no C++ input.
-        assert len(cpp_args)==1 and '-c' in command
-        cpp=cpp_args[0]
-        assert previous/'cache/inductor' in cpp.parents
-        if cpp not in wrappers:wrappers.append(cpp)
-    assert len(wrappers)==8
-    sources={}
-    for M,cpp in zip([1,2,4,8,16,32,64],wrappers[:7]):
-        so=cpp.with_suffix('.so');blob=cpp.with_name(cpp.name[:-len('.wrapper.cpp')]+'.wrapper_weights.blob')
-        assert so.is_file() and blob.is_file(),(so,blob)
-        sources['forward_'+str(M)]=(so,blob)
-    current=contextvars.ContextVar('roofline_compile_method',default=None)
-    original_context=backend.get_extra_aoti_compile_context_manager
-    @contextlib.contextmanager
-    def context(cls,specs=None):
-        token=current.set(cls.method_name_from_compile_specs(specs))
-        try:
-            with original_context(specs):yield
-        finally:current.reset(token)
-    backend.get_extra_aoti_compile_context_manager=classmethod(context)
-    original_compile=torch._inductor.aot_compile
-    def compile(module,args,**kwargs):
-        method=current.get()
-        if method not in sources:return original_compile(module,args,**kwargs)
-        assert not any('siliconbench.roofline_native_large_w4a16' in str(n.target)
-                       for gm in module.modules() if isinstance(gm,torch.fx.GraphModule) for n in gm.graph.nodes)
-        so,blob=sources[method]
-        events.append(dict(reused_static_method=method,SO=str(so),SO_SHA256=hashlib.sha256(so.read_bytes()).hexdigest(),
-                           graph_code_SHA256=hashlib.sha256(module.code.encode()).hexdigest(),
-                           failed_dynamic_method_not_reused=True,full_output_validation_still_required=True))
-        return [str(so),str(blob)]
-    torch._inductor.aot_compile=compile

@@ -1,7 +1,7 @@
 """Recover complete roofline export while retaining nested slice-copy semantics.
 
-Reuse validated policies and unchanged static delegates from the preserved
-terminal export. Dynamic delegates are freshly compiled. Full three-arm timing,
+Reuse validated policies and source caches from the preserved terminal export.
+All model delegates are freshly compiled. Full three-arm timing,
 causal profiling and independent prefill/decode output checks remain required.
 """
 import argparse
@@ -53,7 +53,7 @@ def main():
         assert s['status']=='failed'
         assert 'Method forward_others missing fallback kernels' in (a.previous_workflow/'candidate-export/export.log').read_text()
         probe=json.loads((a.ownership_probe_job/'results.json').read_text())
-        assert probe['status']=='passed' and probe['all_seven_preserved_static_paths_exist']
+        assert probe['status']=='passed' and probe['complete_model_delegates_will_be_freshly_compiled']
         assert len(probe['cases'])==6 and all(v['bitwise_equal'] and v['input_unchanged_after_output_mutation'] for v in probe['cases'])
         prior=json.loads((a.previous_workflow/'qualified-policies.json').read_text())
         assert len(prior['policies'])==len(prior['validation_reports'])==3

@@ -3,13 +3,13 @@ import argparse
 import json
 from pathlib import Path
 import torch
-from roofline_slice_copy_lowering import SliceCopyLowering,install_static_compile_reuse
+from roofline_slice_copy_lowering import SliceCopyLowering
 
 class Fixture(torch.nn.Module):
     def forward(self,x):
         def branch(x,start):
             y=torch.ops.aten.slice_copy.Tensor(x,1,start,start+32)
-            return y+1
+            return y
         return torch.cond(x.shape[0]<=128,lambda x:branch(x,2),lambda x:branch(x,3),(x,))
 
 def main():
@@ -28,9 +28,7 @@ def main():
         assert torch.equal(gold,actual) and torch.equal(x,saved) and actual.is_contiguous()
         actual.add_(1);assert torch.equal(x,saved)
         cases.append(dict(M=M,bitwise_equal=True,input_unchanged_after_output_mutation=True,contiguous=True))
-    from executorch.backends.cuda.cuda_backend import CudaBackend
-    reuse=[];install_static_compile_reuse(CudaBackend,a.previous_export,reuse)
     report=dict(status='passed',CPU_only=True,GPU_work=False,cases=cases,events=events,
-        all_seven_preserved_static_paths_exist=True,full_model_acceptance_still_required=True)
+        complete_model_delegates_will_be_freshly_compiled=True,full_model_acceptance_still_required=True)
     (a.output/'results.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 if __name__=='__main__':main()

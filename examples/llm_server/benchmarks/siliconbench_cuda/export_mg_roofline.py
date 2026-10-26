@@ -49,7 +49,7 @@ def main():
     parser.add_argument('--reference-compile-cache-job',type=Path,
                         help='Reuse completed static cache entries from a preserved failed dynamic attempt')
     parser.add_argument('--slice-copy-recovery-job',type=Path,
-                        help='Retain slice-copy semantics and reuse only unchanged compiled static delegates')
+                        help='Retain slice-copy semantics while freshly compiling all complete-model delegates')
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
@@ -203,9 +203,8 @@ def main():
         previous=args.slice_copy_recovery_job
         assert json.loads((previous/'progress.json').read_text())['status']=='failed'
         assert 'Method forward_others missing fallback kernels' in (previous/'export.log').read_text()
-        from roofline_slice_copy_lowering import install,install_static_compile_reuse
+        from roofline_slice_copy_lowering import install
         slice_copy_events=install(CudaBackend,args.job_dir)
-        install_static_compile_reuse(CudaBackend,previous,slice_copy_events)
     ka_receipt=None
     large_w4a16_receipt=None
     if args.large_w4a16_policy_file is not None:
