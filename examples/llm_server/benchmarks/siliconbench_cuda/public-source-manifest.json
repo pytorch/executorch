@@ -1183,6 +1183,10 @@
       "sha256": "a9f29a79d08cf89123306c255cdf5b30a1bbcccbfb06dfb753c88fc7a9411735",
       "bytes": 10567
     },
+    "run_paired_KV_chain_on_existing_mini.py": {
+      "sha256": "3727d6ebe8e71f0b82b78a54b4c75ff7c847e4489a7cc09fd2eb651382e18cdf",
+      "bytes": 3778
+    },
     "run_paired_KV_storage_mini_diagnostic.py": {
       "sha256": "c5db466b95fa9ef497357f6c103e81d0944462e247d478a9b600803a3720ce5e",
       "bytes": 6684
