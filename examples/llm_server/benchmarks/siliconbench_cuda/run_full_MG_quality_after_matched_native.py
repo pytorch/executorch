@@ -40,7 +40,7 @@ def main():
    state('waiting-confirmed-live-full-MG-matched-native',parent_PID=d['controller_pid'],parent_status=d['status'])
    time.sleep(20)
   gate=verify_runtime(a.native_job,package)
-  path=a.matched_native_job/'result.json';matched=json.loads(path.read_text())
+  path=a.matched_native_job/'result.json';matched_hash=sha(path);matched=json.loads(path.read_text())
   assert matched['full_profile']=='muse-glimmer-52layers'
   assert matched['original_gates_unchanged'] and not matched['full_model_qualified']
   assert not matched['main_candidate_accepted']
@@ -72,7 +72,7 @@ def main():
   assert review['complete'] and review['reviewed_shots']==20 and review['actual_response_count']==9936
   assert review['full_task_F1_independently_reviewed'] and review['full_task_raw_quality_pass']
   assert review['native_runtime_gate_SHA256']==sha(a.native_job/'native-gate.json')
-  assert sha(path)==sha(a.matched_native_job/'result.json')
+  assert sha(path)==matched_hash
   assert verify_runtime(a.native_job,package)==gate
   (a.output/'result.json').write_text(json.dumps(dict(fresh_F1_collected=True,
    full_task_F1_independently_reviewed=True,full_task_raw_quality_pass=True,
