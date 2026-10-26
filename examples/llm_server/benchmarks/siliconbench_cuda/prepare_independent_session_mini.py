@@ -81,8 +81,9 @@ def main():
         state('verifying-baseline-source')
         verify(args.baseline_source, 'before')
         controls = {}
-        for name in ['backends/cuda/triton/kernels/w4a8_gemm.py',
-                     'backends/cuda/triton/kernels/w4a16_gemm.py',
+        for name in ['backends/cuda/triton/kernels/int4_quantized_gemm.py',
+                     'backends/cuda/triton/kernels/int6_quantized_gemm.py',
+                     'backends/cuda/triton/kernels/quantized_gemm_utils.py',
                      'extension/cuda/cuda_allocator.cpp']:
             p = args.baseline_source / name
             if p.is_file():
