@@ -856,8 +856,8 @@
       "bytes": 8728
     },
     "review_independent_session_http_lifecycle.py": {
-      "sha256": "decac7a86d6514629ec58ccbc17185e8c66026781ea567ed92928f4f7af6f00b",
-      "bytes": 15835
+      "sha256": "b0aa155af1f80eedfc9de295c8a131e9726e2575cff55830262d73e0565d872b",
+      "bytes": 16152
     },
     "review_independent_session_mg_fixed_latency.py": {
       "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",

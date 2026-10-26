@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--require-native-memory", action="store_true")
     parser.add_argument("--wait-minutes", type=int, default=0)
+    parser.add_argument('--preserved-failure-local-root',type=Path,
+                        help='Readonly archived failed HTTP root; all original failure hashes still required')
     args = parser.parse_args()
     assert not args.output.exists()
     until = time.monotonic() + args.wait_minutes * 60
@@ -56,8 +58,11 @@ def main():
         assert full_profile=='gemma4-48layers'
         preserved=document['preserved_global_HTTP_failure']
         assert preserved['actual_failed_global_HTTP_preserved'] and preserved['failed_global_test_is_not_a_pass']
+        failure_root=args.preserved_failure_local_root or Path(preserved['path'])
         for name,expected in preserved['raw_files_SHA256'].items():
-            assert digest(Path(preserved['path'])/name)==expected,name
+            assert digest(failure_root/name)==expected,name
+    else:
+        assert args.preserved_failure_local_root is None
     assert len(document["rounds"]) == 8*len(collected_arms)
     assert sorted((row['round'],row['prefix'],row['arm']) for row in document['rounds'])==sorted(
         (number,prefix,arm) for number in range(1,5) for prefix in ('off','on') for arm in collected_arms)
