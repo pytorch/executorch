@@ -79,7 +79,9 @@ def main():
             assert collected['full_model_profile'] == 'muse-glimmer-52layers'
             binding = collected['full_model_source_binding']
             assert binding['actual_sources_binaries_and_tests_reverified']
-            assert collected['native_gate_sha256'] == sha(a.native_job/'native-gate.json')
+            # The collector records the full artifact's rebound gate here;
+            # the real runtime's native gate is independently bound below.
+            assert collected['native_gate_sha256'] == sha(a.native_lifecycle_job/'after-full-artifact/native-gate.json')
             assert binding['native_runtime_gate_SHA256'] == sha(a.native_job/'native-gate.json')
             assert binding['full_native_lifecycle_result_SHA256'] == sha(a.native_lifecycle_job/'result.json')
             assert binding['mini_qualification_SHA256'] == sha(a.mini_qualification)

@@ -1036,8 +1036,8 @@
       "bytes": 5383
     },
     "run_full_MG_HTTP_after_native.py": {
-      "sha256": "486a1491592792108baf53cafcb98b78c8a5eea2a98351ab2ba011030d5623ca",
-      "bytes": 8843
+      "sha256": "7d8df1d7657dd301c03e9dab3e9fa211c72734f70cebab65f73b01ab775143a5",
+      "bytes": 9023
     },
     "run_full_MG_matched_native_after_controls.py": {
       "sha256": "92102a379bc52ae44ff7f85cc5450d79582c7237b56815e9b5cf56491f87350c",
