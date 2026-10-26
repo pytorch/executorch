@@ -13,7 +13,7 @@
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 struct EValue;
 
@@ -704,26 +704,26 @@ struct EValue {
   }
 };
 
-#define EVALUE_DEFINE_TO(T, method_name)                                       \
-  template <>                                                                  \
-  inline T EValue::to<T>()&& {                                                 \
-    return static_cast<T>(std::move(*this).method_name());                     \
-  }                                                                            \
-  template <>                                                                  \
-  inline ::executorch::runtime::internal::evalue_to_const_ref_overload_return< \
-      T>::type                                                                 \
-  EValue::to<T>() const& {                                                     \
-    typedef ::executorch::runtime::internal::                                  \
-        evalue_to_const_ref_overload_return<T>::type return_type;              \
-    return static_cast<return_type>(this->method_name());                      \
-  }                                                                            \
-  template <>                                                                  \
-  inline ::executorch::runtime::internal::evalue_to_ref_overload_return<       \
-      T>::type                                                                 \
-  EValue::to<T>()& {                                                           \
-    typedef ::executorch::runtime::internal::evalue_to_ref_overload_return<    \
-        T>::type return_type;                                                  \
-    return static_cast<return_type>(this->method_name());                      \
+#define EVALUE_DEFINE_TO(T, method_name)                          \
+  template <>                                                     \
+  inline T EValue::to<T>()&& {                                    \
+    return static_cast<T>(std::move(*this).method_name());        \
+  }                                                               \
+  template <>                                                     \
+  inline ::executorch::ET_RUNTIME_NAMESPACE::internal::           \
+      evalue_to_const_ref_overload_return<T>::type                \
+      EValue::to<T>() const& {                                    \
+    typedef ::executorch::ET_RUNTIME_NAMESPACE::internal::        \
+        evalue_to_const_ref_overload_return<T>::type return_type; \
+    return static_cast<return_type>(this->method_name());         \
+  }                                                               \
+  template <>                                                     \
+  inline ::executorch::ET_RUNTIME_NAMESPACE::internal::           \
+      evalue_to_ref_overload_return<T>::type                      \
+      EValue::to<T>()& {                                          \
+    typedef ::executorch::ET_RUNTIME_NAMESPACE::internal::        \
+        evalue_to_ref_overload_return<T>::type return_type;       \
+    return static_cast<return_type>(this->method_name());         \
   }
 
 EVALUE_DEFINE_TO(executorch::aten::Scalar, toScalar)
@@ -854,14 +854,24 @@ Result<executorch::aten::ArrayRef<T>> BoxedEvalueList<T>::tryGet() const {
   return executorch::aten::ArrayRef<T>{unwrapped_vals_, wrapped_vals_.size()};
 }
 
+} // namespace ET_RUNTIME_NAMESPACE
+} // namespace executorch
+
+#ifdef USE_ATEN_LIB
+namespace executorch {
+namespace runtime {
+// ATen-mode EValue lives in runtime::aten; keep the runtime:: spelling working.
+using ::executorch::ET_RUNTIME_NAMESPACE::BoxedEvalueList;
+using ::executorch::ET_RUNTIME_NAMESPACE::EValue;
 } // namespace runtime
 } // namespace executorch
+#endif
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::BoxedEvalueList;
-using ::executorch::runtime::EValue;
+using ::executorch::ET_RUNTIME_NAMESPACE::BoxedEvalueList;
+using ::executorch::ET_RUNTIME_NAMESPACE::EValue;
 } // namespace executor
 } // namespace torch

@@ -42,6 +42,18 @@ fbcode_target(_kind = python_unittest,
 )
 
 fbcode_target(_kind = python_unittest,
+    name = "test_lfm2_short_conv",
+    srcs = [
+        "test_lfm2_short_conv.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/lfm2:lfm2",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_pre_quantization_transforms",
     srcs = [
         "test_pre_quantization_transforms.py",

@@ -302,7 +302,7 @@ def test_stop_trimmed_turn_falls_back_to_text():
         session_id="s",
         content="a1",
         tool_calls=None,
-        generated_token_ids=[],  # stop-trimmed -> ids None -> not resumable
+        generated_token_ids=None,  # stop-trimmed -> ids None -> not resumable
         prior_turns=0,
         preamble=NOTHINK,
     )

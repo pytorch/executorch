@@ -52,4 +52,19 @@ function(et_cxx_test target_name)
   # add_test adds a test target to be used by ctest
   add_test(NAME ${target_name} COMMAND ${target_name})
 
+  # Windows records no search path in an executable, so a test linking a shared
+  # library built in another directory cannot start. Copy the DLLs it links
+  # beside it. The command is dropped when the test links none, since
+  # copy_if_different given only a destination fails.
+  if(WIN32)
+    set(_dlls "$<TARGET_RUNTIME_DLLS:${target_name}>")
+    add_custom_command(
+      TARGET ${target_name}
+      POST_BUILD
+      COMMAND
+        "$<$<BOOL:${_dlls}>:${CMAKE_COMMAND};-E;copy_if_different;${_dlls};$<TARGET_FILE_DIR:${target_name}>>"
+      COMMAND_EXPAND_LISTS
+    )
+  endif()
+
 endfunction()

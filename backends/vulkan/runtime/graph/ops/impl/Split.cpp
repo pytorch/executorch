@@ -16,13 +16,34 @@
 
 namespace vkcompute {
 
+void resize_split_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
+  int64_t dim = graph->extract_scalar<int64_t>(extra_args.at(0));
+  if (dim < 0) {
+    dim += graph->dim_of(input);
+  }
+
+  // The split sizes are baked into the shader as specialization constants, so
+  // only the dims that are not split can change.
+  std::vector<int64_t> new_out_sizes = graph->sizes_of(input);
+  new_out_sizes.at(dim) = graph->size_at<int64_t>(dim, out);
+
+  graph->virtual_resize(out, new_out_sizes);
+}
+
 void add_split_node(
     ComputeGraph& graph,
     const ValueRef input,
     const std::vector<int64_t>& split_sizes,
-    const int64_t dim,
+    const ValueRef dim_ref,
     const ValueRef out,
     const int split_idx) {
+  const int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
+
   std::string kernel_name = "split";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
@@ -57,16 +78,16 @@ void add_split_node(
        graph.hashed_layout_of(out),
        graph.hashed_layout_of(input)},
       // Resize Args
-      {},
+      {dim_ref},
       // Resizing Logic
-      nullptr));
+      resize_split_node));
 }
 
 void add_split_with_sizes_node(
     ComputeGraph& graph,
     const ValueRef input,
     const std::vector<int64_t>& split_sizes,
-    const int64_t dim,
+    const ValueRef dim_ref,
     const ValueRef out_list_ref) {
   const ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
@@ -75,7 +96,7 @@ void add_split_with_sizes_node(
   // Dispatch a shader for each output tensor
   for (int split_idx = 0; split_idx < split_sizes.size(); split_idx++) {
     const ValueRef out_ref = out_list->at(split_idx);
-    add_split_node(graph, input, split_sizes, dim, out_ref, split_idx);
+    add_split_node(graph, input, split_sizes, dim_ref, out_ref, split_idx);
   }
 }
 
@@ -87,11 +108,10 @@ void split_with_sizes_copy_default(
   ValueRef dim_ref = args[2];
   ValueRef out_list_ref = args[3];
 
-  int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
   std::vector<int64_t> split_sizes =
       graph.extract_int_or_symint_list(split_sizes_ref);
 
-  add_split_with_sizes_node(graph, input, split_sizes, dim, out_list_ref);
+  add_split_with_sizes_node(graph, input, split_sizes, dim_ref, out_list_ref);
 }
 
 REGISTER_OPERATORS {

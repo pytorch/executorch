@@ -17,6 +17,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -217,6 +218,7 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
             DecomposeCDist,
