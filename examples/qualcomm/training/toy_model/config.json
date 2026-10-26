@@ -1,0 +1,14 @@
+{
+  "name": "toy_model",
+  "weight_sharing": false,
+  "soc_model": "SM8850",
+  "output_dir": "outputs/artifacts",
+  "seed": 0,
+  "batch_size": 4,
+  "in_dim": 8,
+  "hidden_dim": 32,
+  "out_dim": 4,
+  "steps": 500,
+  "lr": 0.1,
+  "log_every": 50
+}
