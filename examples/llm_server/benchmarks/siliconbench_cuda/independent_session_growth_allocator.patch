@@ -1,0 +1,23 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -74,11 +74,19 @@
+   for (const auto& allocation : allocations_) {
+     old_rows.push_back(allocation.rows);
+   }
++  // Releasing allocator caches while growing returns AOTI workspace pages
++  // before the next forward, forcing expensive pool recommit. Retain them
++  // during growth; preserve eager release when owners/capacities contract.
++  bool releases_storage = columns < old_columns;
++  for (size_t index = 0; index < allocations_.size(); ++index) {
++    releases_storage |= target_rows[index] < allocations_[index].rows;
++  }
++  const bool trim_reclaimed_storage = trim_unused && releases_storage;
+   auto fence = [&]() -> Error {
+     if (cudaStreamSynchronize(stream) != cudaSuccess) {
+       return Error::Internal;
+     }
+-    if (trim_unused) {
++    if (trim_reclaimed_storage) {
+       CudaAllocator::release_cached_memory(device_);
+     }
+     return Error::Ok;

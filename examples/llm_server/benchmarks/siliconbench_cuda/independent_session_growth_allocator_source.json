@@ -1,0 +1,12 @@
+{
+  "patch_SHA256": "c8e99949ed0fc7188da238287ece848c9db8b2dbac85d3f3eeb0c6abe2b35cc5",
+  "file": "backends/cuda/runtime/session_capacity_pool.inc",
+  "before_SHA256": "4f3c7c7e80cbfbc61b873828bd7824140876e6bc82d29b80a428fc2a1c3a80b7",
+  "after_SHA256": "b7a54a56887b8c222888751c54fa5a987db14fa542ae672ec06fa25fdc241c19",
+  "original_session_source_spec_SHA256": "56b20b00f06ca9d658e50bb5c595279736df1ef490e0c74b450f0f93aa332358",
+  "allocator_policy_only": true,
+  "weight_math_ABI_graph_invalidation_and_sliding_unchanged": true,
+  "growth_retains_cached_blocks": true,
+  "contraction_retains_original_eager_release": true,
+  "qualified": false
+}

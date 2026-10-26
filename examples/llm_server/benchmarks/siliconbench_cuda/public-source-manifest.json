@@ -475,6 +475,14 @@
       "sha256": "f2137dcda2aba2e8ade37d830eb7b35ae92dab1b211d95a5fdd165fdbe83bc20",
       "bytes": 9912
     },
+    "independent_session_growth_allocator.patch": {
+      "sha256": "c8e99949ed0fc7188da238287ece848c9db8b2dbac85d3f3eeb0c6abe2b35cc5",
+      "bytes": 989
+    },
+    "independent_session_growth_allocator_source.json": {
+      "sha256": "05ee859b572bdd5ff2698979f388ea9189e3a1842855a35ed69bdd5bc2db9c1a",
+      "bytes": 649
+    },
     "independent_session_mini_profiles.py": {
       "sha256": "549cdafd8c44e1bc4efc22530f66782671d0efd9bd10735486d12fe83831c776",
       "bytes": 2603
@@ -586,6 +594,10 @@
     "prepare_gemma_runtime_http.py": {
       "sha256": "3eb65117bc32009d3de694a7603c7cc75fc208db6e1eeddb1ea80bb3bbe85037",
       "bytes": 5254
+    },
+    "prepare_independent_session_growth_allocator.py": {
+      "sha256": "e33ea833e892e78d7f48391d65c1131ad31faae386d0a0c3b65e5c2ec552d113",
+      "bytes": 11555
     },
     "prepare_independent_session_mini.py": {
       "sha256": "1d8f6daac1fa0866c9ab5140ac78a519d43e91a8591a24598d75691c1a84664a",
