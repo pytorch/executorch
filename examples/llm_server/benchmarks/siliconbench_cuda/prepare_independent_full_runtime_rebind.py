@@ -14,6 +14,13 @@ from independent_session_full_native_binding import (
 from independent_session_mini_profiles import FULL_PROFILES, validate_full_audit
 
 
+POLICIES = {
+    'empty-owner-reuse': ('independent_session_empty_replacement', 'empty_owner_reuse_spec_SHA256'),
+    'coalesced-growth-trim': ('independent_session_coalesced_growth_trim', 'coalesced_growth_trim_spec_SHA256'),
+    'workspace-preserving-growth-trim': ('independent_session_workspace_preserving_growth_trim', 'workspace_preserving_growth_trim_spec_SHA256'),
+}
+
+
 def records(gate):
     change = gate['actual_native_source_change']
     return change['patches'] if 'patches' in change else [change]
@@ -22,18 +29,15 @@ def records(gate):
 def verify_transition(before_job, after_job, package, variant, transition='empty-owner-reuse'):
     before = verify_runtime(before_job, package)
     after = verify_runtime(after_job, package)
-    assert transition in ('empty-owner-reuse', 'coalesced-growth-trim')
-    policy = ('independent_session_empty_replacement' if transition == 'empty-owner-reuse'
-              else 'independent_session_coalesced_growth_trim')
-    key = ('empty_owner_reuse_spec_SHA256' if transition == 'empty-owner-reuse'
-           else 'coalesced_growth_trim_spec_SHA256')
+    assert transition in POLICIES
+    policy, key = POLICIES[transition]
     fix_path = package/(policy + '_source.json')
     fix = json.loads(fix_path.read_text())
     assert sha(package/(policy + '.patch')) == fix['patch_SHA256']
     assert after['preserved_preceding_native_gate_SHA256'] == sha(before_job/'native-gate.json')
     assert after[key] == sha(fix_path)
     assert records(after) == records(before) + fix['variants'][variant]
-    if transition == 'coalesced-growth-trim':
+    if transition != 'empty-owner-reuse':
         assert before.get('empty_owner_reuse_spec_SHA256')
         assert after['empty_owner_reuse_spec_SHA256'] == before['empty_owner_reuse_spec_SHA256']
         assert all(r['allocator_policy_only'] and r['weights_math_ABI_sliding_and_graph_invalidation_unchanged']
@@ -80,13 +84,29 @@ def verify_rebind(proof_path, runtime_job, package):
         assert sha(name) == expected, name
     before, after = verify_transition(Path(proof['export_runtime_job']),
         Path(runtime_job), Path(package), proof['source_variant'], transition)
+    export_runtime = before
+    original_export_runtime_job = proof['export_runtime_job']
+    preceding = None
+    if proof.get('preceding_full_rebind_proof'):
+        assert transition in POLICIES and transition != 'empty-owner-reuse'
+        preceding_path = Path(proof['preceding_full_rebind_proof'])
+        assert preceding_path.resolve() != Path(proof_path).resolve()
+        assert sha(preceding_path) == proof['preceding_full_rebind_proof_SHA256']
+        preceding = verify_rebind(preceding_path, Path(proof['export_runtime_job']), package)
+        assert preceding['full_model_profile'] == proof['full_model_profile']
+        assert preceding['artifacts'] == proof['artifacts']
+        assert preceding.get('native_transition', 'empty-owner-reuse') == 'empty-owner-reuse'
+        export_runtime = verify_runtime(Path(preceding['export_runtime_job']), package)
+        original_export_runtime_job = preceding.get('original_model_export_runtime_job', preceding['export_runtime_job'])
+    if 'original_model_export_runtime_job' in proof:
+        assert Path(proof['original_model_export_runtime_job']).resolve() == Path(original_export_runtime_job).resolve()
     profile = proof['full_model_profile']
     mini_profile = 'gemma4-first6' if profile == 'gemma4-48layers' else 'muse-glimmer-first4'
     verify_qualification(proof['mini_qualification'], mini_profile,
         FULL_PROFILES[profile]['GGUF_SHA256'], runtime_job)
     for arm, item in proof['artifacts'].items():
         assert arm in ('global', 'independent')
-        verify_export(item['artifact'], item['export_job'], before, profile, arm)
+        verify_export(item['artifact'], item['export_job'], export_runtime, profile, arm)
     assert proof['native_runtime_gate_SHA256'] == sha(Path(runtime_job)/'native-gate.json')
     return proof
 
@@ -99,7 +119,9 @@ def main():
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--global-artifact', type=Path)
     parser.add_argument('--global-export-job', type=Path)
-    parser.add_argument('--native-transition', choices=('empty-owner-reuse', 'coalesced-growth-trim'),
+    parser.add_argument('--preceding-full-rebind-proof', type=Path,
+                        help='Preserved empty-owner rebind linking these exact models to the preceding runtime')
+    parser.add_argument('--native-transition', choices=POLICIES,
                         default='empty-owner-reuse')
     parser.add_argument('--full-model-profile', choices=FULL_PROFILES, required=True)
     args = parser.parse_args()
@@ -119,24 +141,35 @@ def main():
     if args.global_artifact:
         artifacts['global'] = dict(artifact=str(args.global_artifact.resolve()),
             export_job=str(args.global_export_job.resolve()))
-    audits = {arm: verify_export(item['artifact'], item['export_job'], before, profile, arm)
+    export_runtime = before
+    original_export_runtime_job = str(args.export_runtime_job.resolve())
+    preceding = None
+    if args.preceding_full_rebind_proof:
+        assert args.native_transition in POLICIES and args.native_transition != 'empty-owner-reuse'
+        preceding = verify_rebind(args.preceding_full_rebind_proof, args.export_runtime_job, package)
+        assert preceding['full_model_profile'] == profile and preceding['artifacts'] == artifacts
+        assert preceding.get('native_transition', 'empty-owner-reuse') == 'empty-owner-reuse'
+        export_runtime = verify_runtime(Path(preceding['export_runtime_job']), package)
+        original_export_runtime_job = preceding.get('original_model_export_runtime_job', preceding['export_runtime_job'])
+    audits = {arm: verify_export(item['artifact'], item['export_job'], export_runtime, profile, arm)
               for arm, item in artifacts.items()}
     assert not args.output.exists(), 'Preserve preceding outputs'
     args.output.mkdir(parents=True)
     evidence = {str(args.mini_qualification.resolve()): sha(args.mini_qualification),
         str(args.export_runtime_job.resolve()/'native-gate.json'): sha(args.export_runtime_job/'native-gate.json'),
         str(args.runtime_job.resolve()/'native-gate.json'): sha(args.runtime_job/'native-gate.json'),
-        str(package/('independent_session_empty_replacement_source.json' if args.native_transition == 'empty-owner-reuse'
-                    else 'independent_session_coalesced_growth_trim_source.json')):
-        sha(package/('independent_session_empty_replacement_source.json' if args.native_transition == 'empty-owner-reuse'
-                    else 'independent_session_coalesced_growth_trim_source.json'))}
+        str(package/(POLICIES[args.native_transition][0] + '_source.json')):
+        sha(package/(POLICIES[args.native_transition][0] + '_source.json'))}
     for item in artifacts.values():
         for path in (Path(item['artifact'])/'independent-full-artifact-audit.json',
                      Path(item['export_job'])/'native-gate.json'):
             evidence[str(path)] = sha(path)
+    if args.preceding_full_rebind_proof:
+        evidence[str(args.preceding_full_rebind_proof.resolve())] = sha(args.preceding_full_rebind_proof)
     proof = dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         full_model_profile=profile, source_variant=variant,
         export_runtime_job=str(args.export_runtime_job.resolve()),
+        original_model_export_runtime_job=original_export_runtime_job,
         runtime_job=str(args.runtime_job.resolve()),
         mini_qualification=str(args.mini_qualification.resolve()),
         native_runtime_gate_SHA256=sha(args.runtime_job/'native-gate.json'),
@@ -146,10 +179,13 @@ def main():
         original_models_and_export_SDK_preserved=True,
         no_GEMM_attention_or_model_method_change=True,
         full_model_qualified=False, main_candidate_accepted=False)
+    if args.preceding_full_rebind_proof:
+        proof.update(preceding_full_rebind_proof=str(args.preceding_full_rebind_proof.resolve()),
+                     preceding_full_rebind_proof_SHA256=sha(args.preceding_full_rebind_proof))
     proof_path = args.output/'full-runtime-rebind.json'
     proof_path.write_text(json.dumps(proof, indent=2)+'\n')
     verify_rebind(proof_path, args.runtime_job, package)
-    alias_runtime(args.runtime_job, package, args.output, before['source'], extra={
+    alias_runtime(args.runtime_job, package, args.output, export_runtime['source'], extra={
         'full_runtime_rebind_proof': str(proof_path.resolve()),
         'full_runtime_rebind_proof_SHA256': sha(proof_path)})
     for arm, item in artifacts.items():

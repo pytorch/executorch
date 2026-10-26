@@ -45,6 +45,7 @@ def main():
     p.add_argument('--replacement-native-job', type=Path)
     p.add_argument('--replacement-mini-qualification', type=Path,
                    help='Complete same-runtime mini qualification for the compatible allocator replacement')
+    p.add_argument('--replacement-native-transition', choices=('coalesced-growth-trim', 'workspace-preserving-growth-trim'), default='coalesced-growth-trim')
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     assert bool(a.replacement_native_job) == bool(a.replacement_mini_qualification)
     package=Path(__file__).resolve().parent;profile='muse-glimmer-52layers'
@@ -123,7 +124,7 @@ def main():
                                  FULL_PROFILES[profile]['GGUF_SHA256'], a.replacement_native_job)
             from prepare_independent_full_runtime_rebind import verify_transition
             before_replacement, replacement = verify_transition(a.native_job,
-                a.replacement_native_job, package, 'MG-empty-owner-reuse', 'coalesced-growth-trim')
+                a.replacement_native_job, package, 'MG-empty-owner-reuse', a.replacement_native_transition)
             assert before_replacement == after
             runtime_job, after = a.replacement_native_job, replacement
             (a.output/'replacement-mini-and-native-binding.json').write_text(json.dumps(dict(
@@ -131,7 +132,7 @@ def main():
                 export_runtime_gate_SHA256=sha(a.native_job/'native-gate.json'),
                 replacement_runtime_gate_SHA256=sha(runtime_job/'native-gate.json'),
                 mini_qualification_SHA256=sha(qualification),
-                transition='coalesced-growth-trim', full_model_qualified=False), indent=2)+'\n')
+                transition=a.replacement_native_transition, full_model_qualified=False), indent=2)+'\n')
         aliases={}
         for arm,job,gate in (('before',a.original_native_job,original),('after',runtime_job,after)):
             alias=a.output/(arm+'-full-artifact');alias.mkdir();aliases[arm]=alias

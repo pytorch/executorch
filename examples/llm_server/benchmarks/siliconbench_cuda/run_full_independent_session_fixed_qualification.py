@@ -67,7 +67,7 @@ def main():
                 for name,r in audit['artifacts'].items():assert sha(artifact/name)==r['sha256'],name
                 artifacts[arm]=artifact;audit_hashes[arm]=sha(audit_path)
             pair=a.output/'full-pair';pair.mkdir()
-            alias_runtime(a.native_job,package,pair,verify_runtime(Path(rebind['export_runtime_job']),package)['source'],extra={
+            alias_runtime(a.native_job,package,pair,verify_runtime(Path(rebind.get('original_model_export_runtime_job', rebind['export_runtime_job'])),package)['source'],extra={
                 'full_runtime_rebind_proof':str(proof_path.resolve()),'full_runtime_rebind_proof_SHA256':sha(proof_path)})
             for arm,artifact in artifacts.items():(pair/('full-'+arm+'-artifact')).symlink_to(artifact)
             (pair/'progress.json').write_text(json.dumps(dict(status='full-artifacts-ready-for-qualification',

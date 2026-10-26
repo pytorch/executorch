@@ -672,8 +672,8 @@
       "bytes": 5254
     },
     "prepare_independent_full_runtime_rebind.py": {
-      "sha256": "23dc1068b997d1c302711ea73b08c0cf6cf1c9eab9ae752644e6f1c7453913d5",
-      "bytes": 9866
+      "sha256": "bf4003478e555ed8f353596ba8e6a8932ce3d004c4d828cb0ec74a049b160f85",
+      "bytes": 12246
     },
     "prepare_independent_main_public_inputs.py": {
       "sha256": "ccb1e6e2db158a70076fb76e0b7ce8df973eed790a65c07810f1575b69fae07e",
@@ -1016,8 +1016,8 @@
       "bytes": 6326
     },
     "run_full_independent_session_fixed_qualification.py": {
-      "sha256": "cb7fe73a86ace11ca2b834f0fb3373a04fbf1f6a8f96bf3646fdc856756b1cd0",
-      "bytes": 9598
+      "sha256": "65560eeeb54405116de1357127dadbb1ed64cd8cc99f34b8b200cb91cb0e3d7e",
+      "bytes": 9647
     },
     "run_full_independent_session_lifecycle_after_fixed.py": {
       "sha256": "5580aee905aaf0926e43dc9533b677a4386c9cb40505c1fc754eb6db2af6a630",
@@ -1164,8 +1164,8 @@
       "bytes": 27694
     },
     "run_single_full_MG_lifecycle_after_export.py": {
-      "sha256": "e5e92934758e97a23668906a780a6e93009361c38226737d66e1cf76201f0cc4",
-      "bytes": 15670
+      "sha256": "77952d179de5661d08dffa6eaadb5e4547e0330a00b67de571b3e56e11dbbe91",
+      "bytes": 15844
     },
     "runtime_kv_columns.patch": {
       "sha256": "47511aeec234f833a88b5b9a0fb6835a87acb97da77f2a8dfb45f13be707cd1a",
