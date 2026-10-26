@@ -68,7 +68,11 @@ def install_static_compile_reuse(backend,previous,events):
     wrappers=[]
     for v in records:
         if not v['target_name'].endswith('.wrapper'):continue
-        command=shlex.split(v['command']);cpp=next(Path(s) for s in command if s.endswith('.wrapper.cpp'))
+        command=shlex.split(v['command'])
+        cpp_args=[Path(s) for s in command if s.endswith('.wrapper.cpp')]
+        if not cpp_args:continue  # The wrapper link record has no C++ input.
+        assert len(cpp_args)==1 and '-c' in command
+        cpp=cpp_args[0]
         assert previous/'cache/inductor' in cpp.parents
         if cpp not in wrappers:wrappers.append(cpp)
     assert len(wrappers)==8

@@ -352,8 +352,8 @@
       "bytes": 11746
     },
     "export_mg_roofline.py": {
-      "sha256": "686f28c502201559f7c1c80d588841a3d93a3ba3cf34ee3dba93cf7eec4b4b63",
-      "bytes": 21328
+      "sha256": "cc5820d7b82b3f458fdd6ba9547f7790a6144de886ee9ff87157b2ef167304db",
+      "bytes": 22363
     },
     "export_public_prefill_Gemma_full.py": {
       "sha256": "2e343b4027153c17ce0e3de2541c49581a94211ed630019c843a9f1e2fae7f50",
@@ -700,8 +700,8 @@
       "bytes": 946
     },
     "roofline_slice_copy_lowering.py": {
-      "sha256": "2afaa395f439a47f7521837572d737893978e66141db4798e12ca4dbf841baae",
-      "bytes": 5017
+      "sha256": "d9d926e9cfc2c117a0e0568485e7d9db88eb4a458428aeee01a2dfae232c9b19",
+      "bytes": 5180
     },
     "roofline_validation_project/CMakeLists.txt": {
       "sha256": "ae4679dfe4bf4ce0f0178abfad8a52d7d803bdad6e36a255f5319cccea9a38d2",
@@ -766,6 +766,10 @@
     "run_roofline_runtime_crossover_refinement.py": {
       "sha256": "867bf790053142c96b85e02ab937f9cc70ee6f4c50f119a7a08c3f516cd2fb14",
       "bytes": 9582
+    },
+    "run_roofline_slice_copy_recovery.py": {
+      "sha256": "343cec076d25b31f2c59a51bc97f80f4c14734bbee6f11d8cf9cb1dd5d9498a8",
+      "bytes": 5643
     },
     "run_runtime_kv_feasibility.py": {
       "sha256": "9d372fb5366b24f9f1565566fa5d95ec3dd33d2f885b75ffa1804f416d02733e",

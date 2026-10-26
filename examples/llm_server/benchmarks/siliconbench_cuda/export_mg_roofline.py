@@ -142,6 +142,21 @@ def main():
             strict_route_audit_SHA256=digest(previous/'actual-strict-export-route-audit.json'),
             terminal_export_log_SHA256=digest(previous/'export.log'),
             cache_is_not_runtime_or_numerical_acceptance=True)
+    if args.slice_copy_recovery_job is not None:
+        import shutil
+        previous=args.slice_copy_recovery_job
+        assert json.loads((previous/'progress.json').read_text())['status']=='failed'
+        assert 'Method forward_others missing fallback kernels' in (previous/'export.log').read_text()
+        combined=json.loads((previous.parent/'qualified-policies.json').read_text())
+        assert combined==json.loads(args.large_w4a16_policy_file.read_text())
+        for path in combined['validation_reports']:
+            assert json.loads(Path(path).read_text())['GGUF_SHA256']==digest(args.gguf)
+        for name in ['inductor','triton']:
+            shutil.copytree(previous/'cache'/name,cache/name,dirs_exist_ok=True)
+        recovered_cache=dict(source=str(previous),preserved_source=True,
+            strict_route_audit_SHA256=digest(previous/'actual-strict-export-route-audit.json'),
+            terminal_export_log_SHA256=digest(previous/'export.log'),
+            cache_is_not_runtime_or_numerical_acceptance=True)
     os.environ.update(CUDA_VISIBLE_DEVICES='0', CUDA_HOME='/usr/local/cuda',
                       TORCH_CUDA_ARCH_LIST='12.0', TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas',
                       ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'),
