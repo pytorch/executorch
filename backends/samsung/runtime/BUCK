@@ -1,0 +1,37 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "ANDROID",
+)
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+non_fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "enn_backend",
+    srcs = [
+        "enn_api_implementation.cpp",
+        "enn_backend.cpp",
+        "enn_executor.cpp",
+        "enn_shared_memory_manager.cpp",
+        "logging.cpp",
+    ],
+    headers = glob([
+        "*.h",
+        "*.hpp",
+    ]),
+    modifiers = ["ovr_config//os/version/android/constraints:api-level-26"],
+    deps = [
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:memory_allocator",
+        "//third-party/toolchains:dl",
+    ],
+    define_static_target = True,
+    link_whole = True,
+    platforms = [ANDROID],
+    visibility = ["PUBLIC"],
+)

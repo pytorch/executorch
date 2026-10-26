@@ -17,6 +17,8 @@ void EnnLogImpl(ENN_LOG_LEVEL log_level, const char* format, ...) {
   va_list args;
   va_start(args, format);
 #ifdef __ANDROID__
+  va_list android_args;
+  va_copy(android_args, args);
   int android_severity = ANDROID_LOG_DEBUG;
   switch (log_level) {
     case ENN_LOG_LEVEL::DEBUG:
@@ -35,7 +37,9 @@ void EnnLogImpl(ENN_LOG_LEVEL log_level, const char* format, ...) {
       android_severity = ANDROID_LOG_UNKNOWN;
       break;
   }
-  __android_log_print(android_severity, "[Exynos ExecuTorch]", format, args);
+  __android_log_vprint(
+      android_severity, "[Exynos ExecuTorch]", format, android_args);
+  va_end(android_args);
 #endif
   const char* serverity_name;
   switch (log_level) {

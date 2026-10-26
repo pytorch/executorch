@@ -76,13 +76,13 @@ Error EnnExecutor::eval(
   ET_CHECK_OR_RETURN_ERROR(
       inputs.size() == getInputSize(),
       InvalidArgument,
-      "Invalid number of inputs, expect %" PRIu32 " while get %ld",
+      "Invalid number of inputs, expect %" PRIu32 " while get %zu",
       getInputSize(),
       inputs.size());
   ET_CHECK_OR_RETURN_ERROR(
       outputs.size() == getOutputSize(),
       InvalidArgument,
-      "Invalid number of outputs, expected %" PRIu32 " while get %ld",
+      "Invalid number of outputs, expected %" PRIu32 " while get %zu",
       getOutputSize(),
       outputs.size());
 
@@ -116,8 +116,12 @@ Error EnnExecutor::eval(
 EnnExecutor::~EnnExecutor() {
   EXYNOS_ATRACE_FUNCTION_LINE();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
+  if (!enn_api_inst->isInitialized() || model_id_ == 0) {
+    return;
+  }
   NumberOfBuffersInfo buffers_info;
-  if (enn_api_inst->EnnGetBuffersInfo(model_id_, &buffers_info) ==
+  if (alloc_buffer_ != nullptr &&
+      enn_api_inst->EnnGetBuffersInfo(model_id_, &buffers_info) ==
       ENN_RET_SUCCESS) {
     const int32_t num_of_buffers =
         buffers_info.n_in_buf + buffers_info.n_out_buf;
