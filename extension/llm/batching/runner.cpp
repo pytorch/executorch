@@ -706,7 +706,6 @@ std::future<AcceptanceResult> Runner::accepts_async(PreparedInputPtr input) {
 // --- RunnerImpl ------------------------------------------------------------
 
 void RunnerImpl::shutdown() {
-  bool owns_join = false;
   {
     std::unique_lock<std::mutex> lock(control_mutex_);
     if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
@@ -735,7 +734,6 @@ void RunnerImpl::shutdown() {
     }
     if (!join_in_progress_) {
       join_in_progress_ = true;
-      owns_join = true;
     } else {
       stopped_cv_.wait(lock, [this] {
         return lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Stopped;
@@ -744,7 +742,7 @@ void RunnerImpl::shutdown() {
     }
   }
 
-  assert(owns_join && engine_.joinable());
+  assert(engine_.joinable());
   notify_engine_();
   engine_.join();
   {
