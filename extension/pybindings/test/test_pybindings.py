@@ -1272,7 +1272,7 @@ print("CUDA DLPack roundtrip preserved device storage")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -1290,6 +1290,9 @@ print("CUDA DLPack roundtrip preserved device storage")
         del meta
         self.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
         self.assertEqual([t.dtype() for t in input_tensors], [float_dtype, float_dtype])
+        self.assertEqual(
+            [t.dtype_name() for t in input_tensors], ["float32", "float32"]
+        )
         self.assertEqual([t.is_memory_planned() for t in input_tensors], [True, True])
         self.assertEqual([t.nbytes() for t in input_tensors], [16, 16])
         self.assertEqual(str(input_tensors), f"[{tensor_info}, {tensor_info}]")
@@ -1902,7 +1905,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_outputs(), 1)
         self.assertEqual(meta.num_attributes(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
 
         float_dtype = 6
         self.assertEqual(
@@ -1954,7 +1957,7 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
 
-        tensor_info = "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16, device=cpu)"
+        tensor_info = "TensorInfo(sizes=[2, 2], dtype=float32, is_memory_planned=True, nbytes=16, device=cpu)"
         float_dtype = 6
         self.assertEqual(
             str(meta),

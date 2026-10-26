@@ -65,8 +65,10 @@ separate borrowed view. In torch output mode such a result is a view of memory
 torch does not own, so it cannot grow with `resize_()` and cannot be shared
 through `torch.multiprocessing`. Call `.clone()` for a normal torch tensor.
 
-`dtype_name` names a result's dtype, including dtypes NumPy lacks, such as
-`"bfloat16"`.
+An `ExecuTorchResult`'s `dtype` is the dtype's name as torch spells it, such as
+`"float32"` or `"bfloat16"`.
+`method_meta().output_tensor_meta(i).dtype_name()` gives the same name before
+the method runs.
 
 `Method.get_attribute()` returns a view of mutable state. A constant can sit
 in read-only memory, so it comes back read-only: NumPy and the buffer protocol

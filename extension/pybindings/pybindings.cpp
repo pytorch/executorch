@@ -2131,6 +2131,10 @@ struct PyTensorInfo final {
         info_.scalar_type());
   }
 
+  const char* dtype_name() const {
+    return python_dtype(info_.scalar_type()).torch_name;
+  }
+
   bool is_memory_planned() const {
     return info_.is_memory_planned();
   }
@@ -2164,8 +2168,7 @@ struct PyTensorInfo final {
       size_str.pop_back();
     }
     size_str.append("]");
-    return "TensorInfo(sizes=" + size_str + ", dtype=" +
-        std::string(executorch::runtime::toString(info_.scalar_type())) +
+    return "TensorInfo(sizes=" + size_str + ", dtype=" + dtype_name() +
         ", is_memory_planned=" +
         (info_.is_memory_planned() ? "True" : "False") +
         ", nbytes=" + std::to_string(info_.nbytes()) + ", device=" + device() +
@@ -4438,12 +4441,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly(
           "dtype",
           &PyExecuTorchResult::dtype,
-          "NumPy dtype. Raises for dtypes NumPy lacks, such as bfloat16.")
-      .def_property_readonly(
-          "dtype_name",
-          &PyExecuTorchResult::torch_dtype_name,
-          "Name of the dtype, such as \"bfloat16\", including dtypes NumPy "
-          "lacks.")
+          "Name of the dtype, such as \"float32\" or \"bfloat16\", as "
+          "torch spells it.")
       .def_property_readonly(
           "nbytes", &PyExecuTorchResult::nbytes, "Size of the data in bytes.")
       .def_property_readonly(
@@ -4703,6 +4702,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyTensorInfo>(m, "TensorInfo", py::module_local())
       .def("sizes", &PyTensorInfo::sizes, call_guard)
       .def("dtype", &PyTensorInfo::dtype, call_guard)
+      .def("dtype_name", &PyTensorInfo::dtype_name, call_guard)
       .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
       .def("nbytes", &PyTensorInfo::nbytes, call_guard)
       .def("device", &PyTensorInfo::device, call_guard)

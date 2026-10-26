@@ -30,7 +30,6 @@ namespace py = pybind11;
 struct PyTensorDType final {
   executorch::aten::ScalarType scalar_type;
   const char* torch_name;
-  const char* numpy_name;
   const char* buffer_format;
 };
 
@@ -38,41 +37,41 @@ inline const PyTensorDType& python_dtype(
     executorch::aten::ScalarType scalar_type) {
   using executorch::aten::ScalarType;
   static constexpr PyTensorDType kDTypes[] = {
-      {ScalarType::Byte, "uint8", "uint8", "B"},
-      {ScalarType::Char, "int8", "int8", "b"},
-      {ScalarType::Short, "int16", "int16", "h"},
-      {ScalarType::Int, "int32", "int32", "i"},
-      {ScalarType::Long, "int64", "int64", "q"},
-      {ScalarType::Half, "float16", "float16", "e"},
-      {ScalarType::Float, "float32", "float32", "f"},
-      {ScalarType::Double, "float64", "float64", "d"},
-      {ScalarType::ComplexHalf, "complex32", nullptr, nullptr},
-      {ScalarType::ComplexFloat, "complex64", "complex64", "Zf"},
-      {ScalarType::ComplexDouble, "complex128", "complex128", "Zd"},
-      {ScalarType::Bool, "bool", "bool", "?"},
-      {ScalarType::QInt8, "qint8", nullptr, "b"},
-      {ScalarType::QUInt8, "quint8", nullptr, nullptr},
-      {ScalarType::QInt32, "qint32", nullptr, "i"},
-      {ScalarType::BFloat16, "bfloat16", nullptr, nullptr},
-      {ScalarType::QUInt4x2, "quint4x2", nullptr, nullptr},
-      {ScalarType::QUInt2x4, "quint2x4", nullptr, nullptr},
-      {ScalarType::Bits1x8, "bits1x8", nullptr, nullptr},
-      {ScalarType::Bits2x4, "bits2x4", nullptr, nullptr},
-      {ScalarType::Bits4x2, "bits4x2", nullptr, nullptr},
-      {ScalarType::Bits8, "bits8", nullptr, nullptr},
-      {ScalarType::Bits16, "bits16", nullptr, nullptr},
-      {ScalarType::Float8_e5m2, "float8_e5m2", nullptr, nullptr},
-      {ScalarType::Float8_e4m3fn, "float8_e4m3fn", nullptr, nullptr},
-      {ScalarType::Float8_e5m2fnuz, "float8_e5m2fnuz", nullptr, nullptr},
-      {ScalarType::Float8_e4m3fnuz, "float8_e4m3fnuz", nullptr, nullptr},
-      {ScalarType::UInt16, "uint16", "uint16", "H"},
-      {ScalarType::UInt32, "uint32", "uint32", "I"},
-      {ScalarType::UInt64, "uint64", "uint64", "Q"},
+      {ScalarType::Byte, "uint8", "B"},
+      {ScalarType::Char, "int8", "b"},
+      {ScalarType::Short, "int16", "h"},
+      {ScalarType::Int, "int32", "i"},
+      {ScalarType::Long, "int64", "q"},
+      {ScalarType::Half, "float16", "e"},
+      {ScalarType::Float, "float32", "f"},
+      {ScalarType::Double, "float64", "d"},
+      {ScalarType::ComplexHalf, "complex32", nullptr},
+      {ScalarType::ComplexFloat, "complex64", "Zf"},
+      {ScalarType::ComplexDouble, "complex128", "Zd"},
+      {ScalarType::Bool, "bool", "?"},
+      {ScalarType::QInt8, "qint8", "b"},
+      {ScalarType::QUInt8, "quint8", nullptr},
+      {ScalarType::QInt32, "qint32", "i"},
+      {ScalarType::BFloat16, "bfloat16", nullptr},
+      {ScalarType::QUInt4x2, "quint4x2", nullptr},
+      {ScalarType::QUInt2x4, "quint2x4", nullptr},
+      {ScalarType::Bits1x8, "bits1x8", nullptr},
+      {ScalarType::Bits2x4, "bits2x4", nullptr},
+      {ScalarType::Bits4x2, "bits4x2", nullptr},
+      {ScalarType::Bits8, "bits8", nullptr},
+      {ScalarType::Bits16, "bits16", nullptr},
+      {ScalarType::Float8_e5m2, "float8_e5m2", nullptr},
+      {ScalarType::Float8_e4m3fn, "float8_e4m3fn", nullptr},
+      {ScalarType::Float8_e5m2fnuz, "float8_e5m2fnuz", nullptr},
+      {ScalarType::Float8_e4m3fnuz, "float8_e4m3fnuz", nullptr},
+      {ScalarType::UInt16, "uint16", "H"},
+      {ScalarType::UInt32, "uint32", "I"},
+      {ScalarType::UInt64, "uint64", "Q"},
   };
   const auto index = static_cast<size_t>(scalar_type);
   if (index >= sizeof(kDTypes) / sizeof(kDTypes[0]) ||
       kDTypes[index].scalar_type != scalar_type) {
-    throw std::runtime_error("Unsupported ExecuTorch result dtype");
+    throw std::runtime_error("Unsupported ExecuTorch dtype");
   }
   return kDTypes[index];
 }
@@ -233,21 +232,8 @@ class PyExecuTorchResult final
     return result;
   }
 
-  py::dtype dtype() const {
-    const auto* name = python_dtype(scalar_type_).numpy_name;
-    if (name == nullptr) {
-      throw std::runtime_error(
-          std::string("ExecuTorch result dtype ") +
-          executorch::runtime::toString(scalar_type_) +
-          " cannot be represented by NumPy; dtype_name names it");
-    }
-    return py::dtype(name);
-  }
-
   py::array numpy_array(const py::object& base) {
-    const auto array_dtype = dtype();
-    auto info = buffer();
-    py::array array(array_dtype, info.shape, info.strides, info.ptr, base);
+    py::array array(buffer(), base);
     if (read_only_) {
       array.attr("setflags")(py::arg("write") = false);
     }
@@ -397,7 +383,7 @@ class PyExecuTorchResult final
     return capsule;
   }
 
-  const char* torch_dtype_name() const {
+  const char* dtype() const {
     return python_dtype(scalar_type_).torch_name;
   }
 
@@ -497,8 +483,8 @@ class PyExecuTorchResult final
     if (sizes_.size() == 1) {
       shape += ",";
     }
-    return "ExecuTorchResult(shape=(" + shape +
-        "), dtype=" + torch_dtype_name() + ", device=" + device_name() + ")";
+    return "ExecuTorchResult(shape=(" + shape + "), dtype=" + dtype() +
+        ", device=" + device_name() + ")";
   }
 
   std::string device_name() const {
@@ -657,8 +643,8 @@ class PyExecuTorchResult final
   }
 
   // PEP 3118 has no format for dtypes such as bfloat16. An unsigned integer of
-  // the same width keeps the real shape and layout; dtype_name says how to read
-  // each element.
+  // the same width keeps the real shape and layout; dtype says how to read each
+  // element.
   const char* buffer_format() const {
     const auto* format = python_dtype(scalar_type_).buffer_format;
     if (format != nullptr) {

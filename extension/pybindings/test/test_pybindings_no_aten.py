@@ -203,8 +203,8 @@ else:
 
         copy = output.to_host()
 
-        self.assertEqual(output.dtype_name, "float32")
-        self.assertEqual(output.dtype, np.dtype(np.float32))
+        self.assertIsInstance(output.dtype, str)
+        self.assertEqual(output.dtype, "float32")
         self.assertEqual(
             repr(copy), "ExecuTorchResult(shape=(1,), dtype=float32, device=cpu)"
         )
@@ -363,11 +363,9 @@ else:
                 self.assertEqual(output.shape, (2, 2))
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
                 if isinstance(output, runtime.ExecuTorchResult):
-                    # NumPy has no bfloat16, so only the name says how to read
-                    # these bytes.
-                    self.assertEqual(output.dtype_name, "bfloat16")
-                    with self.assertRaisesRegex(RuntimeError, "dtype_name"):
-                        output.dtype
+                    self.assertEqual(output.dtype, "bfloat16")
+                    # NumPy reads the buffer first, so call __array__ directly.
+                    self.assertEqual(output.__array__().dtype, np.uint16)
                 for noncontiguous in (
                     np.arange(16, dtype=np.uint8)[::2],
                     np.arange(8, dtype=np.uint8)[::-1],

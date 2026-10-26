@@ -21,6 +21,6 @@ For detailed information on how APIs evolve and the deprecation process, please 
     :members: execute, metadata
 
 .. autoclass:: ExecuTorchResult
-    :members: shape, strides, dtype, dtype_name, nbytes, to_host, from_host
+    :members: shape, strides, dtype, nbytes, to_host, from_host
 
 Without PyTorch, ``Method.execute`` returns ``ExecuTorchResult`` values: read a CPU result through the buffer protocol, NumPy, or DLPack, read a CUDA result through DLPack or ``to_host()``, and place host data on a CUDA device with ``ExecuTorchResult.from_host()``.

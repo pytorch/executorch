@@ -746,11 +746,11 @@ print("Input on a non-current device was read")
         method = self.bindings._load_program_from_buffer(data).load_method("forward")
         on_device = method(value)[0]
         host = on_device.to_host()
-        self.assertEqual(host.dtype_name, "bfloat16")
+        self.assertEqual(host.dtype, "bfloat16")
         # The host export of bfloat16 is unsigned integers, so passing the
         # result itself is what keeps its dtype.
         back = self.bindings.ExecuTorchResult.from_host(host, self.device.index)
-        self.assertEqual(back.dtype_name, "bfloat16")
+        self.assertEqual(back.dtype, "bfloat16")
         self.assertEqual(back.shape, (2, 3))
         torch.testing.assert_close(torch.from_dlpack(back), value)
         with self.assertRaisesRegex(ValueError, "already on a device"):
