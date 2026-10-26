@@ -36,6 +36,10 @@ def main():
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
     parser.add_argument('--rewind-probe-job',type=Path)
     parser.add_argument('--native-sampler',choices=['off','on'],default='off')
+    parser.add_argument('--nsys',type=Path,
+                        help='Trace round1 only; rounds2-4 remain unprofiled for performance')
+    parser.add_argument('--diagnostic-initial-KV-capacity',type=int,choices=(512,16384),default=512,
+                        help='Numerical/performance allocation control only; default512 is unchanged')
     args = parser.parse_args()
     assert args.native_sampler=='off' or args.rewind_probe_job is not None
     assert not args.output.exists()
@@ -107,7 +111,17 @@ def main():
                     argv = [str(probe), "--pte=" + str(artifact / "model.pte"),
                             "--data_path=" + str(artifact / "aoti_cuda_blob.ptd"),
                             "--output_dir=" + str(directory), "--max_sessions=21",
-                            "--max_context=131072", "--initial_kv_capacity=512"]
+                            "--max_context=131072", "--initial_kv_capacity="+str(args.diagnostic_initial_KV_capacity)]
+                    native_argv=list(argv)
+                    trace=bool(args.nsys and number==1)
+                    if trace:
+                        assert args.nsys.is_file()
+                        argv=[str(args.nsys),'profile','--trace=cuda,nvtx',
+                              '--sample=none','--cpuctxsw=none','--cuda-graph-trace=node',
+                              '--force-overwrite=false','--output='+str(directory/'cold-profile'),*argv]
+                    (directory/'executor-command.json').write_text(json.dumps(dict(
+                        command=argv,native_command=native_argv,profiled_discarded_round=trace,
+                        initial_KV_capacity=args.diagnostic_initial_KV_capacity),indent=2)+'\n')
                     child = None
                     try:
                         with (directory / "stderr.log").open("x") as log, (directory / "protocol.jsonl").open("x") as raw:
@@ -120,18 +134,28 @@ def main():
                             selector.register(child.stdout, selectors.EVENT_READ)
 
                             def receive():
-                                assert selector.select(1800), "Native executor observation timeout"
-                                line = child.stdout.readline()
-                                assert line, "Native executor terminated: " + str(child.poll())
-                                response = json.loads(line)
+                                until=time.monotonic()+1800
+                                while True:
+                                    assert selector.select(max(0,until-time.monotonic())), "Native executor observation timeout"
+                                    line = child.stdout.readline()
+                                    assert line, "Native executor terminated: " + str(child.poll())
+                                    try: response=json.loads(line)
+                                    except ValueError:
+                                        log.write(line);log.flush();continue
+                                    break
                                 raw.write(json.dumps(dict(response=response)) + "\n")
                                 raw.flush()
                                 assert not response.get("failed"), response
                                 return response
 
                             ready = receive()
-                            assert ready["ready"] and ready["snapshot"]["pid"] == child.pid
-                            state("running-matched-mini-model-latency", round=number, arm=arm, GPU_pid=child.pid)
+                            assert ready["ready"]
+                            native_pid=ready["snapshot"]["pid"]
+                            if not trace: assert native_pid==child.pid
+                            else:
+                                assert (Path('/proc')/str(native_pid)/'cmdline').read_bytes().split(b'\0')[0]==str(probe).encode()
+                            state("running-matched-mini-model-latency", round=number, arm=arm,
+                                  GPU_pid=native_pid,launcher_pid=child.pid,profiled_discarded_round=trace)
                             serial = 0
 
                             def request(body):
@@ -197,8 +221,16 @@ def main():
                             child.stdin.close()
                             assert child.wait(timeout=120) == 0
                             selector.close()
+                        if trace:
+                            report=directory/'cold-profile.nsys-rep';assert report.is_file()
+                            with (directory/'nsys-export.log').open('x') as out:
+                                subprocess.run([str(args.nsys),'export','--type=sqlite',
+                                    '--output='+str(directory/'cold-profile.sqlite'),str(report)],
+                                    check=True,stdout=out,stderr=subprocess.STDOUT,timeout=300)
                         records.append(dict(round=number,arm=arm,cases=case_records,
-                                            protocol_sha256=digest(directory / "protocol.jsonl")))
+                                            protocol_sha256=digest(directory / "protocol.jsonl"),
+                                            native_PID=native_pid,actual_command_SHA256=digest(directory/'executor-command.json'),
+                                            profiled_discarded_round=trace))
                         (args.output / "results.partial.json").write_text(json.dumps(records,indent=2) + "\n")
                     finally:
                         if child is not None and child.poll() is None:
@@ -223,6 +255,9 @@ def main():
         (args.output / "result.json").write_text(json.dumps(dict(
             mini_only=True,mini_profile=args.mini_profile,model_geometry=geometry,
             rewind_probe_proof=probe_proof,native_sampler_mode=args.native_sampler,
+            initial_KV_capacity=args.diagnostic_initial_KV_capacity,
+            actual_profiled_rounds=[row['round'] for row in records if row['profiled_discarded_round']],
+            performance_rounds_unprofiled=all(not row['profiled_discarded_round'] for row in records if row['round']>1),
             rounds=records,aggregates=aggregates,artifact_audits=audits,
             native_gate_sha256=digest(gate_path),probe_sha256=digest(probe),
             fixed_teacher_forced_inputs=True,native_intervals_exclude_IPC_and_snapshots=True,

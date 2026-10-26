@@ -94,9 +94,18 @@ def main():
                 assert len(finishes) == 1
                 usage = item["usage"]
                 assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
-                assert item["start_ns"] < item["first_content_ns"] <= item["end_ns"]
+                content_events = [choice.get("delta", {}).get("content", "")
+                                  for event in events for choice in event.get("choices", [])
+                                  if choice.get("delta", {}).get("content")]
+                assert item["start_ns"] < item["end_ns"]
                 assert item["seconds"] == (item["end_ns"] - item["start_ns"]) / 1e9
-                assert item["TTFT_seconds"] == (item["first_content_ns"] - item["start_ns"]) / 1e9
+                if content_events:
+                    assert item["start_ns"] < item["first_content_ns"] <= item["end_ns"]
+                    assert item["TTFT_seconds"] == (item["first_content_ns"] - item["start_ns"]) / 1e9
+                else:
+                    # First-token EOS has no visible content. Preserve missing TTFT.
+                    assert item["first_content_ns"] is None and item["TTFT_seconds"] is None
+                    assert finishes == ["stop"] and usage["completion_tokens"] == 1
                 if prefix == "off":
                     assert usage["prompt_tokens_details"]["cached_tokens"] == 0
                 text = "".join(choice.get("delta", {}).get("content", "") for event in events for choice in event.get("choices", []))
@@ -110,12 +119,16 @@ def main():
             assert tokens == stage["output_tokens"]
             assert tokens / elapsed == stage["aggregate_TPS"]
             timed = [item for item in samples if stage["start_ns"] <= item["monotonic_ns"] <= stage["end_ns"]]
-            assert timed
             lifecycle = {}
             labels = ["stage-" + str(index) + "-c" + str(concurrency) + suffix for suffix in ("-active", "-idle")]
             for label in labels:
                 selected = [item for item in samples if item["stage"] == label]
-                assert selected
+                if not selected:
+                    assert label.endswith("-active"), "Missing required idle evidence: " + label
+                    lifecycle[label] = dict(NVML_samples=0, NVML_peak_bytes=None,
+                        NVML_last_bytes=None, native_samples=0, native_sample_coverage=False,
+                        limitation="Active interval shorter than sampling cadence; no active peak claimed")
+                    continue
                 lower, upper = selected[0]["monotonic_ns"], selected[-1]["monotonic_ns"]
                 readings = [item for item in native if lower <= item["monotonic_ns"] <= upper]
                 value = dict(NVML_peak_bytes=max(item["GPU_used_bytes"] for item in selected),
@@ -134,9 +147,12 @@ def main():
                         assert label.endswith("-active"), "Missing required idle lifecycle evidence: " + label
                         value["native_limitation"] = "No250ms native sample within this short active interval; no active native peak is claimed"
                 lifecycle[label] = value
+            ttft = [item["TTFT_seconds"] for item in raw if item["TTFT_seconds"] is not None]
             stages.append(dict(stage=index, concurrency=concurrency, seconds=elapsed,
                                output_tokens=tokens, TPS=tokens / elapsed,
-                               mean_TTFT_seconds=statistics.mean(item["TTFT_seconds"] for item in raw),
+                               timed_NVML_samples=len(timed),
+                               mean_TTFT_seconds=statistics.mean(ttft) if ttft else None,
+                               visible_content_requests=len(ttft), empty_first_EOS_requests=len(raw)-len(ttft),
                                lifecycle=lifecycle))
         assert cursor == len(raw_requests)
         after = stages[-1]["lifecycle"]["stage-5-c1-idle"]
@@ -167,7 +183,8 @@ def main():
             for index in range(6):
                 summaries.append(dict(prefix=prefix, arm=arm, stage=index, concurrency=rows[0]["stages"][index]["concurrency"],
                                       TPS=moments([row["stages"][index]["TPS"] for row in rows[1:]]),
-                                      mean_TTFT_seconds=moments([row["stages"][index]["mean_TTFT_seconds"] for row in rows[1:]]),
+                                      mean_TTFT_seconds=(moments([row["stages"][index]["mean_TTFT_seconds"] for row in rows[1:]]) if all(row["stages"][index]["mean_TTFT_seconds"] is not None for row in rows[1:]) else None),
+                                      empty_first_EOS_requests=[row["stages"][index]["empty_first_EOS_requests"] for row in rows[1:]],
                                       NVML_idle_last_bytes=moments([row["stages"][index]["lifecycle"]["stage-" + str(index) + "-c" + str(row["stages"][index]["concurrency"]) + "-idle"]["NVML_last_bytes"] for row in rows[1:]])))
     result = dict(raw_streams_usage_timestamps_and_hashes_verified=True, matched_requests=len(comparison),
                   completion_lengths_equal_between_arms=lengths_equal,
