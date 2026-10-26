@@ -22,18 +22,10 @@ private func mappedError(_ error: Error, code: ETCoreAIErrorCode, context: Strin
 }
 
 // Objective-C blocks have no Sendable annotation. Each box is invoked by one detached task only.
-private final class Completion<Value>: @unchecked Sendable {
-  let call: (Value?, Error?) -> Void
+private final class Completion<Callback>: @unchecked Sendable {
+  let call: Callback
 
-  init(_ call: @escaping (Value?, Error?) -> Void) {
-    self.call = call
-  }
-}
-
-private final class AcquisitionCompletion: @unchecked Sendable {
-  let call: ETCoreAIAcquisitionCompletion
-
-  init(_ call: @escaping ETCoreAIAcquisitionCompletion) {
+  init(_ call: Callback) {
     self.call = call
   }
 }
@@ -43,7 +35,7 @@ func acquireCoreAIModel(
   context: String, completion: @escaping ETCoreAIAcquisitionCompletion,
   operation: @escaping @Sendable () async throws -> (any ETCoreAIPreparedModel)?
 ) {
-  let callback = AcquisitionCompletion(completion)
+  let callback = Completion(completion)
   Task.detached {
     do {
       if let model = try await operation() {
@@ -421,14 +413,14 @@ public final class ETCoreAISwiftModelLoader: NSObject, ETCoreAIModelLoading {
   public func evictModel(
     withBookmark bookmark: Data, completion: @escaping (Error?) -> Void
   ) {
-    let callback = Completion<Void> { _, error in completion(error) }
+    let callback = Completion(completion)
     Task.detached {
       do {
         try AIModelCache.deleteEntry(referencedBy: bookmark)
-        callback.call((), nil)
+        callback.call(nil)
       } catch {
         callback.call(
-          nil, mappedError(error, code: .runtime, context: "Core AI cache eviction failed"))
+          mappedError(error, code: .runtime, context: "Core AI cache eviction failed"))
       }
     }
   }

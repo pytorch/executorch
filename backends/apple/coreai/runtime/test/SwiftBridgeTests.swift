@@ -6,6 +6,7 @@
 
 import CoreAI
 import Foundation
+import Synchronization
 import XCTest
 
 private final class ProtocolPreparedModel: NSObject, ETCoreAIPreparedModel, Sendable {
@@ -92,6 +93,193 @@ final class SwiftAcquisitionTests: XCTestCase {
         throw underlying
       }
       wait(for: [completed], timeout: 5)
+    }
+  }
+}
+
+@available(macOS 27.0, iOS 27.0, *)
+final class SwiftSessionTests: XCTestCase {
+  private struct Manifest: Decodable {
+    let function: String
+    let inputNames: [String]
+    let outputNames: [String]
+
+    enum CodingKeys: String, CodingKey {
+      case function
+      case inputNames = "input_names"
+      case outputNames = "output_names"
+    }
+  }
+
+  private struct Input: @unchecked Sendable {
+    let storage: NSData
+    let tensor: ETCoreAIInputTensor
+
+    init(_ data: Data, shape: [Int], type: ETCoreAIScalarType = .float32) {
+      storage = data as NSData
+      tensor = ETCoreAIInputTensor(
+        bytes: storage.bytes, byteCount: UInt(storage.length),
+        shape: shape.map(NSNumber.init(value:)), scalarType: type)
+    }
+
+    init(_ values: [Float]) {
+      self.init(values.withUnsafeBytes { Data($0) }, shape: [values.count])
+    }
+  }
+
+  private let loader = ETCoreAISwiftModelLoader()
+  private var manifest: Manifest!
+  private var model: (any ETCoreAIPreparedModel)?
+  private var session: (any ETCoreAISession)?
+  private var bookmark: Data?
+
+  override func setUpWithError() throws {
+    let root = try XCTUnwrap(ProcessInfo.processInfo.environment["COREAI_BRIDGE_FIXTURE_DIR"])
+    let directory = URL(fileURLWithPath: root, isDirectory: true)
+    manifest = try JSONDecoder().decode(
+      Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
+    XCTAssertEqual(manifest.inputNames.count, 2)
+    XCTAssertEqual(manifest.outputNames.count, 2)
+    let completed = expectation(description: "specialized session fixture")
+    completed.assertForOverFulfill = true
+    var failure: Error?
+    loader.specializeModel(at: directory.appendingPathComponent("model.aimodel")) {
+      status, model, error in
+      XCTAssertEqual(status, .hit)
+      self.model = model
+      failure = error
+      completed.fulfill()
+    }
+    wait(for: [completed], timeout: 30)
+    if let failure { throw failure }
+    bookmark = try XCTUnwrap(model).copyBookmarkData()
+  }
+
+  override func tearDownWithError() throws {
+    session = nil
+    model = nil
+    if let bookmark {
+      let completed = expectation(description: "evicted session fixture")
+      completed.assertForOverFulfill = true
+      loader.evictModel(withBookmark: bookmark) { error in
+        XCTAssertNil(error)
+        completed.fulfill()
+      }
+      wait(for: [completed], timeout: 10)
+    }
+    bookmark = nil
+  }
+
+  private func bind(inputNames: [String]? = nil, outputNames: [String]? = nil) throws {
+    let result = Mutex<(session: (any ETCoreAISession)?, error: Error?, calls: Int)>((nil, nil, 0))
+    try XCTUnwrap(model).loadFunctionNamed(
+      manifest.function, inputNames: inputNames ?? manifest.inputNames,
+      outputNames: outputNames ?? manifest.outputNames
+    ) { session, error in
+      result.withLock { $0 = (session, error, $0.calls + 1) }
+    }
+    let value = result.withLock { value in
+      let snapshot = value
+      value = (nil, nil, 0)
+      return snapshot
+    }
+    XCTAssertEqual(value.calls, 1)
+    if let failure = value.error { throw failure }
+    session = try XCTUnwrap(value.session)
+  }
+
+  private func execute(_ inputs: [Input]) throws -> [ETCoreAITensor] {
+    let completed = expectation(description: "executed session fixture")
+    completed.assertForOverFulfill = true
+    let result = Mutex<(outputs: [ETCoreAITensor]?, error: Error?)>((nil, nil))
+    try XCTUnwrap(session).executeInputs(inputs.map(\.tensor)) { tensors, error in
+      result.withLock { $0 = (tensors, error) }
+      // Retain the borrowed allocations even if the XCTest wait times out.
+      withExtendedLifetime(inputs) { completed.fulfill() }
+    }
+    wait(for: [completed], timeout: 10)
+    let value = result.withLock { value in
+      let snapshot = value
+      value = (nil, nil)
+      return snapshot
+    }
+    if let failure = value.error { throw failure }
+    return try XCTUnwrap(value.outputs)
+  }
+
+  func testExecutesWithOrderedAndReversedBindings() throws {
+    for reversed in [false, true] {
+      try bind(
+        inputNames: reversed ? Array(manifest.inputNames.reversed()) : manifest.inputNames,
+        outputNames: reversed ? Array(manifest.outputNames.reversed()) : manifest.outputNames)
+      let inputs = [Input([5, 9]), Input([1, 2])]
+      let outputs = try execute(reversed ? Array(inputs.reversed()) : inputs)
+      let expected: [[Float]] = reversed ? [[4, 7], [6, 11]] : [[6, 11], [4, 7]]
+      XCTAssertEqual(outputs.count, expected.count)
+      for (output, values) in zip(outputs, expected) {
+        XCTAssertEqual(output.scalarType, .float32)
+        XCTAssertEqual(output.shape, [2])
+        XCTAssertEqual(output.data, values.withUnsafeBytes { Data($0) })
+      }
+    }
+  }
+
+  func testRejectsDuplicateAndMismatchedBindings() throws {
+    let inputs = manifest.inputNames
+    let outputs = manifest.outputNames
+    for (inputNames, outputNames) in [
+      ([inputs[0], inputs[0]], outputs),
+      (inputs, [outputs[0], outputs[0]]),
+      ([inputs[0], "missing"], outputs),
+      (inputs, [outputs[0], "missing"]),
+    ] {
+      XCTAssertThrowsError(try bind(inputNames: inputNames, outputNames: outputNames)) {
+        XCTAssertEqual(($0 as NSError).domain, ETCoreAIErrorDomain)
+        XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.invalidModel.rawValue)
+      }
+    }
+  }
+
+  func testInvalidInputCountCompletesSynchronouslyOnce() throws {
+    try bind()
+    let calls = Mutex(0)
+    let caller = ObjectIdentifier(Thread.current)
+    try XCTUnwrap(session).executeInputs([]) { outputs, error in
+      calls.withLock { $0 += 1 }
+      XCTAssertEqual(ObjectIdentifier(Thread.current), caller)
+      XCTAssertNil(outputs)
+      XCTAssertEqual((error as NSError?)?.domain, ETCoreAIErrorDomain)
+      XCTAssertEqual((error as NSError?)?.code, ETCoreAIErrorCode.invalidArgument.rawValue)
+    }
+    XCTAssertEqual(calls.withLock { $0 }, 1)
+  }
+
+  func testInvalidPayloadCompletesSynchronouslyOnce() throws {
+    try bind()
+    let invalid = ETCoreAIInputTensor(
+      bytes: nil, byteCount: 8, shape: [2], scalarType: .float32)
+    let calls = Mutex(0)
+    let caller = ObjectIdentifier(Thread.current)
+    try XCTUnwrap(session).executeInputs([invalid, invalid]) { outputs, error in
+      calls.withLock { $0 += 1 }
+      XCTAssertEqual(ObjectIdentifier(Thread.current), caller)
+      XCTAssertNil(outputs)
+      XCTAssertEqual((error as NSError?)?.code, ETCoreAIErrorCode.invalidArgument.rawValue)
+    }
+    XCTAssertEqual(calls.withLock { $0 }, 1)
+  }
+
+  func testRejectsInputDescriptorDtypeAndShapeMismatches() throws {
+    try bind()
+    for input in [
+      Input(Data(count: 4), shape: [2], type: .float16),
+      Input(Data(count: 8), shape: [1, 2]),
+      Input(Data(count: 12), shape: [3]),
+    ] {
+      XCTAssertThrowsError(try execute([input, Input([1, 2])])) {
+        XCTAssertEqual(($0 as NSError).domain, ETCoreAIErrorDomain)
+        XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.invalidArgument.rawValue)
+      }
     }
   }
 }

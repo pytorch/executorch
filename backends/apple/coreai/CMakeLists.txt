@@ -273,10 +273,34 @@ if(EXECUTORCH_BUILD_TESTS
     coreai_swift_bridge_test PRIVATE "-framework XCTest" XCTestSwiftSupport
                                      executorch::coreai_dependencies
   )
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(_coreai_fixture_dir "${CMAKE_CURRENT_BINARY_DIR}/bridge_fixture")
+  add_custom_command(
+    OUTPUT "${_coreai_fixture_dir}/manifest.json"
+    BYPRODUCTS "${_coreai_fixture_dir}/model.aimodel/main.hash"
+               "${_coreai_fixture_dir}/model.aimodel/main.mlirb"
+               "${_coreai_fixture_dir}/model.aimodel/metadata.json"
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/export_bridge_fixture.py"
+      "${_coreai_fixture_dir}"
+    DEPENDS runtime/test/export_bridge_fixture.py compiler/preprocess.py
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    COMMENT "Export the Core AI session test model"
+    VERBATIM
+  )
+  add_custom_target(
+    coreai_bridge_fixture DEPENDS "${_coreai_fixture_dir}/manifest.json"
+  )
+  add_dependencies(coreai_swift_bridge_test coreai_bridge_fixture)
   add_test(NAME coreai_swift_bridge_test
            COMMAND xcrun xctest "$<TARGET_BUNDLE_DIR:coreai_swift_bridge_test>"
   )
-  set_tests_properties(coreai_swift_bridge_test PROPERTIES TIMEOUT 120)
+  set_tests_properties(
+    coreai_swift_bridge_test
+    PROPERTIES TIMEOUT 120 ENVIRONMENT
+               "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
+  )
 endif()
 
 install(

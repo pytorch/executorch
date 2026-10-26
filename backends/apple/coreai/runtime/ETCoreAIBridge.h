@@ -10,6 +10,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// Bridge completions can require Swift's cooperative thread pool. Callers that
+// synchronously wait for them must use ordinary worker threads, not Swift Task
+// or Task.detached workers, which can starve the work needed for completion.
+
 typedef NS_ENUM(NSInteger, ETCoreAIScalarType) {
   ETCoreAIScalarTypeFloat16 = 0,
   ETCoreAIScalarTypeFloat32 = 1,
@@ -48,6 +52,8 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 
 // The caller keeps inputs valid and unmodified until completion. All session
 // input access must finish before completion is invoked, including on failure.
+// Completion is called exactly once, possibly before executeInputs returns,
+// with no guarantee of a particular thread or queue.
 @protocol ETCoreAISession<NSObject>
 - (void)executeInputs:(NSArray<ETCoreAIInputTensor*>*)inputs
            completion:(void (^)(
