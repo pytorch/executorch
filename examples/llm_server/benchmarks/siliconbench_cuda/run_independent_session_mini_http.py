@@ -35,6 +35,32 @@ def digest(path):
     return h.hexdigest()
 
 
+def verified_allocator_policy_suffix(gate, package, changes, expected_pool, variant, pool_file):
+    """Append only exact reviewed allocator patches to the existing source chain."""
+    for policy, key in (
+        ('independent_session_coalesced_growth_trim', 'coalesced_growth_trim_spec_SHA256'),
+        ('independent_session_pool_only_growth_trim', 'pool_only_growth_trim_spec_SHA256')):
+        if not gate.get(key):
+            continue
+        spec_path = package/(policy + '_source.json')
+        spec = json.loads(spec_path.read_text())
+        assert digest(spec_path) == gate[key]
+        assert digest(package/(policy + '.patch')) == spec['patch_SHA256']
+        records = spec['variants'][variant]
+        assert len(records) == 1 and records[0]['file'] == pool_file
+        record = records[0]
+        assert record['before_SHA256'] == expected_pool
+        assert record['patch_SHA256'] == spec['patch_SHA256']
+        if policy == 'independent_session_coalesced_growth_trim':
+            assert record['allocator_policy_only'] and record['weights_math_ABI_sliding_and_graph_invalidation_unchanged']
+        else:
+            assert record['allocator_pool_policy_only'] and record['contraction_full_cache_release_unchanged']
+            assert record['weights_math_ABI_and_live_graph_invalidation_unchanged']
+        changes = dict(patches=changes['patches'] + records)
+        expected_pool = record['after_SHA256']
+    return changes, expected_pool
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("preparation-job", "python", "tokenizer", "lock", "output"):
@@ -237,6 +263,9 @@ def main():
                     expected_pool_SHA256=changes[0]['after_SHA256']
                     extra_native_source_hashes[changes[1]['file']]=changes[1]['after_SHA256']
                     extra_native_original_hashes[changes[1]['file']]=changes[1]['before_SHA256']
+                source_changes, expected_pool_SHA256 = verified_allocator_policy_suffix(
+                    gate, package, source_changes, expected_pool_SHA256,
+                    'Gemma-empty-owner-reuse', growth['file'])
                 if 'actual_native_source_change' in gate:
                     assert gate['actual_native_source_change']==source_changes
                     assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']

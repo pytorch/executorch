@@ -1,4 +1,4 @@
-"""Qualify an allocator SDK using preserved MG mini graphs and real HTTP.
+"""Qualify an allocator SDK using preserved MG/Gemma mini graphs and real HTTP.
 
 Wait for the existing native build, generate matching old/new probe code,
 collect four fresh rounds, and reconstruct raw storage/performance evidence.
@@ -15,7 +15,13 @@ def main():
                  'lock', 'nsys', 'output'):
         p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--port', type=int, required=True)
+    p.add_argument('--profile', choices=('muse-glimmer-first4', 'gemma4-first6'),
+                   default='muse-glimmer-first4')
+    p.add_argument('--Gemma-source-preparation-job', type=Path)
+    p.add_argument('--http-python-dependencies-job', type=Path)
     a = p.parse_args()
+    gemma = a.profile == 'gemma4-first6'
+    assert not gemma or (a.Gemma_source_preparation_job and a.http_python_dependencies_job)
     assert not a.output.exists()
     a.output.mkdir(parents=True)
     package = Path(__file__).resolve().parent
@@ -70,25 +76,30 @@ def main():
             '--output', a.output / 'original-rewind-probe'])
         state('collecting-original-matched-mini-latency')
         run('original-latency', 'run_independent_session_mini_model_latency.py', [
-            '--preparation-job', a.original_mini_preparation, '--mini-profile', 'muse-glimmer-first4',
+            '--preparation-job', a.original_mini_preparation, '--mini-profile', a.profile,
             '--rewind-probe-job', a.output / 'original-rewind-probe',
             '--native-sampler', 'off', '--lock', a.lock, '--nsys', a.nsys,
             '--output', a.output / 'original-latency'])
-        state('preparing-isolated-current-native-HTTP-dependencies')
-        run('HTTP-dependencies', 'prepare_mg_http_python_dependencies.py', [
-            '--native-job', a.native_job, '--python', sys.executable,
-            '--output', a.output / 'HTTP-dependencies'])
+        dependency_job = a.http_python_dependencies_job
+        if not gemma:
+            state('preparing-isolated-current-native-HTTP-dependencies')
+            dependency_job = a.output / 'HTTP-dependencies'
+            run('HTTP-dependencies', 'prepare_mg_http_python_dependencies.py', [
+                '--native-job', a.native_job, '--python', sys.executable,
+                '--output', dependency_job])
         state('collecting-mini-native-and-HTTP-controls')
-        run('mini-controls', 'run_growth_allocator_mg_mini_controls.py', [
+        run('mini-controls', 'run_growth_allocator_gemma_mini_controls.py' if gemma else 'run_growth_allocator_mg_mini_controls.py', [
             '--native-job', a.native_job, '--tokenizer', a.tokenizer,
-            '--http-python-dependencies-job', a.output / 'HTTP-dependencies',
+            '--http-python-dependencies-job', dependency_job,
             '--lock', a.lock, '--nsys', a.nsys, '--port', a.port,
-            '--output', a.output / 'mini-controls'])
+            '--output', a.output / 'mini-controls'] + (
+                ['--Gemma-source-preparation-job', a.Gemma_source_preparation_job] if gemma else []))
         state('independently-reviewing-mini-raw-evidence')
         run('qualification', 'qualify_independent_session_mini_for_full.py', [
             '--mini-job', a.output / 'mini-controls', '--native-job', a.native_job,
             '--previous-latency-job', a.output / 'original-latency',
-            '--profile', 'muse-glimmer-first4', '--output', a.output / 'mini-reviews'])
+            '--profile', a.profile, '--output', a.output / 'mini-reviews'] + (
+                ['--Gemma-source-preparation-job', a.Gemma_source_preparation_job] if gemma else []))
         qpath = a.output / 'mini-reviews/mini-qualification.json'
         q = json.loads(qpath.read_text())
         assert q['runtime_native_gate_SHA256'] == sha(a.native_job / 'native-gate.json')

@@ -41,7 +41,8 @@ def main():
             command=handle.read_bytes()
             assert str(a.native_job).encode() in command and any(name in command for name in (
                 b'prepare_independent_session_growth_allocator.py',
-                b'prepare_independent_session_empty_owner_reuse.py'))
+                b'prepare_independent_session_empty_owner_reuse.py',
+                b'prepare_independent_session_coalesced_growth_trim.py'))
             assert time.monotonic()<deadline,'Verified-live native observation timeout; do not restart build'
             state('waiting-on-confirmed-live-native-build',native_PID=pid,native_status=old['status'])
             time.sleep(15)
