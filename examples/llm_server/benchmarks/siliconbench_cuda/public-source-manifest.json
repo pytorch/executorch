@@ -539,6 +539,14 @@
       "sha256": "62d2f097c033d8840f042fa937be3250e95ed2c8bda2e128e803381598df07f1",
       "bytes": 4742
     },
+    "independent_session_paired_KV_storage.patch": {
+      "sha256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774",
+      "bytes": 1937
+    },
+    "independent_session_paired_KV_storage_source.json": {
+      "sha256": "1652cf14acd54275095fc39c06fda6c2f82f44b9226ed6984a0622a5945e9dc0",
+      "bytes": 3050
+    },
     "independent_session_pool_only_growth_trim.patch": {
       "sha256": "821e53c2f2132b34c9eae40323742726ffddb32dfdb2437c76b13b41efca26d8",
       "bytes": 1879
@@ -696,8 +704,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_coalesced_growth_trim.py": {
-      "sha256": "976a1ff2c75f72d0995454f1e0aadac8adb1e041674d3ec4d0477d7eeb4deb6c",
-      "bytes": 13563
+      "sha256": "aaed2916f40da71bb5eed4be5da60fb07702b4d903a7abc5ccaf4dbf8a3e5e97",
+      "bytes": 13747
     },
     "prepare_independent_session_empty_owner_reuse.py": {
       "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
@@ -1154,6 +1162,10 @@
     "run_native_allocator_stage_diagnostic.py": {
       "sha256": "bad76d2e51f5faee1bc70ce38eccf59dff680f86cb919359d1b6d57684013929",
       "bytes": 4019
+    },
+    "run_paired_KV_storage_mini_diagnostic.py": {
+      "sha256": "c5db466b95fa9ef497357f6c103e81d0944462e247d478a9b600803a3720ce5e",
+      "bytes": 6684
     },
     "run_private_KV_growth_slack_mini_diagnostic.py": {
       "sha256": "9f3ab838ffe116c97e60e54c67b3fab27dd68fd87e994fae8357707a693276f1",

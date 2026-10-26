@@ -1,0 +1,60 @@
+{
+  "patch_SHA256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "2bcf2cbc5486916eab9536bd2dc9f9983d8c8d4421e03eab247ef1f180c788b7",
+        "after_SHA256": "e66bb2ea06ced140fbb2cb1a3fab68afefadac645d04be4137d598494c954048",
+        "paired_private_KV_allocation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "6fd10a46e5525f8749d0019f4b7eaea07fdef7e13d3d0cc51f1a10d5113c2df1",
+        "after_SHA256": "9c68304f14b87901e9e8b6fb18696f4455117d089ff4af0b88dc0539ce4b0841",
+        "paired_private_KV_allocation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "2bcf2cbc5486916eab9536bd2dc9f9983d8c8d4421e03eab247ef1f180c788b7",
+        "after_SHA256": "e66bb2ea06ced140fbb2cb1a3fab68afefadac645d04be4137d598494c954048",
+        "paired_private_KV_allocation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "6fd10a46e5525f8749d0019f4b7eaea07fdef7e13d3d0cc51f1a10d5113c2df1",
+        "after_SHA256": "9c68304f14b87901e9e8b6fb18696f4455117d089ff4af0b88dc0539ce4b0841",
+        "paired_private_KV_allocation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "f753be799e730aa41e8e5657a0d8ab41f2aab711fa59b5ff762b3405f71b1774"
+      }
+    ]
+  },
+  "private_KV_pool_only_in_independent_sequence_mode": true,
+  "global_layout_shared_allocator_unchanged": true,
+  "per_session_capacity_initial512_and_growth_unchanged": true,
+  "sliding_capacity_writes_and_attention_unchanged": true,
+  "unchanged_PTE_PTD_kernels_and_graph_invalidation": true,
+  "preceding_bounded_growth_slack_policy_unchanged": true,
+  "K_and_V_logical_shapes_and_live_bytes_unchanged": true,
+  "paired_single_backing_with_separate_aligned_views": true,
+  "view_alignment_bytes": 256,
+  "destructor_and_discard_free_only_backing": true,
+  "rollback_uses_same_ownership_path": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}

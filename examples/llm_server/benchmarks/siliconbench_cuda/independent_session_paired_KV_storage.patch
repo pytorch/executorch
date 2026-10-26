@@ -1,0 +1,45 @@
+--- a/backends/cuda/runtime/cuda_kv_pool.h
++++ b/backends/cuda/runtime/cuda_kv_pool.h
+@@ -190,0 +191,2 @@
++    // Private K/V views can share one backing allocation owned by k.
++    bool paired{false};
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -103 +103,3 @@
+-    release(allocation.v, cudaStreamPerThread);
++    if (!allocation.paired) {
++      release(allocation.v, cudaStreamPerThread);
++    }
+@@ -366,0 +369,11 @@
++    // One allocation per layer reduces private-pool allocation count and
++    // fragmentation. K and V remain separate tensor views with unchanged
++    // logical sizes; retain allocator alignment at the start of each view.
++    constexpr size_t alignment = 256;
++    ET_CHECK_OR_RETURN_ERROR(
++        bytes <= std::numeric_limits<size_t>::max() - (alignment - 1),
++        MemoryAllocationFailed, "offgraph_kv: paired allocation overflow");
++    const size_t value_offset = (bytes + alignment - 1) & ~(alignment - 1);
++    ET_CHECK_OR_RETURN_ERROR(
++        value_offset <= std::numeric_limits<size_t>::max() - bytes,
++        MemoryAllocationFailed, "offgraph_kv: paired allocation overflow");
+@@ -368,3 +381,2 @@
+-    void* v = nullptr;
+-    if (cudaMallocFromPoolAsync(&k, bytes, sequence_memory_pool_, stream) !=
+-        cudaSuccess) {
++    if (cudaMallocFromPoolAsync(
++            &k, value_offset + bytes, sequence_memory_pool_, stream) != cudaSuccess) {
+@@ -374,7 +386,2 @@
+-    if (cudaMallocFromPoolAsync(&v, bytes, sequence_memory_pool_, stream) !=
+-        cudaSuccess) {
+-      (void)cudaFreeAsync(k, stream);
+-      (void)cudaGetLastError();
+-      return Error::MemoryAllocationFailed;
+-    }
+-    out = Allocation{k, v, rows};
++    void* v = static_cast<uint8_t*>(k) + value_offset;
++    out = Allocation{k, v, rows, true};
+@@ -410 +417,3 @@
+-  release(allocation.v, stream);
++  if (!allocation.paired) {
++    release(allocation.v, stream);
++  }
