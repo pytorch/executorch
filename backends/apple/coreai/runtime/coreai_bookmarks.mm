@@ -12,7 +12,6 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
-#include <cstring>
 #include <unistd.h>
 #include <cerrno>
 
@@ -73,20 +72,6 @@ Result<NSString*> bookmark_key(const Manifest& selected, NSString* platform,
 }
 
 namespace {
-Result<NSString*> resolve_root(NSString* path, bool create) {
-  ET_CHECK_OR_RETURN_ERROR(text(path) && path.isAbsolutePath, InvalidArgument,
-                           "Core AI assets require an absolute root path");
-  if (!create) {
-    struct stat info;
-    const int result =
-        retry_eintr([&] { return stat(path.fileSystemRepresentation, &info); });
-    if (result < 0 && errno == ENOENT) return path;
-    ET_CHECK_OR_RETURN_ERROR(result == 0 && S_ISDIR(info.st_mode),
-                             AccessFailed, "Invalid Core AI assets root");
-  }
-  return prepare_storage_root(path, create);
-}
-
 // Returns -1 when the root does not exist.
 Result<int> open_root(NSString* root) {
   const int fd = retry_eintr([&] {
@@ -146,7 +131,23 @@ Result<bool> entry_exists(int root_fd, NSString* key) {
 }  // namespace
 
 Result<NSString*> resolve_bookmark_root(NSString* path, bool create) {
-  return resolve_root(path, create);
+  ET_CHECK_OR_RETURN_ERROR(
+      text(path) && path.isAbsolutePath,
+      InvalidArgument,
+      "Core AI assets require an absolute root path");
+  if (create) {
+    return prepare_storage_root(path, true);
+  }
+  struct stat info;
+  const int result =
+      retry_eintr([&] { return stat(path.fileSystemRepresentation, &info); });
+  if (result < 0 && errno == ENOENT)
+    return path;
+  ET_CHECK_OR_RETURN_ERROR(
+      result == 0 && S_ISDIR(info.st_mode),
+      AccessFailed,
+      "Invalid Core AI assets root");
+  return path;
 }
 
 BookmarkLock::BookmarkLock(int root, int bookmarks, int file,
@@ -162,7 +163,7 @@ Result<std::unique_ptr<BookmarkLock>> lock_bookmark(NSString* root,
                                                     bool create) {
   ET_CHECK_OR_RETURN_ERROR(digest(key), InvalidArgument,
                            "Invalid Core AI bookmark key");
-  auto resolved = resolve_root(root, create);
+  auto resolved = resolve_bookmark_root(root, create);
   if (!resolved.ok()) return resolved.error();
   root = resolved.get();
   auto opened = open_root(root);
@@ -201,9 +202,12 @@ Result<std::unique_ptr<BookmarkLock>> lock_bookmark(NSString* root,
 
 Result<NSData*> read_bookmark(const BookmarkLock& lock) {
   if (lock.bookmarks_.get() < 0) return static_cast<NSData*>(nil);
-  FileDescriptor file(openat(lock.bookmarks_.get(),
-                             bookmark_name(lock.key_).fileSystemRepresentation,
-                             O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
+  FileDescriptor file(retry_eintr([&] {
+    return openat(
+        lock.bookmarks_.get(),
+        bookmark_name(lock.key_).fileSystemRepresentation,
+        O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  }));
   if (file.get() < 0 && errno == ENOENT) return static_cast<NSData*>(nil);
   ET_CHECK_OR_RETURN_ERROR(file.get() >= 0, AccessFailed,
                            "Cannot open Core AI bookmark");

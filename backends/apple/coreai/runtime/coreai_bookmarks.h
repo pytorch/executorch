@@ -27,9 +27,6 @@ class BookmarkLock final {
  public:
   BookmarkLock(const BookmarkLock&) = delete;
   BookmarkLock& operator=(const BookmarkLock&) = delete;
-  NSString* root_path() const {
-    return root_path_;
-  }
 
  private:
   friend runtime::Result<std::unique_ptr<BookmarkLock>>
