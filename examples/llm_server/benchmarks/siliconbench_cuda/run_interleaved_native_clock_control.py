@@ -21,9 +21,14 @@ def main():
  for n in ('before-preparation','after-preparation','before-rewind-probe','after-rewind-probe','lock','nsys','output'):
   p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--mini-profile',choices=('muse-glimmer-first4','gemma4-first6'),default='muse-glimmer-first4')
+ p.add_argument('--full-model-profile',choices=('muse-glimmer-52layers','gemma4-48layers'),
+  help='Collect an already mini-gated full artifact; this control never qualifies or exports a full model')
+ p.add_argument('--arm',choices=('both','independent'),default='both')
  p.add_argument('--diagnostic-initial-KV-capacity',type=int,choices=(512,16384),default=512,
   help='Same capacity in both native arms;16384 is allocation-placement diagnostic only, never a replacement main preset')
- a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
+ a=p.parse_args();assert a.arm=='both' or a.full_model_profile
+ selected_arms=('global','independent') if a.arm=='both' else ('independent',)
+ assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  def state(status,**extra):
   f=a.output/'progress.pending.json';f.write_text(json.dumps(dict(status=status,controller_pid=os.getpid(),
@@ -43,14 +48,21 @@ def main():
   preparations={'before':a.before_preparation,'after':a.after_preparation}
   probes={'before':a.before_rewind_probe,'after':a.after_rewind_probe};gates={};proofs={}
   for arm,prep in preparations.items():
-   assert json.loads((prep/'progress.json').read_text())['status']=='mini-artifacts-ready'
+   progress=json.loads((prep/'progress.json').read_text())
+   assert progress['status']==('full-artifacts-ready-for-qualification' if a.full_model_profile else 'mini-artifacts-ready')
+   if a.full_model_profile:
+    assert progress['mini_gate_passed'] and progress['all_full_artifact_hashes_verified']
+    assert not progress['full_model_qualified']
    gate=prep/'native-gate.json';gates[arm]=sha(gate)
    _,proofs[arm]=qualified_rewind_probe(probes[arm],gate,prep/'model-build/muse_glimmer_runtime_kv_probe',state,0)
   assert proofs['before']['generated_CPP_SHA256']==proofs['after']['generated_CPP_SHA256']
-  for layout in ('global','independent'):
-   audits=[json.loads((prep/f'mini-{layout}-artifact/independent-mini-artifact-audit.json').read_text()) for prep in preparations.values()]
-   from independent_session_mini_profiles import validate_mini_audit
-   for audit in audits:validate_mini_audit(audit,a.mini_profile,layout=='independent')
+  for layout in selected_arms:
+   prefix='full' if a.full_model_profile else 'mini'
+   audits=[json.loads((prep/f'{prefix}-{layout}-artifact/independent-{prefix}-artifact-audit.json').read_text()) for prep in preparations.values()]
+   from independent_session_mini_profiles import validate_mini_audit,validate_full_audit
+   for audit in audits:
+    if a.full_model_profile:validate_full_audit(audit,a.full_model_profile,layout=='independent')
+    else:validate_mini_audit(audit,a.mini_profile,layout=='independent')
    assert audits[0]['artifacts']==audits[1]['artifacts']
   thread=threading.Thread(target=observe,daemon=True);thread.start();parts=[]
   warm_code="""import time,torch
@@ -80,14 +92,16 @@ while time.monotonic()<end:
      '--native-sampler','off','--mini-profile',a.mini_profile,
      '--diagnostic-initial-KV-capacity',str(a.diagnostic_initial_KV_capacity),
      '--diagnostic-round-number',str(number),'--nsys',str(a.nsys),'--lock',str(a.lock),'--output',str(child)]
+    if a.full_model_profile:command+=['--full-model-profile',a.full_model_profile,'--arm',a.arm]
     current.update(phase='fixed-token-collection',round=number,native=arm);state('collecting-interleaved-native-control',round=number,native=arm)
     with (a.output/f'child-round-{number}-{arm}.log').open('x') as log:
      subprocess.run(command,check=True,stdout=log,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,timeout=3600)
-    doc=json.loads((child/'result.json').read_text());assert doc['diagnostic_single_round']==number and len(doc['rounds'])==2
+    doc=json.loads((child/'result.json').read_text());assert doc['diagnostic_single_round']==number and len(doc['rounds'])==len(selected_arms)
+    assert doc.get('full_model_profile')==a.full_model_profile
     assert not doc['model_performance_qualified'] and not doc['candidate_promoted']
     assert doc['native_gate_sha256']==gates[arm]
     assert {r['round'] for r in doc['rounds']}=={number}
-    assert {r['arm'] for r in doc['rounds']}=={'global','independent'}
+    assert {r['arm'] for r in doc['rounds']}==set(selected_arms)
     parts.append(dict(native=arm,round=number,result=str(child/'result.json'),SHA256=sha(child/'result.json'),command=command))
   combined={}
   for arm in ('before','after'):
@@ -113,7 +127,8 @@ while time.monotonic()<end:
   stop.set();thread.join(timeout=20)
   assert not sample_errors,sample_errors
   result=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-   mini_profile=a.mini_profile,initial_KV_capacity=a.diagnostic_initial_KV_capacity,
+   mini_profile=a.mini_profile,full_model_profile=a.full_model_profile,collected_arms=list(selected_arms),
+   initial_KV_capacity=a.diagnostic_initial_KV_capacity,
    four_rounds_discard_first=True,ABBA_native_order=True,matched_probe_CPP=True,
    unchanged_PTE_PTD_and_tokens=True,native_tests_and_proofs_reverified=True,
    actual_child_results=parts,raw_numerical_review_SHA256=sha(review),
