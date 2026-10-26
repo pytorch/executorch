@@ -192,6 +192,10 @@ from executorch.backends.webgpu.test.ops.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
 )
+from executorch.backends.webgpu.test.ops.test_where import (
+    _fp64_golden as _where_fp64_golden,
+    WhereModule,
+)
 
 # rms_norm coverage is exactly the 15 cases the native test covered.
 RMS_NORM_CASES = _CASES
@@ -1332,6 +1336,47 @@ def _layer_norm_suite() -> WebGPUTestSuite:
     )
 
 
+def _where_cond(shape):
+    return (torch.arange(torch.Size(shape).numel()).reshape(shape) % 2) == 0
+
+
+def _where_a(shape):
+    return torch.linspace(-1.0, 1.0, torch.Size(shape).numel()).reshape(shape)
+
+
+def _where_b(shape):
+    return torch.linspace(1.0, -1.0, torch.Size(shape).numel()).reshape(shape)
+
+
+def _where_golden(_module, inputs):
+    return _where_fp64_golden(*inputs)
+
+
+@register_op_test("where")
+def _where_suite() -> WebGPUTestSuite:
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={},
+            inputs=(
+                InputSpec(shape=shape, gen=_where_cond),
+                InputSpec(shape=shape, gen=_where_a),
+                InputSpec(shape=shape, gen=_where_b),
+            ),
+            golden_fn=_where_golden,
+        )
+
+    return WebGPUTestSuite(
+        module_factory=WhereModule,
+        cases=[
+            case("equal", (4, 8)),
+            case("large_2d_dispatch", (16, 576, 576)),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
 from executorch.backends.webgpu.test.ops.test_linear_fp32 import (
     _ramp as _lin_ramp,
     make_linear,
@@ -1340,8 +1385,10 @@ from executorch.backends.webgpu.test.ops.test_linear_fp32 import (
 
 @register_op_test("linear_fp32")
 def _linear_fp32_suite() -> WebGPUTestSuite:
-    # fp32 linear (BART + DaViT projections); bias + no-bias, and shapes whose
-    # M*N exceeds the 65535 1D ceiling to exercise the 2D-dispatch spill.
+    # fp32 linear (BART, DaViT, and vision-encoder projections); bias +
+    # no-bias, rank-2/3/4 inputs, and shapes whose M*N exceeds the 65535 1D
+    # ceiling to exercise the 2D-dispatch spill.
+    dynamic_batch = torch.export.Dim("linear_rank4_batch", min=1, max=2)
     return WebGPUTestSuite(
         module_factory=make_linear,
         cases=[
@@ -1359,6 +1406,23 @@ def _linear_fp32_suite() -> WebGPUTestSuite:
                 name="rank3",
                 construct={"in_features": 768, "out_features": 768},
                 inputs=(InputSpec(shape=(1, 16, 768), gen=_lin_ramp),),
+            ),
+            Case(
+                name="rank4_bias",
+                construct={"in_features": 64, "out_features": 96},
+                inputs=(InputSpec(shape=(2, 3, 4, 64), gen=_lin_ramp),),
+            ),
+            Case(
+                name="rank4_no_bias",
+                construct={"in_features": 64, "out_features": 96, "bias": False},
+                inputs=(InputSpec(shape=(2, 3, 4, 64), gen=_lin_ramp),),
+            ),
+            Case(
+                name="dynamic_rank4_batch_2_to_1",
+                construct={"in_features": 64, "out_features": 96},
+                export_inputs=(InputSpec(shape=(2, 3, 4, 64), gen=_lin_ramp),),
+                inputs=(InputSpec(shape=(1, 3, 4, 64), gen=_lin_ramp),),
+                dynamic_shapes=({0: dynamic_batch},),
             ),
             Case(
                 name="tall_m",

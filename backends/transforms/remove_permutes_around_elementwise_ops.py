@@ -120,6 +120,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             tuple[int, int, torch.fx.Node, torch.fx.Node] | None,
         ] = {}
         self._pending_visits = None
+        self._bypassed_permutes: set[torch.fx.Node] = set()
 
     _VIEW_OPS = (
         exir_ops.edge.aten.view_copy.default,
@@ -417,6 +418,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         self._sq_unsq_cache.clear()
         self._interleave_cache.clear()
+        self._bypassed_permutes.clear()
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
         for node in graph_module.graph.nodes:
@@ -829,6 +831,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
             assert inp.target in PERMUTE_COPY_TARGETS
+            self._bypassed_permutes.add(inp)
             if len(inp.args) >= 1:
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
             else:
@@ -897,7 +900,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             (inp, out) for inp, out, _ in subgraph.edges_out_to_update
         ]
         for inp, out in outgoing:
-            if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
+            # A bypassed permute stays wired to its producer, but an earlier
+            # region now reads that producer directly and relies on its layout.
+            if (
+                out.target not in PERMUTE_COPY_TARGETS
+                or out not in inp.users
+                or out in self._bypassed_permutes
+            ):
                 return False
 
         for const_node, user_node in subgraph.constant_edges_in:

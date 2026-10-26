@@ -176,6 +176,22 @@ jobs:
         python -m examples.portable.scripts.export \
           --model_name=add \
           --output_dir=cmake-out-no-aten
+        python - <<'PY'
+        from pathlib import Path
+
+        from executorch.extension.pybindings.test.make_test import (
+            create_program,
+            ModuleAddBFloat16,
+            ModuleAddBFloat16ToChannelsLast,
+        )
+
+        program, _ = create_program(ModuleAddBFloat16())
+        Path("cmake-out-no-aten/add_bfloat16.pte").write_bytes(bytes(program.buffer))
+        program, _ = create_program(ModuleAddBFloat16ToChannelsLast())
+        Path("cmake-out-no-aten/add_bfloat16_channels_last.pte").write_bytes(
+            bytes(program.buffer)
+        )
+        PY
         EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py \
@@ -187,11 +203,14 @@ jobs:
             PybindingsNoAtenTest.test_executorch_output_is_sticky_after_torch_import
         python -m pip uninstall -y torch torchvision torchaudio
         EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE=cmake-out-no-aten/add_bfloat16.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py \
             PybindingsNoAtenTest.test_output_policy_without_torch
         EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
           EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE=cmake-out-no-aten/add_bfloat16.pte \
+          EXECUTORCH_PYBIND_TEST_BFLOAT16_CHANNELS_LAST_PTE=cmake-out-no-aten/add_bfloat16_channels_last.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
         if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then
@@ -1324,7 +1343,7 @@ jobs:
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 15
+      timeout: 30
       script: |
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
@@ -1580,6 +1599,10 @@ jobs:
 
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
+
+        # Build the WebGPU configuration of the Wasm bindings. Build only:
+        # running a delegated model needs a browser with WebGPU.
+        PYTHON_EXECUTABLE=python bash scripts/build_wasm_tests.sh --webgpu
 
   unittest-wasm-bindings:
     needs: docker-image

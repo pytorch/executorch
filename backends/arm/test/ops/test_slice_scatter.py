@@ -296,6 +296,23 @@ def test_slice_scatter_u85_INT_stepN(test_module: input_t):
     pipeline.run()
 
 
+@common.parametrize("test_module", test_data_fp8_step1 | test_data_fp8_stepN)
+@common.SkipIfNoModelConverter
+def test_slice_scatter_vgf_no_quant_fp8(test_module):
+    x, y, dim, start, end, step, _ = test_module()
+    pipeline = VgfPipeline[input_t](
+        SliceScatter(),
+        (x, y, dim, start, end, step),
+        aten_op=SliceScatter.fp_aten_op,
+        exir_op=SliceScatter.fp_exir_op,
+        tosa_extensions=["fp8e4m3", "fp8e5m2"],
+        quantize=False,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_module",
