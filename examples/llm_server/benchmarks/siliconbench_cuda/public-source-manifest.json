@@ -856,8 +856,8 @@
       "bytes": 8106
     },
     "run_roofline_history_logits_control.py": {
-      "sha256": "09c201af8fe5393b6644c43731b8869e1b5b7d729742cfdc1665f35516fe4fc6",
-      "bytes": 6520
+      "sha256": "c48278a75efec6d556588cbaa012af59fd8c803b91dd8fe00cd694ed2bdc142a",
+      "bytes": 6965
     },
     "run_roofline_qualified_large_workflow.py": {
       "sha256": "3a423385e6413f0a1e68d5f678d218365b0a9112896b96230dc3c3193763f798",

@@ -29,7 +29,13 @@ def main():
   with (a.output/'build.log').open('x') as log:
    for cmd in [['cmake','-S',package/'roofline_validation_project','-B',build,'-DCMAKE_BUILD_TYPE=Release','-DET_SOURCE='+str(a.et_source),'-DCMAKE_PREFIX_PATH='+sdk['SDK']+';'+prefix],['cmake','--build',build,'--parallel','2','--target','roofline_prefill_validation']]:subprocess.run([str(x) for x in cmd],env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=remaining())
   provenance=json.loads((a.workflow/'full-model-comparison/input-provenance.json').read_text());arms=provenance['artifact_arms'];assert {r['name'] for r in arms}=={'ET-baseline','ET-large'}
-  assert arms[0]['hashes']['aoti_cuda_blob.ptd']==arms[1]['hashes']['aoti_cuda_blob.ptd']
+  same_ptd=arms[0]['hashes']['aoti_cuda_blob.ptd']==arms[1]['hashes']['aoti_cuda_blob.ptd']
+  if not same_ptd:
+   weights=json.loads((a.workflow/'weight-payload-review.json').read_text())
+   assert weights['all_quantized_and_nonquantized_storage_sha256_equal']
+   by_name={arm['name']:arm for arm in arms}
+   assert weights['fixed_PTD_sha256']==by_name['ET-baseline']['hashes']['aoti_cuda_blob.ptd']
+   assert weights['runtime_PTD_sha256']==by_name['ET-large']['hashes']['aoti_cuda_blob.ptd']
   env['CUDA_VISIBLE_DEVICES']='0';records=[];binary=build/'roofline_prefill_validation'
   with a.lock.open('a') as lock:
    fcntl.flock(lock,fcntl.LOCK_EX)
@@ -70,7 +76,7 @@ def main():
        two=np.partition(gold[row],-2)[-2:];margins.append(dict(row=int(row),baseline_top1=int(top_gold[row]),candidate_top1=int(top_test[row]),baseline_top2_margin=float(two.max()-two.min()),baseline_score_of_candidate_top1=float(gold[row,top_test[row]]),baseline_top1_score=float(gold[row,top_gold[row]])))
       steps.append(dict(step=step,relative_RMS=rms,max_abs=float(np.max(np.abs(diff))),bitwise_logits_equal=bool(np.array_equal(gold,test)),top1_mismatches=len(mismatch),rows=len(gold),mismatch_margins=margins))
      comparison.append(dict(history_chunk=chunk,round=rid,mix=gold_case['mix'],steps=steps))
-  result=dict(records=records,comparison=comparison,files=files,source_binary_SHA256=sha(binary),validation_source_SHA256=sha(package/'roofline_prefill_validation.cpp'),input_provenance=provenance,history_tokens=a.history_tokens,same_PTD_bytes=True,teacher_forced_tokens_identical=True,performance_and_F1_not_measured=True,rounds=4,no_numerical_acceptance_threshold_invented=True)
+  result=dict(records=records,comparison=comparison,files=files,source_binary_SHA256=sha(binary),validation_source_SHA256=sha(package/'roofline_prefill_validation.cpp'),input_provenance=provenance,history_tokens=a.history_tokens,same_PTD_bytes=same_ptd,same_original_model_weight_bytes=True,teacher_forced_tokens_identical=True,performance_and_F1_not_measured=True,rounds=4,no_numerical_acceptance_threshold_invented=True)
   (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n');state('completed-pending-independent-numerical-review')
  except BaseException as e:state('failed',error=str(e));raise
 if __name__=='__main__':main()
