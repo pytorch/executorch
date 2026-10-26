@@ -16,6 +16,8 @@ def main():
     p.add_argument('--port',type=int,default=19892)
     p.add_argument('--tokenizer',type=Path,
                    help='Also collect the official HTTP memory lifecycle with this unchanged tokenizer')
+    p.add_argument('--http-python-dependencies-job',type=Path,
+                   help='Optional pinned HTTP dependencies installed in an isolated target')
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     package=Path(__file__).resolve().parent
     def state(status,**extra):
@@ -43,7 +45,8 @@ def main():
             command=handle.read_bytes()
             assert str(a.native_job).encode() in command and any(name in command for name in (
                 b'prepare_independent_session_growth_allocator.py',
-                b'prepare_independent_session_empty_owner_reuse.py'))
+                b'prepare_independent_session_empty_owner_reuse.py',
+                b'prepare_independent_session_coalesced_growth_trim.py'))
             assert time.monotonic()<deadline,'Verified-live native observation timeout; do not restart build'
             state('waiting-on-confirmed-live-native-build',native_PID=pid,native_status=old['status'])
             time.sleep(15)
@@ -93,7 +96,9 @@ def main():
                 ('HTTP-memory','run_independent_session_mini_http.py',
                     ['--preparation-job',alias,'--python',sys.executable,'--tokenizer',a.tokenizer,
                      '--lock',a.lock,'--output',a.output/'HTTP-memory','--port',a.port,
-                     '--memory-worker-proof',a.output/'memory-worker/proof.json'])):
+                     '--memory-worker-proof',a.output/'memory-worker/proof.json']+(
+                         ['--http-python-dependencies-job',a.http_python_dependencies_job]
+                         if a.http_python_dependencies_job else []))):
                 commands[label]=run(label,script,argv)
                 result=a.output/label/('proof.json' if label=='memory-worker' else 'result.json')
                 assert result.is_file();jobs[label]=dict(result=str(result),SHA256=sha(result))

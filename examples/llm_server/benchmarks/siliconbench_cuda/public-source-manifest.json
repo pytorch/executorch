@@ -987,6 +987,10 @@
       "sha256": "ae4679dfe4bf4ce0f0178abfad8a52d7d803bdad6e36a255f5319cccea9a38d2",
       "bytes": 1038
     },
+    "run_MG_allocator_mini_qualification_after_native.py": {
+      "sha256": "764883432fa81fdd8ee43f590b006f2cbd511454989471bad7785b1c8529def8",
+      "bytes": 6618
+    },
     "run_case.py": {
       "sha256": "ac288938f43dc0c8fc2fdcd5afe47cf55ae609a0ffd0a1270eb970c232175423",
       "bytes": 14525
@@ -1032,8 +1036,8 @@
       "bytes": 7287
     },
     "run_growth_allocator_mg_mini_controls.py": {
-      "sha256": "65e30145da771cd08ae24aa479b1b438fe4ac9c732ea8ba2ca988b4a0d267b8e",
-      "bytes": 7500
+      "sha256": "077ca3960aed62abbd39d9d3706676029dff484e56750037da7415eb8c0cf757",
+      "bytes": 7890
     },
     "run_independent_full_after_mini.py": {
       "sha256": "4f6d54181dfd66b6b7e02805acfc01db0c30754ee53bd79c0bac0aef63ce9e16",
