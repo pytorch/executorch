@@ -11,6 +11,33 @@ from independent_session_full_native_binding import sha,verify_runtime,verify_qu
 from independent_session_mini_profiles import FULL_PROFILES,validate_full_audit
 
 
+def verify_original_export_native_gate(original_path, exported_path):
+    """Accept direct identity or an exact hash-bound binary-path alias expansion."""
+    original_path, exported_path = Path(original_path), Path(exported_path)
+    original = json.loads(original_path.read_text())
+    exported = json.loads(exported_path.read_text())
+    aliases = {}
+    if exported != original:
+        assert exported['imported_native_gate_SHA256'] == sha(original_path)
+        aliases = exported['verified_binary_path_aliases']
+        assert isinstance(aliases, dict) and aliases
+        binaries = dict(original['binaries'])
+        for alias, target in aliases.items():
+            assert alias not in binaries and target in original['binaries']
+            assert Path(alias).resolve() == Path(target).resolve()
+            binaries[alias] = original['binaries'][target]
+        expected = {**original, 'binaries': binaries,
+                    'imported_native_gate_SHA256': sha(original_path),
+                    'verified_binary_path_aliases': aliases}
+        assert exported == expected, 'Unexpected original SDK provenance change'
+    for name, expected in exported['binaries'].items():
+        assert sha(name) == expected, name
+    return {'original_native_gate_SHA256': sha(original_path),
+            'export_original_native_gate_SHA256': sha(exported_path),
+            'exact_metadata_and_binary_hash_binding_verified': True,
+            'verified_additional_binary_aliases': aliases}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('export-controller','original-native-job','native-job','lock','nsys','output'):
@@ -66,7 +93,10 @@ def main():
         for name,expected in original['unchanged_controls'].items():
             assert sha(Path(original['source'])/name)==expected and after['unchanged_controls'][name]==expected,name
         for name,expected in original['binaries'].items():assert sha(name)==expected,name
-        assert json.loads((export_job/'export-source-native-gate.json').read_text())==original
+        assert audit['export_source_native_gate_sha256'] == sha(export_job/'export-source-native-gate.json')
+        provenance = verify_original_export_native_gate(
+            a.original_native_job/'native-gate.json', export_job/'export-source-native-gate.json')
+        (a.output/'original-export-native-provenance-review.json').write_text(json.dumps(provenance,indent=2)+'\n')
         aliases={}
         for arm,job,gate in (('before',a.original_native_job,original),('after',a.native_job,after)):
             alias=a.output/(arm+'-full-artifact');alias.mkdir();aliases[arm]=alias
