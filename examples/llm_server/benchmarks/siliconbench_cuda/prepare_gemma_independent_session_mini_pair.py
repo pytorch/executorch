@@ -39,9 +39,17 @@ def main():
     for name in ('source-preparation-job', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--gguf', type=Path, help='Optional read-only existing identical GGUF')
+    parser.add_argument('--reuse-failed-job', type=Path,
+        help='Copy compiler caches from a confirmed terminal attempt; preserve its records')
     parser.add_argument('--owned-GPU-child', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
+    if args.reuse_failed_job:
+        from failed_export_cache_reuse import verify_failed_export
+        verify_failed_export(args.reuse_failed_job, args.output,
+            ('prepare_gemma_independent_session_mini_pair.py',))
+        prior_gate = json.loads((args.reuse_failed_job/'native-gate.json').read_text())
+        assert prior_gate['Gemma_source_preparation_SHA256'] == digest(args.source_preparation_job/'source-preparation.json')
 
     def state(status, **fields):
         pending = args.output / 'progress.pending.json'
@@ -200,6 +208,10 @@ def main():
         current_job = args.output / ('mini-' + arm + '-export')
         current_job.mkdir()
         cache = current_job / 'cache'
+        if args.reuse_failed_job:
+            from failed_export_cache_reuse import copy_compiler_caches
+            copy_compiler_caches(args.reuse_failed_job/('mini-'+arm+'-export/cache'),
+                cache,current_job/'reused-compiler-cache.json')
         (cache / 'host-zero-backed').mkdir(parents=True)
         os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(cache / 'inductor'),
             TRITON_CACHE_DIR=str(cache / 'triton'), ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache / 'host-zero-backed'))
@@ -242,7 +254,7 @@ def main():
                 for record in delegate.compile_specs:
                     if record.key != 'offgraph_kv_manifest': continue
                     manifest = json.loads(bytes(record.value))
-                    assert manifest['independent_capacity'] == (arm == 'independent')
+                    assert manifest.get('independent_capacity', False) == (arm == 'independent')
                     assert manifest['runtime_columns'] and manifest['max_seqs'] == 21
                     assert manifest['max_write'] == 512 and manifest['maximum_capacity'] == 131072
                     assert len(manifest['layers']) == 6

@@ -379,6 +379,10 @@
       "sha256": "43ed01425a90a1719a6ac8e3fa8d49ec03515579f407c7fe7f10c40122a8ac06",
       "bytes": 12962
     },
+    "failed_export_cache_reuse.py": {
+      "sha256": "115f9cb2a130e884573965576b33495313bf7e37a1383e9f626f0386ac18f255",
+      "bytes": 2510
+    },
     "gate_quality_matrix_for_protocol.py": {
       "sha256": "0e160f98865f10ebedfee19961a8855583d955a2f88053ccc214f8e203f8fe4b",
       "bytes": 4594
@@ -552,8 +556,8 @@
       "bytes": 9427
     },
     "prepare_gemma_independent_session_mini_pair.py": {
-      "sha256": "51607d676b7ce13a5597ce16c975c2409951014d959d73552178e41b485495b4",
-      "bytes": 17923
+      "sha256": "43e096254c99b2e0e1b0d4efcf57f2ea22b48d9a04da9d33c67ff7e2dbdcdee3",
+      "bytes": 18780
     },
     "prepare_gemma_independent_session_mini_source.py": {
       "sha256": "141474269ec45b797995ea42b17686d29601c74b5bd67d6c4ca523a0e8bf1700",
@@ -580,8 +584,8 @@
       "bytes": 7398
     },
     "prepare_independent_session_shared_autotune_mini.py": {
-      "sha256": "b093035b5f453ffaff43f37aadcb7d07efd453a54a2400e55395daaf39782a79",
-      "bytes": 10578
+      "sha256": "cfd2d68b731e7af0495a47fcbafe7cec334f7405aab4961cc180b62a6b61279c",
+      "bytes": 11403
     },
     "prepare_kv_memory_worker.py": {
       "sha256": "dca01bb0031357124d2052a9c6790d46815cb8076bfff4493878a57febf7df37",
@@ -956,8 +960,8 @@
       "bytes": 7997
     },
     "shared_inductor_config_control.py": {
-      "sha256": "0fe0a3f1264d376805886b92504246972238d1d995be240652a38378f674ba3a",
-      "bytes": 5232
+      "sha256": "abebd53d97fd5a11810bc67a9e0b98c4b0c21968e5e73575fa9258c379530c63",
+      "bytes": 5761
     },
     "supervise.py": {
       "sha256": "9da500edfdf99ba404e375c23aa98d59e64e1a082cce0d68cc663c0714584cd9",

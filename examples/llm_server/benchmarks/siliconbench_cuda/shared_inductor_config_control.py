@@ -90,7 +90,17 @@ def install_shared_inductor_config_control(output):
             return
         chosen = next((config for config in supplied_configs
                        if config_id(config) == json.dumps(winners[key], sort_keys=True)), None)
-        assert chosen is not None, 'Recorded configuration is not a supplied candidate for this kernel'
+        if chosen is None:
+            # Identical generated text can have different legal configuration
+            # sets (notably GEMM epilogues). Never force an unavailable winner.
+            # Exclude this instance from sharing and retain the mismatch proof.
+            tuner._siliconbench_config_key = None
+            events.append(dict(action='not-reused-unavailable-config',
+                kernel=tuner.fn.__name__, addressing_control=addressing,
+                recorded_config=winners[key],
+                supplied_configs=[config_record(config) for config in supplied_configs]))
+            save()
+            return
         tuner.configs = [chosen]
         events.append(dict(action='reuse', kernel=tuner.fn.__name__,
             addressing_control=addressing, config=config_record(chosen),

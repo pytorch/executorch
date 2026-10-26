@@ -32,8 +32,14 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument('--share-inductor-configs', action='store_true',
         help='Diagnostic reuse of legal generated reduction/pointwise configuration winners')
+    parser.add_argument('--reuse-failed-job', type=Path,
+        help='Copy compiler caches from a confirmed terminal attempt; preserve its records')
     parser.add_argument("--owned-GPU-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.reuse_failed_job:
+        from failed_export_cache_reuse import verify_failed_export
+        verify_failed_export(args.reuse_failed_job,args.output,
+            ('prepare_independent_session_shared_autotune_mini.py',))
 
     def state(status, **fields):
         pending = args.output / "progress.pending.json"
@@ -47,6 +53,9 @@ def main():
     assert previous["status"] == "mini-artifacts-ready"
     gate_path = args.preparation_job / "native-gate.json"
     gate = json.loads(gate_path.read_text())
+    if args.reuse_failed_job:
+        previous_gate=json.loads((args.reuse_failed_job/'native-gate.json').read_text())
+        assert previous_gate['imported_native_gate_SHA256']==digest(gate_path)
     assert gate["native_GPU_tests_pass"] and gate["test_count"] == 74
     source = Path(gate["source"])
     package = args.exporter_package
@@ -114,6 +123,10 @@ def main():
                     "--role", role, "--output", str(args.output / (role + "-artifact")),
                     "--job-dir", str(job), "--lock", str(args.lock), "--owned-GPU-child"]
         (job / "cache").mkdir(parents=True)
+        if args.reuse_failed_job:
+            from failed_export_cache_reuse import copy_compiler_caches
+            copy_compiler_caches(args.reuse_failed_job/(role+'-export/cache'),
+                job/'cache',job/'reused-compiler-cache.json')
         os.environ.update(TORCHINDUCTOR_CACHE_DIR=str(job / "cache/inductor"), TRITON_CACHE_DIR=str(job / "cache/triton"))
         import torch
         import triton
