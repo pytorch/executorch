@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--public-source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--full-owner-padding', type=int, choices=[0,1,3,8], default=0)
     args = parser.parse_args()
     package = Path(__file__).resolve().parent
     old = json.loads((package / 'runtime_kv_columns_source.json').read_text())
@@ -141,8 +142,8 @@ def main():
                                       for h,w in zip(histories,widths)]
                         rows = ring or max(capacities)
                         cols = owners+1
-                        total = sum(capacities)+1
-                        bases = [sum(capacities[:i]) for i in range(owners)]
+                        total = sum(capacities)+owners*args.full_owner_padding+1
+                        bases = [sum(capacities[:i])+i*args.full_owner_padding for i in range(owners)]
                         global_k = torch.full((rows,cols,hkv,dim),float('nan'),device='cuda',dtype=torch.bfloat16)
                         global_v = torch.full_like(global_k,float('nan'))
                         packed_k = torch.full((total,1,hkv,dim),float('nan'),device='cuda',dtype=torch.bfloat16) if not ring else global_k.clone()
@@ -221,6 +222,7 @@ def main():
                                             histories=histories,capacities=capacities,
                                             global_full_slots=rows*cols if not ring else None,
                                             independent_full_slots=total if not ring else None,
+                                            full_owner_padding_rows=args.full_owner_padding,
                                             logical_full_launch_rows=131072,
                                             oracle_errors=errors,rounds_ms=rounds,means_ms=means,
                                             sample_SD_ms=[statistics.stdev(r[1:]) for r in rounds],

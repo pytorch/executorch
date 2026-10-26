@@ -860,8 +860,8 @@
       "bytes": 1444
     },
     "test_independent_session_attention.py": {
-      "sha256": "836ca25d224ce93c52e85a0de8896723386470e920815f7eaa34e5932d282b21",
-      "bytes": 14280
+      "sha256": "3b487d3af77af4d6ea22ce652e6bad12e6bacfa049c0a66d2c29b3951ee503cb",
+      "bytes": 14518
     },
     "trace_gemma_runtime_http_memory.py": {
       "sha256": "2889c7c714bf1e958cf1c215f85a384f031303583f462fd6b6fe6eca249caded",
