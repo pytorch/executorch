@@ -90,7 +90,7 @@ def main():
         parent=json.loads((a.HTTP_job/'result.json').read_text())
         assert parent['full_profile']==a.full_model_profile and parent['full_HTTP_memory_pass']
         assert sha(a.HTTP_job/'HTTP-independent-review.json')==parent['HTTP_review_SHA256']
-        if parent['positive_performance_signals'] and a.phase=='performance':
+        if parent['positive_performance_signals'] and a.phase=='performance' and gemma:
             state('full-performance-gate-not-passed',positive_performance_signals=parent['positive_performance_signals'])
             return
         binding=verify_http(a,a.package)
@@ -123,6 +123,9 @@ def main():
             assert not qualification['unresolved_correctness_or_performance_signals']
             for name,expected in qualification['evidence_files_SHA256'].items():
                 assert sha(name)==expected,name
+            if not gemma:
+                from write_MG_full_independent_KV_qualification import verify_MG_full_qualification
+                verify_MG_full_qualification(a.full_qualification_receipt,a,binding)
         # This generated wrapper remains in the owned experiment output only.
         common=[]
         common=['--full-model-profile',a.full_model_profile]
@@ -139,7 +142,9 @@ def main():
             native_runtime_gate_SHA256=sha(a.native_job/'native-gate.json'),wrapper_SHA256=sha(wrapper),
             native_allocator_sampler_enabled=True,sampler_interval_ms=250,
             HTTP_parent_result_SHA256=sha(a.HTTP_job/'result.json'),
-            unresolved_full_performance_signals=parent['positive_performance_signals'],
+            original_full_performance_signals=parent['positive_performance_signals'],
+            unresolved_full_performance_signals=([] if a.phase=='performance' else parent['positive_performance_signals']),
+            full_qualification_receipt_SHA256=sha(a.full_qualification_receipt) if a.phase=='performance' else None,
             full_model_qualified=False,main_candidate_accepted=False)
         (a.output/'provenance.json').write_text(json.dumps(source_receipt,indent=2)+'\n')
         completed=[]

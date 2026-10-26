@@ -78,6 +78,32 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
             assert record['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
         changes = dict(patches=changes['patches'] + records)
         expected_pool = records[0]['after_SHA256']
+    if gate.get('isolated_KV_growth_slack_spec_SHA256'):
+        assert gate.get('isolated_KV_pool_spec_SHA256'), 'Growth slack requires the preceding private KV pool'
+        policy = 'independent_session_isolated_KV_growth_slack'
+        spec_path = package/(policy + '_source.json'); spec = json.loads(spec_path.read_text())
+        assert digest(spec_path) == gate['isolated_KV_growth_slack_spec_SHA256']
+        assert digest(package/(policy + '.patch')) == spec['patch_SHA256']
+        records = spec['variants'][variant]
+        assert len(records) == 3 and records[0]['file'] == pool_file
+        assert {r['file'] for r in records} == {pool_file,
+            'backends/cuda/runtime/cuda_kv_pool.cpp', 'backends/cuda/runtime/cuda_kv_pool.h'}
+        previous = {r['file']:r['after_SHA256'] for r in changes['patches']}
+        assert records[0]['before_SHA256'] == expected_pool
+        assert spec['requested_retained_growth_slack_bytes'] == 64*2**20
+        for key in ('contraction_shared_allocator_and_graph_release_unchanged',
+                    'per_session_capacity_initial512_and_growth_unchanged',
+                    'sliding_capacity_writes_and_attention_unchanged',
+                    'unchanged_PTE_PTD_kernels_and_graph_invalidation'):
+            assert spec[key],key
+        for record in records:
+            assert record['before_SHA256'] == previous[record['file']],record['file']
+            assert record['patch_SHA256'] == spec['patch_SHA256']
+            assert record['private_KV_allocator_and_instrumentation_only']
+            assert record['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
+            assert record['requested_growth_slack_bytes'] == 64*2**20 and record['contraction_requested_slack_bytes'] == 0
+        changes = dict(patches=changes['patches'] + records)
+        expected_pool = records[0]['after_SHA256']
     return changes, expected_pool
 
 

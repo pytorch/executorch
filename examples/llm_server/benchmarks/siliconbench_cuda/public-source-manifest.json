@@ -1072,8 +1072,8 @@
       "bytes": 6160
     },
     "run_gemma_independent_full_main.py": {
-      "sha256": "2108faa7b86cccf29b4d2000506873fc33ef225494201efe6f2ff4c53782bcdd",
-      "bytes": 15355
+      "sha256": "9fc7c1d6e5b25b168f2cbf6b9757c8f658dc7fb5b9d143d73d8aa3e997f96347",
+      "bytes": 15815
     },
     "run_gemma_runtime_columns_qualification.py": {
       "sha256": "8c138d800e7923f415dc028870ad5e9deef345af79b91f57eef9b36d3142a0c2",
@@ -1100,8 +1100,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "1771783d3067a22382c24c063ee953bd8605e7f602722ef8c405427a5f628d2a",
-      "bytes": 42443
+      "sha256": "ea378180eaadb39b0f84c3761147c96863d8e07c58606095a18cdf42ff5e52a7",
+      "bytes": 44340
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "d6832838288088b6e799c59e56c89f9687ac375777ddf7bdb1247c7ec2e8b3d3",
@@ -1270,6 +1270,10 @@
     "wait_mg_quality_boundary.py": {
       "sha256": "1c95b9eb7fa68b1cf5e6340ae54d2509b6006c370795bd1a2073b4f5a770a2b6",
       "bytes": 3752
+    },
+    "write_MG_full_independent_KV_qualification.py": {
+      "sha256": "f5f97c32265e6dc9c0361b5a27ac8c4b672f1833ee95ffa4d991f43276d622b2",
+      "bytes": 11952
     }
   }
 }
