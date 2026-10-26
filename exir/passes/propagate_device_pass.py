@@ -303,7 +303,13 @@ class PropagateDevicePass(PassBase):
       instead (user provides GPU tensor at runtime). Every other reader of the
       placeholder reads one D2H copy of it. A placeholder that an op writes in
       place on the host is refused. Constants are placeholders too, but their
-      data is stored on the host, so they still get an H2D copy.
+      data is stored on the host, so they still get an H2D copy unless
+      skip_h2d_for_constants keeps them on the device.
+    - skip_h2d_for_constants: A constant that only delegates on one device
+      read is tagged with that device instead of getting an H2D copy. Memory
+      planning keeps it in device memory for the whole method, and the runtime
+      loads its data there once, when it loads the method. Any other constant
+      still gets an H2D copy.
     - skip_d2h_for_method_outputs: The graph output reads a delegate output
       on device, not its D2H copy; the copy stays only for other readers. When
       one of them writes the copy in place, the graph output reads the written
@@ -320,18 +326,23 @@ class PropagateDevicePass(PassBase):
         skip_d2h_for_method_outputs: bool = False,
         enable_non_cpu_memory_planning: bool = False,
         error_on_per_call_copies: bool = False,
+        skip_h2d_for_constants: bool = False,
     ) -> None:
         super().__init__()
         self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
         self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
         self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
         self.error_on_per_call_copies = error_on_per_call_copies
+        self.skip_h2d_for_constants = skip_h2d_for_constants
 
         if (
-            skip_h2d_for_method_inputs or skip_d2h_for_method_outputs
+            skip_h2d_for_method_inputs
+            or skip_d2h_for_method_outputs
+            or skip_h2d_for_constants
         ) and not enable_non_cpu_memory_planning:
             raise ValueError(
-                "skip_h2d_for_method_inputs and skip_d2h_for_method_outputs are "
+                "skip_h2d_for_method_inputs, skip_d2h_for_method_outputs and "
+                "skip_h2d_for_constants are "
                 "only meaningful when enable_non_cpu_memory_planning=True, since "
                 "they control host/device copy insertion which only happens during "
                 "device-aware memory planning. Set enable_non_cpu_memory_planning="
@@ -371,10 +382,10 @@ class PropagateDevicePass(PassBase):
     ) -> bool:
         """Make each tensor input of a delegate call read device memory.
 
-        A method input that is not a constant moves to the device under
-        skip_h2d_for_method_inputs.
-        Any other input reads an H2D copy, reused from an earlier delegate on
-        the same device when possible.
+        Under skip_h2d_for_method_inputs, a method input moves to the device,
+        and under skip_h2d_for_constants, so does a constant that only
+        delegates on that device read. Any other input reads an H2D copy,
+        reused from an earlier delegate on the same device when possible.
         """
         changed = False
         new_args = list(node.args)
@@ -411,6 +422,23 @@ class PropagateDevicePass(PassBase):
                     f"it is created, for example in the pass that adds it."
                 )
 
+            if (
+                self.skip_h2d_for_constants
+                and arg_spec.const
+                and self._is_placeholder(arg)
+                and all(
+                    self._delegate_device(graph_module, user)
+                    == (target_device_type, device_index)
+                    for user in arg.users
+                )
+            ):
+                # Memory planning keeps it in device memory for the whole
+                # method, and the runtime loads its data there once.
+                _set_device_on_spec(arg_spec, target_device_type, device_index)
+                arg.meta["device_resident_constant"] = True
+                changed = True
+                continue
+
             h2d_node = _reusable_copy(arg, node, target_device_type, device_index)
             if h2d_node is None:
                 if arg_spec.const:
@@ -420,7 +448,7 @@ class PropagateDevicePass(PassBase):
                         f"{device_index} from outside it, so it is copied to the "
                         f"device on every call. Have the partitioner take it into "
                         f"the delegate to avoid that copy.",
-                        self.skip_h2d_for_method_inputs,
+                        self.skip_h2d_for_method_inputs or self.skip_h2d_for_constants,
                     )
                 with graph_module.graph.inserting_before(node):
                     h2d_node = graph_module.graph.call_function(
