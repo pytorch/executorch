@@ -1,0 +1,53 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -135,7 +135,7 @@
+   // pages cannot evict shared model workspaces or graph allocations.
+   auto trim_migration_reservation = [&]() {
+     if (trim_unused) {
+-      trim_sequence_memory_pool();
++      trim_sequence_memory_pool(trim_reclaimed_storage ? 0 : (64ull << 20));
+     }
+   };
+   auto fence = [&]() -> Error {
+--- a/backends/cuda/runtime/cuda_kv_pool.h
++++ b/backends/cuda/runtime/cuda_kv_pool.h
+@@ -214,7 +214,7 @@
+       cudaStream_t stream,
+       Allocation& out);
+   runtime::Error ensure_sequence_memory_pool();
+-  void trim_sequence_memory_pool();
++  void trim_sequence_memory_pool(uint64_t retained_growth_bytes = 0);
+   void release(void* ptr, cudaStream_t stream);
+   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
+   runtime::Error allocate_initial(int64_t required_rows, cudaStream_t stream);
+--- a/backends/cuda/runtime/cuda_kv_pool.cpp
++++ b/backends/cuda/runtime/cuda_kv_pool.cpp
+@@ -291,7 +291,7 @@
+   return Error::Ok;
+ }
+
+-void CudaKVPool::trim_sequence_memory_pool() {
++void CudaKVPool::trim_sequence_memory_pool(uint64_t retained_growth_bytes) {
+ #if !defined(EXECUTORCH_USE_HIP)
+   if (sequence_memory_pool_ == nullptr) {
+     return;
+@@ -302,9 +302,16 @@
+   if (cudaMemPoolGetAttribute(sequence_memory_pool_,
+           cudaMemPoolAttrUsedMemCurrent, &used) != cudaSuccess ||
+       cudaMemPoolGetAttribute(sequence_memory_pool_,
+-          cudaMemPoolAttrReservedMemCurrent, &reserved) != cudaSuccess ||
+-      (reserved > used &&
+-       cudaMemPoolTrimTo(sequence_memory_pool_, used) != cudaSuccess)) {
++          cudaMemPoolAttrReservedMemCurrent, &reserved) != cudaSuccess) {
++    ET_LOG(Error, "offgraph_kv: private sequence pool query failed");
++    (void)cudaGetLastError();
++    return;
++  }
++  // Bound retained growth reservation; genuine contraction requests no slack.
++  const uint64_t floor = used + std::min(retained_growth_bytes,
++      std::numeric_limits<uint64_t>::max() - used);
++  if (reserved > floor &&
++      cudaMemPoolTrimTo(sequence_memory_pool_, floor) != cudaSuccess) {
+     ET_LOG(Error, "offgraph_kv: private sequence pool trim failed");
+     (void)cudaGetLastError();
+   }

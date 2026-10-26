@@ -1,0 +1,84 @@
+{
+  "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "496be5d85f6e003071bf970cfbeef3692dc4d978c8a97777b9617155b1c2b05b",
+        "after_SHA256": "15f35c53a3e1cfa2bebc4021c80e0d5cc2eed327d8acb906753fac387722f79b",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "71d85cb458b77bbed4afc5a4391aba061c4f91e1c514cf012f9f66316fb11629",
+        "after_SHA256": "2bcf2cbc5486916eab9536bd2dc9f9983d8c8d4421e03eab247ef1f180c788b7",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "4cd4d678b95c629a37bee174d4c4829929cf6f599b53032179a29cdf41d2e5e2",
+        "after_SHA256": "6fd10a46e5525f8749d0019f4b7eaea07fdef7e13d3d0cc51f1a10d5113c2df1",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "cead1d91107940e3eeb1569fe5dd08e8a616c4b21aa21b39bdc6d1a2e80f7acd",
+        "after_SHA256": "236e650c043e6f5d8186a7b1586117e978871336104880a8e17a9860087715d3",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.h",
+        "before_SHA256": "71d85cb458b77bbed4afc5a4391aba061c4f91e1c514cf012f9f66316fb11629",
+        "after_SHA256": "2bcf2cbc5486916eab9536bd2dc9f9983d8c8d4421e03eab247ef1f180c788b7",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      },
+      {
+        "file": "backends/cuda/runtime/cuda_kv_pool.cpp",
+        "before_SHA256": "4cd4d678b95c629a37bee174d4c4829929cf6f599b53032179a29cdf41d2e5e2",
+        "after_SHA256": "6fd10a46e5525f8749d0019f4b7eaea07fdef7e13d3d0cc51f1a10d5113c2df1",
+        "private_KV_allocator_and_instrumentation_only": true,
+        "weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged": true,
+        "requested_growth_slack_bytes": 67108864,
+        "contraction_requested_slack_bytes": 0,
+        "qualified": false,
+        "patch_SHA256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b"
+      }
+    ]
+  },
+  "requested_retained_growth_slack_bytes": 67108864,
+  "contraction_shared_allocator_and_graph_release_unchanged": true,
+  "per_session_capacity_initial512_and_growth_unchanged": true,
+  "sliding_capacity_writes_and_attention_unchanged": true,
+  "unchanged_PTE_PTD_kernels_and_graph_invalidation": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}

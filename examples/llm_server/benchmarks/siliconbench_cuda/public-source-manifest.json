@@ -519,6 +519,14 @@
       "sha256": "05ee859b572bdd5ff2698979f388ea9189e3a1842855a35ed69bdd5bc2db9c1a",
       "bytes": 649
     },
+    "independent_session_isolated_KV_growth_slack.patch": {
+      "sha256": "27b5fdf96895ed510f82cf6470493ad3bae4a887be44dd005faf8a53da2e489b",
+      "bytes": 2277
+    },
+    "independent_session_isolated_KV_growth_slack_source.json": {
+      "sha256": "e73df898c92c6b9a9e70fa9a8dae624b0cd58a00c046a48ff4df63a27d11c51c",
+      "bytes": 4487
+    },
     "independent_session_isolated_KV_pool.patch": {
       "sha256": "382d14127871a17989da7cefa0779f8795cf9f455732ed4f0b1bd8a58c00839d",
       "bytes": 11449
@@ -688,8 +696,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_coalesced_growth_trim.py": {
-      "sha256": "921f0045817a49893cd43f68f34d77a32112d0e7579df18deacf7c270c09b11a",
-      "bytes": 13351
+      "sha256": "976a1ff2c75f72d0995454f1e0aadac8adb1e041674d3ec4d0477d7eeb4deb6c",
+      "bytes": 13563
     },
     "prepare_independent_session_empty_owner_reuse.py": {
       "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
@@ -1142,6 +1150,10 @@
     "run_native_allocator_stage_diagnostic.py": {
       "sha256": "bad76d2e51f5faee1bc70ce38eccf59dff680f86cb919359d1b6d57684013929",
       "bytes": 4019
+    },
+    "run_private_KV_growth_slack_mini_diagnostic.py": {
+      "sha256": "9f3ab838ffe116c97e60e54c67b3fab27dd68fd87e994fae8357707a693276f1",
+      "bytes": 6569
     },
     "run_public_prefill_Gemma_full_workflow.py": {
       "sha256": "4c7a88d5f8d42de8e8c5c7f380f472623162134ce7e4dd6e46ccfb23b541ecd7",
