@@ -13,9 +13,10 @@
 #
 # Pack GQA folds multiple Q heads that share the same KV head into the M
 # (sequence) dimension of a single tile, so K/V are loaded once per KV head
-# instead of once per Q head. The tile-utilization heuristic decides when
-# packing is beneficial (short seqlen_q, e.g. decode) vs. when simple head
-# remapping suffices (long seqlen_q, e.g. prefill).
+# instead of once per Q head. The power-of-2 kernel autotunes whether to pack
+# along with its tile; the non-power-of-2 kernel keeps the tile-utilization
+# heuristic, which packs for short seqlen_q (e.g. decode) and not for long
+# seqlen_q (e.g. prefill).
 
 """
 Triton SDPA Kernel for ExecuTorch CUDA Backend.
@@ -49,6 +50,16 @@ def _kv_len_scenarios(args) -> list[int]:
     lk = int(args["Lk"])
     lq = int(args.get("Lq", args.get("LQ", 1)))
     return sorted({min(lk, max(lq, length)) for length in (1024, lk // 8, lk)})
+
+
+def _visible_mask_scenarios(args) -> list[bool]:
+    """An all-visible mask for each of ``_kv_len_scenarios``, paired by position.
+
+    The kernels skip KV blocks no row of a tile can see, so the all-False bool
+    mask autotuning would otherwise see times no attention at all and picks
+    whichever tile loads the mask fastest. All-visible times the full sweep
+    up to each KV length."""
+    return [True] * len(_kv_len_scenarios(args))
 
 
 def _is_power_of_2(n: int) -> bool:
@@ -735,9 +746,33 @@ def _sdpa_prefill_prune(configs, nargs, **kwargs):
     return kept
 
 
-@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
+# Pack GQA is tuned with the tile: which wins depends on the query count, the
+# group size, the tile and how many CTAs the device runs at once, which a
+# utilization rule cannot weigh.
+_SDPA_FWD_CONFIGS = [
+    triton.Config(
+        {**config.kwargs, "PACK_GQA": pack},
+        num_warps=config.num_warps,
+        num_stages=config.num_stages,
+    )
+    for config in _SDPA_PREFILL_CONFIGS
+    for pack in (False, True)
+]
+
+
+def _sdpa_fwd_prune(configs, nargs, **kwargs):
+    """``_sdpa_prefill_prune``, and without GQA only the unpacked tiles."""
+    num_groups = kwargs.get("NUM_GROUPS")
+    if num_groups is None and nargs is not None:
+        num_groups = nargs.get("NUM_GROUPS")
+    if num_groups is not None and num_groups <= 1:
+        configs = [c for c in configs if not c.kwargs["PACK_GQA"]]
+    return _sdpa_prefill_prune(configs, nargs, **kwargs)
+
+
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios, Mask_ptr=_visible_mask_scenarios)
 @triton.autotune(
-    configs=_SDPA_PREFILL_CONFIGS,
+    configs=_SDPA_FWD_CONFIGS,
     key=[
         "Lq",
         "Lk",
@@ -746,9 +781,8 @@ def _sdpa_prefill_prune(configs, nargs, **kwargs):
         "IS_CAUSAL",
         "MASK_IS_CAUSAL",
         "NUM_GROUPS",
-        "PACK_GQA",
     ],
-    prune_configs_by={"early_config_prune": _sdpa_prefill_prune},
+    prune_configs_by={"early_config_prune": _sdpa_fwd_prune},
 )
 @triton.jit
 def _sdpa_fwd_kernel(
@@ -759,7 +793,7 @@ def _sdpa_fwd_kernel(
     Mask_ptr,
     KV_LEN_ptr,
     B,
-    H_grid,
+    H_q,
     Lq,
     Lk,
     stride_qb,
@@ -792,6 +826,11 @@ def _sdpa_fwd_kernel(
     BLOCK_N: tl.constexpr,
     MASK_IS_CAUSAL: tl.constexpr = False,
 ):
+    # Packed, the grid walks the KV heads; unpacked, the query heads.
+    if PACK_GQA:
+        H_grid = H_q // NUM_GROUPS
+    else:
+        H_grid = H_q
     _sdpa_fwd_kernel_body(
         Q_ptr,
         K_ptr,
@@ -1016,7 +1055,6 @@ def _launch_pow2_kernel(
     stride_mk: int,
     is_causal: bool,
     num_groups: int,
-    pack_gqa: bool,
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
     mask_is_causal: bool = False,
@@ -1078,21 +1116,16 @@ def _launch_pow2_kernel(
         )
         return
 
-    if pack_gqa:
-        H_grid = H_kv
-        Lq_packed = L_q * num_groups
-    else:
-        H_grid = H_q
-        Lq_packed = L_q
-
     def grid(meta):
-        return (triton.cdiv(Lq_packed, meta["BLOCK_M"]), B * H_grid)
+        if meta["PACK_GQA"]:
+            return (triton.cdiv(L_q * num_groups, meta["BLOCK_M"]), B * H_kv)
+        return (triton.cdiv(L_q, meta["BLOCK_M"]), B * H_q)
 
-    # Single autotuned kernel: the config set spans BLOCK_M in {16..128} and
-    # `_sdpa_prefill_prune` keeps only non-spilling tiles for this HEAD_DIM, so
-    # the autotuner picks a high-occupancy tile (small BLOCK_M for large HEAD_DIM,
-    # larger BLOCK_M / more CTAs for small problems) — subsuming the old
-    # CTA-count m32/m64 selector.
+    # Single autotuned kernel: the config set spans BLOCK_M in {16..128}, each
+    # with and without pack GQA, and `_sdpa_prefill_prune` keeps only
+    # non-spilling tiles for this HEAD_DIM, so the autotuner picks a
+    # high-occupancy tile (small BLOCK_M for large HEAD_DIM, larger BLOCK_M /
+    # more CTAs for small problems).
     wrap_triton(_sdpa_fwd_kernel)[grid](
         query,
         key,
@@ -1101,7 +1134,7 @@ def _launch_pow2_kernel(
         Mask_ptr if HAS_MASK else 0,
         kv_len_ptr if HAS_KV_LEN else 0,
         B,
-        H_grid,
+        H_q,
         L_q,
         L_kv,
         stride_qb,
@@ -1129,7 +1162,6 @@ def _launch_pow2_kernel(
         HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
-        PACK_GQA=pack_gqa,
         MASK_IS_CAUSAL=mask_is_causal,
     )
 
@@ -1368,17 +1400,6 @@ def sdpa(
             )
             return out
 
-    # Decide whether to pack GQA based on tile utilization heuristic.
-    # Use the actual BLOCK_M that the launched kernel will use:
-    # - non-pow2 path always uses BLOCK_M=32
-    # - pow2 path selects M32 or M64 based on CTA occupancy
-    if not _is_power_of_2(D):
-        block_m = 32
-    else:
-        total_ctas_m64 = ((L_q * num_groups + 63) // 64) * (B * H_kv)
-        block_m = 32 if total_ctas_m64 < 4 * 84 else 64
-    pack_gqa = _should_pack_gqa(L_q, num_groups, block_m)
-
     if _is_power_of_2(D):
         _launch_pow2_kernel(
             query,
@@ -1399,12 +1420,14 @@ def sdpa(
             stride_mk,
             kernel_is_causal,
             num_groups,
-            pack_gqa,
             kv_len_t,
             HAS_KV_LEN,
             mask_is_causal,
         )
     else:
+        # The non-pow2 kernel always uses BLOCK_M=32 and is not tuned over pack
+        # GQA, so a tile-utilization rule decides it.
+        pack_gqa = _should_pack_gqa(L_q, num_groups, 32)
         _launch_non_pow2_kernel(
             query,
             key,
@@ -1465,7 +1488,7 @@ def _sdpa_abstract(
 # then reduces partial results in a second kernel.
 
 
-@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios, Mask_ptr=_visible_mask_scenarios)
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_N": 32}, num_warps=2, num_stages=1),
@@ -1922,7 +1945,7 @@ def _sdpa_decode_splitk_abstract(
 # occupancy, then reduces per-query partial results in a second kernel.
 
 
-@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios, Mask_ptr=_visible_mask_scenarios)
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_N": 32}, num_warps=2, num_stages=1),
