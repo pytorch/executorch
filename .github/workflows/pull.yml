@@ -796,6 +796,11 @@ jobs:
           exit 1
         fi
 
+        # Run a minimal image on the FVP to check the build actually executes
+        if [[ ${{ matrix.os }} == "bare_metal" ]]; then
+          backends/arm/test/test_arm_backend.sh test_minimal_classic_ml_cortex_m55
+        fi
+
   test-mcu-cortex-m-backend:
     needs: docker-image
     name: test-mcu-cortex-m-backend
