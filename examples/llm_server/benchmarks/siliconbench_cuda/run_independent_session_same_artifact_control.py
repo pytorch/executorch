@@ -35,6 +35,8 @@ def main():
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
     parser.add_argument('--full-model-profile',choices=FULL_PROFILES)
+    parser.add_argument('--arm',choices=('both','global','independent'),default='both',
+                        help='Explicit diagnostic scope; default mini/full collection remains both arms')
     parser.add_argument('--rewind-probe-job',type=Path,
                         help='Also verify actual native rewind on each cloned model owner')
     parser.add_argument("--after-logit-collision-job", type=Path)
@@ -102,7 +104,8 @@ def main():
             assert preparation['mini_gate_passed'] and preparation['all_full_artifact_hashes_verified']
         artifact_prefix='full-' if args.full_model_profile else 'mini-'
         audit_name='independent-full-artifact-audit.json' if args.full_model_profile else 'independent-mini-artifact-audit.json'
-        for arm in ("global", "independent"):
+        selected_arms=('global','independent') if args.arm=='both' else (args.arm,)
+        for arm in selected_arms:
             artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
             audit = json.loads((artifact / audit_name).read_text())
             geometry = (validate_full_audit(audit,args.full_model_profile,arm=='independent') if args.full_model_profile else validate_mini_audit(audit, args.mini_profile, arm == 'independent'))
@@ -119,7 +122,7 @@ def main():
             assert not subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid",
                                                 "--format=csv,noheader"], text=True).strip()
             for number in range(1, 5):
-                for arm in (("global", "independent") if number % 2 else ("independent", "global")):
+                for arm in (selected_arms if number%2 else tuple(reversed(selected_arms))):
                     directory = args.output / ("round-" + str(number)) / arm
                     directory.mkdir(parents=True)
                     artifact = artifacts[arm]
@@ -255,6 +258,7 @@ def main():
         (args.output / "result.json").write_text(json.dumps(dict(
             same_artifact_same_forward_same_tokens=True, all_bitwise_checks_pass=True,
             mini_profile=args.mini_profile, full_model_profile=args.full_model_profile, model_geometry=geometry,
+            collected_arms=list(selected_arms), default_two_arm_collection=args.arm=='both',
             actual_rewind_checked=probe_proof is not None,rewind_probe_proof=probe_proof,
             independent_exports_not_compared_here=True, CUDA_graph_mode_enabled=True,
             actual_graph_trace_review_separate=True, performance_qualified=False,

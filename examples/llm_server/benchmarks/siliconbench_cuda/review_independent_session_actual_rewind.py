@@ -9,7 +9,9 @@ p.add_argument('--profile',choices=['gemma4-first6','muse-glimmer-first4'],requi
 a=p.parse_args();root=a.job;vocab=262144 if a.profile=='gemma4-first6' else 202048
 doc=json.loads((root/'result.json').read_text())
 assert doc['same_artifact_same_forward_same_tokens'] and doc['actual_rewind_checked']
-assert len(doc['rounds'])==8 and doc['mini_profile']==a.profile
+arms=doc.get('collected_arms',['global','independent']);assert arms in (['global','independent'],['global'],['independent'])
+assert len(doc['rounds'])==4*len(arms) and doc['mini_profile']==a.profile
+assert {(r['round'],r['arm']) for r in doc['rounds']}=={(i,arm) for i in range(1,5) for arm in arms}
 verified=[];invalid_count=0;protocols={};artifacts={};owner_pids=set()
 for row in doc['rounds']:
  rid,arm=row['round'],row['arm'];directory=root/f'round-{rid}'/arm
@@ -56,8 +58,8 @@ for row in doc['rounds']:
   verified.append({'round':rid,'arm':arm,'history':c['history'],'phase':c['phase'],'bitwise_logits_equal':True,'raw_reference_SHA256':c['reference']['SHA256'],'raw_actual_SHA256':c['actual']['SHA256']})
  artifacts.setdefault(arm,set()).add(row['PTE_SHA256'])
  protocols[rid,arm]=[{k:v for k,v in req.items() if k!='tag'} for req,reply in operations]
-assert len(verified)==96 and invalid_count==48 and all(len(a)==1 for a in artifacts.values())
-assert len(owner_pids)==8
+assert len(verified)==48*len(arms) and invalid_count==24*len(arms) and all(len(a)==1 for a in artifacts.values())
+assert len(owner_pids)==4*len(arms)
 out=a.output;assert not out.exists()
-result={'UTC':datetime.datetime.now(datetime.timezone.utc).isoformat(),'all_reads_local_CPU':True,'raw_logits_protocols_and_actual_rewind_verified':True,'checks':verified,'invalid_out_of_context_rewinds_rejected':invalid_count,'same_PTE_within_each_arm_across_rounds':{k:next(iter(v)) for k,v in artifacts.items()},'cross_export_equivalence_not_claimed':True,'actual_graph_replay_review_separate':True,'model_performance_qualified':False,'full_model_promoted':False,'raw_directory':str(root),'source_result_SHA256':hashlib.sha256((root/'result.json').read_bytes()).hexdigest()}
-out.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({'checks':96,'invalid_rewinds':invalid_count,'report':str(out)}))
+result={'UTC':datetime.datetime.now(datetime.timezone.utc).isoformat(),'all_reads_local_CPU':True,'raw_logits_protocols_and_actual_rewind_verified':True,'checks':verified,'collected_arms':arms,'default_two_arm_collection':arms==['global','independent'],'invalid_out_of_context_rewinds_rejected':invalid_count,'same_PTE_within_each_arm_across_rounds':{k:next(iter(v)) for k,v in artifacts.items()},'cross_export_equivalence_not_claimed':True,'actual_graph_replay_review_separate':True,'model_performance_qualified':False,'full_model_promoted':False,'raw_directory':str(root),'source_result_SHA256':hashlib.sha256((root/'result.json').read_bytes()).hexdigest()}
+out.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({'checks':len(verified),'invalid_rewinds':invalid_count,'collected_arms':arms,'report':str(out)}))

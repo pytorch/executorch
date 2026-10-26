@@ -840,8 +840,8 @@
       "bytes": 6951
     },
     "review_independent_session_actual_rewind.py": {
-      "sha256": "460c64208fbedfbdc41544c3688100d9462baac5054051d969b0dc3f49ab3834",
-      "bytes": 4759
+      "sha256": "9c30cfb9795aa67fe3bc82ab8b43678e28a1a01d27603a43078b18b89bb9516c",
+      "bytes": 5140
     },
     "review_independent_session_gemma_fixed_latency.py": {
       "sha256": "8992b18ecbecdd2ee6c1da25b9adcf679ed3f162c4a1da2f93915a1541c3222c",
@@ -967,6 +967,14 @@
       "sha256": "eb196d607eeb3a6feed61f65ac4f27428edb9a2bffc01ef0c473b2f146e619d8",
       "bytes": 21845
     },
+    "run_full_independent_session_fixed_qualification.py": {
+      "sha256": "cb7fe73a86ace11ca2b834f0fb3373a04fbf1f6a8f96bf3646fdc856756b1cd0",
+      "bytes": 9598
+    },
+    "run_full_independent_session_lifecycle_after_fixed.py": {
+      "sha256": "5580aee905aaf0926e43dc9533b677a4386c9cb40505c1fc754eb6db2af6a630",
+      "bytes": 8748
+    },
     "run_gemma_full_fixed_qualification_after_exports.py": {
       "sha256": "c850c2bfefebd47de7b8220dd652a1a246f17e8bd28c28fc67dcf3513671f861",
       "bytes": 6828
@@ -1020,8 +1028,8 @@
       "bytes": 29172
     },
     "run_independent_session_same_artifact_control.py": {
-      "sha256": "c6145af9dfaad53d5ada32d2c40cd7ee34737e91e3bdf20cfa386a6f22331f9a",
-      "bytes": 16938
+      "sha256": "07e656dd38711c2327a90ea3d12b26671e58efc09b5ee9af3986adf5aec373bb",
+      "bytes": 17288
     },
     "run_matrix.py": {
       "sha256": "7809e920164afe21dd35a82883e89c34bf2549c020b1d8c8b88fbbd194bfb8ed",
