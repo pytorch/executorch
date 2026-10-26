@@ -65,14 +65,15 @@
 #include <torch/python.h>
 #endif
 
-/// Throws a runtime_error with the provided message if `error` is not `Ok`.
+/// Throws a runtime_error with the provided message if `error` is not `Ok`,
+/// followed by the errors the runtime logged during this call.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::runtime_error(msg_buf);                          \
+      throw std::runtime_error(with_runtime_errors(msg_buf));     \
     }                                                             \
   })
 
@@ -82,7 +83,7 @@
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::out_of_range(msg_buf);                           \
+      throw std::out_of_range(with_runtime_errors(msg_buf));      \
     }                                                             \
   })
 
@@ -125,6 +126,44 @@ namespace extension {
 namespace pybindings {
 
 namespace {
+
+// The errors the runtime logged on this thread, which RuntimeErrorScope
+// limits to the current binding call. The runtime explains a failure only in
+// its log and returns a bare error code, so the exceptions raised here carry
+// these lines too. Plain arrays, because a log can arrive while thread_local
+// objects with destructors are already destroyed at exit.
+constexpr size_t kRuntimeErrorsCapacity = 1024;
+thread_local char runtime_errors[kRuntimeErrorsCapacity];
+thread_local size_t runtime_errors_size = 0;
+// How many binding calls are running on this thread. Lines logged outside
+// any, such as on worker threads, are not kept, so they never linger.
+thread_local size_t runtime_error_scopes = 0;
+
+std::string with_runtime_errors(const char* message) {
+  std::string result(message);
+  if (runtime_errors_size != 0) {
+    result.append(": ").append(runtime_errors, runtime_errors_size);
+    runtime_errors_size = 0;
+  }
+  return result;
+}
+
+// Starts every binding call with no runtime errors recorded, and gives an
+// outer call its own back when a nested call returns.
+struct RuntimeErrorScope final {
+  RuntimeErrorScope() : outer_(runtime_errors, runtime_errors_size) {
+    runtime_errors_size = 0;
+    ++runtime_error_scopes;
+  }
+  ~RuntimeErrorScope() {
+    --runtime_error_scopes;
+    std::memcpy(runtime_errors, outer_.data(), outer_.size());
+    runtime_errors_size = outer_.size();
+  }
+
+ private:
+  std::string outer_;
+};
 
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
@@ -1777,7 +1816,7 @@ inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
       path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      "Failed to create MmapDataLoader from file %s, error: 0x%" PRIx32,
       path.c_str(),
       static_cast<uint32_t>(res.error()));
 
@@ -3073,7 +3112,7 @@ inline std::shared_ptr<ProgramState> load_program(
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to load program, error: 0x:%" PRIx32,
+      "Failed to load program, error: 0x%" PRIx32,
       static_cast<uint32_t>(res.error()));
   // A program whose weights live outside the pte names them through a data
   // map. The CUDA delegate emits exactly that: a pte holding the compiled
@@ -3088,7 +3127,7 @@ inline std::shared_ptr<ProgramState> load_program(
         FlatTensorDataMap::load(data_map_loader.get());
     THROW_IF_ERROR(
         map_res.error(),
-        "Failed to load data map from %s, error: 0x:%" PRIx32,
+        "Failed to load data map from %s, error: 0x%" PRIx32,
         data_path.value().c_str(),
         static_cast<uint32_t>(map_res.error()));
     data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
@@ -3663,7 +3702,7 @@ struct PyMethod final {
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
         attr.error(),
-        "Failed to get attribute '%s' for method '%s', error: 0x:%" PRIx32,
+        "Failed to get attribute '%s' for method '%s', error: 0x%" PRIx32,
         name.c_str(),
         storage_->method->method_meta().name(),
         static_cast<uint32_t>(attr.error()));
@@ -4200,7 +4239,7 @@ struct PyProgram final {
     Result<const char*> res = state_->program_->get_method_name(method_index);
     THROW_IF_ERROR(
         res.error(),
-        "Failed get method name, error: 0x:%" PRIx32,
+        "Failed get method name, error: 0x%" PRIx32,
         static_cast<uint32_t>(res.error()));
     return std::string(res.get());
   }
@@ -4210,7 +4249,7 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         meta.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(meta.error()));
     // Device memory is claimed here rather than at program load so that one
@@ -4227,7 +4266,7 @@ struct PyProgram final {
         &state_->backend_options_);
     THROW_IF_ERROR(
         res.error(),
-        "Failed to load method %s, error: 0x:%" PRIx32,
+        "Failed to load method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethod>(
@@ -4245,7 +4284,7 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         res.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethodMeta>(state_, std::move(res.get()));
@@ -4365,9 +4404,11 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // scoped_ostream_redirect mutates process-wide stream buffers and is not
-  // thread-safe when Python operations inside a binding release the GIL.
-  auto call_guard = py::call_guard<>();
+  // Gives each call its own record of runtime errors for its exceptions.
+  // Runtime logs reach Python through emit_log_message below rather than
+  // scoped_ostream_redirect, which mutates process-wide stream buffers and is
+  // not thread-safe when Python operations inside a binding release the GIL.
+  auto call_guard = py::call_guard<RuntimeErrorScope>();
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
@@ -4766,7 +4807,7 @@ namespace {
 // stream buffer.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
-    ET_UNUSED et_pal_log_level_t level,
+    et_pal_log_level_t level,
     const char* filename,
     ET_UNUSED const char* function,
     size_t line,
@@ -4774,6 +4815,19 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
+  if (level == kError && runtime_error_scopes != 0) {
+    // Keeps the first lines, which usually name the cause.
+    const char separator[] = "; ";
+    const size_t prefix = runtime_errors_size == 0 ? 0 : sizeof(separator) - 1;
+    const size_t room = kRuntimeErrorsCapacity - runtime_errors_size;
+    if (room > prefix) {
+      std::memcpy(runtime_errors + runtime_errors_size, separator, prefix);
+      const size_t copied = std::min(length, room - prefix);
+      std::memcpy(
+          runtime_errors + runtime_errors_size + prefix, message, copied);
+      runtime_errors_size += prefix + copied;
+    }
+  }
   if (Py_IsInitialized() && PyGILState_Check()) {
     try {
       py::gil_scoped_acquire gil;

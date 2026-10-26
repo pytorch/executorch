@@ -398,6 +398,25 @@ print("all calls finished")
         with self.assertRaisesRegex(ValueError, "dtype Long.*expects Float"):
             executorch_module(np.ones((2, 2), dtype=int))
 
+    def test_refused_input_errors_say_why(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        executorch_module = self.load_fn(exported_program.buffer)
+        with self.assertRaises(RuntimeError) as error:
+            executorch_module.forward([None, inputs[1]])
+        self.assertIn("type Tensor but was None", str(error.exception))
+        # Only the reason is reported, not lines about other inputs.
+        self.assertNotIn("is not Tensor", str(error.exception))
+
+        # The portable runtime logs a static shape mismatch over two lines.
+        if self.kernel_mode == "portable":
+            exported_program, inputs = create_program(ModuleAdd())
+            with self.assertRaisesRegex(
+                RuntimeError, r"received \(3, 2\)\.; Error resizing tensor at input 0"
+            ):
+                self.load_fn(exported_program.buffer).forward(
+                    [torch.ones(3, 2), inputs[1]]
+                )
+
     def test_numpy_float_scalar_input(self):
         exported_program, inputs = create_program(ModuleAddScalar())
         executorch_module = self.load_fn(exported_program.buffer)
