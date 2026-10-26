@@ -12,7 +12,13 @@ namespace batching = executorch::backends::cuda::batching;
 
 int main(int argc, char** argv) {
   try {
-    roofline::require(argc == 4, "Usage: roofline_prefill_validation model.pte weights.ptd output.json");
+    roofline::require(argc >= 4 && argc <= 7, "Usage: roofline_prefill_validation model.pte weights.ptd output.json [history_chunk] [teacher_forced] [dump_logits]");
+    const int history_chunk = argc >= 5 ? std::stoi(argv[4]) : 512;
+    const bool teacher_forced = argc >= 6 && std::stoi(argv[5]) != 0;
+    const bool dump_logits = argc >= 7 && std::stoi(argv[6]) != 0;
+    roofline::require(history_chunk == 512 || history_chunk == 1024, "History chunk must be 512 or 1024");
+    struct Dump { std::string file; int rows; int vocab; std::string format; };
+    std::vector<Dump> dumps;
     executorch::runtime::runtime_init();
     batching::CudaExecutorConfig cfg;
     cfg.model_path = argv[1]; cfg.data_files = {argv[2]};
@@ -40,6 +46,23 @@ int main(int argc, char** argv) {
         auto ids = executor->argmax_rows(output.logits, output.selected_indices.size());
         if (!ids) return false;
         sampled.assign(ids->begin(), ids->end());
+        if (dump_logits) {
+          const auto& t = output.logits;
+          const int rows = static_cast<int>(output.selected_indices.size());
+          roofline::require(t.dim() == 2 && t.strides()[1] == 1 && t.strides()[0] == t.size(1), "Logits must be row contiguous");
+          std::string format;
+          if (t.scalar_type() == executorch::aten::ScalarType::BFloat16) format = "bf16";
+          else if (t.scalar_type() == executorch::aten::ScalarType::Half) format = "f16";
+          else if (t.scalar_type() == executorch::aten::ScalarType::Float) format = "f32";
+          else throw std::runtime_error("Unsupported logits dtype");
+          const std::size_t bytes = static_cast<std::size_t>(rows) * t.size(1) * t.element_size();
+          std::vector<char> host(bytes);
+          roofline::require(cudaMemcpy(host.data(), t.const_data_ptr(), bytes, cudaMemcpyDeviceToHost) == cudaSuccess, "Logit copy failed");
+          const std::string file = std::string(argv[3]) + ".logits-" + std::to_string(dumps.size()) + "." + format;
+          std::ofstream binary(file, std::ios::binary);
+          binary.write(host.data(), host.size()); roofline::require(binary.good(), "Cannot write logits");
+          dumps.push_back({file, rows, static_cast<int>(t.size(1)), format});
+        }
         return true;
       });
       roofline::require(ok && callbacks == 1, "Expected one successful unsplit raw forward");
@@ -48,7 +71,7 @@ int main(int argc, char** argv) {
       roofline::sync(); return sampled;
     };
     std::ofstream out(argv[3]); roofline::require(out.good(), "Cannot write validation outputs");
-    out << "{\"history_tokens\":1024,\"prefix_reuse\":false,\"initial_KV\":512,"
+    out << "{\"history_chunk\":" << history_chunk << ",\"teacher_forced\":" << (teacher_forced ? "true" : "false") << ",\"history_tokens\":1024,\"prefix_reuse\":false,\"initial_KV\":512,"
         << "\"runtime_capacity\":2048,\"static_cuda_graph_requested\":true,"
         << "\"timing_used_for_performance\":false,\"cases\":[";
     for (std::size_t i = 0; i < roofline::kMixes.size(); ++i) {
@@ -57,12 +80,13 @@ int main(int argc, char** argv) {
       owners.clear(); int count = mix.decode + (mix.prefill ? 1 : 0);
       for (int owner = 0; owner < count; ++owner) {
         auto id = cache.seq_new(); roofline::require(id.has_value(), "Owner allocation failed"); owners.push_back(*id);
-        for (int start = 0; start < 1024; start += 512) {
+        for (int start = 0; start < 1024; start += history_chunk) {
           std::vector<roofline::Row> input;
-          for (int pos = start; pos < start + 512; ++pos) input.push_back({roofline::token(owner, pos), pos, owner, false});
+          for (int pos = start; pos < start + history_chunk; ++pos) input.push_back({roofline::token(owner, pos), pos, owner, false});
           run(input, 0);
         }
       }
+      const std::size_t dump_start = dumps.size();
       auto before = executor->method_calls(); auto input = roofline::rows(mix);
       // The performance harness selects decode outputs only. This separate
       // check also requests the prefill owner's last logits and follows its KV.
@@ -83,9 +107,15 @@ int main(int argc, char** argv) {
         for (int owner = 0; owner < count; ++owner) {
           int expected = 1024 + (owner < mix.decode ? 1 : mix.prefill) + step;
           roofline::require(cache.pos(owners[owner]) == expected, "History advancement differs");
-          next.push_back({ids[owner], expected, owner, true});
+          next.push_back({teacher_forced ? roofline::token(owner, expected) : ids[owner], expected, owner, true});
         }
         ids = run(next, count); out << ','; roofline::print_tokens(out, ids);
+      }
+      out << "],\"logit_dumps\":[";
+      for (std::size_t d = dump_start; d < dumps.size(); ++d) {
+        if (d > dump_start) out << ',';
+        out << "{\"file\":\"" << dumps[d].file << "\",\"rows\":" << dumps[d].rows
+            << ",\"vocab\":" << dumps[d].vocab << ",\"format\":\"" << dumps[d].format << "\"}";
       }
       out << "]}"; out.flush();
     }
