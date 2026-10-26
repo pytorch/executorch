@@ -20,6 +20,7 @@ def main():
  p.add_argument('--Gemma-source-preparation-job',type=Path)
  p.add_argument('--matched-native-control-job',type=Path,
   help='Retained four-round matched-probe ABBA control resolving a consecutive-native signal; thresholds stay unchanged')
+ p.add_argument('--preserved-native-controls-job',type=Path,help='Exact completed paired-mini controls reused without GPU recollection; hash all original raw evidence')
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  current=load(a.mini_job/'progress.json')
@@ -97,7 +98,20 @@ def main():
  assert audit['GGUF_sha256']==expected and audit['independent_capacity']
  for name,r in audit['artifacts'].items():assert sha(artifact/name)==r['sha256'],name
  evidence={}
- for directory in (a.mini_job,a.output,*((a.matched_native_control_job,) if a.matched_native_control_job else ())):
+ preserved_roots=()
+ if a.preserved_native_controls_job:
+  preserved=a.preserved_native_controls_job
+  assert load(preserved/'progress.json')['status']=='paired-KV-storage-mini-diagnostic-collected'
+  prior=load(preserved/'result.json')
+  assert prior['paired_KV_single_backing_candidate'] and prior['observed_storage_and_graph_correctness_pass']
+  assert prior['compared_to_original_native_mini_SDK'] and prior['initial_KV_capacity']==512
+  for name,value in prior['raw_reviews_SHA256'].items():assert sha(name)==value,name
+  assert a.matched_native_control_job and a.matched_native_control_job.resolve()==(preserved/'matched-control').resolve()
+  for name,target in (('model-latency','matched-control/after'),('capacity-control','capacity-control'),
+                      ('same-artifact-rewind','rewind'),('graph-lifecycle','graphs')):
+   assert (a.mini_job/name).resolve()==(preserved/target).resolve(),name
+  preserved_roots=(preserved,)
+ for directory in (a.mini_job,a.output,*((a.matched_native_control_job,) if a.matched_native_control_job else ()),*preserved_roots):
   for path in directory.rglob('*'):
    if path.is_file() and not path.is_symlink() and path.suffix in ('.json','.jsonl','.f32','.sqlite','.nsys-rep') and not any(part in ('model-build','executorch','build') for part in path.relative_to(directory).parts):
     evidence[str(path.resolve())]=sha(path)

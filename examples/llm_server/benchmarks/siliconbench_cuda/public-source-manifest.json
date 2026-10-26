@@ -872,8 +872,8 @@
       "bytes": 6180
     },
     "qualify_independent_session_mini_for_full.py": {
-      "sha256": "f4cd980e18fca088f1f1e3587bd37c4e360816be2ebcc79d7654f042fc9bb870",
-      "bytes": 9697
+      "sha256": "a4c92604b185f55348b6d9fb0b3ab68aaa728d9467362f61517a65958528eaeb",
+      "bytes": 10826
     },
     "receive_verified_model_artifact.py": {
       "sha256": "91e649c0334066c129d7abd53ff4d6fc9a0b2fc474a86b03789e5e578312608f",
@@ -920,8 +920,8 @@
       "bytes": 18421
     },
     "review_independent_session_mg_fixed_latency.py": {
-      "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",
-      "bytes": 8730
+      "sha256": "4db4b0d84ca37597dc67b3485651f4dea0f30d223967c29abc1b5bb880a52e45",
+      "bytes": 10113
     },
     "review_independent_session_mini_graph_trace.py": {
       "sha256": "6311339db87576ee1c17b3471945b8af6670a50fdbf1700b7d009d078823bf26",
@@ -1112,8 +1112,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "ea378180eaadb39b0f84c3761147c96863d8e07c58606095a18cdf42ff5e52a7",
-      "bytes": 44340
+      "sha256": "4381fea7f0cec3c32ecddb2379de2024eed832a153b0e241b1410d7ad14f4184",
+      "bytes": 46208
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "d6832838288088b6e799c59e56c89f9687ac375777ddf7bdb1247c7ec2e8b3d3",
@@ -1162,6 +1162,10 @@
     "run_native_allocator_stage_diagnostic.py": {
       "sha256": "bad76d2e51f5faee1bc70ce38eccf59dff680f86cb919359d1b6d57684013929",
       "bytes": 4019
+    },
+    "run_paired_KV_HTTP_qualification_after_mini.py": {
+      "sha256": "c381f3130c5927b5bb50125b02497c7cec6dc22d74ee85fe7173a08c4040320e",
+      "bytes": 9462
     },
     "run_paired_KV_storage_mini_diagnostic.py": {
       "sha256": "c5db466b95fa9ef497357f6c103e81d0944462e247d478a9b600803a3720ce5e",

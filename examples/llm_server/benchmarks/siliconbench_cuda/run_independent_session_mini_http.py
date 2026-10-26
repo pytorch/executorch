@@ -104,6 +104,33 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
             assert record['requested_growth_slack_bytes'] == 64*2**20 and record['contraction_requested_slack_bytes'] == 0
         changes = dict(patches=changes['patches'] + records)
         expected_pool = records[0]['after_SHA256']
+    if gate.get('paired_KV_storage_spec_SHA256'):
+        assert gate.get('isolated_KV_pool_spec_SHA256') and gate.get('isolated_KV_growth_slack_spec_SHA256')
+        policy = 'independent_session_paired_KV_storage'
+        spec_path = package/(policy + '_source.json'); spec = json.loads(spec_path.read_text())
+        assert digest(spec_path) == gate['paired_KV_storage_spec_SHA256']
+        assert digest(package/(policy + '.patch')) == spec['patch_SHA256']
+        records = spec['variants'][variant]
+        assert len(records) == 2 and {r['file'] for r in records} == {
+            'backends/cuda/runtime/cuda_kv_pool.cpp','backends/cuda/runtime/cuda_kv_pool.h'}
+        previous = {r['file']:r['after_SHA256'] for r in changes['patches']}
+        for key in ('global_layout_shared_allocator_unchanged',
+                    'per_session_capacity_initial512_and_growth_unchanged',
+                    'sliding_capacity_writes_and_attention_unchanged',
+                    'unchanged_PTE_PTD_kernels_and_graph_invalidation',
+                    'preceding_bounded_growth_slack_policy_unchanged',
+                    'K_and_V_logical_shapes_and_live_bytes_unchanged',
+                    'paired_single_backing_with_separate_aligned_views',
+                    'destructor_and_discard_free_only_backing',
+                    'rollback_uses_same_ownership_path'):
+            assert spec[key],key
+        assert spec['view_alignment_bytes'] == 256
+        for record in records:
+            assert record['before_SHA256'] == previous[record['file']],record['file']
+            assert record['patch_SHA256'] == spec['patch_SHA256']
+            assert record['paired_private_KV_allocation_only']
+            assert record['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
+        changes = dict(patches=changes['patches'] + records)
     return changes, expected_pool
 
 
