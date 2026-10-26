@@ -872,8 +872,8 @@
       "bytes": 6180
     },
     "qualify_independent_session_mini_for_full.py": {
-      "sha256": "a4c92604b185f55348b6d9fb0b3ab68aaa728d9467362f61517a65958528eaeb",
-      "bytes": 10826
+      "sha256": "7e1e728d4e8dd227944d3c44a479576a5134664cb8ffbbac333ec232a636b8ae",
+      "bytes": 15749
     },
     "receive_verified_model_artifact.py": {
       "sha256": "91e649c0334066c129d7abd53ff4d6fc9a0b2fc474a86b03789e5e578312608f",
@@ -1084,8 +1084,8 @@
       "bytes": 8748
     },
     "run_gemma_full_after_allocator_mini.py": {
-      "sha256": "f14e7f751e4172f5c9ef8daafcf2c2d7509d7326718e086e3368fe4e4208f949",
-      "bytes": 7743
+      "sha256": "e4710fe16f3804b229dae41e141a0daac232cc5a2054fa937c3db07c5a25f56b",
+      "bytes": 7857
     },
     "run_gemma_full_fixed_qualification_after_exports.py": {
       "sha256": "c850c2bfefebd47de7b8220dd652a1a246f17e8bd28c28fc67dcf3513671f861",
@@ -1186,6 +1186,10 @@
     "run_paired_KV_storage_mini_diagnostic.py": {
       "sha256": "c5db466b95fa9ef497357f6c103e81d0944462e247d478a9b600803a3720ce5e",
       "bytes": 6684
+    },
+    "run_paired_mini_qualification_after_layout_confirmation.py": {
+      "sha256": "f341e5e58819eba62057795e16591150663e8da0b0f858edc810947c40078591",
+      "bytes": 4478
     },
     "run_private_KV_growth_slack_mini_diagnostic.py": {
       "sha256": "9f3ab838ffe116c97e60e54c67b3fab27dd68fd87e994fae8357707a693276f1",

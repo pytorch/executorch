@@ -49,7 +49,8 @@ def main():
             assert any(name in actual for name in (b'run_MG_allocator_mini_qualification_after_native.py',
                                                    b'resume_allocator_mini_after_HTTP_failure.py',
                                                    b'run_matched_native_control_after_mini.py',
-                                                   b'run_paired_KV_HTTP_qualification_after_mini.py'))
+                                                   b'run_paired_KV_HTTP_qualification_after_mini.py',
+                                                   b'run_paired_mini_qualification_after_layout_confirmation.py'))
             assert str(a.mini_controller).encode() in actual
             assert time.monotonic()<until,'Preserve confirmed-live mini after observation timeout'
             state('waiting-confirmed-live-allocator-mini',mini_PID=d['controller_pid'],mini_status=d['status'])
