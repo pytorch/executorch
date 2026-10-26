@@ -1067,6 +1067,10 @@
       "sha256": "a1cf7463ba1b818ee7adcbbaa563cba341a9bcc30dea18a0a68fc0da17e5b1c0",
       "bytes": 8173
     },
+    "run_native_allocator_stage_diagnostic.py": {
+      "sha256": "bad76d2e51f5faee1bc70ce38eccf59dff680f86cb919359d1b6d57684013929",
+      "bytes": 4019
+    },
     "run_public_prefill_Gemma_full_workflow.py": {
       "sha256": "4c7a88d5f8d42de8e8c5c7f380f472623162134ce7e4dd6e46ccfb23b541ecd7",
       "bytes": 8266
