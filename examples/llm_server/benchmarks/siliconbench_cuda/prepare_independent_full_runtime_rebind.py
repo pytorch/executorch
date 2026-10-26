@@ -15,6 +15,8 @@ from independent_session_mini_profiles import FULL_PROFILES, validate_full_audit
 
 
 POLICIES = {
+    'paired-KV-storage': ('independent_session_paired_KV_storage', 'paired_KV_storage_spec_SHA256'),
+    'isolated-KV-growth-slack': ('independent_session_isolated_KV_growth_slack', 'isolated_KV_growth_slack_spec_SHA256'),
     'isolated-KV-pool': ('independent_session_isolated_KV_pool', 'isolated_KV_pool_spec_SHA256'),
     'empty-owner-reuse': ('independent_session_empty_replacement', 'empty_owner_reuse_spec_SHA256'),
     'coalesced-growth-trim': ('independent_session_coalesced_growth_trim', 'coalesced_growth_trim_spec_SHA256'),
@@ -41,7 +43,20 @@ def verify_transition(before_job, after_job, package, variant, transition='empty
     if transition != 'empty-owner-reuse':
         assert before.get('empty_owner_reuse_spec_SHA256')
         assert after['empty_owner_reuse_spec_SHA256'] == before['empty_owner_reuse_spec_SHA256']
-        if transition == 'isolated-KV-pool':
+        if transition == 'paired-KV-storage':
+            assert before.get('isolated_KV_growth_slack_spec_SHA256')
+            assert after['isolated_KV_growth_slack_spec_SHA256'] == before['isolated_KV_growth_slack_spec_SHA256']
+            assert all(r['paired_private_KV_allocation_only'] and
+                       r['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
+                       for r in fix['variants'][variant])
+        elif transition == 'isolated-KV-growth-slack':
+            assert before.get('isolated_KV_pool_spec_SHA256')
+            assert after['isolated_KV_pool_spec_SHA256'] == before['isolated_KV_pool_spec_SHA256']
+            assert all(r['private_KV_allocator_and_instrumentation_only'] and
+                       r['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
+                       and r['requested_growth_slack_bytes']==64*2**20 and r['contraction_requested_slack_bytes']==0
+                       for r in fix['variants'][variant])
+        elif transition == 'isolated-KV-pool':
             assert all(r['private_KV_allocator_and_instrumentation_only'] and
                        r['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
                        for r in fix['variants'][variant])
@@ -55,8 +70,22 @@ def verify_transition(before_job, after_job, package, variant, transition='empty
     return before, after
 
 
-def verify_transition_chain(before_job, after_job, package, variant, transition, via_job=None):
+def verify_transition_chain(before_job, after_job, package, variant, transition, via_job=None, intermediate_jobs=None):
     """Verify each actual SDK hop without qualifying an intermediate runtime."""
+    if intermediate_jobs:
+        assert transition == 'paired-KV-storage' and via_job is None
+        assert len(intermediate_jobs) == 3, 'Require actual workspace, private-pool and bounded-slack SDKs'
+        paths = [Path(job).resolve() for job in (before_job,*intermediate_jobs,after_job)]
+        assert len(set(paths)) == 5
+        first = previous = final = None
+        for i,policy in enumerate(('workspace-preserving-growth-trim','isolated-KV-pool',
+                                   'isolated-KV-growth-slack','paired-KV-storage')):
+            before,after=verify_transition(paths[i],paths[i+1],Path(package),variant,policy)
+            if previous is not None:assert previous==before
+            if first is None:first=before
+            previous=final=after
+        return first,final
+    assert transition != 'paired-KV-storage', 'Paired full rebind requires all three actual intermediate SDKs'
     if via_job is None:
         return verify_transition(before_job, after_job, package, variant, transition)
     assert transition == 'isolated-KV-pool', 'Only the explicit private-pool source chain uses an intermediate SDK'
@@ -104,7 +133,11 @@ def verify_rebind(proof_path, runtime_job, package):
         assert sha(name) == expected, name
     before, after = verify_transition_chain(Path(proof['export_runtime_job']),
         Path(runtime_job), Path(package), proof['source_variant'], transition,
-        proof.get('transition_via_native_job'))
+        proof.get('transition_via_native_job'),proof.get('transition_intermediate_native_jobs'))
+    if proof.get('transition_intermediate_native_jobs'):
+        assert len(proof['transition_intermediate_native_gate_SHA256'])==3
+        for job,expected in zip(proof['transition_intermediate_native_jobs'],proof['transition_intermediate_native_gate_SHA256']):
+            assert sha(Path(job)/'native-gate.json')==expected
     if proof.get('transition_via_native_job'):
         assert sha(Path(proof['transition_via_native_job'])/'native-gate.json') == proof['transition_via_native_gate_SHA256']
     export_runtime = before
@@ -146,6 +179,8 @@ def main():
                         help='Preserved empty-owner rebind linking these exact models to the preceding runtime')
     parser.add_argument('--transition-via-native-job', type=Path,
                         help='Actual workspace-preserving SDK between the export runtime and private KV SDK')
+    parser.add_argument('--transition-intermediate-native-jobs',type=Path,nargs=3,
+                        help='Actual workspace/private-pool/bounded-slack SDKs preceding paired K/V storage')
     parser.add_argument('--native-transition', choices=POLICIES,
                         default='empty-owner-reuse')
     parser.add_argument('--full-model-profile', choices=FULL_PROFILES, required=True)
@@ -157,7 +192,8 @@ def main():
     variant = ('Gemma-stable-metadata' if gemma else 'MG-flat-copy') if args.native_transition == 'empty-owner-reuse' else (
         'Gemma-empty-owner-reuse' if gemma else 'MG-empty-owner-reuse')
     before, after = verify_transition_chain(args.export_runtime_job, args.runtime_job, package, variant,
-                                           args.native_transition, args.transition_via_native_job)
+                                           args.native_transition, args.transition_via_native_job,
+                                           args.transition_intermediate_native_jobs)
     qualification = verify_qualification(args.mini_qualification,
         'gemma4-first6' if gemma else 'muse-glimmer-first4',
         FULL_PROFILES[profile]['GGUF_SHA256'], args.runtime_job)
@@ -189,6 +225,11 @@ def main():
         for path in (args.transition_via_native_job.resolve()/'native-gate.json',
                      package/'independent_session_workspace_preserving_growth_trim_source.json'):
             evidence[str(path)] = sha(path)
+    if args.transition_intermediate_native_jobs:
+        for job in args.transition_intermediate_native_jobs:
+            path=job.resolve()/'native-gate.json';evidence[str(path)]=sha(path)
+        for policy in ('workspace-preserving-growth-trim','isolated-KV-pool','isolated-KV-growth-slack'):
+            path=package/(POLICIES[policy][0]+'_source.json');evidence[str(path)]=sha(path)
     for item in artifacts.values():
         for path in (Path(item['artifact'])/'independent-full-artifact-audit.json',
                      Path(item['export_job'])/'native-gate.json'):
@@ -211,6 +252,9 @@ def main():
     if args.transition_via_native_job:
         proof.update(transition_via_native_job=str(args.transition_via_native_job.resolve()),
                      transition_via_native_gate_SHA256=sha(args.transition_via_native_job/'native-gate.json'))
+    if args.transition_intermediate_native_jobs:
+        proof.update(transition_intermediate_native_jobs=[str(job.resolve()) for job in args.transition_intermediate_native_jobs],
+                     transition_intermediate_native_gate_SHA256=[sha(job/'native-gate.json') for job in args.transition_intermediate_native_jobs])
     if args.preceding_full_rebind_proof:
         proof.update(preceding_full_rebind_proof=str(args.preceding_full_rebind_proof.resolve()),
                      preceding_full_rebind_proof_SHA256=sha(args.preceding_full_rebind_proof))

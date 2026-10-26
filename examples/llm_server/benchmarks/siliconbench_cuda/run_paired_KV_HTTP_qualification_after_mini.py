@@ -49,6 +49,19 @@ def main():
         until = time.monotonic()+8*3600
         parent = args.mini_diagnostic_job
         while True:
+            if not (parent/'progress.json').is_file():
+                # Native/source checks precede the parent's first progress write.
+                # Wait only for the exact detached controller in its launch receipt.
+                launch=json.loads(parent.with_name(parent.name+'-deployment.json').read_text())
+                handle=Path('/proc')/str(launch['controller_pid'])/'cmdline'
+                actual=handle.read_bytes().split(bytes([0])) if handle.is_file() else []
+                assert any(Path(v.decode()).name=='run_paired_KV_storage_mini_diagnostic.py' for v in actual if v)
+                assert b'--output' in actual and actual[actual.index(b'--output')+1]==os.fsencode(parent)
+                assert b'--native-job' in actual and actual[actual.index(b'--native-job')+1]==os.fsencode(args.native_job)
+                assert time.monotonic()<until,'Preserve confirmed-live native preflight after observation timeout'
+                state('waiting-confirmed-live-mini-native-preflight',parent_PID=launch['controller_pid'])
+                time.sleep(20)
+                continue
             progress = json.loads((parent/'progress.json').read_text())
             if progress['status']=='paired-KV-storage-mini-diagnostic-collected':break
             assert progress['status']!='failed',progress

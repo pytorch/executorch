@@ -17,11 +17,13 @@ def main():
                  'http-python-dependencies-job','tokenizer','preserved-global-rewind-failure-job',
                  'preserved-global-HTTP-failure-job','lock','nsys','output'):
         p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--native-transition', choices=('workspace-preserving-growth-trim','isolated-KV-pool'), default='workspace-preserving-growth-trim')
+    p.add_argument('--native-transition', choices=('workspace-preserving-growth-trim','isolated-KV-pool','paired-KV-storage'), default='workspace-preserving-growth-trim')
     p.add_argument('--transition-via-native-job', type=Path)
+    p.add_argument('--transition-intermediate-native-jobs',type=Path,nargs=3)
     p.add_argument('--port',type=int,required=True)
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     assert not a.transition_via_native_job or a.native_transition == 'isolated-KV-pool'
+    assert bool(a.transition_intermediate_native_jobs)==(a.native_transition=='paired-KV-storage')
     package=Path(__file__).resolve().parent
     def state(status,**extra):
         f=a.output/'progress.pending.json'
@@ -46,7 +48,8 @@ def main():
             if not actual and qpath.is_file():break
             assert any(name in actual for name in (b'run_MG_allocator_mini_qualification_after_native.py',
                                                    b'resume_allocator_mini_after_HTTP_failure.py',
-                                                   b'run_matched_native_control_after_mini.py'))
+                                                   b'run_matched_native_control_after_mini.py',
+                                                   b'run_paired_KV_HTTP_qualification_after_mini.py'))
             assert str(a.mini_controller).encode() in actual
             assert time.monotonic()<until,'Preserve confirmed-live mini after observation timeout'
             state('waiting-confirmed-live-allocator-mini',mini_PID=d['controller_pid'],mini_status=d['status'])
@@ -67,6 +70,8 @@ def main():
             '--full-model-profile','gemma4-48layers','--output',rebind]
         if a.transition_via_native_job:
             rebind_args += ['--transition-via-native-job',a.transition_via_native_job]
+        if a.transition_intermediate_native_jobs:
+            rebind_args += ['--transition-intermediate-native-jobs',*a.transition_intermediate_native_jobs]
         run('rebind','prepare_independent_full_runtime_rebind.py',rebind_args)
         state('collecting-full48-fixed-token-performance')
         run('fixed','run_full_independent_session_fixed_qualification.py',[
