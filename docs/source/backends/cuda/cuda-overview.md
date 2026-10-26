@@ -169,34 +169,6 @@ out works, and the snippet above sets it explicitly only to make the requirement
 it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
 during device-aware memory planning.
 
-**With `skip_h2d_for_method_inputs`, an input that a device delegate reads stays on that device.**
-If delegates on more than one device read it, that is the device of the first one in the graph.
-An operator that reads only its shape reads it there too. Anything else that reads it, such as an
-operator outside the delegates or a delegate on another device, reads a copy of it in host memory,
-made on every call, and `to_executorch` logs a warning. Have the partitioner put those operators in
-a delegate on that device to avoid that copy. `to_executorch` refuses an input that the method
-changes, because the change is written back on the host, and an input that an operator outside the
-delegates writes in place. For a mutable buffer, have the partitioner put the buffer and every
-operator that reads or writes it in the delegate. `tag_mutated_buffer` tags the buffer once those
-operators are there, and the CUDA partitioner already calls it.
-
-**A constant that a delegate reads from outside is still copied.** Constants, such as weights and
-buffers the method does not change, are not passed by the caller. Their data stays in host memory,
-in the program or in its external data file, so `to_executorch` adds a copy to the device that runs
-on every call, one for each device that reads the constant, and logs a warning. Each copy stays in
-device memory until the last delegate on that device has read it. Keep constants inside the
-delegate to avoid that cost.
-
-**With `skip_d2h_for_method_outputs`, a returned output that a custom operator outside the
-delegate writes in place is still copied.** This is a custom operator with a mutable argument, such
-as a KV cache update. It writes the host copy, so `to_executorch` returns a device copy of the
-written tensor. That copies the output to the host and back on every call and logs a warning. Put
-that operator in the delegate to avoid it.
-
-**Set `error_on_per_call_copies=True` in `PropagateDeviceConfig` to turn these warnings into
-errors** when the matching skip flag is set, so `to_executorch` fails instead of adding a copy that
-runs on every call.
-
 **Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
 program reserves its own input buffer and the runtime copies the caller's memory into it, so the
 copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,
@@ -235,6 +207,26 @@ ExecutorchBackendConfig(
 Do not pass a dict to `skip_h2d_for_method_inputs` itself. The pass reads that field for
 truthiness, so any non-empty dict enables the skip for every method regardless of the values
 inside it.
+
+**Some copies stay even with the skip flags.** In the cases below, `to_executorch` keeps a copy
+that runs on every call and logs a warning. To remove the copy, have the partitioner put more of
+the graph in the delegate.
+
+- An input stays on the device of the first delegate that reads it. Other readers, such as an
+  operator outside the delegate or a delegate on another device, read a copy in host memory.
+- A constant, such as a weight, that a delegate reads from outside is copied to each device that
+  reads it.
+- A returned output that a custom operator outside the delegate writes in place, such as a KV
+  cache update, is copied to the host and back.
+
+Add `error_on_per_call_copies=True` to `PropagateDeviceConfig` to make `to_executorch` fail
+instead of warning. It fails only on a copy that one of the skip flags you set was meant to remove.
+
+**`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
+the method changes an input, even when the delegate makes the change. This includes a mutable
+buffer, such as a KV cache, even though the caller does not pass it. For a buffer, put it and every
+operator that uses it in the delegate. The CUDA partitioner already moves the buffer in, with
+`tag_mutated_buffer`, once those operators are there.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not
