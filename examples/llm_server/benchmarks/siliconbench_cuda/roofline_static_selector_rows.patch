@@ -1,0 +1,69 @@
+--- a/backends/cuda/batching/cuda_executor.cpp
++++ b/backends/cuda/batching/cuda_executor.cpp
+@@ -603,7 +603,26 @@
+     ET_LOG(Error, "CudaExecutor: could not name the cache to the backend");
+     return false;
+   }
++  static_selector_rows_.clear();
+   for (const ForwardMethod& method : methods_) {
++    int selector_rows = method.max_tokens;
++    if (method.is_static) {
++      const auto meta = module_->method_meta(method.name);
++      if (!meta.ok()) {
++        ET_LOG(Error, "CudaExecutor: missing static method metadata");
++        return false;
++      }
++      const auto selector = meta->input_tensor_meta(2);
++      if (!selector.ok() || selector->sizes().size() != 1 ||
++          selector->sizes()[0] <= 0 ||
++          selector->sizes()[0] > method.max_tokens) {
++        ET_LOG(Error, "CudaExecutor: invalid static selector width for %s",
++               method.name.c_str());
++        return false;
++      }
++      selector_rows = static_cast<int>(selector->sizes()[0]);
++    }
++    static_selector_rows_.push_back(selector_rows);
+     if (module_->load_method(
+             method.name,
+             /*planned_memory=*/nullptr,
+@@ -731,7 +750,7 @@
+     // Static selector widths are fixed; dynamic selectors have an independent
+     // axis but are still bounded by the exported maximum step.
+     const auto row_limit = static_cast<std::size_t>(
+-        method.is_static ? slice.width : method.max_tokens);
++        method.is_static ? static_selector_rows_[slice.method] : method.max_tokens);
+     if (selected.size() > row_limit) {
+       ET_LOG(
+           Error,
+@@ -740,7 +759,7 @@
+       return false;
+     }
+     const std::size_t rows = method.is_static
+-        ? slice.width
++        ? static_selector_rows_[slice.method]
+         : std::max<std::size_t>(selected.size(), min_selected_rows_);
+     selected.resize(rows, selected.empty() ? 0 : selected.back());
+     if (!ctl_->declare_step(std::vector<std::int32_t>(
+--- a/backends/cuda/batching/cuda_executor.h
++++ b/backends/cuda/batching/cuda_executor.h
+@@ -280,6 +280,8 @@
+   // Sorted by max_tokens, ascending; the dynamic method, if any, is last.
+   std::vector<ForwardMethod> methods_;
+   std::vector<std::uint64_t> calls_;
++  // Static selector width is independent of the token bucket width.
++  std::vector<int> static_selector_rows_;
+   struct EmbeddingsMethod {
+     int max_tokens;
+     int min_tokens;
+--- a/examples/models/muse-glimmer/export/export_solo.py
++++ b/examples/models/muse-glimmer/export/export_solo.py
+@@ -549,7 +549,7 @@
+                 (
+                     torch.zeros((1, n), dtype=torch.long),
+                     torch.arange(n, dtype=torch.long),
+-                    torch.zeros(n, dtype=torch.long),
++                    torch.zeros(min(n, MAX_SAMPLE_ROWS), dtype=torch.long),
+                 ),
+                 strict=True,
+             )

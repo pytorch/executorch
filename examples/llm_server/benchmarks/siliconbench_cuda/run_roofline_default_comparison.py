@@ -70,6 +70,7 @@ def main():
             hashes={name:digest(artifact/name) for name in ['model.pte','aoti_cuda_blob.ptd']}
             assert all(hashes[name]==audit['artifacts'][name]['sha256'] for name in hashes)
             provenance['artifact_arms'].append(dict(**arm,hashes=hashes,artifact_audit_SHA256=digest(artifact/'artifact-audit.json')))
+            arm['static_methods']=audit['static_methods']
         (a.job/'input-provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')
         samples={x['name']:[] for x in arms};samples['CPP-default']=[]
         env=dict(os.environ,CUDA_VISIBLE_DEVICES='0',PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='4')
@@ -94,7 +95,9 @@ def main():
                     if name!='CPP-default':
                         for c in data['cases']:
                             deltas=c['actual_method_call_deltas'];assert sum(deltas.values())==a.repetitions+3
-                            expected='forward_others' if c['batch_tokens']>64 else 'forward_'+str(c['batch_tokens'])
+                            widths=next(x for x in arms if x['name']==name)['static_methods']
+                            fits=[m for m in widths if m>=c['batch_tokens']]
+                            expected='forward_'+str(min(fits)) if fits else 'forward_others'
                             assert deltas[expected]==a.repetitions+3
                     samples[name].append(data);teardown()
         results=[]

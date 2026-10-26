@@ -37,6 +37,8 @@ def main():
     parser.add_argument('--attention-source-sha256', required=True)
     parser.add_argument('--max-kv-seqs', type=int, choices=[32], default=32)
     parser.add_argument('--max-step-tokens', type=int, choices=[1024], default=1024)
+    parser.add_argument('--forward-sizes', default='1,2,4,8,16,32,64',
+                        help='Power-of-two static token widths; larger widths keep at most64 selected rows')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--job-dir', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
@@ -53,6 +55,9 @@ def main():
     parser.add_argument('--owned-gpu-worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--max-context', type=int, choices=[131072], default=131072)
     args = parser.parse_args()
+    static_sizes=sorted(set(int(v) for v in args.forward_sizes.split(',')))
+    assert static_sizes[:7]==[1,2,4,8,16,32,64]
+    assert all(v in [1,2,4,8,16,32,64,128,256,512] for v in static_sizes)
 
     def state(status, **fields):
         pending = args.job_dir / 'progress.pending.json'
@@ -235,8 +240,9 @@ def main():
             count=sum(node.op=='call_function' and 'siliconbench.roofline_native_large_w4a16' in str(node.target)
                 for module in ep.graph_module.modules() if isinstance(module,torch.fx.GraphModule)
                 for node in module.graph.nodes)
-            item=dict(dynamic=kw.get('dynamic_shapes') is not None,native_large_operator_calls=count)
-            if count:assert item['dynamic'],'Original static forwards must retain their operations'
+            width=a[1][0].shape[1] if len(a)>1 and isinstance(a[1],tuple) and a[1] and isinstance(a[1][0],torch.Tensor) and a[1][0].ndim==2 else None
+            item=dict(dynamic=kw.get('dynamic_shapes') is not None,native_large_operator_calls=count,example_token_width=width)
+            if count:assert item['dynamic'] or width in [128,256,512],'Original static forwards must retain their operations'
             route_audits.append(item)
             (args.job_dir/'actual-strict-export-route-audit.json').write_text(json.dumps(route_audits,indent=2)+'\n')
             return ep
@@ -264,7 +270,7 @@ def main():
     sys.argv = ['export_solo', '--backend', 'cuda', '--gguf', str(args.gguf),
                 '--use-offgraph-kv-cache', '--kv-layout', 'sequence',
                 '--max-kv-seqs', str(args.max_kv_seqs), '--max-seq-len', str(args.max_context),
-                '--forward-sizes', '1,2,4,8,16,32,64', '--max-step-tokens', str(args.max_step_tokens),
+                '--forward-sizes', ','.join(map(str,static_sizes)), '--max-step-tokens', str(args.max_step_tokens),
                 '--activation-dtype', 'bfloat16', '--output-dir', str(args.output)]
     runpy.run_module('executorch.examples.models.muse_glimmer.export.export_solo', run_name='__main__')
     from executorch.exir._serialize._program import deserialize_pte_binary
@@ -272,7 +278,7 @@ def main():
     from executorch.exir.scalar_type import ScalarType
     program = deserialize_pte_binary((args.output / 'model.pte').read_bytes()).program
     methods = {plan.name: plan for plan in program.execution_plan}
-    forwards = {f'forward_{m}' for m in [1,2,4,8,16,32,64]} | {'forward_others'}
+    forwards = {f'forward_{m}' for m in static_sizes} | {'forward_others'}
     assert forwards | {'sample', 'sample_argmax'} <= set(methods)
     assert 'vision_encoder' not in methods and not any(name.startswith('draft_') for name in methods)
     metadata = {}
@@ -292,6 +298,12 @@ def main():
     assert metadata['has_vision_encoder'] is False
     output = methods['forward_others'].values[methods['forward_others'].outputs[0]].val
     assert output.sizes == [64,202048]
+    static_output_bounds={}
+    for m in static_sizes:
+        plan=methods[f'forward_{m}'];selected=plan.values[plan.inputs[2]].val
+        logits=plan.values[plan.outputs[0]].val
+        assert selected.sizes==[min(m,64)] and logits.sizes==[min(m,64),202048]
+        static_output_bounds[f'forward_{m}']=logits.sizes
     manifests = {}
     for name in forwards:
         for delegate in methods[name].delegates:
@@ -318,7 +330,8 @@ def main():
                  selected_MG_main_attention_loaded_before_model_imports=True,
                  max_resident_sequences=args.max_kv_seqs, physical_columns=args.max_kv_seqs+1,
                  prefix_caching=False, measured_context_before_step=1024,
-                 context=args.max_context, active_sessions=32, decode_ceiling=32, static_methods=[1,2,4,8,16,32,64],
+                 context=args.max_context, active_sessions=32, decode_ceiling=32, static_methods=static_sizes,
+                 static_output_bounds=static_output_bounds,
                  AOTI_wrapper_optimization='O2', actual_optimized_builds=len(optimized),
                  artifacts={name:dict(sha256=digest(args.output / name),bytes=(args.output / name).stat().st_size)
                             for name in ['model.pte','aoti_cuda_blob.ptd']},

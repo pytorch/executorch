@@ -55,9 +55,12 @@ def main():
             with (args.job/'nsys.log').open('x') as log:subprocess.run(command,env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=3600)
             data=json.loads(out.read_text());assert data['completed'] and len(data['cases'])==7
             assert all(c['same_prefix_greedy_repeats_equal'] and sum(c['actual_method_call_deltas'].values())==7 for c in data['cases'])
-            for mix in ['p512','d8p512']:
+            widths=json.loads((args.artifact/'artifact-audit.json').read_text())['static_methods']
+            for mix,tokens in [('p512',512),('d8p512',520)]:
                 case=next(c for c in data['cases'] if c['mix']==mix)
-                assert case['actual_method_call_deltas']['forward_others']==7
+                fits=[m for m in widths if m>=tokens]
+                expected='forward_'+str(min(fits)) if fits else 'forward_others'
+                assert case['actual_method_call_deltas'][expected]==7
             with (args.job/'export.log').open('x') as log:subprocess.run([nsys,'export','--type=sqlite','--output='+str(trace.with_suffix('.sqlite')),str(trace.with_suffix('.nsys-rep'))],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)
             teardown=time.monotonic()+120
             while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():

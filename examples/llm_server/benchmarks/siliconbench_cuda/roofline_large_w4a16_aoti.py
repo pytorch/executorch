@@ -95,6 +95,13 @@ def large_w4a16_route(x,q,sc,ss,z,zs,policy_index):
     exported row symbol and lets each leaf lower independently.
     """
     _, branches=POLICIES[policy_index]
+    # A static exported width chooses one measured launch at trace time.
+    # It needs no nested dynamic condition and can be captured as a CUDA graph.
+    if isinstance(x.shape[0],int):
+        for index,branch in enumerate(branches):
+            if x.shape[0]<=branch[0]:
+                return native_leaf_op(x,q,sc,ss,z,zs,policy_index,index)
+        return original_dequant_matmul(x,q,sc,ss,z,zs,32)
     def choose(args,index):
         if index==len(branches):return original_dequant_matmul(*args,32)
         return torch.cond(args[0].shape[0]<=branches[index][0],

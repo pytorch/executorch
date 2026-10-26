@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
     roofline::require(executor->initialize(), "CudaExecutor initialize failed");
     roofline::require(executor->vocab_size() > 190256, "Unexpected MG vocabulary");
     std::vector<std::int32_t> owners;
+    int last_logit_rows = 0;
     auto& cache = executor->cache_control();
     auto run = [&](const std::vector<roofline::Row>& input, int outputs) {
       batching::RawTargetStep step;
@@ -45,6 +46,7 @@ int main(int argc, char** argv) {
       int callbacks = 0;
       bool ok = executor->execute_raw(step, [&](const batching::RawTargetOutput& output) {
         ++callbacks;
+        last_logit_rows = output.logits.size(0);
         if (output.selected_indices.empty()) return true;
         auto ids = executor->argmax_rows(output.logits, output.selected_indices.size());
         if (!ids) return false;
@@ -118,17 +120,17 @@ int main(int argc, char** argv) {
       }
       stream << "},\"requested_logit_rows\":" << mix.decode;
       roofline::require(sum == static_cast<std::uint64_t>(calls), "Unexpected ET forward split");
-      // Static method logits retain the exported method width. Dynamic methods
-      // pad the selector to at least five; no omitted work is hidden in theory.
-      int padded = mix.decode;
       int tokens = mix.decode + mix.prefill;
-      if (tokens <= 64) {
-        padded = 1;
-        while (padded < tokens) padded *= 2;
-      } else if (padded < 5) {
-        padded = 5;
+      int executed_tokens = tokens;
+      for (std::size_t i = 0; i < current.size(); ++i) {
+        if (current[i].calls == previous[i].calls) continue;
+        if (current[i].name != "forward_others") {
+          executed_tokens = std::stoi(current[i].name.substr(8));
+        }
       }
-      stream << ",\"exported_or_padded_logit_rows\":" << padded;
+      stream << ",\"exported_or_padded_logit_rows\":" << last_logit_rows
+             << ",\"executed_input_tokens\":" << executed_tokens
+             << ",\"padding_tokens\":" << executed_tokens - tokens;
       previous = current;
     };
     roofline::measure(out, repetitions, run, rewind, evidence, setup);

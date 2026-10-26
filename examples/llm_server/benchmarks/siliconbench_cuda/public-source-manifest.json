@@ -352,8 +352,8 @@
       "bytes": 11746
     },
     "export_mg_roofline.py": {
-      "sha256": "d66c126b6d470a86413f22e1de04f5f29a3a8c4f70a7144630f071795f345920",
-      "bytes": 22259
+      "sha256": "4b6ebabd827b6ca6a5736caa159b424fbb214d035d0994279b70458b0e6f9969",
+      "bytes": 23219
     },
     "export_public_prefill_Gemma_full.py": {
       "sha256": "2e343b4027153c17ce0e3de2541c49581a94211ed630019c843a9f1e2fae7f50",
@@ -556,8 +556,8 @@
       "bytes": 5124
     },
     "profile_roofline_large_candidate.py": {
-      "sha256": "fd6a41f81e1585e9eba1492db9a5ebe9a1c40732861e70c0c89c4f1b68889472",
-      "bytes": 4879
+      "sha256": "c8503a2a48b9b461851b7c4a40d9f44fd1a4ceba86ce48736e39818d43a7f657",
+      "bytes": 5124
     },
     "public_bulk_w4a16_aoti.py": {
       "sha256": "5df921195877ecc3378e5205b77ca8b3979a0d588385b4ff8536676bb616d620",
@@ -656,8 +656,8 @@
       "bytes": 6455
     },
     "roofline_active_et.cpp": {
-      "sha256": "f2d5a4690915583a7e313c9a45cc5731ee6045d7b5f4b9c8bddf3015b5951f17",
-      "bytes": 6633
+      "sha256": "132c1dc94cb9f172080089e55ea4961fe378217636f83dea13d03705c7db4f84",
+      "bytes": 6799
     },
     "roofline_common.h": {
       "sha256": "8b40945367d9dbebc66b219beae0976a88fcf76d799fc192a02557c67f37bbf8",
@@ -684,8 +684,8 @@
       "bytes": 2646
     },
     "roofline_large_w4a16_aoti.py": {
-      "sha256": "c20578c318bd70a275b87d91510e0c747ac53c7bd1204ac6552b93e6ce2f77d4",
-      "bytes": 6006
+      "sha256": "d1c3e31253c48ac0f1bea02690bdeb8ec2421ddf3b23f52c903e766d5c30e48d",
+      "bytes": 6412
     },
     "roofline_prefill_validation.cpp": {
       "sha256": "6e88c596f58c608d99c8279202ff89224eb89ed085f01eb5251ec8e84b284c6c",
@@ -702,6 +702,10 @@
     "roofline_slice_copy_lowering.py": {
       "sha256": "c05fac27984fc1a88d4bd97d6e75056958b6ae8ced14bfc24d55731fcd822969",
       "bytes": 2242
+    },
+    "roofline_static_selector_rows.patch": {
+      "sha256": "bee020fd4f1c8e4d1ce05bcb06bae0b4e3e17b7f8a2f488c2a3ecd47c08e7ed9",
+      "bytes": 2858
     },
     "roofline_validation_project/CMakeLists.txt": {
       "sha256": "ae4679dfe4bf4ce0f0178abfad8a52d7d803bdad6e36a255f5319cccea9a38d2",
@@ -756,8 +760,8 @@
       "bytes": 8446
     },
     "run_roofline_default_comparison.py": {
-      "sha256": "94968dc7ed7bbb8a3abeb6987ac3d349d30d25f1447970fa1dfc4d728dea0fc1",
-      "bytes": 7901
+      "sha256": "ca0a6eb23c74586e11de573f9a5cc1df820eaadcc784e7e3e186cf9e07f38a6e",
+      "bytes": 8106
     },
     "run_roofline_history_logits_control.py": {
       "sha256": "09c201af8fe5393b6644c43731b8869e1b5b7d729742cfdc1665f35516fe4fc6",
@@ -774,6 +778,10 @@
     "run_roofline_slice_copy_recovery.py": {
       "sha256": "63950c2cfadb59a5695232e90f6ad34b20be20b6f7de7d5c179e0432683e7267",
       "bytes": 5643
+    },
+    "run_roofline_static_forward_workflow.py": {
+      "sha256": "fe693f38fb3e5d5f0dd74da2010eede4c40ce02928d79039c34a682a33dc2ae5",
+      "bytes": 7838
     },
     "run_runtime_kv_feasibility.py": {
       "sha256": "9d372fb5366b24f9f1565566fa5d95ec3dd33d2f885b75ffa1804f416d02733e",
