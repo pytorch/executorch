@@ -39,7 +39,8 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
     """Append only exact reviewed allocator patches to the existing source chain."""
     for policy, key in (
         ('independent_session_coalesced_growth_trim', 'coalesced_growth_trim_spec_SHA256'),
-        ('independent_session_pool_only_growth_trim', 'pool_only_growth_trim_spec_SHA256')):
+        ('independent_session_pool_only_growth_trim', 'pool_only_growth_trim_spec_SHA256'),
+        ('independent_session_workspace_preserving_growth_trim', 'workspace_preserving_growth_trim_spec_SHA256')):
         if not gate.get(key):
             continue
         spec_path = package/(policy + '_source.json')
@@ -51,7 +52,7 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
         record = records[0]
         assert record['before_SHA256'] == expected_pool
         assert record['patch_SHA256'] == spec['patch_SHA256']
-        if policy == 'independent_session_coalesced_growth_trim':
+        if policy in ('independent_session_coalesced_growth_trim', 'independent_session_workspace_preserving_growth_trim'):
             assert record['allocator_policy_only'] and record['weights_math_ABI_sliding_and_graph_invalidation_unchanged']
         else:
             assert record['allocator_pool_policy_only'] and record['contraction_full_cache_release_unchanged']

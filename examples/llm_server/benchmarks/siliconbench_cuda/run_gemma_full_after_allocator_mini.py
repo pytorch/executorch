@@ -41,7 +41,8 @@ def main():
             proc=Path('/proc')/str(d['controller_pid'])/'cmdline'
             actual=proc.read_bytes() if proc.is_file() else b''
             if not actual and qpath.is_file():break
-            assert b'run_MG_allocator_mini_qualification_after_native.py' in actual
+            assert any(name in actual for name in (b'run_MG_allocator_mini_qualification_after_native.py',
+                                                   b'resume_allocator_mini_after_HTTP_failure.py'))
             assert str(a.mini_controller).encode() in actual
             assert time.monotonic()<until,'Preserve confirmed-live mini after observation timeout'
             state('waiting-confirmed-live-allocator-mini',mini_PID=d['controller_pid'],mini_status=d['status'])
