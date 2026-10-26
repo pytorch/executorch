@@ -631,6 +631,10 @@
       "sha256": "3eb65117bc32009d3de694a7603c7cc75fc208db6e1eeddb1ea80bb3bbe85037",
       "bytes": 5254
     },
+    "prepare_independent_main_public_inputs.py": {
+      "sha256": "ccb1e6e2db158a70076fb76e0b7ce8df973eed790a65c07810f1575b69fae07e",
+      "bytes": 5485
+    },
     "prepare_independent_session_growth_allocator.py": {
       "sha256": "63a6b47df69adc06f80d90cfbd7dc8121f2703f3d9c77d3fe2d058e29a343812",
       "bytes": 15787
