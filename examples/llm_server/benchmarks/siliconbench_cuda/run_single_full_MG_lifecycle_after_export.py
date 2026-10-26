@@ -64,6 +64,26 @@ def main():
             subprocess.run(cmd,check=True,stdout=log,stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,timeout=21600)
     try:
+        if a.replacement_native_job:
+            qualification = a.replacement_mini_qualification
+            controller = qualification.parent.parent
+            deadline = time.monotonic() + 4*3600
+            while not qualification.is_file():
+                current = json.loads((controller/'progress.json').read_text())
+                assert current['status'] not in ('failed', 'mini-performance-gate-not-passed'), current
+                handle = Path('/proc')/str(current['controller_pid'])/'cmdline'
+                command = handle.read_bytes() if handle.is_file() else b''
+                if not command and qualification.is_file():
+                    break
+                assert any(name in command for name in (b'run_MG_allocator_mini_qualification_after_native.py',
+                                                        b'run_matched_native_control_after_mini.py'))
+                assert str(controller).encode() in command
+                assert time.monotonic() < deadline, 'Preserve verified-live mini qualification after timeout'
+                state('waiting-confirmed-live-replacement-mini-qualification',
+                      mini_status=current['status'], mini_PID=current['controller_pid'])
+                time.sleep(20)
+            verify_qualification(qualification, 'muse-glimmer-first4',
+                                 FULL_PROFILES[profile]['GGUF_SHA256'], a.replacement_native_job)
         deadline=time.monotonic()+12*3600
         while True:
             d=json.loads((a.export_controller/'progress.json').read_text())
@@ -106,25 +126,6 @@ def main():
         (a.output/'original-export-native-provenance-review.json').write_text(json.dumps(provenance,indent=2)+'\n')
         runtime_job = a.native_job
         if a.replacement_native_job:
-            qualification = a.replacement_mini_qualification
-            controller = qualification.parent.parent
-            deadline = time.monotonic() + 4*3600
-            while not qualification.is_file():
-                current = json.loads((controller/'progress.json').read_text())
-                assert current['status'] not in ('failed', 'mini-performance-gate-not-passed'), current
-                handle = Path('/proc')/str(current['controller_pid'])/'cmdline'
-                command = handle.read_bytes() if handle.is_file() else b''
-                if not command and qualification.is_file():
-                    break
-                assert any(name in command for name in (b'run_MG_allocator_mini_qualification_after_native.py',
-                                                        b'run_matched_native_control_after_mini.py'))
-                assert str(controller).encode() in command
-                assert time.monotonic() < deadline, 'Preserve verified-live mini qualification after timeout'
-                state('waiting-confirmed-live-replacement-mini-qualification',
-                      mini_status=current['status'], mini_PID=current['controller_pid'])
-                time.sleep(20)
-            verify_qualification(qualification, 'muse-glimmer-first4',
-                                 FULL_PROFILES[profile]['GGUF_SHA256'], a.replacement_native_job)
             from prepare_independent_full_runtime_rebind import verify_transition_chain
             before_replacement, replacement = verify_transition_chain(a.native_job,
                 a.replacement_native_job, package, 'MG-empty-owner-reuse', a.replacement_native_transition,
