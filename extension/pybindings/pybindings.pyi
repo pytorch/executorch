@@ -42,10 +42,8 @@ class ExecuTorchResult:
     @property
     def strides(self) -> Tuple[int, ...]: ...
     @property
-    def dtype(self) -> Any: ...
-    @property
-    def dtype_name(self) -> str:
-        """The dtype's name, such as ``"bfloat16"``, including dtypes NumPy lacks."""
+    def dtype(self) -> str:
+        """Name of the dtype, such as ``"float32"`` or ``"bfloat16"``, as torch spells it."""
         ...
 
     @property
@@ -197,6 +195,11 @@ class TensorInfo:
         """The data type of the elements inside the tensor.
         See documentation for ScalarType in executorch/runtime/core/portable_type/scalar_type.h
         for the values these integers can take."""
+        ...
+
+    def dtype_name(self) -> str:
+        """Name of the data type, such as ``"float32"`` or ``"bfloat16"``, the
+        same name ``ExecuTorchResult.dtype`` gives."""
         ...
 
     def is_memory_planned(self) -> bool:
