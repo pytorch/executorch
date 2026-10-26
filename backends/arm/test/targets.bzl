@@ -3,6 +3,11 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _vgf_zero_copy_test_flags():
+    if native.read_config("executorch", "vgf_zero_copy_io", "false") == "true":
+        return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=1"]
+    return ["-DEXECUTORCH_VGF_ZERO_COPY_IO=0"]
+
 _ENABLE_VGF = True
 
 def define_arm_tests():
@@ -253,6 +258,7 @@ def define_arm_tests():
                 "-DUSE_VULKAN_WRAPPER",
                 "-DUSE_VULKAN_VOLK",
             ],
+            preprocessor_flags = _vgf_zero_copy_test_flags(),
             deps = [
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",

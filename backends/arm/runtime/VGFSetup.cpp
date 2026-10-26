@@ -1005,8 +1005,37 @@ static void cache_external_tensor_host_allocation_capabilities(
 
   vkGetPhysicalDeviceExternalTensorPropertiesARM(
       physical_device, &external_tensor_info, &external_tensor_properties);
-  vgf_cache_external_tensor_properties(
-      metadata, external_tensor_properties.externalMemoryProperties);
+
+  const auto& external_memory_properties =
+      external_tensor_properties.externalMemoryProperties;
+  const bool external_importable =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
+  const bool host_allocation_compatible =
+      (external_memory_properties.compatibleHandleTypes &
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT) != 0;
+  const bool dedicated_only =
+      (external_memory_properties.externalMemoryFeatures &
+       VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0;
+
+  ET_LOG(
+      Info,
+      "VGF external tensor properties: resource=%u format=%u tiling=%u "
+      "usage=0x%x features=0x%x compatible_handle_types=0x%x "
+      "importable=%d host_allocation_compatible=%d dedicated_only=%d",
+      resource_index,
+      static_cast<unsigned int>(tensor_description.format),
+      static_cast<unsigned int>(tensor_description.tiling),
+      static_cast<unsigned int>(tensor_description.usage),
+      static_cast<unsigned int>(
+          external_memory_properties.externalMemoryFeatures),
+      static_cast<unsigned int>(
+          external_memory_properties.compatibleHandleTypes),
+      static_cast<int>(external_importable),
+      static_cast<int>(host_allocation_compatible),
+      static_cast<int>(dedicated_only));
+
+  vgf_cache_external_tensor_properties(metadata, external_memory_properties);
 
   if (metadata->external_tensor_requires_dedicated_allocation) {
     ET_LOG(
@@ -4111,12 +4140,11 @@ VgfZeroCopyImportResult VgfRepr::try_import_zero_copy_candidate(
   auto result = zero_copy_import_manager_.try_import_candidate(
       io_index, host_pointer, logical_nbytes, zero_copy_io_metadata[io_index]);
 
-  // TODO:
-  // The VGFBackend::execute() does not have import consumer yet, so the import
-  // wrapper owns the selection policy. Select every accepted import, including
-  // the first import and cache hits. On rejection, restore the owned view
-  // before the next graph dispatch. The actual descriptor write stays deferred
-  // until flush_boundary_bindings().
+  // Accepted imports select the imported view for the current synchronous
+  // execution. Rejections restore the owned view. VGFBackend::execute()
+  // releases all host imports again before returning to the caller; cache hits
+  // therefore never extend the lifetime of caller-owned EValue storage across
+  // executions.
   if (io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].owned_view != VK_NULL_HANDLE) {
     const auto* slot =
@@ -4181,6 +4209,84 @@ bool VgfRepr::activate_owned_binding(size_t io_index) {
 bool VgfRepr::is_import_active(size_t io_index) const {
   return io_index < zero_copy_binding_states_.size() &&
       zero_copy_binding_states_[io_index].import_active;
+}
+
+bool VgfRepr::release_execution_zero_copy_imports() {
+  bool has_imported_slot = false;
+  for (size_t io_index = 0; io_index < zero_copy_import_manager_.slot_count();
+       ++io_index) {
+    const auto* slot = zero_copy_import_manager_.slot(io_index);
+    if (slot != nullptr && slot->valid()) {
+      has_imported_slot = true;
+      break;
+    }
+  }
+
+  if (!has_imported_slot) {
+    return true;
+  }
+
+  // Never return to the ExecuTorch caller while submitted work might still
+  // reference imported EValue storage. execute_vgf() normally waits on its
+  // fence, but a failed wait can leave a submission outstanding.
+  if (execute_submission_pending_) {
+    const VkResult wait_result = vkQueueWaitIdle(vk_queue);
+
+    // Device loss is terminal for this representation, but Vulkan permits its
+    // child objects to be destroyed. free_vgf() synchronously ends every
+    // imported VkDeviceMemory lifetime before caller-owned storage can expire.
+    if (wait_result == VK_ERROR_DEVICE_LOST) {
+      ET_LOG(
+          Error,
+          "VGF device lost while draining zero-copy execution; tearing down "
+          "the VGF representation before returning to the caller");
+      invalidate_execution_state();
+      return false;
+    }
+
+    // Any other failure leaves completion unknown. There is no safe way to
+    // return control while Vulkan may still reference caller-owned memory, so
+    // use a fail-stop path rather than leaking the lifetime obligation across
+    // BackendInterface::execute().
+    ET_CHECK_MSG(
+        wait_result == VK_SUCCESS,
+        "Cannot establish VGF queue completion while caller-owned zero-copy "
+        "memory is imported (vkQueueWaitIdle=%d)",
+        static_cast<int>(wait_result));
+    execute_submission_pending_ = false;
+  }
+
+  // From this point no submitted work can reference the imported resources.
+  // Prefer restoring the reusable owned binding state. If that cannot be done,
+  // synchronously tear down the whole representation; free_vgf() releases the
+  // imports before this function returns.
+  for (size_t io_index = 0; io_index < zero_copy_binding_states_.size();
+       ++io_index) {
+    if (!zero_copy_binding_states_[io_index].import_active) {
+      continue;
+    }
+    if (!activate_owned_binding(io_index)) {
+      ET_LOG(
+          Error,
+          "Failed to restore owned VGF boundary binding for IO %zu; tearing "
+          "down the VGF representation to end caller-owned import lifetime",
+          io_index);
+      invalidate_execution_state();
+      return false;
+    }
+  }
+
+  if (!flush_boundary_bindings()) {
+    ET_LOG(
+        Error,
+        "Failed to restore owned VGF boundary descriptors; tearing down the "
+        "VGF representation to end caller-owned import lifetime");
+    invalidate_execution_state();
+    return false;
+  }
+
+  zero_copy_import_manager_.release_all();
+  return true;
 }
 
 bool VgfRepr::flush_boundary_bindings(
@@ -4632,6 +4738,13 @@ bool VgfRepr::record_execute_command_buffer(VkCommandBuffer command_buffer) {
 }
 
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
+  if (!execution_valid_) {
+    ET_LOG(
+        Error,
+        "VGF representation is invalid after terminal teardown and cannot be executed");
+    return false;
+  }
+
   ET_LOG(Debug, "Executing vgf");
 
   if (!flush_boundary_bindings(event_tracer)) {
@@ -4746,6 +4859,18 @@ std::string VgfRepr::collect_neural_statistics_metadata() const {
 
   return collect_vgf_neural_statistics_metadata(
       vk_device, get_neural_statistics_segment_contexts(), metadata_context);
+}
+
+void VgfRepr::invalidate_execution_state() {
+  if (!execution_valid_) {
+    return;
+  }
+
+  // Mark terminal state before freeing Vulkan resources. The runtime still
+  // owns the DelegateHandle and may later call destroy(), but no subsequent
+  // execute is allowed to observe or reuse this torn-down representation.
+  execution_valid_ = false;
+  free_vgf();
 }
 
 void VgfRepr::free_vgf() {
