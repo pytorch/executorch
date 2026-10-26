@@ -884,8 +884,8 @@
       "bytes": 6507
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "c030ac4686d0d5d1d91a6604eff3e640871e2f2da7f757c7d1519f1f5b0fe831",
-      "bytes": 25713
+      "sha256": "1da2387aa6eac129f1954bbd10f7147fd6301d84ea21f20e5d606e6e08927c28",
+      "bytes": 28117
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "aa1218812efb23ff2b7691220968a2cb193014403922214dddcc7d39eb003bbc",

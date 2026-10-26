@@ -135,14 +135,45 @@ def main():
         for name,expected in dependency_proof['files_SHA256'].items():
             path=dependency_path/name
             assert path.resolve().is_relative_to(dependency_path.resolve()) and digest(path)==expected,name
+    Gemma_model_source_binding = None
     if gemma:
         from prepare_gemma_canonical_tokenizer import FILES
         for name,(expected,count) in FILES.items():
             assert (args.tokenizer/name).stat().st_size==count and digest(args.tokenizer/name)==expected,name
         receipt_path=args.Gemma_source_preparation_job/'source-preparation.json'
         receipt=json.loads(receipt_path.read_text())
-        assert digest(receipt_path)==gate['Gemma_source_preparation_SHA256']
-        assert receipt['original_native_gate']['source']==gate['source']
+        receipt_SHA256=digest(receipt_path)
+        if receipt['original_native_gate']['source']==gate['source']:
+            assert receipt_SHA256==gate['Gemma_source_preparation_SHA256']
+            Gemma_model_source_binding=dict(original_model_and_native_source_binding=True)
+        else:
+            # The allocator control reuses the exact compiled Gemma models
+            # against a new ABI-compatible native pool. Its Python export
+            # receipt still describes the preserved original model source.
+            growth_path=package/'independent_session_growth_allocator_source.json'
+            growth=json.loads(growth_path.read_text())
+            assert gate['allocator_growth_spec_SHA256']==digest(growth_path)
+            assert gate['actual_native_source_change']==growth and growth['allocator_policy_only']
+            assert growth['weight_math_ABI_graph_invalidation_and_sliding_unchanged']
+            assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
+            assert gate['source_spec_SHA256']==receipt['original_native_gate']['source_spec_SHA256']
+            assert digest(source/growth['file'])==growth['after_SHA256']
+            original_mini=Path(preparation['original_mini_preparation'])
+            original_model_gate=json.loads((original_mini/'native-gate.json').read_text())
+            assert original_model_gate['Gemma_source_preparation_SHA256']==receipt_SHA256
+            assert original_model_gate['source']==receipt['original_native_gate']['source']
+            for arm in ('global','independent'):
+                original=original_mini/('mini-'+arm+'-artifact')
+                artifact=args.preparation_job/('mini-'+arm+'-artifact')
+                audit=json.loads((original/'independent-mini-artifact-audit.json').read_text())
+                assert audit['Gemma_source_preparation_SHA256']==receipt_SHA256
+                for name,record in audit['artifacts'].items():
+                    assert digest(original/name)==digest(artifact/name)==record['sha256']
+            Gemma_model_source_binding=dict(original_compiled_models_and_Python_source_reused=True,
+                allocator_only_native_control_verified=True,
+                allocator_growth_spec_SHA256=digest(growth_path),
+                original_model_native_source=original_model_gate['source'],
+                current_native_source=gate['source'],model_source_preparation_SHA256=receipt_SHA256)
         assert receipt['original_source_and_binaries_unchanged']
         source=Path(receipt['new_source'])
         for name,expected in receipt['source_files'].items():assert digest(source/name)==expected,name
@@ -375,7 +406,7 @@ def main():
                   artifact_audits=audits, native_gate_sha256=digest(gate_path),
                   worker_sha256=digest(worker), candidate_promoted=False,
                   initial_KV_set_by="explicit supported CLI" if explicit_initial else "verified native default",
-                  memory_worker_proof=memory_proof,
+                  memory_worker_proof=memory_proof,Gemma_model_source_binding=Gemma_model_source_binding,
                   native_allocator_sampling_enabled=memory_proof is not None and not args.disable_native_memory_sampling,
                   native_sampler_explicitly_disabled=args.disable_native_memory_sampling,
                   workload_equivalence_and_memory_review_pending=True,
