@@ -42,7 +42,7 @@ def verify_Gemma_full_qualification(path,args,binding):
  matched=quality_root/'matched-control';control=json.loads((matched/'result.json').read_text())
  assert control['full_model_profile']=='gemma4-48layers' and control['collected_arms']==['independent']
  assert control['four_rounds_discard_first'] and control['ABBA_native_order'] and control['initial_KV_capacity']==512
- assert not control['positive_performance_signals'] and len(control['actual_child_results'])==8
+ assert (q.get('matched_replication_review') or not control['positive_performance_signals']) and len(control['actual_child_results'])==8
  assert sha(matched/'GPU-clocks-power.jsonl')==control['clock_power_samples_SHA256']
  UUIDs={json.loads(line)['actual_GPU_query'].split(',')[0].strip() for line in (matched/'GPU-clocks-power.jsonl').read_text().splitlines()}
  assert UUIDs=={q['qualification_GPU_UUID']}=={current_GPU_UUID()}
@@ -53,7 +53,12 @@ def verify_Gemma_full_qualification(path,args,binding):
  assert len(reviewed['cells'])==9 and len(reviewed['records'])==4
  for c in reviewed['cells']:
   assert c['arm']=='independent'
-  for key in ('cold_first_four_seconds','mean_stable_native_ms'):assert not c[key]['positive_signal'],(c['case'],key)
+  for key in ('cold_first_four_seconds','mean_stable_native_ms'):assert q.get('matched_replication_review') or not c[key]['positive_signal'],(c['case'],key)
+ if q.get('matched_replication_review'):
+  from review_full_native_ABBA_replication import verify_report
+  replicated=verify_report(q['matched_replication_review'],package,q['qualification_GPU_UUID'])
+  assert replicated['original_matched_signals']==control['positive_performance_signals']
+  assert json.loads(Path(replicated['recomputed_reviews'][0]).read_text())['cells']==reviewed['cells']
  original=json.loads((control_root/'full-HTTP/result.json').read_text())
  assert q['performance_resolution']['original_consecutive_signals']==original['positive_performance_signals']
  assert q['performance_resolution']['original_gates_unchanged'] and q['performance_resolution']['no_automatic_cold_or_recapture_waiver']
@@ -79,13 +84,14 @@ def verify_Gemma_full_qualification(path,args,binding):
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ('package','full-controls-job','quality-follower-job','native-job','mini-qualification','memory-worker-proof','Gemma-source-preparation-job','http-python-dependencies-job','tokenizer','public-inputs','output'):p.add_argument('--'+n,type=Path,required=True)
+ p.add_argument('--matched-confirmation-job',type=Path)
  a=p.parse_args();assert not a.output.exists()
  require_complete_control_states(((a.full_controls_job,'full48-allocator-controls-collected-pending-F1-and-main'),(a.quality_follower_job,'fresh-full-Gemma-native-ABBA-and-quality-collected')))
  native=verify_runtime(a.native_job,a.package);a.full_model_profile='gemma4-48layers';a.mini_profile='gemma4-first6';a.full_native_job=a.native_job;a.arm='independent';a.preserved_global_HTTP_failure_job=None
  a.fixed_job=a.full_controls_job/'full-fixed';a.HTTP_job=a.full_controls_job/'full-HTTP';a.preparation_job=a.fixed_job/'full-pair'
  binding=verified_gemma_full_http(a,a.package)
  verify_qualification(a.mini_qualification,a.mini_profile,'7cef807d864aed1cbb9b93623df3724bb5d19a943fca01c56146dda78004233a',a.native_job)
- parent=json.loads((a.quality_follower_job/'result.json').read_text());assert parent['raw_full_quality_pass'] and not parent['positive_performance_signals']
+ parent=json.loads((a.quality_follower_job/'result.json').read_text());assert parent['raw_full_quality_pass'] and (a.matched_confirmation_job or not parent['positive_performance_signals'])
  assert parent['original_evidence_preserved'] and not parent['full_model_qualified'] and not parent['main_candidate_accepted']
  a.output.mkdir(parents=True)
  def run(label,script,argv):
@@ -94,6 +100,10 @@ def main():
  matched=a.quality_follower_job/'matched-control';review=a.output/'matched-native-raw-review.json'
  run('matched-native','review_independent_session_same_artifact_native_change.py',['--before-job',matched/'before','--after-job',matched/'after','--output',review])
  observed=json.loads((matched/'same-PTE-native-independent-review.json').read_text());actual=json.loads(review.read_text());assert actual['cells']==observed['cells'] and actual['records']==observed['records']
+ replication=None
+ if a.matched_confirmation_job:
+  run('matched-replication','review_full_native_ABBA_replication.py',['--original-job',matched,'--confirmation-job',a.matched_confirmation_job,'--package',a.package,'--output',a.output/'matched-replication'])
+  replication=a.output/'matched-replication/replication-review.json'
  quality=a.output/'full-task-raw-review.json'
  run('quality','review_independent_full_task_quality.py',['--quality-job',a.quality_follower_job/'full-quality','--public-inputs',a.public_inputs,'--native-job',a.native_job,'--full-model-profile','gemma4-48layers','--output',quality])
  lifecycle=a.full_controls_job/'full-lifecycle';reviews={}
@@ -113,6 +123,10 @@ def main():
  evidence[str(a.mini_qualification.resolve())]=sha(a.mini_qualification)
  artifact=binding['artifacts']['independent'];original=json.loads((a.HTTP_job/'result.json').read_text())
  q=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),full_profile='gemma4-48layers',producer_source_SHA256=sha(Path(__file__)),qualification_GPU_UUID=current_GPU_UUID(),native_runtime_gate_SHA256=sha(a.native_job/'native-gate.json'),artifact_SHA256={n:sha(artifact/n) for n in ('model.pte','aoti_cuda_blob.ptd')},full_controls_job=str(a.full_controls_job.resolve()),quality_follower_job=str(a.quality_follower_job.resolve()),full_controls_result_SHA256=sha(a.full_controls_job/'result.json'),quality_follower_result_SHA256=sha(a.quality_follower_job/'result.json'),mini_qualification=str(a.mini_qualification.resolve()),mini_qualification_SHA256=sha(a.mini_qualification),full_model_correctness_pass=True,full_task_F1_independently_reviewed=True,full_fixed_token_performance_pass=True,full_storage_rewind_graph_pass=True,full_HTTP_memory_pass=True,unresolved_correctness_or_performance_signals=[],raw_quality_review=str(quality.resolve()),matched_native_raw_review=str(review.resolve()),recomputed_storage_reviews=reviews,recomputed_storage_reviews_SHA256={n:sha(Path(v)) for n,v in reviews.items()},recomputed_HTTP_review=str(http.resolve()),performance_resolution=dict(original_consecutive_signals=original['positive_performance_signals'],original_gates_unchanged=True,no_automatic_cold_or_recapture_waiver=True,same_PTE_ABBA_baseline_is_separate_from_prior_accepted_main=True),evidence_files_SHA256=evidence,full_model_qualified=True,main_candidate_accepted=False,main_performance_and_same_GPU_accepted_baseline_comparison_pending=True)
+ if replication:
+  q['matched_replication_review']=str(replication.resolve())
+  q['evidence_files_SHA256'].update(json.loads(replication.read_text())['evidence_files_SHA256'])
+  q['evidence_files_SHA256'][str(replication.resolve())]=sha(replication)
  pending=a.output/'qualification.pending.json';pending.write_text(json.dumps(q,indent=2)+'\n');verify_Gemma_full_qualification(pending,a,binding)
  assert verify_runtime(a.native_job,a.package)==native;pending.rename(a.output/'full-qualification.json')
  print(json.dumps(dict(full_model_qualified=True,main_candidate_accepted=False,qualification=str(a.output/'full-qualification.json'))))

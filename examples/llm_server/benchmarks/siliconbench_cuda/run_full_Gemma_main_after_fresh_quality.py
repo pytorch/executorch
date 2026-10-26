@@ -12,6 +12,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ('quality-follower-job','full-controls-job','native-job','mini-qualification','memory-worker-proof','Gemma-source-preparation-job','http-python-dependencies-job','tokenizer','server-python','public-inputs','lock','output'):p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--port',type=int,required=True)
+ p.add_argument('--matched-confirmation-job',type=Path)
  a=p.parse_args();assert 1024<=a.port<=65535 and not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  def state(status,**kw):
@@ -32,12 +33,23 @@ def main():
    assert time.monotonic()<deadline,'Preserve verified-live quality controller after observation timeout'
    state('waiting-confirmed-live-fresh-full-Gemma-quality',parent_PID=d['controller_pid'],parent_status=d['status']);time.sleep(20)
   parent=a.quality_follower_job/'result.json';parent_hash=sha(parent);doc=json.loads(parent.read_text())
-  assert doc['raw_full_quality_pass'] and not doc['positive_performance_signals']
+  assert doc['raw_full_quality_pass'] and (a.matched_confirmation_job or not doc['positive_performance_signals'])
+  if a.matched_confirmation_job:
+   while True:
+    d=json.loads((a.matched_confirmation_job/'progress.json').read_text())
+    if d['status']=='interleaved-native-control-collected':break
+    assert d['status']!='failed',d
+    proc=Path('/proc')/str(d['controller_pid'])/'cmdline';actual=proc.read_bytes().split(bytes([0])) if proc.is_file() else []
+    assert any(Path(x.decode()).name=='run_interleaved_native_clock_control.py' for x in actual if x)
+    assert b'--output' in actual and actual[actual.index(b'--output')+1]==os.fsencode(a.matched_confirmation_job)
+    assert time.monotonic()<deadline
+    state('waiting-live-full-native-ABBA-confirmation',confirmation_PID=d['controller_pid'],confirmation_status=d['status']);time.sleep(20)
   assert not doc['full_model_qualified'] and not doc['main_candidate_accepted']
   common=[]
   for n in ('native-job','mini-qualification','memory-worker-proof','Gemma-source-preparation-job','http-python-dependencies-job','tokenizer','public-inputs'):common+=['--'+n,getattr(a,n.replace('-','_'))]
+  confirmation_args=['--matched-confirmation-job',a.matched_confirmation_job] if a.matched_confirmation_job else []
   state('rechecking-complete-full-Gemma-qualification')
-  run('full-qualification','write_Gemma_full_independent_KV_qualification.py',['--package',package,*common,'--full-controls-job',a.full_controls_job,'--quality-follower-job',a.quality_follower_job,'--output',a.output/'full-qualification'],4*3600)
+  run('full-qualification','write_Gemma_full_independent_KV_qualification.py',['--package',package,*common,'--full-controls-job',a.full_controls_job,'--quality-follower-job',a.quality_follower_job,'--output',a.output/'full-qualification',*confirmation_args],4*3600)
   receipt=a.output/'full-qualification/full-qualification.json';qualified=json.loads(receipt.read_text())
   assert qualified['full_model_qualified'] and not qualified['main_candidate_accepted'] and not qualified['unresolved_correctness_or_performance_signals']
   assert sha(parent)==parent_hash
