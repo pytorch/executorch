@@ -10,6 +10,43 @@ PROFILES = {
 }
 DEFAULT_PROFILE = 'muse-glimmer-first4'
 
+FULL_PROFILES = {
+    'muse-glimmer-52layers': dict(PROFILES['muse-glimmer-first4'], layers=52,
+                                 ring_layers=39),
+    'gemma4-48layers': dict(PROFILES['gemma4-first6'], layers=48,
+                           ring_layers=40),
+}
+
+
+def validate_full_audit(audit, profile, independent):
+    expected = FULL_PROFILES[profile]
+    assert audit['mini_is_not_full_model'] is False
+    assert audit['retained_original_layer_indices'] == list(range(expected['layers']))
+    assert audit['independent_capacity'] == independent
+    assert audit['GGUF_sha256'] == expected['GGUF_SHA256']
+    assert audit['initial_runtime_KV'] == 512 and audit['logical_context'] == 131072
+    assert audit['declared_owner_limit'] == 21 and audit['selected_logit_limit'] == 64
+    assert audit['static_forwards'] == [1, 2, 4, 8, 16, 32, 64]
+    metadata = audit['metadata']
+    assert metadata['get_n_caches'] == expected['layers']
+    assert metadata['get_vocab_size'] == expected['vocab']
+    assert metadata['get_max_context_len'] == 131072
+    assert metadata['get_max_prefill_chunk'] == expected['max_step']
+    assert metadata['get_activation_dtype'] == (15 if profile=='gemma4-48layers' else 'bfloat16')
+    assert metadata['get_offgraph_kv_sequence_info_abi'] == (3 if independent else 2)
+    manifests = audit['offgraph_manifests']
+    assert set(manifests) == {f'forward_{m}' for m in (1,2,4,8,16,32,64)} | {'forward_others'}
+    for manifest in manifests.values():
+        assert manifest['runtime_columns'] and manifest['maximum_capacity'] == 131072
+        assert manifest.get('independent_capacity', False) == independent
+        assert manifest['max_write'] == expected['max_step'] and manifest['max_seqs'] == 21
+        layers = manifest['layers']
+        assert len(layers) == expected['layers']
+        assert sum(layer['policy']=='ring' for layer in layers) == expected['ring_layers']
+        assert sum(layer['policy']=='flat' for layer in layers) == expected['layers']-expected['ring_layers']
+        assert all(layer['window']==expected['window'] for layer in layers if layer['policy']=='ring')
+    return expected
+
 
 def validate_mini_audit(audit, profile, independent):
     expected = PROFILES[profile]

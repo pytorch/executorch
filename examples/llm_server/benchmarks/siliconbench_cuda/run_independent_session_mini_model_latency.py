@@ -16,7 +16,7 @@ import statistics
 import subprocess
 import time
 import traceback
-from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
+from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, FULL_PROFILES, validate_mini_audit, validate_full_audit
 from qualified_rewind_probe import qualified_rewind_probe
 
 
@@ -34,6 +34,8 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=240)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--full-model-profile', choices=FULL_PROFILES,
+                        help='Require separately gated full artifacts and record their actual full geometry')
     parser.add_argument('--rewind-probe-job',type=Path)
     parser.add_argument('--native-sampler',choices=['off','on'],default='off')
     parser.add_argument('--nsys',type=Path,
@@ -57,8 +59,9 @@ def main():
         deadline = time.monotonic() + 60 * args.wait_minutes
         while True:
             progress = json.loads((args.preparation_job / "progress.json").read_text())
-            if progress["status"] == "mini-artifacts-ready":
+            if progress["status"] == ("full-artifacts-ready-for-qualification" if args.full_model_profile else "mini-artifacts-ready"):
                 break
+            assert not args.full_model_profile, 'Full pair must already be gated and ready'
             assert progress["status"] != "failed", progress
             pid = progress["controller_pid"]
             command = (Path("/proc") / str(pid) / "cmdline").read_bytes()
@@ -81,10 +84,16 @@ def main():
         if args.rewind_probe_job:
             probe,probe_proof=qualified_rewind_probe(args.rewind_probe_job,gate_path,probe,state,args.wait_minutes)
         audits = {}
+        artifact_prefix = 'full-' if args.full_model_profile else 'mini-'
+        audit_name = 'independent-full-artifact-audit.json' if args.full_model_profile else 'independent-mini-artifact-audit.json'
+        if args.full_model_profile:
+            assert progress['mini_gate_passed'] and progress['all_full_artifact_hashes_verified']
+            assert not progress['full_model_qualified']
+            assert args.mini_profile == ('gemma4-first6' if args.full_model_profile=='gemma4-48layers' else DEFAULT_PROFILE)
         for arm in ("global", "independent"):
-            artifact = args.preparation_job / ("mini-" + arm + "-artifact")
-            audit = json.loads((artifact / "independent-mini-artifact-audit.json").read_text())
-            geometry = validate_mini_audit(audit, args.mini_profile, arm == 'independent')
+            artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
+            audit = json.loads((artifact / audit_name).read_text())
+            geometry = (validate_full_audit(audit,args.full_model_profile,arm=='independent') if args.full_model_profile else validate_mini_audit(audit, args.mini_profile, arm == 'independent'))
             assert audit["source_spec_sha256"] == gate["source_spec_SHA256"]
             assert audit["independent_capacity"] == (arm == "independent")
             for name in ("model.pte", "aoti_cuda_blob.ptd"):
@@ -107,7 +116,7 @@ def main():
                 for arm in (("global","independent") if number%2 else ("independent","global")):
                     directory = args.output / ("round-" + str(number)) / arm
                     directory.mkdir(parents=True)
-                    artifact = args.preparation_job / ("mini-" + arm + "-artifact")
+                    artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
                     argv = [str(probe), "--pte=" + str(artifact / "model.pte"),
                             "--data_path=" + str(artifact / "aoti_cuda_blob.ptd"),
                             "--output_dir=" + str(directory), "--max_sessions=21",
@@ -253,7 +262,8 @@ def main():
                               first_discarded=selected[0]["cases"][index][key])
                     for key in ("cold_first_four_seconds","mean_all_measured_native_ms","mean_stable_native_ms")}))
         (args.output / "result.json").write_text(json.dumps(dict(
-            mini_only=True,mini_profile=args.mini_profile,model_geometry=geometry,
+            mini_only=not bool(args.full_model_profile),full_model_profile=args.full_model_profile,
+            full_model_qualification_control=bool(args.full_model_profile),mini_profile=args.mini_profile,model_geometry=geometry,
             rewind_probe_proof=probe_proof,native_sampler_mode=args.native_sampler,
             initial_KV_capacity=args.diagnostic_initial_KV_capacity,
             actual_profiled_rounds=[row['round'] for row in records if row['profiled_discarded_round']],

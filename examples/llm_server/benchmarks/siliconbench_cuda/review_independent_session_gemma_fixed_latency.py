@@ -13,7 +13,15 @@ parser.add_argument('--output',type=Path,required=True)
 args=parser.parse_args();root=args.job;output=args.output
 assert not output.exists()
 document=json.loads((root/'result.json').read_text())
-assert document['mini_only'] and document['fixed_teacher_forced_inputs']
+assert document['fixed_teacher_forced_inputs']
+if document.get('full_model_profile'):
+ from independent_session_mini_profiles import validate_full_audit
+ assert document['full_model_profile']=='gemma4-48layers' and not document['mini_only']
+ assert document['full_model_qualification_control']
+ for arm,audit in document['artifact_audits'].items():
+  assert validate_full_audit(audit,'gemma4-48layers',arm=='independent')==document['model_geometry']
+else:
+ assert document['mini_only']
 assert document['mini_profile']=='gemma4-first6'
 assert len(document['rounds'])==8
 cases=[('decode'+str(c),[1]*c) for c in (1,2,4,8,16)]

@@ -500,8 +500,8 @@
       "bytes": 649
     },
     "independent_session_mini_profiles.py": {
-      "sha256": "549cdafd8c44e1bc4efc22530f66782671d0efd9bd10735486d12fe83831c776",
-      "bytes": 2603
+      "sha256": "62d2f097c033d8840f042fa937be3250e95ed2c8bda2e128e803381598df07f1",
+      "bytes": 4742
     },
     "independent_session_stable_metadata_uploads.patch": {
       "sha256": "1bc4bc6cecc0b3283b98cb836a86b02cb1a47a29bccefba46015a78e5d1271dc",
@@ -804,16 +804,16 @@
       "bytes": 4759
     },
     "review_independent_session_gemma_fixed_latency.py": {
-      "sha256": "2994ef9c3d6227b947406897c40cf80b67f60ec982801656876052ec46b016a8",
-      "bytes": 8315
+      "sha256": "8992b18ecbecdd2ee6c1da25b9adcf679ed3f162c4a1da2f93915a1541c3222c",
+      "bytes": 8728
     },
     "review_independent_session_http_lifecycle.py": {
       "sha256": "8cc1d6f1576ef9b366fe7bd883fadbcf76c7a962864316cc3cf96718773c4d1f",
       "bytes": 13980
     },
     "review_independent_session_mg_fixed_latency.py": {
-      "sha256": "6dbffc7307b3b89ba9f2c9ee6d078b779ce5f317a3d3f4d32434f26d6430b905",
-      "bytes": 8305
+      "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",
+      "bytes": 8730
     },
     "review_independent_session_mini_graph_trace.py": {
       "sha256": "6311339db87576ee1c17b3471945b8af6670a50fdbf1700b7d009d078823bf26",
@@ -927,6 +927,10 @@
       "sha256": "eb196d607eeb3a6feed61f65ac4f27428edb9a2bffc01ef0c473b2f146e619d8",
       "bytes": 21845
     },
+    "run_gemma_full_fixed_qualification_after_exports.py": {
+      "sha256": "c850c2bfefebd47de7b8220dd652a1a246f17e8bd28c28fc67dcf3513671f861",
+      "bytes": 6828
+    },
     "run_gemma_runtime_columns_qualification.py": {
       "sha256": "8c138d800e7923f415dc028870ad5e9deef345af79b91f57eef9b36d3142a0c2",
       "bytes": 7624
@@ -952,8 +956,8 @@
       "bytes": 33388
     },
     "run_independent_session_mini_model_latency.py": {
-      "sha256": "aa1218812efb23ff2b7691220968a2cb193014403922214dddcc7d39eb003bbc",
-      "bytes": 17929
+      "sha256": "f296b5afe6bfed0ecba7a8f18310bc7c573eed12668a7d4e40aa7dff479bc1d4",
+      "bytes": 19073
     },
     "run_independent_session_mini_pair.py": {
       "sha256": "c24f3ee0bb32c31506e553bf3eb7045e711f1bee46a503576d237e437c6eb6a0",
