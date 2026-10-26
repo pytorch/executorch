@@ -29,7 +29,8 @@ Result<runtime::FreeableBuffer> TestData::get_data(std::string_view key) const {
                   << required_prefix;
     return Error::InvalidArgument;
   }
-  if (++attempts == fail_at) return Error::AccessFailed;
+  if (++attempts == fail_at)
+    return failure_error;
   auto found = files.find(std::string(key));
   if (found == files.end()) return Error::NotFound;
   ++requests;

@@ -56,11 +56,14 @@ The assets root must be an absolute path. The application chooses it, should
 reserve it for this backend, and is trusted not to rename, replace or modify its
 contents while the backend uses it; the backend does not defend against other
 processes of the same user rebinding paths. Written files and changed directories
-are synced with `fsync`. Atomic publication uses `F_FULLFSYNC` on the temporary
-file before rename and on the directory afterward. A failure before rename
-preserves the old contents; a failure of the final flush reports an error even
-though the new complete contents are already visible. Use a local APFS volume;
-unsupported full-device flushes are reported as errors, not downgraded to `fsync`.
+are synced with `fsync`. Bookmark publication uses `F_FULLFSYNC` on the temporary
+file before rename and on the directory afterward. Source-bundle publication
+fully flushes the staging directory after syncing its files and subdirectories,
+then fully flushes the destination directory after rename. A failure before
+rename preserves the old contents; a failure of the final flush reports an error
+even though the new complete contents are already visible. Use a local APFS
+volume; unsupported full-device flushes are reported as errors, not downgraded
+to `fsync`.
 
 Inline bundles are read through `NamedDataMap` and materialized as unchanged
 files under the assets root. Named data can be supplied externally; inline
@@ -78,6 +81,10 @@ exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and
 used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
 loading without replacement, since an SDK model may still be using them.
+Only interrupted system calls are retried; other failures are returned to the
+caller without automatic retries or repair. Temporary bundles are removed on
+ordinary failures before publication; a caller can explicitly retry after
+addressing the failure.
 
 These are completeness checks, not full content-integrity verification. Same-size
 content changes are not detected, and a complete stored bundle does not cause its

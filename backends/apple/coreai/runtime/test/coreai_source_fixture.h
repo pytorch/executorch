@@ -23,6 +23,7 @@ class TestData final : public runtime::NamedDataMap {
   mutable std::atomic<int> attempts{0};
   mutable std::atomic<int> metadata_requests{0};
   int fail_at = 0;
+  runtime::Error failure_error = runtime::Error::AccessFailed;
   std::string required_prefix;
   std::map<std::string, std::string> files{
       {"coreai/ab/model.aimodel/graph.bin", std::string("model data", 11)}};
