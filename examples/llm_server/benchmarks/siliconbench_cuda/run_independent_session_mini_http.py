@@ -40,6 +40,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
+    parser.add_argument("--memory-worker-proof", type=Path)
     args = parser.parse_args()
     assert 1024 <= args.port <= 65535
     assert not args.output.exists()
@@ -72,6 +73,18 @@ def main():
     source = Path(gate["source"])
     worker = args.preparation_job / "model-build/muse_glimmer_batching_worker"
     assert digest(worker) == gate["binaries"][str(worker)]
+    memory_proof = None
+    if args.memory_worker_proof:
+        memory_proof = json.loads(args.memory_worker_proof.read_text())
+        assert memory_proof["native_gate_SHA256"] in (
+            digest(gate_path), gate.get("imported_native_gate_SHA256"))
+        assert memory_proof["original_worker_SHA256"] == digest(worker)
+        assert memory_proof["source"] == gate["source"]
+        assert memory_proof["official_control_flow_preserved"] and memory_proof["no_inference_kernel_change"]
+        for name, expected in memory_proof["unchanged_SDK_libraries"].items():
+            assert digest(Path(name)) == expected, name
+        worker = Path(memory_proof["instrumented_worker"])
+        assert digest(worker) == memory_proof["instrumented_worker_SHA256"]
     for name, expected in gate["unchanged_controls"].items():
         assert digest(source / name) == expected, name
     assert args.python.is_file() and (args.tokenizer / "tokenizer.json").is_file()
@@ -79,7 +92,14 @@ def main():
     assert "int initial_capacity = 512;" in cache_config
     factory = (source / "examples/models/muse-glimmer/runtime/backend_factory.cpp").read_text()
     assert "CudaExecutorConfig executor_config;" in factory
-    assert "executor_config.initial_capacity" not in factory
+    explicit_initial = "executor_config.initial_capacity" in factory
+    if explicit_initial:
+        assert "executor_config.initial_capacity = config.initial_kv_capacity;" in factory
+        bootstrap = (source / "examples/models/muse-glimmer/runtime/runners/batching_bootstrap.cpp").read_text()
+        assert 'DEFINE_int32(initial_kv_capacity, -1,' in bootstrap
+        assert "backend.initial_kv_capacity = FLAGS_initial_kv_capacity;" in bootstrap
+        serve = (source / "examples/models/muse-glimmer/serving/serve_batching.py").read_text()
+        assert '"--initial-kv-capacity"' in serve
     artifacts, audits = {}, {}
     for arm in ("global", "independent"):
         artifact = args.preparation_job / ("mini-" + arm + "-artifact")
@@ -151,8 +171,13 @@ def main():
                                "--prefix-cache-entries", "4" if prefix == "on" else "0",
                                "--prefix-checkpoint-interval", "512" if prefix == "on" else "0",
                                "--tool-parser", "none", "--host", "127.0.0.1", "--port", str(args.port)]
+                    if explicit_initial:
+                        command.extend(["--initial-kv-capacity", "512"])
                     (directory / "launch.json").write_text(json.dumps(dict(argv=command), indent=2) + "\n")
                     env = {**os.environ, "PYTHONPATH": str(source.parent), "CUDA_VISIBLE_DEVICES": "0"}
+                    env.pop("ET_CUDA_BENCH_MEMORY_TRACE", None)
+                    if memory_proof:
+                        env["ET_CUDA_BENCH_MEMORY_TRACE"] = "1"
                     child = None
                     try:
                         with (directory / "server.log").open("x") as log, (directory / "requests.jsonl").open("x") as raw:
@@ -282,6 +307,9 @@ def main():
                   NVML_source="entire device, sampled every 50 ms", rounds=records, aggregates=aggregates,
                   artifact_audits=audits, native_gate_sha256=digest(gate_path),
                   worker_sha256=digest(worker), candidate_promoted=False,
+                  initial_KV_set_by="explicit supported CLI" if explicit_initial else "verified native default",
+                  memory_worker_proof=memory_proof,
+                  native_allocator_sampling_enabled=memory_proof is not None,
                   workload_equivalence_and_memory_review_pending=True,
                   model_performance_qualified=False,
                   limitations="Named-session lifecycle diagnostic. Natural outputs are retained, not forced. "
