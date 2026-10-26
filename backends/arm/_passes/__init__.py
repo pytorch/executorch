@@ -27,9 +27,6 @@ from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
 from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
-from .convert_permute_singleton_to_view_pass import (  # noqa
-    ConvertPermuteSingletonToViewPass,
-)
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa
@@ -46,6 +43,7 @@ from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
+from .decompose_bool_equality_pass import DecomposeBoolEqualityPass  # noqa
 from .decompose_choose_qparams_symmetric_pass import (  # noqa
     DecomposeChooseQParamsSymmetricPass,
 )
@@ -118,6 +116,7 @@ from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_strided_slice_copy_pass import DecomposeStridedSliceCopyPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
 from .decompose_tan_pass import DecomposeTanPass  # noqa
+from .decompose_topk_pass import DecomposeTopKPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )

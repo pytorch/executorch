@@ -482,6 +482,13 @@ lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+# Sub-byte weights: `weight` is a [out_dim, packed_row_bytes] int8 blob, so
+# in_dim and the bit width can no longer be read off its shape.
+lib.define(
+    "quantized_fully_connected_packed(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset) -> (Tensor Z)"
+)
 lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
 lib.define(
     "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
@@ -531,6 +538,13 @@ lib.define(
 )
 lib.define(
     "sdpa_bitwise_causal_mask_gen.out(Tensor positions, int key_length, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "sdpa_bitwise_ring_mask_gen(Tensor positions, int sliding_window, int cache_length) -> Tensor"
+)
+lib.define(
+    "sdpa_bitwise_ring_mask_gen.out(Tensor positions, int sliding_window, int cache_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Load/store with iDMA. These only exist before memory planning.
@@ -665,6 +679,11 @@ lib.define(
 lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected_packed.out(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
@@ -2769,6 +2788,33 @@ def quantized_fully_connected_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
+@register_fake("cadence::quantized_fully_connected_packed")
+def quantized_fully_connected_packed_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, packed_row_bytes], so out_dim is still
+    # size(0) - that is what packing per row buys us - but in_dim is an
+    # argument rather than size(1).
+    torch._check(src.size(-1) == in_dim, lambda: "src last dim must equal in_dim")
+    out_size = list(src.size())
+    out_size[-1] = weight.size(0)
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
 @register_fake("cadence::quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
 def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     src: torch.Tensor,
@@ -3369,6 +3415,26 @@ def sdpa_bitwise_causal_mask_gen_meta(
     torch._check(key_length > 0, lambda: "key_length must be positive")
     torch._check(key_length % 8 == 0, lambda: "key_length must be a multiple of 8")
     return positions.new_empty((positions.numel(), key_length // 8), dtype=torch.uint8)
+
+
+@register_fake("cadence::sdpa_bitwise_ring_mask_gen")
+def sdpa_bitwise_ring_mask_gen_meta(
+    positions: torch.Tensor, sliding_window: int, cache_length: int
+) -> torch.Tensor:
+    torch._check(
+        positions.dtype in (torch.int32, torch.int64),
+        lambda: "expected int32 or int64 positions",
+    )
+    torch._check(positions.dim() == 1, lambda: "positions must be one-dimensional")
+    torch._check(cache_length > 0, lambda: "cache_length must be positive")
+    torch._check(cache_length % 8 == 0, lambda: "cache_length must be a multiple of 8")
+    torch._check(
+        0 < sliding_window <= cache_length,
+        lambda: "sliding_window must be positive and at most cache_length",
+    )
+    return positions.new_empty(
+        (positions.numel(), cache_length // 8), dtype=torch.uint8
+    )
 
 
 @register_fake("cadence::quantized_w8a32_linear")

@@ -27,6 +27,11 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+from executorch.backends.arm._passes.decompose_topk_pass import (
+    is_topk_indices_getitem,
+    is_topk_indices_int32_cast,
+    TOPK_OPS,
+)
 from executorch.backends.arm._passes.prepare_gather_indices_pass import (
     is_safe_int32_to_int64_gather_boundary,
 )
@@ -59,6 +64,36 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+def _tag_delegate_owned_buffers(exported_program: ExportedProgram) -> None:
+    """Tag each mutable buffer into the partition that reads and updates it.
+
+    The partition takes the buffer only when it holds every reader and the
+    update. A buffer shared with another partition or with ops left outside the
+    delegate is left untagged, so it stays a program buffer passed in and out of
+    the delegate.
+
+    """
+    signature = exported_program.graph_signature
+    writer_names = {
+        target: name for name, target in signature.buffers_to_mutate.items()
+    }
+    nodes = {node.name: node for node in exported_program.graph.nodes}
+    for node in exported_program.graph.find_nodes(op="placeholder"):
+        target = signature.inputs_to_buffers.get(node.name)
+        if target not in writer_names:
+            continue
+        accesses = [*node.users, nodes[writer_names[target]]]
+        tags = {access.meta.get("delegation_tag") for access in accesses}
+        if len(tags) == 1 and None not in tags:
+            node.meta["delegation_tag"] = tags.pop()
+        elif tags != {None}:
+            logger.warning(
+                f"Mutable buffer {target} is accessed outside a single delegate "
+                "partition, so it stays a program buffer instead of being "
+                "owned by the delegate."
+            )
 
 
 def _is_custom_partition_op(
@@ -310,6 +345,32 @@ def _find_connected_components(nodes: set[torch.fx.Node]) -> list[set[torch.fx.N
     return components
 
 
+def _detag_incomplete_topk_chains(nodes: Iterable[torch.fx.Node]) -> set[str]:
+    """Keep TopK, tuple extraction, and index narrowing in one delegate."""
+    affected_tags: set[str] = set()
+    for topk in nodes:
+        if topk.target not in TOPK_OPS:
+            continue
+        chain = {topk, *topk.users}
+        for extraction in topk.users:
+            if is_topk_indices_getitem(extraction):
+                chain.update(
+                    user
+                    for user in extraction.users
+                    if is_topk_indices_int32_cast(user)
+                )
+        tag = topk.meta.get("delegation_tag")
+        if tag is not None and all(
+            node.meta.get("delegation_tag") == tag for node in chain
+        ):
+            continue
+        for node in chain:
+            node_tag = node.meta.pop("delegation_tag", None)
+            if node_tag is not None:
+                affected_tags.add(node_tag)
+    return affected_tags
+
+
 def _detag_mixed_delegate_gather_boundaries(
     nodes: Iterable[torch.fx.Node],
 ) -> set[str]:
@@ -422,6 +483,8 @@ class TOSAPartitioner(Partitioner):
     """
 
     compile_spec: ArmCompileSpec
+    # Only backends whose runtime keeps a persistent region can own mutable buffers.
+    delegate_mutable_buffers: bool = False
 
     def __init__(
         self,
@@ -739,6 +802,7 @@ class TOSAPartitioner(Partitioner):
                     if active_tag in tags:
                         tags.remove(active_tag)
         affected_tags = _detag_mixed_delegate_gather_boundaries(module.graph.nodes)
+        affected_tags.update(_detag_incomplete_topk_chains(module.graph.nodes))
         if affected_tags:
             _retag_affected_partitions(
                 module.graph.nodes,
@@ -804,6 +868,8 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if self.delegate_mutable_buffers:
+            _tag_delegate_owned_buffers(exported_program)
         if (
             self.intermediate_path is not None
             and logger.getEffectiveLevel() <= logging.INFO
@@ -847,6 +913,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
+            torch.ops.aten.softplus.default,
             torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_if_fp = {
