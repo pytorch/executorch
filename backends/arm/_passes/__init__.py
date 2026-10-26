@@ -93,6 +93,7 @@ from .decompose_matmul import DecomposeMatmulPass  # noqa
 from .decompose_max_pool1d_pass import DecomposeMaxPool1dPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
+from .decompose_mv_dot_pass import DecomposeMvDotPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_pow_tensor_tensor_pass import DecomposePowTensorTensorPass  # noqa
