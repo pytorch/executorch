@@ -98,22 +98,45 @@ REGISTER_TEST_CASE_SET("q4gsw_linear", "coopmat_correctness") {
   // double-buffered); the second shape dispatches a multi-workgroup grid for
   // both, covering the gl_WorkGroupID-derived tile offsets in the store
   // address math.
+  auto cases = generate_coopmat_test_cases(
+      {
+          {64, 128, 64, 64, ""},
+          {128, 256, 128, 64, ""},
+          {128, 128, 128, 64, ""},
+          {256, 256, 256, 64, ""},
+          // Discriminators for the tiled-texture cube-shape failure:
+          {128, 128, 256, 64, ""}, // M == K only
+          {256, 128, 128, 64, ""}, // K == N only
+          {64, 128, 256, 64, ""}, // K > M, K < N
+          {256, 128, 64, 64, ""}, // K < M, K > N
+      },
+      /*ops=*/{"linear_q4gsw", "linear_dq8ca_q4gsw"},
+      /*storage_types=*/{utils::kTexture3D, utils::kBuffer},
+      /*well_conditioned_data=*/true);
+
+  for (const std::string& op : {"linear_q4gsw", "linear_dq8ca_q4gsw"}) {
+    const CoopmatLinearConfig cfg{128, 128, 128, 64, op};
+    for (auto storage : {utils::kTexture3D, utils::kBuffer}) {
+      TestCase t = make_case(cfg, storage);
+      set_well_conditioned_data(t, cfg);
+      const size_t scales_idx = is_dq8ca(op) ? 5 : 2;
+      ValueSpec scales(
+          {cfg.K / cfg.group_size, cfg.N},
+          vkapi::kFloat,
+          storage,
+          utils::kWidthPacked,
+          DataGenType::ONES);
+      scales.set_constant(true);
+      auto& data = scales.get_float_data();
+      std::fill(data.begin(), data.end(), 0.5f);
+      t.inputs()[scales_idx] = std::move(scales);
+      t.set_name(t.name() + " [fp32_scales]");
+      cases.push_back(std::move(t));
+    }
+  }
+
   return {
-      generate_coopmat_test_cases(
-          {
-              {64, 128, 64, 64, ""},
-              {128, 256, 128, 64, ""},
-              {128, 128, 128, 64, ""},
-              {256, 256, 256, 64, ""},
-              // Discriminators for the tiled-texture cube-shape failure:
-              {128, 128, 256, 64, ""}, // M == K only
-              {256, 128, 128, 64, ""}, // K == N only
-              {64, 128, 256, 64, ""}, // K > M, K < N
-              {256, 128, 64, 64, ""}, // K < M, K > N
-          },
-          /*ops=*/{"linear_q4gsw", "linear_dq8ca_q4gsw"},
-          /*storage_types=*/{utils::kTexture3D, utils::kBuffer},
-          /*well_conditioned_data=*/true),
+      std::move(cases),
       bench_reference,
       flop_calc,
       /*warmup_runs=*/3,

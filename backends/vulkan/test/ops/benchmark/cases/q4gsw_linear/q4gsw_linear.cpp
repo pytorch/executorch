@@ -48,7 +48,9 @@ TestCase create_test_case_from_config(
   test_case.set_operator_name(operator_name);
 
   // Derive sizes from M, K, N
-  std::vector<int64_t> input_size = {config.M, config.K};
+  std::vector<int64_t> input_size = config.singleton_batch
+      ? std::vector<int64_t>{1, config.M, config.K}
+      : std::vector<int64_t>{config.M, config.K};
   // Input tensor (float/half) - [M, K]
   ValueSpec input_tensor(
       input_size,
@@ -140,8 +142,11 @@ TestCase create_test_case_from_config(
   }
 
   // Output tensor (float/half) - [M, N]
+  std::vector<int64_t> output_size = config.singleton_batch
+      ? std::vector<int64_t>{1, config.M, config.N}
+      : std::vector<int64_t>{config.M, config.N};
   ValueSpec output(
-      {config.M, config.N},
+      output_size,
       input_dtype,
       storage_type,
       utils::kWidthPacked,
@@ -198,9 +203,9 @@ int64_t quantized_linear_flop_calculator(const TestCase& test_case) {
   const auto& input_sizes = test_case.inputs()[0].get_tensor_sizes();
   const auto& output_sizes = test_case.outputs()[0].get_tensor_sizes();
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = test_case.inputs()[0].numel() / in_features;
 
   // Calculate FLOPs for quantized linear operation
   // Each output element requires:
@@ -472,9 +477,9 @@ void linear_q4gsw_reference_impl(TestCase& test_case) {
   auto output_sizes =
       output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = test_case.inputs()[0].numel() / in_features;
   int64_t group_size = group_size_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow
@@ -562,9 +567,9 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   auto output_sizes =
       output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = test_case.inputs()[0].numel() / in_features;
   int64_t group_size = group_size_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow

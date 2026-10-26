@@ -21,8 +21,6 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef fp_input = args.at(1).refs.at(0);
   const ValueRef int_input = args.at(1).refs.at(1);
@@ -33,23 +31,16 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
   const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
   const bool is_gemv_case = is_gemv(graph, fp_input);
 
-  // Use the coopmat<int8> shader for 4-bit dq8ca dispatches when the device
-  // enumerates VK_COMPONENT_TYPE_SINT8_KHR in its cooperative matrix property
-  // list and the shape aligns; tiled otherwise.
-  if (weight_is_4bit && !is_gemv_case &&
-      graph->context()->adapter_ptr()->supports_int8_cooperative_matrix()) {
+  // Use the coopmat<int8> shader when the device exposes the exact matrix
+  // tuple used by its native subgroup size and the shape aligns.
+  if (weight_is_4bit && !is_gemv_case) {
     const int64_t group_size =
         graph->extract_scalar<int64_t>(resize_args.at(0));
-    if (can_use_q4gsw_coopmat(
-            graph,
-            out,
-            fp_input,
-            group_size,
-            resize_args.at(2),
-            kDq8caQ4gswCoopmatDims.m,
-            kDq8caQ4gswCoopmatDims.n,
-            kDq8caQ4gswCoopmatDims.k)) {
+    const char* variant = pick_dq8ca_q4gsw_coopmat_variant(
+        graph, out, fp_input, group_size, resize_args.at(2));
+    if (variant != nullptr) {
       std::string kernel_name = "linear_dq8ca_q4gsw_coopmat";
+      kernel_name += variant;
       add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
       add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
       add_dtype_suffix(kernel_name, graph->dtype_of(out));

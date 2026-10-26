@@ -52,11 +52,15 @@ struct PhysicalDevice final {
       shader_int_dot_product_properties;
 #endif /* VK_KHR_shader_integer_dot_product */
 
+#ifdef VK_KHR_vulkan_memory_model
+  VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features;
+#endif /* VK_KHR_vulkan_memory_model */
+
 #ifdef VK_KHR_cooperative_matrix
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features;
-  // True when VK_COMPONENT_TYPE_SINT8_KHR appears in the enumerated coopmat
-  // property list — required for coopmat<int8> shaders (e.g. dq8ca_q4gsw).
-  bool supports_int8_coopmat;
+  VkPhysicalDeviceCooperativeMatrixPropertiesKHR
+      cooperative_matrix_device_properties;
+  std::vector<VkCooperativeMatrixPropertiesKHR> cooperative_matrix_properties;
 #endif /* VK_KHR_cooperative_matrix */
 
 #ifdef VK_NV_cooperative_matrix2
