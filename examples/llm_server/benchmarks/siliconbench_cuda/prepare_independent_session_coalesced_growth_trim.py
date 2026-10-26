@@ -116,8 +116,9 @@ def main():
         before_hashes = {name: sha(source_before / name) for name in spec['files']}
         before_hashes.update({name: sha(source_before / name) for name in controls})
         assert all(sha(source / name) == expected for name, expected in before_hashes.items())
-        run(['git', 'apply', '--check', patch], cwd=source)
-        run(['git', 'apply', patch], cwd=source)
+        patch_options = ['--unidiff-zero'] if args.allocator_policy == 'paired-KV-storage' else []
+        run(['git', 'apply', *patch_options, '--check', patch], cwd=source)
+        run(['git', 'apply', *patch_options, patch], cwd=source)
         changed = {record['file']: record for record in records}
         for name, expected in before_hashes.items():
             after = changed[name]['after_SHA256'] if name in changed else expected

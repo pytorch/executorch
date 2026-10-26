@@ -704,8 +704,8 @@
       "bytes": 5485
     },
     "prepare_independent_session_coalesced_growth_trim.py": {
-      "sha256": "aaed2916f40da71bb5eed4be5da60fb07702b4d903a7abc5ccaf4dbf8a3e5e97",
-      "bytes": 13747
+      "sha256": "a086b582bf844c5b2bea29f4eef6cd373dc1b33837a776a533fa38aea6e890fa",
+      "bytes": 13878
     },
     "prepare_independent_session_empty_owner_reuse.py": {
       "sha256": "bc9b11d375c572fd6fc6505a5be4b6f303d84ebedcd7bdac25fec75319b83a77",
