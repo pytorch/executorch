@@ -1,4 +1,4 @@
-"""Prepare full Gemma quality/performance runs after actual lifecycle gates.
+"""Prepare full MG/Gemma quality/performance runs after actual lifecycle gates.
 
 Public source-only controller; model artifacts and results stay on the host.
 Quality collection does not promote a candidate. Performance requires a full
@@ -11,35 +11,51 @@ from pathlib import Path
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase',choices=['serve','quality','performance'],required=True)
-    for name in ('package','HTTP-job','fixed-job','native-job','memory-worker-proof',
-                 'Gemma-source-preparation-job','http-python-dependencies-job',
+    parser.add_argument('--full-model-profile', choices=('gemma4-48layers','muse-glimmer-52layers'),
+                        default='gemma4-48layers')
+    for name in ('package','HTTP-job','native-job','memory-worker-proof',
+                 'http-python-dependencies-job',
                  'tokenizer','server-python','public-inputs','lock','output'):
         parser.add_argument('--'+name,type=Path,required=True)
+    for name in ('fixed-job','Gemma-source-preparation-job','native-lifecycle-job','mini-qualification'):
+        parser.add_argument('--'+name, type=Path)
     parser.add_argument('--full-qualification-receipt',type=Path)
     parser.add_argument('--port',type=int,default=19910)
     a=parser.parse_args()
     assert 1024<=a.port<=65535
     sys.path.insert(0,str(a.package.resolve()))
     from independent_session_full_native_binding import sha,verify_runtime
-    from independent_session_full_http_binding import verified_gemma_full_http
-    a.full_model_profile='gemma4-48layers';a.mini_profile='gemma4-first6'
-    a.full_native_job=a.native_job;a.preparation_job=a.fixed_job/'full-pair'
+    from independent_session_full_http_binding import verified_gemma_full_http, verified_mg_full_http
+    gemma=a.full_model_profile=='gemma4-48layers'
+    assert (a.fixed_job and a.Gemma_source_preparation_job) if gemma else (
+        a.native_lifecycle_job and a.mini_qualification)
+    a.mini_profile='gemma4-first6' if gemma else 'muse-glimmer-first4'
+    a.full_native_job=a.native_job
+    a.preparation_job=a.fixed_job/'full-pair' if gemma else a.native_lifecycle_job/'after-full-artifact'
+    a.full_MG_native_lifecycle_job=a.native_lifecycle_job
+    a.full_MG_mini_qualification=a.mini_qualification
+    a.arm='independent';a.preserved_global_HTTP_failure_job=None
+    verify_http=verified_gemma_full_http if gemma else verified_mg_full_http
+    model_id='gemma4-12b-it' if gemma else 'muse-glimmer-30b'
     a.disable_native_memory_sampling=False
     if a.phase=='serve':
-        binding=verified_gemma_full_http(a,a.package)
+        binding=verify_http(a,a.package)
         prefix=os.environ['SB_PREFIX_CACHE'];assert prefix in ('off','on')
         port=int(os.environ['SB_PORT']);assert 1024<=port<=65535
         artifact=binding['artifacts']['independent']
-        command=[str(a.server_python),'-B',str(a.package/'serve_gemma_runtime_columns.py'),
+        serve=a.package/'serve_gemma_runtime_columns.py' if gemma else binding['source']/'examples/models/muse-glimmer/serving/serve_batching.py'
+        command=[str(a.server_python),'-B',str(serve),
             '--worker-bin',str(binding['worker']),'--model-path',str(artifact/'model.pte'),
             '--data-path',str(artifact/'aoti_cuda_blob.ptd'),
             '--tokenizer-path',str(a.tokenizer),'--hf-tokenizer',str(a.tokenizer),
-            '--model-id','gemma4-12b-it','--max-context','131072',
-            '--initial-kv-capacity','512','--max-sessions','16',
+            '--model-id',model_id,'--max-context','131072',
+            '--max-sessions','16',
             '--max-decode-sequences','16','--max-inflight-requests','16',
-            '--prefix-cache-entries','1' if prefix=='on' else '0',
-            '--prefix-checkpoint-interval','512' if prefix=='on' else '0',
-            '--raw-tool-text','--tool-parser','none','--host','127.0.0.1','--port',str(port)]
+            '--prefix-cache-entries',('1' if gemma else '4') if prefix=='on' else '0',
+            '--prefix-checkpoint-interval','512' if gemma and prefix=='on' else '0',
+            '--tool-parser','none','--host','127.0.0.1','--port',str(port)]
+        if binding['explicit_initial']:command+=['--initial-kv-capacity','512']
+        command+=['--raw-tool-text'] if gemma else ['--backend','cuda']
         env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',CUDA_VISIBLE_DEVICES='0',
             ET_CUDA_BENCH_MEMORY_TRACE='1',
             PYTHONPATH=str(binding['dependency_path'])+os.pathsep+str(binding['source'].parent))
@@ -65,7 +81,8 @@ def main():
             if d['status']=='full-HTTP-memory-collected-pending-F1-and-main':break
             assert d['status']!='failed',d
             proc=Path('/proc')/str(d['controller_pid'])/'cmdline'
-            assert proc.is_file() and b'run_gemma_full_http_after_lifecycle.py' in proc.read_bytes()
+            assert proc.is_file() and any(name in proc.read_bytes() for name in (
+                b'run_gemma_full_http_after_lifecycle.py', b'run_full_MG_HTTP_after_native.py'))
             assert time.monotonic()<deadline,'Preserve verified-live work; observation deadline reached'
             state('waiting-confirmed-live-full-HTTP',PID=d['controller_pid'],HTTP_status=d['status'])
             time.sleep(20)
@@ -76,7 +93,7 @@ def main():
         if parent['positive_performance_signals'] and a.phase=='performance':
             state('full-performance-gate-not-passed',positive_performance_signals=parent['positive_performance_signals'])
             return
-        binding=verified_gemma_full_http(a,a.package)
+        binding=verify_http(a,a.package)
         artifact=binding['artifacts']['independent']
         input_progress=json.loads((a.public_inputs/'progress.json').read_text())
         assert input_progress['status']=='pinned-public-main-inputs-ready'
@@ -108,9 +125,10 @@ def main():
                 assert sha(name)==expected,name
         # This generated wrapper remains in the owned experiment output only.
         common=[]
-        for name in ('package','HTTP-job','fixed-job','native-job','memory-worker-proof',
-                     'Gemma-source-preparation-job','http-python-dependencies-job',
-                     'tokenizer','server-python','public-inputs','lock','output'):
+        common=['--full-model-profile',a.full_model_profile]
+        for name in ('package','HTTP-job','native-job','memory-worker-proof',
+                     'http-python-dependencies-job','tokenizer','server-python','public-inputs','lock','output',
+                     *(('fixed-job','Gemma-source-preparation-job') if gemma else ('native-lifecycle-job','mini-qualification'))):
             common.extend(['--'+name,str(getattr(a,name.replace('-','_')))])
         serve=[str(a.server_python),'-B',str(Path(__file__).resolve()),'--phase','serve',*common]
         wrapper=a.output/'serve-qualified-full.sh'
@@ -132,13 +150,16 @@ def main():
                     mode='correctness' if a.phase=='quality' else 'performance'
                     case=a.output/(mode+'-'+split+'-prefix-'+prefix+'-c'+str(c))
                     argv=[str(benchmark_python),'-B',str(a.package/'run_case_24h.py'),
-                        '--wrapper',str(wrapper),'--backend','executorch','--model','gemma4-12b-it',
-                        '--variant','independent-session-KV','--prefix-cache',prefix,'--client',str(a.package/'benchmark_gemma.py'),
+                        '--wrapper',str(wrapper),'--backend','executorch','--model',model_id,
+                        '--variant','independent-session-KV','--prefix-cache',prefix,'--client',str(a.package/('benchmark_gemma.py' if gemma else 'benchmark_mg.py')),
                         '--prompts',str(prompt_paths[split]),'--correctness-root',str(a.public_inputs/'correctness'),
                         '--python',str(benchmark_python),'--concurrency',str(c),'--port',str(a.port),
                         '--output',str(case),'--lock',str(a.lock),'--mode',mode,'--split',split]
                     if a.phase=='quality':
                         argv+=['--quality-scope','full' if c in (1,16) else 'smoke','--correctness-rounds','1']
+                        if not gemma:
+                            argv+=['--correctness-max-tokens','1024','--correctness-chat-template-kwargs',
+                                   json.dumps(dict(enable_thinking=False,current_date='2026-10-21',reasoning_strength='low'))]
                     (a.output/(case.name+'-command.json')).write_text(json.dumps(dict(argv=argv),indent=2)+'\n')
                     state('collecting-'+mode,split=split,prefix=prefix,concurrency=c,case=str(case),completed=completed)
                     # Observe the unchanged driver's atomic progress records.
