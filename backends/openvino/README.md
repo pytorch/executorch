@@ -14,19 +14,29 @@ For more information on the supported hardware, please refer to [OpenVINO System
 
 ## Quick Start (pip wheel)
 
-On Linux, the OpenVINO backend is included in the ExecuTorch pip wheel. Install the OpenVINO runtime to activate it:
+On Linux and Windows, the OpenVINO backend is included in the ExecuTorch pip wheel. Install the OpenVINO runtime to activate it:
 
 ```bash
 pip install executorch[openvino]
 ```
 
-The backend automatically discovers the OpenVINO C library from the pip-installed package — no `LD_LIBRARY_PATH` setup is needed.
+For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python 3.14 need glibc 2.35 or newer.
 
-If auto-discovery fails (e.g. non-standard install), you can point to the library explicitly:
+The backend automatically discovers the OpenVINO C library from the pip-installed package, so no library search path setup is needed.
+
+If auto-discovery fails (e.g. non-standard install), set `OPENVINO_LIB_PATH` to the full path of the OpenVINO C library: a `libopenvino_c.so` file on Linux, or `openvino_c.dll` on Windows. For the pip package on Linux:
 
 ```bash
-export OPENVINO_LIB_PATH=$(python3 -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'libopenvino_c.so'))")
+export OPENVINO_LIB_PATH="$(python3 -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
 ```
+
+On Windows, in PowerShell:
+
+```powershell
+$env:OPENVINO_LIB_PATH = python -c "import openvino, os; print(os.path.join(os.path.dirname(openvino.__file__), 'libs', 'openvino_c.dll'))"
+```
+
+On Windows, `PATH` and the current folder are not searched for the library or for its dependencies, such as `tbb12.dll`. Those must sit beside `openvino_c.dll`, as they do in the pip package, or in a folder added with `os.add_dll_directory` (`AddDllDirectory` in C++). Importing the `openvino` Python package adds its folders this way, including the ones Intel's `setupvars.bat` lists.
 
 Verify the backend is available:
 

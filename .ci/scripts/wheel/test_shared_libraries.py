@@ -79,7 +79,10 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # strong one elsewhere, so naming one of those would count a definition that may not be the one
 # the process uses.
 _CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
-_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+_CUDA_EXTENSION_SYMBOLS = (
+    "executorch::extension::cuda::getCallerStream",
+    "executorch::extension::cuda::CudaAllocator::instance",
+)
 
 # The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
 # genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
@@ -96,10 +99,6 @@ _AOTI_SHIM_SYMBOLS = (
     # kernel shim is listed rather than a sample, because a partially built library is exactly the
     # failure this row exists to catch.
     "aoti_torch_cuda__weight_int4pack_mm",
-    "aoti_torch_cuda_int4_plain_mm",
-    "aoti_torch_cuda_int5_plain_mm",
-    "aoti_torch_cuda_int6_plain_mm",
-    "aoti_torch_cuda_int8_plain_mm",
     "aoti_torch_cuda_rand",
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",
@@ -150,7 +149,11 @@ else:
 # The delegate's own entry points. A second definer means the delegate is compiled
 # into the Python extension as well, which would register it twice in one process.
 _QNN_BACKEND_SYMBOLS = ("QnnExecuTorchBackendRegister",)
-_OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
+# A member rather than the bare class name, because the PE reader matches MSVC decorated
+# names, which spell a member as ?is_available@OpenvinoBackend@... and never the class alone.
+_OPENVINO_BACKEND_SYMBOLS = (
+    "executorch::backends::openvino::OpenvinoBackend::is_available",
+)
 
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
@@ -214,6 +217,9 @@ _WINDOWS_IMPORT_WITNESSES = {
         "executorch.dll",
         "executorch::runtime::register_backend",
     ),
+    # The delegate's entry points come from cuda_platform, an archive, so its export list does not
+    # name them either.
+    "CUDA delegate": ("executorch.dll", "executorch::runtime::register_backend"),
 }
 
 _PE_REPORTS: dict = {}
@@ -1095,22 +1101,23 @@ def _wheel_cuda_train() -> str:
 # wheel is inspected, and a row cannot call that at import time.
 _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
-# Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
-_REQUIRED_ON_LINUX = "linux-only"
+# Marker for a row whose owner every Linux and Windows wheel carries and no macOS wheel
+# does.
+_REQUIRED_ON_LINUX_AND_WINDOWS = "linux-and-windows-only"
 # Marker for a row whose owner every macOS wheel carries and no other wheel does.
 # The Core ML delegate is built on every macOS wheel, so its presence is decidable
 # from the installed wheel and a macOS wheel that dropped it should fail rather than
 # quietly regress to folding it into the Python extension.
 _REQUIRED_ON_MACOS = "macos-only"
-# Narrower than the marker above on purpose. The Qualcomm SDK the delegate builds
-# against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no such
-# library and demanding it there would fail a wheel that is correct. Reusing the
-# Linux-wide marker would do exactly that.
+# Narrower than the Linux and Windows marker on purpose. The Qualcomm SDK the delegate
+# builds against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no
+# such library and demanding it there would fail a wheel that is correct. Reusing that
+# marker would do exactly that.
 _REQUIRED_ON_LINUX_X86 = "linux-x86-only"
 # Marker for a row whose owner every aarch64 wheel carries, macOS and Linux alike. The
 # TorchAO kernels are selected by the processor rather than the operating system, so
-# neither the macOS nor the Linux marker describes them and a fixed False would let a
-# wheel that silently dropped the library pass.
+# neither the macOS nor the Linux and Windows marker describes them and a fixed False
+# would let a wheel that silently dropped the library pass.
 _REQUIRED_ON_AARCH64 = "aarch64-only"
 
 
@@ -1118,8 +1125,8 @@ def _resolve_required(required):
     """Turn a row's requirement marker into the answer for the installed wheel."""
     if required == _REQUIRED_ON_A_CUDA_WHEEL:
         return bool(_wheel_cuda_train())
-    if required == _REQUIRED_ON_LINUX:
-        return sys.platform == "linux"
+    if required == _REQUIRED_ON_LINUX_AND_WINDOWS:
+        return sys.platform in ("linux", "win32")
     if required == _REQUIRED_ON_MACOS:
         return sys.platform == "darwin"
     if required == _REQUIRED_ON_LINUX_X86:
@@ -1236,8 +1243,8 @@ _OWNED_COMPONENTS = (
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     (
-        "CUDA stream helper",
-        _CUDA_STREAM_SYMBOLS,
+        "CUDA allocator and stream helpers",
+        _CUDA_EXTENSION_SYMBOLS,
         _library_file_name("libexecutorch_extension_cuda"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
@@ -1277,15 +1284,15 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_backend_mlx"),
         False,
     ),
-    # Required on Linux, where packaging turns the backend on for every non-minimal
-    # build. A fixed False passed a wheel that had compiled the delegate back into the
-    # extension: no library ships, so the row skips, and one definer inside the
+    # Required on Linux and Windows, where packaging turns the backend on for every
+    # non-minimal build. A fixed False passed a wheel that had compiled the delegate back
+    # into the extension: no library ships, so the row skips, and one definer inside the
     # extension is exactly the monolithic layout a definer count cannot distinguish.
     (
         "OpenVINO delegate",
         _OPENVINO_BACKEND_SYMBOLS,
         _library_file_name("libexecutorch_backend_openvino"),
-        _REQUIRED_ON_LINUX,
+        _REQUIRED_ON_LINUX_AND_WINDOWS,
     ),
     # Required on Linux x86_64 only, where the Qualcomm SDK the delegate builds against
     # is published. A fixed False would pass a wheel that compiled the delegate back
@@ -1794,9 +1801,13 @@ import sys
 if sys.argv[3] == "torch":
     import torch  # noqa: F401
 
-# executorch/lib, which a C++ program copies beside itself and the package's entry points
-# register. Whether they do is test_package_entry_points_load_their_libraries.
-os.add_dll_directory(sys.argv[2])
+# The directories the package ships DLLs in, the ones the Linux libraries record relative
+# search paths for: executorch/lib, which a C++ program copies beside itself and the
+# package's entry points register (test_package_entry_points_load_their_libraries checks
+# that they do), and backends/cuda, where the CUDA delegate's shim layer ships.
+for directory in [sys.argv[2], *sys.argv[4:]]:
+    if os.path.isdir(directory):
+        os.add_dll_directory(directory)
 ctypes.WinDLL(sys.argv[1])
 """
 
@@ -1830,6 +1841,7 @@ def _assert_shipped_libraries_load_on_windows(root: Path, package_dir: Path) -> 
                 str(target),
                 str(lib_dir),
                 torch_needed,
+                str(root / "backends" / "cuda"),
             ],
             capture_output=True,
             text=True,
@@ -2757,6 +2769,9 @@ def test_extension_contains_no_component() -> None:
             marker in name
             for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
         )
+        # Not on Windows, where a CUDA program cannot be lowered, so the delegate ships for
+        # C++ applications and the extension deliberately does not link it.
+        and not (_WINDOWS and "backend_cuda" in name)
     }
     unused = sorted(expected - needed)
     assert not unused, (

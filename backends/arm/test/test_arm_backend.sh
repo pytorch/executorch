@@ -340,6 +340,38 @@ test_minimal_classic_ml_ethos_u55() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_minimal_classic_ml_cortex_m55() {
+    echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Cortex-M55"
+
+    local build_dir="${et_root_dir}/arm_test/minimal_classic_ml_cortex_m55"
+    local pte_path="${build_dir}/add.pte"
+    local fvp_log="${build_dir}/run_fvp.log"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=add \
+        --target=cortex-m55 \
+        --intermediates="${build_dir}" \
+        --output="${pte_path}"
+
+    cmake \
+        -S examples/arm/minimal_classic_ml \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}"
+    cmake --build "${build_dir}" --target arm_classic_ml_runner -j"$(nproc)"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${build_dir}/arm_classic_ml_runner" \
+        --target=cortex-m55 | tee "${fvp_log}"
+    local fvp_status="${PIPESTATUS[0]}"
+    [[ "${fvp_status}" -eq 0 ]]
+    grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # ----------------------------------------------
 # -------- Arm Ethos-U85 specific tests --------
 # ----------------------------------------------
@@ -497,7 +529,9 @@ test_runtime_vgf() {
     cmake --build "${ctest_build_dir}" \
     --target \
         vgf_neural_statistics_test \
+        vgf_shape_utils_test \
         vgf_vulkan_features_test \
+        vgf_zero_copy_test \
         vgf_execution_stats_enabled_test \
         vgf_execution_stats_disabled_test \
     --parallel
@@ -536,6 +570,12 @@ test_ootb_tests_vgf() {
 test_deit_e2e_ethos_u() {
     echo "${TEST_SUITE_NAME}: Run DEiT end-to-end test for Arm Ethos-U"
     backends/arm/test/test_arm_ootb.sh run_deit_e2e_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_person_detection_e2e_cortex_m() {
+    echo "${TEST_SUITE_NAME}: Run person-detection Cortex-M end-to-end test"
+    backends/arm/test/test_arm_ootb.sh run_person_detection_e2e_cortex_m
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

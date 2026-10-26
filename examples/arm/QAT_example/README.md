@@ -11,8 +11,10 @@ Use a standard Practical-RIFE checkout with this layout:
 
 ```text
 <model-root>/train_log/IFNet_HDv3.py
-<model-root>/train_log/flownet.pkl
 ```
+
+Pass `--checkpoint /path/to/flownet.pkl` to load trained weights. The
+checkpoint is optional; omitting it uses the model's initial weights.
 
 The triples file must identify frame interpolation samples in this order:
 
@@ -33,6 +35,7 @@ PTQ, and QAT at the default 768x384 shape while preserving uint8 image IO:
 python examples/arm/QAT_example/qat_loop.py \
   --triples-list <path-to-real-triples.csv> \
   --model-root <path-to-Practical-RIFE> \
+  --checkpoint <path-to-Practical-RIFE>/train_log/flownet.pkl \
   --height 768 \
   --width 384 \
   --max-triples 10 \
@@ -63,6 +66,59 @@ Small random or short QAT runs are useful only for checking that the flow runs.
 Do not use them as model-quality evidence. For example, two samples and three
 QAT steps can produce very low PSNR while still proving that eager, PTQ, and
 QAT execution is wired correctly.
+
+## Model Selection
+
+Use `--model-class` to select a compatible model class from
+`train_log/IFNet_HDv3.py` in your Practical-RIFE checkout. For example,
+add `--model-class IFNetTwoBlock` to the command above.
+
+### Packed Intermediate Warps
+
+The RIFE VGF extension runs `PackRifeWarpsAndConcatPass` after TOSA lowering.
+For the supported integer pattern, one shader samples both images and both
+feature tensors and writes the second block's CONCAT input directly as C32.
+It copies the existing full-resolution mask, features and flow, inserts the
+constant timestep, and adds four dummy channels. Four zero weight columns
+make the following convolution ignore those channels.
+
+The pass checks shader identities, descriptors, matching sampling qparams,
+private warp consumers, and symmetric convolution weights before rewriting.
+Unsupported graphs are left unchanged. When the original block0 tail matches,
+PixelShuffle, slicing, state resizing and rescaling run inside the packed shader.
+The shader writes only C32, including the original INT8 previous-flow codes in
+channels 24–27. The final warp shader reads those channels directly for block1's
+flow update. No separate flow output is written.
+The final block0 transpose-convolution weights, bias and per-channel rescale
+parameters are reordered during export from channel-major to phase-major order,
+so each PixelShuffle lookup reads 13 contiguous channels from C52. No runtime weight
+reorder is added. Resize bounds come from the tensor dimensions; C32 stores
+remain loop-based.
+
+`FuseRifeFinalWarpsPass` fuses block1's PixelShuffle, flow update, sigmoid mask
+lookup and both final image warps into one shader. It reorders block1's final
+transpose-convolution weights, bias and rescale parameters at export time so
+each PixelShuffle phase reads five contiguous channels from C20. Integer flow
+rescales preserve TOSA's single-round behavior, and each warp retains its own
+sampling quantization parameters. A compatible final image blend is fused into
+the same shader, which writes only the final NCHW INT8 RGB image. Intermediate
+warped images and masks stay in registers. The complement mask uses an exact
+lookup table. Blend rescales use TOSA's integer multipliers, shifts and
+single-round behavior. The original blend quantization boundaries are retained.
+When the blend does not match, the shader outputs both warped RGBA images and
+the quantized NCHW mask for blending in TOSA. Unsupported tail patterns and
+tails with additional consumers are left unchanged.
+
+`PadRifeBlock0ConcatPass` pads the two RGB image branches to C4 before their
+half-resolution RESIZE operations. Image0 carries the constant timestep in
+its fourth channel; image1 carries a dummy channel. The CONCAT joins four C4
+branches without separate constant inputs. The pass reorders the convolution's
+input weight columns and adds a zero column for the dummy channel, preserving
+the convolution result. Existing image PADs are shared with the warp shaders
+when their fourth channel is unused. Unsupported resize or quantization patterns
+are skipped.
+
+`glslc` must be available when exporting a matching graph.
 
 ## Reference Samples
 
