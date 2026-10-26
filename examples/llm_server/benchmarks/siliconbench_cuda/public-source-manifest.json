@@ -515,6 +515,10 @@
       "sha256": "62d2f097c033d8840f042fa937be3250e95ed2c8bda2e128e803381598df07f1",
       "bytes": 4742
     },
+    "independent_session_preserved_http_failure.py": {
+      "sha256": "7762ab04e895626b616f7d46b6247b01a3b2ae59025148497fe339be3c7e230e",
+      "bytes": 2351
+    },
     "independent_session_stable_metadata_uploads.patch": {
       "sha256": "1bc4bc6cecc0b3283b98cb836a86b02cb1a47a29bccefba46015a78e5d1271dc",
       "bytes": 6068
@@ -852,8 +856,8 @@
       "bytes": 8728
     },
     "review_independent_session_http_lifecycle.py": {
-      "sha256": "e9b75bb95ce5a52943b36dc157fde9dc4748e9b104e72ac457f79ec7b6bc9591",
-      "bytes": 14621
+      "sha256": "decac7a86d6514629ec58ccbc17185e8c66026781ea567ed92928f4f7af6f00b",
+      "bytes": 15835
     },
     "review_independent_session_mg_fixed_latency.py": {
       "sha256": "baf4ba7a91b3d0adad19b5cb4f663b4dd56cb9c27ed36c727eab1cea153d18dc",
@@ -984,8 +988,8 @@
       "bytes": 6828
     },
     "run_gemma_full_http_after_lifecycle.py": {
-      "sha256": "17865aa55b1b605db8ee73a977a2501b0974032dec12bef55d3bc8875110f150",
-      "bytes": 5252
+      "sha256": "5e4f3b4c86dc6364457fa3dc739cc38357ee01a1f9aedd010fe597723ba0bbbe",
+      "bytes": 6290
     },
     "run_gemma_full_lifecycle_after_fixed.py": {
       "sha256": "920b91a84d466373a2fe7f5e272f42c6ccaa826c2176062aebb565597439151e",
@@ -1020,8 +1024,8 @@
       "bytes": 7145
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "9b1cbd37a79fa3ac6a0fbd1cfb3960559b44ce1f59ab998c72daba94899d6a6d",
-      "bytes": 37151
+      "sha256": "23bf4b4cebf64401a8e15a745001a6ec1667b3daae29d2191d29532adf3432ad",
+      "bytes": 38168
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "c2703f1a60c26dfb370b364e915f70442c236fb4b8bedcdde3f9d5677eb30fe5",

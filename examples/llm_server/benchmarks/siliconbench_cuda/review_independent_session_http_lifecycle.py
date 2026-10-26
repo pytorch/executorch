@@ -49,7 +49,18 @@ def main():
         assert document['mini_only']
 
     assert document["context"] == 131072 and document["initial_KV_capacity"] == 512
-    assert len(document["rounds"]) == 16
+    collected_arms=document.get('collected_arms',['global','independent'])
+    assert collected_arms in (['global','independent'],['independent'])
+    paired=len(collected_arms)==2
+    if not paired:
+        assert full_profile=='gemma4-48layers'
+        preserved=document['preserved_global_HTTP_failure']
+        assert preserved['actual_failed_global_HTTP_preserved'] and preserved['failed_global_test_is_not_a_pass']
+        for name,expected in preserved['raw_files_SHA256'].items():
+            assert digest(Path(preserved['path'])/name)==expected,name
+    assert len(document["rounds"]) == 8*len(collected_arms)
+    assert sorted((row['round'],row['prefix'],row['arm']) for row in document['rounds'])==sorted(
+        (number,prefix,arm) for number in range(1,5) for prefix in ('off','on') for arm in collected_arms)
     native_enabled = document.get("native_allocator_sampling_enabled", False)
     if args.require_native_memory:
         assert native_enabled
@@ -176,19 +187,20 @@ def main():
                             native_initial_pool_unavailable_samples=sum(not item["allocator_pool_available"] for item in native),
                             native_query_duration_ns=moments([item["query_duration_ns"] for item in native]) if len(native) > 1 else None,
                             raw_file_SHA256={path.name: digest(path) for path in (requests_path, memory_path, log_path)}))
-    assert len(comparison) == 256 and all(set(value) == {"global", "independent"} for value in comparison.values())
+    assert len(comparison) == 256 and all(set(value) == set(collected_arms) for value in comparison.values())
     differences = []
     for key, values in comparison.items():
+        if not paired:continue
         left, right = values["global"], values["independent"]
         assert left["body"] == right["body"] and left["prompt_tokens"] == right["prompt_tokens"]
         if left != right:
             differences.append(dict(round=key[0], prefix=key[1], stage=key[2], owner=key[3],
                                     global_output=left, independent_output=right))
-    lengths_equal = all(values["global"]["completion_tokens"] == values["independent"]["completion_tokens"]
-                        for values in comparison.values())
+    lengths_equal = (all(values["global"]["completion_tokens"] == values["independent"]["completion_tokens"]
+                        for values in comparison.values()) if paired else None)
     summaries = []
     for prefix in ("off", "on"):
-        for arm in ("global", "independent"):
+        for arm in collected_arms:
             rows = sorted((row for row in records if row["prefix"] == prefix and row["arm"] == arm), key=lambda row: row["round"])
             assert [row["round"] for row in rows] == [1, 2, 3, 4]
             for index in range(6):
@@ -197,15 +209,18 @@ def main():
                                       mean_TTFT_seconds=(moments([row["stages"][index]["mean_TTFT_seconds"] for row in rows[1:]]) if all(row["stages"][index]["mean_TTFT_seconds"] is not None for row in rows[1:]) else None),
                                       empty_first_EOS_requests=[row["stages"][index]["empty_first_EOS_requests"] for row in rows[1:]],
                                       NVML_idle_last_bytes=moments([row["stages"][index]["lifecycle"]["stage-" + str(index) + "-c" + str(row["stages"][index]["concurrency"]) + "-idle"]["NVML_last_bytes"] for row in rows[1:]])))
-    result = dict(full_model_profile=full_profile, mini_only=not full_profile, raw_streams_usage_timestamps_and_hashes_verified=True, matched_requests=len(comparison),
+    result = dict(full_model_profile=full_profile, mini_only=not full_profile, raw_streams_usage_timestamps_and_hashes_verified=True,
+                  collected_arms=collected_arms,server_runs=len(records),actual_requests=256*len(collected_arms),
+                  matched_requests=len(comparison) if paired else 0,
+                  paired_comparison_collected=paired,preserved_global_HTTP_failure=document.get('preserved_global_HTTP_failure'),
                   completion_lengths_equal_between_arms=lengths_equal,
                   all_outputs_reached_limit=all(value[arm]["completion_tokens"] == 64 for value in comparison.values() for arm in value),
-                  output_differences=differences, natural_output_texts_identical=not differences,
+                  output_differences=differences, natural_output_texts_identical=(not differences if paired else None),
                   native_allocator_memory_verified=native_enabled,
                   automatic_OFF_c16_to_c1_reclaim_verified=native_enabled,
                   source_result_SHA256=digest(args.job / "result.json"), rounds=records, summaries=summaries,
                   native_sampler_overhead_not_qualified=True, model_performance_qualified=False, candidate_promoted=False,
-                  limitations="Mini HTTP diagnostic. NVML includes all device allocations; the ET allocator pool is not a measure of graph-private pools. Natural output text differences need model correctness review.")
+                  limitations="HTTP lifecycle diagnostic, not task F1 or main performance acceptance. NVML includes all device allocations; the ET allocator pool does not measure graph-private pools. Candidate-only collection has no paired output or timing comparison; the failed global run remains a failure.")
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({key: result[key] for key in ("matched_requests", "completion_lengths_equal_between_arms", "all_outputs_reached_limit", "native_allocator_memory_verified", "automatic_OFF_c16_to_c1_reclaim_verified")}))
 

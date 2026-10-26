@@ -15,6 +15,7 @@ def main():
                  'tokenizer','output','lock'):
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--port',type=int,required=True)
+    p.add_argument('--preserved-global-HTTP-failure-job',type=Path)
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     package=Path(__file__).resolve().parent
     def state(status,**extra):
@@ -43,6 +44,10 @@ def main():
             time.sleep(20)
         verify_runtime(a.native_job,package)
         result=json.loads((a.lifecycle_job/'result.json').read_text())
+        preserved_global_HTTP_failure=None
+        if a.preserved_global_HTTP_failure_job:
+            from independent_session_preserved_http_failure import verify_failed_global_HTTP
+            preserved_global_HTTP_failure=verify_failed_global_HTTP(a.preserved_global_HTTP_failure_job,a.fixed_job/'full-pair')
         assert result['full_profile']=='gemma4-48layers' and result['full_storage_rewind_graph_pass']
         assert result['native_gate_SHA256']==sha(a.native_job/'native-gate.json')
         for name,expected in result['raw_reviews_SHA256'].items():
@@ -54,12 +59,19 @@ def main():
             '--port',a.port,'--mini-profile','gemma4-first6','--full-model-profile','gemma4-48layers',
             '--full-native-job',a.native_job,'--memory-worker-proof',a.memory_worker_proof,
             '--Gemma-source-preparation-job',a.Gemma_source_preparation_job,
-            '--http-python-dependencies-job',a.http_python_dependencies_job])
+            '--http-python-dependencies-job',a.http_python_dependencies_job]+(
+            ['--arm','independent','--preserved-global-HTTP-failure-job',a.preserved_global_HTTP_failure_job] if preserved_global_HTTP_failure else []))
         run('HTTP-review','review_independent_session_http_lifecycle.py',[
             '--job',a.output/'HTTP-memory','--require-native-memory',
             '--output',a.output/'HTTP-independent-review.json'])
         review=json.loads((a.output/'HTTP-independent-review.json').read_text())
-        assert review['matched_requests']==256 and review['full_model_profile']=='gemma4-48layers'
+        assert review['full_model_profile']=='gemma4-48layers'
+        if preserved_global_HTTP_failure:
+            assert review['collected_arms']==['independent'] and review['matched_requests']==0
+            assert review['actual_requests']==256 and review['server_runs']==8
+            assert review['completion_lengths_equal_between_arms'] is None
+        else:
+            assert review['matched_requests']==256
         assert review['native_allocator_memory_verified']
         assert review['automatic_OFF_c16_to_c1_reclaim_verified']
         final=dict(full_profile='gemma4-48layers',full_HTTP_memory_pass=True,
@@ -70,6 +82,8 @@ def main():
             natural_HTTP_outputs_are_not_task_F1_acceptance=True,
             rewind_test_arms=result.get('rewind_test_arms',['global','independent']),
             preserved_global_rewind_failure=result.get('preserved_global_rewind_failure'),
+            HTTP_test_arms=review['collected_arms'],preserved_global_HTTP_failure=preserved_global_HTTP_failure,
+            global_HTTP_pass=not bool(preserved_global_HTTP_failure),
             full_model_qualified=False,main_candidate_accepted=False,
             remaining_gates=['full 0/5-shot F1 and balanced checks','main comparison'])
         (a.output/'result.json').write_text(json.dumps(final,indent=2)+'\n')

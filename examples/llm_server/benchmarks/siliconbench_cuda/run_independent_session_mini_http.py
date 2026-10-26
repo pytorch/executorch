@@ -45,6 +45,9 @@ def main():
     parser.add_argument('--mini-profile',choices=PROFILES,default=DEFAULT_PROFILE)
     parser.add_argument('--full-model-profile', choices=['gemma4-48layers'])
     parser.add_argument('--full-native-job',type=Path)
+    parser.add_argument('--arm', choices=['both', 'independent'], default='both',
+                        help='Full-model candidate-only collection requires a preserved failed global HTTP run')
+    parser.add_argument('--preserved-global-HTTP-failure-job', type=Path)
     parser.add_argument('--Gemma-source-preparation-job',type=Path)
     parser.add_argument('--http-python-dependencies-job',type=Path,
                         help='Verified isolated HTTP dependencies; no change to model environment')
@@ -59,6 +62,15 @@ def main():
     args.output.mkdir(parents=True)
     package=Path(__file__).resolve().parent
     full_profile=args.full_model_profile
+    collected_arms=['global','independent'] if args.arm=='both' else ['independent']
+    preserved_global_HTTP_failure=None
+    if args.arm=='independent':
+        assert full_profile=='gemma4-48layers' and args.preserved_global_HTTP_failure_job is not None
+        from independent_session_preserved_http_failure import verify_failed_global_HTTP
+        preserved_global_HTTP_failure=verify_failed_global_HTTP(
+            args.preserved_global_HTTP_failure_job,args.preparation_job)
+    else:
+        assert args.preserved_global_HTTP_failure_job is None
     if full_profile:
         from independent_session_full_http_binding import verified_gemma_full_http
         verified=verified_gemma_full_http(args,package)
@@ -335,6 +347,7 @@ def main():
         for number in range(1, 5):
             for prefix in ("off", "on"):
                 order = ("global", "independent") if number % 2 else ("independent", "global")
+                order=tuple(arm for arm in order if arm in collected_arms)
                 for arm in order:
                     with socket.socket() as check:
                         assert check.connect_ex(("127.0.0.1", args.port)) != 0, "Preserve existing port owner"
@@ -500,7 +513,7 @@ def main():
 
     aggregates = []
     for prefix in ("off", "on"):
-        for arm in ("global", "independent"):
+        for arm in collected_arms:
             selected = [row for row in records if row["prefix"] == prefix and row["arm"] == arm]
             assert [row["round"] for row in selected] == [1, 2, 3, 4]
             for index, concurrency in enumerate([1, 2, 4, 8, 16, 1]):
@@ -513,7 +526,8 @@ def main():
                   mini_profile=args.mini_profile,uses_existing_Gemma_llm_server_adapter=gemma,
                   initial_KV_capacity=512, concurrency_sequence=[1, 2, 4, 8, 16, 1],
                   prefix_modes=["off", "on"], prefix_entries_on=prefix_entries_on, prefix_checkpoint_interval_on=prefix_interval_on,
-                  four_rounds_first_discarded=True, alternating_arm_order=True,
+                  four_rounds_first_discarded=True, alternating_arm_order=len(collected_arms)==2,
+                  collected_arms=collected_arms,preserved_global_HTTP_failure=preserved_global_HTTP_failure,
                   NVML_source="entire device, sampled every 50 ms", rounds=records, aggregates=aggregates,
                   artifact_audits=audits, native_gate_sha256=digest(gate_path),
                   worker_sha256=digest(worker), candidate_promoted=False,
