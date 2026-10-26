@@ -1,0 +1,44 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -122,9 +122,10 @@
+   for (const auto& allocation : allocations_) {
+     old_rows.push_back(allocation.rows);
+   }
+-  // Releasing allocator caches while growing returns AOTI workspace pages
+-  // before the next forward, forcing expensive pool recommit. Retain them
+-  // during growth; preserve eager release when owners/capacities contract.
++  // Coalesce cache trims around a growth migration, instead of retaining
++  // unused pages across the next model forward or trimming every layer.
++  // Contraction still trims eagerly to bound transient memory. These trims
++  // release only unused allocator/graph pages; live KV stays allocated.
+   bool releases_storage = columns < old_columns;
+   for (size_t index = 0; index < allocations_.size(); ++index) {
+     releases_storage |= target_rows[index] < allocations_[index].rows;
+@@ -244,9 +245,16 @@
+         return poison();
+       }
+     }
++    // All restored copies have passed fence() before unused pages are trimmed.
++    if (trim_unused && !trim_reclaimed_storage) {
++      CudaAllocator::release_cached_memory(device_);
++    }
+     return error;
+   };
+   ET_CHECK_OK_OR_RETURN_ERROR(fence());
++  if (trim_unused && !trim_reclaimed_storage) {
++    CudaAllocator::release_cached_memory(device_);
++  }
+   invalidate_bindings();
+   for (size_t index = 0; index < layers_.size(); ++index) {
+     // A flat range can move at unchanged total size, so compare ownership too.
+@@ -275,6 +283,10 @@
+     if (fence() != Error::Ok) {
+       return poison();
+     }
++  }
++  // The final layer migration has passed fence(); no pending free is trimmed.
++  if (trim_unused && !trim_reclaimed_storage) {
++    CudaAllocator::release_cached_memory(device_);
+   }
+   initial_rows_ = initial_rows_ / old_columns * columns;
+   max_rows_ = max_rows_ / old_columns * columns;

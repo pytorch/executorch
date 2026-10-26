@@ -1,0 +1,44 @@
+{
+  "patch_SHA256": "6b6162501bdc9d84321d74464c636542c45ee14ceccfc032fa1d8f114e372075",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "173b5bf3becdfb8550c1b6975f90e0b2bdc28824078eb65407fabdd23574a5de",
+        "after_SHA256": "ca68ee7df8854d8c74d6664d19ce43cbe03cb15b62ec6e9ca78413960071c86b",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "6b6162501bdc9d84321d74464c636542c45ee14ceccfc032fa1d8f114e372075"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "5b2b3ae419daff929ac0524e2bcb7877e66b53a9d84840143508fe1dd816017c",
+        "after_SHA256": "d0623b9cf24b669ffc6cd99991c07bf5cf5d72ba75402b085d68a3f8a32c5340",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "6b6162501bdc9d84321d74464c636542c45ee14ceccfc032fa1d8f114e372075"
+      }
+    ],
+    "growth-only": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "b7a54a56887b8c222888751c54fa5a987db14fa542ae672ec06fa25fdc241c19",
+        "after_SHA256": "c3645085a028ffee6725305b5e837d321a00496bc08bd1674fd16ff543a81130",
+        "allocator_policy_only": true,
+        "weights_math_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "6b6162501bdc9d84321d74464c636542c45ee14ceccfc032fa1d8f114e372075"
+      }
+    ]
+  },
+  "growth_trims_before_and_after_migration": true,
+  "contraction_eager_release_unchanged": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}
