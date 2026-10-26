@@ -603,6 +603,10 @@
       "sha256": "a8a58b887107ea38743b2eaf69c6ee46287c881aefc8dd3afe9681627aa32906",
       "bytes": 4062
     },
+    "prepare_rewind_kv_probe.py": {
+      "sha256": "1b99ddc94ec7c07ec1b8937513c0ad5224708d795d48ca7f73b342c213cc8f50",
+      "bytes": 6024
+    },
     "prepare_roofline_gpu_sdk.py": {
       "sha256": "9085bc3fac2f57cf45db6b94be1f4b1336a5905405cc1404ca66eaa1e5375eb6",
       "bytes": 6318
@@ -703,6 +707,10 @@
       "sha256": "01568afdd13e1dbacd12a6820172c32a6d4de1f892909195a6c5898ea58597ae",
       "bytes": 2710
     },
+    "qualified_rewind_probe.py": {
+      "sha256": "e65528f9cd1df3b2c588b8f7de5680b5e07f4f8f3e8ec025fa3fb8aa49b47082",
+      "bytes": 1819
+    },
     "qualify_existing_nearcap_server.py": {
       "sha256": "83de70790d21157bc4a11b8ee8bc6bdb2dc6e4307f3d5fd89376dbaaa931cd8c",
       "bytes": 6180
@@ -754,6 +762,10 @@
     "review_runtime_kv_weight_payload.py": {
       "sha256": "74ffb427da69a8b69da6d1235dea198f195f4eae7ba7f68a5162cdf6eb7f63cc",
       "bytes": 5222
+    },
+    "rewind_kv_probe_project/CMakeLists.txt": {
+      "sha256": "e8a9f91cde7bc66858c7e0091a5680c1cbcd39d624dd2b3c01a61417e2f6d417",
+      "bytes": 908
     },
     "roofline_active_common.h": {
       "sha256": "0887caf44962f47a863d70c5edb58d089af516001271837d2257a8a1cc6cfe5c",
@@ -836,8 +848,8 @@
       "bytes": 21109
     },
     "run_independent_session_mini_model_latency.py": {
-      "sha256": "cca68b9be2401271289492ac7dc821573646b1ecfb5a0e5c6a744fe86104c685",
-      "bytes": 14381
+      "sha256": "1cb04a5b327f8611ef471f9015d64ae9ee8d20a750c17859617e4651d3ce39a8",
+      "bytes": 15156
     },
     "run_independent_session_mini_pair.py": {
       "sha256": "c24f3ee0bb32c31506e553bf3eb7045e711f1bee46a503576d237e437c6eb6a0",
@@ -848,8 +860,8 @@
       "bytes": 27991
     },
     "run_independent_session_same_artifact_control.py": {
-      "sha256": "9cd07bb3929590110a73726d91cdd27751c00895e5f9c3578a09625e4da25bec",
-      "bytes": 14057
+      "sha256": "22d9d1f875e20481a1cd39556fb4e4dc13a06b0e16a0442267ade4e1439642e1",
+      "bytes": 16197
     },
     "run_matrix.py": {
       "sha256": "7809e920164afe21dd35a82883e89c34bf2549c020b1d8c8b88fbbd194bfb8ed",

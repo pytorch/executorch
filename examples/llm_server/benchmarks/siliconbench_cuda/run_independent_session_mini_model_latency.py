@@ -17,6 +17,7 @@ import subprocess
 import time
 import traceback
 from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
+from qualified_rewind_probe import qualified_rewind_probe
 
 
 def digest(path):
@@ -33,7 +34,10 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=240)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--rewind-probe-job',type=Path)
+    parser.add_argument('--native-sampler',choices=['off','on'],default='off')
     args = parser.parse_args()
+    assert args.native_sampler=='off' or args.rewind_probe_job is not None
     assert not args.output.exists()
     args.output.mkdir(parents=True)
 
@@ -69,6 +73,9 @@ def main():
         assert gate["native_GPU_tests_pass"] and gate["test_count"] >= 29
         probe = args.preparation_job / "model-build/muse_glimmer_runtime_kv_probe"
         assert digest(probe) == gate["binaries"][str(probe)]
+        probe_proof=None
+        if args.rewind_probe_job:
+            probe,probe_proof=qualified_rewind_probe(args.rewind_probe_job,gate_path,probe,state,args.wait_minutes)
         audits = {}
         for arm in ("global", "independent"):
             artifact = args.preparation_job / ("mini-" + arm + "-artifact")
@@ -104,8 +111,11 @@ def main():
                     child = None
                     try:
                         with (directory / "stderr.log").open("x") as log, (directory / "protocol.jsonl").open("x") as raw:
+                            env={**os.environ,'CUDA_VISIBLE_DEVICES':'0'}
+                            env.pop('ET_CUDA_BENCH_MEMORY_TRACE',None)
+                            if args.native_sampler=='on':env['ET_CUDA_BENCH_MEMORY_TRACE']='1'
                             child = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                                     stderr=log, text=True, bufsize=1)
+                                                     stderr=log, text=True, bufsize=1,env=env)
                             selector = selectors.DefaultSelector()
                             selector.register(child.stdout, selectors.EVENT_READ)
 
@@ -212,6 +222,7 @@ def main():
                     for key in ("cold_first_four_seconds","mean_all_measured_native_ms","mean_stable_native_ms")}))
         (args.output / "result.json").write_text(json.dumps(dict(
             mini_only=True,mini_profile=args.mini_profile,model_geometry=geometry,
+            rewind_probe_proof=probe_proof,native_sampler_mode=args.native_sampler,
             rounds=records,aggregates=aggregates,artifact_audits=audits,
             native_gate_sha256=digest(gate_path),probe_sha256=digest(probe),
             fixed_teacher_forced_inputs=True,native_intervals_exclude_IPC_and_snapshots=True,

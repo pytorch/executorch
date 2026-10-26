@@ -17,6 +17,7 @@ import subprocess
 import time
 import traceback
 from independent_session_mini_profiles import PROFILES, DEFAULT_PROFILE, validate_mini_audit
+from qualified_rewind_probe import qualified_rewind_probe
 
 
 def digest(path):
@@ -33,6 +34,8 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument('--mini-profile', choices=PROFILES, default=DEFAULT_PROFILE)
+    parser.add_argument('--rewind-probe-job',type=Path,
+                        help='Also verify actual native rewind on each cloned model owner')
     parser.add_argument("--after-logit-collision-job", type=Path)
     args = parser.parse_args()
     assert not args.output.exists()
@@ -86,6 +89,10 @@ def main():
         assert gate["native_GPU_tests_pass"] and gate["test_count"] >= 29
         probe = args.preparation_job / "model-build/muse_glimmer_runtime_kv_probe"
         assert digest(probe) == gate["binaries"][str(probe)]
+        probe_proof=None
+        if args.rewind_probe_job:
+            probe,probe_proof=qualified_rewind_probe(args.rewind_probe_job,
+                args.preparation_job/'native-gate.json',probe,state,args.wait_minutes)
         for name, expected in gate["unchanged_controls"].items():
             assert digest(Path(gate["source"]) / name) == expected
         artifacts = {}
@@ -118,8 +125,10 @@ def main():
                     child = None
                     try:
                         with (directory / "stderr.log").open("x") as log, (directory / "protocol.jsonl").open("x") as protocol:
+                            env={**os.environ,'CUDA_VISIBLE_DEVICES':'0'}
+                            env.pop('ET_CUDA_BENCH_MEMORY_TRACE',None)
                             child = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                                     stderr=log, text=True, bufsize=1)
+                                                     stderr=log, text=True, bufsize=1,env=env)
                             selector = selectors.DefaultSelector()
                             selector.register(child.stdout, selectors.EVENT_READ)
 
@@ -208,6 +217,22 @@ def main():
                                                       max_abs=difference, reference=reference_record, actual=actual_record))
                                     (directory / "checks.partial.json").write_text(json.dumps(cells, indent=2) + "\n")
                                     assert equal, cells[-1]
+                                    if probe_proof is not None:
+                                        rewound=request(dict(op='rewind',seq_id=clone,position=history))
+                                        assert rewound['rewound'] and rewound['position']==history
+                                        repeated,repeated_record=saved_step(clone,history)
+                                        assert repeated.shape==reference.shape
+                                        equal_rewind=bool(np.array_equal(repeated,reference))
+                                        cells.append(dict(history=history,phase=phase+'-actual-rewind',
+                                            bitwise_equal=equal_rewind,
+                                            max_abs=float(np.abs(repeated.astype(np.float64)-reference).max()),
+                                            reference=reference_record,actual=repeated_record,
+                                            rewind_response=rewound))
+                                        (directory/'checks.partial.json').write_text(json.dumps(cells,indent=2)+'\n')
+                                        assert equal_rewind,cells[-1]
+                                        rejected=request(dict(op='rewind',seq_id=clone,position=131073,
+                                                              expect_success=False))
+                                        assert not rejected['rewound'] and rejected['position']==history+8
                                     request(dict(op="remove", seq_id=clone))
                                 request(dict(op="remove", seq_id=checkpoint))
                             child.stdin.close()
@@ -224,6 +249,7 @@ def main():
         (args.output / "result.json").write_text(json.dumps(dict(
             same_artifact_same_forward_same_tokens=True, all_bitwise_checks_pass=True,
             mini_profile=args.mini_profile, model_geometry=geometry,
+            actual_rewind_checked=probe_proof is not None,rewind_probe_proof=probe_proof,
             independent_exports_not_compared_here=True, CUDA_graph_mode_enabled=True,
             actual_graph_trace_review_separate=True, performance_qualified=False,
             full_model_qualified=False, rounds=records), indent=2) + "\n")
