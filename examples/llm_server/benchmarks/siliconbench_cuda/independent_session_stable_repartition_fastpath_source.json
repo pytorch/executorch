@@ -1,0 +1,14 @@
+{
+  "file": "backends/cuda/runtime/session_capacity_pool.inc",
+  "before_SHA256": "b7a54a56887b8c222888751c54fa5a987db14fa542ae672ec06fa25fdc241c19",
+  "after_SHA256": "b61260c08b73ee8c3b808197a2d9528e472803b150d4db798d8eb6ccc33faf03",
+  "patch_SHA256": "f4f56c9dcea1cc92f93a87687d1ebe04724c0d80af345c68bc6669ebe9c3ea28",
+  "allocator_growth_spec_SHA256": "05ee859b572bdd5ff2698979f388ea9189e3a1842855a35ed69bdd5bc2db9c1a",
+  "native_source_only": true,
+  "model_weights_kernels_ABI_graph_policy_and_sliding_unchanged": true,
+  "fast_path_requires_unchanged_owner_mapping_capacities_and_ring_capacity": true,
+  "duplicate_missing_new_or_relocated_owners_use_original_validation": true,
+  "supports_up_to_64_physical_columns_others_use_original_path": true,
+  "preserves_original_stream_dependency_handling": true,
+  "qualified": false
+}

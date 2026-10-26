@@ -47,12 +47,18 @@ def main():
         assert json.loads((alias/'progress.json').read_text())['original_compiled_artifacts_unchanged']
         jobs={};commands={}
         for label,script,argv in (
+            ('rewind-probe','prepare_rewind_kv_probe.py',
+                ['--preparation-job',alias,'--python',sys.executable,'--output',a.output/'rewind-probe']),
             ('model-latency','run_independent_session_mini_model_latency.py',
                 ['--preparation-job',alias,'--output',a.output/'model-latency','--lock',a.lock,
-                 '--mini-profile','gemma4-first6','--native-sampler','off','--nsys',a.nsys]),
+                 '--mini-profile','gemma4-first6','--native-sampler','off','--nsys',a.nsys,
+                 '--rewind-probe-job',a.output/'rewind-probe']),
             ('capacity-control','run_independent_session_mini_capacity_control.py',
                 ['--preparation-job',alias,'--output',a.output/'capacity-control','--lock',a.lock,
                  '--mini-profile','gemma4-first6']),
+            ('same-artifact-rewind','run_independent_session_same_artifact_control.py',
+                ['--preparation-job',alias,'--output',a.output/'same-artifact-rewind','--lock',a.lock,
+                 '--mini-profile','gemma4-first6','--rewind-probe-job',a.output/'rewind-probe']),
             ('memory-worker','prepare_gemma_kv_memory_worker.py',
                 ['--native-job',a.native_job,'--python',sys.executable,'--output',a.output/'memory-worker']),
             ('HTTP-memory','run_independent_session_mini_http.py',
@@ -62,8 +68,26 @@ def main():
                  '--memory-worker-proof',a.output/'memory-worker/proof.json',
                  '--http-python-dependencies-job',a.http_python_dependencies_job])):
             commands[label]=run(label,script,argv)
-            result=a.output/label/('proof.json' if label=='memory-worker' else 'result.json')
+            result=a.output/label/('proof.json' if label in ('memory-worker','rewind-probe') else 'result.json')
             assert result.is_file();jobs[label]=dict(result=str(result),SHA256=sha(result))
+        artifact=alias/'mini-independent-artifact'
+        audit=json.loads((artifact/'independent-mini-artifact-audit.json').read_text())
+        label='graph-lifecycle'
+        commands[label]=run(label,'run_independent_session_mini_probe.py',[
+            '--probe',alias/'model-build/muse_glimmer_runtime_kv_probe','--artifact',artifact,
+            '--native-gate',alias/'native-gate.json','--expected-PTE-sha256',audit['artifacts']['model.pte']['sha256'],
+            '--expected-weights-sha256',audit['artifacts']['aoti_cuda_blob.ptd']['sha256'],
+            '--arm','independent','--mini-profile','gemma4-first6','--automatic-reclaim',
+            '--job-dir',a.output/label,'--lock',a.lock,'--nsys',a.nsys])
+        trace=a.output/label/'round-1/cuda-graphs.nsys-rep';trace_SHA256=sha(trace)
+        sqlite=a.output/label/'round-1/cuda-graphs.sqlite';assert not sqlite.exists()
+        subprocess.run([str(a.nsys),'export','--type=sqlite','--output='+str(sqlite),str(trace)],
+                       check=True,stdout=subprocess.DEVNULL,timeout=300)
+        assert sha(trace)==trace_SHA256
+        commands['graph-review']=run('graph-review','review_independent_session_mini_graph_trace.py',[
+            '--runtime-job',a.output/label,'--sqlite',sqlite,'--output',a.output/'actual-graph-review.json'])
+        jobs[label]=dict(result=str(a.output/label/'result.json'),SHA256=sha(a.output/label/'result.json'))
+        jobs['graph-review']=dict(result=str(a.output/'actual-graph-review.json'),SHA256=sha(a.output/'actual-graph-review.json'))
         result=dict(controls_collected_pending_independent_review=True,commands=commands,jobs=jobs,
             native_gate_SHA256=sha(gate),same_compiled_model_artifacts=True,
             four_rounds_first_discarded=True,main_preset_changed=False,

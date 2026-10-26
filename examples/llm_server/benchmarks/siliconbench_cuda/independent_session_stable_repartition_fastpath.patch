@@ -1,0 +1,51 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -14,6 +14,48 @@
+   ET_CHECK_OR_RETURN_ERROR(
+       columns >= 2 && columns <= declared_columns_ && required >= 0,
+       InvalidArgument, "offgraph_kv: invalid independent sequence geometry");
++  // Reuse the established owner layout without allocating validation tables.
++  // This is only a stable-layout shortcut; every other request retains the
++  // original validation, growth, migration, and contraction path below.
++  if (allocated_ && independent_sequences_ && columns == columns_ &&
++      columns <= 64 && sequence_capacities_.size() == size_t(columns)) {
++    bool stable = true;
++    uint64_t seen = 0;
++    for (const auto& range : ranges) {
++      if (range.from != range.to || range.to < 0 || range.to >= columns - 1 ||
++          range.capacity <= 0 || range.live < 0 || range.live > range.capacity ||
++          range.capacity != sequence_capacities_[range.to]) {
++        stable = false;
++        break;
++      }
++      const uint64_t owner = uint64_t{1} << range.to;
++      if (seen & owner) {
++        stable = false;
++        break;
++      }
++      seen |= owner;
++    }
++    for (int col = 0; stable && col < columns - 1; ++col) {
++      stable = (sequence_capacities_[col] > 0) ==
++          ((seen & (uint64_t{1} << col)) != 0);
++    }
++    for (size_t index = 0; stable && index < layers_.size(); ++index) {
++      const auto& layer = layers_[index];
++      if (layer.ring) {
++        const int64_t limit = layer.declared_rows / declared_columns_;
++        const int64_t needed = std::min<int64_t>(
++            limit, std::max<int64_t>(1, required));
++        stable = allocations_[index].rows / columns >= needed;
++      }
++    }
++    if (stable) {
++      const auto device = CUDAGuard::create(device_);
++      ET_CHECK_OK_OR_RETURN_ERROR(device.error());
++      ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
++      stream_ = stream;
++      return Error::Ok;
++    }
++  }
+   std::vector<int64_t> capacities(columns, 0), offsets(columns, 0);
+   std::unordered_set<int> sources, destinations;
+   for (const auto& range : ranges) {

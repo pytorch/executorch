@@ -487,6 +487,14 @@
       "sha256": "549cdafd8c44e1bc4efc22530f66782671d0efd9bd10735486d12fe83831c776",
       "bytes": 2603
     },
+    "independent_session_stable_repartition_fastpath.patch": {
+      "sha256": "f4f56c9dcea1cc92f93a87687d1ebe04724c0d80af345c68bc6669ebe9c3ea28",
+      "bytes": 2181
+    },
+    "independent_session_stable_repartition_fastpath_source.json": {
+      "sha256": "86057a2a521c55d78deb2cc81dc2d6a74e9abb12884a6419feab89e794a631f6",
+      "bytes": 837
+    },
     "isolated_aoti_export.py": {
       "sha256": "b6f54f4e0fa52d2e9b1acd1457c83bcb2696385c2e0683e9fac9fd2e48796fa8",
       "bytes": 7453
@@ -596,8 +604,8 @@
       "bytes": 5254
     },
     "prepare_independent_session_growth_allocator.py": {
-      "sha256": "26960945f02007b841fcc765b908b1bc81d9ae2e5f669a9f2fcf4e6c9e3b06aa",
-      "bytes": 12238
+      "sha256": "002797818eed7b9d3c4e56503bdee5c0a004ff335fcd76c18102f7fe726cc396",
+      "bytes": 13326
     },
     "prepare_independent_session_mini.py": {
       "sha256": "1d8f6daac1fa0866c9ab5140ac78a519d43e91a8591a24598d75691c1a84664a",
@@ -872,20 +880,20 @@
       "bytes": 7624
     },
     "run_growth_allocator_gemma_mini_controls.py": {
-      "sha256": "0de4082c90df1069214e3cb3591547b3280e595e8cb22c757f800ddb290478e6",
-      "bytes": 5006
+      "sha256": "48464d0bbc8092a3ad1dde239d1c9b242c2f36d14de8c577bacfa76ab80730da",
+      "bytes": 7092
     },
     "run_growth_allocator_mg_mini_controls.py": {
-      "sha256": "27d27ba42bed96201fd77968abbcb4e06e07ac2689bce0c7c075bf9896050380",
-      "bytes": 4703
+      "sha256": "df54eb7584a3f4d363075ffa2a32ba17688ac748e5f6ca064cd67bacf4dd816c",
+      "bytes": 7305
     },
     "run_independent_session_mini_capacity_control.py": {
       "sha256": "e864084c264776fe27b3293279e17cc48844256c9c27095613d33aa509787d66",
       "bytes": 6507
     },
     "run_independent_session_mini_http.py": {
-      "sha256": "61506880bb9b49f9d5ba49717059455c4ff41870ae11dd878123455a77e601f4",
-      "bytes": 30344
+      "sha256": "46ac04f9323121369e2a0e5aceec6ca6458bbe933016fcf2032f8ebc0e164362",
+      "bytes": 31630
     },
     "run_independent_session_mini_model_latency.py": {
       "sha256": "aa1218812efb23ff2b7691220968a2cb193014403922214dddcc7d39eb003bbc",

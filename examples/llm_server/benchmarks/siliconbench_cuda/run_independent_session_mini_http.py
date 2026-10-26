@@ -101,9 +101,18 @@ def main():
     memory_proof = None
     if args.memory_worker_proof:
         memory_proof = json.loads(args.memory_worker_proof.read_text())
+        root_gate_path=source.parent/'native-gate.json'
+        root_gate_SHA256=None
+        if root_gate_path.is_file():
+            root_gate=json.loads(root_gate_path.read_text())
+            for key in ('source','source_spec_SHA256','native_tests_xml_SHA256','unchanged_controls'):
+                assert root_gate[key]==gate[key],key
+            for name,expected in root_gate['binaries'].items():
+                assert gate['binaries'][name]==expected and digest(Path(name))==expected,name
+            root_gate_SHA256=digest(root_gate_path)
         assert memory_proof["native_gate_SHA256"] in (
             digest(gate_path), gate.get("imported_native_gate_SHA256"),
-            digest(source.parent/'native-gate.json') if gemma else None)
+            root_gate_SHA256)
         if not gemma:
             assert memory_proof["original_worker_SHA256"] == digest(worker)
         else:
@@ -155,8 +164,19 @@ def main():
             assert gate['allocator_growth_spec_SHA256']==digest(growth_path)
             assert growth['allocator_policy_only']
             assert growth['weight_math_ABI_graph_invalidation_and_sliding_unchanged']
+            expected_pool_SHA256=growth['after_SHA256']
+            source_changes=growth
+            if gate.get('stable_fastpath_spec_SHA256'):
+                fast_path=package/'independent_session_stable_repartition_fastpath_source.json'
+                fast=json.loads(fast_path.read_text())
+                assert digest(fast_path)==gate['stable_fastpath_spec_SHA256']
+                assert fast['allocator_growth_spec_SHA256']==digest(growth_path)
+                assert fast['before_SHA256']==growth['after_SHA256'] and fast['file']==growth['file']
+                assert fast['model_weights_kernels_ABI_graph_policy_and_sliding_unchanged']
+                expected_pool_SHA256=fast['after_SHA256']
+                source_changes=dict(patches=[growth,fast])
             if 'actual_native_source_change' in gate:
-                assert gate['actual_native_source_change']==growth
+                assert gate['actual_native_source_change']==source_changes
                 assert gate['preserved_original_native_gate_SHA256']==receipt['original_native_gate_SHA256']
             # Older qualified allocator builds predate those descriptive
             # fields. Verify the actual preserved sources, binaries and XML;
@@ -172,7 +192,7 @@ def main():
             assert gate['test_count']==original_gate['test_count']==74
             for name,record in capacity['files'].items():
                 assert digest(Path(original_gate['source'])/name)==record['after_SHA256'],name
-                expected=growth['after_SHA256'] if name==growth['file'] else record['after_SHA256']
+                expected=expected_pool_SHA256 if name==growth['file'] else record['after_SHA256']
                 assert digest(source/name)==expected,name
             assert gate['unchanged_controls']==original_gate['unchanged_controls']
             for verified_gate in (gate,original_gate):
@@ -185,7 +205,7 @@ def main():
                 t.find('failure') is not None or t.find('error') is not None or t.find('skipped') is not None
                 for t in tests)
             assert gate['source_spec_SHA256']==receipt['original_native_gate']['source_spec_SHA256']
-            assert digest(source/growth['file'])==growth['after_SHA256']
+            assert digest(source/growth['file'])==expected_pool_SHA256
             original_mini=Path(preparation['original_mini_preparation'])
             original_model_gate=json.loads((original_mini/'native-gate.json').read_text())
             assert original_model_gate['Gemma_source_preparation_SHA256']==receipt_SHA256
@@ -200,7 +220,7 @@ def main():
             Gemma_model_source_binding=dict(original_compiled_models_and_Python_source_reused=True,
                 allocator_only_native_control_verified=True,
                 allocator_growth_spec_SHA256=digest(growth_path),
-                actual_native_source_change=growth,
+                actual_native_source_change=source_changes,
                 original_native_gate_SHA256=digest(original_gate_path),
                 actual_native_tests_XML_SHA256=digest(xml),
                 actual_sources_binaries_and_tests_reverified=True,
