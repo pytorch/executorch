@@ -543,6 +543,10 @@
       "sha256": "58c7d94c0375d062b2db06614f234a7f85111fbcf99742fa0f7a4a309ebc02f7",
       "bytes": 10766
     },
+    "profile_gemma_runtime_columns_memory.py": {
+      "sha256": "ce4decea64980e3fb5847655f31b513d93ec3c0d91cb3dec918708ef947cf1de",
+      "bytes": 5124
+    },
     "profile_roofline_large_candidate.py": {
       "sha256": "fd6a41f81e1585e9eba1492db9a5ebe9a1c40732861e70c0c89c4f1b68889472",
       "bytes": 4879
