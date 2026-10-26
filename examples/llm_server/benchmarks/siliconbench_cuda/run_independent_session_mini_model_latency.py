@@ -38,6 +38,8 @@ def main():
                         help='Collect one labelled diagnostic round for an interleaved native control; not standalone qualification')
     parser.add_argument('--full-model-profile', choices=FULL_PROFILES,
                         help='Require separately gated full artifacts and record their actual full geometry')
+    parser.add_argument('--arm',choices=['both','independent'],default='both',
+                        help='An explicit full candidate-only native control; default two-arm mini gate is unchanged')
     parser.add_argument('--rewind-probe-job',type=Path)
     parser.add_argument('--native-sampler',choices=['off','on'],default='off')
     parser.add_argument('--nsys',type=Path,
@@ -45,6 +47,8 @@ def main():
     parser.add_argument('--diagnostic-initial-KV-capacity',type=int,choices=(512,16384),default=512,
                         help='Numerical/performance allocation control only; default512 is unchanged')
     args = parser.parse_args()
+    assert args.arm=='both' or args.full_model_profile
+    selected_arms=('global','independent') if args.arm=='both' else ('independent',)
     assert args.native_sampler=='off' or args.rewind_probe_job is not None
     assert not args.output.exists()
     args.output.mkdir(parents=True)
@@ -92,7 +96,7 @@ def main():
             assert progress['mini_gate_passed'] and progress['all_full_artifact_hashes_verified']
             assert not progress['full_model_qualified']
             assert args.mini_profile == ('gemma4-first6' if args.full_model_profile=='gemma4-48layers' else DEFAULT_PROFILE)
-        for arm in ("global", "independent"):
+        for arm in selected_arms:
             artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
             audit = json.loads((artifact / audit_name).read_text())
             geometry = (validate_full_audit(audit,args.full_model_profile,arm=='independent') if args.full_model_profile else validate_mini_audit(audit, args.mini_profile, arm == 'independent'))
@@ -115,7 +119,7 @@ def main():
             assert not subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid",
                                                 "--format=csv,noheader,nounits"], text=True).strip()
             for number in ([args.diagnostic_round_number] if args.diagnostic_round_number else range(1,5)):
-                for arm in (("global","independent") if number%2 else ("independent","global")):
+                for arm in (selected_arms if number%2 else tuple(reversed(selected_arms))):
                     directory = args.output / ("round-" + str(number)) / arm
                     directory.mkdir(parents=True)
                     artifact = args.preparation_job / (artifact_prefix + arm + "-artifact")
@@ -255,7 +259,7 @@ def main():
                             time.sleep(1)
         aggregates = []
         if args.diagnostic_round_number is None:
-            for arm in ("global","independent"):
+            for arm in selected_arms:
                 selected = [row for row in records if row["arm"] == arm]
                 assert [row["round"] for row in selected] == [1,2,3,4]
                 for index,(label,widths) in enumerate(cases):
@@ -272,10 +276,11 @@ def main():
             actual_profiled_rounds=[row['round'] for row in records if row['profiled_discarded_round']],
             performance_rounds_unprofiled=all(not row['profiled_discarded_round'] for row in records if row['round']>1),
             rounds=records,aggregates=aggregates,artifact_audits=audits,
+            collected_arms=list(selected_arms),
             native_gate_sha256=digest(gate_path),probe_sha256=digest(probe),
             fixed_teacher_forced_inputs=True,native_intervals_exclude_IPC_and_snapshots=True,
             native_intervals_include_host_preparation_argmax_and_CUDA_synchronization=True,
-            four_rounds_first_discarded=args.diagnostic_round_number is None,alternating_arm_order=True,
+            four_rounds_first_discarded=args.diagnostic_round_number is None,alternating_arm_order=len(selected_arms)==2,
             diagnostic_single_round=args.diagnostic_round_number,
             numerical_and_route_review_pending=True,model_performance_qualified=False,
             candidate_promoted=False),indent=2) + "\n")

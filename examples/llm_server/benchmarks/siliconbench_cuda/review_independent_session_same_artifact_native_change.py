@@ -10,6 +10,14 @@ p.add_argument('--output',type=Path,required=True)
 a=p.parse_args();roots=[a.before_job,a.after_job];out=a.output
 assert not out.exists()
 docs=[json.loads((r/'result.json').read_text()) for r in roots]
+selected_arms=docs[0].get('collected_arms',['global','independent'])
+assert selected_arms in (['global','independent'],['independent'])
+assert docs[1].get('collected_arms',['global','independent'])==selected_arms
+full_profile=docs[0].get('full_model_profile')
+assert docs[1].get('full_model_profile')==full_profile
+if len(selected_arms)==1:assert full_profile
+assert all(sorted((row['round'],row['arm']) for row in d['rounds'])==sorted(
+ (number,arm) for number in range(1,5) for arm in selected_arms) for d in docs)
 assert all(d['native_sampler_mode']=='off' for d in docs)
 assert all(d.get('performance_rounds_unprofiled',True) for d in docs)
 def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -27,7 +35,7 @@ def ops(p):
 def moments(v):return {'mean':statistics.mean(v),'sample_SD':statistics.stdev(v),'values':v}
 records=[];full=[];argmax_count=0
 for number in range(1,5):
- for arm in ('global','independent'):
+ for arm in selected_arms:
   pairs=[next(row for row in d['rounds'] if row['round']==number and row['arm']==arm) for d in docs]
   paths=[root/f'round-{number}'/arm/'protocol.jsonl' for root in roots]
   for row,path in zip(pairs,paths):assert digest(path)==row['protocol_sha256']
@@ -59,13 +67,13 @@ for number in range(1,5):
   records.append({'round':number,'arm':arm,'selected_argmax_values_equal':checked,
                   'protocol_SHA256':[digest(p) for p in paths]})
 artifacts=[]
-for arm in ('global','independent'):
+for arm in selected_arms:
  audits=[d['artifact_audits'][arm] for d in docs]
  assert audits[0]['artifacts']==audits[1]['artifacts']
  artifacts.append({'arm':arm,'artifacts':audits[0]['artifacts']})
-assert len(full)==18
+assert len(full)==9*len(selected_arms)
 cells=[]
-for arm in ('global','independent'):
+for arm in selected_arms:
  for case in docs[0]['rounds'][0]['cases']:
   fields={}
   for name in ('cold_first_four_seconds','mean_stable_native_ms'):
@@ -73,7 +81,7 @@ for arm in ('global','independent'):
    delta=values[1]['mean']-values[0]['mean'];bound=3*((values[0]['sample_SD']**2+values[1]['sample_SD']**2)/3)**0.5
    fields[name]={'before':values[0],'after':values[1],'delta':delta,'delta_percent':100*(values[1]['mean']/values[0]['mean']-1),'combined_3SE':bound,'positive_signal':delta>bound}
   cells.append({'arm':arm,'case':case['case'],**fields})
-result={'cells':cells,'same_compiled_artifacts':True,'both_native_sampler_OFF':True,'no_model_TPS_or_F1_qualification':True,'UTC':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+result={'cells':cells,'full_model_profile':full_profile,'collected_arms':selected_arms,'same_compiled_artifacts':True,'both_native_sampler_OFF':True,'no_model_TPS_or_F1_qualification':True,'UTC':datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'same_PTE_and_PTD_recorded_hashes_verified':True,'all_four_round_requests_and_argmax_verified':True,
         'selected_argmax_values_equal':argmax_count,'full_saved_FP32_tensors_equal':len(full),
         'native_change_preserves_observed_model_numerics':True,

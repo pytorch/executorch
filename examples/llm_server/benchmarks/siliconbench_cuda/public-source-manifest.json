@@ -884,8 +884,8 @@
       "bytes": 7515
     },
     "review_independent_session_same_artifact_native_change.py": {
-      "sha256": "a95287722a1c36296e080392ef3fbcbd86063605da8c2f4ebef56f229800ac20",
-      "bytes": 5492
+      "sha256": "96e6cfe6bbb98839fd72bceabb3b7724e69f9710ae500ffdb690edfa43da7e6b",
+      "bytes": 6059
     },
     "review_runtime_kv_graph_trace.py": {
       "sha256": "0c47409d7e9cbbbc89ce4b9e80d69cdf998182f40aad718d2f212015f68aa55f",
@@ -1028,8 +1028,8 @@
       "bytes": 38168
     },
     "run_independent_session_mini_model_latency.py": {
-      "sha256": "c2703f1a60c26dfb370b364e915f70442c236fb4b8bedcdde3f9d5677eb30fe5",
-      "bytes": 19540
+      "sha256": "d6832838288088b6e799c59e56c89f9687ac375777ddf7bdb1247c7ec2e8b3d3",
+      "bytes": 19915
     },
     "run_independent_session_mini_pair.py": {
       "sha256": "c24f3ee0bb32c31506e553bf3eb7045e711f1bee46a503576d237e437c6eb6a0",
@@ -1122,6 +1122,10 @@
     "run_runtime_kv_probe.py": {
       "sha256": "06d86d74b41d62bbf975258c807a8e0becd40afec5be1b5e9715cb35bba12890",
       "bytes": 27694
+    },
+    "run_single_full_MG_lifecycle_after_export.py": {
+      "sha256": "ebcc1361328ffd14ecbe12f57c1b54b9aafb65caf48e4ba241b4e3d45500bee2",
+      "bytes": 11113
     },
     "runtime_kv_columns.patch": {
       "sha256": "47511aeec234f833a88b5b9a0fb6835a87acb97da77f2a8dfb45f13be707cd1a",
