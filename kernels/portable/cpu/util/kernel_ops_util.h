@@ -298,9 +298,6 @@ void kernel_reduction_then_map_2d(
  * T map_fn(const int64_t count, const T accum);
  * ```
  *
- * TODO(ssjia) Allow this to handle 1-D kernels as well by unsqueezing
- * appropriately.
- *
  * @param[in] reduce_fn The reduction function used to update accumulator
  * values.
  * @param[in] map_fn The map function used to post-process the accumulated
@@ -398,6 +395,19 @@ void apply_kernel_2d_reduce_then_map_fn(
  * ```
  * CTYPE map_fn(const int64_t count, const ACC accum);
  * ```
+ *
+ * @param[in] reduce_fn The reduction function used to update the accumulator
+ * value.
+ * @param[in] map_fn The map function used to post-process the accumulated
+ * value before writing to out.
+ * @param[in] include_pad Indicates if padded elements should be included in
+ * the count passed to map_fn.
+ * @param[in] in The input tensor.
+ * @param[in] kernel_size 1D array describing the length of the kernel region.
+ * @param[in] stride 1D array describing how the kernel region "traverses" over
+ * the input tensor. Defaults to kernel_size when empty.
+ * @param[in] padding 1D array describing padding to apply to the input tensor.
+ * @param[in] out The output tensor.
  */
 template <typename CTYPE, typename ACC, typename ReduceOp, typename MapOp>
 void apply_kernel_1d_reduce_then_map_fn(
