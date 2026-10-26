@@ -1019,6 +1019,7 @@ class TestPropagateDevicePass(unittest.TestCase):
                 )
             with self.subTest(write_view=write_view):
                 (warning,) = logs.output
+                self.assertIn("Method output 0 (16 bytes)", warning)
                 self.assertIn(
                     "'propagate_device_test.accumulate.default' writes it", warning
                 )

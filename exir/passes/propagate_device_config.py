@@ -68,9 +68,9 @@ class PropagateDeviceConfig:
 
     # When True, device delegate outputs that the method returns stay on
     # device, with one exception: when an op outside the delegate, such as a
-    # KV cache update, writes the host copy of such an output in place, the
-    # method returns that host copy, since the device tensor never sees the
-    # write. The copy to the host runs on every call, and the pass logs a
+    # mutable custom op left on the host, writes the host copy of such an
+    # output in place, the method returns that host copy, since the device
+    # tensor never sees the write. The copy to the host runs on every call, and the pass logs a
     # warning about it.
     # Useful for cross-method GPU pipelines where the next method consumes GPU
     # tensors directly.

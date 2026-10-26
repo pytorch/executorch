@@ -609,14 +609,16 @@ class PropagateDevicePass(PassBase):
             writers = _in_place_writers(node)
             if writers:
                 device_spec = returned.meta["spec"]
+                index = list(graph_module.graph.output_node().args[0]).index(node)
                 self._report_per_call_copy(
-                    f"A method output ({device_spec.nbytes()} bytes) comes from a "
-                    f"delegate on {device_spec.device.name.lower()}:"
+                    f"Method output {index} ({device_spec.nbytes()} bytes) comes "
+                    f"from a delegate on {device_spec.device.name.lower()}:"
                     f"{device_spec.device_index} and '{writers[0].target}' writes "
                     f"it in place on the host, so it is copied to the host on every "
                     f"call and returned there, even with "
-                    f"skip_d2h_for_method_outputs. Have the partitioner take that "
-                    f"op into the delegate to avoid that copy.",
+                    f"skip_d2h_for_method_outputs. A caller that passes its own "
+                    f"output buffers must pass a host buffer for it. Have the "
+                    f"partitioner take that op into the delegate to avoid that copy.",
                     True,
                 )
                 continue
