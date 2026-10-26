@@ -64,6 +64,9 @@ def main():
             assert all(item["cuda_set_device_status"] == 0 for item in native)
             allocated = [item for item in native if item["allocator_pool_available"]]
             assert allocated and all(item["allocator_query_status"] == [0, 0, 0, 0] for item in allocated)
+            first_allocation_ns = allocated[0]["monotonic_ns"]
+            assert all(item["monotonic_ns"] < first_allocation_ns and item["live_KV_bytes"] == 0
+                       for item in native if not item["allocator_pool_available"])
             assert len({item["pid"] for item in native}) == 1
         else:
             assert not native
@@ -119,10 +122,12 @@ def main():
                              NVML_last_bytes=selected[-1]["GPU_used_bytes"], NVML_samples=len(selected))
                 if native_enabled:
                     assert readings, label
-                    assert all(item["allocator_pool_available"] for item in readings), label
                     value["native_last"] = readings[-1]
                     value["native_peak_KV_bytes"] = max(item["live_KV_bytes"] for item in readings)
-                    value["allocator_peak_reserved_bytes"] = max(item["allocator_reserved_bytes"] for item in readings)
+                    pooled = [item for item in readings if item["allocator_pool_available"]]
+                    assert pooled and readings[-1]["allocator_pool_available"], label
+                    value["allocator_initial_unavailable_samples"] = len(readings) - len(pooled)
+                    value["allocator_peak_reserved_bytes"] = max(item["allocator_reserved_bytes"] for item in pooled)
                 lifecycle[label] = value
             stages.append(dict(stage=index, concurrency=concurrency, seconds=elapsed,
                                output_tokens=tokens, TPS=tokens / elapsed,
