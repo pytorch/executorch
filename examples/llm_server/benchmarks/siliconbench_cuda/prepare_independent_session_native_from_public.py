@@ -35,6 +35,24 @@ def main():
                 name.endswith(('.pte','.ptd','.gguf','.log','.nsys-rep'))]
 
     shutil.copytree(args.baseline_source,base,symlinks=True,ignore=ignore)
+    if any(not (base/'third-party'/name/'CMakeLists.txt').is_file()
+           for name in ['googletest','flatbuffers']):
+        subprocess.run(['git','init','-q',str(base)],check=True)
+        subprocess.run(['git','-C',str(base),'remote','add','origin',
+                        'https://github.com/pytorch/executorch.git'],check=True)
+        subprocess.run(['git','-C',str(base),'fetch','--filter=blob:none','--depth=1',
+                        'origin',spec['base_commit']],check=True,timeout=600)
+        subprocess.run(['git','-C',str(base),'reset','--mixed',spec['base_commit']],
+                       check=True,stdout=subprocess.DEVNULL)
+        modules = subprocess.check_output(['git','-C',str(base),'show',
+                    spec['base_commit']+':.gitmodules'])
+        (base/'.gitmodules').write_bytes(modules)
+        urls = subprocess.check_output(['git','config','--file',str(base/'.gitmodules'),
+                '--get-regexp','^submodule[.].*[.]url$'],text=True)
+        assert all(line.split(maxsplit=1)[1].startswith('https://github.com/')
+                   for line in urls.splitlines()), urls
+        subprocess.run(['git','-C',str(base),'submodule','update','--init',
+                        '--recursive','--depth=1','--jobs=4'],check=True,timeout=3600)
     original = {}
     for name,record in spec['changed_files'].items():
         p = base/name

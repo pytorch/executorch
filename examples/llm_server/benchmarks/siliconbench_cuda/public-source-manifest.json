@@ -520,8 +520,8 @@
       "bytes": 9167
     },
     "prepare_independent_session_native_from_public.py": {
-      "sha256": "8c0d94f02908892ebfe34cae0f3d24dff2c8aa793fec8463416fa0a3ab0c21bf",
-      "bytes": 3666
+      "sha256": "42dcedc0dc041d90ec8012d057cd2556a9eda38403242c51d5282b97d5f0a55c",
+      "bytes": 4949
     },
     "prepare_kv_near_cap_build.py": {
       "sha256": "a225cb8ac372da35bf8e92d571103d565c7441ebe51264af3f3d760170d5c3f9",
