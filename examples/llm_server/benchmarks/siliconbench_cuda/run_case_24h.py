@@ -38,11 +38,14 @@ def main():
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--correctness-rounds', type=int, default=1)
     parser.add_argument('--mode', choices=['performance', 'correctness'], required=True)
+    parser.add_argument('--split',choices=['chat','agent'],default='agent',
+                        help='Silicon Bench workload split; F1 correctness remains agent')
     parser.add_argument('--quality-scope', choices=['full', 'smoke'], default='full')
     parser.add_argument('--smoke-per-category', type=int, default=8)
     parser.add_argument('--correctness-max-tokens', type=int)
     parser.add_argument('--correctness-chat-template-kwargs', type=json.loads)
     args = parser.parse_args()
+    assert args.mode!='correctness' or args.split=='agent'
     assert args.correctness_rounds > 0 and args.smoke_per_category > 0
     if args.correctness_max_tokens is not None:
         assert args.mode == 'correctness' and args.correctness_max_tokens > 0
@@ -143,6 +146,7 @@ def main():
                         smoke_selection_policy='Up to eight per category, all rare-category items, redistribute deficits in sorted category order', model=args.model, backend=args.backend, variant=args.variant,
                         concurrency=args.concurrency, prefix_cache=args.prefix_cache == 'on',
                         mode=args.mode, quality_scope=args.quality_scope,
+                        split=args.split,
                         performance_rounds=4 if args.mode=='performance' else 0,
                         discarded=[1] if args.mode=='performance' else [],
                         averaged=[2,3,4] if args.mode=='performance' else [], warmup_each_round=3,
@@ -204,7 +208,7 @@ def main():
                 target = args.output/f'repeat-{repetition}'
                 target.mkdir()
                 run([args.python, '-B', str(args.client), '--port', str(args.port), '--framework', args.backend,
-                     '--split', 'agent', '--concurrency', str(args.concurrency), '--requests', '100',
+                     '--split', args.split, '--concurrency', str(args.concurrency), '--requests', '100',
                      '--warmup', '3', '--prompts', str(args.prompts), '--output', str(target/'metrics.json'),
                      '--outputs', str(target/'outputs.jsonl')], target/'client.log', 7200)
                 metrics = json.loads((target/'metrics.json').read_text())['concurrency_results'][0]

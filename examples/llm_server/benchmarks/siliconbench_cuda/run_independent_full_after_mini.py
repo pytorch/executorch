@@ -15,7 +15,10 @@ def main():
  p.add_argument('--source-preparation-job',type=Path)
  p.add_argument('--original-export-source',type=Path)
  p.add_argument('--original-export-native-gate',type=Path)
+ p.add_argument('--Gemma-global-baseline',action='store_true',
+                help='Prepare a separate global-row same-GPU baseline after the same mini gate')
  a=p.parse_args();gemma=a.profile=='gemma4-first6'
+ assert not a.Gemma_global_baseline or gemma
  assert a.gguf.is_file() and not a.output.exists()
  if gemma:assert a.source_preparation_job
  else:assert a.original_export_source and a.original_export_native_gate
@@ -58,9 +61,10 @@ def main():
         full_layers=48 if gemma else 52,mini_qualification=str(qpath))
   common=['--gguf',a.gguf,'--mini-qualification',qpath,'--runtime-native-job',a.native_job,'--lock',a.lock]
   if gemma:
+   layout='global' if a.Gemma_global_baseline else 'independent'
    run('full-export','prepare_gemma_independent_session_full.py',
-       ['--source-preparation-job',a.source_preparation_job,'--output',a.output/'full-export',*common])
-   artifact=a.output/'full-export/full-independent-artifact'
+       ['--source-preparation-job',a.source_preparation_job,'--output',a.output/'full-export','--layout',layout,*common])
+   artifact=a.output/('full-export/full-'+layout+'-artifact')
   else:
    run('full-export','export_mg_independent_session_full.py',
        ['--source',a.original_export_source,'--native-gate',a.original_export_native_gate,

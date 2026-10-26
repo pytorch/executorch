@@ -42,6 +42,8 @@ def main():
     parser.add_argument('--gguf', type=Path, required=True, help='Read-only identical main GGUF')
     parser.add_argument('--mini-qualification', type=Path, required=True)
     parser.add_argument('--runtime-native-job',type=Path,required=True)
+    parser.add_argument('--layout',choices=['independent','global'],default='independent',
+        help='Use global rows only for a separately retained same-GPU full baseline')
     parser.add_argument('--reuse-failed-job', type=Path,
         help='Copy compiler caches from a confirmed terminal attempt; preserve its records')
     parser.add_argument('--owned-GPU-child', action='store_true', help=argparse.SUPPRESS)
@@ -195,7 +197,7 @@ def main():
         return original_build(builder)
     cpp.CppBuilder.build = record_build
     snapshots = []
-    for arm in ('independent',):
+    for arm in (args.layout,):
         current_job = args.output / ('full-' + arm + '-export')
         current_job.mkdir()
         cache = current_job / 'cache'
@@ -278,7 +280,7 @@ def main():
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
     assert snapshots[0]['launch_picks']
-    assert len(snapshots)==1 and snapshots[0]['arm']=='independent'
+    assert len(snapshots)==1 and snapshots[0]['arm']==args.layout
     assert all(digest(source/name) == expected for name,expected in controls.items())
     assert all(digest(name) == expected for name,expected in original_gate['binaries'].items())
     (args.output / 'shared-autotune-cache-review.json').write_text(json.dumps(dict(
