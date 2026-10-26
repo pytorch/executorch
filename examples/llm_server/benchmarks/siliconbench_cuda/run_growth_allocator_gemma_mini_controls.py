@@ -37,7 +37,11 @@ def main():
             assert old['status']!='failed',old
             if old['status']=='native-GPU-tests-passed' and (alias/'progress.json').is_file():break
             pid=old['controller_pid'];handle=Path('/proc')/str(pid)/'cmdline'
-            assert handle.is_file() and b'prepare_independent_session_growth_allocator.py' in handle.read_bytes()
+            assert handle.is_file()
+            command=handle.read_bytes()
+            assert str(a.native_job).encode() in command and any(name in command for name in (
+                b'prepare_independent_session_growth_allocator.py',
+                b'prepare_independent_session_empty_owner_reuse.py'))
             assert time.monotonic()<deadline,'Verified-live native observation timeout; do not restart build'
             state('waiting-on-confirmed-live-native-build',native_PID=pid,native_status=old['status'])
             time.sleep(15)
