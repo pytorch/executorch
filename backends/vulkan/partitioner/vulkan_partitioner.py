@@ -7,18 +7,31 @@
 # pyre-strict
 
 import logging
-from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    final,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+)
 
 import executorch.backends.vulkan.patterns as vk_patterns
 import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
     OpFeatures,
     OpKey,
+    unwrap_identity_repeat,
     vulkan_supported_ops,
 )
 
@@ -41,8 +54,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
 
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.utils._pytree import tree_leaves
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -67,12 +81,24 @@ class VulkanSupportedOperators(OperatorSupportBase):
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
+        downcast_64_bit: bool = True,
+        constant_nodes: Optional[Set[torch.fx.Node]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
         super().__init__()
+        # Backends that consume the Vulkan serialization but implement less of an
+        # op than the Vulkan registry advertises supply their own features here.
+        self.op_features_overrides: Dict[OpKey, OpFeatures] = (
+            op_features_overrides if op_features_overrides is not None else {}
+        )
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
+        self.downcast_64_bit = downcast_64_bit
+        self.constant_nodes: Set[torch.fx.Node] = (
+            constant_nodes if constant_nodes is not None else set()
+        )
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -82,11 +108,26 @@ class VulkanSupportedOperators(OperatorSupportBase):
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
+        self.unsupported_fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
-            self.fusable_nodes.update(match.all_nodes)
+            nodes = {
+                node for node in match.all_nodes if isinstance(node, torch.fx.Node)
+            }
+            self.fusable_nodes.update(nodes)
+            inputs = {arg for node in nodes for arg in node.all_input_nodes}
+            if not downcast_64_bit and any(
+                isinstance(value, torch.Tensor)
+                and value.dtype in (torch.int64, torch.float64)
+                for node in (nodes | inputs) - (constant_nodes or set())
+                for value in tree_leaves(node.meta.get("val"))
+            ):
+                # Keep the whole pattern outside Vulkan instead of splitting a fusion.
+                # Constant quantization parameters may disappear during fusion.
+                self.unsupported_fusable_nodes.update(nodes)
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
+        self._node_support: Dict[torch.fx.Node, bool] = {}
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -195,13 +236,47 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 f"[Vulkan Partitioner] Due to [{reason}], skipping {utils.node_io_str(node)}"
             )
 
+    def reject(self, node: torch.fx.Node, reason: str) -> None:
+        """Mark node as unsupported from now on, overriding its support check."""
+        self.log_skip(node, reason)
+        self._node_support[node] = False
+
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
-        r = self._is_node_supported(node)
-        return r
+        return self._is_node_supported(node)
 
-    def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+    def _is_node_supported(self, node: torch.fx.Node) -> bool:
+        if node not in self._node_support:
+            self._node_support[node] = self._check_node_support(node)
+        return self._node_support[node]
+
+    def _check_node_support(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        if node in self.unsupported_fusable_nodes:
+            self.log_skip(node, "fusable pattern requires 64-bit tensor downcasting")
+            return False
+
+        # Asserts and the symbolic comparisons feeding them are removed during
+        # preprocessing, so their SymBool values never need to be represented.
+        is_assert_chain = node.target in RemoveAssertsTransform.assert_ops or (
+            len(node.users) > 0
+            and all(
+                user.target in RemoveAssertsTransform.assert_ops for user in node.users
+            )
+        )
+        if not is_assert_chain and any(
+            isinstance(arg.meta.get("val"), (torch.SymFloat, torch.SymBool))
+            for arg in [node, *node.all_input_nodes]
+        ):
+            self.log_skip(node, "symbolic float or bool values are not supported")
+            return False
+
+        if utils.is_symint_node(node) and any(
+            not self._is_node_supported(user) for user in node.users
+        ):
+            self.log_skip(node, "symbolic scalar has an unsupported consumer")
+            return False
+
         # Check if tensor node dtype is supported by vulkan
         if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
             self.log_skip(node, "dtype not supported")
@@ -227,6 +302,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if node in self.fusable_nodes:
                 return True
 
+        if not self.downcast_64_bit:
+            native_dtypes = utils.DtypeSetList(
+                utils.ALL_T - {torch.int64, torch.float64}
+            )
+            dtype_valid, dtype_reason = utils.check_node_dtypes(
+                node, native_dtypes, native_dtypes
+            )
+            if not dtype_valid:
+                self.log_skip(node, f"{dtype_reason} with downcast_64_bit disabled")
+                return False
+
         target = node.target
         if (
             node.target == torch.ops.higher_order.auto_functionalized
@@ -244,17 +330,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        features = None
-        if target not in vulkan_supported_ops:
+        features = self.op_features_overrides.get(target)
+        if features is None:
+            if target in vulkan_supported_ops:
+                features = vulkan_supported_ops[target]
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
+            elif hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")
                 return False
-        else:
-            features = vulkan_supported_ops[target]
 
         assert features is not None
 
@@ -266,6 +352,15 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
+            return False
+
+        if (
+            features.are_node_inputs_supported_with_constants_fn is not None
+            and not features.are_node_inputs_supported_with_constants_fn(
+                node, self.constant_nodes
+            )
+        ):
+            self.log_skip(node, "op args are not constant where required")
             return False
 
         if not features.supports_highdim and utils.op_contains_high_dim_tensor(node):
@@ -332,6 +427,35 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     return compile_specs
 
 
+def instance_norms_split_from_affine_repeats(
+    partitions: Iterable[Partition],
+) -> Set[torch.fx.Node]:
+    """
+    The batch norms without stats in ``partitions`` whose affine args are read
+    through an identity ``repeat`` (as F.instance_norm does for a batch of 1)
+    that is not in the same partition.
+
+    Such a norm receives the repeat's output as a runtime input, which
+    ReplaceInstanceNormPass cannot unwrap to a constant. Even a delegated repeat
+    can land in another partition, for instance when it has other users on a path
+    that leaves the norm's partition and re-enters it.
+    """
+    partition_of = {
+        node: partition.id for partition in partitions for node in partition.nodes
+    }
+    split = set()
+    for node, partition_id in partition_of.items():
+        if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
+            continue
+        for affine_arg in (node.args[1], node.args[2]):
+            if (
+                unwrap_identity_repeat(affine_arg) is not affine_arg
+                and partition_of.get(affine_arg) != partition_id
+            ):
+                split.add(node)
+    return split
+
+
 @final
 class VulkanPartitioner(Partitioner):
     def __init__(
@@ -341,7 +465,9 @@ class VulkanPartitioner(Partitioner):
         operator_allowlist: Optional[List[OpKey]] = None,
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
+        op_features_overrides: Optional[Dict[OpKey, OpFeatures]] = None,
     ) -> None:
+        self.op_features_overrides = op_features_overrides
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
             self.options = compile_options
@@ -403,22 +529,37 @@ class VulkanPartitioner(Partitioner):
         else:
             texture_limits = utils.DEFAULT_TEXTURE_LIMITS
         buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
+        operator_support = VulkanSupportedOperators(
+            texture_limits,
+            buffer_limit,
+            require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+            skip_bool_tensors=self.options.get("skip_bool_tensors", False),
+            operator_blocklist=self.operator_blocklist,
+            operator_allowlist=self.operator_allowlist,
+            fusable_subgraphs=fusable_subgraphs,
+            nn_module_blocklist=self.nn_module_blocklist,
+            nn_module_allowlist=self.nn_module_allowlist,
+            downcast_64_bit=self.options.get("downcast_64_bit", True),
+            op_features_overrides=self.op_features_overrides,
+            constant_nodes=utils.get_constant_nodes(exported_program),
+        )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            VulkanSupportedOperators(
-                texture_limits,
-                buffer_limit,
-                require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
-                skip_bool_tensors=self.options.get("skip_bool_tensors", False),
-                operator_blocklist=self.operator_blocklist,
-                operator_allowlist=self.operator_allowlist,
-                fusable_subgraphs=fusable_subgraphs,
-                nn_module_blocklist=self.nn_module_blocklist,
-                nn_module_allowlist=self.nn_module_allowlist,
-            ),
+            operator_support,
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
+        # Support is checked node by node, but an instance norm is only delegable
+        # if the repeats of its affine args share its partition. Keep the norms
+        # that ended up apart on the CPU and partition again until none do.
+        split_norms = instance_norms_split_from_affine_repeats(partition_list)
+        while split_norms:
+            for node in split_norms:
+                operator_support.reject(
+                    node, "affine arg repeat is not in the same partition"
+                )
+            partition_list = capability_partitioner.propose_partitions()
+            split_norms = instance_norms_split_from_affine_repeats(partition_list)
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"

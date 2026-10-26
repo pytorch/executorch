@@ -4457,6 +4457,12 @@ class LiftConstantScalarOperands:
         def forward(self, x):
             return torch.where(x > 0, 1.0, 0.0)
 
+    class _HigherOrderOps(torch.nn.Module):
+        def forward(self, x):
+            with torch.no_grad():
+                y = x + 1
+            return y * 2
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -4525,6 +4531,14 @@ class LiftConstantScalarOperands:
                     f"lifted scalar {n.name} expected float32, "
                     f"got {n.meta['val'].dtype} (use_self_dtype broken?)"
                 )
+
+        with subtests.test(msg="skip_higher_order_ops"):
+            # The pass reads node.target._schema; a higher-order op has none, so it
+            # must be skipped rather than crash the annotation pipeline.
+            gm = lower(LiftConstantScalarOperands._HigherOrderOps())
+            assertions.assert_target_count(
+                gm, torch.ops.higher_order.wrap_with_set_grad_enabled, 1
+            )
 
 
 class LpaiPartitionFallbackSupport:

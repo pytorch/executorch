@@ -46,7 +46,7 @@ private constructor(
     private var maxNewTokens: Int = -1
     private var warming: Boolean = false
     private var seqLen: Int = -1
-    private var temperature: Float = 0.8f
+    private var temperature: Float = -1.0f
     private var numBos: Int = 0
     private var numEos: Int = 0
 
@@ -62,7 +62,7 @@ private constructor(
     /** Sets the maximum sequence length for generation. */
     fun seqLen(seqLen: Int): Builder = apply { this.seqLen = seqLen }
 
-    /** Sets the temperature for random sampling. */
+    /** Sets the temperature for random sampling. A negative value uses the module's temperature. */
     fun temperature(temperature: Float): Builder = apply { this.temperature = temperature }
 
     /** Sets the number of BOS tokens to prepend. */

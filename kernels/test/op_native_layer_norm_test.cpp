@@ -673,7 +673,11 @@ TEST_F(OpNativeLayerNormTest, FloatLargeMeanRows) {
 }
 
 TEST_F(OpNativeLayerNormTest, DoubleLargeMeanRows) {
-  test_large_mean_rows<ScalarType::Double>(1e8, 0.5, {192}, 1e-10);
+  // ATen's vectorized Welford reduction rounds when merging large means.
+  const double tolerance =
+      torch::executor::testing::SupportedFeatures::get()->is_aten ? 1e-7
+                                                                  : 1e-10;
+  test_large_mean_rows<ScalarType::Double>(1e8, 0.5, {192}, tolerance);
 }
 
 TEST_F(OpNativeLayerNormTest, HalfLargeMeanRows) {

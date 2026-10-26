@@ -13,7 +13,6 @@
 #include <executorch/examples/llm_server/cpp/worker_prefill_plan.h>
 
 #include <cstdio>
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -30,7 +29,7 @@ void expect(
     size_t suffix_start,
     const char* reason) {
   bool ok = p.action == action && p.suffix_start == suffix_start &&
-      std::strcmp(p.reason, reason) == 0;
+      p.reason == reason;
   if (!ok) {
     ++g_failures;
     printf(
@@ -38,7 +37,7 @@ void expect(
         name,
         (int)p.action,
         p.suffix_start,
-        p.reason);
+        p.reason.c_str());
   } else {
     printf("  [PASS] %s\n", name);
   }

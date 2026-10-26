@@ -93,8 +93,14 @@ StreamingConfig StreamingConfig::from_preset(const std::string& preset) {
   throw std::invalid_argument("Unknown streaming preset: " + preset);
 }
 
-Runner::Runner(const std::string& model_path, StreamingConfig config)
-    : model_(model_path, executorch::extension::Module::LoadMode::Mmap),
+Runner::Runner(
+    const std::string& model_path,
+    StreamingConfig config,
+    const std::string& data_path)
+    : model_(
+          model_path,
+          data_path,
+          executorch::extension::Module::LoadMode::Mmap),
       config_(config) {
   if (model_.load() != Error::Ok) {
     throw std::runtime_error("Could not load " + model_path);

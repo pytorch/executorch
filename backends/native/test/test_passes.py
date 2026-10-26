@@ -15,6 +15,9 @@ from executorch.backends.native.partitioner import NativePartitioner
 from executorch.backends.native.passes import get_default_passes
 from executorch.backends.native.passes.fuse_rope import FuseRoPEPass
 from executorch.backends.native.passes.reinplace import NativeReinplacePass
+from executorch.backends.native.passes.remove_runtime_asserts import (
+    RemoveRuntimeAssertsPass,
+)
 from executorch.backends.native.serialization import deserialize_graph
 from executorch.backends.native.serialization.schema import BoolArg, FloatArg, TensorArg
 from executorch.backends.native.test.utils import (
@@ -78,6 +81,107 @@ class CSEPassTest(unittest.TestCase):
             if n.op == "call_function" and "add" in str(n.target)
         ]
         self.assertEqual(len(adds), 1, f"expected CSE to leave one add, got {adds}")
+
+
+class RemoveRuntimeAssertsPassTest(unittest.TestCase):
+    def _exported_graph(self):
+        class Model(nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        ep = torch.export.export(
+            Model(),
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: torch.export.Dim("s", min=1, max=16)}},
+        )
+        return ep.graph_module
+
+    def _add_assert(self, graph_module, make_cond):
+        graph = graph_module.graph
+        x = next(n for n in graph.nodes if n.op == "placeholder")
+        with graph.inserting_after(x):
+            size = graph.call_function(torch.ops.aten.sym_size.int, (x, 0))
+            size.meta["val"] = x.meta["val"].shape[0]
+        with graph.inserting_after(size):
+            cond = graph.call_function(make_cond, (size,))
+            cond.meta["val"] = make_cond(size.meta["val"])
+        with graph.inserting_after(cond):
+            graph.call_function(torch.ops.aten._assert_scalar.default, (cond, "msg"))
+        graph_module.recompile()
+
+    def _targets(self, graph_module):
+        return [n.target for n in graph_module.graph.nodes if n.op == "call_function"]
+
+    def test_removes_assert_implied_by_input_bounds(self):
+        graph_module = self._exported_graph()
+        self._add_assert(graph_module, lambda s: s <= 16)
+
+        result = RemoveRuntimeAssertsPass().call(graph_module)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._targets(graph_module), [torch.ops.aten.add.Tensor])
+
+    def test_keeps_assert_not_implied_by_input_bounds(self):
+        for make_cond in (lambda s: s <= 8, lambda s: s % 2 == 0):
+            graph_module = self._exported_graph()
+            self._add_assert(graph_module, make_cond)
+
+            RemoveRuntimeAssertsPass().call(graph_module)
+
+            self.assertIn(
+                torch.ops.aten._assert_scalar.default, self._targets(graph_module)
+            )
+
+    def test_removes_range_constraint_implied_by_input_bounds(self):
+        graph_module = self._exported_graph()
+        graph = graph_module.graph
+        x = next(n for n in graph.nodes if n.op == "placeholder")
+        with graph.inserting_after(x):
+            size = graph.call_function(torch.ops.aten.sym_size.int, (x, 0))
+            size.meta["val"] = x.meta["val"].shape[0]
+        with graph.inserting_after(size):
+            graph.call_function(
+                torch.ops.aten.sym_constrain_range_for_size.default,
+                (size,),
+                {"min": 0, "max": 16},
+            )
+
+        result = RemoveRuntimeAssertsPass().call(graph_module)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._targets(graph_module), [torch.ops.aten.add.Tensor])
+
+    def test_removes_tensor_metadata_assert(self):
+        graph_module = self._exported_graph()
+        graph = graph_module.graph
+        x = next(n for n in graph.nodes if n.op == "placeholder")
+        with graph.inserting_after(x):
+            graph.call_function(
+                torch.ops.aten._assert_tensor_metadata.default,
+                (x,),
+                {"dtype": torch.float32},
+            )
+
+        result = RemoveRuntimeAssertsPass().call(graph_module)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(self._targets(graph_module), [torch.ops.aten.add.Tensor])
+
+    def test_keeps_data_dependent_asserts(self):
+        class Model(nn.Module):
+            def forward(self, x, n):
+                size = n.item()
+                torch._check(size >= 0)
+                torch._check(size <= 16)
+                return x[:size]
+
+        ep = torch.export.export(Model(), (torch.randn(16), torch.tensor(4)))
+        before = self._targets(ep.graph_module)
+        self.assertIn(torch.ops.aten._assert_scalar.default, before)
+
+        RemoveRuntimeAssertsPass().call(ep.graph_module)
+
+        self.assertEqual(self._targets(ep.graph_module), before)
 
 
 class NativeReinplacePassTest(unittest.TestCase):
@@ -149,6 +253,30 @@ class ReplaceCopyWithAliasPassTest(unittest.TestCase):
         targets = _call_function_targets(graph)
         self.assertIn("torch.ops.aten.view.default", targets)
         self.assertNotIn("torch.ops.aten.view_copy.default", targets)
+
+    def test_nonzero_offset_select_remains_copy(self):
+        class SelectModel(nn.Module):
+            def forward(self, x):
+                return x.select(0, -1) + 1.0
+
+        graph = deserialize_graph(
+            _get_delegate_blob(_lower(SelectModel(), (torch.randn(3, 4),)))
+        )
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.select_copy.int", targets)
+        self.assertNotIn("torch.ops.aten.select.int", targets)
+
+    def test_nonzero_offset_slice_remains_copy(self):
+        class SliceModel(nn.Module):
+            def forward(self, x):
+                return x[1:3] + 1.0
+
+        graph = deserialize_graph(
+            _get_delegate_blob(_lower(SliceModel(), (torch.randn(4, 4),)))
+        )
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.slice_copy.Tensor", targets)
+        self.assertNotIn("torch.ops.aten.slice.Tensor", targets)
 
 
 class FuseRopePassTest(unittest.TestCase):

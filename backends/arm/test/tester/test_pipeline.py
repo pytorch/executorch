@@ -3,7 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
+import os
 import warnings as _warnings
 
 from typing import (
@@ -11,6 +13,7 @@ from typing import (
     Callable,
     Dict,
     Generic,
+    Iterable,
     List,
     Optional,
     Sequence,
@@ -38,6 +41,13 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+from executorch.backends.arm.test.tester.pte_diff_utils import (
+    _read_tosa_ops,
+    format_tosa_delegate_diff,
+    pte_diff_within_tolerance,
+    tosa_delegate_op_names_equal,
+    tosa_delegate_payloads_equal,
+)
 from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -47,6 +57,11 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
+from executorch.devtools.pte_tool.diff_pte import (
+    diff_pte as _diff_pte,
+    format_diff_result,
+    PTEDiffResult,
+)
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
@@ -246,6 +261,20 @@ class BasePipeline(Generic[T]):
                 f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
             )
 
+    def set_quantization_calibration(
+        self,
+        calibration_samples: Iterable[Any],
+        dynamic_shapes: Optional[Tuple[Any, ...]] = None,
+    ):
+        """Calibrates the quantize stage with the given samples instead of the
+        test data.
+        """
+        quantize_stage = self._stages[self.find_pos("quantize")].args[0]
+        quantize_stage.calibration_samples = calibration_samples
+        if dynamic_shapes is not None:
+            quantize_stage.dynamic_shapes = dynamic_shapes
+        return self
+
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos."""
         if isinstance(identifier, int):
@@ -302,6 +331,97 @@ class BasePipeline(Generic[T]):
     def visualize(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(stage_id, self.tester.visualize, suffix=suffix)
+        return self
+
+    def _compare_pte(
+        self,
+        pte: bytes | str | os.PathLike[str],
+        verbose: bool = False,
+        max_samples: int = 10,
+        atol: float = 0.0,
+        rtol: float = 0.0,
+        allow_tosa_op_name_only_match: bool = False,
+    ):
+        """Compare the to_executorch PTE with another PTE."""
+        reference_pte = self.tester.get_artifact(StageType.TO_EXECUTORCH).buffer
+
+        if isinstance(pte, bytes):
+            pte_data = pte
+            pte_path = "generated.pte"
+        else:
+            pte_path = os.fspath(pte)
+            with open(pte_path, "rb") as pte_file:
+                pte_data = pte_file.read()
+
+        result = _diff_pte(
+            reference_pte,
+            pte_data,
+            "to_executorch.pte",
+            pte_path,
+            max_samples=max_samples,
+        )
+        if not result.bitwise_equal and not self._pte_diff_within_tolerance(
+            result,
+            reference_pte,
+            pte_data,
+            atol,
+            rtol,
+            allow_tosa_op_name_only_match,
+        ):
+            message = format_diff_result(result, verbose=verbose)
+            extra_diff = self._format_extra_pte_diff(
+                reference_pte, pte_data, max_samples=max_samples
+            )
+            if extra_diff:
+                message = message + "\n" + "\n".join(extra_diff)
+            print(message)
+            raise AssertionError(message)
+
+    def _format_extra_pte_diff(
+        self,
+        data_a: bytes,
+        data_b: bytes,
+        max_samples: int,
+    ) -> list[str]:
+        return []
+
+    def _pte_diff_within_tolerance(
+        self,
+        result: PTEDiffResult,
+        data_a: bytes,
+        data_b: bytes,
+        atol: float,
+        rtol: float,
+        allow_tosa_op_name_only_match: bool = False,
+    ) -> bool:
+        return pte_diff_within_tolerance(result, data_a, data_b, atol=atol, rtol=rtol)
+
+    def diff_pte(
+        self,
+        pte: bytes | str | os.PathLike[str],
+        verbose: bool = False,
+        max_samples: int = 10,
+        atol: float = 0.0,
+        rtol: float = 0.0,
+        allow_tosa_op_name_only_match: bool = False,
+    ):
+        """Add a stage to compare the to_executorch PTE with another PTE.
+
+        Set allow_tosa_op_name_only_match to accept changed TOSA delegate
+        payload bytes when their decoded operator-name sequences match.
+
+        """
+        self.add_stage_after(
+            "to_executorch",
+            self._compare_pte,
+            pte,
+            verbose=verbose,
+            max_samples=max_samples,
+            atol=atol,
+            rtol=rtol,
+            allow_tosa_op_name_only_match=allow_tosa_op_name_only_match,
+            suffix="diff_pte",
+        )
         return self
 
     def count_tosa_ops(self, expected_ops: Dict[str, int]):
@@ -401,12 +521,46 @@ class TOSAPipeline(BasePipeline, Generic[T]):
         # Not all deployments of ET have the TOSA reference model available.
         # Make sure we don't try to use it if it's not available.
         try:
-            import tosa_reference_model  # type: ignore[import-not-found, import-untyped]
+            import tosa_reference_model  # type: ignore[import-untyped]
 
             # Check if the module has content
             return bool(dir(tosa_reference_model))
         except ImportError:
             return False
+
+    def _format_extra_pte_diff(
+        self,
+        data_a: bytes,
+        data_b: bytes,
+        max_samples: int,
+    ) -> list[str]:
+        return format_tosa_delegate_diff(
+            data_a,
+            data_b,
+            max_samples=max_samples,
+            read_tosa_ops=_read_tosa_ops,
+        )
+
+    def _pte_diff_within_tolerance(
+        self,
+        result: PTEDiffResult,
+        data_a: bytes,
+        data_b: bytes,
+        atol: float,
+        rtol: float,
+        allow_tosa_op_name_only_match: bool = False,
+    ) -> bool:
+        if super()._pte_diff_within_tolerance(
+            result, data_a, data_b, atol, rtol, allow_tosa_op_name_only_match
+        ):
+            return True
+        if tosa_delegate_payloads_equal(data_a, data_b):
+            return True
+        if not allow_tosa_op_name_only_match:
+            return False
+        return tosa_delegate_op_names_equal(
+            data_a, data_b, read_tosa_ops=_read_tosa_ops
+        )
 
     def run(self):
         if (
@@ -1223,6 +1377,9 @@ class VgfPipeline(BasePipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
+       compare_outputs: Whether to compare VKML runtime outputs with reference
+           outputs. If False, skip reference execution and output comparison.
+           Defaults to True.
 
        vgf_compiler_flags: Optional compiler flags.
        is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
@@ -1265,6 +1422,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
         preserve_io_quantization: bool = False,
         n_expected_delegates: int = 1,
         is_qat: bool = False,
+        compare_outputs: bool = True,
     ):
         if is_qat and not quantize:
             raise ValueError("QAT requires quantize=True.")
@@ -1382,5 +1540,69 @@ class VgfPipeline(BasePipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_outputs,
             )
         self.run_on_vulkan_runtime = run_on_vulkan_runtime
+
+
+class VgfPipelineFP8(VgfPipeline[T]):
+    """Test FP8 VGF execution and the expected CPU reference availability.
+
+    Cases with a CPU reference compare outputs normally. Cases without one
+    execute VGF first, then check the missing CPU kernel separately. Compiler
+    and runtime errors always fail the test. A newly supported CPU reference
+    also fails, prompting the case to enable output comparison.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_op: str | List[str],
+        exir_op: Optional[str | List[str]] = None,
+        *,
+        expect_missing_reference: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Configure an unquantized FP8 VGF test.
+
+        Args:
+            module (torch.nn.Module): Module to test.
+            test_data (T): Inputs used for export and execution.
+            aten_op (str | List[str]): Expected ATen operators.
+            exir_op (Optional[str | List[str]]): Expected edge operators.
+            expect_missing_reference (bool): Expect an unsupported FP8 CPU
+                kernel instead of comparing outputs. Defaults to False.
+            **kwargs (Any): Additional VgfPipeline options, excluding runtime
+                enablement, quantization, TOSA extensions, and comparison.
+
+        """
+        super().__init__(
+            module,
+            test_data,
+            aten_op,
+            exir_op,
+            run_on_vulkan_runtime=True,
+            quantize=False,
+            tosa_extensions=["fp8e4m3", "fp8e5m2"],
+            compare_outputs=not expect_missing_reference,
+            **kwargs,
+        )
+        if expect_missing_reference:
+            self.add_stage(self._check_missing_reference)
+
+    def _check_missing_reference(self) -> None:
+        reference_stage = self.tester.stages[StageType.INITIAL_MODEL]
+        assert reference_stage is not None
+        reference_inputs = copy.deepcopy(self.test_data)
+        try:
+            reference_stage.run_artifact(reference_inputs)
+        except NotImplementedError as error:
+            if "not implemented for 'Float8_" not in str(error):
+                raise
+        else:
+            raise AssertionError(
+                "The FP8 CPU reference now succeeds. Set "
+                "expect_missing_reference=False to enable output comparison."
+            )

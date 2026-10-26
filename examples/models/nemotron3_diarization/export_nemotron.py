@@ -63,22 +63,31 @@ class PreEncode(nn.Module):
 class Encode(nn.Module):
     """Adapt the stateless Transformers network to the native streaming ABI."""
 
-    def __init__(self, model):
+    def __init__(self, model, *, expand_attention_mask=False):
         super().__init__()
         self.model = model.model
         self.classifier = model.classifier
         self.dtype = model.dtype
+        self.expand_attention_mask = expand_attention_mask
+        self.additive_mask = model.config.audio_config._attn_implementation == "eager"
 
     def forward(self, embeddings, lengths):
         positions = torch.arange(embeddings.shape[1], device=embeddings.device)
         mask = (positions[None, :] < lengths[:, None])[:, None, None, :]
+        if self.expand_attention_mask:
+            # CUDA SDPA requires the full query dimension in the mask.
+            mask = mask.expand(-1, -1, embeddings.shape[1], -1)
+        if self.additive_mask:
+            mask = torch.where(mask, 0.0, -torch.inf)
         encoded = self.model(
             inputs_embeds=embeddings.to(self.dtype), attention_mask=mask
         )
         return self.classifier(encoded.last_hidden_state).sigmoid().float()
 
 
-def capture_model(model, feature_extractor):
+def capture_model(
+    model, feature_extractor, *, attn_implementation="sdpa", expand_attention_mask=False
+):
     """Capture backend-independent programs; streaming state stays in the runner."""
     audio = model.config.audio_config
     head = model.config.head_config
@@ -89,7 +98,7 @@ def capture_model(model, feature_extractor):
     ):
         raise ValueError("Unsupported feature dimensions for the native runner")
     model.eval().requires_grad_(False)
-    model.model.audio_tower.set_attn_implementation("sdpa")
+    model.model.audio_tower.set_attn_implementation(attn_implementation)
     metadata = {
         "format_version": 2,
         "sample_rate": feature_extractor.sampling_rate,
@@ -145,7 +154,7 @@ def capture_model(model, feature_extractor):
                 strict=False,
             ),
             "encode": export(
-                Encode(model),
+                Encode(model, expand_attention_mask=expand_attention_mask),
                 (
                     torch.zeros(1, 128, audio.hidden_size),
                     torch.tensor([128], dtype=torch.int64),
@@ -157,24 +166,65 @@ def capture_model(model, feature_extractor):
     return programs, metadata
 
 
-def export_model(
-    model_id, output_dir, revision=None, dtype=torch.bfloat16, backend="mlx"
-):
+def export_model(model_id, output_dir, revision=None, dtype=None, backend="mlx"):
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackPartitioner,
     )
 
+    if dtype is None:
+        dtype = torch.float32 if backend == "vulkan" else torch.bfloat16
+    if backend == "vulkan" and dtype != torch.float32:
+        raise ValueError(f"{backend} currently requires --dtype fp32")
     passes = []
     if backend == "mlx":
         from executorch.backends.mlx.partitioner import MLXPartitioner
         from executorch.backends.mlx.passes import get_default_passes
 
-        partitioners = [MLXPartitioner()]
+        partitioners = {name: [MLXPartitioner()] for name in ("pre_encode", "encode")}
         passes = get_default_passes()
     elif backend == "xnnpack":
-        partitioners = [XnnpackPartitioner(enable_bf16=dtype == torch.bfloat16)]
+        partitioners = {
+            name: [XnnpackPartitioner(enable_bf16=dtype == torch.bfloat16)]
+            for name in ("pre_encode", "encode")
+        }
+    elif backend == "vulkan":
+        from executorch.backends.vulkan._passes import RemoveRedundantOpsTransform
+        from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+            VulkanPartitioner,
+        )
+
+        partitioners = {
+            name: [
+                VulkanPartitioner(
+                    {"require_dynamic_shapes": True, "small_texture_limits": True},
+                ),
+                XnnpackPartitioner(),
+            ]
+            for name in ("pre_encode", "encode")
+        }
+        # Normalize redundant views before partitioning for numerical parity.
+        passes = [RemoveRedundantOpsTransform()]
+    elif backend == "cuda":
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        # The custom Triton SDPA kernel supports BF16 only.
+        triton_mode = b"ON" if dtype == torch.bfloat16 else b"OFF"
+        partitioners = {
+            name: [
+                CudaPartitioner(
+                    [
+                        CudaBackend.generate_method_name_compile_spec(name),
+                        CompileSpec("triton_kernel_mode", triton_mode),
+                    ]
+                )
+            ]
+            for name in ("pre_encode", "encode")
+        }
     else:
         raise ValueError(f"Unknown backend: {backend}")
+    partitioners["preprocessor"] = [XnnpackPartitioner()]
 
     model = Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
         model_id, revision=revision, dtype=dtype
@@ -182,14 +232,15 @@ def export_model(
     processor = Nemotron3DiarizationProcessor.from_pretrained(
         model_id, revision=revision
     )
-    programs, metadata = capture_model(model, processor.feature_extractor)
+    programs, metadata = capture_model(
+        model,
+        processor.feature_extractor,
+        attn_implementation="eager" if backend == "vulkan" else "sdpa",
+        expand_attention_mask=backend == "cuda",
+    )
     edge = to_edge_transform_and_lower(
         programs,
-        partitioner={
-            "preprocessor": [XnnpackPartitioner()],
-            "pre_encode": partitioners,
-            "encode": partitioners,
-        },
+        partitioner=partitioners,
         transform_passes={
             "preprocessor": [],
             "pre_encode": passes,
@@ -212,6 +263,9 @@ def export_model(
     with path.open("wb") as output:
         program.write_to_file(output)
     print(f"Saved {path} ({path.stat().st_size / 2**20:.1f} MiB)")
+    if backend == "cuda":
+        program.write_tensor_data_to_file(str(output_dir))
+        print(f"Saved {output_dir / 'aoti_cuda_blob.ptd'}")
     return path
 
 
@@ -223,16 +277,17 @@ def main():
         help="Hugging Face model ID or local Transformers checkpoint directory",
     )
     parser.add_argument("--revision", help="Hugging Face model revision")
-    parser.add_argument("--backend", choices=("mlx", "xnnpack"), default="mlx")
+    parser.add_argument(
+        "--backend", choices=("mlx", "xnnpack", "cuda", "vulkan"), default="mlx"
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("nemotron_exports"))
     parser.add_argument(
         "--dtype",
         choices=("bf16", "fp32"),
-        default="bf16",
-        help="Model weights and compute dtype (default: bf16)",
+        help="Model dtype (default: fp32 for Vulkan, bf16 for other backends)",
     )
     args = parser.parse_args()
-    dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[args.dtype]
+    dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}.get(args.dtype)
     export_model(args.hf_model, args.output_dir, args.revision, dtype, args.backend)
 
 

@@ -6,10 +6,12 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/nemotron3_diarization",
       "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "OFF",
         "EXECUTORCH_BUILD_MLX": "OFF",
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
-        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out",
+        "EXECUTORCH_BUILD_VULKAN": "OFF"
       }
     },
     {
@@ -29,14 +31,44 @@
       }
     },
     {
+      "name": "nemotron3-diarization-cuda",
+      "displayName": "Nemotron 3 Diarization runner (CUDA)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
       "name": "nemotron3-diarization-cpu",
       "displayName": "Nemotron 3 Diarization runner (XNNPACK)",
       "inherits": [
         "nemotron3-diarization-base"
       ]
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "displayName": "Nemotron 3 Diarization runner (Vulkan)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      }
     }
   ],
   "buildPresets": [
+    {
+      "name": "nemotron3-diarization-cuda",
+      "configurePreset": "nemotron3-diarization-cuda",
+      "configuration": "Release"
+    },
     {
       "name": "nemotron3-diarization-mlx",
       "configurePreset": "nemotron3-diarization-mlx",
@@ -46,9 +78,27 @@
       "name": "nemotron3-diarization-cpu",
       "configurePreset": "nemotron3-diarization-cpu",
       "configuration": "Release"
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "configurePreset": "nemotron3-diarization-vulkan",
+      "configuration": "Release"
     }
   ],
   "workflowPresets": [
+    {
+      "name": "nemotron3-diarization-cuda",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-cuda"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-cuda"
+        }
+      ]
+    },
     {
       "name": "nemotron3-diarization-mlx",
       "steps": [
@@ -72,6 +122,19 @@
         {
           "type": "build",
           "name": "nemotron3-diarization-cpu"
+        }
+      ]
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-vulkan"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-vulkan"
         }
       ]
     }

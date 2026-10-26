@@ -5,16 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Export model to CUDA/Metal/XNNPACK format with optional quantization
+# Export model to CUDA/Metal/XNNPACK/Vulkan format with optional quantization
 
 show_help() {
   cat << EOF
 Usage: export_model_artifact.sh <device> <hf_model> [quant_name] [output_dir] [mode]
 
-Export a HuggingFace model to CUDA/Metal/XNNPACK format with optional quantization.
+Export a HuggingFace model to CUDA/Metal/XNNPACK/Vulkan format with optional quantization.
 
 Arguments:
-  device       cuda, metal, or xnnpack (required)
+  device       cuda, metal, xnnpack, or vulkan (required)
 
   hf_model     HuggingFace model ID (required)
                Supported models:
@@ -26,14 +26,20 @@ Arguments:
                  - nvidia/parakeet-tdt
                  - facebook/dinov2-small-imagenet1k-1-layer
                  - meta-models/Muse-Glimmer-30B-GGUF
+                 - Qwen/Qwen3-0.6B
+                 - unsloth/Llama-3.2-1B-Instruct
+                 - microsoft/Phi-4-mini-instruct
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
                  - non-quantized
                  - quantized-int4-tile-packed (CUDA only)
-                 - quantized-int4-weight-only (CUDA only)
+                 - quantized-int4-weight-only (CUDA/Vulkan)
                  - quantized-int4-metal (Metal only)
-                 - quantized-8da4w (XNNPACK only)
+                 - quantized-8da4w (XNNPACK/Vulkan)
+                 - quantized-8da4w-fp16 (Vulkan only)
+                 - quantized-8da4w-embedding (Vulkan only)
+                 - quantized-8da4w-fp16-embedding (Vulkan only)
                  - kquant-17gb (Muse Glimmer only)
                  - kquant-dynamic (Muse Glimmer only)
 
@@ -44,6 +50,7 @@ Arguments:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
                  - solo-text: Muse Glimmer solo text mode
+                 - solo-text-batching: Muse Glimmer text on the CUDA batching runtime
                  - dflash-image: Muse Glimmer DFlash vision mode
 
 Examples:
@@ -84,6 +91,9 @@ QUANT_NAME="${3:-non-quantized}"
 OUTPUT_DIR="${4:-.}"
 MODE="${5:-}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 # Validate mode if specified
 if [ -n "$MODE" ]; then
   case "$MODE" in
@@ -95,7 +105,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|dflash-image)
+    solo-text|solo-text-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -104,7 +114,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -117,14 +127,17 @@ case "$DEVICE" in
     ;;
   metal)
     ;;
-  xnnpack)
+  xnnpack|vulkan)
     ;;
   *)
     echo "Error: Unsupported device '$DEVICE'"
-    echo "Supported devices: cuda, cuda-windows, metal, xnnpack"
+    echo "Supported devices: cuda, cuda-windows, metal, xnnpack, vulkan"
     exit 1
     ;;
 esac
+
+CHECKPOINT_SHA256=""
+EXPORT_METADATA=""
 
 # Determine model configuration based on HF model ID
 case "$HF_MODEL" in
@@ -167,6 +180,41 @@ case "$HF_MODEL" in
     EXTRA_PIP=""
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
+    if [ "$DEVICE" = "vulkan" ]; then
+      test "$QUANT_NAME" = quantized-8da4w-fp16-embedding
+      MODEL_NAME=qwen3_0_6b
+      REVISION=c1899de289a04d12100db370d81485cdf75e47ca
+      CONVERTER=executorch.examples.models.qwen3.convert_weights
+      PARAMS="$EXECUTORCH_ROOT/examples/models/qwen3/config/0_6b_config.json"
+      PROMPT=$'<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n'
+      EXPECTED_OUTPUT=Paris
+    fi
+    ;;
+  unsloth/Llama-3.2-1B-Instruct)
+    if [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: $HF_MODEL is only supported with Vulkan"
+      exit 1
+    fi
+    MODEL_NAME=llama3_2
+    REVISION=5a8abab4a5d6f164389b1079fb721cfab8d7126c
+    CONVERTER=executorch.examples.models.llama.convert_weights
+    CHECKPOINT_SHA256=1ff795ff6a07e6a68085d206fb84417da2f083f68391c2843cd2b8ac6df8538f
+    EXPORT_METADATA='{"append_eos_to_prompt":0,"get_bos_id":128000,"get_eos_ids":[128009,128001]}'
+    PROMPT=$'<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nWhat is the capital of France?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'
+    EXPECTED_OUTPUT="The capital of France is Paris"
+    ;;
+  microsoft/Phi-4-mini-instruct)
+    if [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: $HF_MODEL is only supported with Vulkan"
+      exit 1
+    fi
+    test "$QUANT_NAME" = quantized-8da4w-embedding
+    MODEL_NAME=phi_4_mini
+    REVISION=cfbefacb99257ffa30c83adab238a50856ac3083
+    CONVERTER=executorch.examples.models.phi_4_mini.convert_weights
+    PARAMS="$EXECUTORCH_ROOT/examples/models/phi_4_mini/config/config.json"
+    PROMPT=$'<|user|>\nWhat is the capital of France?<|end|>\n<|assistant|>\n'
+    EXPECTED_OUTPUT="The capital of France is Paris"
     ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
@@ -231,6 +279,10 @@ case "$HF_MODEL" in
     ;;
 esac
 
+QMODE=8da4w
+FORCE_FP16=false
+EMBEDDING_QUANTIZE=""
+
 # Determine quantization args based on quant name
 case "$QUANT_NAME" in
   non-quantized)
@@ -249,6 +301,7 @@ case "$QUANT_NAME" in
       exit 1
     fi
     EXTRA_ARGS="--qlinear_encoder 4w"
+    QMODE=4w
     ;;
   quantized-int4-metal)
     if [ "$DEVICE" != "metal" ]; then
@@ -258,11 +311,24 @@ case "$QUANT_NAME" in
     EXTRA_ARGS="--qlinear fpa4w --qlinear_encoder fpa4w"
     ;;
   quantized-8da4w)
-    if [ "$DEVICE" != "xnnpack" ]; then
-      echo "Error: quantized-8da4w is only supported with xnnpack device"
+    if [ "$DEVICE" != "xnnpack" ] && [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: quantized-8da4w is only supported with xnnpack or vulkan device"
       exit 1
     fi
     EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"
+    ;;
+  quantized-8da4w-fp16|quantized-8da4w-embedding|quantized-8da4w-fp16-embedding)
+    if [ "$DEVICE" != "vulkan" ]; then
+      echo "Error: Quantization '$QUANT_NAME' is only supported with Vulkan"
+      exit 1
+    fi
+    case "$QUANT_NAME" in
+      *-fp16*) FORCE_FP16=true ;;
+    esac
+    case "$QUANT_NAME" in
+      *-embedding) EMBEDDING_QUANTIZE=4,64 ;;
+    esac
+    EXTRA_ARGS=""
     ;;
   kquant-17gb|kquant-dynamic)
     if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
@@ -288,10 +354,86 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
     echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
     exit 1
   fi
-  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image" ]; then
-    echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "solo-text-batching" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
     exit 1
   fi
+fi
+
+if [ "$DEVICE" = "vulkan" ]; then
+  case "$MODEL_NAME" in
+    qwen3_0_6b|llama3_2|phi_4_mini) ;;
+    *) echo "Error: Unsupported Vulkan model: $HF_MODEL"; exit 1 ;;
+  esac
+  case "$QUANT_NAME" in
+    quantized-8da4w|quantized-8da4w-fp16|quantized-8da4w-embedding|quantized-8da4w-fp16-embedding|quantized-int4-weight-only) ;;
+    *) echo "Error: Unsupported Vulkan quantization: $QUANT_NAME"; exit 1 ;;
+  esac
+  mkdir -p "$OUTPUT_DIR"
+  OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+  (
+    cd "$EXECUTORCH_ROOT"
+    MAX_SIZE_MIB=""
+    if [ "$MODEL_NAME" = "llama3_2" ] && [ -n "$EMBEDDING_QUANTIZE" ]; then MAX_SIZE_MIB=770; fi
+    HASH_ARGS=(--metadata-path "$OUTPUT_DIR/metadata.json")
+    if [ -n "${CHECKPOINT_SHA256:-}" ]; then HASH_ARGS+=(--expected-sha256 "$CHECKPOINT_SHA256"); fi
+    python - "$OUTPUT_DIR" "$HF_MODEL" "$REVISION" "$QUANT_NAME" "$QMODE" "$FORCE_FP16" \
+      "$EMBEDDING_QUANTIZE" "$MAX_SIZE_MIB" "$PROMPT" "$EXPECTED_OUTPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output, model, revision, variant, qmode, fp16, embedding, size, prompt, expected = sys.argv[1:]
+metadata = {
+    "model": model, "revision": revision, "variant": variant, "quantization": qmode,
+    "group_size": 64, "embedding_quantize": embedding, "dtype": "fp32",
+    "vulkan_force_fp16": fp16 == "true", "max_seq_length": 2048, "max_context_length": 2048,
+    "use_kv_cache": True, "use_sdpa_with_kv_cache": True, "max_size_mib": int(size) if size else None,
+    "prompt": prompt, "expected": expected, "temperature": 0, "max_new_tokens": 50,
+}
+if model == "unsloth/Llama-3.2-1B-Instruct":
+    metadata["original_model"] = "meta-llama/Llama-3.2-1B-Instruct"
+output = Path(output)
+(output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+(output / "prompt.txt").write_text(prompt)
+(output / "expected_output.txt").write_text(expected + "\n")
+PY
+    SNAPSHOT=$(python -m executorch.examples.models.llama.hf_download snapshot "$HF_MODEL" \
+      --revision "$REVISION" "${HASH_ARGS[@]}" \
+      2> "$OUTPUT_DIR/download.log")
+    cp "$SNAPSHOT/tokenizer.json" "$SNAPSHOT/tokenizer_config.json" "$OUTPUT_DIR/"
+    VULKAN_CHECKPOINT_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/vulkan_llm_XXXXXX")
+    trap 'rm -rf "$VULKAN_CHECKPOINT_DIR"' EXIT
+    CONVERT_ARGS=("$SNAPSHOT" "$VULKAN_CHECKPOINT_DIR/checkpoint.pth")
+    if [ "$MODEL_NAME" = "llama3_2" ]; then
+      PARAMS="$OUTPUT_DIR/params.json"
+      CONVERT_ARGS=(hf-to-meta "${CONVERT_ARGS[@]}" --params-output "$PARAMS")
+    fi
+    python -m "$CONVERTER" "${CONVERT_ARGS[@]}" > "$OUTPUT_DIR/convert.log" 2>&1
+    VULKAN_EXPORT_ARGS=(
+      "base.model_class=$MODEL_NAME" "base.checkpoint=\"$VULKAN_CHECKPOINT_DIR/checkpoint.pth\""
+      "base.params=\"$PARAMS\"" "base.tokenizer_path=\"$OUTPUT_DIR/tokenizer.json\""
+      model.dtype_override=fp32 model.use_kv_cache=true model.use_sdpa_with_kv_cache=true
+      model.enable_dynamic_shape=true backend.vulkan.enabled=true "backend.vulkan.force_fp16=$FORCE_FP16"
+      "quantization.qmode=$QMODE" quantization.group_size=64
+      export.max_seq_length=2048 export.max_context_length=2048
+      "export.output_dir=\"$OUTPUT_DIR\"" "export.output_name=\"$OUTPUT_DIR/model.pte\"" debug.verbose=true
+    )
+    if [ -n "$EMBEDDING_QUANTIZE" ]; then
+      VULKAN_EXPORT_ARGS+=("quantization.embedding_quantize=\"$EMBEDDING_QUANTIZE\"")
+    fi
+    if [ -n "${EXPORT_METADATA:-}" ]; then VULKAN_EXPORT_ARGS+=("base.metadata='$EXPORT_METADATA'"); fi
+    rm -f "$OUTPUT_DIR/model.pte"
+    python -m extension.llm.export.export_llm "${VULKAN_EXPORT_ARGS[@]}" > "$OUTPUT_DIR/export.log" 2>&1
+    test -f "$OUTPUT_DIR/model.pte"
+    python - "$OUTPUT_DIR/model.pte" "$QMODE" "$EMBEDDING_QUANTIZE" "$MAX_SIZE_MIB" <<'PY'
+import sys
+from executorch.backends.vulkan.test.utils import verify_vulkan_llm_pte
+
+verify_vulkan_llm_pte(sys.argv[1], sys.argv[2], bool(sys.argv[3]), int(sys.argv[4]) if sys.argv[4] else None)
+PY
+  )
+  exit 0
 fi
 
 # Downloads and compiler caches go in scratch dirs outside OUTPUT_DIR because the CI job
@@ -565,6 +707,18 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --backend cuda \
           --output-dir "${OUTPUT_DIR}"
       ;;
+    solo-text-batching)
+      # The off-graph cache exports the batching methods CudaExecutor drives:
+      # Static forward_{N}, dynamic forward_others and the device samplers.
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_solo \
+          --gguf "$TARGET_GGUF_PATH" \
+          --backend cuda \
+          --use-offgraph-kv-cache \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
     dflash-image)
       DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
       MMPROJ_GGUF_FILE="mmproj-Muse-Glimmer-30B-Q4_K_M.gguf"
@@ -581,7 +735,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --output-dir "${OUTPUT_DIR}"
       ;;
     *)
-      echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+      echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
       exit 1
       ;;
   esac

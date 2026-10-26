@@ -80,40 +80,9 @@ bool is_channels_last(const int hashed_layout) {
 #define get_outer_packed_dim_block_size(layout) (((layout) >> 28) & 0xF)
 #define get_batch_concat_dim(layout) (((layout) >> 12) & 0xF)
 
-// Safe ivec4 component access via if/else chain. Avoids dynamic vector
-// indexing (v[index]) on UBO-backed ivec4 members, which crashes on Adreno 740
-// when the index is a specialization constant with value 1 or 2.
-int safe_idx(const ivec4 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  if (idx == 2) return v.z;
-  return v.w;
-}
-
-// Safe uvec4 component access via if/else chain. Same rationale as safe_idx
-// for ivec4 — avoids dynamic vector indexing on UBO-backed uvec4 members.
-uint safe_idx(const uvec4 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  if (idx == 2) return v.z;
-  return v.w;
-}
-
-// Safe ivec3 component access via if/else chain. Same rationale as safe_idx
-// for ivec4.
-int safe_idx(const ivec3 v, const int idx) {
-  if (idx == 0) return v.x;
-  if (idx == 1) return v.y;
-  return v.z;
-}
-
-// Safe ivec4 component write via if/else chain. Companion to safe_idx for
-// cases where we need to set a component by a spec-const-derived index.
-void safe_set(inout ivec4 v, const int idx, const int val) {
-  if (idx == 0) { v.x = val; }
-  else if (idx == 1) { v.y = val; }
-  else if (idx == 2) { v.z = val; }
-  else { v.w = val; }
+uint safe_idx(const uvec4 lower, const uvec4 upper, const int idx) {
+  if (idx < 4) return safe_idx(lower, idx);
+  return safe_idx(upper, idx - 4);
 }
 
 //
@@ -140,19 +109,19 @@ uint numel(const BufferMetadata meta) {
 }
 
 uint dim_order_at(const BufferMetadata meta, const int dim) {
-  return meta.dim_order[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.dim_order[0], meta.dim_order[1], dim);
 }
 
 uint dim_order_at(const BufferMetadata meta, const uint dim) {
-  return meta.dim_order[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.dim_order[0], meta.dim_order[1], int(dim));
 }
 
 uint stride_at(const BufferMetadata meta, const int dim) {
-  return meta.strides[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.strides[0], meta.strides[1], dim);
 }
 
 uint stride_at(const BufferMetadata meta, const uint dim) {
-  return meta.strides[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.strides[0], meta.strides[1], int(dim));
 }
 
 uint width(const BufferMetadata meta) {
@@ -164,11 +133,11 @@ uint height(const BufferMetadata meta) {
 }
 
 uint size_at(const BufferMetadata meta, const int dim) {
-  return meta.sizes[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.sizes[0], meta.sizes[1], dim);
 }
 
 uint size_at(const BufferMetadata meta, const uint dim) {
-  return meta.sizes[div_4(dim)][mod_4(dim)];
+  return safe_idx(meta.sizes[0], meta.sizes[1], int(dim));
 }
 
 bool are_equal(const BufferMetadata meta1, const BufferMetadata meta2) {
@@ -322,8 +291,8 @@ TensorIndex linear_idx_to_tensor_idx(
   int dim = int_ndim(meta);
   int i = 0;
   for (int d = max(dim - 1, 0); d >= 0; d--) {
-    uint dim_idx = meta.dim_order[div_4(d)][mod_4(d)];
-    uint dim_stride = meta.strides[div_4(dim_idx)][mod_4(dim_idx)];
+    uint dim_idx = dim_order_at(meta, d);
+    uint dim_stride = stride_at(meta, dim_idx);
 
     tidx.data[div_4(dim_idx)][mod_4(dim_idx)] = linear_idx / dim_stride;
     linear_idx = linear_idx % dim_stride;
@@ -424,7 +393,7 @@ TensorIndex4D texel_idx_to_tensor4d_idx(
   uint remaining = block_idx;
   [[unroll]] for (int d = 3; d >= 0; d--) {
     int dim_idx = extract_4b(hashed_layout, d);
-    uint dim_stride = meta.strides[0][dim_idx];
+    uint dim_stride = safe_idx(meta.strides[0], dim_idx);
     tidx.data[dim_idx] = int(remaining / dim_stride);
     remaining = remaining % dim_stride;
   }
@@ -562,7 +531,7 @@ uint tensor4d_idx_to_linear_idx(
     const TensorIndex4D tidx) {
   uint lin_idx = 0;
   for (int d = 0; d < 4; ++d) {
-    lin_idx += meta.strides[0][d] * tidx.data[d];
+    lin_idx += safe_idx(meta.strides[0], d) * tidx.data[d];
   }
   return lin_idx;
 }
@@ -637,7 +606,7 @@ int tensor4d_idx_to_block_idx(
   // Compute block-space linear index
   int block_idx = 0;
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[0][d]) * tidx.data[d];
+    block_idx += int(safe_idx(meta.strides[0], d)) * tidx.data[d];
   }
   return block_idx;
 }
@@ -732,10 +701,10 @@ int tensor_idx_to_block_idx(
   // Compute block-space linear index over all 8 dims
   int block_idx = 0;
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[0][d]) * int(tidx.data[0][d]);
+    block_idx += int(safe_idx(meta.strides[0], d)) * int(tidx.data[0][d]);
   }
   [[unroll]] for (int d = 0; d < 4; ++d) {
-    block_idx += int(meta.strides[1][d]) * int(tidx.data[1][d]);
+    block_idx += int(safe_idx(meta.strides[1], d)) * int(tidx.data[1][d]);
   }
   return block_idx;
 }
