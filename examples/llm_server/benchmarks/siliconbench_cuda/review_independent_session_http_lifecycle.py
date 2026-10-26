@@ -121,13 +121,18 @@ def main():
                 value = dict(NVML_peak_bytes=max(item["GPU_used_bytes"] for item in selected),
                              NVML_last_bytes=selected[-1]["GPU_used_bytes"], NVML_samples=len(selected))
                 if native_enabled:
-                    assert readings, label
-                    value["native_last"] = readings[-1]
-                    value["native_peak_KV_bytes"] = max(item["live_KV_bytes"] for item in readings)
-                    pooled = [item for item in readings if item["allocator_pool_available"]]
-                    assert pooled and readings[-1]["allocator_pool_available"], label
-                    value["allocator_initial_unavailable_samples"] = len(readings) - len(pooled)
-                    value["allocator_peak_reserved_bytes"] = max(item["allocator_reserved_bytes"] for item in pooled)
+                    value["native_sample_coverage"] = bool(readings)
+                    value["native_samples"] = len(readings)
+                    if readings:
+                        value["native_last"] = readings[-1]
+                        value["native_peak_KV_bytes"] = max(item["live_KV_bytes"] for item in readings)
+                        pooled = [item for item in readings if item["allocator_pool_available"]]
+                        assert pooled and readings[-1]["allocator_pool_available"], label
+                        value["allocator_initial_unavailable_samples"] = len(readings) - len(pooled)
+                        value["allocator_peak_reserved_bytes"] = max(item["allocator_reserved_bytes"] for item in pooled)
+                    else:
+                        assert label.endswith("-active"), "Missing required idle lifecycle evidence: " + label
+                        value["native_limitation"] = "No250ms native sample within this short active interval; no active native peak is claimed"
                 lifecycle[label] = value
             stages.append(dict(stage=index, concurrency=concurrency, seconds=elapsed,
                                output_tokens=tokens, TPS=tokens / elapsed,

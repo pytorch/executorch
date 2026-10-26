@@ -41,7 +41,10 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--wait-minutes", type=int, default=0)
     parser.add_argument("--memory-worker-proof", type=Path)
+    parser.add_argument("--disable-native-memory-sampling", action="store_true",
+                        help="Use the verified memory worker binary with its sampler disabled")
     args = parser.parse_args()
+    assert not args.disable_native_memory_sampling or args.memory_worker_proof is not None
     assert 1024 <= args.port <= 65535
     assert not args.output.exists()
     args.output.mkdir(parents=True)
@@ -176,7 +179,7 @@ def main():
                     (directory / "launch.json").write_text(json.dumps(dict(argv=command), indent=2) + "\n")
                     env = {**os.environ, "PYTHONPATH": str(source.parent), "CUDA_VISIBLE_DEVICES": "0"}
                     env.pop("ET_CUDA_BENCH_MEMORY_TRACE", None)
-                    if memory_proof:
+                    if memory_proof and not args.disable_native_memory_sampling:
                         env["ET_CUDA_BENCH_MEMORY_TRACE"] = "1"
                     child = None
                     try:
@@ -309,7 +312,8 @@ def main():
                   worker_sha256=digest(worker), candidate_promoted=False,
                   initial_KV_set_by="explicit supported CLI" if explicit_initial else "verified native default",
                   memory_worker_proof=memory_proof,
-                  native_allocator_sampling_enabled=memory_proof is not None,
+                  native_allocator_sampling_enabled=memory_proof is not None and not args.disable_native_memory_sampling,
+                  native_sampler_explicitly_disabled=args.disable_native_memory_sampling,
                   workload_equivalence_and_memory_review_pending=True,
                   model_performance_qualified=False,
                   limitations="Named-session lifecycle diagnostic. Natural outputs are retained, not forced. "

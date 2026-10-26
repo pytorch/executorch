@@ -53,7 +53,8 @@ def main():
             pid = progress["controller_pid"]
             command = (Path("/proc") / str(pid) / "cmdline").read_bytes()
             assert (b"prepare_independent_session_mini.py" in command or
-                    b"export_independent_session_mini_from_native.py" in command)
+                    b"export_independent_session_mini_from_native.py" in command or
+                    b"prepare_independent_session_shared_autotune_mini.py" in command)
             state("waiting-on-confirmed-live-mini-preparation", preparation_pid=pid)
             if time.monotonic() >= deadline:
                 state("observation-timeout", preparation_pid=pid, preparation_still_running=True)
