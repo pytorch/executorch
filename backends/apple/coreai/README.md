@@ -56,8 +56,10 @@ The assets root must be an absolute path. The application chooses it, should
 reserve it for this backend, and is trusted not to rename, replace or modify its
 contents while the backend uses it; the backend does not defend against other
 processes of the same user rebinding paths. Written files and changed directories
-are synced with `fsync`; atomic publication also uses `F_FULLFSYNC` before its
-rename.
+are synced with `fsync`. Atomic publication uses `F_FULLFSYNC` on the temporary
+file before rename and on the directory afterward. A failure before rename
+preserves the old contents; a failure of the final flush reports an error even
+though the new complete contents are already visible.
 
 Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which covers
 everything beneath it. Ancestors are not modified. This is backup exclusion, not
@@ -67,8 +69,9 @@ a control for iCloud Drive synchronization.
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
 registers the standalone `coreai_host_test` executable with CTest. It tests
-manifest parsing and AOT asset selection using Foundation, without Swift or
-CoreAI SDK calls. The host test target is omitted for Apple cross-builds.
+manifest parsing, AOT asset selection, and filesystem storage using Foundation,
+without Swift or CoreAI SDK calls. The host test target is omitted for Apple
+cross-builds.
 
 CI builds and runs these tests on macOS 27. To use the same configuration from
 the repository root:

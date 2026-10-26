@@ -109,8 +109,8 @@ int storage_fault(StorageOperation operation) {
 
 namespace {
 template <typename F>
-int storage_call(StorageOperation operation, F call) {
-  return retry_eintr([&] {
+auto storage_call(StorageOperation operation, F call) {
+  return retry_eintr([&]() -> decltype(call()) {
     const int fault = storage_fault(operation);
     if (fault != 0) {
       errno = fault;
@@ -175,22 +175,27 @@ Error write_file(
       file.get() >= 0, AccessFailed, "Cannot create Core AI storage file");
   const auto* bytes = static_cast<const uint8_t*>(data);
   while (size > 0) {
-    const ssize_t count =
-        write(file.get(), bytes, std::min(size, size_t(1024 * 1024)));
-    if (count < 0 && errno == EINTR) continue;
+    const ssize_t count = storage_call(StorageOperation::Write, [&] {
+      return write(file.get(), bytes, std::min(size, size_t(1024 * 1024)));
+    });
     ET_CHECK_OR_RETURN_ERROR(
         count > 0, AccessFailed, "Cannot write Core AI storage file");
     bytes += count;
     size -= count;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      retry_eintr([&] { return fsync(file.get()); }) == 0 &&
+      storage_call(
+          StorageOperation::SyncFile, [&] { return fsync(file.get()); }) == 0 &&
           (!full_sync ||
-           retry_eintr([&] { return fcntl(file.get(), F_FULLFSYNC); }) == 0),
+           storage_call(
+               StorageOperation::FullSync,
+               [&] { return fcntl(file.get(), F_FULLFSYNC); }) == 0),
       AccessFailed,
       "Cannot synchronize Core AI file");
-  ET_CHECK_OR_RETURN_ERROR(::close(file.release()) == 0, AccessFailed,
-                           "Cannot close Core AI storage file");
+  ET_CHECK_OR_RETURN_ERROR(
+      ::close(file.release()) == 0,
+      AccessFailed,
+      "Cannot close Core AI storage file");
   return sync_storage_directory(parent.get());
 }
 } // namespace
@@ -222,8 +227,7 @@ Result<NSArray<NSString*>*> storage_children(int fd, bool skip_invalid_names) {
     NSString* name = [[NSString alloc] initWithBytes:entry->d_name
                                               length:strlen(entry->d_name)
                                             encoding:NSUTF8StringEncoding];
-    if (name == nil ||
-        strcmp(name.fileSystemRepresentation, entry->d_name) != 0) {
+    if (name == nil) {
       if (skip_invalid_names) {
         continue;
       }
@@ -287,8 +291,16 @@ Error publish_storage_data(int root_fd, NSString* name, NSData* data) {
                                    name.fileSystemRepresentation);
                              }) != 0)
     result = Error::AccessFailed;
-  if (result == Error::Ok)
-    return sync_storage_directory(root_fd);
+  if (result == Error::Ok) {
+    // Flush the renamed entry as well as the file's pre-rename contents.
+    ET_CHECK_OR_RETURN_ERROR(
+        storage_call(
+            StorageOperation::FullSync,
+            [&] { return fcntl(root_fd, F_FULLFSYNC); }) == 0,
+        AccessFailed,
+        "Cannot fully synchronize Core AI publication directory");
+    return Error::Ok;
+  }
   if (unlinkat(root_fd, temporary.fileSystemRepresentation, 0) == 0) {
     (void)sync_storage_directory(root_fd);
   }

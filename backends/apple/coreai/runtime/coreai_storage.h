@@ -30,14 +30,17 @@ runtime::Error write_storage_file(
     NSString* relative_path,
     const void* bytes,
     size_t size);
-// Atomically replaces name with data. On error, readers see either the old or
-// the new complete bytes.
+// Atomically replaces name with data and fully flushes the file and renamed
+// entry. On error, readers see either the old or the new complete bytes.
 runtime::Error publish_storage_data(int root_fd, NSString* name, NSData* data);
 runtime::Result<NSArray<NSString*>*> storage_children(
     int fd,
     bool skip_invalid_names = false);
 
 enum class StorageOperation {
+  Write,
+  SyncFile,
+  FullSync,
   Rename,
   BeforeSDK,
   AfterSDK,
