@@ -364,6 +364,32 @@ class PropagateDevicePass(PassBase):
             return None
         return _get_target_device_from_compile_specs(lowered_module)
 
+    def _constant_reader_off_device(
+        self,
+        graph_module: torch.fx.GraphModule,
+        constant: torch.fx.Node,
+        device_type: schema.DeviceType,
+        device_index: int,
+    ) -> Optional[torch.fx.Node]:
+        """A reader of *constant* other than a delegate on this device, or None.
+
+        A delegate on another device reads it through its _h2d_copy, so the
+        reader behind such a copy counts.
+        """
+        for user in constant.users:
+            readers = (
+                user.users
+                if user.target == torch.ops.et_copy._h2d_copy.default
+                else [user]
+            )
+            for reader in readers:
+                if self._delegate_device(graph_module, reader) != (
+                    device_type,
+                    device_index,
+                ):
+                    return reader
+        return None
+
     def _report_per_call_copy(self, message: str, skip_requested: bool) -> None:
         """Warn about a copy that runs on every call. When a skip flag asked
         for no such copy and error_on_per_call_copies is set, raise instead."""
@@ -422,15 +448,18 @@ class PropagateDevicePass(PassBase):
                     f"it is created, for example in the pass that adds it."
                 )
 
+            other_reader = (
+                self._constant_reader_off_device(
+                    graph_module, arg, target_device_type, device_index
+                )
+                if arg_spec.const
+                else None
+            )
             if (
                 self.skip_h2d_for_constants
                 and arg_spec.const
                 and self._is_placeholder(arg)
-                and all(
-                    self._delegate_device(graph_module, user)
-                    == (target_device_type, device_index)
-                    for user in arg.users
-                )
+                and other_reader is None
             ):
                 # Memory planning keeps it in device memory for the whole
                 # method, and the runtime loads its data there once.
@@ -442,12 +471,31 @@ class PropagateDevicePass(PassBase):
             h2d_node = _reusable_copy(arg, node, target_device_type, device_index)
             if h2d_node is None:
                 if arg_spec.const:
+                    remedy = (
+                        "Have the partitioner take it into the delegate to avoid "
+                        "that copy."
+                    )
+                    # The option saves nothing for an empty constant.
+                    if (
+                        not self.skip_h2d_for_constants
+                        and other_reader is None
+                        and arg_spec.nbytes() > 0
+                    ):
+                        remedy = (
+                            "Have the partitioner take it into the delegate, or set "
+                            "PropagateDeviceConfig(skip_h2d_for_constants=True), to "
+                            "avoid that copy."
+                        )
+                    elif self.skip_h2d_for_constants and other_reader is not None:
+                        remedy = (
+                            f"skip_h2d_for_constants cannot keep it on the device, "
+                            f"because '{other_reader.name}' also reads it. {remedy}"
+                        )
                     self._report_per_call_copy(
                         f"Constant '{arg.name}' ({arg_spec.nbytes()} bytes) feeds a "
                         f"delegate on {target_device_type.name.lower()}:"
                         f"{device_index} from outside it, so it is copied to the "
-                        f"device on every call. Have the partitioner take it into "
-                        f"the delegate to avoid that copy.",
+                        f"device on every call. {remedy}",
                         self.skip_h2d_for_method_inputs or self.skip_h2d_for_constants,
                     )
                 with graph_module.graph.inserting_before(node):

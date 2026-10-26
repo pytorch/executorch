@@ -2005,7 +2005,8 @@ class TestPropagateDevicePass(unittest.TestCase):
     def test_skip_h2d_for_constants_copies_constants_read_elsewhere(self):
         """A constant that a host op, or a delegate on another device, reads
         too is still copied with skip_h2d_for_constants=True, and so is every
-        constant without the option."""
+        constant without the option. The warning says why the option did not
+        keep it, or suggests the option when it is off."""
 
         class Buffer(torch.nn.Module):
             def __init__(self):
@@ -2023,12 +2024,49 @@ class TestPropagateDevicePass(unittest.TestCase):
             def forward(self, a):
                 return torch.add(a, self.offset), torch.add(a * 2, self.offset)
 
+        class EmptyBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offset", torch.zeros(2, 0))
+
+            def forward(self, a):
+                return torch.add(a[:, :0], self.offset)
+
+        kept_elsewhere = "skip_h2d_for_constants cannot keep it on the device"
         cases = {
-            "host reader": (AlsoReadOnHost(), ["cuda:0"], True, [0]),
-            "two devices": (ReadByTwoDelegates(), ["cuda:0", "cuda:1"], True, [0, 1]),
-            "without the option": (Buffer(), ["cuda:0"], False, [0]),
+            "host reader": (AlsoReadOnHost(), ["cuda:0"], True, [0], kept_elsewhere),
+            "two devices": (
+                ReadByTwoDelegates(),
+                ["cuda:0", "cuda:1"],
+                True,
+                [0, 1],
+                kept_elsewhere,
+            ),
+            "without the option": (
+                Buffer(),
+                ["cuda:0"],
+                False,
+                [0],
+                "or set PropagateDeviceConfig(skip_h2d_for_constants=True)",
+            ),
+            # The option would not help, so it is not suggested.
+            "host reader without the option": (
+                AlsoReadOnHost(),
+                ["cuda:0"],
+                False,
+                [0],
+                "take it into the delegate to avoid that copy",
+            ),
+            # Nor for an empty constant, which costs nothing to copy.
+            "empty without the option": (
+                EmptyBuffer(),
+                ["cuda:0"],
+                False,
+                [0],
+                "take it into the delegate to avoid that copy",
+            ),
         }
-        for case, (model, devices, skip_constants, copied_to) in cases.items():
+        for case, (model, devices, skip_constants, copied_to, hint) in cases.items():
             with self.assertLogs(propagate_device_pass.logger, "WARNING") as logs:
                 results = self._get_executorch_program(
                     model,
@@ -2036,7 +2074,11 @@ class TestPropagateDevicePass(unittest.TestCase):
                     PerAddDeviceDelegatePartitioner(devices),
                     _skip_h2d_for_constants_config(False, skip_constants),
                 )
-            self.assertIn("Constant 'b_offset'", logs.output[0])
+            warnings = [w for w in logs.output if "Constant 'b_offset'" in w]
+            self.assertTrue(warnings)
+            for warning in warnings:
+                self.assertIn(hint, warning)
+                self.assertNotIn("_h2d_copy", warning)
             for pipeline, _program, gm in results:
                 with self.subTest(pipeline=pipeline, case=case):
                     copies = [
