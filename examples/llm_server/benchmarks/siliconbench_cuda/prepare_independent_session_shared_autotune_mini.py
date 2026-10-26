@@ -34,11 +34,15 @@ def main():
         help='Diagnostic reuse of legal generated reduction/pointwise configuration winners')
     parser.add_argument('--diagnostic-generated-gemm-backends',choices=['ATEN'],
         help='Only this numerical control: use ATen for Inductor-generated GEMM in both arms')
+    parser.add_argument('--diagnostic-deterministic-generated-gemm',action='store_true',
+        help='Only this numerical control: deterministic generated Triton GEMM algorithm selection')
     parser.add_argument('--reuse-failed-job', type=Path,
         help='Copy compiler caches from a confirmed terminal attempt; preserve its records')
     parser.add_argument("--owned-GPU-child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     assert args.diagnostic_generated_gemm_backends is None or args.share_inductor_configs
+    assert not args.diagnostic_deterministic_generated_gemm or args.share_inductor_configs
+    assert not (args.diagnostic_generated_gemm_backends is not None and args.diagnostic_deterministic_generated_gemm)
     if args.reuse_failed_job:
         from failed_export_cache_reuse import verify_failed_export
         verify_failed_export(args.reuse_failed_job,args.output,
@@ -119,7 +123,8 @@ def main():
     if args.share_inductor_configs:
         from shared_inductor_config_control import install_shared_inductor_config_control
         restore_inductor = install_shared_inductor_config_control(args.output/'shared-inductor-config-control.json',
-            generated_gemm_backends=args.diagnostic_generated_gemm_backends)
+            generated_gemm_backends=args.diagnostic_generated_gemm_backends,
+            deterministic_generated_gemm=args.diagnostic_deterministic_generated_gemm)
     for role in ("mini-global", "mini-independent"):
         job = args.output / (role + "-export")
         sys.argv = [str(package / "export_independent_session_mini.py"), "--source", str(source),
