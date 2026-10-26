@@ -1,0 +1,48 @@
+{
+  "patch_SHA256": "821e53c2f2132b34c9eae40323742726ffddb32dfdb2437c76b13b41efca26d8",
+  "variants": {
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "ca68ee7df8854d8c74d6664d19ce43cbe03cb15b62ec6e9ca78413960071c86b",
+        "after_SHA256": "9c504d9f45fbdc30685ecf3894daa99b319cde3a18f912abb4c98990ab6b7b11",
+        "allocator_pool_policy_only": true,
+        "contraction_full_cache_release_unchanged": true,
+        "weights_math_ABI_and_live_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "821e53c2f2132b34c9eae40323742726ffddb32dfdb2437c76b13b41efca26d8"
+      }
+    ],
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "d0623b9cf24b669ffc6cd99991c07bf5cf5d72ba75402b085d68a3f8a32c5340",
+        "after_SHA256": "1f9bcfe5c6613b4f95eb054f4e37b06a9da30e4dea3a29fabe9a0fefd0f75aa6",
+        "allocator_pool_policy_only": true,
+        "contraction_full_cache_release_unchanged": true,
+        "weights_math_ABI_and_live_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "821e53c2f2132b34c9eae40323742726ffddb32dfdb2437c76b13b41efca26d8"
+      }
+    ],
+    "growth-only": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "c3645085a028ffee6725305b5e837d321a00496bc08bd1674fd16ff543a81130",
+        "after_SHA256": "4c3255f28fe16feac82fa2d3e72574852e35f9ace0b8cd4300b00de083e23e45",
+        "allocator_pool_policy_only": true,
+        "contraction_full_cache_release_unchanged": true,
+        "weights_math_ABI_and_live_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "821e53c2f2132b34c9eae40323742726ffddb32dfdb2437c76b13b41efca26d8"
+      }
+    ]
+  },
+  "growth_trims_allocator_private_pool_only": true,
+  "growth_cached_graph_pages_preserved": true,
+  "contraction_eager_allocator_and_graph_release_unchanged": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false
+}

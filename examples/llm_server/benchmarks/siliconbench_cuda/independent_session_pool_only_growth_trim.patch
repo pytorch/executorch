@@ -1,0 +1,49 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -131,6 +131,21 @@
+     releases_storage |= target_rows[index] < allocations_[index].rows;
+   }
+   const bool trim_reclaimed_storage = trim_unused && releases_storage;
++  auto trim_growth_pool = [&]() {
++#if !defined(EXECUTORCH_USE_HIP)
++    // Preserve cached CUDA graph pages for the next capture/replay. Release
++    // only this allocator's unused pages after the caller's stream fence.
++    const cudaMemPool_t pool = CudaAllocator::pool_for_device(device_);
++    if (pool != nullptr) {
++      const cudaError_t error = cudaMemPoolTrimTo(pool, 0);
++      if (error != cudaSuccess) {
++        ET_LOG(Error, "offgraph_kv: growth allocator pool trim failed: %s",
++            cudaGetErrorString(error));
++        (void)cudaGetLastError();
++      }
++    }
++#endif
++  };
+   auto fence = [&]() -> Error {
+     if (cudaStreamSynchronize(stream) != cudaSuccess) {
+       return Error::Internal;
+@@ -247,13 +262,13 @@
+     }
+     // All restored copies have passed fence() before unused pages are trimmed.
+     if (trim_unused && !trim_reclaimed_storage) {
+-      CudaAllocator::release_cached_memory(device_);
++      trim_growth_pool();
+     }
+     return error;
+   };
+   ET_CHECK_OK_OR_RETURN_ERROR(fence());
+   if (trim_unused && !trim_reclaimed_storage) {
+-    CudaAllocator::release_cached_memory(device_);
++    trim_growth_pool();
+   }
+   invalidate_bindings();
+   for (size_t index = 0; index < layers_.size(); ++index) {
+@@ -286,7 +301,7 @@
+   }
+   // The final layer migration has passed fence(); no pending free is trimmed.
+   if (trim_unused && !trim_reclaimed_storage) {
+-    CudaAllocator::release_cached_memory(device_);
++    trim_growth_pool();
+   }
+   initial_rows_ = initial_rows_ / old_columns * columns;
+   max_rows_ = max_rows_ / old_columns * columns;

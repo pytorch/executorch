@@ -14,6 +14,7 @@ def main():
     for name in ('baseline-native-job','original-mini-preparation','original-rewind-probe',
                  'current-mini-preparation','current-rewind-probe','python','lock','nsys','output'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--allocator-policy',choices=('coalesced','pool-only'),default='coalesced')
     a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
     package=Path(__file__).resolve().parent
     def state(status,**extra):
@@ -31,11 +32,12 @@ def main():
     try:
         baseline=verify_runtime(a.baseline_native_job,package)
         assert baseline.get('empty_owner_reuse_spec_SHA256')
-        native=a.output/'coalesced-trim-native'
+        native=a.output/('pool-only-trim-native' if a.allocator_policy=='pool-only' else 'coalesced-trim-native')
         state('building-coalesced-growth-trim-native')
         run('native','prepare_independent_session_coalesced_growth_trim.py',[
             '--package',package,'--baseline-native-job',a.baseline_native_job,
             '--source-variant','MG-empty-owner-reuse','--mini-profile','muse-glimmer-first4',
+            '--allocator-policy',a.allocator_policy,
             '--python',a.python,'--mini-preparation-job',a.original_mini_preparation,
             '--lock',a.lock,'--output',native])
         gate=verify_runtime(native,package)
@@ -65,7 +67,7 @@ def main():
         assert controls['same_compiled_model_artifacts'] and controls['four_rounds_first_discarded']
         verify_runtime(native,package);assert verify_runtime(a.baseline_native_job,package)==baseline
         (a.output/'result.json').write_text(json.dumps(dict(
-            native_test_count=74,comparisons=comparisons,
+            native_test_count=74,allocator_policy=a.allocator_policy,comparisons=comparisons,
             mini_controls_result_SHA256=sha(a.output/'mini-controls/result.json'),
             previous_failed_gate_not_replaced=True,full_model_qualified=False,
             main_candidate_accepted=False,

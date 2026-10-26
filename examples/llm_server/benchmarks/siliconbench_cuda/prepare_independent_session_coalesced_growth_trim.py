@@ -34,6 +34,7 @@ def main():
     for name in ('package', 'baseline-native-job', 'python', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--source-variant', choices=('MG-empty-owner-reuse', 'Gemma-empty-owner-reuse', 'growth-only'), required=True)
+    parser.add_argument('--allocator-policy', choices=('coalesced', 'pool-only'), default='coalesced')
     parser.add_argument('--mini-preparation-job', type=Path)
     parser.add_argument('--mini-profile', choices=('muse-glimmer-first4', 'gemma4-first6'), required=True)
     parser.add_argument('--jobs', type=int, choices=(1, 2, 4), default=2)
@@ -46,9 +47,11 @@ def main():
     source_before = Path(baseline['source'])
     assert source_before.is_dir()
     resources = Path(__file__).resolve().parent
-    fix_path = resources / 'independent_session_coalesced_growth_trim_source.json'
+    policy = 'independent_session_pool_only_growth_trim' if args.allocator_policy == 'pool-only' else 'independent_session_coalesced_growth_trim'
+    policy_key = 'pool_only_growth_trim_spec_SHA256' if args.allocator_policy == 'pool-only' else 'coalesced_growth_trim_spec_SHA256'
+    fix_path = resources / (policy + '_source.json')
     fix = json.loads(fix_path.read_text())
-    patch = resources / 'independent_session_coalesced_growth_trim.patch'
+    patch = resources / (policy + '.patch')
     assert sha(patch) == fix['patch_SHA256']
     records = fix['variants'][args.source_variant]
     for record in records:
@@ -68,7 +71,7 @@ def main():
         doc = {'status': status, 'controller_pid': os.getpid(),
                'UTC': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                'source': str(source), 'source_spec_SHA256': baseline['source_spec_SHA256'],
-               'coalesced_growth_trim_spec_SHA256': sha(fix_path),
+               policy_key: sha(fix_path),
                'baseline_modified': False, 'candidate_accepted': False,
                'full_model_export_started': False, **extra}
         pending = state_path.with_suffix('.pending.json')
@@ -160,7 +163,7 @@ def main():
                    'native_tests_xml_SHA256': sha(xml), 'independent_session_tests': independent,
                    'preserved_preceding_native_gate_SHA256': sha(args.baseline_native_job / 'native-gate.json'),
                    'actual_native_source_change': {'patches': prior_records + records},
-                   'coalesced_growth_trim_spec_SHA256': sha(fix_path),
+                   policy_key: sha(fix_path),
                    'model_numerics_pass': False, 'model_performance_pass': False,
                    'full_model_export_authorized_by_this_receipt': False}
         (args.output / 'native-gate.json').write_text(json.dumps(receipt, indent=2) + '\n')
