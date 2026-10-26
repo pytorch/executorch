@@ -169,6 +169,7 @@ from .insert_rescales_pass import (  # noqa
 )
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa
+from .lower_int16_rsqrt_pass import LowerInt16RsqrtPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa

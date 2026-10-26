@@ -20,6 +20,7 @@ from . import (  # noqa
     op_tosa_avg_pool2d_adaptive,
     op_tosa_binary_ops,
     op_tosa_bitwise_not,
+    op_tosa_cast,
     op_tosa_cast_to_block_scaled,
     op_tosa_ceil,
     op_tosa_clamp,

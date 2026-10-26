@@ -143,6 +143,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertRescalePass,
     InsertTableOpsPass,
     LowerDynamicW8A8LinearPass,
+    LowerInt16RsqrtPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
     MoveDataMovementOpsToSmallerDtypePass,
@@ -708,6 +709,12 @@ class ArmPassManager(ExportedProgramPassManager):
                 InsertDataLayoutCastsPass(),
             ]
         )
+
+        if self.tosa_spec.support_extension("int16"):
+            self.insert_passes_before(
+                InsertTableOpsPass,
+                [LowerInt16RsqrtPass(exported_program)],
+            )
 
         # Aten -> TOSA transformation passes
         self.add_passes(
