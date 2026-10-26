@@ -560,8 +560,8 @@
       "bytes": 9427
     },
     "prepare_gemma_http_python_dependencies.py": {
-      "sha256": "fce55e76db720b120703f7789fb249443dca26fe43c1e91f30bcc06a51bab9e2",
-      "bytes": 3983
+      "sha256": "4f19288f46ae3397fc961a132183f3db2bb5fcada7bfd49f407cabe5132d3966",
+      "bytes": 4423
     },
     "prepare_gemma_independent_session_mini_pair.py": {
       "sha256": "43e096254c99b2e0e1b0d4efcf57f2ea22b48d9a04da9d33c67ff7e2dbdcdee3",

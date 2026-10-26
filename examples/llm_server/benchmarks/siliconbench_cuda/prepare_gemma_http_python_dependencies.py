@@ -3,7 +3,7 @@
 The model/export Python environment, native SDK and serving sources are kept.
 Only public PyPI wheels are fetched. No model is loaded by the import check.
 """
-import argparse, datetime, hashlib, json, os, subprocess, traceback
+import argparse, datetime, hashlib, json, os, shutil, subprocess, traceback
 from pathlib import Path
 
 VERSIONS={'fastapi':'0.159.1','uvicorn':'0.54.0','pydantic':'2.14.1',
@@ -30,10 +30,16 @@ def main():
   env={**os.environ,'CUDA_VISIBLE_DEVICES':'','PYTHONDONTWRITEBYTECODE':'1'}
   check='import importlib.metadata as m,json;print(json.dumps({k:m.version(k) for k in ("torch","triton")}))'
   before=json.loads(subprocess.check_output([str(a.python),'-B','-c',check],env=env,text=True))
+  has_pip=subprocess.check_output([str(a.python),'-B','-c',
+      'import importlib.util;print(int(importlib.util.find_spec("pip") is not None))'],env=env,text=True).strip()=='1'
+  if has_pip:
+   installer=[str(a.python),'-B','-m','pip','install','--disable-pip-version-check','--only-binary=:all:']
+  else:
+   uv=shutil.which('uv');assert uv,'Neither pip nor the existing uv installer is available'
+   installer=[uv,'pip','install','--python',str(a.python),'--only-binary',':all:']
   state('installing-isolated-public-HTTP-dependencies')
   with (a.output/'install.log').open('x') as log:
-   subprocess.run([str(a.python),'-B','-m','pip','install','--disable-pip-version-check',
-      '--only-binary=:all:','--target',str(target),*[k+'=='+v for k,v in VERSIONS.items()]],
+   subprocess.run([*installer,'--target',str(target),*[k+'=='+v for k,v in VERSIONS.items()]],
       check=True,stdout=log,stderr=subprocess.STDOUT,env=env,timeout=600)
   env['PYTHONPATH']=str(target)+os.pathsep+str(source.parent)
   code='''import importlib.metadata as m,importlib.util,json,sys
@@ -56,6 +62,7 @@ print(json.dumps({'versions':versions,'official_server_import_pass':True}))
          'Gemma_source_preparation_SHA256':hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
          'base_torch_triton_versions_unchanged':before==after,'base_versions':before,
          'installed_only_into_new_owned_target':True,'native_SDK_and_models_unchanged':True,
+         'installer_argv':installer,
          'server_source_SHA256':hashlib.sha256((package/'serve_gemma_runtime_columns.py').read_bytes()).hexdigest(),
          **check_result}
   (a.output/'proof.json').write_text(json.dumps(proof,indent=2)+'\n')
