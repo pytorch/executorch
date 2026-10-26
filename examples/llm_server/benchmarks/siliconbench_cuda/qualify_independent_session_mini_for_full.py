@@ -62,6 +62,8 @@ def main():
    assert doc['interleaved_native_round_order'] and doc['fixed_teacher_forced_inputs']
    assert doc['native_gate_sha256']==reference[arm]['native_gate_sha256']
    assert doc['artifact_audits']==reference[arm]['artifact_audits']
+   assert doc['initial_KV_capacity']==reference[arm]['initial_KV_capacity']
+   if 'initial_KV_capacity' in matched:assert matched['initial_KV_capacity']==doc['initial_KV_capacity']
    for child in doc['all_actual_child_results_verified']:
     assert sha(child['result'])==child['SHA256']
   assert sha(matched_root/'GPU-clocks-power.jsonl')==matched['clock_power_samples_SHA256']

@@ -21,6 +21,8 @@ def main():
  for n in ('before-preparation','after-preparation','before-rewind-probe','after-rewind-probe','lock','nsys','output'):
   p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--mini-profile',choices=('muse-glimmer-first4','gemma4-first6'),default='muse-glimmer-first4')
+ p.add_argument('--diagnostic-initial-KV-capacity',type=int,choices=(512,16384),default=512,
+  help='Same capacity in both native arms;16384 is allocation-placement diagnostic only, never a replacement main preset')
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  def state(status,**extra):
@@ -76,6 +78,7 @@ while time.monotonic()<end:
     command=[sys.executable,'-B','-u',str(package/'run_independent_session_mini_model_latency.py'),
      '--preparation-job',str(preparations[arm]),'--rewind-probe-job',str(probes[arm]),
      '--native-sampler','off','--mini-profile',a.mini_profile,
+     '--diagnostic-initial-KV-capacity',str(a.diagnostic_initial_KV_capacity),
      '--diagnostic-round-number',str(number),'--nsys',str(a.nsys),'--lock',str(a.lock),'--output',str(child)]
     current.update(phase='fixed-token-collection',round=number,native=arm);state('collecting-interleaved-native-control',round=number,native=arm)
     with (a.output/f'child-round-{number}-{arm}.log').open('x') as log:
@@ -110,7 +113,7 @@ while time.monotonic()<end:
   stop.set();thread.join(timeout=20)
   assert not sample_errors,sample_errors
   result=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-   mini_profile=a.mini_profile,
+   mini_profile=a.mini_profile,initial_KV_capacity=a.diagnostic_initial_KV_capacity,
    four_rounds_discard_first=True,ABBA_native_order=True,matched_probe_CPP=True,
    unchanged_PTE_PTD_and_tokens=True,native_tests_and_proofs_reverified=True,
    actual_child_results=parts,raw_numerical_review_SHA256=sha(review),
