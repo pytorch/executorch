@@ -131,7 +131,7 @@ def main():
             assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid',
                                                '--format=csv,noheader'],text=True).strip()
             assert torch.cuda.get_device_capability() == (12,0)
-            for dim,hq,hkv in [(128,32,4),(512,8,1)]:
+            for dim,hq,hkv in [(128,32,2),(512,8,1)]:
                 for label,histories,widths,tokens in cases:
                     for ring in [0,128+512-1]:
                         state('running-kernel-oracle', case=label, dimension=dim, ring=ring)
@@ -215,7 +215,8 @@ def main():
                                 rounds[index].append(begin.elapsed_time(finish)/30)
                                 torch.testing.assert_close(outputs[index],reference,atol=.015,rtol=.02)
                         means = [statistics.mean(r[1:]) for r in rounds]
-                        results.append(dict(case=label,dimension=dim,ring=ring,owners=owners,
+                        results.append(dict(case=label,dimension=dim,query_heads=hq,
+                                            KV_heads=hkv,ring=ring,owners=owners,
                                             query_tokens=tokens,active_query_tokens=sum(widths),
                                             histories=histories,capacities=capacities,
                                             global_full_slots=rows*cols if not ring else None,
