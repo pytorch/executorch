@@ -3,9 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 
-from executorch.exir.tracer import _default_decomposition_table
+from executorch.exir.tracer import (
+    _decompose_normal_float_float,
+    _default_decomposition_table,
+)
 from torch.export import export
 
 
@@ -34,6 +38,15 @@ class NoGradNormal(torch.nn.Module):
         return x + torch.normal(2.0, 3.0, size=x.shape)
 
 
+class NormalWithDtype(torch.nn.Module):
+    def __init__(self, dtype: torch.dtype) -> None:
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.normal(2.0, 3.0, size=x.shape, dtype=self.dtype)
+
+
 def test_decompose_normal_float_float() -> None:
     exported_program = export(Normal(), (torch.zeros(2, 3),))
 
@@ -46,6 +59,59 @@ def test_decompose_normal_float_float() -> None:
     assert torch.ops.aten.randn.default in targets
     assert torch.ops.aten.mul.Tensor in targets
     assert torch.ops.aten.add.Tensor in targets
+
+
+@pytest.mark.parametrize("dtype", (torch.float16, torch.complex64))
+def test_decompose_normal_float_float_with_dtype(dtype: torch.dtype) -> None:
+    exported_program = export(NormalWithDtype(dtype), (torch.zeros(2, 3),))
+
+    transformed = exported_program.run_decompositions(_default_decomposition_table())
+    targets = {
+        node.target for node in transformed.graph.nodes if node.op == "call_function"
+    }
+
+    assert torch.ops.aten.normal.float_float not in targets
+    assert torch.ops.aten.randn.default in targets
+    assert (torch.ops.aten._to_copy.default in targets) == (dtype == torch.float16)
+
+
+@pytest.mark.parametrize("dtype", (torch.float16, torch.bfloat16))
+def test_decompose_normal_float_float_low_precision_numerical_correctness(
+    dtype: torch.dtype,
+) -> None:
+    torch.manual_seed(0)
+    expected = torch.normal(2.0, 3.0, size=(1,), dtype=dtype)
+    torch.manual_seed(0)
+    actual = _decompose_normal_float_float(2.0, 3.0, (1,), dtype=dtype)
+
+    torch.testing.assert_close(actual, expected)
+
+
+def test_decompose_normal_float_float_avoids_float16_overflow() -> None:
+    torch.manual_seed(0)
+    expected = torch.normal(-50_000.0, 50_000.0, size=(1,), dtype=torch.float16)
+    torch.manual_seed(0)
+    sample = torch.randn((1,), dtype=torch.float16)
+    assert torch.isinf(sample * 50_000.0).all()
+    torch.manual_seed(0)
+    actual = _decompose_normal_float_float(
+        -50_000.0, 50_000.0, (1,), dtype=torch.float16
+    )
+
+    assert torch.isfinite(actual).all()
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("dtype", (torch.complex32, torch.complex64, torch.complex128))
+def test_decompose_normal_float_float_complex_numerical_correctness(
+    dtype: torch.dtype,
+) -> None:
+    torch.manual_seed(0)
+    expected = torch.normal(2.0, 3.0, size=(8,), dtype=dtype)
+    torch.manual_seed(0)
+    actual = _decompose_normal_float_float(2.0, 3.0, (8,), dtype=dtype)
+
+    torch.testing.assert_close(actual, expected)
 
 
 def test_preserve_normal_float_float_with_generator() -> None:

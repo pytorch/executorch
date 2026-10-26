@@ -669,17 +669,24 @@ def _decompose_normal_float_float(
     if std < 0:
         raise RuntimeError(f"normal expects std >= 0.0, but found std {std}")
 
-    return (
-        torch.randn(
-            size,
-            dtype=dtype,
-            layout=layout,
-            device=device,
-            pin_memory=pin_memory,
-        )
-        * std
-        + mean
+    output_dtype = dtype or torch.get_default_dtype()
+    match output_dtype:
+        case torch.float16 | torch.bfloat16:
+            compute_dtype = torch.float32
+        case torch.complex32:
+            compute_dtype = torch.complex64
+        case _:
+            compute_dtype = output_dtype
+
+    result = torch.randn(
+        size,
+        dtype=compute_dtype,
+        layout=layout,
+        device=device,
+        pin_memory=pin_memory,
     )
+    result = result * std + (complex(mean, mean) if output_dtype.is_complex else mean)
+    return result.to(output_dtype) if compute_dtype != output_dtype else result
 
 
 def dynamo_trace(
