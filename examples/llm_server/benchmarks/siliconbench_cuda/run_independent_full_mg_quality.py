@@ -45,7 +45,18 @@ def verified(args, package):
         path=args.tokenizer/name
         assert path.stat().st_size==count and sha(path)==expected,name
     source=Path(gate['source'])
-    assert 'executor_config.initial_capacity = config.initial_kv_capacity;' in (source/'examples/models/muse-glimmer/runtime/backend_factory.cpp').read_text()
+    cache=(source/'extension/llm/cache/cache.h').read_text()
+    assert 'int initial_capacity = 512;' in cache
+    factory=(source/'examples/models/muse-glimmer/runtime/backend_factory.cpp').read_text()
+    assert 'CudaExecutorConfig executor_config;' in factory
+    explicit_initial='executor_config.initial_capacity' in factory
+    if explicit_initial:
+        assert 'executor_config.initial_capacity = config.initial_kv_capacity;' in factory
+        assert '"--initial-kv-capacity"' in (source/'examples/models/muse-glimmer/serving/serve_batching.py').read_text()
+    else:
+        # The existing factory uses the verified CacheConfig default512.
+        # Do not invent an unsupported server/worker argument.
+        assert 'initial_capacity' not in factory
     graph=json.loads((args.full_graph_job/'actual-graph-independent-review.json').read_text())
     raw=json.loads((args.full_graph_job/'result.json').read_text())
     assert graph['actual_CUDA_trace'] and graph['all_seven_static_methods_after_shrink_verified']
@@ -53,7 +64,7 @@ def verified(args, package):
     assert graph['model_PTE_sha256']==raw['model_PTE_sha256']==sha(artifact/'model.pte')
     assert graph['probe_sha256']==raw['probe_sha256']==sha(root/'model-build/muse_glimmer_runtime_kv_probe')
     assert graph['sqlite_sha256']==sha(args.full_graph_job/'round-1/cuda-graphs.sqlite')
-    return artifact,source,worker
+    return artifact,source,worker,explicit_initial
 
 
 def main():
@@ -68,7 +79,7 @@ def main():
     parser.add_argument('--prefixes',nargs='+',choices=['off','on'],default=['off','on'])
     args=parser.parse_args();package=args.package.resolve()
     assert 1024<=args.port<=65535
-    artifact,source,worker=verified(args,package)
+    artifact,source,worker,explicit_initial=verified(args,package)
     if args.phase=='serve':
         prefix=os.environ['SB_PREFIX_CACHE'];assert prefix in ('off','on')
         port=int(os.environ['SB_PORT']);assert 1024<=port<=65535
@@ -77,16 +88,18 @@ def main():
             '--data-path',str(artifact/'aoti_cuda_blob.ptd'),
             '--tokenizer-path',str(args.tokenizer),'--hf-tokenizer',str(args.tokenizer),
             '--model-id','muse-glimmer-30b','--backend','cuda',
-            '--max-context','131072','--initial-kv-capacity','512',
+            '--max-context','131072',
             '--max-sessions','16','--max-decode-sequences','16','--max-inflight-requests','16',
             '--prefix-cache-entries','4' if prefix=='on' else '0',
             '--prefix-checkpoint-interval','0','--tool-parser','none',
             '--host','127.0.0.1','--port',str(port)]
+        if explicit_initial:command+=['--initial-kv-capacity','512']
         env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',CUDA_VISIBLE_DEVICES='0',
             PYTHONPATH=str(source.parent),ET_CUDA_BENCH_MEMORY_TRACE='1')
         print('FULL_MG_QUALITY_BINDING:'+json.dumps(dict(argv=command,
             native_gate_SHA256=sha(args.native_job/'native-gate.json'),
             model_PTE_SHA256=sha(artifact/'model.pte'),prefix=prefix,
+            initial_KV_capacity=512,initial_KV_uses_existing_default=not explicit_initial,
             full_model_qualified=False,main_candidate_accepted=False)),flush=True)
         os.execvpe(command[0],command,env)
     assert not args.output.exists();args.output.mkdir(parents=True)
