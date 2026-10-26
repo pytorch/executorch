@@ -1,0 +1,49 @@
+--- a/examples/models/gemma4_31b/export_batching.py
++++ b/examples/models/gemma4_31b/export_batching.py
+@@ -90,7 +90,7 @@
+
+ def export_cuda_batching(model, output_dir, max_step_tokens=512, max_kv_seqs=33,
+                          forward_sizes=(1, 2, 4, 8, 16, 32, 64), suppressed_token_ids=(),
+-                         runtime_kv_columns=False):
++                         runtime_kv_columns=False, independent_capacity=False):
+     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+     import torch._inductor.config as inductor_config
+     from executorch.backends.cuda.cuda_backend import CudaBackend
+@@ -111,7 +111,8 @@
+     inductor_config.aot_inductor.precompile_headers = False
+     inductor_config.cpp_cache_precompile_headers = False
+     manifest = batched_sequence_manifest(model.sequence_manifest(max_step_tokens), max_kv_seqs,
+-                                         runtime_columns=runtime_kv_columns)
++                                         runtime_columns=runtime_kv_columns,
++                                         independent_capacity=independent_capacity)
+     metadata = model.cache_geometry()
+     metadata.update(write_max_context_len(model.config.max_seq_len))
+     metadata.update(write_max_seq_len(max_step_tokens))
+@@ -122,7 +123,7 @@
+                      "get_min_prefill_chunk": 5, "get_max_prefill_chunk": max_step_tokens,
+                      "use_sampling": False, "has_vision_encoder": False})
+     if runtime_kv_columns:
+-        metadata["get_offgraph_kv_sequence_info_abi"] = 2
++        metadata["get_offgraph_kv_sequence_info_abi"] = 3 if independent_capacity else 2
+     programs = export_forward_programs(model, max_step_tokens, forward_sizes)
+     forwards = list(programs)
+     del model
+@@ -172,6 +173,8 @@
+     parser.add_argument("--max-kv-seqs", type=int, default=33)
+     parser.add_argument("--runtime-kv-columns", action="store_true",
+                         help="Use runtime physical pitch for batched-sequence KV")
++    parser.add_argument("--independent-kv-capacity", action="store_true",
++                        help="Grow full KV independently for each live sequence; requires runtime columns")
+     args = parser.parse_args()
+     config = Gemma4_31BConfig.from_hf_config(args.config)
+     config.max_seq_len = args.max_seq_len
+@@ -203,7 +206,8 @@
+     ), indent=2) + "\n")
+     print("GEMMA_CHECKPOINT_SAMPLER_POLICY", suppressed, flush=True)
+     export_cuda_batching(model, str(output), args.max_step_tokens, args.max_kv_seqs,
+-                        suppressed_token_ids=suppressed, runtime_kv_columns=args.runtime_kv_columns)
++                        suppressed_token_ids=suppressed, runtime_kv_columns=args.runtime_kv_columns,
++                        independent_capacity=args.independent_kv_capacity)
+
+
+ if __name__ == "__main__":

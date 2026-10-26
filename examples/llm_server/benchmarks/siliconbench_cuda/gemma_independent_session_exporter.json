@@ -1,0 +1,24 @@
+{
+  "patch_SHA256": "54ac469a9ee84f5e9c2aa319742e3dcc1a5bce3a6b308ff469f405a71400b071",
+  "files": {
+    "examples/models/gemma4_31b/export_batching.py": {
+      "before_SHA256": "8679249d934733525b4520972801d1fae3d4142f863ee79fe80bb4ea27110335",
+      "after_SHA256": "b597f31962136d171c4571ece0c1fbb959a35c72afc47c20433c0e2699091272"
+    }
+  },
+  "shared_independent_session_core_required": true,
+  "independent_sequence_info_abi": 3,
+  "production_attention_baseline_SHA256": "23dd4b686da50566026355094d14f843829814f65299a0b2dcaba2969ad05eda",
+  "sliding_window_policy_changed": false,
+  "static_buckets_unchanged": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64
+  ],
+  "full_model_promoted": false,
+  "mini_model_validation_pending": true
+}
