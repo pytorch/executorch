@@ -26,6 +26,14 @@ def verified_gemma_full_http(args, package):
     for name, expected in gate['binaries'].items():
         assert sha(name) == expected, name
     assert gate['artifact_export_and_native_SDK_sources_are_separately_verified']
+    rebind = None
+    if 'full_runtime_rebind_proof' in gate:
+        from prepare_independent_full_runtime_rebind import verify_rebind
+        rebind_path = Path(gate['full_runtime_rebind_proof'])
+        assert sha(rebind_path) == gate['full_runtime_rebind_proof_SHA256']
+        rebind = verify_rebind(rebind_path, args.full_native_job, package)
+        assert rebind['full_model_profile'] == args.full_model_profile
+        assert set(rebind['artifacts']) == {'global', 'independent'}
     native_source = Path(actual['source'])
     proof = json.loads(args.memory_worker_proof.read_text())
     assert proof['native_gate_SHA256'] == sha(args.full_native_job/'native-gate.json')
@@ -83,9 +91,16 @@ def verified_gemma_full_http(args, package):
         export_gate_path = artifact.resolve().parent/'native-gate.json'
         export_gate = json.loads(export_gate_path.read_text())
         assert sha(export_gate_path) == audit['native_gate_sha256']
-        assert export_gate['source'] == gate['source']
-        for key in ('source_spec_SHA256', 'native_tests_xml_SHA256', 'unchanged_controls'):
-            assert export_gate[key] == gate[key], key
+        if rebind is None:
+            assert export_gate['source'] == gate['source']
+            for key in ('source_spec_SHA256', 'native_tests_xml_SHA256', 'unchanged_controls'):
+                assert export_gate[key] == gate[key], key
+        else:
+            item = rebind['artifacts'][arm]
+            assert artifact.resolve() == Path(item['artifact']).resolve()
+            assert export_gate_path.resolve() == (Path(item['export_job'])/'native-gate.json').resolve()
+            for key in ('source_spec_SHA256', 'unchanged_controls'):
+                assert export_gate[key] == gate[key], key
         for name, expected in export_gate['binaries'].items():
             assert sha(name) == expected, name
         for name, record in audit['artifacts'].items():

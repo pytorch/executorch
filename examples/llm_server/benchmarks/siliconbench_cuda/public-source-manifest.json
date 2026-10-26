@@ -496,8 +496,8 @@
       "bytes": 823
     },
     "independent_session_full_http_binding.py": {
-      "sha256": "3a631ca0e8e1b9143a7fc5988e1af400a0bfc455ca6e6df8ffffe05e2f8f9713",
-      "bytes": 6487
+      "sha256": "ab0f4e2c44c769b08177881e86b03cbaa8322d0267d98dbc3f936b713c7fb5ce",
+      "bytes": 7379
     },
     "independent_session_full_native_binding.py": {
       "sha256": "97d9fed1e2354ce4c8a8f74a76e1324d1345936cd1be39eeb0004386befcee00",
@@ -642,6 +642,10 @@
     "prepare_gemma_runtime_http.py": {
       "sha256": "3eb65117bc32009d3de694a7603c7cc75fc208db6e1eeddb1ea80bb3bbe85037",
       "bytes": 5254
+    },
+    "prepare_independent_full_runtime_rebind.py": {
+      "sha256": "cf31c8b3db2c1e12db42c38fc45b548cb1dcbeedc155d529e7e30d0639777a34",
+      "bytes": 8355
     },
     "prepare_independent_main_public_inputs.py": {
       "sha256": "ccb1e6e2db158a70076fb76e0b7ce8df973eed790a65c07810f1575b69fae07e",
