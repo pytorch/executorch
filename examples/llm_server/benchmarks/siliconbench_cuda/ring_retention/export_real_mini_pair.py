@@ -11,7 +11,7 @@ def digest(p):
 def main():
  a=argparse.ArgumentParser(description=__doc__)
  for n in ['native-preparation','gguf','output','lock']:a.add_argument('--'+n,type=Path,required=True)
- a.add_argument('--model',choices=['MG','Gemma'],required=True);args=a.parse_args()
+ a.add_argument('--model',choices=['MG','Gemma'],required=True);a.add_argument('--reuse-baseline-audit',type=Path);args=a.parse_args()
  assert not args.output.exists();args.output.mkdir(parents=True)
  gate=json.loads((args.native_preparation/'native-gate.json').read_text())
  assert gate['native_tests_passed'] and gate['legacy_test_count']>=74 and gate['allocator_policy_test_count']==4
@@ -105,6 +105,11 @@ def main():
    from executorch.exir.schema import Int,String
    records=[]
    for arm in ['baseline','ring']:
+    if arm=='baseline' and args.reuse_baseline_audit:
+     row=json.loads(args.reuse_baseline_audit.read_text());assert row['arm']=='baseline' and row['model']==args.model and row['prefill_budget']==budget and row['GGUF_SHA256']==expected
+     for n,v in row['artifacts'].items():assert digest(Path(row['artifact'])/n)==v['SHA256']
+     row=dict(row,reused_immutable_baseline_audit=str(args.reuse_baseline_audit),reused_immutable_baseline_audit_SHA256=digest(args.reuse_baseline_audit))
+     (args.output/'baseline').mkdir();(args.output/'baseline/artifact-audit.json').write_text(json.dumps(row,indent=2)+'\n');records.append(row);continue
     current=args.output/arm;current.mkdir();cache=current/'cache';(cache/'host-zero').mkdir(parents=True)
     os.environ.update(ET_CUDA_SPLIT_RING_HISTORY='1' if arm=='ring' else '0',TORCHINDUCTOR_CACHE_DIR=str(cache/'inductor'),TRITON_CACHE_DIR=str(cache/'triton'),ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache/'host-zero'))
     state('exporting-real-mini-'+arm,source=str(source),prefill_budget=budget)
