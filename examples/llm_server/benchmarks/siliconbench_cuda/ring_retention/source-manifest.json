@@ -17,6 +17,7 @@
     "prepare_native_mini_candidate.py": "90e93b2bc5a2f509276a0c43809e37621111d41de00acfcb24e0e883ae696bf7",
     "export_real_mini_pair.py": "ccacf3ef6b3837976c7c0697c3e1d5028caeb1b887b63fe8d576fcf86cd75d5f",
     "run_real_mini_four_arms.py": "fcda5bcbd266790421ca0b432d555dfa84b46c251db971b6ad0cc932f73e4ac7",
-    "run_real_mini_controller.py": "1cb489024c5957673a15dc72825832e137f2c728f1f1a9a0f3596e7874611c6e"
+    "run_real_mini_controller.py": "1cb489024c5957673a15dc72825832e137f2c728f1f1a9a0f3596e7874611c6e",
+    "probe_ring_journal.py": "20e908951db4b195d476201f037145b073a5786285b4d1517648f7cdb9b02373"
   }
 }
