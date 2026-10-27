@@ -29,6 +29,15 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "samples_test",
+        srcs = ["test_samples.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/deserialize:samples",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "zip_reader_test",
         srcs = ["test_zip_reader.cpp"],
         deps = [
