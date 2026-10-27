@@ -114,11 +114,15 @@ cmake examples/models/llama \
 cmake --build cmake-out-android-so/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
-Once the binary is built, it can be pushed to your Android device.
+Once the binary is built, push it and the installed shared Vulkan runtime to
+your Android device. The shared library is required even when shared-context
+runtime options are not supplied. Keep it alongside `llama_main`, where the
+runner's `$ORIGIN` library search path can find it.
 
 ```shell
-adb shell mkdir /data/local/tmp/etvk/ && \
-adb push cmake-out-android-so/examples/models/llama/llama_main /data/local/tmp/etvk/
+adb shell mkdir -p /data/local/tmp/etvk/ && \
+adb push cmake-out-android-so/examples/models/llama/llama_main /data/local/tmp/etvk/ && \
+adb push cmake-out-android-so/lib/libexecutorch_vulkan_shared_runtime.so /data/local/tmp/etvk/
 ```
 
 ## Execute the llama runner binary

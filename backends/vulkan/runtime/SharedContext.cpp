@@ -112,7 +112,8 @@ Result<SharedVulkanContextPtr> create_vulkan_shared_context(
     // We use Volk global instance-loaded dispatch, so
     // we need to use one instance and multiple devices
     // architecture.
-    auto* runtime = vkapi::runtime();
+    auto runtime_owner = vkapi::runtime_owner();
+    auto* runtime = runtime_owner.get();
     auto* default_adapter = runtime->get_adapter_p();
 
     // We create Adapter under the same instance VkInstance.
@@ -139,9 +140,15 @@ Result<SharedVulkanContextPtr> create_vulkan_shared_context(
     info.queue = lease.queue.handle;
     info.queue_family_index = lease.queue.family_index;
     info.enabled_device_extensions = owner->enabled_device_extensions();
-    // The global Runtime owns the VkInstance for process lifetime. The anchor
-    // owns this key's Adapter and therefore its VkDevice and device resources.
-    info.lifetime_anchor = owner;
+    // A registered context may outlive the global Runtime's static owner.
+    // Members are destroyed in reverse order: release the device and its
+    // resources before releasing the Runtime that owns their VkInstance.
+    struct ContextOwner final {
+      std::shared_ptr<vkapi::Runtime> runtime;
+      std::shared_ptr<vkapi::Adapter> adapter;
+    };
+    info.lifetime_anchor = std::make_shared<ContextOwner>(
+        ContextOwner{std::move(runtime_owner), owner});
 
     auto result = std::make_shared<SharedVulkanContext>(std::move(info));
     if (!result->is_valid()) {

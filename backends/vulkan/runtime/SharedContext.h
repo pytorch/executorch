@@ -41,8 +41,8 @@ resolve_vulkan_shared_context(
     const vulkan_shared::SharedVulkanContextRegistry::CreateFn& create_fn);
 
 // Each registry key gets its own owned Adapter/VkDevice under the common
-// instance. Note that for safe teardown we use lifetime_anchor that retains the
-// owner Adapter.
+// instance. The lifetime anchor retains both the Adapter and the owning
+// Runtime, releasing the device before its instance owner.
 runtime::Result<vulkan_shared::SharedVulkanContextPtr>
 create_vulkan_shared_context(const vulkan_shared::SharedVulkanContextKey& key);
 

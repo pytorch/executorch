@@ -89,7 +89,6 @@ file(GLOB_RECURSE vulkan_vkapi_cpp CONFIGURE_DEPENDS
      ${RUNTIME_PATH}/vk_api/*.cpp
 )
 list(APPEND vulkan_api_cpp ${vulkan_vkapi_cpp})
-list(APPEND vulkan_api_cpp ${RUNTIME_PATH}/SharedContext.cpp)
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
 file(GLOB_RECURSE vulkan_runtime_utils_cpp CONFIGURE_DEPENDS
      ${RUNTIME_PATH}/utils/*.cpp
@@ -106,7 +105,7 @@ target_compile_definitions(
 target_compile_options(vulkan_compute_api PRIVATE ${VULKAN_CXX_FLAGS})
 target_link_libraries(
   vulkan_compute_api
-  PUBLIC executorch_core
+  PUBLIC executorch_core executorch_vulkan_shared_runtime
   PRIVATE Threads::Threads ${CMAKE_DL_LIBS}
 )
 

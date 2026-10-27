@@ -106,6 +106,10 @@ std::string& set_and_get_pipeline_cache_data_path(const std::string& file_path);
 
 // The global runtime is retrieved using this function, where it is declared as
 // a static local variable.
+// Retain the instance owner while a backend-created shared device exists.
+// Destroy devices before releasing the last owner of their VkInstance.
+std::shared_ptr<Runtime> runtime_owner();
+
 Runtime* runtime();
 
 // Used to share instance + devices between client code and ETVK

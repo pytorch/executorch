@@ -7,6 +7,7 @@
 
 #include <executorch/backends/vulkan/runtime/SharedContext.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -21,6 +22,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -238,6 +240,28 @@ TEST_F(
       std::runtime_error);
   vkapi::Adapter still_valid(shared, "");
   EXPECT_NO_THROW(submit_empty(still_valid));
+}
+
+TEST_F(
+    SharedContextAdapterTest,
+    CreatedContextRetainsRuntimeUntilLastBorrower) {
+  auto runtime = vkapi::runtime_owner();
+  const auto owners_before = runtime.use_count();
+  auto created = create_vulkan_shared_context({"phase3-runtime-owner", 91});
+  ASSERT_TRUE(created.ok());
+  SharedVulkanContextPtr retained = std::move(created.get());
+  EXPECT_EQ(runtime.use_count(), owners_before + 1);
+
+  std::weak_ptr<SharedVulkanContext> weak = retained;
+  auto borrower = std::make_unique<vkapi::Adapter>(retained, "");
+  retained.reset();
+  EXPECT_FALSE(weak.expired());
+  EXPECT_EQ(runtime.use_count(), owners_before + 1);
+  EXPECT_NO_THROW(submit_empty(*borrower));
+
+  borrower.reset();
+  EXPECT_TRUE(weak.expired());
+  EXPECT_EQ(runtime.use_count(), owners_before);
 }
 
 TEST_F(SharedContextAdapterTest, UnregisterKeepsDeviceAliveUntilLastBorrower) {
