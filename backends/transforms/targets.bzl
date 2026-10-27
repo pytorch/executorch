@@ -129,8 +129,8 @@ def define_common_targets():
             ":utils",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
             "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
         ],
     )
 
