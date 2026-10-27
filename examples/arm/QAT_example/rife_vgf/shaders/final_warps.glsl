@@ -28,9 +28,11 @@ const int COMPLEMENT_TABLE[256] = int[](@COMPLEMENT_TABLE@);
 #endif
 @RESCALES@
 
+const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
+
 vec2 uv(ivec2 p, vec2 size, vec2 offset) {
   vec2 baseGrid = vec2(p) * vec2(2.0) / (size - vec2(1.0)) - vec2(1.0);
-  vec2 texel = (baseGrid + offset + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
+  vec2 texel = (baseGrid + offset * FLOW_NORMALIZATION + vec2(1.0)) * vec2(0.5) * (size - vec2(1.0));
   return (texel + vec2(0.5)) / size;
 }
 
