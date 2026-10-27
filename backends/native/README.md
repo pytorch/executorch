@@ -41,6 +41,89 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
 
+## Samples (optional)
+
+A `.ptn` may carry recorded method calls: inputs, and optionally the outputs and
+intermediate values they produced. A sample is an ordered sequence of calls, so a
+stateful method such as an LLM's prefill followed by decode steps can be checked. They serve reference checks, layer-by-layer
+numerical debugging, calibration and benchmarking. Program loaders ignore them.
+
+```python
+from executorch.exir.native import Call, read_samples, Sample, SampleSet, to_native, write_samples
+
+to_native(ep).save("model.ptn")
+golden = SampleSet([Sample([Call([x], [model(x)])])])
+write_samples("model.ptn", "forward", "golden", golden)
+read_samples("model.ptn")       # {("forward", "golden"): SampleSet(...)}
+```
+
+`write_samples` appends a set to any existing `.ptn`, not only one this process
+saved, and replaces the file only once the set is complete. `read_samples`
+validates every set against the rules below, except that `<method>` exists.
+
+### Layout
+
+```
+samples/<method>/<set>/index.json
+samples/<method>/<set>/data.safetensors
+```
+
+- `<method>` names a program method. `<set>` is an identifier with no meaning to
+  the format. Both match `[A-Za-z0-9_-]+`.
+- Each set has exactly these two members, and nothing else lives under `samples/`.
+- Members are stored (uncompressed). The `data.safetensors` data section starts
+  64-byte aligned in the file, like `program.safetensors`.
+- Adding a set only appends members; removing one means rewriting the zip.
+
+### `index.json`
+
+```
+{ "version":     "1.0",                required, "MAJOR.MINOR"
+  "description": str,                  optional
+  "source":      str,                  optional, producer of the outputs
+  "tol":         [atol, rtol],         optional, default for every call
+  "samples":     [Sample, ...] }       required, non-empty
+
+Sample = { "calls":         [Call, ...],         required, non-empty, run in order
+           "tol":           [atol, rtol] }       optional, overrides the set's
+
+Call   = { "in":            [Value, ...],        required, positional arguments
+           "out":           [Value, ...],        optional, positional outputs
+           "intermediates": {name: Key, ...},    optional
+           "tol":           [atol, rtol] }       optional, overrides the sample's
+
+Value  = Key | number | true | false | [Value, ...]
+Key    = str naming a tensor in the set's data.safetensors
+```
+
+- Each sample starts from the program's initial state. Samples are independent and
+  may run in any order; the calls within a sample run in order with no reset
+  between them, so each sees the state the previous one left.
+- A tensor's key is its JSON path in the index, e.g. `samples[0].calls[1].in[2]`.
+  Below a call that is `.in[k]`, `.in[k][l]` for an element of a list argument,
+  `.out[k]` or `.intermediates.<name>`. Every key resolves, and every tensor is
+  referenced exactly once.
+- A JSON integer is an int scalar, any other number a float.
+- Intermediate names are top-level SSA value names (`[A-Za-z_][A-Za-z0-9_]*`).
+  Producers record what they can; consumers compare the names both sides have.
+- Tolerances are finite and non-negative, and advisory: a consumer may override them.
+  `write_samples` warns when atol or rtol is above 1e-3.
+- Readers reject another major `version` and accept any minor one: a minor bump
+  only adds fields, and readers ignore unknown fields.
+
+Not in v1:
+
+- Sequences that span methods, such as a separate `prefill` and `decode` sharing
+  state.
+- Tensors shared across sets.
+- Values inside nested graphs.
+- Quantized method inputs and outputs (a `QuantSpec` on graph I/O). Integer and
+  float I/O of quantized models is supported; torch quantized dtypes and tensor
+  subclasses are not.
+
+TODO: specify quantized I/O as the storage form the method binds (packed for
+sub-byte), with quant parameters read from the program rather than the sample.
+
 ## Runtime
 
 The C++ runtime reads a `.ptn` into an in-memory graph and hands each method to
