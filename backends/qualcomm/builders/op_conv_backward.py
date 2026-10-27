@@ -10,6 +10,7 @@ from typing import cast, Dict, List, Optional, Tuple
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import dq_ops, NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -53,7 +54,10 @@ class ConvBackward(NodeVisitor):
             return None
 
         grad_output_node = node.args[0]
-        if grad_output_node.target in dq_ops:
+        if (
+            grad_output_node.target in dq_ops
+            or grad_output_node.meta.get(QCOM_QUANT_ATTRS) is not None
+        ):
             logger.warning(
                 "ConvBackward %s is unsupported: quantized grad_output is not supported",
                 node.name,
@@ -69,7 +73,10 @@ class ConvBackward(NodeVisitor):
             return None
 
         filter_node = node.args[2]
-        if filter_node.target in dq_ops:
+        if (
+            filter_node.target in dq_ops
+            or filter_node.meta.get(QCOM_QUANT_ATTRS) is not None
+        ):
             logger.warning(
                 "ConvBackward %s is unsupported: quantized weights are not supported",
                 node.name,
@@ -185,9 +192,8 @@ class ConvBackward(NodeVisitor):
         filter_tensor: torch.Tensor,
         nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
     ) -> Tuple[PyQnnManager.TensorWrapper, List[PyQnnManager.PyQnnOpWrapper]]:
-        # Reuse the forward Conv2d's static HWIO wrapper. HWOI is named from the
-        # forward Conv2d view; for this TransposeConv2d it is HWIO, produced from
-        # the raw OIHW weight by permute(2, 3, 0, 1).
+        # Reuse the forward Conv2d's static HWIO wrapper, then transpose it to
+        # the HWOI layout required by TransposeConv2d.
         filter_tensor_hwio = filter_tensor.permute(2, 3, 1, 0).contiguous()
         filter_wrapper = self.define_tensor(
             filter_node,
@@ -277,21 +283,8 @@ class ConvBackward(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
     ) -> Optional[List[PyQnnManager.PyQnnOpWrapper]]:
-        # convolution_backward signature:
-        #   args[0]: grad_output
-        #   args[1]: input
-        #   args[2]: weight (raw parameter [Cout, Cin, kH, kW])
-        #   args[3]: bias_sizes
-        #   args[4]: stride
-        #   args[5]: padding
-        #   args[6]: dilation
-        #   args[7]: transposed
-        #   args[8]: output_padding
-        #   args[9]: groups
-        #   args[10]: output_mask [grad_input, grad_weight, grad_bias]
         supported_inputs = self._get_supported_input_nodes(node)
         if supported_inputs is None:
-            logger.warning("ConvBackward %s is unsupported", node.name)
             return None
         grad_output_node, grad_output_tensor, filter_node = supported_inputs
         tensors = self._get_filter_and_grad_input_tensors(node, filter_node)

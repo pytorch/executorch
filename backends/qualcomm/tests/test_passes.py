@@ -240,6 +240,25 @@ class TestPasses(unittest.TestCase):
         self.assertIn(f"{weight_node.name}_hwoi", nodes_to_wrappers)
         self.assertIs(first_hwoi_wrapper, second_hwoi_wrapper)
 
+    def test_conv_backward_quantized_inputs_fallback(self):
+        x = torch.randn(1, 3, 8, 8)
+        grad_output = torch.randn(1, 4, 4, 4)
+        edge_program = to_edge(
+            torch.export.export(ConvBackward(), (grad_output, x), strict=True)
+        ).exported_program()
+        conv_backward = next(
+            node
+            for node in edge_program.graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.convolution_backward.default
+        )
+        visitor = get_node_visitors(edge_program)["aten.convolution_backward.default"]
+
+        for input_index in (0, 2):
+            with self.subTest(input_index=input_index):
+                conv_backward.args[input_index].meta[QCOM_QUANT_ATTRS] = {}
+                self.assertIsNone(visitor.define_node(conv_backward, defaultdict(dict)))
+                conv_backward.args[input_index].meta.pop(QCOM_QUANT_ATTRS)
+
     def test_layout_transform_handles_multiple_tuple_getitems(self):
         x = torch.randn(1, 3, 8, 8)
         grad_output = torch.randn(1, 4, 4, 4)
@@ -253,7 +272,6 @@ class TestPasses(unittest.TestCase):
         graph_module = LayoutTransform(edge_program, insert_permute=True)(
             edge_program.graph_module
         ).graph_module
-
         conv_backward = next(
             node
             for node in graph_module.graph.nodes

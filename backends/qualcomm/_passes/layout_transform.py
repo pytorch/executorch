@@ -300,7 +300,12 @@ class LayoutTransform(ExportPass):
         )
 
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
-        for arg in node.args:
+        for index, arg in enumerate(node.args):
+            if (
+                node.target == exir_ops.edge.aten.convolution_backward.default
+                and index == 1
+            ):
+                continue
             if isinstance(arg, list):
                 for arg_node in arg:
                     self.annotate_layout(arg_node, graph_module, revert_layout=False)
