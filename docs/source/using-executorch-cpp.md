@@ -40,14 +40,14 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-There are two ways to get the C++ runtime. Current main/nightly wheels include
+There are two ways to get the C++ runtime. ExecuTorch 1.6 wheels include
 prebuilt libraries and need no source checkout. Building from source gives you
 every option the project has and is required for a platform the wheel does not
 cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux, macOS and Windows, current main/nightly wheels ship the runtime as prebuilt
+On Linux, macOS and Windows, ExecuTorch 1.6 wheels ship the runtime as prebuilt
 shared libraries together with the headers and a CMake package. Stable releases
 from before this packaging was introduced do not contain the namespaced CMake
 targets used below; use the documentation for your installed release.
@@ -59,11 +59,10 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install executorch==1.6.0 torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 ```
 
-`torch` is installed explicitly because nightly ExecuTorch wheels do not declare
-it as a dependency. Python and PyTorch are needed to create the model file in
+Python and PyTorch are needed to create the model file in
 step 1, but not to run the compiled C++ program.
 
 A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot

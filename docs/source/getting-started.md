@@ -17,16 +17,14 @@ The following are required to install the ExecuTorch host libraries, needed to e
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package. Consider installing it within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
 
-Install PyTorch in the same command. The ExecuTorch package does not declare it
-as a dependency, because the build you need depends on your hardware, so pip
-cannot choose one for you. Installing ExecuTorch on its own gives an environment
-where exporting a model stops with `No module named 'torch'`.
+Install PyTorch 2.15 with ExecuTorch 1.6. Choose the PyTorch build for the
+hardware you will use to export models by selecting the package index below.
 
 Both packages come from the same package index. Find your machine in the table
 below and put the name from it in place of `<variant>`:
 
 ```
-pip install executorch torch \
+pip install executorch==1.6.0 torch==2.15.0 \
   --index-url https://download.pytorch.org/whl/<variant> \
   --extra-index-url https://pypi.org/simple
 ```
@@ -53,9 +51,9 @@ the `cpu` variant to skip them.
 To get a change that has landed on the `main` branch but is not in a release
 yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front
 of the variant name, for example `nightly/cu132`, and add `--pre` to the
-command, otherwise pip skips development versions. Nightly builds cover the same
-variants. CUDA 13.4 is the newest, and until the next release it is in nightly
-builds only.
+command, otherwise pip skips development versions. Replace the exact release
+versions above with `executorch torch` to select development versions. Nightly
+builds cover the same variants.
 
 The second index is needed because a bare `--index-url` replaces PyPI instead of
 adding to it, and some dependencies are published only on PyPI.
@@ -215,7 +213,7 @@ execution paths on Apple platforms. The runtime libraries are distributed as
 To get started with Xcode, go to File > Add Package Dependencies and paste the
 ExecuTorch repository URL into the search bar. For Dependency Rule, select
 **Branch** and enter the `swiftpm-X.Y.Z` branch that matches the ExecuTorch
-release used to export the model, for example `swiftpm-1.4.1`. The dependency
+release used to export the model, for example `swiftpm-1.6.0`. The dependency
 can also be added to `Package.swift`; see
 [Using ExecuTorch on iOS](using-executorch-ios.md) for details.
 
@@ -231,11 +229,11 @@ For more information on iOS integration, including an API reference, logging set
 ExecuTorch provides C++ APIs, which can be used to target embedded or mobile devices. The C++ APIs provide a greater level of control compared to other language bindings, allowing for advanced memory management, data loading, and platform integration.
 
 #### Installation
-On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+On Linux and macOS, ExecuTorch 1.6 wheels ship the runtime as prebuilt
 libraries with headers and a CMake package, so there is nothing to build:
 
 ```
-pip install --upgrade --pre executorch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install executorch==1.6.0 torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 ```
 
 ```cmake
@@ -251,7 +249,7 @@ For a platform the package does not cover, or to change build options, build fro
 CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) and [Building from Source](using-executorch-building-from-source.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```
-git clone -b viable/strict https://github.com/pytorch/executorch.git
+git clone -b release/1.6 https://github.com/pytorch/executorch.git
 ```
 ```cmake
 # Set CMAKE_CXX_STANDARD to 17 or above.
