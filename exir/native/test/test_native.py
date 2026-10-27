@@ -450,19 +450,26 @@ class SamplesTest(unittest.TestCase):
             }
         )
         golden = {
-            ("decode", "golden"): SampleSet(
-                [Sample([Call([decode_x], [model(decode_x).detach()])])],
+            "golden": SampleSet(
+                [
+                    Sample(
+                        [
+                            Call("prefill", [prefill_x], [model(prefill_x).detach()]),
+                            Call("decode", [decode_x], [model(decode_x).detach()]),
+                        ]
+                    )
+                ],
                 tol=(1e-5, 1e-5),
             ),
-            ("prefill", "calib"): SampleSet([Sample([Call([prefill_x])])]),
+            "calib": SampleSet([Sample([Call("prefill", [prefill_x])])]),
         }
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "m.ptn")
             native.save(path)
             with zipfile.ZipFile(path) as pkg:
                 program = {n: pkg.read(n) for n in pkg.namelist()}
-            for (method, name), samples in golden.items():
-                write_samples(path, method, name, samples)
+            for name, samples in golden.items():
+                write_samples(path, name, samples)
             with zipfile.ZipFile(path) as pkg:
                 self.assertEqual({n: pkg.read(n) for n in program}, program)
             read = read_samples(path)
@@ -470,13 +477,14 @@ class SamplesTest(unittest.TestCase):
         for key, expected in golden.items():
             self.assertEqual(read[key].tol, expected.tol)
             for got, want in zip(read[key].samples, expected.samples, strict=True):
-                (got_call,), (want_call,) = got.calls, want.calls
-                torch.testing.assert_close(
-                    got_call.inputs, want_call.inputs, rtol=0, atol=0
-                )
-                torch.testing.assert_close(
-                    got_call.outputs, want_call.outputs, rtol=0, atol=0
-                )
+                for got_call, want_call in zip(got.calls, want.calls, strict=True):
+                    self.assertEqual(got_call.method, want_call.method)
+                    torch.testing.assert_close(
+                        got_call.inputs, want_call.inputs, rtol=0, atol=0
+                    )
+                    torch.testing.assert_close(
+                        got_call.outputs, want_call.outputs, rtol=0, atol=0
+                    )
 
 
 if __name__ == "__main__":

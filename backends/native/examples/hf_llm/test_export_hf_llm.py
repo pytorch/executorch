@@ -261,6 +261,7 @@ class ExportHfLlmTest(unittest.TestCase):
             for call, (input_ids, positions) in zip(sample.calls, want):
                 if input_ids is None:
                     input_ids = previous.argmax(dim=-1)
+                self.assertEqual(call.method, "forward")
                 self.assertTrue(torch.equal(call.inputs[0], input_ids))
                 self.assertTrue(torch.equal(call.inputs[1], positions))
                 with torch.no_grad():

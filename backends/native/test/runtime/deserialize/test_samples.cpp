@@ -26,7 +26,7 @@ std::vector<uint8_t> bytes_of(const std::string& text) {
   return {text.begin(), text.end()};
 }
 
-// A zip holding samples/forward/golden/ with `index` and a safetensors blob
+// A zip holding samples/golden/ with `index` and a safetensors blob
 // of `header` over `data`.
 std::vector<uint8_t> make_set(
     const std::string& index,
@@ -37,8 +37,8 @@ std::vector<uint8_t> make_set(
       tensors.data() + tensors.size() - data.size(), data.data(), data.size());
   return make_zip(
       {{"program.ptg", {}},
-       {"samples/forward/golden/index.json", bytes_of(index)},
-       {"samples/forward/golden/data.safetensors", tensors}});
+       {"samples/golden/index.json", bytes_of(index)},
+       {"samples/golden/data.safetensors", tensors}});
 }
 
 const std::string kTwoCallHeader =
@@ -51,7 +51,7 @@ const std::string kTwoCallData =
     std::string("ab") + std::string("\x00\x00\x80\x3f", 4) + "hcd";
 
 SampleSet read(const std::vector<uint8_t>& archive) {
-  return read_sample_set(ZipReader::open(archive), "forward", "golden");
+  return read_sample_set(ZipReader::open(archive), "golden");
 }
 
 // cppcheck-suppress-begin syntaxError
@@ -60,10 +60,12 @@ TEST(SamplesTest, ReadsCallsInOrderWithResolvedTolerance) {
       R"({"version":"1.7","description":"d","source":"eager",
     "tol":[0.001,0.002],"unknown":0,"samples":[
       {"tol":[0.0001,0.0002],"calls":[
-        {"in":["samples[0].calls[0].in[0]"],"out":["samples[0].calls[0].out[0]"],
+        {"method":"prefill","in":["samples[0].calls[0].in[0]"],
+         "out":["samples[0].calls[0].out[0]"],
          "intermediates":{"h":"samples[0].calls[0].intermediates.h"}},
-        {"in":["samples[0].calls[1].in[0]"],"tol":[0,0],"unknown":0}]},
-      {"calls":[{"in":["samples[1].calls[0].in[0]"]}]}]})";
+        {"method":"decode","in":["samples[0].calls[1].in[0]"],"tol":[0,0],
+         "unknown":0}]},
+      {"calls":[{"method":"forward","in":["samples[1].calls[0].in[0]"]}]}]})";
 
   const SampleSet set = read(make_set(index, kTwoCallHeader, kTwoCallData));
 
@@ -72,6 +74,7 @@ TEST(SamplesTest, ReadsCallsInOrderWithResolvedTolerance) {
   ASSERT_EQ(set.samples.size(), 2);
   ASSERT_EQ(set.samples[0].calls.size(), 2);
   const SampleCall& prefill = set.samples[0].calls[0];
+  EXPECT_EQ(prefill.method, "prefill");
   ASSERT_EQ(prefill.inputs.size(), 1);
   EXPECT_EQ(prefill.inputs[0].dtype, kByte);
   EXPECT_EQ(prefill.inputs[0].sizes, (std::vector<int64_t>{1, 2}));
@@ -87,17 +90,19 @@ TEST(SamplesTest, ReadsCallsInOrderWithResolvedTolerance) {
   EXPECT_EQ(prefill.tol->atol, 0.0001);
   EXPECT_EQ(prefill.tol->rtol, 0.0002);
   const SampleCall& decode = set.samples[0].calls[1];
+  EXPECT_EQ(decode.method, "decode");
   EXPECT_EQ(decode.inputs[0].bytes, bytes_of("c"));
   EXPECT_FALSE(decode.outputs);
   ASSERT_TRUE(decode.tol);
   EXPECT_EQ(decode.tol->atol, 0.0);
+  EXPECT_EQ(set.samples[1].calls[0].method, "forward");
   ASSERT_TRUE(set.samples[1].calls[0].tol);
   EXPECT_EQ(set.samples[1].calls[0].tol->atol, 0.001);
 }
 
 TEST(SamplesTest, LeavesToleranceUnsetWhenNoLevelHasOne) {
   const SampleSet set = read(make_set(
-      R"({"version":"1.0","samples":[{"calls":[{"in":["samples[0].calls[0].in[0]"]}]}]})",
+      R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})",
       R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[1],"data_offsets":[0,1]}})",
       "a"));
 
@@ -108,8 +113,9 @@ TEST(SamplesTest, RejectsMalformedSets) {
   const std::string one_tensor =
       R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[1],"data_offsets":[0,1]}})";
   const std::string one_call =
-      R"("samples":[{"calls":[{"in":["samples[0].calls[0].in[0]"]}]}])";
-  const std::string call0 = R"("in":["samples[0].calls[0].in[0]"])";
+      R"("samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}])";
+  const std::string call0 =
+      R"("method":"forward","in":["samples[0].calls[0].in[0]"])";
   const auto with_call = [&](const std::string& fields) {
     return R"({"version":"1.0","samples":[{"calls":[{)" + call0 + "," + fields +
         "}]}]}";
@@ -127,16 +133,22 @@ TEST(SamplesTest, RejectsMalformedSets) {
        "samples[0] must be an object with a non-empty 'calls' list"},
       {R"({"version":"1.0","samples":[{"in":["samples[0].calls[0].in[0]"]}]})",
        "samples[0] must be an object with a non-empty 'calls' list"},
-      {R"({"version":"1.0","samples":[{"calls":[{"in":["samples[0].in[0]"]}]}]})",
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].in[0]"]}]}]})",
        "key samples[0].in[0] must be samples[0].calls[0].in[0]"},
-      {R"({"version":"1.0","samples":[{"calls":[{"in":["samples[0].calls[0].in[0]",1]}]}]})",
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]",1]}]}]})",
        "samples[0].calls[0].in[1] must be a tensor"},
-      {R"({"version":"1.0","samples":[{"calls":[{"in":[["samples[0].calls[0].in[0]"]]}]}]})",
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":[["samples[0].calls[0].in[0]"]]}]}]})",
        "samples[0].calls[0].in[0] must be a tensor"},
-      {R"({"version":"1.0","samples":[{"calls":[{"in":"samples[0].calls[0].in[0]"}]}]})",
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":"samples[0].calls[0].in[0]"}]}]})",
        "samples[0].calls[0].in must be a list"},
-      {R"({"version":"1.0","samples":[{"calls":[{"in":[]}]}]})",
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":[]}]}]})",
        "unreferenced tensor samples[0].calls[0].in[0]"},
+      {R"({"version":"1.0","samples":[{"calls":[{"in":["samples[0].calls[0].in[0]"]}]}]})",
+       "samples[0].calls[0].method must be a non-empty string"},
+      {R"({"version":"1.0","samples":[{"calls":[{"method":"","in":["samples[0].calls[0].in[0]"]}]}]})",
+       "samples[0].calls[0].method must be a non-empty string"},
+      {R"({"version":"1.0","samples":[{"calls":[{"method":1,"in":["samples[0].calls[0].in[0]"]}]}]})",
+       "samples[0].calls[0].method must be a non-empty string"},
       {R"({"version":"1.0","tol":[1],)" + one_call + "}",
        "tol must be [atol, rtol]"},
       {R"({"version":"1.0","tol":[-1,0],)" + one_call + "}",
