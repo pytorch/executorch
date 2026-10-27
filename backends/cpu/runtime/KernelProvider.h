@@ -131,7 +131,7 @@ class KernelImplementation {
     return false;
   }
   /// Pure metadata query, before compile can read constants or allocate
-  /// storage. The default declares contiguous FP32 storage for every region
+  /// storage. The default declares contiguous tensor storage for every region
   /// boundary.
   virtual runtime::Result<StorageRequirements> requirements(
       const KernelRegion& region,

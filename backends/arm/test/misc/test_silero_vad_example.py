@@ -18,6 +18,7 @@ from examples.arm.silero_vad_example_ethos_u.model_export.export_silero_vad_etho
     collect_inputs,
     get_state_qparams,
     quantize_model,
+    run_stream,
     StatefulSileroVAD,
 )
 from examples.arm.silero_vad_example_ethos_u.runtime.compare_vad_probs import compare
@@ -148,6 +149,51 @@ def test_calibration_resets_state_between_streams() -> None:
     torch.testing.assert_close(
         torch.cat(model.observed_states), torch.tensor([0.0, 1.0, 0.0])
     )
+
+
+def test_reference_stream_preserves_exported_initial_state(monkeypatch) -> None:
+    audio = torch.ones(export_module.WINDOW_SIZE * 2)
+    monkeypatch.setattr(export_module, "load_wav_16khz_mono", lambda _: audio)
+    model = StatefulSileroVAD(ToySileroCore(), ((1.0, -8), (1.0, 5))).eval()
+    exported_program = torch.export.export(
+        model,
+        (torch.zeros(1, export_module.INPUT_SIZE),),
+        strict=False,
+    )
+    initial_state = exported_program.state_dict["state"].clone()
+
+    probabilities = run_stream(
+        exported_program.module(), "validation.wav", None, initial_state
+    )
+
+    torch.testing.assert_close(exported_program.state_dict["state"], initial_state)
+    torch.testing.assert_close(
+        probabilities,
+        torch.tensor([export_module.WINDOW_SIZE / export_module.INPUT_SIZE, 2.0]),
+    )
+
+
+def test_reference_stream_restores_state_after_failure(monkeypatch) -> None:
+    model = CalibrationStateModel()
+    model.get_buffer("state").fill_(7)
+    monkeypatch.setattr(
+        export_module,
+        "load_wav_16khz_mono",
+        lambda _: torch.ones(export_module.WINDOW_SIZE * 2),
+    )
+
+    def fail_after_first_frame(audio, frame_index, context):
+        if frame_index == 1:
+            raise RuntimeError("Invalid frame")
+        return audio.unsqueeze(0), context
+
+    monkeypatch.setattr(export_module, "make_model_input", fail_after_first_frame)
+
+    with pytest.raises(RuntimeError, match="Invalid frame"):
+        run_stream(model, "validation.wav", None, torch.zeros(1))
+
+    torch.testing.assert_close(model.get_buffer("state"), torch.tensor([7.0]))
+    torch.testing.assert_close(model.observed_states[0], torch.tensor([0.0]))
 
 
 @pytest.mark.parametrize("invalid_value", [float("nan"), float("inf")])
