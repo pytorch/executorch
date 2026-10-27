@@ -70,9 +70,10 @@ def main():
    tests=list(ET.parse(xml).getroot().iter('testcase'))
    assert len(tests)>=78 and all(t.find('failure') is None and t.find('error') is None and t.find('skipped') is None for t in tests)
    names=[t.attrib['name'] for t in tests if t.attrib['classname']=='CudaSplitRingCacheTest'];assert len(names)==4,names
+   binding_tests=[t for t in tests if t.attrib['classname']=='CudaSplitRingBindingTest']
    xml2=args.output/'native-allocator-policy.xml'
-   run([test,'--gtest_filter=CudaSplitRingCacheTest.*','--gtest_output=xml:'+str(xml2)],log='native-allocator-gates.log',gpu=True,extra={'ET_CUDA_IDLE_SPARE_BYTES':str(256*2**20)},timeout=1800)
-   policy=list(ET.parse(xml2).getroot().iter('testcase'));assert len(policy)==4 and all(t.find('failure') is None and t.find('error') is None for t in policy)
+   run([test,'--gtest_filter=CudaSplitRingCacheTest.*:CudaSplitRingBindingTest.*','--gtest_output=xml:'+str(xml2)],log='native-allocator-gates.log',gpu=True,extra={'ET_CUDA_IDLE_SPARE_BYTES':str(256*2**20)},timeout=1800)
+   policy=list(ET.parse(xml2).getroot().iter('testcase'));assert len(policy)==4+len(binding_tests) and all(t.find('failure') is None and t.find('error') is None for t in policy)
   state('installing-isolated-native-SDK',storage_gate_count=len(tests))
   run([cmake,'-S',source,'-B',build,'-DEXECUTORCH_BUILD_TESTS=OFF','-DBUILD_TESTING=OFF'])
   run([cmake,'--build',build,'--parallel',str(args.jobs),'--target','install'])
@@ -89,7 +90,7 @@ def main():
   run([cmake,'-S',parent/'rewind_kv_probe_project','-B',pb,'-DCMAKE_BUILD_TYPE=Release','-DET_SOURCE='+str(source),'-DREWIND_PROBE_SOURCE='+str(cpp),'-DCMAKE_PREFIX_PATH='+str(build)+';'+prefix])
   run([cmake,'--build',pb,'--parallel',str(args.jobs),'--target','rewind_kv_probe'])
   binary=pb/'rewind_kv_probe'
-  receipt=dict(native_tests_passed=True,legacy_test_count=len(tests)-4,new_ring_test_names=names,allocator_policy_test_count=len(policy),source=str(source),export_source=str(export),probe=str(binary),probe_SHA256=sha(binary),native_baseline_policy_XML_SHA256=sha(xml),allocator_policy_XML_SHA256=sha(xml2),native_source_audit_SHA256=sha(source/'ring-retention-source-audit.json'),export_source_audit_SHA256=sha(export/'ring-retention-source-audit.json'),kernel_qualification_pending_until_model_export=True,real_mini_model_qualified=False,actual_native_Cpp_SHA256=sha(source/'backends/cuda/runtime/cuda_kv_cache.cpp'),source_recovery_SHA256=sha(args.output/'source-recovery.json') if (args.recover_terminal_job or args.recover_storage_test_job) else None)
+  receipt=dict(native_tests_passed=True,legacy_test_count=len(tests)-4-len(binding_tests),new_ring_test_names=names,allocator_policy_test_count=4,binding_test_count=len(binding_tests),source=str(source),export_source=str(export),probe=str(binary),probe_SHA256=sha(binary),native_baseline_policy_XML_SHA256=sha(xml),allocator_policy_XML_SHA256=sha(xml2),native_source_audit_SHA256=sha(source/'ring-retention-source-audit.json'),export_source_audit_SHA256=sha(export/'ring-retention-source-audit.json'),kernel_qualification_pending_until_model_export=True,real_mini_model_qualified=False,actual_native_Cpp_SHA256=sha(source/'backends/cuda/runtime/cuda_kv_cache.cpp'),source_recovery_SHA256=sha(args.output/'source-recovery.json') if (args.recover_terminal_job or args.recover_storage_test_job) else None)
   (args.output/'native-gate.json').write_text(json.dumps(receipt,indent=2)+'\n');state('native-mini-candidate-ready',native_gate=str(args.output/'native-gate.json'),probe=str(binary))
  except BaseException as e:
   state('failed-native-mini-candidate',error=repr(e),traceback=traceback.format_exc());raise

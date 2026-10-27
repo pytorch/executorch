@@ -18,13 +18,16 @@
   "Gemma_ring_qheads": 16,
   "timing": "4 rounds discard1; captured external event nodes measure only forward+commit, restore occurs before the timing event in each graph.",
   "native_candidate_sources": {
-    "apply_ring_retention_candidate.py": "88d49e9028c5c8bb12a78a462a9de9e45b1e19dfe9efffa51b0453e31073eaaa",
+    "apply_ring_retention_candidate.py": "a8da59e2eeb6a4930282d9e39088c4b555bb294cae2417b78b3002cfa3bc008e",
     "ring_host_journal.inc": "231a6d1580b2a264bf764ce50353e1bb5fa6e78d520d239549db56d7dfdd046d",
     "ring_retention_native_tests.inc": "bca7bef9f2425238d025fbb0a63878aa77cdeabacd8072b081e66d53059ca1d1",
-    "prepare_native_mini_candidate.py": "90e93b2bc5a2f509276a0c43809e37621111d41de00acfcb24e0e883ae696bf7",
+    "prepare_native_mini_candidate.py": "6d2375cc1a7599353304cf9f498712d5f871ecc3ffe26dc68cc87ec048d20e9a",
     "export_real_mini_pair.py": "4c9bb5342d4547fff34034ad0ccb9e652d81aee1dad1e993d48c4d19c6fac87e",
     "run_real_mini_four_arms.py": "fcda5bcbd266790421ca0b432d555dfa84b46c251db971b6ad0cc932f73e4ac7",
     "run_real_mini_controller.py": "1cb489024c5957673a15dc72825832e137f2c728f1f1a9a0f3596e7874611c6e",
-    "probe_ring_journal.py": "20e908951db4b195d476201f037145b073a5786285b4d1517648f7cdb9b02373"
+    "probe_ring_journal.py": "20e908951db4b195d476201f037145b073a5786285b4d1517648f7cdb9b02373",
+    "repair_optional_side_bindings.py": "158a73ce33df6ecff66b8616704b13fb30254e14ca2de6ed7d9c2e5a0eb28f06",
+    "recover_native_side_binding.py": "1f0158f89951ea7340599eee93b913dafc84f867b5726d894f83255444d6a17e",
+    "ring_optional_side_binding_tests.inc": "6f8006a89b80d99a437dde340b1294698a7f57a5c32e81cbf21500816aac02dc"
   }
 }

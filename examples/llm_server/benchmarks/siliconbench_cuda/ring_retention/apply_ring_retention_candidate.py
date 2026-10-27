@@ -112,7 +112,9 @@ def patch_native(p):
     t=once(t,'static_cast<int64_t>(layer.policy.window) + *cfg.max_write - 1);',
         'static_cast<int64_t>(layer.policy.window) + (cfg.split_ring_history ? 0 : *cfg.max_write - 1));')
     # Full-cache clone remains original; the ring is restored from the undo archive.
-    t=once(t,'      const cache::LayerGeometry& layer = geometry_.layers[index];\n      const size_t slot', '      const cache::LayerGeometry& layer = geometry_.layers[index];\n      if (cfg_.split_ring_history && is_ring(layer) && !copy_current_ring) continue;\n      const size_t slot')
+    copy_start=t.index('Error copy_column(int from, int to, int keep)')
+    copy_body=once(t[copy_start:],'      const cache::LayerGeometry& layer = geometry_.layers[index];\n      const size_t slot', '      const cache::LayerGeometry& layer = geometry_.layers[index];\n      if (cfg_.split_ring_history && is_ring(layer) && !copy_current_ring) continue;\n      const size_t slot')
+    t=t[:copy_start]+copy_body
     t=once(t,'Error copy_column(int from, int to, int keep)', 'Error copy_column(int from, int to, int keep, bool copy_current_ring = false)')
     insertion='''  bool previous_step_prefill_ = false;
   uint64_t allocator_phase_trims_ = 0;
@@ -137,6 +139,8 @@ def patch_native(p):
   return std::make_shared<CudaBatchedSequenceCache>(''')
     s=before+t+after;s=once(s,'#include <cstring>','#include <cstring>\n#include <cstdlib>')
     (p/n).write_text(s)
+    from repair_optional_side_bindings import patch
+    patch(p)
 
 
 def patch_python(p):
@@ -218,7 +222,8 @@ def main():
         shutil.copy2(package/'ring_retention_native_tests.inc',dst)
         test=args.output/'backends/cuda/runtime/test/test_cuda_kv_cache.cpp'
         ts=test.read_text();assert '#include "ring_retention_native_tests.inc"' not in ts
-        test.write_text(ts+'\n#include "ring_retention_native_tests.inc"\n')
+        shutil.copy2(package/'ring_optional_side_binding_tests.inc',args.output/'backends/cuda/runtime/test/ring_optional_side_binding_tests.inc')
+        test.write_text(ts+'\n#include "ring_retention_native_tests.inc"\n#include "ring_optional_side_binding_tests.inc"\n')
     assert before=={n:sha(args.baseline/n) for n in baseline_files}
     (args.output/'ring-retention-source-audit.json').write_text(json.dumps(dict(
         baseline=str(args.baseline),candidate=str(args.output),baseline_SHA256=before,
