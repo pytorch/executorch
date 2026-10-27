@@ -12,6 +12,7 @@ import os
 import tempfile
 import unittest
 from typing import Callable, List, Optional, Tuple
+from unittest import mock
 
 import executorch.exir as exir
 
@@ -36,6 +37,11 @@ from executorch.exir import (
     memory,
     to_edge,
     to_edge_transform_and_lower,
+)
+from executorch.exir._program_utils import (
+    _disambiguate_mutation_outputs,
+    _get_updated_graph_signature,
+    _MUTATION_OUTPUT_CLONE_OP,
 )
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -80,24 +86,38 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
-from executorch.exir.program._program import lift_constant_tensor_pass
+from executorch.exir.program._program import (
+    _transform,
+    _transform_with_pass_manager,
+    lift_constant_tensor_pass,
+)
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.sym_util import eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
 from executorch.exir.tests.models import FeedForwardBlock, MLP, Mul
+from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from functorch.experimental import control_flow
 
 from torch import nn
+from torch._export.verifier import Verifier
 from torch._prims_common import ELEMENTWISE_TYPE_PROMOTION_KIND
 
 # Import passes
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import export
-from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
+from torch.export.graph_signature import (
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputKind,
+    OutputSpec,
+    TensorArgument,
+)
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torch.library import impl, Library
 from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
@@ -301,6 +321,419 @@ class TestPasses(unittest.TestCase):
         for node in new_graph_module.graph.nodes:
             if node.op == "call_function":
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
+
+    def test_remove_noop_folds_repeated_user_outputs(self) -> None:
+        for target in (torch.ops.aten.to.dtype, torch.ops.aten.slice_copy.Tensor):
+            for both_outputs in (False, True):
+                with self.subTest(target=target, both_outputs=both_outputs):
+                    graph = torch.fx.Graph()
+                    value = torch.ones(2, 3)
+                    x = graph.placeholder("x")
+                    x.meta["val"] = value
+                    args = (
+                        (x, torch.float32)
+                        if target == torch.ops.aten.to.dtype
+                        else (x, 0, 0, 2)
+                    )
+                    noop = graph.call_function(target, args)
+                    noop.meta["val"] = value
+                    graph.output((x, noop) if both_outputs else (noop,))
+                    module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+                    result = RemoveNoopPass()(module)
+                    self.assertIsNotNone(result)
+                    outputs = module.graph.output_node().all_input_nodes
+                    self.assertEqual(len(outputs), 1)
+                    self.assertIs(outputs[0], x)
+                    module.recompile()
+                    for output in module(value):
+                        torch.testing.assert_close(output, value)
+
+    def test_mutation_output_repair_preserves_sharing_of_user_outputs(self) -> None:
+        for use_edge_ops, use_dim_order in (
+            (False, False),
+            (True, False),
+            (True, True),
+        ):
+            for kind in (OutputKind.BUFFER_MUTATION, OutputKind.USER_INPUT_MUTATION):
+                with self.subTest(
+                    use_edge_ops=use_edge_ops, use_dim_order=use_dim_order, kind=kind
+                ):
+                    graph = torch.fx.Graph()
+                    x = graph.placeholder("x")
+                    result = graph.call_function(torch.ops.aten.mm.default, (x, x))
+                    result.meta["val"] = torch.empty(4, 4)
+                    result.meta["stack_trace"] = "matrix multiplication"
+                    result.meta["custom_kernel_tag"] = 7
+                    result.meta["spec"] = object()
+                    result.meta["_share_alloc_with_arg_idx"] = 0
+                    graph.output((result, result, result, result, result))
+                    module = torch.fx.GraphModule(torch.nn.Module(), graph)
+                    signature = ExportGraphSignature(
+                        input_specs=[
+                            InputSpec(InputKind.USER_INPUT, TensorArgument("x"), None)
+                        ],
+                        output_specs=[
+                            OutputSpec(kind, TensorArgument(result.name), f"state_{i}")
+                            for i in range(3)
+                        ]
+                        + [
+                            OutputSpec(
+                                OutputKind.USER_OUTPUT,
+                                TensorArgument(result.name),
+                                None,
+                            )
+                            for _ in range(2)
+                        ],
+                    )
+
+                    clone_op = (
+                        (
+                            exir_ops.edge.dim_order_ops._clone_dim_order.default
+                            if use_dim_order
+                            else exir_ops.edge.aten.clone.default
+                        )
+                        if use_edge_ops
+                        else torch.ops.aten.clone.default
+                    )
+                    self.assertTrue(
+                        _disambiguate_mutation_outputs(
+                            signature,
+                            module,
+                            clone_op=clone_op,
+                        )
+                    )
+                    updated = _get_updated_graph_signature(signature, module)
+
+                    mutations = (
+                        updated.buffers_to_mutate
+                        if kind == OutputKind.BUFFER_MUTATION
+                        else updated.user_inputs_to_mutate
+                    )
+                    self.assertEqual(
+                        list(mutations.values()), [f"state_{i}" for i in range(3)]
+                    )
+                    self.assertEqual(
+                        len(
+                            graph.find_nodes(
+                                op="call_function", target=torch.ops.aten.mm.default
+                            )
+                        ),
+                        1,
+                    )
+                    outputs = graph.output_node().args[0]
+                    self.assertIs(outputs[3], result)
+                    self.assertIs(outputs[4], result)
+                    self.assertEqual(outputs[1].args, (result,))
+                    self.assertEqual(outputs[2].args, (result,))
+                    self.assertIs(outputs[1].meta["val"], result.meta["val"])
+                    self.assertEqual(
+                        outputs[1].meta["stack_trace"], "matrix multiplication"
+                    )
+                    for copy_node in outputs[1:3]:
+                        self.assertIs(copy_node.target, clone_op)
+                        for key in (
+                            "custom_kernel_tag",
+                            "spec",
+                            "_share_alloc_with_arg_idx",
+                        ):
+                            self.assertNotIn(key, copy_node.meta)
+                    values = module(torch.arange(16, dtype=torch.float32).view(4, 4))
+                    for value in values:
+                        torch.testing.assert_close(value, values[0])
+                    self.assertEqual(len({value.data_ptr() for value in values[:3]}), 3)
+                    self.assertEqual(values[3].data_ptr(), values[4].data_ptr())
+                    node_count = len(list(graph.nodes))
+                    self.assertFalse(_disambiguate_mutation_outputs(
+                        updated,
+                        module,
+                        clone_op=clone_op,
+                    ))
+                    self.assertEqual(len(list(graph.nodes)), node_count)
+
+    def test_mutation_output_repair_handles_inputs_and_attributes(self) -> None:
+        for source in ("placeholder", "get_attr"):
+            with self.subTest(source=source):
+                graph = torch.fx.Graph()
+                root = torch.nn.Module()
+                value = torch.tensor([7], dtype=torch.int32)
+                root.register_buffer("state", value)
+                node = (
+                    graph.placeholder("state")
+                    if source == "placeholder"
+                    else graph.get_attr("state")
+                )
+                node.meta["val"] = value
+                graph.output((node, node))
+                module = torch.fx.GraphModule(root, graph)
+                signature = ExportGraphSignature(
+                    input_specs=(
+                        [
+                            InputSpec(
+                                InputKind.BUFFER,
+                                TensorArgument("state"),
+                                "state",
+                                persistent=True,
+                            )
+                        ]
+                        if source == "placeholder"
+                        else []
+                    ),
+                    output_specs=[
+                        OutputSpec(
+                            OutputKind.BUFFER_MUTATION,
+                            TensorArgument(node.name),
+                            f"state_{i}",
+                        )
+                        for i in range(2)
+                    ],
+                )
+
+                _disambiguate_mutation_outputs(
+                    signature, module, clone_op=torch.ops.aten.clone.default
+                )
+                updated = _get_updated_graph_signature(signature, module)
+
+                self.assertEqual(len(graph.find_nodes(op=source)), 1)
+                self.assertEqual(len(updated.input_specs), len(signature.input_specs))
+                self.assertEqual(len(updated.buffers_to_mutate), 2)
+                outputs = graph.output_node().args[0]
+                self.assertEqual(outputs[1].meta["from_node"][0].name, node.name)
+                values = module(value) if source == "placeholder" else module()
+                torch.testing.assert_close(values[0], value)
+                torch.testing.assert_close(values[1], value)
+                self.assertNotEqual(values[0].data_ptr(), values[1].data_ptr())
+
+    def test_signature_update_does_not_copy_large_repeated_user_outputs(self) -> None:
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        graph.output((x, x))
+        module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        signature = ExportGraphSignature(
+            input_specs=[InputSpec(InputKind.USER_INPUT, TensorArgument("x"), None)],
+            output_specs=[
+                OutputSpec(OutputKind.USER_OUTPUT, TensorArgument("x"), None)
+                for _ in range(2)
+            ],
+        )
+        value = torch.ones(1, 2, 1024, 256)
+
+        updated = _get_updated_graph_signature(signature, module)
+
+        self.assertEqual(updated.user_outputs, ("x", "x"))
+        self.assertFalse(any(node.op == "call_function" for node in graph.nodes))
+        first, second = module(value)
+        self.assertEqual(first.data_ptr(), value.data_ptr())
+        self.assertEqual(second.data_ptr(), value.data_ptr())
+
+    def test_signature_update_does_not_modify_colliding_mutation_outputs(self) -> None:
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        graph.output((x, x))
+        module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        signature = ExportGraphSignature(
+            input_specs=[InputSpec(InputKind.USER_INPUT, TensorArgument("x"), None)],
+            output_specs=[
+                OutputSpec(OutputKind.BUFFER_MUTATION, TensorArgument("x"), name)
+                for name in ("first", "second")
+            ],
+        )
+        original_code = module.code
+        original_nodes = tuple(graph.nodes)
+        with mock.patch.object(module, "recompile") as recompile:
+            updated = _get_updated_graph_signature(signature, module)
+
+        recompile.assert_not_called()
+        self.assertEqual(tuple(graph.nodes), original_nodes)
+        self.assertEqual(module.code, original_code)
+        self.assertEqual(graph.output_node().args[0], (x, x))
+        self.assertEqual([spec.target for spec in updated.output_specs], ["first", "second"])
+
+    def test_signature_update_rejects_changed_output_count(self) -> None:
+        graph = torch.fx.Graph()
+        graph.output(())
+        module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        signature = ExportGraphSignature(
+            input_specs=[],
+            output_specs=[
+                OutputSpec(OutputKind.USER_OUTPUT, TensorArgument("missing"), None)
+            ],
+        )
+
+        with self.assertRaisesRegex(AssertionError, "Number of outputs changed"):
+            _get_updated_graph_signature(signature, module)
+
+    def test_mutations_in_separate_name_maps_can_share_a_result(self) -> None:
+        graph = torch.fx.Graph()
+        graph.placeholder("buffer")
+        x = graph.placeholder("x")
+        graph.output((x, x))
+        module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        signature = ExportGraphSignature(
+            input_specs=[
+                InputSpec(
+                    InputKind.BUFFER,
+                    TensorArgument("buffer"),
+                    "buffer",
+                    persistent=True,
+                ),
+                InputSpec(InputKind.USER_INPUT, TensorArgument("x"), None),
+            ],
+            output_specs=[
+                OutputSpec(OutputKind.BUFFER_MUTATION, TensorArgument("x"), "buffer"),
+                OutputSpec(OutputKind.USER_INPUT_MUTATION, TensorArgument("x"), "x"),
+            ],
+        )
+
+        self.assertFalse(
+            _disambiguate_mutation_outputs(signature, module, clone_op=None)
+        )
+        updated = _get_updated_graph_signature(signature, module)
+
+        self.assertEqual(updated.buffers_to_mutate, {"x": "buffer"})
+        self.assertEqual(updated.user_inputs_to_mutate, {"x": "x"})
+        self.assertFalse(any(node.op == "call_function" for node in graph.nodes))
+
+    def test_repeated_buffer_mutations_survive_aten_and_edge_transforms(self) -> None:
+        class StateModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("first", torch.zeros(4))
+                self.register_buffer("second", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.first.copy_(x + x)
+                self.second.copy_(x + x)
+                return x * 3
+
+        inputs = (torch.arange(4, dtype=torch.float32),)
+        program = torch.export.export(StateModel(), inputs).run_decompositions({})
+        aten = _transform(program, CSEPass())
+        for use_dim_order in (False, True):
+            edge = to_edge(
+                copy.deepcopy(aten),
+                compile_config=EdgeCompileConfig(_skip_dim_order=not use_dim_order),
+            )
+            edge = edge.transform([CSEPass()])
+            for stage in (aten, edge.exported_program()):
+                with self.subTest(dialect=stage.dialect, use_dim_order=use_dim_order):
+                    stage.validate()
+                    self.assertCountEqual(
+                        stage.graph_signature.buffers_to_mutate.values(),
+                        ["first", "second"],
+                    )
+                    torch.testing.assert_close(stage.module()(*inputs), inputs[0] * 3)
+                    for name in ("first", "second"):
+                        torch.testing.assert_close(
+                            stage.state_dict[name], inputs[0] * 2
+                        )
+            executable = edge.to_executorch()
+            self.assertGreater(len(executable.buffer), 0)
+
+    def test_mutation_output_repair_with_custom_verifier(self) -> None:
+        class ShareStateOutputsPass(ExportPass):
+            def call(self, gm: torch.fx.GraphModule) -> PassResult:
+                output = gm.graph.output_node()
+                first, _, user_output = output.args[0]
+                output.args = ((first, first, user_output),)
+                gm.graph.eliminate_dead_code()
+                return PassResult(gm, True)
+
+        class StateModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("first", torch.zeros(4))
+                self.register_buffer("second", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.first.copy_(x + x)
+                self.second.copy_(x + x)
+                return x * 3
+
+        inputs = (torch.arange(4, dtype=torch.float32),)
+        program = torch.export.export(StateModel(), inputs).run_decompositions({})
+        for use_dim_order in (False, True):
+            config = EdgeCompileConfig(_skip_dim_order=not use_dim_order)
+            standard_verifier = EXIREdgeDialectVerifier(edge_compile_config=config)
+
+            class CustomEdgeVerifier(Verifier):
+                dialect = "EDGE"
+
+                def allowed_op_types(self):
+                    return standard_verifier.allowed_op_types()
+
+                def allowed_getattr_types(self):
+                    return standard_verifier.allowed_getattr_types()
+
+                def check_valid_op(self, op):
+                    standard_verifier.check_valid_op(op)
+
+                def check_additional(self, gm: torch.fx.GraphModule) -> None:
+                    standard_verifier.check_additional(gm)
+
+            self.assertNotIn("use_dim_order", vars(CustomEdgeVerifier()))
+            edge = to_edge(copy.deepcopy(program), compile_config=config)
+            expected_clone = (
+                exir_ops.edge.dim_order_ops._clone_dim_order.default
+                if use_dim_order
+                else exir_ops.edge.aten.clone.default
+            )
+            unconfigured = copy.deepcopy(edge.exported_program())
+            unconfigured.graph_module.meta.pop(_MUTATION_OUTPUT_CLONE_OP)
+            with self.assertRaisesRegex(RuntimeError, "explicit clone operator"):
+                _transform_with_pass_manager(
+                    unconfigured,
+                    GraphModulePassManager([ShareStateOutputsPass()]),
+                    [CustomEdgeVerifier],
+                )
+            for graph_module_only, explicit_clone in itertools.product(
+                (False, True), (False, True)
+            ):
+                with self.subTest(
+                    use_dim_order=use_dim_order,
+                    graph_module_only=graph_module_only,
+                    explicit_clone=explicit_clone,
+                ):
+                    source = copy.deepcopy(edge.exported_program())
+                    if explicit_clone:
+                        source.graph_module.meta.pop(_MUTATION_OUTPUT_CLONE_OP)
+                    clone_op = expected_clone if explicit_clone else None
+                    if graph_module_only:
+                        transformed = _transform_with_pass_manager(
+                            source,
+                            GraphModulePassManager([ShareStateOutputsPass()]),
+                            [CustomEdgeVerifier],
+                            mutation_output_clone_op=clone_op,
+                        )
+                    else:
+                        transformed = _transform(
+                            source,
+                            ShareStateOutputsPass(),
+                            override_verifiers=[CustomEdgeVerifier],
+                            mutation_output_clone_op=clone_op,
+                        )
+                    transformed.validate()
+                    self.assertIs(transformed.verifier, CustomEdgeVerifier)
+                    self.assertEqual(
+                        transformed.graph_module.meta[_MUTATION_OUTPUT_CLONE_OP],
+                        "edge_dim_order" if use_dim_order else "edge",
+                    )
+                    self.assertCountEqual(
+                        transformed.graph_signature.buffers_to_mutate.values(),
+                        ["first", "second"],
+                    )
+                    self.assertTrue(
+                        transformed.graph.find_nodes(
+                            op="call_function", target=expected_clone
+                        )
+                    )
+                    torch.testing.assert_close(
+                        transformed.module()(*inputs), inputs[0] * 3
+                    )
+                    for name in ("first", "second"):
+                        torch.testing.assert_close(
+                            transformed.state_dict[name], inputs[0] * 2
+                        )
 
     def test_redundant_slice_copy_removal(self) -> None:
         class FooWithNoSlice(torch.nn.Module):

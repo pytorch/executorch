@@ -11,7 +11,7 @@ import io
 import logging
 import os
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
 import torch._export
@@ -30,6 +30,7 @@ from executorch.exir.backend.backend_api import (
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
@@ -132,8 +133,11 @@ transform_op_to_aten_op = {}
 
 
 from executorch.exir._program_utils import (  # noqa: E402
+    _disambiguate_mutation_outputs,
+    _get_mutation_output_clone_op,
     _get_updated_graph_signature,
     _get_updated_range_constraints,
+    _set_mutation_output_clone_op,
 )
 
 
@@ -141,6 +145,7 @@ def _transform(
     self,
     *passes: PassType,
     override_verifiers: None | list[Type[Verifier]] = None,
+    mutation_output_clone_op: Callable[..., torch.Tensor] | None = None,
 ) -> "ExportedProgram":
     """
     Transforms the program according to the provided passes.
@@ -150,6 +155,8 @@ def _transform(
         *passes: A sequence of passes to apply to the program
         override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
             This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+        mutation_output_clone_op: Clone operator for the transformed graph's dialect and layout mode.
+            Defaults to ATen cloning or the contract recorded during Edge conversion.
 
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
@@ -160,7 +167,10 @@ def _transform(
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
     return _transform_with_pass_manager(
-        self, ExportedProgramPassManager(list(passes)), override_verifiers
+        self,
+        ExportedProgramPassManager(list(passes)),
+        override_verifiers,
+        mutation_output_clone_op=mutation_output_clone_op,
     )
 
 
@@ -168,6 +178,8 @@ def _transform_with_pass_manager(
     self: ExportedProgram,
     pass_manager: Union[ExportedProgramPassManager, GraphModulePassManager],
     override_verifiers: None | list[Type[Verifier]] = None,
+    *,
+    mutation_output_clone_op: Callable[..., torch.Tensor] | None = None,
 ) -> "ExportedProgram":
     """
     Transforms the program using the provided pass_manager.
@@ -184,7 +196,11 @@ def _transform_with_pass_manager(
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
     if isinstance(pass_manager, ExportedProgramPassManager):
-        res = pass_manager(self, override_verifiers)
+        res = pass_manager(
+            self,
+            override_verifiers,
+            mutation_output_clone_op=mutation_output_clone_op,
+        )
         if not res.modified:
             return self
         return res.exported_program
@@ -193,7 +209,10 @@ def _transform_with_pass_manager(
         if not res.modified:
             return self
         return _update_exported_program_graph_module(
-            self, res.graph_module, override_verifiers
+            self,
+            res.graph_module,
+            override_verifiers,
+            mutation_output_clone_op=mutation_output_clone_op,
         )
 
 
@@ -201,12 +220,19 @@ def _update_exported_program_graph_module(
     exported_program: ExportedProgram,
     gm: torch.fx.GraphModule,
     override_verifiers: None | list[Type[Verifier]] = None,
+    *,
+    mutation_output_clone_op: Callable[..., torch.Tensor] | None = None,
 ) -> "ExportedProgram":
+    clone_op = _get_mutation_output_clone_op(exported_program, mutation_output_clone_op)
+    _disambiguate_mutation_outputs(
+        exported_program.graph_signature, gm, clone_op=clone_op
+    )
     transformed_ep = ExportedProgram(
         root=gm,
         graph=gm.graph,
         graph_signature=_get_updated_graph_signature(
-            exported_program.graph_signature, gm
+            exported_program.graph_signature,
+            gm,
         ),
         state_dict=exported_program.state_dict,
         range_constraints=_get_updated_range_constraints(
@@ -219,6 +245,7 @@ def _update_exported_program_graph_module(
     )
     transformed_ep.graph_module.meta.update(exported_program.graph_module.meta)
     transformed_ep.graph_module.meta.update(gm.meta)
+    _set_mutation_output_clone_op(transformed_ep.graph_module, clone_op)
     return transformed_ep
 
 
@@ -707,11 +734,21 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
 
+    clone_op = (
+        exir_ops.edge.aten.clone.default
+        if config._skip_dim_order
+        else exir_ops.edge.dim_order_ops._clone_dim_order.default
+    )
+    _disambiguate_mutation_outputs(
+        new_ep.exported_program.graph_signature, new_gm, clone_op=clone_op
+    )
+    _set_mutation_output_clone_op(new_gm, clone_op)
     new_ep.exported_program = ExportedProgram(
         root=new_gm,
         graph=new_gm.graph,
         graph_signature=_get_updated_graph_signature(
-            new_ep.exported_program.graph_signature, new_gm
+            new_ep.exported_program.graph_signature,
+            new_gm,
         ),
         state_dict=new_ep.exported_program.state_dict,
         range_constraints=new_ep.exported_program.range_constraints,
@@ -851,10 +888,20 @@ def _generate_edge_program(
         assert gm_res is not None
         gm = gm_res.graph_module
 
+    clone_op = (
+        exir_ops.edge.aten.clone.default
+        if config._skip_dim_order
+        else exir_ops.edge.dim_order_ops._clone_dim_order.default
+    )
+    _disambiguate_mutation_outputs(program.graph_signature, gm, clone_op=clone_op)
+    _set_mutation_output_clone_op(gm, clone_op)
     edge_program = ExportedProgram(
         root=gm,
         graph=gm.graph,
-        graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
+        graph_signature=_get_updated_graph_signature(
+            program.graph_signature,
+            gm,
+        ),
         state_dict=program.state_dict,
         range_constraints=program.range_constraints,
         module_call_graph=program.module_call_graph,
@@ -1618,6 +1665,11 @@ class EdgeProgramManager:
         """
 
         compile_config = compile_config or self.compile_config
+        clone_op = (
+            exir_ops.edge.aten.clone.default
+            if compile_config._skip_dim_order
+            else exir_ops.edge.dim_order_ops._clone_dim_order.default
+        )
         new_programs: Dict[str, ExportedProgram] = {}
 
         # Cast passes parameter upfront.
@@ -1646,11 +1698,17 @@ class EdgeProgramManager:
 
             # Depending on the passes parameter, call the corresponding transform function.
             if passes_seq is not None:
-                new_programs[name] = _transform(program, *passes_seq)
+                new_programs[name] = _transform(
+                    program, *passes_seq, mutation_output_clone_op=clone_op
+                )
             elif passes_dict is not None:
-                new_programs[name] = _transform(program, *passes_dict[name])
+                new_programs[name] = _transform(
+                    program, *passes_dict[name], mutation_output_clone_op=clone_op
+                )
             elif pass_manager is not None:
-                new_programs[name] = _transform_with_pass_manager(program, pass_manager)
+                new_programs[name] = _transform_with_pass_manager(
+                    program, pass_manager, mutation_output_clone_op=clone_op
+                )
 
             # Verify the correctness of model graph after each transformation.
             EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
