@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
+#include <limits>
 
 using namespace ::testing;
 using executorch::aten::Scalar;
@@ -44,6 +45,27 @@ TEST_F(OpFmodTest, SmokeTest) {
   Tensor out_expected = tfDouble.full({2, 2}, 2.0);
   op_fmod_tensor_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST_F(OpFmodTest, Int64KeepsFullPrecision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor self = tf.make(
+      {4},
+      {(int64_t{1} << 62) + 3,
+       -((int64_t{1} << 62) + 3),
+       9007199254740993,
+       std::numeric_limits<int64_t>::min()});
+  Tensor out = tf.zeros({4});
+
+  op_fmod_tensor_out(self, tf.make({4}, {10, 10, 2, -1}), out);
+  EXPECT_TENSOR_EQ(out, tf.make({4}, {7, -7, 1, 0}));
+
+  op_fmod_scalar_out(self, 10, out);
+  EXPECT_TENSOR_EQ(out, tf.make({4}, {7, -7, 3, -8}));
+
+  op_fmod_scalar_out(self, -1, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros({4}));
 }
 
 TEST_F(OpFmodTest, ScalarSmokeTest) {

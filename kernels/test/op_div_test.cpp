@@ -590,6 +590,28 @@ TEST_F(OpDivScalarOutTest, SanityCheckFloatScalar) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
 }
 
+TEST_F(OpDivOutTest, TruncModeKeepsInt64Precision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor a = tf.make(
+      {3},
+      {(int64_t{1} << 62) + 3, -((int64_t{1} << 62) + 3), 9007199254740993});
+  Tensor b = tf.make({3}, {3, 3, 1});
+  Tensor out = tf.zeros({3});
+
+  torch::executor::aten::div_outf(context_, a, b, "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 9007199254740993}));
+
+  torch::executor::aten::div_outf(context_, a, Scalar(3), "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 3002399751580331}));
+}
+
 TEST_F(OpDivScalarOutTest, OptimizedSanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
