@@ -54,7 +54,7 @@ def patch_native(p):
     t=once(t,'    const int length = source->second.plan.length();',
         '    if (finish_ring_journal() != Error::Ok) return std::nullopt;\n    const int length = source->second.plan.length();')
     t=once(t,'    if (copy_column(source->second.column, seqs_.at(*id).column, keep) !=',
-        '    if (cfg_.split_ring_history) ring_archives_[*id] = ring_archives_.at(src);\n    if (restore_ring_history(*id, seqs_.at(*id).column, keep) != Error::Ok ||\n        copy_column(source->second.column, seqs_.at(*id).column, keep) !=')
+        '    if (cfg_.split_ring_history) ring_archives_[*id] = ring_archives_.at(src);\n    if ((keep != length && restore_ring_history(*id, seqs_.at(*id).column, keep) != Error::Ok) ||\n        copy_column(source->second.column, seqs_.at(*id).column, keep, keep == length) !=')
     t=once(t,'    return seqs_.erase(seq_id) > 0;',
         '    if (finish_ring_journal() != Error::Ok) return false;\n    ring_archives_.erase(seq_id);\n    return seqs_.erase(seq_id) > 0;')
     t=once(t,'    return it != seqs_.end() && it->second.plan.rewind(position);',
@@ -112,7 +112,8 @@ def patch_native(p):
     t=once(t,'static_cast<int64_t>(layer.policy.window) + *cfg.max_write - 1);',
         'static_cast<int64_t>(layer.policy.window) + (cfg.split_ring_history ? 0 : *cfg.max_write - 1));')
     # Full-cache clone remains original; the ring is restored from the undo archive.
-    t=once(t,'      if (is_ring(layer)) {','      if (is_ring(layer)) {\n        if (cfg_.split_ring_history) continue;')
+    t=once(t,'      if (is_ring(layer)) {','      if (is_ring(layer)) {\n        if (cfg_.split_ring_history && !copy_current_ring) continue;')
+    t=once(t,'Error copy_column(int from, int to, int keep)', 'Error copy_column(int from, int to, int keep, bool copy_current_ring = false)')
     insertion='''  bool previous_step_prefill_ = false;
   uint64_t allocator_phase_trims_ = 0;
   static int64_t allocator_spare_bytes() {
@@ -189,20 +190,35 @@ def patch_python(p):
         'constant_methods["get_offgraph_kv_sequence_info_abi"] = 4 if os.environ.get("ET_CUDA_SPLIT_RING_HISTORY", "0") == "1" else (3 if independent_capacity else 2)')
     if '\nimport os\n' not in s:s=once(s,'import json','import json\nimport os')
     (p/n).write_text(s)
+    gemma=p/'examples/models/gemma4_31b/export_batching.py'
+    if gemma.exists():
+        gs=gemma.read_text()
+        gs=once(gs,'metadata["get_offgraph_kv_sequence_info_abi"] = 3 if independent_capacity else 2',
+            'metadata["get_offgraph_kv_sequence_info_abi"] = 4 if os.environ.get("ET_CUDA_SPLIT_RING_HISTORY", "0") == "1" else (3 if independent_capacity else 2)')
+        if '\nimport os\n' not in gs:gs=once(gs,'import json','import json\nimport os')
+        gemma.write_text(gs)
 
 
 def main():
     a=argparse.ArgumentParser(description=__doc__)
     a.add_argument('--baseline',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
+    a.add_argument('--role',choices=['native','export','combined'],default='combined')
     args=a.parse_args();assert not args.output.exists();assert args.output.resolve()!=args.baseline.resolve()
     package=Path(__file__).parent
     baseline_files=['extension/llm/cache/cache.h','backends/cuda/batching/cuda_executor.cpp','backends/cuda/runtime/cuda_kv_cache.cpp','backends/cuda/runtime/cuda_kv_pool.cpp','backends/cuda/runtime/cuda_kv_pool.h','backends/cuda/passes/lower_offgraph_kv.py','examples/models/muse-glimmer/export/export_solo.py']
     before={n:sha(args.baseline/n) for n in baseline_files}
-    shutil.copytree(args.baseline,args.output,ignore=shutil.ignore_patterns('.git','cmake-out','build','__pycache__','.pytest_cache','*.o','*.a','*.so'))
-    patch_native(args.output);patch_python(args.output)
+    shutil.copytree(args.baseline,args.output,symlinks=True,ignore=shutil.ignore_patterns('.git','cmake-out','build','__pycache__','.pytest_cache','*.o','*.a','*.so'))
+    if args.role in ('native','combined'):patch_native(args.output)
+    if args.role in ('export','combined'):patch_python(args.output)
     for name,dest in [('two_source_ring.py','backends/cuda/triton/kernels/two_source_ring.py'),('ring_host_journal.inc','backends/cuda/runtime/ring_host_journal.inc')]:
         (args.output/dest).parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(package/name,args.output/dest)
+    if args.role in ('native','combined') and (args.output/'backends/cuda/runtime/test/test_cuda_kv_cache.cpp').exists():
+        dst=args.output/'backends/cuda/runtime/test/ring_retention_native_tests.inc'
+        shutil.copy2(package/'ring_retention_native_tests.inc',dst)
+        test=args.output/'backends/cuda/runtime/test/test_cuda_kv_cache.cpp'
+        ts=test.read_text();assert '#include "ring_retention_native_tests.inc"' not in ts
+        test.write_text(ts+'\n#include "ring_retention_native_tests.inc"\n')
     assert before=={n:sha(args.baseline/n) for n in baseline_files}
     (args.output/'ring-retention-source-audit.json').write_text(json.dumps(dict(
         baseline=str(args.baseline),candidate=str(args.output),baseline_SHA256=before,

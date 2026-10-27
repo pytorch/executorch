@@ -12,7 +12,11 @@ struct RingRun {
 std::vector<RingRun> ring_runs_;
 std::vector<RingRun> journal_runs_;
 std::vector<size_t> ring_layers_;
-std::map<int32_t, std::vector<uint8_t>> ring_archives_;
+static constexpr int kHostRingPageRows = 64;
+using HostRingPage = std::shared_ptr<std::vector<uint8_t>>;
+// Prefix clones share immutable host pages. A write copies just the affected
+// page, rather than copying a window+max_write archive at every prefix hit.
+std::map<int32_t, std::vector<HostRingPage>> ring_archives_;
 void* ring_host_step_ = nullptr;
 cudaEvent_t ring_copy_done_ = nullptr;
 bool ring_copy_pending_ = false;
@@ -54,20 +58,27 @@ Error finish_ring_journal() {
   ET_CHECK_OR_RETURN_ERROR(cudaEventSynchronize(ring_copy_done_) == cudaSuccess,
       Internal, "split ring journal transfer failed");
   const auto* step = static_cast<const uint8_t*>(ring_host_step_);
-  const size_t plane_bytes = static_cast<size_t>(ring_archive_rows_) * ring_row_bytes_;
+  const int64_t pages = (ring_archive_rows_ + kHostRingPageRows - 1) / kHostRingPageRows;
+  const size_t page_plane_bytes = kHostRingPageRows * ring_row_bytes_;
   for (const auto& run : journal_runs_) {
     auto& archive = ring_archives_[run.owner];
-    if (archive.empty()) archive.resize(ring_layers_.size() * 2 * plane_bytes);
-    for (size_t plane = 0; plane < ring_layers_.size() * 2; ++plane) {
-      int done = 0;
-      while (done < run.length) {
-        const int64_t dst = (run.absolute_start + done) % ring_archive_rows_;
-        const int n = std::min<int64_t>(run.length - done, ring_archive_rows_ - dst);
-        std::memcpy(archive.data() + plane * plane_bytes + dst * ring_row_bytes_,
+    if (archive.empty()) archive.resize(pages);
+    int done = 0;
+    while (done < run.length) {
+      const int64_t dst = (run.absolute_start + done) % ring_archive_rows_;
+      const int64_t block = dst / kHostRingPageRows;
+      const int64_t row = dst % kHostRingPageRows;
+      const int n = std::min<int64_t>(run.length - done,
+          std::min(ring_archive_rows_ - dst, kHostRingPageRows - row));
+      auto& page = archive[block];
+      if (!page) page = std::make_shared<std::vector<uint8_t>>(ring_layers_.size() * 2 * page_plane_bytes);
+      else if (!page.unique()) page = std::make_shared<std::vector<uint8_t>>(*page);
+      for (size_t plane = 0; plane < ring_layers_.size() * 2; ++plane) {
+        std::memcpy(page->data() + plane * page_plane_bytes + row * ring_row_bytes_,
             step + (plane * ring_journal_tokens_ + run.packed_start + done) * ring_row_bytes_,
             static_cast<size_t>(n) * ring_row_bytes_);
-        done += n;
       }
+      done += n;
     }
   }
   journal_runs_.clear();
@@ -98,16 +109,19 @@ Error restore_ring_history(int32_t owner, int column, int keep) {
   auto it = ring_archives_.find(owner);
   ET_CHECK_OR_RETURN_ERROR(it != ring_archives_.end(), InvalidState, "split ring rewind archive missing");
   const int first = std::max<int64_t>(0, keep - ring_window_);
-  const size_t plane_bytes = static_cast<size_t>(ring_archive_rows_) * ring_row_bytes_;
+  const size_t page_plane_bytes = kHostRingPageRows * ring_row_bytes_;
   for (size_t r = 0; r < ring_layers_.size(); ++r) {
     for (int v = 0; v < 2; ++v) {
       int pos = first;
       while (pos < keep) {
         const int64_t hr = pos % ring_archive_rows_;
         const int64_t dr = pos % ring_window_;
+        const int64_t page_row = hr % kHostRingPageRows;
         const int n = std::min<int64_t>(keep - pos,
-            std::min(ring_archive_rows_ - hr, ring_window_ - dr));
-        const auto* host = it->second.data() + (r * 2 + v) * plane_bytes + hr * ring_row_bytes_;
+            std::min(kHostRingPageRows - page_row, std::min(ring_archive_rows_ - hr, ring_window_ - dr)));
+        const auto& page = it->second.at(hr / kHostRingPageRows);
+        ET_CHECK_OR_RETURN_ERROR(page != nullptr, InvalidState, "split ring rewind host page missing");
+        const auto* host = page->data() + (r * 2 + v) * page_plane_bytes + page_row * ring_row_bytes_;
         auto* device = static_cast<uint8_t*>(pool_.layer_data(ring_layers_[r], v != 0)) +
             (dr * columns_ + column) * ring_row_bytes_;
         ET_CHECK_OR_RETURN_ERROR(cudaMemcpy2DAsync(device, columns_ * ring_row_bytes_,
@@ -118,6 +132,10 @@ Error restore_ring_history(int32_t owner, int column, int keep) {
       }
     }
   }
+  // Pageable undo pages may be freed or copied on a later owner operation.
+  // Complete this infrequent restore before releasing their host lifetime.
+  ET_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(pool_.stream()) == cudaSuccess,
+      Internal, "cannot complete split ring rewind restore");
   return Error::Ok;
 }
 

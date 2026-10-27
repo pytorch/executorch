@@ -11,7 +11,9 @@
   "Gemma_ring_qheads": 16,
   "timing": "4 rounds discard1; captured external event nodes measure only forward+commit, restore occurs before the timing event in each graph.",
   "native_candidate_sources": {
-    "apply_ring_retention_candidate.py": "c6c3159abfbc5f19f7ebde4f3b43d5ddb03690a84648d194d56d69c10d4aed1d",
-    "ring_host_journal.inc": "0f46ef5cd35f465212c17d66070cdddd1f56ea97217317291d7ed97c911d4956"
+    "apply_ring_retention_candidate.py": "b16798fec38db723305877a1cfcb9ad22906b35af452c8319af3768b231b48b0",
+    "ring_host_journal.inc": "231a6d1580b2a264bf764ce50353e1bb5fa6e78d520d239549db56d7dfdd046d",
+    "ring_retention_native_tests.inc": "da7beceb54f965337cbd40c0c96ce40a5aa6055c87ef872ebe52c9cc82e24580",
+    "prepare_native_mini_candidate.py": "80610c4674a26fe0c968b4631eebcae13898bd5cc7cb565471568bbd8eeb821c"
   }
 }
