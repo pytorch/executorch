@@ -50,11 +50,14 @@ class BookmarkLock final {
 
 // Each acquisition opens an independent descriptor; the backend never removes
 // lock files. With create=false, missing roots or entries return a null lock.
+// Existing entries may require creating coordination files, so the root must
+// be writable even with create=false.
 runtime::Result<std::unique_ptr<BookmarkLock>>
 lock_bookmark(NSString* root, NSString* key, bool create = true);
 // Missing is nil. Empty, oversized, inaccessible or nonregular files fail
 // closed.
 runtime::Result<NSData*> read_bookmark(const BookmarkLock& lock);
+// A staging-only lock has no bookmark directory; writes return InvalidArgument.
 runtime::Error write_bookmark(const BookmarkLock& lock, NSData* data);
 // Prepared only for cold loads; source preparation appends key/bundle.
 runtime::Result<NSString*> prepare_bookmark_staging(const BookmarkLock& lock);

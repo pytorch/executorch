@@ -6,12 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <chrono>
 #include <fcntl.h>
-#include <future>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <chrono>
+#include <future>
+#include <thread>
 #include "coreai_bookmark_fixture.h"
+#include "coreai_fault_scope.h"
 #include "coreai_filesystem_fixture.h"
 #include "coreai_manifest_fixture.h"
 #include "coreai_storage.h"
@@ -22,6 +24,38 @@ using namespace executorch::backends::coreai::testing;
 
 namespace {
 constexpr size_t kMiB = 1024 * 1024;
+constexpr auto kWaitTimeout = std::chrono::seconds(5);
+
+struct BookmarkWaiter {
+  std::future<void> attempting;
+  std::future<Result<std::unique_ptr<BookmarkLock>>> result;
+};
+
+BookmarkWaiter
+start_bookmark_waiter(NSString* path, NSString* key, bool create = true) {
+  std::promise<void> attempting;
+  std::promise<Result<std::unique_ptr<BookmarkLock>>> result;
+  BookmarkWaiter waiter{attempting.get_future(), result.get_future()};
+  // Promise-backed futures cannot block teardown if acquisition stalls.
+  std::thread([path,
+               key,
+               create,
+               attempting = std::move(attempting),
+               result = std::move(result)]() mutable {
+    @autoreleasepool {
+      StorageFaultScope scope(StorageOperation::BeforeBookmarkLock);
+      scope.armed = false;
+      auto* signal = &attempting;
+      scope.observe = ^(StorageOperation operation) {
+        if (operation == StorageOperation::BeforeBookmarkLock) {
+          signal->set_value();
+        }
+      };
+      result.set_value(lock_bookmark(path, key, create));
+    }
+  }).detach();
+  return waiter;
+}
 
 class CoreAIBookmarkIdentityTest : public ::testing::Test {
  protected:
@@ -40,10 +74,11 @@ class CoreAIBookmarkIdentityTest : public ::testing::Test {
 
 class CoreAIBookmarkPathTest : public CoreAIBookmarkIdentityTest {
  protected:
-  BookmarkDirectory root;
+  TestDirectory root;
   void SetUp() override {
     CoreAIBookmarkIdentityTest::SetUp();
-    if (HasFatalFailure()) return;
+    if (HasFatalFailure())
+      return;
     ASSERT_NE(root.url, nil);
   }
   NSURL* lock_url() {
@@ -58,7 +93,8 @@ class CoreAIBookmarkRawTest : public CoreAIBookmarkPathTest {
   NSURL* url = nil;
   void SetUp() override {
     CoreAIBookmarkPathTest::SetUp();
-    if (HasFatalFailure()) return;
+    if (HasFatalFailure())
+      return;
     auto result = lock_bookmark(root.url.path, key);
     ASSERT_TRUE(result.ok());
     locked = std::move(result.get());
@@ -67,11 +103,15 @@ class CoreAIBookmarkRawTest : public CoreAIBookmarkPathTest {
   }
 };
 
-::testing::AssertionResult bookmark_bytes_equal(const BookmarkLock& lock, NSData* expected) {
+::testing::AssertionResult bookmark_bytes_equal(
+    const BookmarkLock& lock,
+    NSData* expected) {
   auto result = read_bookmark(lock);
   if (!result.ok())
-    return ::testing::AssertionFailure() << "Bookmark read error " << int(result.error());
-  if (expected == nil ? result.get() != nil : ![result.get() isEqual:expected]) {
+    return ::testing::AssertionFailure()
+        << "Bookmark read error " << int(result.error());
+  if (expected == nil ? result.get() != nil
+                      : ![result.get() isEqual:expected]) {
     return ::testing::AssertionFailure() << "Bookmark bytes differ";
   }
   return ::testing::AssertionSuccess();
@@ -79,10 +119,15 @@ class CoreAIBookmarkRawTest : public CoreAIBookmarkPathTest {
 
 ::testing::AssertionResult no_temporary_bookmarks(NSURL* root) {
   NSURL* directory = [root URLByAppendingPathComponent:@"bookmarks"];
-  FileDescriptor fd(open(directory.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-  if (fd.get() < 0) return ::testing::AssertionFailure() << "open bookmark directory: " << errno;
+  FileDescriptor fd(open(
+      directory.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  if (fd.get() < 0)
+    return ::testing::AssertionFailure()
+        << "open bookmark directory: " << errno;
   auto children = storage_children(fd.get());
-  if (!children.ok()) return ::testing::AssertionFailure() << "Cannot enumerate bookmark directory";
+  if (!children.ok())
+    return ::testing::AssertionFailure()
+        << "Cannot enumerate bookmark directory";
   for (NSString* name in children.get()) {
     if ([name hasPrefix:@".tmp-"])
       return ::testing::AssertionFailure() << "Leaked " << name.UTF8String;
@@ -101,7 +146,9 @@ TEST_F(CoreAIBookmarkIdentityTest, IgnoresFunctionBindingsAndDeliveryLocation) {
   EXPECT_TRUE([changed.get() isEqual:key]);
 }
 
-TEST_F(CoreAIBookmarkIdentityTest, KeySeparatesPlatformArchitectureWeightsAndAotContext) {
+TEST_F(
+    CoreAIBookmarkIdentityTest,
+    KeySeparatesPlatformArchitectureWeightsAndAotContext) {
   auto platform = bookmark_key(manifest, @"iOS", @"arch_b");
   auto architecture = bookmark_key(manifest, @"macOS", @"arch_a");
   Manifest reweighted = manifest;
@@ -218,7 +265,7 @@ TEST_F(CoreAIBookmarkRawTest, PreparesSharedStagingParentOnDemand) {
   auto staging = prepare_bookmark_staging(*locked);
   ASSERT_TRUE(staging.ok());
   EXPECT_TRUE([staging.get() isEqual:expected]);
-  struct stat info{};
+  struct stat info {};
   ASSERT_EQ(lstat(staging.get().fileSystemRepresentation, &info), 0);
   EXPECT_TRUE(S_ISDIR(info.st_mode));
   auto repeated = prepare_bookmark_staging(*locked);
@@ -254,8 +301,10 @@ TEST_F(CoreAIBookmarkRawTest, RejectsFileAtStagingParent) {
 }
 
 TEST_F(CoreAIBookmarkRawTest, RejectsOversizedStoredBookmark) {
-  FileDescriptor file(
-      open(url.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
+  FileDescriptor file(open(
+      url.fileSystemRepresentation,
+      O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+      0600));
   ASSERT_GE(file.get(), 0);
   ASSERT_EQ(ftruncate(file.get(), 8 * kMiB + 1), 0);
   ASSERT_EQ(close(file.release()), 0);
@@ -327,6 +376,8 @@ TEST_F(CoreAIBookmarkPathTest, NoncreatingLookupLocksStagingOnlyEntry) {
   ASSERT_TRUE(existing.ok());
   ASSERT_NE(existing.get(), nullptr);
   EXPECT_TRUE(bookmark_bytes_equal(*existing.get(), nil));
+  NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
+  EXPECT_EQ(write_bookmark(*existing.get(), bytes), Error::InvalidArgument);
   EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:lock_url().path]);
   EXPECT_FALSE([NSFileManager.defaultManager
       fileExistsAtPath:[root.url URLByAppendingPathComponent:@"bookmarks"]
@@ -348,9 +399,12 @@ TEST_F(CoreAIBookmarkPathTest, ResolvesAndCreatesRootWithBackupExclusion) {
 
 TEST_F(CoreAIBookmarkPathTest, RejectsInvalidResolvedRoots) {
   for (bool create : {false, true}) {
-    EXPECT_EQ(
-        resolve_bookmark_root(@"relative", create).error(),
-        Error::InvalidArgument);
+    for (NSString* path in
+         @[ @"relative", @"~", @"~/cache", @"~nobody/cache" ]) {
+      SCOPED_TRACE(path.UTF8String);
+      EXPECT_EQ(
+          resolve_bookmark_root(path, create).error(), Error::InvalidArgument);
+    }
     EXPECT_EQ(
         resolve_bookmark_root(nil, create).error(), Error::InvalidArgument);
   }
@@ -371,35 +425,66 @@ TEST_F(
   auto holder = lock_bookmark(root.url.path, key);
   ASSERT_TRUE(holder.ok());
   ASSERT_NE(holder.get(), nullptr);
-  auto acquire = [path = root.url.path](NSString* next_key) {
-    @autoreleasepool {
-      auto result = lock_bookmark(path, next_key);
-      if (!result.ok())
-        return result.error();
-      return result.get() != nullptr ? Error::Ok : Error::Internal;
-    }
-  };
-  std::promise<void> started;
-  auto starting = started.get_future();
-  auto waiter = std::async(std::launch::async, [&] {
-    started.set_value();
-    return acquire(key);
-  });
+  auto waiter = start_bookmark_waiter(root.url.path, key);
+  ASSERT_EQ(
+      waiter.attempting.wait_for(kWaitTimeout), std::future_status::ready);
   EXPECT_EQ(
-      starting.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-  EXPECT_EQ(
-      waiter.wait_for(std::chrono::milliseconds(100)),
+      waiter.result.wait_for(std::chrono::milliseconds(100)),
       std::future_status::timeout);
   auto independent =
-      std::async(std::launch::async, acquire, fixture_identity('f'));
-  EXPECT_EQ(
-      independent.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+      start_bookmark_waiter(root.url.path, fixture_identity('f'));
+  ASSERT_EQ(
+      independent.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto other = independent.result.get();
+  ASSERT_TRUE(other.ok());
+  ASSERT_NE(other.get(), nullptr);
   holder.get().reset();
-  EXPECT_EQ(waiter.get(), Error::Ok);
-  EXPECT_EQ(independent.get(), Error::Ok);
+  ASSERT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto acquired = waiter.result.get();
+  ASSERT_TRUE(acquired.ok());
+  EXPECT_NE(acquired.get(), nullptr);
 }
 
-TEST_F(CoreAIBookmarkPathTest, ProcessContentionAllowsIndependentKeyAndRecoversAfterHolderDeath) {
+TEST_F(CoreAIBookmarkRawTest, NoncreatingWaiterRechecksEvictedEntry) {
+  NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
+  ASSERT_EQ(write_bookmark(*locked, bytes), Error::Ok);
+  auto waiter = start_bookmark_waiter(root.url.path, key, false);
+  ASSERT_EQ(
+      waiter.attempting.wait_for(kWaitTimeout), std::future_status::ready);
+  ASSERT_EQ(
+      waiter.result.wait_for(std::chrono::milliseconds(100)),
+      std::future_status::timeout);
+  ASSERT_EQ(unlink(url.fileSystemRepresentation), 0);
+  locked.reset();
+  ASSERT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto absent = waiter.result.get();
+  ASSERT_TRUE(absent.ok());
+  EXPECT_EQ(absent.get(), nullptr);
+}
+
+TEST_F(CoreAIBookmarkRawTest, WaiterOpensBookmarkDirectoryAfterAcquiringLock) {
+  auto waiter = start_bookmark_waiter(root.url.path, key);
+  ASSERT_EQ(
+      waiter.attempting.wait_for(kWaitTimeout), std::future_status::ready);
+  ASSERT_EQ(
+      waiter.result.wait_for(std::chrono::milliseconds(100)),
+      std::future_status::timeout);
+  NSURL* bookmarks = [root.url URLByAppendingPathComponent:@"bookmarks"];
+  ASSERT_EQ(rmdir(bookmarks.fileSystemRepresentation), 0);
+  ASSERT_EQ(mkdir(bookmarks.fileSystemRepresentation, 0700), 0);
+  locked.reset();
+  ASSERT_EQ(waiter.result.wait_for(kWaitTimeout), std::future_status::ready);
+  auto acquired = waiter.result.get();
+  ASSERT_TRUE(acquired.ok());
+  ASSERT_NE(acquired.get(), nullptr);
+  NSData* bytes = [@"bookmark" dataUsingEncoding:NSUTF8StringEncoding];
+  ASSERT_EQ(write_bookmark(*acquired.get(), bytes), Error::Ok);
+  EXPECT_TRUE([[NSData dataWithContentsOfURL:url] isEqual:bytes]);
+}
+
+TEST_F(
+    CoreAIBookmarkPathTest,
+    ProcessContentionAllowsIndependentKeyAndRecoversAfterHolderDeath) {
   BookmarkChild holder;
   ASSERT_TRUE(holder.spawn(@"--bookmark-hold", root.url.path, @"same"));
   ASSERT_TRUE(holder.receive('L'));
@@ -423,4 +508,4 @@ TEST_F(CoreAIBookmarkPathTest, ProcessContentionAllowsIndependentKeyAndRecoversA
   EXPECT_EQ(before.st_ino, after.st_ino);
 }
 
-}  // namespace
+} // namespace

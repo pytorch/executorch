@@ -82,13 +82,13 @@ and enumeration use explicit policies, with a missing child distinguishable
 from an error. Fault injection is a separate, thread-local test interface and
 compiles away in production.
 
-Each partition derives a key from its selected export digest/bundle, platform,
-Core AI device architecture, default SDK cache namespace, versioned default
-options and persistent policy. Function bindings and delivery location are
-excluded. No model bytes are hashed at runtime. Each key determines a raw
-bookmark in the `bookmarks` subdirectory, a bundle directory in `staging`, and an
-empty coordination file in `locks`. There is no PTE-wide bookmark list or
-serialized lifecycle record.
+Each partition derives a key from its selected export digest/bundle, source/AOT
+mode, platform, Core AI device architecture, default SDK cache namespace,
+versioned default options and persistent policy. Function bindings and delivery
+location are excluded. No model bytes are hashed at runtime. Each key determines
+a raw bookmark in `bookmarks`, a bundle directory in `staging`, and an empty
+coordination file in `locks`. There is no PTE-wide bookmark list or serialized
+lifecycle record.
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.

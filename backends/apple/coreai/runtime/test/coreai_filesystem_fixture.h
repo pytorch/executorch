@@ -21,8 +21,6 @@ struct TestDirectory {
   TestDirectory& operator=(const TestDirectory&) = delete;
 };
 
-using BookmarkDirectory = TestDirectory;
-
 ::testing::AssertionResult backup_excluded(NSURL* url);
 ::testing::AssertionResult set_backup_excluded(NSURL* url, bool excluded);
 
