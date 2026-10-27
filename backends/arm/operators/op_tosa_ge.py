@@ -25,6 +25,7 @@ class GreaterEqualVisitor(SimpleNodeVisitor):
             attr_method="GreaterEqualAttribute",
             num_inputs=2,
             input_dtypes=COMPARE_INPUT_DTYPES,
+            extension_dtypes={"int64": [ts.DType.INT64]},
             output_dtypes=[ts.DType.BOOL],
             same_dtype_with_output=False,
             dtype_check_inputs_only=True,
