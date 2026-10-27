@@ -38,6 +38,21 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
+# Optional recorded method calls inside a .ptn; see backends/native/README.md.
+fbcode_target(_kind = runtime.python_library,
+    name = "ptn_samples",
+    typing = True,
+    srcs = [
+        "_ptn_samples.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":ptn",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "//caffe2:torch",
+    ],
+)
+
 # so we can have access to EXECUTORCH_CLIENTS list.
 fbcode_target(_kind = runtime.python_library,
     name = "lib",
