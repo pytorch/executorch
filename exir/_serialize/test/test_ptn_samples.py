@@ -24,15 +24,31 @@ from executorch.exir._serialize._ptn_samples import (
 )
 
 _PTG = b"\x00\x00\x00\x00NPTG stand-in graph blob"
-_INDEX = "samples/forward/golden/index.json"
-_DATA = "samples/forward/golden/data.safetensors"
+_INDEX = "samples/golden/index.json"
+_DATA = "samples/golden/data.safetensors"
 
 
 def _golden() -> SampleSet:
     return SampleSet(
         samples=[
-            Sample([Call(inputs=[torch.randn(1, 3)], outputs=[torch.randn(1, 2)])]),
-            Sample([Call(inputs=[torch.randn(1, 3)], outputs=[torch.randn(1, 2)])]),
+            Sample(
+                [
+                    Call(
+                        "forward",
+                        inputs=[torch.randn(1, 3)],
+                        outputs=[torch.randn(1, 2)],
+                    )
+                ]
+            ),
+            Sample(
+                [
+                    Call(
+                        "forward",
+                        inputs=[torch.randn(1, 3)],
+                        outputs=[torch.randn(1, 2)],
+                    )
+                ]
+            ),
         ],
         description="two calls",
         source="eager/cpu/f32",
@@ -118,6 +134,7 @@ class PtnSamplesTest(unittest.TestCase):
                 self.assertCallsEqual(ac, ec)
 
     def assertCallsEqual(self, a: Call, e: Call):
+        self.assertEqual(a.method, e.method)
         self.assertValuesEqual(a.inputs, e.inputs)
         self.assertEqual(a.outputs is None, e.outputs is None)
         if e.outputs is not None:
@@ -134,11 +151,11 @@ class PtnSamplesTest(unittest.TestCase):
 
     def test_golden_round_trips(self):
         golden = _golden()
-        write_samples(self.path, "forward", "golden", golden)
+        write_samples(self.path, "golden", golden)
 
         sets = read_samples(self.path)
-        self.assertEqual(list(sets), [("forward", "golden")])
-        self.assertSetsEqual(sets[("forward", "golden")], golden)
+        self.assertEqual(list(sets), ["golden"])
+        self.assertSetsEqual(sets["golden"], golden)
 
     def test_intermediates_and_nested_tol_round_trip(self):
         debug = SampleSet(
@@ -146,6 +163,7 @@ class PtnSamplesTest(unittest.TestCase):
                 Sample(
                     [
                         Call(
+                            "forward",
                             inputs=[torch.randn(2, 4)],
                             outputs=[torch.randn(2, 4)],
                             intermediates={
@@ -160,28 +178,36 @@ class PtnSamplesTest(unittest.TestCase):
             ],
             tol=(1e-4, 1e-4),
         )
-        write_samples(self.path, "forward", "debug", debug)
+        write_samples(self.path, "debug", debug)
 
-        self.assertSetsEqual(read_samples(self.path)[("forward", "debug")], debug)
+        self.assertSetsEqual(read_samples(self.path)["debug"], debug)
 
     def test_calls_round_trip_in_order(self):
         prefill = Call(
-            [torch.arange(6).view(1, 6), torch.arange(6)], [torch.randn(1, 1, 5)]
+            "forward",
+            [torch.arange(6).view(1, 6), torch.arange(6)],
+            [torch.randn(1, 1, 5)],
         )
         decode = [
-            Call([torch.tensor([[t]]), torch.tensor([6 + i])], [torch.randn(1, 1, 5)])
+            Call(
+                "forward",
+                [torch.tensor([[t]]), torch.tensor([6 + i])],
+                [torch.randn(1, 1, 5)],
+            )
             for i, t in enumerate((11, 12, 13))
         ]
         golden = SampleSet([Sample([prefill, *decode]), Sample([prefill])])
-        write_samples(self.path, "forward", "golden", golden)
+        write_samples(self.path, "golden", golden)
 
-        self.assertSetsEqual(read_samples(self.path)[("forward", "golden")], golden)
+        self.assertSetsEqual(read_samples(self.path)["golden"], golden)
 
     def test_inputs_only_round_trips(self):
-        calib = SampleSet(samples=[Sample([Call([torch.randn(3)])]) for _ in range(3)])
-        write_samples(self.path, "forward", "calibration", calib)
+        calib = SampleSet(
+            samples=[Sample([Call("forward", [torch.randn(3)])]) for _ in range(3)]
+        )
+        write_samples(self.path, "calibration", calib)
 
-        self.assertSetsEqual(read_samples(self.path)[("forward", "calibration")], calib)
+        self.assertSetsEqual(read_samples(self.path)["calibration"], calib)
 
     def test_scalars_lists_and_dtypes_round_trip(self):
         mixed = SampleSet(
@@ -189,6 +215,7 @@ class PtnSamplesTest(unittest.TestCase):
                 Sample(
                     [
                         Call(
+                            "forward",
                             inputs=[
                                 torch.arange(6, dtype=torch.int64).reshape(2, 3),
                                 [
@@ -205,34 +232,34 @@ class PtnSamplesTest(unittest.TestCase):
                 )
             ]
         )
-        write_samples(self.path, "forward", "mixed", mixed)
+        write_samples(self.path, "mixed", mixed)
 
-        self.assertSetsEqual(read_samples(self.path)[("forward", "mixed")], mixed)
+        self.assertSetsEqual(read_samples(self.path)["mixed"], mixed)
 
     def test_samples_may_differ_in_shape(self):
         dynamic = SampleSet(
-            samples=[Sample([Call([torch.randn(1, n, 8)])]) for n in (3, 9)]
+            samples=[Sample([Call("forward", [torch.randn(1, n, 8)])]) for n in (3, 9)]
         )
-        write_samples(self.path, "forward", "dynamic", dynamic)
+        write_samples(self.path, "dynamic", dynamic)
 
-        samples = read_samples(self.path)[("forward", "dynamic")].samples
+        samples = read_samples(self.path)["dynamic"].samples
         self.assertEqual([s.calls[0].inputs[0].shape[1] for s in samples], [3, 9])
 
     def test_keys_are_json_paths(self):
         write_samples(
             self.path,
-            "forward",
             "golden",
             SampleSet(
                 samples=[
                     Sample(
                         [
                             Call(
+                                "forward",
                                 inputs=[torch.ones(1), [torch.ones(1), 2]],
                                 outputs=[torch.ones(1)],
                                 intermediates={"linear": torch.ones(1)},
                             ),
-                            Call(inputs=[torch.ones(1)]),
+                            Call("forward", inputs=[torch.ones(1)]),
                         ]
                     )
                 ]
@@ -246,23 +273,30 @@ class PtnSamplesTest(unittest.TestCase):
         self.assertEqual(
             calls[0]["intermediates"], {"linear": f"{at}.intermediates.linear"}
         )
-        self.assertEqual(calls[1], {"in": ["samples[0].calls[1].in[0]"]})
-
-    def test_sets_across_methods_coexist(self):
-        write_samples(self.path, "encode", "golden", _golden())
-        write_samples(self.path, "decode", "golden", _golden())
-        write_samples(
-            self.path, "decode", "bench", SampleSet([Sample([Call([torch.ones(1)])])])
-        )
-
         self.assertEqual(
-            sorted(read_samples(self.path)),
-            [("decode", "bench"), ("decode", "golden"), ("encode", "golden")],
+            calls[1], {"method": "forward", "in": ["samples[0].calls[1].in[0]"]}
         )
+
+    def test_sample_spans_methods(self):
+        prefill = Call("prefill", [torch.arange(6).view(1, 6)], [torch.randn(1, 6, 5)])
+        decode = Call("decode", [torch.tensor([[11]])], [torch.randn(1, 1, 5)])
+        golden = SampleSet([Sample([prefill, decode])])
+        write_samples(self.path, "golden", golden)
+
+        calls = json.loads(_members(self.path)[_INDEX])["samples"][0]["calls"]
+        self.assertEqual([c["method"] for c in calls], ["prefill", "decode"])
+        self.assertSetsEqual(read_samples(self.path)["golden"], golden)
+
+    def test_sets_coexist(self):
+        write_samples(self.path, "golden", _golden())
+        bench = SampleSet([Sample([Call("forward", [torch.ones(1)])])])
+        write_samples(self.path, "bench", bench)
+
+        self.assertEqual(sorted(read_samples(self.path)), ["bench", "golden"])
 
     def test_append_leaves_program_untouched(self):
         before = _members(self.path)
-        write_samples(self.path, "forward", "golden", _golden())
+        write_samples(self.path, "golden", _golden())
 
         after = _members(self.path)
         for name, data in before.items():
@@ -274,13 +308,13 @@ class PtnSamplesTest(unittest.TestCase):
     def test_members_are_stored_and_data_aligned(self):
         # Vary the preceding index.json size so the data member starts at every
         # offset modulo the alignment.
-        pad = SampleSet([Sample([Call([torch.ones(1)])])])
+        pad = SampleSet([Sample([Call("forward", [torch.ones(1)])])])
         for size in range(64):
             with self.subTest(size=size):
                 write_ptn(self.path, _PTG, {"w": torch.ones(4)})
                 pad.description = "x" * size
-                write_samples(self.path, "forward", "pad", pad)
-                write_samples(self.path, "forward", "golden", _golden())
+                write_samples(self.path, "pad", pad)
+                write_samples(self.path, "golden", _golden())
                 with zipfile.ZipFile(self.path) as pkg:
                     for name in (_INDEX, _DATA):
                         self.assertEqual(
@@ -293,7 +327,7 @@ class PtnSamplesTest(unittest.TestCase):
         # Program sizes one byte apart cannot both leave the data aligned.
         for size in (0, 1):
             write_ptn(self.path, b"x" * size, {})
-            write_samples(self.path, "forward", "golden", _golden())
+            write_samples(self.path, "golden", _golden())
             entries = _members(self.path)
             with zipfile.ZipFile(self.path, "w", zipfile.ZIP_STORED) as pkg:
                 for name, data in entries.items():
@@ -304,7 +338,7 @@ class PtnSamplesTest(unittest.TestCase):
             read_samples(self.path)
 
     def test_failed_append_leaves_package_untouched(self):
-        write_samples(self.path, "forward", "golden", _golden())
+        write_samples(self.path, "golden", _golden())
         with open(self.path, "rb") as f:
             before = f.read()
         with mock.patch(
@@ -312,61 +346,88 @@ class PtnSamplesTest(unittest.TestCase):
             side_effect=OSError("disk full"),
         ):
             with self.assertRaisesRegex(OSError, "disk full"):
-                write_samples(self.path, "forward", "other", _golden())
+                write_samples(self.path, "other", _golden())
 
         with open(self.path, "rb") as f:
             self.assertEqual(f.read(), before)
         self.assertEqual(os.listdir(self._tmp.name), ["m.ptn"])
 
     def test_writer_rejects_existing_set(self):
-        write_samples(self.path, "forward", "golden", _golden())
+        write_samples(self.path, "golden", _golden())
         with self.assertRaisesRegex(ValueError, "already exists"):
-            write_samples(self.path, "forward", "golden", _golden())
+            write_samples(self.path, "golden", _golden())
 
     def test_writer_rejects_bad_names(self):
-        for method, name in (("for/ward", "golden"), ("forward", "gol.den"), ("", "x")):
-            with self.subTest(method=method, name=name):
+        for name in ("gol/den", "gol.den", ""):
+            with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "must match"):
-                    write_samples(self.path, method, name, _golden())
+                    write_samples(self.path, name, _golden())
+        no_method = SampleSet([Sample([Call("", [torch.ones(1)])])])
+        with self.assertRaisesRegex(ValueError, "method must be a non-empty string"):
+            write_samples(self.path, "golden", no_method)
         bad = SampleSet(
-            [Sample([Call([torch.ones(1)], intermediates={"a.b": torch.ones(1)})])]
+            [
+                Sample(
+                    [
+                        Call(
+                            "forward",
+                            [torch.ones(1)],
+                            intermediates={"a.b": torch.ones(1)},
+                        )
+                    ]
+                )
+            ]
         )
         with self.assertRaisesRegex(ValueError, "must match"):
-            write_samples(self.path, "forward", "debug", bad)
+            write_samples(self.path, "debug", bad)
 
     def test_writer_rejects_bad_values(self):
         cases = [
             (SampleSet([]), ValueError, "at least one sample"),
             (SampleSet([Sample([])]), ValueError, "at least one call"),
-            (SampleSet([Sample([Call([float("nan")])])]), ValueError, "not finite"),
             (
-                SampleSet([Sample([Call([torch.ones(1)])])], tol=(-1.0, 0.0)),
+                SampleSet([Sample([Call("forward", [float("nan")])])]),
+                ValueError,
+                "not finite",
+            ),
+            (
+                SampleSet(
+                    [Sample([Call("forward", [torch.ones(1)])])], tol=(-1.0, 0.0)
+                ),
                 ValueError,
                 "tol",
             ),
             (
-                SampleSet([Sample([Call([torch.ones(1)], tol=(0.0, -1.0))])]),
+                SampleSet(
+                    [Sample([Call("forward", [torch.ones(1)], tol=(0.0, -1.0))])]
+                ),
                 ValueError,
                 r"samples\[0\]\.calls\[0\]: tol",
             ),
-            (SampleSet([Sample([Call(["x"])])]), TypeError, "unsupported value"),
             (
-                SampleSet([Sample([Call([torch.ones(1)])])], description=1),
+                SampleSet([Sample([Call("forward", ["x"])])]),
+                TypeError,
+                "unsupported value",
+            ),
+            (
+                SampleSet([Sample([Call("forward", [torch.ones(1)])])], description=1),
                 TypeError,
                 "description must be a string",
             ),
             (
-                SampleSet([Sample([Call(torch.ones(1))])]),
+                SampleSet([Sample([Call("forward", torch.ones(1))])]),
                 TypeError,
                 "inputs must be a list",
             ),
             (
-                SampleSet([Sample([Call([torch.ones(1)], torch.ones(1))])]),
+                SampleSet([Sample([Call("forward", [torch.ones(1)], torch.ones(1))])]),
                 TypeError,
                 "outputs must be a list",
             ),
             (
-                SampleSet([Sample([Call([torch.ones(1, dtype=torch.complex128)])])]),
+                SampleSet(
+                    [Sample([Call("forward", [torch.ones(1, dtype=torch.complex128)])])]
+                ),
                 KeyError,
                 "cannot represent dtype",
             ),
@@ -374,16 +435,28 @@ class PtnSamplesTest(unittest.TestCase):
         for samples, error, message in cases:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(error, message):
-                    write_samples(self.path, "forward", "golden", samples)
+                    write_samples(self.path, "golden", samples)
         self.assertEqual(read_samples(self.path), {})
 
     def test_writer_warns_on_loose_tol(self):
         one = [torch.ones(1)]
         cases = [
-            (SampleSet([Sample([Call(one)])], tol=(2.0, 0.05)), "set"),
-            (SampleSet([Sample([Call(one)], tol=(0.0, 2e-3))]), r"samples\[0\]"),
+            (SampleSet([Sample([Call("forward", one)])], tol=(2.0, 0.05)), "set"),
             (
-                SampleSet([Sample([Call(one), Call(one, tol=(2e-3, 0.0))])]),
+                SampleSet([Sample([Call("forward", one)], tol=(0.0, 2e-3))]),
+                r"samples\[0\]",
+            ),
+            (
+                SampleSet(
+                    [
+                        Sample(
+                            [
+                                Call("forward", one),
+                                Call("forward", one, tol=(2e-3, 0.0)),
+                            ]
+                        )
+                    ]
+                ),
                 r"samples\[0\]\.calls\[1\]",
             ),
         ]
@@ -391,41 +464,43 @@ class PtnSamplesTest(unittest.TestCase):
             with self.assertWarnsRegex(
                 UserWarning, f"{where} tol .* above 0.001"
             ) as caught:
-                write_samples(self.path, "forward", f"loose{i}", loose)
+                write_samples(self.path, f"loose{i}", loose)
             self.assertEqual(caught.filename, __file__)
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            write_samples(self.path, "forward", "golden", _golden())
-            tight = SampleSet([Sample([Call([torch.ones(1)], tol=(1e-3, 1e-3))])])
-            write_samples(self.path, "forward", "tight", tight)
+            write_samples(self.path, "golden", _golden())
+            tight = SampleSet(
+                [Sample([Call("forward", [torch.ones(1)], tol=(1e-3, 1e-3))])]
+            )
+            write_samples(self.path, "tight", tight)
 
     def test_writer_requires_a_program(self):
         path = os.path.join(self._tmp.name, "empty.ptn")
         with zipfile.ZipFile(path, "w") as pkg:
             pkg.writestr("other", b"")
         with self.assertRaisesRegex(ValueError, "has no program.ptg"):
-            write_samples(path, "forward", "golden", _golden())
+            write_samples(path, "golden", _golden())
 
     def test_reader_rejects_bad_layout(self):
         cases = [
             ({_DATA: None}, "missing data.safetensors"),
             ({_INDEX: None}, "missing index.json"),
-            ({"samples/forward/golden/notes.txt": b""}, "unexpected member"),
-            ({"samples/forward/stray.json": b""}, "unexpected member"),
-            ({"samples/for.ward/golden/index.json": b""}, "unexpected member"),
-            ({"samples/forward/golden/x/index.json": b""}, "unexpected member"),
+            ({"samples/golden/notes.txt": b""}, "unexpected member"),
+            ({"samples/stray.json": b""}, "unexpected member"),
+            ({"samples/gol.den/index.json": b""}, "unexpected member"),
+            ({"samples/golden/x/index.json": b""}, "unexpected member"),
         ]
         for overrides, message in cases:
             with self.subTest(message=message):
                 write_ptn(self.path, _PTG, {})
-                write_samples(self.path, "forward", "golden", _golden())
+                write_samples(self.path, "golden", _golden())
                 _rewrite(self.path, overrides)
                 with self.assertRaisesRegex(ValueError, message):
                     read_samples(self.path)
 
     def test_reader_rejects_compressed_member(self):
-        write_samples(self.path, "forward", "golden", _golden())
+        write_samples(self.path, "golden", _golden())
         entries = _members(self.path)
         with zipfile.ZipFile(self.path, "w") as pkg:
             for name, data in entries.items():
@@ -466,6 +541,12 @@ class PtnSamplesTest(unittest.TestCase):
             (set_sample_field("tol", [1e-4]), "tol must be"),
             (set_call_field("tol", [0.0, -1.0]), "tol must be"),
             (set_call_field("in", None), "'in' list"),
+            (set_call_field("method", ""), "method must be a non-empty string"),
+            (set_call_field("method", 1), "method must be a non-empty string"),
+            (
+                lambda index: index["samples"][0]["calls"][0].pop("method"),
+                "method must be a non-empty string",
+            ),
             (set_call_field("in", [f"{at}.in[0]", None]), "unsupported value"),
             (set_call_field("in", [f"{at}.in[0]", float("nan")]), "unsupported value"),
             (set_call_field("out", f"{at}.out[0]"), "out must be a list"),
@@ -485,7 +566,7 @@ class PtnSamplesTest(unittest.TestCase):
         for edit, message in cases:
             with self.subTest(message=message):
                 write_ptn(self.path, _PTG, {})
-                write_samples(self.path, "forward", "golden", _golden())
+                write_samples(self.path, "golden", _golden())
                 _edit_index(self.path, edit)
                 with self.assertRaisesRegex(ValueError, message):
                     read_samples(self.path)
@@ -499,16 +580,14 @@ class PtnSamplesTest(unittest.TestCase):
         for overrides, message in cases:
             with self.subTest(message=message):
                 write_ptn(self.path, _PTG, {})
-                write_samples(self.path, "forward", "golden", _golden())
+                write_samples(self.path, "golden", _golden())
                 _rewrite(self.path, overrides)
-                with self.assertRaisesRegex(
-                    ValueError, f"samples/forward/golden.*{message}"
-                ):
+                with self.assertRaisesRegex(ValueError, f"samples/golden.*{message}"):
                     read_samples(self.path)
 
     def test_reader_accepts_newer_minor_version_and_unknown_fields(self):
         golden = _golden()
-        write_samples(self.path, "forward", "golden", golden)
+        write_samples(self.path, "golden", golden)
 
         def add_fields(index):
             index["version"] = "1.7"
@@ -517,4 +596,4 @@ class PtnSamplesTest(unittest.TestCase):
             index["samples"][0]["calls"][0]["future"] = True
 
         _edit_index(self.path, add_fields)
-        self.assertSetsEqual(read_samples(self.path)[("forward", "golden")], golden)
+        self.assertSetsEqual(read_samples(self.path)["golden"], golden)
