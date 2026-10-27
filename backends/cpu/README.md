@@ -6,8 +6,11 @@
 The initial workload is pretrained ConvNeXt-Tiny in FP32 on a Linux server.
 The registered `CPURecipeType.FP32` (`cpu_fp32`) Recipe retains a semantic Native
 graph inside one `CpuBackend` delegate in a regular ExecuTorch `.pte`.
-This first delegate version supports pure operations on statically shaped,
-contiguous FP32 tensors.
+The partitioner supports pure operations on statically shaped, contiguous FP32,
+uint8, int8, int16, int32, int64 and boolean tensors. Integer and boolean operations
+use the existing ET kernel routes, subject to each kernel's operator and dtype
+support. Runtime-computed scalar arguments and symbolic tensor shapes remain
+unsupported. Ordinary integer tensors do not imply quantized execution support.
 
 The `cpu_delegate_version` compile spec stores `CPU_DELEGATE_VERSION` as a
 four-byte little-endian unsigned integer. The loader accepts explicitly
@@ -44,7 +47,7 @@ allocation. Sequential steps share the maximum declared scratch capacity. XNNPAC
 shares compatible convolution-weight conversions within a plan and borrows weights
 whose physical order already matches.
 
-For a loaded method, shapes, FP32 dtype, contiguous layout, threadpool identity,
+For a loaded method, shapes, tensor dtypes, contiguous layout, threadpool identity,
 thread count and ISA capabilities remain fixed. Input/output pointers may change
 and are validated on every invocation. Changing an execution property requires
 reloading the method; failed validation executes no provider. The trace includes
