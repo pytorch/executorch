@@ -1320,13 +1320,44 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        tensor_meta.error(),
+        "Error getting tensor metadata at input %" ET_PRIsize_t,
+        input_idx);
+
+    // For DYNAMIC_BOUND the serialized sizes are the per-dimension upper
+    // bound, but numel_bound_ is initialized to their product, so the resize
+    // below only rejects shapes whose total numel exceeds it. A shape that
+    // trades size between dimensions stays under that product and would
+    // otherwise be accepted. Rank mismatches are left to resize_tensor.
+    const auto* s_tensor = serialization_plan_->values()
+                               ->Get(get_input_index(input_idx))
+                               ->val_as_Tensor();
+    if (s_tensor->shape_dynamism() ==
+        executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND) {
+      const Span<const int32_t> bound_sizes = tensor_meta->sizes();
+      if (static_cast<size_t>(t_src.dim()) == bound_sizes.size()) {
+        for (size_t i = 0; i < bound_sizes.size(); ++i) {
+          ET_CHECK_OR_RETURN_ERROR(
+              t_src.size(i) <= bound_sizes[i],
+              InvalidArgument,
+              "Input %" ET_PRIsize_t " dimension %" ET_PRIsize_t
+              " is %" ET_PRIssize_t " but its upper bound is %" PRId32 ".",
+              input_idx,
+              i,
+              static_cast<ssize_t>(t_src.size(i)),
+              bound_sizes[i]);
+        }
+      }
+    }
+
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
