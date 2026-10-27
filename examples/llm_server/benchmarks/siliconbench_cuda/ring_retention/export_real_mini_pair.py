@@ -11,7 +11,7 @@ def digest(p):
 def main():
  a=argparse.ArgumentParser(description=__doc__)
  for n in ['native-preparation','gguf','output','lock']:a.add_argument('--'+n,type=Path,required=True)
- a.add_argument('--model',choices=['MG','Gemma'],required=True);a.add_argument('--reuse-baseline-audit',type=Path);a.add_argument('--only-arm',choices=['baseline','ring']);args=a.parse_args()
+ a.add_argument('--model',choices=['MG','Gemma'],required=True);a.add_argument('--reuse-baseline-audit',type=Path);a.add_argument('--only-arm',choices=['baseline','ring']);a.add_argument('--cache-root',type=Path);args=a.parse_args()
  assert not args.output.exists();args.output.mkdir(parents=True)
  gate=json.loads((args.native_preparation/'native-gate.json').read_text())
  assert gate['native_tests_passed'] and gate['legacy_test_count']>=74 and gate['allocator_policy_test_count']==4
@@ -111,7 +111,8 @@ def main():
      row=dict(row,reused_immutable_baseline_audit=str(args.reuse_baseline_audit),reused_immutable_baseline_audit_SHA256=digest(args.reuse_baseline_audit))
      (args.output/'baseline').mkdir();(args.output/'baseline/artifact-audit.json').write_text(json.dumps(row,indent=2)+'\n');records.append(row);continue
     current=args.output/arm;current.mkdir();cache=current/'cache';(cache/'host-zero').mkdir(parents=True)
-    os.environ.update(ET_CUDA_SPLIT_RING_HISTORY='1' if arm=='ring' else '0',TORCHINDUCTOR_CACHE_DIR=str(cache/'inductor'),TRITON_CACHE_DIR=str(cache/'triton'),ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache/'host-zero'))
+    compile_cache=(args.cache_root/arm) if args.cache_root else cache
+    os.environ.update(ET_CUDA_SPLIT_RING_HISTORY='1' if arm=='ring' else '0',TORCHINDUCTOR_CACHE_DIR=str(compile_cache/'inductor'),TRITON_CACHE_DIR=str(compile_cache/'triton'),ET_CUDA_HOST_ZERO_BACKING_DIR=str(cache/'host-zero'))
     state('exporting-real-mini-'+arm,source=str(source),prefill_budget=budget)
     model=make_model();artifact=current/'artifact';export_model(model,artifact);del model
     program=deserialize_pte_binary((artifact/'model.pte').read_bytes()).program;methods={p.name:p for p in program.execution_plan};metadata={}

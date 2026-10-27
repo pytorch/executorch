@@ -9,11 +9,13 @@ def main():
     for n in ['native-preparation','baseline-audit','gguf','output','lock']:
         p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--model',choices=['MG','Gemma'],required=True)
+    p.add_argument('--cache-root',type=Path)
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     pkg=Path(__file__).resolve().parent
     def state(status,**extra):
         temp=a.output/'progress.pending.json';temp.write_text(json.dumps(dict(status=status,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),real_mini_qualified=False,full_models_paused=True,**extra),indent=2)+'\n');temp.replace(a.output/'progress.json')
-    env=dict(os.environ,CUDA_VISIBLE_DEVICES='0',OMP_NUM_THREADS='2',TORCHINDUCTOR_COMPILE_THREADS='1',PYTHONDONTWRITEBYTECODE='1',TORCHINDUCTOR_CACHE_DIR=str(a.output/'kernel-inductor-cache'),TRITON_CACHE_DIR=str(a.output/'kernel-triton-cache'))
+    cache=a.cache_root or a.output
+    env=dict(os.environ,CUDA_VISIBLE_DEVICES='0',OMP_NUM_THREADS='2',TORCHINDUCTOR_COMPILE_THREADS='1',PYTHONDONTWRITEBYTECODE='1',TORCHINDUCTOR_CACHE_DIR=str(cache/'kernel-inductor-cache'),TRITON_CACHE_DIR=str(cache/'kernel-triton-cache'))
     env.pop('CUDA_LAUNCH_BLOCKING',None)
     try:
         state('checking-balanced-compiled-kernel')
@@ -25,6 +27,7 @@ def main():
                 subprocess.run(argv,env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1200)
         state('exporting-and-measuring-real-mini')
         argv=[sys.executable,'-B','-u',str(pkg/'recover_real_mini_export.py'),'--model',a.model,'--native-preparation',str(a.native_preparation),'--baseline-audit',str(a.baseline_audit),'--compiled-probe',str(a.output/'compiled-probe/result.json'),'--gguf',str(a.gguf),'--output',str(a.output/'recovery'),'--lock',str(a.lock)]
+        if a.cache_root:argv+=['--cache-root',str(a.cache_root/'export-cache')]
         with (a.output/'recovery.log').open('x') as log:
             subprocess.run(argv,env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=21600)
         state('four-arm-data-collected-review-required',performance_acceptance_pending=True)

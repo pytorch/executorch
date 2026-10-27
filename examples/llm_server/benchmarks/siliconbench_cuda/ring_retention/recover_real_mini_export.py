@@ -9,7 +9,7 @@ def sha(p):
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ['native-preparation','compiled-probe','baseline-audit','gguf','output','lock']:p.add_argument('--'+n,type=Path,required=True)
- p.add_argument('--model',choices=['MG','Gemma'],required=True);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False);pkg=Path(__file__).resolve().parent
+ p.add_argument('--model',choices=['MG','Gemma'],required=True);p.add_argument('--cache-root',type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False);pkg=Path(__file__).resolve().parent
  def state(s,**kw):
   t=a.output/'progress.pending.json';t.write_text(json.dumps(dict(status=s,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),full_models_paused=True,mini_accepted=False,**kw),indent=2)+'\n');t.replace(a.output/'progress.json')
  try:
@@ -38,6 +38,7 @@ def main():
   prep=a.output/'native-preparation';prep.mkdir();gate=dict(oldgate,export_source=str(source),source_only_kernel_recovery=True,reused_native_gate=str(a.native_preparation/'native-gate.json'),reused_native_gate_SHA256=sha(a.native_preparation/'native-gate.json'),compiled_kernel_gate_SHA256=sha(a.compiled_probe),export_source_audit_SHA256=sha(auditfile))
   (prep/'native-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
   argv=[sys.executable,'-B','-u',str(pkg/'export_real_mini_pair.py'),'--native-preparation',str(prep),'--gguf',str(a.gguf),'--output',str(a.output/'exports'),'--lock',str(a.lock),'--model',a.model,'--reuse-baseline-audit',str(a.baseline_audit)]
+  if a.cache_root:argv+=['--cache-root',str(a.cache_root)]
   state('exporting-ring-only-with-immutable-baseline-reuse')
   with (a.output/'export.log').open('x') as f:subprocess.run(argv,stdout=f,stderr=subprocess.STDOUT,check=True,timeout=10800,env=dict(os.environ,CUDA_LAUNCH_BLOCKING='1'))
   state('measuring-four-arm-real-minis')

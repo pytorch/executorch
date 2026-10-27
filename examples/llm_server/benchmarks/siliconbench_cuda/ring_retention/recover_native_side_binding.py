@@ -28,10 +28,14 @@ def main():
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--model", choices=["MG", "Gemma"], required=True)
     p.add_argument("--export-job", type=Path)
+    p.add_argument("--executable-root", type=Path)
     p.add_argument("--wait-process", action="append", default=[])
     p.add_argument("--jobs", type=int, default=8)
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=False)
+    executable_root = a.executable_root or a.output
+    if a.executable_root:
+        executable_root.mkdir(parents=True, exist_ok=False)
     pkg = Path(__file__).resolve().parent
     def state(status, **extra):
         value = dict(status=status, PID=os.getpid(), UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -39,7 +43,8 @@ def main():
         temp = a.output / "progress.pending.json"
         temp.write_text(json.dumps(value, indent=2) + "\n")
         temp.replace(a.output / "progress.json")
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES="0", OMP_NUM_THREADS="2", PYTHONDONTWRITEBYTECODE="1")
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES="0", OMP_NUM_THREADS="2", PYTHONDONTWRITEBYTECODE="1",
+        CUDA_HOME="/usr/local/cuda", CUDAARCHS="120", TORCH_CUDA_ARCH_LIST="12.0")
     env.pop("CUDA_LAUNCH_BLOCKING", None)
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env["PATH"]
     def run(argv, log, **kwargs):
@@ -62,10 +67,13 @@ def main():
                  "backends/cuda/runtime/cuda_kv_cache.cpp", "backends/cuda/runtime/test/test_cuda_kv_cache.cpp"]
         before = {name: sha(oldsource / name) for name in paths}
         assert before[paths[2]] == prior["actual_native_Cpp_SHA256"]
-        source = a.output / "native/executorch"
+        source = executable_root / "native/executorch"
         state("copying-isolated-native-source")
         shutil.copytree(oldsource, source, symlinks=True, ignore=shutil.ignore_patterns(
-            ".git", "cmake-out", "build", "__pycache__", "*.pte", "*.ptd", "*.gguf", "*.log"))
+            ".git", "cmake-out", "__pycache__", "*.pte", "*.ptd", "*.gguf", "*.log"))
+        filelists = "shim_et/xplat/executorch/build/build_variables.bzl"
+        assert sha(source / filelists) == sha(oldsource / filelists)
+        env["PYTHONPATH"] = str(source.parent)
         patch(source)
         testdir = source / "backends/cuda/runtime/test"
         shutil.copy2(pkg / "ring_optional_side_binding_tests.inc", testdir / "ring_optional_side_binding_tests.inc")
@@ -90,8 +98,8 @@ def main():
             "-DEXECUTORCH_BUILD_PRESET_FILE=" + str(source / "tools/cmake/preset/llm.cmake"),
             "-DEXECUTORCH_BUILD_CUDA=ON", "-DEXECUTORCH_BUILD_PYBIND=OFF",
             "-DEXECUTORCH_BUILD_TESTS=ON", "-DBUILD_TESTING=ON", "-DCMAKE_INSTALL_PREFIX=" + str(build),
-            "-DCMAKE_PREFIX_PATH=" + prefix, "-DPYTHON_EXECUTABLE=" + sys.executable], "build.log")
-        run([cmake, "--build", build, "--parallel", a.jobs, "--target", "test_cuda_kv_cache"], "build.log")
+            "-DCMAKE_PREFIX_PATH=" + prefix, "-DPYTHON_EXECUTABLE=" + sys.executable], "build.log", cwd=source)
+        run([cmake, "--build", build, "--parallel", a.jobs, "--target", "test_cuda_kv_cache"], "build.log", cwd=source)
         binary = build / "backends/cuda/test_cuda_kv_cache"
         with a.lock.open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -111,17 +119,17 @@ def main():
             trimmed = list(ET.parse(trim_xml).getroot().iter("testcase"))
             assert len(trimmed) == 7 and all(t.find("failure") is None and t.find("error") is None and t.find("skipped") is None for t in trimmed)
         state("installing-qualified-native-SDK")
-        run([cmake, "-S", source, "-B", build, "-DEXECUTORCH_BUILD_TESTS=OFF", "-DBUILD_TESTING=OFF"], "build.log")
-        run([cmake, "--build", build, "--parallel", a.jobs, "--target", "install"], "build.log")
+        run([cmake, "-S", source, "-B", build, "-DEXECUTORCH_BUILD_TESTS=OFF", "-DBUILD_TESTING=OFF"], "build.log", cwd=source)
+        run([cmake, "--build", build, "--parallel", a.jobs, "--target", "install"], "build.log", cwd=source)
         probe_source = Path(prior["probe"]).parent.parent / "mini_probe.cpp"
         assert probe_source.is_file()
-        local_probe = a.output / "mini_probe.cpp"
+        local_probe = executable_root / "mini_probe.cpp"
         shutil.copy2(probe_source, local_probe)
-        probe_build = a.output / "probe-build"
+        probe_build = executable_root / "probe-build"
         run([cmake, "-S", pkg.parent / "rewind_kv_probe_project", "-B", probe_build,
             "-DCMAKE_BUILD_TYPE=Release", "-DET_SOURCE=" + str(source),
-            "-DREWIND_PROBE_SOURCE=" + str(local_probe), "-DCMAKE_PREFIX_PATH=" + str(build) + ";" + prefix], "probe-build.log")
-        run([cmake, "--build", probe_build, "--parallel", a.jobs, "--target", "rewind_kv_probe"], "probe-build.log")
+            "-DREWIND_PROBE_SOURCE=" + str(local_probe), "-DCMAKE_PREFIX_PATH=" + str(build) + ";" + prefix], "probe-build.log", cwd=source)
+        run([cmake, "--build", probe_build, "--parallel", a.jobs, "--target", "rewind_kv_probe"], "probe-build.log", cwd=source)
         prep = a.output / "native-preparation"
         prep.mkdir()
         gate = dict(prior, source=str(source), probe=str(probe_build / "rewind_kv_probe"),
@@ -142,6 +150,8 @@ def main():
             argv = [sys.executable, "-B", "-u", pkg / "run_qualified_ring_recovery.py",
                 "--native-preparation", prep, "--baseline-audit", a.baseline_audit, "--gguf", a.gguf,
                 "--model", a.model, "--output", a.output / "qualification", "--lock", a.lock]
+            if a.executable_root:
+                argv += ["--cache-root", executable_root / "qualification-cache"]
         run(argv, "qualification.log", timeout=25200)
         state("real-mini-data-complete-review-required", performance_acceptance_pending=True)
     except BaseException as error:
