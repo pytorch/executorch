@@ -1,0 +1,11 @@
+{
+  "scope": "Public experiment Python source only; no model, requests, results or credentials",
+  "files": {
+    "build_prefill_workset_retention.py": "37e0a291ab428baa40d4216d4d7acbb1f764072987b538cfdf1290f91459ecd9",
+    "run_prefill_workset_retention.py": "91de0e82971ac8a957ede43f8874f1aa5372811cf1c424339aa576f570c59afc"
+  },
+  "local_syntax_checked": true,
+  "GPU_qualified": false,
+  "experimental": true,
+  "tested_on_GPU": false
+}
