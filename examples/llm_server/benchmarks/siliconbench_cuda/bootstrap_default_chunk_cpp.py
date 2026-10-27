@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 import traceback
 
 from bootstrap_current_native_chat import CPP_COMMIT,download_gguf,sha,write_wrapper
@@ -18,6 +19,10 @@ def main():
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--inputs',type=Path)
     parser.add_argument('--reuse-Gemma-gguf',type=Path)
+    parser.add_argument('--reuse-MG-gguf',type=Path)
+    parser.add_argument('--force-cublas',action='store_true')
+    parser.add_argument('--prepare-after-performance',type=Path)
+    parser.add_argument('--run-after-full-quality',type=Path)
     parser.add_argument('--port',type=int,required=True)
     args=parser.parse_args()
     assert not args.output.exists() and not args.assets.exists()
@@ -35,6 +40,10 @@ def main():
             subprocess.run(list(map(str,command)),stdout=log,stderr=subprocess.STDOUT,
                            stdin=subprocess.DEVNULL,check=True,timeout=timeout)
     try:
+        if args.prepare_after_performance:
+            while not args.prepare_after_performance.is_file():
+                state('waiting-other-performance-before-CPU-build',dependency=str(args.prepare_after_performance))
+                time.sleep(20)
         state('preparing-stock-CPP-and-public-GGUF')
         source=args.assets/'llama.cpp'
         build=args.assets/'build'
@@ -48,18 +57,19 @@ def main():
                 print(agents.read_text(),flush=True)
             assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()==CPP_COMMIT
             run('configure-stock-CPP',['cmake','-S',source,'-B',build,'-DGGML_CUDA=ON',
-                '-DGGML_CUDA_FORCE_CUBLAS=OFF','-DGGML_CUDA_FORCE_MMQ=OFF','-DGGML_CUDA_GRAPHS=ON',
+                '-DGGML_CUDA_FORCE_CUBLAS='+('ON' if args.force_cublas else 'OFF'),
+                '-DGGML_CUDA_FORCE_MMQ=OFF','-DGGML_CUDA_GRAPHS=ON',
                 '-DCMAKE_CUDA_ARCHITECTURES=120','-DCMAKE_BUILD_TYPE=Release','-DLLAMA_CURL=OFF',
                 '-DLLAMA_BUILD_TESTS=OFF'],900)
             run('build-stock-CPP',['cmake','--build',build,'--target','llama-server','--parallel','4'],7200)
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            futures=[pool.submit(compile_server),pool.submit(download_gguf,'muse-glimmer',args.assets/'models'),
+            futures=[pool.submit(compile_server),pool.submit(download_gguf,'muse-glimmer',args.assets/'models',args.reuse_MG_gguf),
                      pool.submit(download_gguf,'gemma4',args.assets/'models',args.reuse_Gemma_gguf)]
             results=[f.result() for f in futures]
         binary=build/'bin/llama-server'
         assert not subprocess.check_output(['git','-C',str(source),'status','--porcelain','--untracked-files=no'],text=True).strip()
         cmake=(build/'CMakeCache.txt').read_text()
-        assert 'GGML_CUDA_FORCE_CUBLAS:BOOL=OFF' in cmake and 'GGML_CUDA:BOOL=ON' in cmake
+        assert 'GGML_CUDA_FORCE_CUBLAS:BOOL='+('ON' if args.force_cublas else 'OFF') in cmake and 'GGML_CUDA:BOOL=ON' in cmake
         inputs=args.inputs or args.output/'inputs'
         if args.inputs is None:
             run('inputs',[sys.executable,'-B',package/'prepare_independent_main_public_inputs.py','--output',inputs],900)
@@ -71,13 +81,14 @@ def main():
             wrapper=args.output/(label+'-serve-stock.sh')
             write_wrapper(wrapper,model,'llamacpp',args.output/(label+'-tokenizer/tokenizer'),
                           Path(proof['path']),binary,args.output/(label+'-cache'))
-            tasks.append(dict(name=label+'-llamacpp',model=alias,backend='llamacpp',
+            tasks.append(dict(name=label+'-llamacpp'+('-cublas-on-reference' if args.force_cublas else ''),model=alias,backend='llamacpp',
                 wrapper=str(wrapper),client=str(package/client),inputs=str(inputs),
                 benchmark_python=str(inputs/'.venv/bin/python'),prefill_budget=prefill,
                 quality_policy='smoke',stock_framework_code_unmodified=True,GGUF=proof,
-                CPP_commit=CPP_COMMIT,CPP_binary_SHA256=sha(binary),CUBLAS_forced=False))
+                CPP_commit=CPP_COMMIT,CPP_binary_SHA256=sha(binary),CUBLAS_forced=args.force_cublas))
         config=args.output/'matrix-config.json'
-        config.write_text(json.dumps(dict(tasks=tasks,port=args.port,lock=str(args.lock)),indent=2)+'\n')
+        config.write_text(json.dumps(dict(tasks=tasks,port=args.port,lock=str(args.lock),
+            performance_after_performance=str(args.run_after_full_quality) if args.run_after_full_quality else None),indent=2)+'\n')
         state('running-single-round-matrix-before-deferred-quality',matrix_config=str(config))
         run('matrix',[sys.executable,'-B','-u',package/'run_default_chunk_single_matrix.py',
                       '--config',config,'--output',args.output/'matrix'],86400)
