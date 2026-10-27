@@ -36,11 +36,12 @@ jobs:
 
   linux:
     needs: docker-image
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -51,8 +52,9 @@ jobs:
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.15
     with:
+      test-infra-ref: release/2.15
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -67,8 +69,9 @@ jobs:
 
   windows:
     if: ${{ inputs.build-tool == 'cmake' }}
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.15
     with:
+      test-infra-ref: release/2.15
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |

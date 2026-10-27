@@ -46,7 +46,7 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -55,6 +55,7 @@ jobs:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: ${{ matrix.runner }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'

@@ -28,10 +28,11 @@ on:
 
 jobs:
   test-aot:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       contents: read
     with:
+      test-infra-ref: release/2.15
       job-name: test-aot
       runner: ${{ inputs.runner }}
       docker-image: ${{ inputs.docker-image }}
@@ -50,10 +51,11 @@ jobs:
         python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       contents: read
     with:
+      test-infra-ref: release/2.15
       job-name: test-ops
       runner: ${{ inputs.runner }}
       docker-image: ${{ inputs.docker-image }}

@@ -8,7 +8,7 @@ on:
 
 jobs:
   claude-code:
-    uses: pytorch/test-infra/.github/workflows/_claude-code.yml@main
+    uses: pytorch/test-infra/.github/workflows/_claude-code.yml@release/2.15
     with:
       additional_claude_args: --allowedTools Skill ${{ startsWith(github.event.comment.body, '@claude /pr-review') && '--effort max' || '' }}
       append_system_prompt: |

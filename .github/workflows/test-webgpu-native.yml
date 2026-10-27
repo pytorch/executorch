@@ -35,11 +35,12 @@ jobs:
 
   test-webgpu-native:
     needs: docker-image
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: mt-l-x86iavx512-16-128
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}

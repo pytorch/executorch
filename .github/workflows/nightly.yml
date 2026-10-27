@@ -25,13 +25,13 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
-        uses: pytorch/test-infra/.github/actions/update-commit-hash@main
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@release/2.15
         if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
           branch: main
           pin-folder: .ci/docker/ci_commit_pins
-          test-infra-ref: main
+          test-infra-ref: release/2.15
           updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
@@ -56,7 +56,7 @@ jobs:
   test-static-hf-llm-qnn-linux:
     needs: docker-image
     name: test-static-hf-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -65,6 +65,7 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'

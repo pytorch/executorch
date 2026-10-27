@@ -39,16 +39,18 @@ class CudaWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
-    def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
+    def test_cuda_builds_take_the_node_driver_on_the_release_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
         # the only ref carrying driver-version / driver-download-url, and it
         # installed R615 for the 13.4 cell. On OSDC the driver belongs to the
         # node and a pod cannot replace it, so the job takes what the node has.
         job = WORKFLOW["jobs"]["test-cuda-builds"]
         self.assertEqual(
-            job["uses"], "pytorch/test-infra/.github/workflows/linux_job_v3.yml@main"
+            job["uses"],
+            "pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15",
         )
-        for pin in ("test-infra-ref", "driver-version", "driver-download-url"):
+        self.assertEqual(job["with"]["test-infra-ref"], "release/2.15")
+        for pin in ("driver-version", "driver-download-url"):
             self.assertNotIn(pin, job["with"])
 
     def test_cuda_runtime_update_precedes_build_and_propagates_failure(self):

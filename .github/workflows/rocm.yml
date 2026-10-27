@@ -170,11 +170,12 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ["7.2"]
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       # Since #23603 the quantized GEMM kernels compile and run here instead of
       # failing fast; the job takes ~80 min, ~37 of them Int4AutotunePickTest's
       # CPU-saturated AOTI compile.
@@ -201,7 +202,7 @@ jobs:
       needs.voxtral-run-decision.outputs.run-voxtral == 'true' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -211,6 +212,7 @@ jobs:
       matrix:
         rocm-version: ["7.2"]
     with:
+      test-infra-ref: release/2.15
       timeout: 180
       no-sudo: true
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -243,7 +245,7 @@ jobs:
     concurrency:
       group: rocm-gfx1100-${{ github.event.pull_request.number || github.ref_name }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -253,6 +255,7 @@ jobs:
       matrix:
         rocm-version: ["7.2"]
     with:
+      test-infra-ref: release/2.15
       timeout: 180
       no-sudo: true
       secrets-env: EXECUTORCH_HF_TOKEN

@@ -138,11 +138,12 @@ jobs:
         cuda-version: ["12.6", "13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -201,11 +202,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -242,11 +244,12 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
@@ -300,11 +303,12 @@ jobs:
     name: merge-and-test-cuda-multi-arch-a10g
     needs: [export-cuda-target-smem-cross-arch]
     if: needs.export-cuda-target-smem-cross-arch.result == 'success'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -404,11 +408,12 @@ jobs:
     name: test-cuda-merged-pte-a100
     needs: [test-cuda-target-smem-cross-arch]
     if: needs.test-cuda-target-smem-cross-arch.result == 'success'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
@@ -489,11 +494,12 @@ jobs:
       fail-fast: false
       matrix:
         shard: [kernel, system]
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -621,11 +627,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -701,11 +708,12 @@ jobs:
               backends/cuda/tests/test_int6_large_quantized_gemm.py
               backends/cuda/tests/test_int8_quantized_gemm.py
               backends/cuda/tests/test_cuda_graph_timing.py
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -732,11 +740,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -798,7 +807,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -939,6 +948,7 @@ jobs:
             pybind_model: "qwen3-0.6b"
             pybind_quantized: true
     with:
+      test-infra-ref: release/2.15
       timeout: 240
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-11-41-a10g' }}
@@ -1156,7 +1166,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload benchmark results to dashboard
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.15
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false
@@ -1182,7 +1192,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1201,6 +1211,7 @@ jobs:
           - variant: kquant-dynamic
             mode: dflash-image
     with:
+      test-infra-ref: release/2.15
       timeout: 240
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda

@@ -71,11 +71,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -165,11 +166,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 180
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -249,8 +251,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: build-vulkan-windows-msvc
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.15
     with:
+      test-infra-ref: release/2.15
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |

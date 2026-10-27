@@ -39,7 +39,7 @@ jobs:
   test-qnn-wheel-packages-linux:
     needs: docker-image
     name: test-qnn-wheel-packages-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -48,6 +48,7 @@ jobs:
       matrix:
         python-version: [ "3.11", "3.12", "3.13" ]
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -96,11 +97,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-minimal-wheel-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -115,13 +117,14 @@ jobs:
   test-setup-linux-gcc:
     needs: docker-image
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -147,11 +150,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-pybindings-no-aten
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -221,7 +225,7 @@ jobs:
   test-models-linux-basic:
     needs: docker-image
     name: test-models-linux-basic
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -245,6 +249,7 @@ jobs:
             build-tool: buck2
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: ${{ matrix.runner }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -266,7 +271,7 @@ jobs:
   test-models-linux:
     needs: docker-image
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -299,6 +304,7 @@ jobs:
             runner: mt-l-x86iavx512-16-128
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: ${{ matrix.runner }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -320,13 +326,14 @@ jobs:
   test-parakeet-xnnpack-linux:
     needs: docker-image
     name: test-parakeet-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-16-128
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -354,13 +361,14 @@ jobs:
   test-voxtral-realtime-xnnpack-linux:
     needs: docker-image
     name: test-voxtral-realtime-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-16-128
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -392,7 +400,7 @@ jobs:
     needs: docker-image
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -417,6 +425,7 @@ jobs:
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: ${{ matrix.runner }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -443,13 +452,14 @@ jobs:
   test-llama-runner-linux-android:
     needs: docker-image
     name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -469,13 +479,14 @@ jobs:
   test-custom-ops-linux:
     needs: docker-image
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -494,13 +505,14 @@ jobs:
   test-selective-build-linux:
     needs: docker-image
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -520,7 +532,7 @@ jobs:
     needs: docker-image
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-multimodal-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -530,6 +542,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
+      test-infra-ref: release/2.15
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: mt-l-x86iavx512-94-768
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
@@ -559,13 +572,14 @@ jobs:
   test-moshi-linux:
     needs: docker-image
     name: test-moshi-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -592,13 +606,14 @@ jobs:
   test-quantized-aot-lib-linux:
     needs: docker-image
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -616,13 +631,14 @@ jobs:
   test-binary-size-linux-gcc:
     needs: docker-image
     name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc9-nopytorch-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -660,13 +676,14 @@ jobs:
   test-binary-size-linux:
     needs: docker-image
     name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -705,7 +722,7 @@ jobs:
   test-arm-cortex-m-size-test:
     needs: docker-image
     name: test-arm-cortex-m-size-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -714,6 +731,7 @@ jobs:
         os: [bare_metal, zephyr-preset]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -799,11 +817,12 @@ jobs:
   test-mcu-cortex-m-backend:
     needs: docker-image
     name: test-mcu-cortex-m-backend
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -891,13 +910,14 @@ jobs:
   test-qnn-buck-build-linux:
     needs: docker-image
     name: test-qnn-buck-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -926,7 +946,7 @@ jobs:
   test-arm-backend-no-driver:
     needs: docker-image
     name: test-arm-backend-no-driver
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -939,6 +959,7 @@ jobs:
           - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -978,7 +999,7 @@ jobs:
   test-arm-backend-vkml:
     needs: docker-image
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -990,6 +1011,7 @@ jobs:
           - test_arm_backend: test_runtime_vgf
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1018,11 +1040,12 @@ jobs:
   test-arm-backend-public-api-backward-compatibility:
     needs: docker-image
     name: test-arm-backend-public-api-backward-compatibility
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1046,7 +1069,7 @@ jobs:
   test-llama-runner-qnn-linux:
     needs: docker-image
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1057,6 +1080,7 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1086,7 +1110,7 @@ jobs:
   test-static-llama-qnn-linux:
     needs: docker-image
     name: test-static-llama-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1095,6 +1119,7 @@ jobs:
         task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1121,7 +1146,7 @@ jobs:
   test-sqnr-static-llm-qnn-linux:
     needs: docker-image
     name: test-sqnr-static-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1130,6 +1155,7 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1156,7 +1182,7 @@ jobs:
   test-qnn-models-linux:
     needs: docker-image
     name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1165,6 +1191,7 @@ jobs:
         model: [mv2, mv3, dl3]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1182,11 +1209,12 @@ jobs:
   test-qnn-direct-build-linux:
     needs: docker-image
     name: test-qnn-direct-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1219,13 +1247,14 @@ jobs:
   test-qnn-passes-linux:
     needs: docker-image
     name: test-qnn-passes-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1258,13 +1287,14 @@ jobs:
   test-qnn-delegate-linux:
     needs: docker-image
     name: test-qnn-delegate-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       # Intel, unlike the avx512 labels: those are r7a, i.e. AMD EPYC, and the
       # QNN backend disables MKLDNN on an AMD host through a non-bracketed
       # torch.backends mutation that raises once the tests have frozen the
@@ -1301,13 +1331,14 @@ jobs:
   test-phi-3-mini-runner-linux:
     needs: docker-image
     name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1332,13 +1363,14 @@ jobs:
   test-qnn-python-imports-linux:
     needs: docker-image
     name: test-qnn-python-imports-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1381,13 +1413,14 @@ jobs:
   test-eval_llama-wikitext-linux:
     needs: docker-image
     name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1409,7 +1442,7 @@ jobs:
   # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
   # test-eval_llama-mmlu-linux:
   #   name: test-eval_llama-mmlu-linux
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
   #   permissions:
   #     id-token: write
   #     contents: read
@@ -1437,13 +1470,14 @@ jobs:
   test-llama_runner_eager-linux:
     needs: docker-image
     name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1465,13 +1499,14 @@ jobs:
   test-lora-linux:
     needs: docker-image
     name: test-lora-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1493,13 +1528,14 @@ jobs:
   test-lora-multimethod-linux:
     needs: docker-image
     name: test-lora-multimethod-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1523,13 +1559,14 @@ jobs:
     if: ${{ false }}
     needs: docker-image
     name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-94-192
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-mediatek-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1551,13 +1588,14 @@ jobs:
   test-openvino-linux:
     needs: docker-image
     name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1574,13 +1612,14 @@ jobs:
   test-build-wasm-linux:
     needs: docker-image
     name: test-build-wasm-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1607,7 +1646,7 @@ jobs:
   unittest-wasm-bindings:
     needs: docker-image
     name: unittest-wasm-bindings
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1616,6 +1655,7 @@ jobs:
         enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1653,11 +1693,12 @@ jobs:
 
   unittest-nxp-neutron:
     needs: docker-image
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1698,11 +1739,12 @@ jobs:
   test-vulkan-models-linux:
     needs: docker-image
     name: test-vulkan-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1740,11 +1782,12 @@ jobs:
   test-vulkan-operators-linux:
     needs: docker-image
     name: test-vulkan-operators-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1803,7 +1846,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-bc-macos (${{ matrix.runner }})
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.15
     permissions:
       id-token: write
       contents: read
@@ -1812,6 +1855,7 @@ jobs:
         runner: [macos-m1-stable, macos-m2-stable]
       fail-fast: false
     with:
+      test-infra-ref: release/2.15
       default-packages: ""
       runner: ${{ matrix.runner }}
       submodules: 'recursive'
@@ -1836,11 +1880,12 @@ jobs:
   nxp-build-test:
     needs: docker-image
     name: nxp-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1867,11 +1912,12 @@ jobs:
   nxp-mcuxpresso-test:
     needs: docker-image
     name: nxp-mcuxpresso-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'

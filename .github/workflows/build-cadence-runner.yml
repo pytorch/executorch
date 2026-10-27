@@ -72,10 +72,11 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association))
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       contents: read
     with:
+      test-infra-ref: release/2.15
       job-name: build
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.image }}

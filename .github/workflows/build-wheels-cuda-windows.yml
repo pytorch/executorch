@@ -41,12 +41,12 @@ concurrency:
 
 jobs:
   generate-matrix:
-    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@release/2.15
     with:
       package-type: wheel
       os: windows
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: release/2.15
       with-cuda: enable
       with-cpu: disable
       with-rocm: disable
@@ -89,7 +89,7 @@ jobs:
             smoke-test-script: .ci/scripts/wheel/test_cuda_windows.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_windows.yml@main
+    uses: pytorch/test-infra/.github/workflows/build_wheels_windows.yml@release/2.15
     with:
       repository: ${{ matrix.repository }}
       ref: ""
@@ -167,11 +167,12 @@ jobs:
       matrix:
         cuda-version: ${{ fromJSON(needs.cuda-trains.outputs.versions) }}
     name: export-cuda-windows-wheel-program-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.15
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.15
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
@@ -259,8 +260,9 @@ jobs:
       matrix:
         cuda-version: ${{ fromJSON(needs.cuda-trains.outputs.versions) }}
     name: test-cuda-windows-wheel-e2e-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.15
     with:
+      test-infra-ref: release/2.15
       timeout: 120
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
