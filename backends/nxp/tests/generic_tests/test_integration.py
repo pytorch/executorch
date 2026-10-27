@@ -20,7 +20,7 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNet
 def test_conv_fc_softmax__to_executorch_program(use_qat):
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)
-    train_fn = lambda m: None if use_qat else None  # noqa E731
+    train_fn = (lambda m: None) if use_qat else None  # noqa E731
 
     exec_prog = to_quantized_executorch_program(
         model, input_shape, use_qat=use_qat, train_fn=train_fn
@@ -43,7 +43,7 @@ def test_conv_fc_softmax__to_executorch_program(use_qat):
 def test_cifarnet(use_qat):
     model = CifarNet().get_eager_model().eval()
     input_shape = (1, 3, 32, 32)
-    train_fn = lambda m: None if use_qat else None  # noqa E731
+    train_fn = (lambda m: None) if use_qat else None  # noqa E731
 
     exec_prog = to_quantized_executorch_program(
         model,
