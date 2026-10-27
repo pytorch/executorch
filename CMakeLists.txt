@@ -807,11 +807,6 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
-# Reset on every configure so a reused build tree cannot package a stale DSO.
-set(EXECUTORCH_VULKAN_SHARED_RUNTIME_BUILT
-    OFF
-    CACHE INTERNAL "Whether the shared Vulkan runtime is built" FORCE
-)
 if(EXECUTORCH_BUILD_VULKAN
    OR EXECUTORCH_BUILD_VGF
    OR EXECUTORCH_BUILD_NATIVE_VULKAN

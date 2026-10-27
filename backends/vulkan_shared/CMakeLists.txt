@@ -39,13 +39,6 @@ add_library(
   executorch::vulkan_shared_runtime ALIAS executorch_vulkan_shared_runtime
 )
 
-# Packaging follows the actual target, not EXECUTORCH_BUILD_SHARED. The shared
-# registry is required even when its Vulkan consumers are static libraries.
-set(EXECUTORCH_VULKAN_SHARED_RUNTIME_BUILT
-    ON
-    CACHE INTERNAL "Whether the shared Vulkan runtime is built" FORCE
-)
-
 target_compile_definitions(
   executorch_vulkan_shared_runtime PRIVATE EXECUTORCH_VULKAN_SHARED_BUILDING
 )
