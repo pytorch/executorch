@@ -26,30 +26,46 @@ NSError* bookmark_test_error(NSInteger code = EIO) {
 }
 
 // These cases never retain a delegate handle beyond initialization.
-Error initialize_and_destroy(NSDictionary* dict, const NamedDataMap* data, NSString* root) {
-  if (root == nil) return Error::InvalidArgument;
+Error initialize_and_destroy(
+    NSDictionary* dict,
+    const NamedDataMap* data,
+    NSString* root) {
+  if (root == nil)
+    return Error::InvalidArgument;
   BackendOptions<1> options;
   auto error = options.set_option("coreai_assets_dir", root.UTF8String);
-  if (error != Error::Ok) return error;
+  if (error != Error::Ok)
+    return error;
   auto* backend = get_backend_class("CoreAIBackend");
-  if (backend == nullptr) return Error::Internal;
-  BackendInitContext context(nullptr, nullptr, "forward", data,
-                             {options.view().data(), options.view().size()});
+  if (backend == nullptr)
+    return Error::Internal;
+  BackendInitContext context(
+      nullptr,
+      nullptr,
+      "forward",
+      data,
+      {options.view().data(), options.view().size()});
   NSData* json = encode(dict);
-  if (json == nil) return Error::InvalidArgument;
+  if (json == nil)
+    return Error::InvalidArgument;
   FreeableBuffer processed(json.bytes, json.length, nullptr);
   auto handle = backend->init(context, &processed, {});
-  if (!handle.ok()) return handle.error();
+  if (!handle.ok())
+    return handle.error();
   backend->destroy(handle.get());
   return Error::Ok;
 }
 
-dispatch_time_t deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC); }
+dispatch_time_t deadline() {
+  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
+}
 
 class CoreAIEvictionTest : public ::testing::Test {
  protected:
   ScopedFakeBridgeState bridge;
-  void SetUp() override { runtime_init(); }
+  void SetUp() override {
+    runtime_init();
+  }
 };
 
 // Release the callback before waiting; never unwind storage borrowed by a hang.
@@ -75,20 +91,27 @@ struct ReleaseAndJoin final {
   }
   void join() {
     release();
-    if (joined) return;
+    if (joined)
+      return;
     const auto completion_deadline = deadline();
     if (eviction_started)
-      eviction_wait = dispatch_semaphore_wait(eviction_done, completion_deadline);
-    if (loading_started) loading_wait = dispatch_semaphore_wait(loading_done, completion_deadline);
-    if ((eviction_started && eviction_wait != 0) || (loading_started && loading_wait != 0)) {
-      ADD_FAILURE() << "Eviction/load workers did not return after releasing the gate";
+      eviction_wait =
+          dispatch_semaphore_wait(eviction_done, completion_deadline);
+    if (loading_started)
+      loading_wait = dispatch_semaphore_wait(loading_done, completion_deadline);
+    if ((eviction_started && eviction_wait != 0) ||
+        (loading_started && loading_wait != 0)) {
+      ADD_FAILURE()
+          << "Eviction/load workers did not return after releasing the gate";
       std::_Exit(EXIT_FAILURE);
     }
-    const int eviction_join = eviction_started ? pthread_join(eviction, nullptr) : 0;
-    const int loading_join = loading_started ? pthread_join(loading, nullptr) : 0;
+    const int eviction_join =
+        eviction_started ? pthread_join(eviction, nullptr) : 0;
+    const int loading_join =
+        loading_started ? pthread_join(loading, nullptr) : 0;
     if (eviction_join != 0 || loading_join != 0) {
-      ADD_FAILURE() << "Cannot join eviction/load workers: " << eviction_join << ", "
-                    << loading_join;
+      ADD_FAILURE() << "Cannot join eviction/load workers: " << eviction_join
+                    << ", " << loading_join;
       std::_Exit(EXIT_FAILURE);
     }
     auto drained = bridge.wait_for_callbacks(deadline());
@@ -98,9 +121,11 @@ struct ReleaseAndJoin final {
     }
     joined = true;
   }
-  ~ReleaseAndJoin() { join(); }
+  ~ReleaseAndJoin() {
+    join();
+  }
 };
-}  // namespace
+} // namespace
 
 @interface PinBookmarkLoader : BookmarkFakeLoader
 @property(nonatomic, weak) BookmarkFakeModel* temporary;
@@ -108,13 +133,15 @@ struct ReleaseAndJoin final {
 @end
 
 @implementation PinBookmarkLoader
-- (void)specializeModelAtURL:(NSURL*)url completion:(ETCoreAIAcquisitionCompletion)completion {
+- (void)specializeModelAtURL:(NSURL*)url
+                  completion:(ETCoreAIAcquisitionCompletion)completion {
   ++specializations;
   self.retainedCompletion = completion;
   @autoreleasepool {
     BookmarkFakeModel* model = [[BookmarkFakeModel alloc] init];
     model.owner = self;
-    model.bookmark = [@"pinned-bookmark" dataUsingEncoding:NSUTF8StringEncoding];
+    model.bookmark =
+        [@"pinned-bookmark" dataUsingEncoding:NSUTF8StringEncoding];
     self.temporary = model;
     completion(ETCoreAIAcquisitionStatusHit, model, nil);
     model = nil;
@@ -126,12 +153,16 @@ struct ReleaseAndJoin final {
   self.retainedCompletion = completion;
   @autoreleasepool {
     BookmarkFakeModel* model = self.temporary;
-    completion(model == nil ? ETCoreAIAcquisitionStatusMiss : ETCoreAIAcquisitionStatusHit, model,
-               nil);
+    completion(
+        model == nil ? ETCoreAIAcquisitionStatusMiss
+                     : ETCoreAIAcquisitionStatusHit,
+        model,
+        nil);
     model = nil;
   }
 }
-- (void)evictModelWithBookmark:(NSData*)bookmark completion:(void (^)(NSError*))completion {
+- (void)evictModelWithBookmark:(NSData*)bookmark
+                    completion:(void (^)(NSError*))completion {
   ++evictions;
   bool busy;
   @autoreleasepool {
@@ -148,7 +179,7 @@ struct ReleaseAndJoin final {
 namespace {
 TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
   @autoreleasepool {
-    BookmarkDirectory root;
+    TestDirectory root;
     ASSERT_NE(root.url, nil);
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
@@ -167,7 +198,8 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     NSString* source_path = fake.loader.lastSpecializeURL;
     ASSERT_NE(source_path, nil);
     NSURL* source_url = [NSURL fileURLWithPath:source_path];
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
 
     fake.loader.restoreMiss = YES;
     fake.loader.specializeError = bookmark_test_error();
@@ -175,7 +207,8 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     auto after_failure = saved_bookmark(root.url, key);
     ASSERT_TRUE(after_failure.ok());
     EXPECT_TRUE([after_failure.get() isEqual:original]);
-    EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_TRUE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     fake.loader.specializeError = nil;
     ASSERT_EQ(initialize_and_destroy(dict, &data, root.url.path), Error::Ok);
     EXPECT_EQ(fake.loader->specializations.load(), 3);
@@ -186,12 +219,14 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     NSData* saved = saved_result.get();
     ASSERT_NE(saved, nil);
     EXPECT_FALSE([saved isEqual:original]);
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     ASSERT_EQ(
         clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_NE(fake.loader.models[original], nil);
     EXPECT_EQ(fake.loader.models[saved], nil);
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     fake.loader.restoreMiss = NO;
     fake.loader.emptyBookmark = YES;
     EXPECT_NE(initialize_and_destroy(dict, &data, root.url.path), Error::Ok);
@@ -205,9 +240,11 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
   }
 }
 
-TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbsent) {
+TEST_F(
+    CoreAIEvictionTest,
+    BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbsent) {
   @autoreleasepool {
-    BookmarkDirectory root;
+    TestDirectory root;
     ASSERT_NE(root.url, nil);
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
@@ -225,20 +262,21 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
       StorageFaultScope fault(StorageOperation::Remove);
       ASSERT_EQ(
           initialize_and_destroy(manifest_dict(), &data, root.url.path),
-          Error::AccessFailed);
+          Error::Ok);
       EXPECT_EQ(fault.hits, 1);
     }
     auto saved_result = saved_bookmark(root.url, key);
     ASSERT_TRUE(saved_result.ok());
     NSData* saved = saved_result.get();
     ASSERT_NE(saved, nil);
-    NSURL* source_url =
-        [[[root.url URLByAppendingPathComponent:@"staging"] URLByAppendingPathComponent:key]
-            URLByAppendingPathComponent:selected->path.lastPathComponent];
+    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"staging"]
+        URLByAppendingPathComponent:key]
+        URLByAppendingPathComponent:selected->path.lastPathComponent];
     EXPECT_TRUE(
         [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     for (bool probe_error : {false, true}) {
-      SCOPED_TRACE(probe_error ? "unknown restore failure" : "restore hit/busy");
+      SCOPED_TRACE(
+          probe_error ? "unknown restore failure" : "restore hit/busy");
       fake.loader.evictError = bookmark_test_error(EBUSY);
       fake.loader.restoreError = probe_error ? bookmark_test_error() : nil;
       EXPECT_NE(
@@ -266,9 +304,12 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
     auto absent = saved_bookmark(root.url, key);
     ASSERT_TRUE(absent.ok());
     EXPECT_EQ(absent.get(), nil);
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     fake.loader.evictError = nil;
-    ASSERT_EQ(initialize_and_destroy(manifest_dict(), &data, root.url.path), Error::Ok);
+    ASSERT_EQ(
+        initialize_and_destroy(manifest_dict(), &data, root.url.path),
+        Error::Ok);
     {
       StorageFaultScope fault(StorageOperation::Remove);
       EXPECT_NE(
@@ -283,14 +324,17 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
     auto removed = saved_bookmark(root.url, key);
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     EXPECT_EQ(data.requests.load(), data.releases.load());
   }
 }
 
-TEST_F(CoreAIEvictionTest, PreparedPinsBlockEvictionWithoutRetainedCompletionLeak) {
+TEST_F(
+    CoreAIEvictionTest,
+    PreparedPinsBlockEvictionWithoutRetainedCompletionLeak) {
   @autoreleasepool {
-    BookmarkDirectory root;
+    TestDirectory root;
     ASSERT_NE(root.url, nil);
     TestData data;
     auto selected = bookmark_manifest();
@@ -304,8 +348,8 @@ TEST_F(CoreAIEvictionTest, PreparedPinsBlockEvictionWithoutRetainedCompletionLea
     // failures.
     bridge.state().bookmark_loader = loader;
     @autoreleasepool {
-      auto pinned =
-          acquire_bookmark_model(selected.get(), &data, root.url.path, @"macOS", @"arch_b", loader);
+      auto pinned = acquire_bookmark_model(
+          selected.get(), &data, root.url.path, @"macOS", @"arch_b", loader);
       ASSERT_TRUE(pinned.ok());
       EXPECT_NE(loader.temporary, nil);
       EXPECT_NE(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
@@ -320,10 +364,11 @@ TEST_F(CoreAIEvictionTest, PreparedPinsBlockEvictionWithoutRetainedCompletionLea
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
     EXPECT_EQ(loader->evictions.load(), 2);
-    NSURL* source_url =
-        [[[root.url URLByAppendingPathComponent:@"staging"] URLByAppendingPathComponent:key]
-            URLByAppendingPathComponent:selected->path.lastPathComponent];
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    NSURL* source_url = [[[root.url URLByAppendingPathComponent:@"staging"]
+        URLByAppendingPathComponent:key]
+        URLByAppendingPathComponent:selected->path.lastPathComponent];
+    EXPECT_FALSE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     [loader clearRetainedState];
     EXPECT_EQ(data.requests.load(), data.releases.load());
   }
@@ -331,7 +376,7 @@ TEST_F(CoreAIEvictionTest, PreparedPinsBlockEvictionWithoutRetainedCompletionLea
 
 TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
   @autoreleasepool {
-    BookmarkDirectory root;
+    TestDirectory root;
     ASSERT_NE(root.url, nil);
     BookmarkLoaderScope fake;
     ASSERT_NE(fake.loader, nil);
@@ -341,7 +386,9 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     auto key_result = test_bookmark_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
-    ASSERT_EQ(initialize_and_destroy(manifest_dict(), &data, root.url.path), Error::Ok);
+    ASSERT_EQ(
+        initialize_and_destroy(manifest_dict(), &data, root.url.path),
+        Error::Ok);
     dispatch_semaphore_t deleting = dispatch_semaphore_create(0);
     dispatch_semaphore_t proceed = dispatch_semaphore_create(0);
     dispatch_semaphore_t loading_observed = dispatch_semaphore_create(0);
@@ -362,8 +409,13 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     };
     auto load = [&] {
       @autoreleasepool {
-        auto acquired = acquire_bookmark_model(selected.get(), &data, root.url.path, @"macOS",
-                                               @"arch_b", fake.loader);
+        auto acquired = acquire_bookmark_model(
+            selected.get(),
+            &data,
+            root.url.path,
+            @"macOS",
+            @"arch_b",
+            fake.loader);
         load_ok = acquired.ok() && acquired.get() != nil;
       }
       dispatch_semaphore_signal(loading_observed);
@@ -371,20 +423,23 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     };
     ReleaseAndJoin cleanup{proceed, eviction_done, loading_done, bridge};
     const int eviction_start = pthread_create(
-        &cleanup.eviction, nullptr,
+        &cleanup.eviction,
+        nullptr,
         [](void* context) -> void* {
           (*static_cast<decltype(evict)*>(context))();
           return nullptr;
         },
         &evict);
     cleanup.eviction_started = eviction_start == 0;
-    const long entered =
-        cleanup.eviction_started ? dispatch_semaphore_wait(deleting, deadline()) : -1;
+    const long entered = cleanup.eviction_started
+        ? dispatch_semaphore_wait(deleting, deadline())
+        : -1;
     int loading_start = -1;
     long premature_completion = -1;
     if (entered == 0) {
       loading_start = pthread_create(
-          &cleanup.loading, nullptr,
+          &cleanup.loading,
+          nullptr,
           [](void* context) -> void* {
             (*static_cast<decltype(load)*>(context))();
             return nullptr;
@@ -393,7 +448,8 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
       cleanup.loading_started = loading_start == 0;
       if (cleanup.loading_started) {
         premature_completion = dispatch_semaphore_wait(
-            loading_observed, dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC));
+            loading_observed,
+            dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC));
       }
     }
     cleanup.join();
@@ -415,4 +471,4 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     EXPECT_EQ(data.requests.load(), data.releases.load());
   }
 }
-}  // namespace
+} // namespace

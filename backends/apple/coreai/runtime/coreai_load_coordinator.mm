@@ -81,8 +81,10 @@ void cleanup_source(const CacheEntryLock& cache_entry) {
 }
 
 Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
-  ET_CHECK_OR_RETURN_ERROR(storage_fault(StorageOperation::BeforeEvict) == 0,
-                           AccessFailed, "Core AI eviction interrupted");
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_fault(StorageOperation::BeforeEvict) == 0,
+      AccessFailed,
+      "Core AI eviction interrupted");
   dispatch_semaphore_t ready = dispatch_semaphore_create(0);
   __block NSError* failure = nil;
   [loader evictModelWithBookmark:bookmark
@@ -95,15 +97,18 @@ Error evict_one(id<ETCoreAIModelLoading> loader, NSData* bookmark) {
     // Probe after failed deletion so our own probe cannot make the entry busy.
     @autoreleasepool {
       auto probe = restore(loader, bookmark);
-      if (probe.ok() && probe.get() == nil) return Error::Ok;
+      if (probe.ok() && probe.get() == nil)
+        return Error::Ok;
     }
     return sdk_error(failure);
   }
-  ET_CHECK_OR_RETURN_ERROR(storage_fault(StorageOperation::AfterEvict) == 0,
-                           AccessFailed, "Core AI eviction interrupted");
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_fault(StorageOperation::AfterEvict) == 0,
+      AccessFailed,
+      "Core AI eviction interrupted");
   return Error::Ok;
 }
-}  // namespace
+} // namespace
 
 Result<RuntimeAssets> select_runtime_assets(const Manifest& manifest) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -207,26 +212,48 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
   return model;
 }
 
-Error clear_bookmark_assets(NSString* root, NSString* key,
-                            id<ETCoreAIModelLoading> loader) {
+Error clear_bookmark_assets(
+    NSString* root,
+    NSString* key,
+    id<ETCoreAIModelLoading> loader) {
   auto locked = lock_bookmark(root, key, false);
-  if (!locked.ok()) return locked.error();
-  if (locked.get() == nullptr) return Error::Ok;
-  auto bookmark = read_bookmark(*locked.get());
-  if (!bookmark.ok()) return bookmark.error();
-  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(*locked.get(), false));
-  if (bookmark.get() != nil) {
-    if (loader == nil) {
-      ET_CHECK_OR_RETURN_ERROR(ETCoreAIIsAvailable(), NotSupported,
-                               "Core AI requires macOS 27 or iOS 27");
-      loader = ETCoreAICreateModelLoader();
-      ET_CHECK_OR_RETURN_ERROR(loader != nil, Internal,
-                               "Cannot create Core AI model loader");
-    }
-    ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bookmark.get()));
+  if (!locked.ok())
+    return locked.error();
+  if (locked.get() == nullptr)
+    return Error::Ok;
+  auto bookmark = read_bookmark(*locked.get(), /*maintenance=*/true);
+  if (!bookmark.ok() && bookmark.error() != Error::InvalidExternalData) {
+    return bookmark.error();
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(*locked.get()));
-  return bookmark.get() == nil ? Error::Ok : remove_bookmark(*locked.get());
+  NSData* bytes = bookmark.ok() ? bookmark.get() : nil;
+  if (bytes == nil) {
+    ET_LOG(
+        Info,
+        "Core AI cache key %s has a %s bookmark; SDK eviction could not be "
+        "confirmed; attempting local cleanup",
+        key.UTF8String,
+        bookmark.ok() ? "missing" : "corrupt");
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(
+      *locked.get(), false, StorageRemovalMode::Maintenance));
+  if (bytes != nil) {
+    if (loader == nil) {
+      ET_CHECK_OR_RETURN_ERROR(
+          ETCoreAIIsAvailable(),
+          NotSupported,
+          "Core AI requires macOS 27 or iOS 27");
+      loader = ETCoreAICreateModelLoader();
+      ET_CHECK_OR_RETURN_ERROR(
+          loader != nil, Internal, "Cannot create Core AI model loader");
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bytes));
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(
+      *locked.get(), true, StorageRemovalMode::Maintenance));
+  if (!bookmark.ok() || bytes != nil) {
+    ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark(*locked.get()));
+  }
+  return remove_bookmark_identity(*locked.get());
 }
 
-}  // namespace executorch::backends::coreai
+} // namespace executorch::backends::coreai

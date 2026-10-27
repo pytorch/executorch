@@ -246,13 +246,14 @@ when the directory is omitted or null. A supplied path must be absolute; invalid
 paths fail without falling back to the default. If loading used a custom root,
 pass that same root when clearing; the PTE does not store runtime overrides.
 
-Root-wide clearing visits keyed bookmarks and staged directories. PTE clearing
-selects and deduplicates keys for all Core AI delegates in every method, using
-the current platform, SDK architecture and default specialization configuration.
-All selected manifests must be valid and compatible before any entry is cleared.
-Incompatible delegates are not silently skipped. Root-wide clearing remains
-available independently of the PTE. Discovery does not load models or materialize
-assets.
+Root-wide clearing visits keyed bookmarks, identity records, and staged
+directories. PTE clearing finds every Core AI delegate in every method and clears
+all recorded variants of its bundles, including other platforms and SDK
+architectures. Manifests must be structurally valid before any entry is cleared;
+their minimum OS and runtime compatibility do not restrict maintenance.
+Discovery requires neither SDK availability nor an architecture query, and does
+not load models or materialize assets. Actual SDK eviction still requires a
+usable bookmark and an available loader.
 
 These synchronous calls require callers to unload affected models and prevent
 concurrent loads, inference and maintenance across processes. Per-key locks are
@@ -267,11 +268,39 @@ missing root or absent entry is a noncreating no-op.
 Everything under a keyed `staging/<key>` directory belongs to the backend and is
 removed with that key. Outside keyed entries, clearing does not delete PTEs,
 other files or the stable lock files. Unkeyed interrupted-staging directories
-also remain untouched. Bookmarks are SDK eviction handles, not weights: lost
-bookmarks can leave SDK entries that these APIs cannot target. There is no
-history or ownership registry. Copied or reused exported artifacts can share
-keys; clearing them also removes the other copy's warm-cache benefit. Subsequent
-loads can specialize again.
+also remain untouched. Bookmarks are SDK eviction handles, not weights. For an
+existing entry with a missing or structurally invalid bookmark, clearing logs an
+Info message with the cache key, attempts local cleanup, and continues to other keys.
+The message states that SDK eviction could not be confirmed; bookmark contents
+are not logged. Absent entries remain quiet no-ops. I/O failures and SDK eviction
+errors still preserve bookmarks for retry. Lost bookmarks can leave SDK entries
+that these APIs cannot target. No history of removed entries is retained.
+Copied or reused exported artifacts can share keys; clearing them also removes
+the other copy's warm-cache benefit. Subsequent loads can specialize again.
+
+Identity records are small JSON sidecars beside bookmarks. They retain bundle
+identity and cache context, and are checked against their hashed key. Loading
+publishes the record before staging or SDK acquisition, and clearing removes it
+last. Existing keys and opaque bookmark bytes are unchanged. Older AOT entries
+can be found directly from the PTE's architecture list. Older source entries
+without attribution cannot always be identified: PTE clearing removes known
+matches, logs unresolved keys, and reports incomplete cleanup rather than
+removing unrelated entries. A one-time root-wide `clear_cache` handles these
+older entries. Missing or corrupt attribution has the same conservative behavior.
+
+### Persistent SDK Rejection
+
+SDK errors are not classified as transient or permanent.
+Busy errors and all unclassified eviction/restore errors retain the local
+bookmark for retry; only successful eviction or a confirmed SDK miss permits
+normal removal. If retries keep failing, first stop every process using the
+assets root. Back up or quarantine only the affected key's bookmark, identity
+sidecar, and keyed staging outside that root, leaving the stable lock files in
+place. A later load can attempt cold acquisition and create new tracking data.
+This manual recovery does not confirm SDK eviction or guarantee disk-space
+reclamation: keep the backup because it may contain the only remaining eviction
+handle. Do not perform manual recovery while loading, inference, or maintenance
+is running.
 
 ### Runtime options
 

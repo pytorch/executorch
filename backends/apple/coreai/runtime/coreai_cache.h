@@ -32,10 +32,13 @@ namespace executorch::backends::coreai {
     const char* coreai_assets_dir = nullptr);
 
 /**
- * Clears current-platform/SDK-architecture cache entries referenced by every
- * CoreAI delegate in the PTE, after validating all selected manifests. Invalid
- * or incompatible delegates fail before any entries are cleared. Does not
- * initialize delegates or materialize Core AI assets.
+ * Clears all recorded cache variants referenced by every CoreAI delegate in
+ * the PTE after validating its manifests. Discovery does not require host
+ * compatibility or SDK availability. Actual SDK eviction requires a loader.
+ * Missing/corrupt attribution can leave legacy source entries unidentified:
+ * known matches are cleared, then an error reports incomplete cleanup. A
+ * root-wide clear can recover these entries. Does not initialize delegates or
+ * materialize Core AI assets.
  *
  * A null directory selects the same Caches default as backend initialization.
  * Supplied directories must be valid explicit roots; they never fall back to

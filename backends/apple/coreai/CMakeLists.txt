@@ -422,8 +422,8 @@ coreai_require_os27(coreaidelegate)
 target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
 add_dependencies(coreaidelegate coreai_swift)
 target_link_libraries(
-  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} program_schema
-                         executorch::coreai_dependencies
+  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} ${_coreai_data_loader}
+                         program_schema executorch::coreai_dependencies
 )
 executorch_target_link_options_shared_lib(coreaidelegate)
 if(EXECUTORCH_BUILD_SHARED)
