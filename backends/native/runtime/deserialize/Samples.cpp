@@ -125,7 +125,13 @@ class SetDecoder {
     if (!entry.is_object() || !entry.contains("in")) {
       fail(at + " must be an object with an 'in' list");
     }
+    const auto method = entry.find("method");
+    if (method == entry.end() || !method->is_string() ||
+        method->get_ref<const std::string&>().empty()) {
+      fail(at + ".method must be a non-empty string");
+    }
     SampleCall result;
+    result.method = method->get<std::string>();
     result.inputs = tensors(entry["in"], at + ".in");
     if (entry.contains("out")) {
       result.outputs = tensors(entry["out"], at + ".out");
@@ -158,11 +164,9 @@ class SetDecoder {
 
 } // namespace
 
-SampleSet read_sample_set(
-    const ZipReader& zip,
-    const std::string& method,
-    const std::string& set) {
-  const std::string prefix = "samples/" + method + "/" + set + "/";
+// cppcheck-suppress unusedFunction
+SampleSet read_sample_set(const ZipReader& zip, const std::string& set) {
+  const std::string prefix = "samples/" + set + "/";
   const std::string where = "samples: " + prefix;
   if (!zip.member_size(prefix + "index.json") ||
       !zip.member_size(prefix + "data.safetensors")) {
