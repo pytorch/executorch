@@ -243,16 +243,20 @@ def _safetensors_header(owners: dict[str, torch.Tensor]) -> tuple[bytes, list[st
     return len(encoded).to_bytes(8, "little") + encoded, order
 
 
-def _write_safetensors(pkg: zipfile.ZipFile, owners: dict[str, torch.Tensor]) -> None:
-    """Stream the safetensors member into `pkg` with its data section aligned."""
+def _write_safetensors(
+    pkg: zipfile.ZipFile,
+    owners: dict[str, torch.Tensor],
+    entry: str = SAFETENSORS_ENTRY,
+) -> None:
+    """Stream a safetensors member into `pkg` with its data section aligned."""
     header, order = _safetensors_header(owners)
     size = len(header) + sum(t.numel() * t.element_size() for t in owners.values())
     zip64 = size > zipfile.ZIP64_LIMIT
 
-    zinfo = zipfile.ZipInfo(SAFETENSORS_ENTRY, time.localtime(time.time())[:6])
+    zinfo = zipfile.ZipInfo(entry, time.localtime(time.time())[:6])
     local_header_size = (
         _LOCAL_HEADER_SIZE
-        + len(SAFETENSORS_ENTRY.encode("utf-8"))
+        + len(entry.encode("utf-8"))
         + (_ZIP64_LOCAL_EXTRA_SIZE if zip64 else 0)
     )
     assert pkg.fp is not None
