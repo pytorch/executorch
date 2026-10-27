@@ -10,6 +10,7 @@ def sha(p):
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ['source','python','output','lock']:p.add_argument('--'+n,type=Path,required=True)
+ p.add_argument('--reuse-gguf-directory',type=Path)
  a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False);completed=[]
  def state(s,**kw):
   t=a.output/'progress.pending.json';t.write_text(json.dumps(dict(status=s,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),completed=completed,**kw),indent=2)+'\n');t.replace(a.output/'progress.json')
@@ -21,10 +22,14 @@ def main():
   directory=a.output/'public-GGUF';directory.mkdir()
   for model,repo,rev,filename,expected in MODELS:
    state('downloading-pinned-public-GGUF',model=model,repo=repo,revision=rev)
-   gguf=directory/filename;pending=gguf.with_name(gguf.name+'.partial');url=f'https://huggingface.co/{repo}/resolve/{rev}/{filename}'
-   with urllib.request.urlopen(url,timeout=120) as src,pending.open('xb') as dst:
-    for block in iter(lambda:src.read(16*1024*1024),b''):dst.write(block)
-   assert sha(pending)==expected;pending.rename(gguf)
+   gguf=(a.reuse_gguf_directory/filename) if a.reuse_gguf_directory else directory/filename
+   if a.reuse_gguf_directory:
+    assert gguf.is_file() and sha(gguf)==expected
+   else:
+    pending=gguf.with_name(gguf.name+'.partial');url=f'https://huggingface.co/{repo}/resolve/{rev}/{filename}'
+    with urllib.request.urlopen(url,timeout=120) as src,pending.open('xb') as dst:
+     for block in iter(lambda:src.read(16*1024*1024),b''):dst.write(block)
+    assert sha(pending)==expected;pending.rename(gguf)
    audit=dict(public_repo=repo,revision=rev,filename=filename,SHA256=expected,bytes=gguf.stat().st_size,unchanged_GGUF=True)
    (directory/(model+'-download-audit.json')).write_text(json.dumps(audit,indent=2)+'\n')
    state('running-original-Marlin-same-GGUF-probe',model=model)

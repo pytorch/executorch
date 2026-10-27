@@ -81,7 +81,7 @@ def main():
    def bounded():assert time.monotonic()-start<a.max_seconds,'Bounded experiment time exceeded'
    def graph_time(fn):
     for _ in range(3):fn()
-    torch.cuda.synchronize();g=torch.cuda.CUDAGraph();begin=torch.cuda.Event(enable_timing=True);end=torch.cuda.Event(enable_timing=True)
+    torch.cuda.synchronize();g=torch.cuda.CUDAGraph();begin=torch.cuda.Event(enable_timing=True,external=True);end=torch.cuda.Event(enable_timing=True,external=True)
     with torch.cuda.graph(g):
      begin.record();y=fn();end.record()
     out=[]

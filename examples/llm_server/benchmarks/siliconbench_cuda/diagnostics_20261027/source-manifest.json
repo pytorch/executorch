@@ -1,10 +1,10 @@
 {
   "scope": "public source-only parallel diagnostics",
   "sources": {
-    "benchmark_original_marlin.py": "b458ce541e357c0f997b6e056b152bbfaf485ea97a52260dde852d29f20089ee",
+    "benchmark_original_marlin.py": "799b8ac9c294f8cbdb112f0cf0103fa55da7712e424044eb1b3c953c0adfb665",
     "run_gemma_scaling.py": "11e038df7b9c37b296a42968df64a948b584bdf2a5b86a2ef578e65fa1382c89",
     "README.md": "a2a323ccba8497befa82d52b03360d42593d8b8228d346afba24dc483c93de0a",
-    "run_marlin_campaign.py": "694f4fb3b51dcb1c965fbdb196d388bbb38a0437ecb6740b968109027b2c426c"
+    "run_marlin_campaign.py": "8713e0b6305ba33a22b5aca0c99dfe0197febcdcd0992eeda396aec6e5f6b95e"
   },
   "contains_weights_requests_logs_results": false
 }
