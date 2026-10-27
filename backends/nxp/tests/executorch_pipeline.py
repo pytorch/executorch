@@ -213,7 +213,7 @@ def to_quantized_edge_program(
             dump_kernel_selection_code,
             use_profiling,
             train_fn,
-            lambda *_: calibration_inputs,
+            calibration_inputs_fn=lambda *_: calibration_inputs,
         )
         recipe = get_neutron_recipe(rc, use_qat, delegate_to_npu)
 
@@ -321,7 +321,7 @@ def to_quantized_executorch_program(
             dataset_dir
         )
     else:
-        get_calibration_inputs_fn = None  # Use default -> random data.
+        get_calibration_inputs_fn = None  # Use default (example inputs).
 
     if use_recipe_export:
         logging.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
