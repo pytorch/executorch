@@ -7,7 +7,10 @@
 from copy import deepcopy
 
 import torch
-from executorch.backends.cpu.partitioner import CPU_DELEGATE_VERSION
+from executorch.backends.cpu.partitioner import (
+    CPU_DELEGATE_VERSION,
+    CPU_SUPPORTED_DTYPES,
+)
 from executorch.backends.native.serialization import serialize_graph
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import (
@@ -35,7 +38,7 @@ def _validate_boundary_layouts(graph_module: torch.fx.GraphModule) -> None:
 
 
 class CpuBackend(BackendDetails):
-    """Serialize provider-neutral Native semantics with contiguous FP32 storage.
+    """Serialize provider-neutral Native semantics with contiguous tensor storage.
 
     The delegate version fixes 64-byte alignment and 64 initialized readable
     tail bytes. Named constants include the tail in their recorded buffer capacity.
@@ -73,9 +76,9 @@ class CpuBackend(BackendDetails):
         )
         data = NamedDataStore()
         for name, tensor in constants.items():
-            if tensor.dtype != torch.float32 or tensor.device.type != "cpu":
+            if tensor.dtype not in CPU_SUPPORTED_DTYPES or tensor.device.type != "cpu":
                 raise ValueError(
-                    f"CpuBackend requires FP32 CPU constant {name}, "
+                    f"CpuBackend requires supported CPU constant {name}, "
                     f"got dtype {tensor.dtype} on {tensor.device}"
                 )
             if not tensor.is_contiguous():
