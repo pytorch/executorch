@@ -2616,6 +2616,39 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_stft(self):
+        test_comb = [
+            {
+                # Pre-framed speech front end: one 512-point frame per row,
+                # with a 400-sample window zero-padded to n_fft.
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=512, hop_length=160, win_length=400
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(4, 512) * 0.1,),
+            },
+            {
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=256, hop_length=128, output="magnitude"
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(1664) * 0.1,),
+            },
+            {
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=64,
+                    hop_length=16,
+                    use_window=False,
+                    onesided=False,
+                    output="real",
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(2, 256) * 0.1,),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_sort(self):
         modules = [
             Conv2dSort(descending=True),  # noqa: F405

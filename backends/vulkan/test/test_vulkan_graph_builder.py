@@ -10,8 +10,10 @@ import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     Bool,
+    BoolList,
     Double,
     Int,
+    IntList,
 )
 from executorch.backends.vulkan.vulkan_preprocess import apply_passes
 from executorch.exir import to_edge
@@ -104,6 +106,43 @@ class TestVkGraphBuilderInputIds(unittest.TestCase):
 
         builder = self._build(UsesBothInputs(), (torch.randn(2, 3), torch.randn(2, 3)))
         self.assertEqual(len(builder.input_ids), 2)
+
+
+class TestVkGraphBuilderScalarLists(unittest.TestCase):
+    """A scalar list serializes to exactly one Value. bool is a subclass of int,
+    so a bool list also satisfies the all-int check, and an empty list
+    satisfies every check."""
+
+    def _values_appended_by(self, arg) -> list:
+        program = torch.export.export(torch.nn.Identity(), (torch.ones(1),))
+        builder = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        )
+        value_id = builder.create_scalar_list_value(arg)
+        self.assertEqual(value_id, 0)
+        return [v.value for v in builder.values]
+
+    def test_bool_list_serializes_once(self) -> None:
+        values = self._values_appended_by([True, False])
+        self.assertEqual(len(values), 1)
+        self.assertIsInstance(values[0], BoolList)
+
+    def test_empty_list_serializes_once(self) -> None:
+        values = self._values_appended_by([])
+        self.assertEqual(len(values), 1)
+        self.assertIsInstance(values[0], IntList)
+
+    def test_int_list_serializes_once(self) -> None:
+        values = self._values_appended_by([1, 2])
+        self.assertEqual(len(values), 1)
+        self.assertIsInstance(values[0], IntList)
+
+    def test_mixed_bool_and_int_list_serializes_as_ints(self) -> None:
+        values = self._values_appended_by([True, 2])
+        self.assertEqual(len(values), 1)
+        self.assertIsInstance(values[0], IntList)
+        self.assertEqual(values[0].items, [1, 2])
+        self.assertTrue(all(type(e) is int for e in values[0].items))
 
 
 if __name__ == "__main__":
