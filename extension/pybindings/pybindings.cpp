@@ -3598,6 +3598,12 @@ struct PyMethod final {
   // for it with clone_outputs=False stay valid.
   void set_output(py::object tensor, size_t index) {
     ObjectLock lock(mutex_);
+#ifdef USE_ATEN_LIB
+    // ATen swaps the data pointer of the output's storage in place, so an
+    // output returned earlier would read the bound tensor, or freed memory once
+    // it is rebound.
+    throw std::runtime_error("set_output is not supported by the ATen bindings");
+#else
     if (!is_torch_tensor(tensor)) {
       throw py::type_error("Output storage must be a torch tensor");
     }
@@ -3609,15 +3615,15 @@ struct PyMethod final {
     }
     const auto& output = storage_->method->get_output(index);
     if (!output.isTensor()) {
-      throw std::runtime_error(
+      throw py::value_error(
           "output " + std::to_string(index) + " is not a tensor");
     }
     if (const auto input = aliased_input(index)) {
-      throw std::runtime_error(aliased_input_message(index, *input));
+      throw py::value_error(aliased_input_message(index, *input));
     }
     for (size_t i = 0; i < num_outputs; ++i) {
       if (i != index && &storage_->method->get_output(i) == &output) {
-        throw std::runtime_error(
+        throw py::value_error(
             "output " + std::to_string(index) +
             " is the same value as output " + std::to_string(i) +
             " and cannot be bound");
@@ -3627,45 +3633,72 @@ struct PyMethod final {
     THROW_IF_ERROR(
         meta.error(), "Failed to get output tensor meta for output %zu", index);
     if (meta->is_memory_planned()) {
-      throw std::runtime_error(
+      throw py::value_error(
           "output " + std::to_string(index) +
           " is memory planned and cannot be bound");
     }
     if (!tensor.attr("is_contiguous")().cast<bool>()) {
-      throw std::runtime_error(
+      throw py::value_error(
           "output " + std::to_string(index) +
           " must be bound to a contiguous tensor");
     }
-#ifdef USE_ATEN_LIB
-    const auto at_tensor = tensor.cast<at::Tensor>();
-    const bool matches = at_tensor.scalar_type() == meta->scalar_type() &&
-        at_tensor.device() == output.toTensor().device();
-#else
     const TorchTensorView view(tensor, index);
-    const bool matches = view.scalar_type() == meta->scalar_type() &&
-        view.device() == output.toTensor().device();
-#endif
-    if (!matches) {
-      throw std::runtime_error(
-          "output " + std::to_string(index) +
-          " dtype and device must match the bound tensor");
+    const auto device = output.toTensor().device();
+    if (view.scalar_type() != meta->scalar_type() || view.device() != device) {
+      const auto name = [](executorch::aten::Device value) {
+        return value.is_cpu() ? std::string("cpu")
+                              : "cuda:" + std::to_string(value.index());
+      };
+      throw py::value_error(
+          "output " + std::to_string(index) + " is " +
+          runtime::toString(meta->scalar_type()) + " on " + name(device) +
+          ", but the bound tensor is " +
+          runtime::toString(view.scalar_type()) + " on " + name(view.device()));
     }
     const auto dim_order = meta->dim_order();
     for (size_t d = 0; d < dim_order.size(); ++d) {
       if (dim_order[d] != d) {
-        throw std::runtime_error(
+        throw py::value_error(
             "output " + std::to_string(index) +
             " is not contiguous (e.g. channels-last) and cannot be bound");
       }
     }
-    if (tensor.attr("nbytes").cast<size_t>() < meta->nbytes()) {
-      throw std::runtime_error(
+    if (view.nbytes() < meta->nbytes()) {
+      throw py::value_error(
           "output " + std::to_string(index) + " needs " +
           std::to_string(meta->nbytes()) + " bytes, but the tensor has " +
-          std::to_string(tensor.attr("nbytes").cast<size_t>()));
+          std::to_string(view.nbytes()));
+    }
+    // Two outputs written into one buffer, or an output written over an input
+    // a kernel is still reading, would silently corrupt each other.
+    const auto overlaps = [&](const void* data, size_t nbytes) {
+      const auto start = reinterpret_cast<uintptr_t>(view.data());
+      const auto other = reinterpret_cast<uintptr_t>(data);
+      return nbytes != 0 && view.nbytes() != 0 && start < other + nbytes &&
+          other < start + view.nbytes();
+    };
+    for (size_t i = 0; i < bound_outputs_.size(); ++i) {
+      if (i == index || !bound_outputs_[i]) {
+        continue;
+      }
+      const TorchTensorView bound(bound_outputs_[i], i);
+      if (overlaps(bound.data(), bound.nbytes())) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " would share memory with output " + std::to_string(i) +
+            ", which is already bound");
+      }
+    }
+    for (const auto& input : torch_inputs_) {
+      if (overlaps(input->data(), input->nbytes())) {
+        throw py::value_error(
+            "output " + std::to_string(index) +
+            " would share memory with input " + std::to_string(input->index()));
+      }
     }
     bound_outputs_.resize(num_outputs);
     bound_outputs_[index] = tensor;
+#endif
   }
 
   void execute() {
@@ -3714,23 +3747,18 @@ struct PyMethod final {
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
     caller_outputs_.assign(num_outputs, py::object());
     for (size_t i = 0; i < storage_->output_storages.size(); ++i) {
+#ifndef USE_ATEN_LIB
+      // set_output() refuses to bind anything in ATen builds.
       if (is_bound_output(i)) {
         auto bound = bound_outputs_[i];
         set_output(bound, i);
-#ifdef USE_ATEN_LIB
-        const auto at_tensor = bound.cast<at::Tensor>();
-        auto* data =
-            static_cast<uint8_t*>(mutable_tensor_data_ptr_no_cow(at_tensor));
-        const auto nbytes = at_tensor.nbytes();
-#else
         const TorchTensorView view(bound, i);
-        auto* data = static_cast<uint8_t*>(view.data());
-        const auto nbytes = view.nbytes();
-#endif
-        output_storage_spans[i] = Span<uint8_t>(data, nbytes);
+        output_storage_spans[i] =
+            Span<uint8_t>(static_cast<uint8_t*>(view.data()), view.nbytes());
         caller_outputs_[i] = bound;
         continue;
       }
+#endif
       // An output that is an unplanned input (e.g. the write-back of a mutated
       // input) already points at the tensor fed for it. Giving it storage
       // would repoint the input too.
@@ -3967,7 +3995,7 @@ struct PyMethod final {
       }
     }
     if (!error.empty()) {
-      throw std::runtime_error(error);
+      throw py::value_error(error);
     }
   }
 

@@ -50,6 +50,11 @@ class ModuleDoubleChannelsLast(torch.nn.Module):
         return (x * 2).contiguous(memory_format=torch.channels_last)
 
 
+class ModuleTwoOutputs(torch.nn.Module):
+    def forward(self, x):
+        return x * 2, x + 1
+
+
 class ModuleDoubleTwice(torch.nn.Module):
     def forward(self, x):
         y = x * 2
@@ -280,9 +285,9 @@ class RuntimeTest(unittest.TestCase):
         method, _buffer = _load_cache_update_method()
         bad_bindings = {
             "out of range": (IndexError, torch.empty(1, 4), 2),
-            "non contiguous": (RuntimeError, torch.empty(1, 8)[:, ::2], 1),
-            "too small": (RuntimeError, torch.empty(1, 2), 1),
-            "wrong dtype": (RuntimeError, torch.empty(1, 4, dtype=torch.float64), 1),
+            "non contiguous": (ValueError, torch.empty(1, 8)[:, ::2], 1),
+            "too small": (ValueError, torch.empty(1, 2), 1),
+            "wrong dtype": (ValueError, torch.empty(1, 4, dtype=torch.float64), 1),
         }
         for name, (error, tensor, index) in bad_bindings.items():
             with self.subTest(name), self.assertRaises(error):
@@ -293,34 +298,61 @@ class RuntimeTest(unittest.TestCase):
         method, _buffer = _load_unplanned_io_method(
             ModuleDouble(), (x,), plan_outputs=True
         )
-        with self.subTest("memory planned"), self.assertRaises(RuntimeError):
+        with self.subTest("memory planned"), self.assertRaises(ValueError):
             method.set_output(torch.empty(2), 0)
         method, _buffer = _load_unplanned_io_method(ModuleDoubleTwice(), (x,))
-        with self.subTest("returned twice"), self.assertRaises(RuntimeError):
+        with self.subTest("returned twice"), self.assertRaises(ValueError):
             method.set_output(torch.empty(2), 0)
         image = torch.ones(1, 2, 3, 4)
         method, _buffer = _load_unplanned_io_method(
             ModuleDoubleChannelsLast(), (image,)
         )
-        with self.subTest("channels last"), self.assertRaises(RuntimeError):
+        with self.subTest("channels last"), self.assertRaises(ValueError):
             method.set_output(torch.empty(1, 2, 3, 4), 0)
 
     def test_set_output_rejects_mutated_input(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
         method.execute((x, cache, pos))
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             method.set_output(torch.zeros(3, 4), 0)
         # Bound before any inputs are set, the first call removes the binding
         # and raises, and later calls work.
         method, _buffer = _load_cache_update_method()
         method.set_output(torch.zeros(3, 4), 0)
         fresh = torch.zeros(3, 4)
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             method.execute((x, fresh, pos))
         outputs = method._method((x, fresh, pos), clone_outputs=False)
         self.assertEqual(outputs[0].data_ptr(), fresh.data_ptr())
         self.assertTrue(torch.equal(fresh[1], torch.ones(4)))
+
+    def test_set_output_rejects_shared_memory(self):
+        x = torch.ones(2)
+        method, _buffer = _load_unplanned_io_method(ModuleTwoOutputs(), (x,))
+        storage = torch.empty(4)
+        method.set_output(storage[:2], 0)
+        with self.subTest("another bound output"), self.assertRaises(ValueError):
+            method.set_output(storage[1:3], 1)
+        method.set_output(storage[2:], 1)
+        # Inputs are only known once set, so an output bound over an input is
+        # refused by the call that sets it.
+        method, _buffer = _load_unplanned_io_method(ModuleDouble(), (x,))
+        method.set_output(x, 0)
+        with self.subTest("an input"), self.assertRaises(ValueError):
+            method.execute((x,))
+
+    def test_execute_without_inputs_raises_after_set_output(self):
+        # Aliases are found only after inputs are set, since reading an input
+        # marks it as set; binding first must not hide the missing inputs.
+        x = torch.ones(2)
+        for bind in (False, True):
+            with self.subTest(bind=bind):
+                method, _buffer = _load_unplanned_io_method(ModuleDouble(), (x,))
+                if bind:
+                    method.set_output(torch.empty(2), 0)
+                with self.assertRaisesRegex(RuntimeError, "no inputs yet"):
+                    method._method.execute()
 
     def test_execute_can_borrow_outputs(self):
         ep, inputs = create_program(ModuleAdd())

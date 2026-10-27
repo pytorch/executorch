@@ -191,8 +191,10 @@ class Method:
         passed in for it. That last case is only known once inputs have been
         set: a binding made before the first call is removed by that call,
         which raises. ``tensor`` must have the output's dtype and device, be
-        contiguous, and hold at least as many bytes as the output's largest
-        shape. The output itself must be contiguous, not e.g. channels-last.
+        contiguous, hold at least as many bytes as the output's largest shape,
+        and not share memory with another bound output or with an input. The
+        output itself must be contiguous, not e.g. channels-last. A rejected
+        binding raises ``ValueError``. The ATen bindings don't support it.
 
         Args:
             tensor: The tensor that stores the output from now on.
