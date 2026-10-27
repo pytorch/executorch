@@ -13,7 +13,7 @@
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
-#include <cstdio>
+#include <cstring>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
@@ -758,26 +758,29 @@ Error populate_operator_name(
 
   ET_CHECK_OR_RETURN_ERROR(
       op->name() != nullptr, InvalidProgram, "Missing operator name");
-  int cx = snprintf(
-      operator_name,
-      operator_name_size,
-      "%s%s%s",
-      op->name()->c_str(),
-      // Don't append any overload if the overload string is empty.
-      has_overload ? "." : "",
-      has_overload ? op->overload()->c_str() : "");
-  ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
+  // Avoid pulling printf formatting code into builds that otherwise omit it.
+  const size_t name_size = strlen(op->name()->c_str());
+  const size_t overload_size =
+      has_overload ? strlen(op->overload()->c_str()) : 0;
+  const uint64_t needed_size = static_cast<uint64_t>(name_size) +
+      overload_size + (has_overload ? 1 : 0) + 1;
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<size_t>(cx) < operator_name_size,
+      needed_size <= operator_name_size,
       Internal,
-      "Operator name %s%s%s with length %d "
-      "truncated to %" ET_PRIsize_t " due to internal buffer limit.",
+      "Operator name %s%s%s exceeds internal buffer limit of %" ET_PRIsize_t,
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
-      cx,
       operator_name_size);
 
+  memcpy(operator_name, op->name()->c_str(), name_size);
+  size_t pos = name_size;
+  if (has_overload) {
+    operator_name[pos++] = '.';
+    memcpy(operator_name + pos, op->overload()->c_str(), overload_size);
+    pos += overload_size;
+  }
+  operator_name[pos] = '\0';
   return Error::Ok;
 }
 } // namespace
