@@ -29,6 +29,9 @@ struct KernelSpec {
   bool tensor_list_output = false;
   // Schema positions declared float or float?, rather than Scalar.
   std::string_view float_args{};
+  // Tensor-list inputs are declared Tensor?[]. The serializer emits a plain
+  // tensor list when every entry is present, but the kernel unboxes optionals.
+  bool optional_tensor_lists = false;
 };
 
 aten::ScalarType to_aten(ptn::ScalarType dtype) {
@@ -296,8 +299,22 @@ constexpr auto kKernels = std::to_array<KernelSpec>({
     {"torch.ops.aten.gt.Scalar", "aten::gt.Scalar_out", 2, 1, nullptr},
     {"torch.ops.aten.gt.Tensor", "aten::gt.Tensor_out", 2, 1, nullptr},
     {"torch.ops.aten.hardtanh.default", "aten::hardtanh.out", 3, 1, nullptr},
-    {"torch.ops.aten.index.Tensor", "aten::index.Tensor_out", 2, 1, nullptr},
-    {"torch.ops.aten.index_put.default", "aten::index_put.out", 4, 1, nullptr},
+    {"torch.ops.aten.index.Tensor",
+     "aten::index.Tensor_out",
+     2,
+     1,
+     nullptr,
+     false,
+     {},
+     true},
+    {"torch.ops.aten.index_put.default",
+     "aten::index_put.out",
+     4,
+     1,
+     nullptr,
+     false,
+     {},
+     true},
     {"torch.ops.aten.index_select.default",
      "aten::index_select.out",
      3,
@@ -1037,11 +1054,16 @@ class ReferenceExecutable final : public Executable {
         if (input.arg.kind() == ptn::ArgKind::TensorList ||
             input.arg.kind() == ptn::ArgKind::OptionalTensorList) {
           auto argument = std::make_unique<ArgumentStorage>();
-          const bool optional =
+          const bool serialized_optional =
               input.arg.kind() == ptn::ArgKind::OptionalTensorList;
-          const auto& ids = optional ? input.arg.as_optional_tensor_list().ids
-                                     : input.arg.as_tensor_list().ids;
-          const auto error = bind_tensor_list(ids, optional, false, *argument);
+          const auto& ids = serialized_optional
+              ? input.arg.as_optional_tensor_list().ids
+              : input.arg.as_tensor_list().ids;
+          const auto error = bind_tensor_list(
+              ids,
+              serialized_optional || spec->optional_tensor_lists,
+              false,
+              *argument);
           if (error != Error::Ok) {
             return error;
           }
