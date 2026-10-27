@@ -95,6 +95,17 @@ class CPURuntimeTest(unittest.TestCase):
                 for output, expected in zip(actual, model(x, current), strict=True):
                     torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
+    def test_empty_tensors_execute(self):
+        class Add(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        model = Add()
+        x = torch.empty(2, 0, 3)
+        with self._lower(model, (x,)) as runtime:
+            actual = runtime.forward((x,))[0]
+            torch.testing.assert_close(actual, model(x))
+
     def test_neg_view_copy_routes_to_neg(self):
         class NegView(torch.nn.Module):
             def forward(self, x):

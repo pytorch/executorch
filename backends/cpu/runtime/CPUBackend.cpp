@@ -183,15 +183,20 @@ class CPUExecution {
           InvalidArgument,
           "CPU static shape/dtype/layout/storage mismatch: %s",
           method_->graph.value(id).name.c_str());
-      int64_t stride = 1;
-      for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
-        const size_t dim = reverse - 1;
-        ET_CHECK_OR_RETURN_ERROR(
-            tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
-            InvalidArgument,
-            "CPU binding must be contiguous: %s",
-            method_->graph.value(id).name.c_str());
-        stride *= expected.sizes[dim];
+      // Empty bindings carry no data, so their strides and dim order are
+      // meaningless (PyTorch does not canonicalize them); skip the contiguity
+      // check rather than rejecting valid empty tensors.
+      if (tensor.nbytes() != 0) {
+        int64_t stride = 1;
+        for (size_t reverse = expected.sizes.size(); reverse > 0; --reverse) {
+          const size_t dim = reverse - 1;
+          ET_CHECK_OR_RETURN_ERROR(
+              tensor.dim_order()[dim] == dim && tensor.strides()[dim] == stride,
+              InvalidArgument,
+              "CPU binding must be contiguous: %s",
+              method_->graph.value(id).name.c_str());
+          stride *= expected.sizes[dim];
+        }
       }
     }
     // EValue exposes the logical span, but no backing capacity or readable
