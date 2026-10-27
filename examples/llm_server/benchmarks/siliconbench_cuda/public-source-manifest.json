@@ -647,6 +647,10 @@
       "sha256": "5ce65105639785e625739c90c0b208a77d12f8544208c85aa66e143d34a4e8ea",
       "bytes": 19905
     },
+    "mg_preserved_error_logging_launcher.py": {
+      "sha256": "71fa28ad04c3ccaa057f480c1bef3c67750237409b3e2ccb201f4fda0516fb98",
+      "bytes": 693
+    },
     "native_gemm_oracle_diagnostic.py": {
       "sha256": "1e5842fab0a7247479c67727ef0c76407a3a1977b8562d837d60aa86a34a173e",
       "bytes": 7980
@@ -886,6 +890,10 @@
     "qualify_independent_session_mini_for_full.py": {
       "sha256": "7e1e728d4e8dd227944d3c44a479576a5134664cb8ffbbac333ec232a636b8ae",
       "bytes": 15749
+    },
+    "receive_preserved_runtime_bundle.py": {
+      "sha256": "afed1b79741810b23da0fdbc0471d6d646395c0e161beb1f2588c6b4377e11a2",
+      "bytes": 2752
     },
     "receive_verified_model_artifact.py": {
       "sha256": "91e649c0334066c129d7abd53ff4d6fc9a0b2fc474a86b03789e5e578312608f",
@@ -1222,6 +1230,10 @@
     "run_paired_mini_qualification_after_layout_confirmation.py": {
       "sha256": "f341e5e58819eba62057795e16591150663e8da0b0f858edc810947c40078591",
       "bytes": 4478
+    },
+    "run_preserved_MG_pair_after_main.py": {
+      "sha256": "2f3c533ce7d9731b3f3a7f3aff2133dd78b963add89a812be80ec0ce3f42b8cc",
+      "bytes": 16908
     },
     "run_private_KV_growth_slack_mini_diagnostic.py": {
       "sha256": "9f3ab838ffe116c97e60e54c67b3fab27dd68fd87e994fae8357707a693276f1",
