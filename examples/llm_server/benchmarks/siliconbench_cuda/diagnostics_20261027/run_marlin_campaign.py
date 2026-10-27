@@ -11,10 +11,23 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ['source','python','output','lock']:p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--reuse-gguf-directory',type=Path)
+ p.add_argument('--wait-previous-progress',type=Path)
  a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False);completed=[]
  def state(s,**kw):
   t=a.output/'progress.pending.json';t.write_text(json.dumps(dict(status=s,PID=os.getpid(),UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),completed=completed,**kw),indent=2)+'\n');t.replace(a.output/'progress.json')
  try:
+  if a.wait_previous_progress:
+   state('waiting-for-previous-campaign-to-exit-with-records-preserved')
+   deadline=time.monotonic()+7200
+   while True:
+    previous=json.loads(a.wait_previous_progress.read_text())
+    if previous['status'] in ['campaign-terminal-review-required','failed-preserve-evidence']:break
+    assert time.monotonic()<deadline,'Previous campaign did not finish within bound'
+    time.sleep(20)
+   until=time.monotonic()+60
+   while subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip():
+    assert time.monotonic()<until,'Previous GPU context teardown incomplete'
+    time.sleep(1)
   # Isolated gguf Python package only; parent vLLM/torch installation remains read only.
   target=a.output/'python-dependencies';target.mkdir()
   with (a.output/'dependency-install.log').open('x') as f:subprocess.run(['uv','pip','install','--python',str(a.python),'--target',str(target),'--no-deps','gguf==0.17.1'],stdout=f,stderr=subprocess.STDOUT,check=True,timeout=300)
