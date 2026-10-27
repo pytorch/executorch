@@ -27,8 +27,22 @@ def is_custom_sdpa_node(node: Any) -> bool:
     return utils.node_has_target(node, "llama::custom_sdpa")
 
 
-def is_sdpa_with_kv_cache_node(node: Any) -> bool:
-    return utils.node_has_target(node, "llama::sdpa_with_kv_cache")
+def find_cache_update(
+    cache_node: torch.fx.Node,
+    start_pos_node: torch.fx.Node,
+    nodes_before_attention: set[torch.fx.Node],
+) -> Optional[torch.fx.Node]:
+    for user in cache_node.users:
+        if (
+            is_update_cache_node(user)
+            and user.args[1] is cache_node
+            and user.args[2] is start_pos_node
+            and not user.users
+            and user in nodes_before_attention
+        ):
+            return user
+
+    return None
 
 
 class CausalSDPAMatch(PatternMatch):
@@ -54,32 +68,44 @@ class CausalSDPAMatch(PatternMatch):
         else:
             self.scale_node = None
 
-        # try to find update key cache node
-        self.update_key_cache_node = None
-        for user in self.key_cache_node.users:
-            if is_update_cache_node(user):
-                self.update_key_cache_node = user
+        nodes_before_attention = set()
+        for node in custom_sdpa_node.graph.nodes:
+            if node is self.anchor_node:
                 break
+            nodes_before_attention.add(node)
+
+        self.update_key_cache_node = find_cache_update(
+            self.key_cache_node, self.start_pos_node, nodes_before_attention
+        )
 
         self.key_projection_node = None
         if self.update_key_cache_node is not None:
             self.key_projection_node = self.update_key_cache_node.args[0]
 
-        # find update value cache node
-        self.update_value_cache_node = None
-        for user in self.value_cache_node.users:
-            if is_update_cache_node(user):
-                self.update_value_cache_node = user
-                break
+        self.update_value_cache_node = find_cache_update(
+            self.value_cache_node, self.start_pos_node, nodes_before_attention
+        )
 
         self.value_projection_node = None
         if self.update_value_cache_node is not None:
             self.value_projection_node = self.update_value_cache_node.args[0]
 
-        # We have additional optional arguments but we don't need to capture them
-        # since the new op doesn't use them
-
-        self.match_found = True
+        key_cache_users = {self.anchor_node, self.update_key_cache_node}
+        value_cache_users = {self.anchor_node, self.update_value_cache_node}
+        self.match_found = (
+            self.update_key_cache_node is not None
+            and self.key_projection_node is not None
+            and self.update_value_cache_node is not None
+            and self.value_projection_node is not None
+            and self.key_cache_node is not self.value_cache_node
+            and self.update_key_cache_node is not self.update_value_cache_node
+            and self.key_projection_node is not self.key_cache_node
+            and self.key_projection_node is not self.value_cache_node
+            and self.value_projection_node is not self.key_cache_node
+            and self.value_projection_node is not self.value_cache_node
+            and set(self.key_cache_node.users) == key_cache_users
+            and set(self.value_cache_node.users) == value_cache_users
+        )
 
 
 @register_pattern_detector("causal_sdpa")
@@ -101,22 +127,9 @@ def find_causal_sdpa_patterns(
 ##
 
 
-def find_singleton_start_pos_node(graph_module: torch.fx.GraphModule):
-    for node in graph_module.graph.nodes:
-        if is_update_cache_node(node):
-            return node.args[2]
-
-        if is_sdpa_with_kv_cache_node(node):
-            return node.args[5]
-
-    raise Exception(
-        "Could not find an instance of llama::update_cache or sdpa_with_kv_cache"
-    )
-
-
 @register_pattern_replacement("causal_sdpa")
 def replace_custom_sdpa_with_causal_sdpa(
-    ep: ExportedProgram,
+    ep: Optional[ExportedProgram],
     graph_module: torch.fx.GraphModule,
     match: CausalSDPAMatch,
 ):
@@ -124,8 +137,6 @@ def replace_custom_sdpa_with_causal_sdpa(
     assert match.key_projection_node is not None
     assert match.update_value_cache_node is not None
     assert match.value_projection_node is not None
-
-    singleton_start_pos_node = find_singleton_start_pos_node(graph_module)
 
     with graph_module.graph.inserting_before(match.anchor_node):
         new_node = graph_module.graph.create_node(
@@ -137,7 +148,7 @@ def replace_custom_sdpa_with_causal_sdpa(
                 match.value_projection_node,
                 match.key_cache_node,
                 match.value_cache_node,
-                singleton_start_pos_node,
+                match.start_pos_node,
                 1,
                 match.attn_mask_node,
                 match.dropout_p_node,

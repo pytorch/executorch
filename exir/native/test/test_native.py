@@ -186,6 +186,18 @@ class ToNativeEquivalenceTest(unittest.TestCase):
         _, st_keys, _ = self._test_equivalence(ep)
         self.assertEqual(len(st_keys), 2)  # conv weight + bias
 
+    def test_conv_batch_norm(self):
+        for inplace in (False, True):
+            with self.subTest(inplace=inplace):
+                model = nn.Sequential(
+                    nn.Conv2d(3, 4, 3, bias=False),
+                    nn.BatchNorm2d(4),
+                    nn.ReLU(inplace=inplace),
+                ).eval()
+                ep = torch.export.export(model, (torch.randn(1, 3, 8, 8),))
+                _, st_keys, _ = self._test_equivalence(ep)
+                self.assertEqual(len(st_keys), 2)
+
     def test_tied_weights(self):
         class Tied(nn.Module):
             def __init__(self):
@@ -394,6 +406,42 @@ class DelegateContractTest(unittest.TestCase):
 
 
 class MutableBufferDedupTest(unittest.TestCase):
+    def test_batch_norm_statistics_mutated_by_another_method(self):
+        class Classifier(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Conv2d(3, 4, 3)
+                self.bn = nn.BatchNorm2d(4)
+
+            def forward(self, x):
+                return self.bn(self.conv(x))
+
+        class Update(nn.Module):
+            def __init__(self, bn):
+                super().__init__()
+                self.bn = bn
+
+            def forward(self, x):
+                self.bn.running_mean.add_(x)
+                return self.bn.running_mean + 1
+
+        model = Classifier().eval()
+        native = to_native(
+            {
+                "predict": torch.export.export(model, (torch.randn(1, 3, 8, 8),)),
+                "update": torch.export.export(Update(model.bn), (torch.ones(4),)),
+            }
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "model.ptn")
+            native.save(path)
+            with zipfile.ZipFile(path) as package:
+                program = deserialize_program(package.read(PTG_ENTRY))
+        predict = next(method for method in program.methods if method.name == "predict")
+        self.assertTrue(
+            any("batch_norm" in (node.target or "") for node in predict.graph.nodes)
+        )
+
     def test_identical_mutable_buffers_stay_separate(self):
         """Equal bytes must not make two independently mutable buffers one.
 

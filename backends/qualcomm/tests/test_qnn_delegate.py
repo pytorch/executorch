@@ -1126,16 +1126,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fp16a8w_conv2d(self):
-        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1]
+        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1],
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(
@@ -1146,15 +1147,16 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # QAT in float32
@@ -2613,6 +2615,39 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_stft(self):
+        test_comb = [
+            {
+                # Pre-framed speech front end: one 512-point frame per row,
+                # with a 400-sample window zero-padded to n_fft.
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=512, hop_length=160, win_length=400
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(4, 512) * 0.1,),
+            },
+            {
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=256, hop_length=128, output="magnitude"
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(1664) * 0.1,),
+            },
+            {
+                QCOM_MODULE: Stft(  # noqa: F405
+                    n_fft=64,
+                    hop_length=16,
+                    use_window=False,
+                    onesided=False,
+                    output="real",
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(2, 256) * 0.1,),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
 
     def test_qnn_backend_sort(self):
         modules = [

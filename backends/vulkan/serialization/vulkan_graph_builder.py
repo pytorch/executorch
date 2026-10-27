@@ -9,7 +9,7 @@ import hashlib
 import logging
 import operator
 from types import NoneType
-from typing import cast, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 import torch
@@ -162,6 +162,10 @@ class VkGraphBuilder:
 
             # Serialize tensor data to bytes
             tensor = tensor.contiguous()
+            # The bytes are read from the start of the storage, so a view of a
+            # larger tensor needs its own copy.
+            if tensor.nbytes != tensor.untyped_storage().nbytes():
+                tensor = tensor.clone()
             size = tensor.untyped_storage().nbytes()
 
             if size > 0:
@@ -322,6 +326,7 @@ class VkGraphBuilder:
             self.values.append(
                 vk_graph_schema.VkValue(vk_graph_schema.IntList(items=[]))
             )
+            return new_id
 
         all_bool = True
         all_int = True
@@ -341,19 +346,19 @@ class VkGraphBuilder:
         if all_bool:
             self.values.append(
                 vk_graph_schema.VkValue(
-                    vk_graph_schema.BoolList(items=[cast(bool, e) for e in arg])
+                    vk_graph_schema.BoolList(items=[bool(e) for e in arg])
                 )
             )
-        if all_int:
+        elif all_int:
             self.values.append(
                 vk_graph_schema.VkValue(
-                    vk_graph_schema.IntList(items=[cast(int, e) for e in arg])
+                    vk_graph_schema.IntList(items=[int(e) for e in arg])
                 )
             )
         elif all_float:
             self.values.append(
                 vk_graph_schema.VkValue(
-                    vk_graph_schema.DoubleList(items=[cast(float, e) for e in arg])
+                    vk_graph_schema.DoubleList(items=[float(e) for e in arg])
                 )
             )
         elif all_int_or_symint:
