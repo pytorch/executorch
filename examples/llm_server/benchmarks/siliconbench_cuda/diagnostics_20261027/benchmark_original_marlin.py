@@ -69,8 +69,9 @@ def main():
    def unpack(role):
     t=next(t for t in reader.tensors if t.name=='blk.0.'+role+'.weight');n,k=map(int,t.shape[::-1]);raw=torch.from_numpy(np.array(t.data,copy=True)).view(torch.uint8).reshape(n,-1)
     if a.model=='Gemma':
-     assert t.tensor_type==GGMLQuantizationType.Q4_0
-     out=env['decode_q4_blocks'](raw,'q4_0',(n,k))
+     legacy={GGMLQuantizationType.Q4_0:'q4_0',GGMLQuantizationType.Q4_1:'q4_1'}
+     assert t.tensor_type in legacy
+     out=env['decode_q4_blocks'](raw,legacy[t.tensor_type],(n,k))
     else:
      assert t.tensor_type==GGMLQuantizationType.Q4_K
      q,s,minv=env['_q4_k_fields'](raw,n,k);z=torch.where(s!=0,minv/s,torch.zeros_like(minv))
@@ -92,8 +93,8 @@ def main():
      bounded();state('packing-exact-GGUF-codes',role=role)
      names=['ffn_gate','ffn_up'] if role=='ffn_gate_up' else [role]
      raw_tensors=[next(t for t in reader.tensors if t.name=='blk.0.'+name+'.weight') for name in names]
-     supported_type=GGMLQuantizationType.Q4_0 if a.model=='Gemma' else GGMLQuantizationType.Q4_K
-     unsupported=[dict(name=t.name,type=t.tensor_type.name,shape=list(map(int,t.shape)),action='Keep existing ET path; do not requantize') for t in raw_tensors if t.tensor_type!=supported_type]
+     supported_types={GGMLQuantizationType.Q4_0,GGMLQuantizationType.Q4_1} if a.model=='Gemma' else {GGMLQuantizationType.Q4_K}
+     unsupported=[dict(name=t.name,type=t.tensor_type.name,shape=list(map(int,t.shape)),action='Keep existing ET path; do not requantize') for t in raw_tensors if t.tensor_type not in supported_types]
      if unsupported:
       report['unsupported_GGUF_tensors'].extend(unsupported);state('recorded-mixed-GGUF-uncovered-route',role=role);continue
      if role=='ffn_gate_up':
@@ -121,24 +122,32 @@ def main():
      fallback=torch.compile(dqlinear,fullgraph=True,dynamic=False,options=dict(max_autotune_gemm=True,max_autotune_gemm_backends='TRITON',emulate_precision_casts=True,**{'triton.cudagraphs':False}))
      base=gemma if a.model=='Gemma' else native
      methods={}
+     zero_anchor=zeros.round().clamp(0,15)
      # Integer zero points are approximate for the current secondary metadata;
      # never label these bit-exact merely because the GGUF codes are preserved.
      for name,dtype,floating in [('Marlin-BF16-integer-zp',torch.bfloat16,False),('Marlin-FP16-float-zp',torch.float16,True)]:
       scale=marlin.marlin_permute_scales(scales.t().to(dtype).contiguous(),k,n,32)
-      zero=marlin.marlin_permute_scales(zeros.t().to(dtype).contiguous(),k,n,32) if floating else marlin.marlin_zero_points(zeros.round().t().to(torch.int32).contiguous(),k//32,n,4)
+      zero=marlin.marlin_permute_scales(zeros.t().to(dtype).contiguous(),k,n,32) if floating else marlin.marlin_zero_points(zero_anchor.t().to(torch.int32).contiguous(),k//32,n,4)
       methods[name]=(dtype,scale,zero,floating)
      # Preserve the fractional zero offset using an explicit group-sum
      # correction. Marlin still rounds scales to BF16; this is a numerical
      # candidate, never an assertion of bit-identical ET arithmetic.
      # x @ ((q-z)*s) = Marlin(x,q,round(z),s)
      #                  + sum_group(x) @ ((round(z)-z)*s).
-     zero_residual=((zeros.round()-zeros)*scales.to(torch.bfloat16).float()).t().contiguous()
+     zero_residual=((zero_anchor-zeros)*scales.to(torch.bfloat16).float()).t().contiguous()
      def compensate(x,y,residual):
       grouped=x.float().reshape(x.shape[0],x.shape[1]//32,32).sum(dim=2)
       return (y.float()+torch.mm(grouped,residual)).to(x.dtype)
      compensation=torch.compile(compensate,fullgraph=True,dynamic=False,options={'triton.cudagraphs':False})
      packing['zero_correction_bytes']=zero_residual.numel()*zero_residual.element_size()
      packing['BF16_scale_rounding_retained']=True
+     packing['zero_anchor_clipped_groups']=int((zero_anchor!=zeros.round()).sum())
+     residual_a16=zero_residual.bfloat16().contiguous()
+     def compensate_a16(x,y,residual):
+      grouped=x.float().reshape(x.shape[0],x.shape[1]//32,32).sum(dim=2).to(x.dtype)
+      return (y.float()+torch.mm(grouped,residual).float()).to(x.dtype)
+     compensation_a16=torch.compile(compensate_a16,fullgraph=True,dynamic=False,options={'triton.cudagraphs':False})
+     packing['A16_zero_correction_bytes']=residual_a16.numel()*residual_a16.element_size()
      sizes=[8,16,64,128,512,2048]+([4096] if a.model=='MG' else [])
      for m in sizes:
       bounded();state('validating-and-timing',role=role,M=m)
@@ -157,6 +166,7 @@ def main():
       for name,(dtype,s,z,floating) in methods.items():
        xx=x.to(dtype)
        call=lambda xx=xx,s=s,z=z,floating=floating:marlin._marlin_gemm(xx,marlinq,None,s,None,None,z,workspace,scalar_types.uint4.id,m,n,k,use_atomic_add=False,use_fp32_reduce=True,is_zp_float=floating)
+       active_name=name
        try:
         y=call();again=call();torch.cuda.synchronize();check=stats(y,oracle);check.update(deterministic=bool(torch.equal(y,again)),BF16_to_FP16_input_cast=dtype==torch.float16,integer_zero_rounded=not floating)
         # Numerical gate is a screening criterion; a full model task gate is
@@ -165,15 +175,22 @@ def main():
         record['checks'][name]=check
         if check['numeric_screen_pass']:calls[name]=call
         if not floating:
+         active_name='Marlin-BF16-zero-compensated'
          corrected=lambda call=call,x=x:compensation(x,call(),zero_residual)
          cy=corrected();ca=corrected();torch.cuda.synchronize();cs=stats(cy,oracle)
          cs.update(deterministic=bool(torch.equal(cy,ca)),integer_zero_rounding_compensated=True,scale_BF16_rounding_retained=True,extra_FP32_group_sum_and_matmul=True)
          cs['numeric_screen_pass']=cs['finite'] and cs['relative_rms']<.005 and cs['deterministic']
          record['checks']['Marlin-BF16-zero-compensated']=cs
          if cs['numeric_screen_pass']:calls['Marlin-BF16-zero-compensated']=corrected
+         active_name='Marlin-BF16-zero-compensated-A16'
+         corrected_a16=lambda call=call,x=x:compensation_a16(x,call(),residual_a16)
+         ay=corrected_a16();aa=corrected_a16();torch.cuda.synchronize();ac=stats(ay,oracle)
+         ac.update(deterministic=bool(torch.equal(ay,aa)),integer_zero_rounding_compensated=True,scale_BF16_rounding_retained=True,all_GEMM_activations_BF16=True,group_sum_accumulation_FP32=True)
+         ac['numeric_screen_pass']=ac['finite'] and ac['relative_rms']<.005 and ac['deterministic']
+         record['checks']['Marlin-BF16-zero-compensated-A16']=ac
+         if ac['numeric_screen_pass']:calls['Marlin-BF16-zero-compensated-A16']=corrected_a16
        except Exception as e:
-        failed_name='Marlin-BF16-zero-compensated' if name in record['checks'] else name
-        record['checks'][failed_name]=dict(supported=False,error_type=type(e).__name__,detail=str(e)[-1000:])
+        record['checks'][active_name]=dict(supported=False,error_type=type(e).__name__,detail=str(e)[-1000:])
       for name,fn in calls.items():
        y=fn();torch.cuda.synchronize();record['checks'].setdefault(name,stats(y,oracle))
       report['cases'].append(record);state('timing-screened-candidates',role=role,M=m)
@@ -184,7 +201,7 @@ def main():
        for name in names:bounded();samples[name].append(graph_time(calls[name]))
       record['timings']={name:dict(samples_us=v,mean_last3_us=statistics.mean(v[1:]),SD_last3_us=statistics.stdev(v[1:])) for name,v in samples.items()}
       state('case-collected',role=role,M=m)
-     del w,q,sc,ss,zc,zs,codes,scales,zeros,fp32dense,packed,marlinq,workspace,calls,methods,obj,zero_residual,compensation;torch.cuda.empty_cache()
+     del w,q,sc,ss,zc,zs,codes,scales,zeros,fp32dense,packed,marlinq,workspace,calls,methods,obj,zero_residual,compensation,zero_anchor,residual_a16,compensation_a16;torch.cuda.empty_cache()
    state('collected-pending-equivalence-and-ET-integration-review',cases=len(report['cases']),ET_server_integration_qualified=False)
  except Exception as e:
   (a.output/'exception.txt').write_text(traceback.format_exc());state('failed-preserve-evidence',error_type=type(e).__name__,detail=str(e)[-1500:]);raise
