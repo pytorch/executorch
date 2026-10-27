@@ -475,9 +475,10 @@ class _Emitter(torch.fx.Interpreter):
                     self._emit_node_specific_error(
                         self.node,
                         f"Constant tensor storage is on device '{storage_device}', "
-                        "but to_executorch() can only serialize constants from CPU "
-                        "memory. Move parameters, buffers and tensor constants to "
-                        "CPU (e.g. model.cpu()) before export.",
+                        "but constants serialized into the program must be in CPU "
+                        "memory. Move them to CPU before export (e.g. model.cpu()), "
+                        "or delegate the ops that use them to a backend that "
+                        "accepts device tensors.",
                     )
                 )
 
