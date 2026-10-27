@@ -6,7 +6,8 @@
     "baseline_Gemma_sdpa.py": "db8233510aeae0c0bfdc07d7b6bc44942767b1ea7a1946468f401951b0bb8b59",
     "two_source_ring.py": "253f8f1894cbe2152e58037bf626beaf59dd191dcf22ed26a38bd561eb855852",
     "probe_ring_journal_compile.py": "f30868c7d5ecbd8a186146f4b07d89477b31bdeb7ee27bfe4f9e47073d4e217c",
-    "export_real_mini_pair.py": "50d513082aabc975fb629280715b2b2c2e07de6ceb9dbfa059c577e229cf148e"
+    "export_real_mini_pair.py": "50d513082aabc975fb629280715b2b2c2e07de6ceb9dbfa059c577e229cf148e",
+    "recover_real_mini_export.py": "2dac68e380aef42ce684ae292ab9eefa9220e5feb21507ab7dddc5d8c23d8ee1"
   },
   "MG_model_scale": 0.34206290539921874,
   "MG_qheads": 32,
