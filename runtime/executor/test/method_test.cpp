@@ -325,7 +325,8 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Create a 2D tensor with enormous sizes. On 32-bit platforms the numel
-  // multiplication overflows; on 64-bit the resize bounds check rejects it.
+  // multiplication overflows; on 64-bit the per-dimension bound check in
+  // set_input rejects it.
   int32_t sizes[2] = {2000000000, 2000000000};
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {1, 1};
