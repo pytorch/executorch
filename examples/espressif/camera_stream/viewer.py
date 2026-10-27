@@ -12,7 +12,7 @@ Live viewer for the ESP32-S3 camera inference stream (apps/camera_stream).
 The board prints text lines on its USB-Serial-JTAG port:
     #CAM ...                       stream configuration
     #CROP x= y= side=              centre crop fed to the model, in camera pixels
-    #RES seq= pre_us= infer_us= cycle_us= top=idx:prob,...
+    #RES seq= pre_us= infer_us= delegate_us= cycle_us= top=idx:prob,...
     #JPG kind=cam|input seq= res= w= h= enc_us= len= crc= b64=...
 
 Terminal dashboard (stdlib only; --preview draws the frame with Pillow):
@@ -174,6 +174,7 @@ class StreamState:
                     "seq": int(fields.get("seq", 0)),
                     "pre_ms": int(fields.get("pre_us", 0)) / 1000.0,
                     "infer_ms": int(fields.get("infer_us", 0)) / 1000.0,
+                    "delegate_ms": int(fields.get("delegate_us", 0)) / 1000.0,
                     "cycle_ms": int(fields.get("cycle_us", 0)) / 1000.0,
                     "latency_ms": int(fields.get("latency_us", 0)) / 1000.0,
                     "decode_ms": int(fields.get("dec_us", 0)) / 1000.0,
@@ -402,6 +403,7 @@ canvas { width:100%; height:60px; display:block; }
     <div class="metrics" style="margin-top:14px">
       <div class="metric"><div class="v" id="m-ifps">-</div><div class="k">inferences / s</div></div>
       <div class="metric"><div class="v" id="m-infer">-</div><div class="k">inference ms</div></div>
+      <div class="metric"><div class="v" id="m-deleg">-</div><div class="k">in ESP-NN ms</div></div>
       <div class="metric"><div class="v" id="m-pre">-</div><div class="k">preprocess ms</div></div>
       <div class="metric"><div class="v" id="m-pfps">-</div><div class="k">preview fps</div></div>
       <div class="metric"><div class="v" id="m-link">-</div><div class="k">USB KB/s</div></div>
@@ -466,13 +468,14 @@ function render(s) {
   $("m-pfps").textContent = fmt(st.preview_fps, 1);
   $("m-link").textContent = fmt(st.link_kbps, 0);
   const cfg = st.config || {};
-  $("model").textContent = cfg.model_input ? `input ${cfg.model_input}, ${cfg.classes} classes, dual core ${cfg.dual_core === "1" ? "on" : "off"}` : "";
+  $("model").textContent = cfg.model_input ? `${cfg.runtime || "standalone"} runtime, ${cfg.delegates || "?"} ESP-NN delegate(s), input ${cfg.model_input}, ${cfg.classes} classes, dual core ${cfg.dual_core === "1" ? "on" : "off"}` : "";
   const live = st.result_age_ms !== null && st.result_age_ms < 5000;
   $("dot").style.background = live ? "var(--good)" : "var(--warn)";
   $("status-text").textContent = st.link && st.link !== "connected" ? st.link : (live ? "streaming" : (r ? "stalled" : "waiting for board"));
   if (live && camStale) { camStale = false; $("cam").src = "stream.mjpg?t=" + Date.now(); }
   if (r) {
     $("m-infer").textContent = fmt(r.infer_ms, 0);
+    $("m-deleg").textContent = r.delegate_ms ? fmt(r.delegate_ms, 0) : "-";
     $("m-pre").textContent = fmt(r.pre_ms, 0);
     $("m-lat").textContent = fmt(r.latency_ms, 0);
     if (r.seq !== lastSeq) {

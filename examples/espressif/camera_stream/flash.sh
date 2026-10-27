@@ -13,7 +13,7 @@ set -euo pipefail
 PORT=${1:-${ESPPORT:?usage: flash.sh PORT (or set ESPPORT)}}
 cd "$(dirname "$0")"
 mkdir -p build
-idf.py build
+idf.py ${ET_BUILD_DIR:+-DET_BUILD_DIR_PATH="$ET_BUILD_DIR"} build
 touch build/.viewer_pause
 trap 'rm -f build/.viewer_pause' EXIT
 sleep 1

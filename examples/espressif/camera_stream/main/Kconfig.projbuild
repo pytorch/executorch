@@ -9,8 +9,8 @@
 menu "Camera inference stream"
 
     config CAMERA_STREAM_MODEL
-        string "Model to embed (XTS3 graph or XTB1 bundle; absolute or relative to this project)"
-        default "models/mobilenet_v3_small_224.xtb"
+        string "ExecuTorch program (.pte) to embed; absolute or relative to this project"
+        default "models/mobilenet_v3_small_224.pte"
 
 
     choice CAMERA_STREAM_PINOUT
@@ -38,17 +38,14 @@ menu "Camera inference stream"
         default 12
         depends on CAMERA_STREAM_SENSOR_JPEG
 
-    config CAMERA_STREAM_DUAL_CORE
-        bool "Split ESP-NN kernels across both cores"
-        default n
-        help
-            Faster inference, but the ESP-NN worker on core 0 competes with
-            the JPEG preview task, so the preview frame rate drops.
-
     config CAMERA_STREAM_XCLK_MHZ
         int "Camera XCLK frequency in MHz"
         range 6 24
-        default 20
+        default 10
+        help
+            At 20 MHz an OV3660 on the ESP32-S3 CAM boards drops and corrupts
+            frames after a while (NO-SOI, frame timeouts, dark frames).
+            10 MHz is stable and still gives a 12 fps preview.
 
     config CAMERA_STREAM_PREVIEW
         bool "Stream JPEG preview frames alongside the results"

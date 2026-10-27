@@ -31,7 +31,7 @@
 #include <jpeg_decoder.h>
 #include <sdkconfig.h>
 
-#include <espnn/int8_interpreter.h>
+#include <et_model.h>
 
 extern "C" {
 extern const uint8_t camera_model_start[];
@@ -41,11 +41,6 @@ extern const uint8_t camera_model_end[];
 namespace executorch {
 namespace examples {
 namespace espressif {
-
-using ::executorch::backends::espressif::Int8Interpreter;
-using ::executorch::backends::espressif::Int8RuntimeOptions;
-using ::executorch::backends::espressif::Int8TensorInfo;
-using ::executorch::backends::espressif::read_le_u32;
 
 namespace {
 
@@ -77,6 +72,11 @@ constexpr int PREVIEW_MAX_FPS = CONFIG_CAMERA_STREAM_PREVIEW_MAX_FPS;
 constexpr bool PREVIEW = false;
 constexpr int PREVIEW_QUALITY = 50;
 constexpr int PREVIEW_MAX_FPS = 1;
+#endif
+#if CONFIG_ESPNN_DELEGATE_DUAL_CORE
+constexpr bool DUAL_CORE = true;
+#else
+constexpr bool DUAL_CORE = false;
 #endif
 #if CONFIG_CAMERA_STREAM_SENSOR_JPEG
 constexpr bool SENSOR_JPEG = true;
@@ -143,6 +143,7 @@ struct Result {
   int64_t decode_us;
   int64_t preprocess_us;
   int64_t invoke_us;
+  int64_t delegate_us;
   int64_t cycle_us;
   int64_t latency_us;
   uint32_t dropped_results;
@@ -153,7 +154,7 @@ struct Result {
 struct Shared {
   SemaphoreHandle_t state_lock;
   QueueHandle_t results;
-  Int8Interpreter* interpreter;
+  EtModel* model;
   int32_t input_width;
   int32_t input_height;
   bool decoder_swaps_red_blue;
@@ -540,13 +541,10 @@ class Resampler {
   uint16_t* y_weight_ = nullptr;
 };
 
-bool top_k(
-    const Int8Interpreter& interpreter,
-    float* scratch,
-    size_t count,
-    Prediction* top) {
-  if (!interpreter.dequantize_output(0, scratch, count))
+bool top_k(const float* logits, float* scratch, size_t count, Prediction* top) {
+  if (logits == nullptr)
     return false;
+  std::memcpy(scratch, logits, sizeof(float) * count);
   float maximum = scratch[0];
   for (size_t i = 1; i < count; ++i) {
     if (scratch[i] > maximum)
@@ -577,15 +575,13 @@ bool top_k(
 }
 
 void inference_task(void*) {
-  Int8Interpreter& interpreter = *g_shared.interpreter;
-  Int8TensorInfo output_info{};
-  interpreter.output_info(0, output_info);
+  EtModel& model = *g_shared.model;
+  const size_t classes = model.info().classes;
   const int32_t width = g_shared.input_width;
   const int32_t height = g_shared.input_height;
   const size_t rgb_bytes = static_cast<size_t>(width) * height * 3;
   uint8_t* rgb = static_cast<uint8_t*>(psram_alloc(rgb_bytes));
-  float* scratch =
-      static_cast<float*>(std::malloc(sizeof(float) * output_info.bytes));
+  float* scratch = static_cast<float*>(std::malloc(sizeof(float) * classes));
   uint8_t* decoded = nullptr;
   size_t decoded_size = 0;
   Resampler resampler;
@@ -646,19 +642,17 @@ void inference_task(void*) {
       resampler.run_rgb565_be(frame->buf, rgb);
       esp_camera_fb_return(frame);
     }
-    interpreter.set_input_rgb888(
-        0, rgb, width, height, IMAGENET_MEAN, IMAGENET_STD);
+    model.set_input_rgb888(rgb, IMAGENET_MEAN, IMAGENET_STD);
     const int64_t preprocessed = esp_timer_get_time();
-    if (!interpreter.invoke()) {
-      std::printf("#ERR invoke failed\n");
+    if (!model.run())
       continue;
-    }
     Result result{};
     result.seq = ++seq;
     result.decode_us = decode_us;
     result.preprocess_us = preprocessed - started;
-    result.invoke_us = interpreter.last_invoke_us();
-    top_k(interpreter, scratch, output_info.bytes, result.top);
+    result.invoke_us = model.last_run_us();
+    result.delegate_us = model.last_delegate_us();
+    top_k(model.logits(), scratch, classes, result.top);
     const int64_t now = esp_timer_get_time();
     result.cycle_us = now - previous;
     result.latency_us = now - captured;
@@ -688,12 +682,14 @@ void send_result(UsbLink& link, const Result& result) {
   int n = std::snprintf(
       line,
       sizeof(line),
-      "#RES seq=%u dec_us=%lld pre_us=%lld infer_us=%lld cycle_us=%lld latency_us=%lld "
+      "#RES seq=%u dec_us=%lld pre_us=%lld infer_us=%lld delegate_us=%lld cycle_us=%lld "
+      "latency_us=%lld "
       "dropped=%u dec_err=%u usb_fail=%u top=",
       static_cast<unsigned>(result.seq),
       static_cast<long long>(result.decode_us),
       static_cast<long long>(result.preprocess_us),
       static_cast<long long>(result.invoke_us),
+      static_cast<long long>(result.delegate_us),
       static_cast<long long>(result.cycle_us),
       static_cast<long long>(result.latency_us),
       static_cast<unsigned>(result.dropped_results),
@@ -918,45 +914,22 @@ void run_camera_stream() {
   if (!start_camera())
     return;
 
-  Int8RuntimeOptions options{};
-  options.copy_constants_to_psram = true;
-#if CONFIG_CAMERA_STREAM_DUAL_CORE
-  options.dual_core = true;
-#endif
-  Int8Interpreter* interpreter = new (std::nothrow) Int8Interpreter();
-  const uint8_t* model = camera_model_start;
-  size_t model_size = reinterpret_cast<uintptr_t>(camera_model_end) -
+  EtModel* model = new (std::nothrow) EtModel();
+  const size_t model_size = reinterpret_cast<uintptr_t>(camera_model_end) -
       reinterpret_cast<uintptr_t>(camera_model_start);
-  if (model_size >= 12 + 48 && std::memcmp(model, "XTB1", 4) == 0) {
-    const uint32_t offset = read_le_u32(model + 12 + 32);
-    const uint32_t length = read_le_u32(model + 12 + 36);
-    if (offset > model_size || length > model_size - offset) {
-      std::printf("#ERR model bundle is truncated\n");
-      return;
-    }
-    model += offset;
-    model_size = length;
-  }
-  if (interpreter == nullptr ||
-      !interpreter->load(model, model_size, options)) {
+  if (model == nullptr || !model->load(camera_model_start, model_size)) {
     std::printf("#ERR model load failed\n");
     return;
   }
-  Int8TensorInfo input{};
-  Int8TensorInfo output{};
-  if (interpreter->input_count() != 1 || !interpreter->input_info(0, input) ||
-      !interpreter->output_info(0, output) || input.channels != 3) {
-    std::printf("#ERR model must have one 3-channel image input\n");
-    return;
-  }
-  g_shared.interpreter = interpreter;
-  g_shared.input_width = input.width;
-  g_shared.input_height = input.height;
+  const EtModelInfo& info = model->info();
+  g_shared.model = model;
+  g_shared.input_width = info.input_width;
+  g_shared.input_height = info.input_height;
   g_shared.state_lock = xSemaphoreCreateMutex();
   g_shared.results = xQueueCreate(RESULT_QUEUE_LENGTH, sizeof(Result));
   g_shared.published_bgr = PREVIEW
-      ? static_cast<uint8_t*>(
-            psram_alloc(static_cast<size_t>(input.width) * input.height * 3))
+      ? static_cast<uint8_t*>(psram_alloc(
+            static_cast<size_t>(info.input_width) * info.input_height * 3))
       : nullptr;
   if (g_shared.state_lock == nullptr || g_shared.results == nullptr ||
       (PREVIEW && g_shared.published_bgr == nullptr)) {
@@ -964,18 +937,21 @@ void run_camera_stream() {
     return;
   }
   std::printf(
-      "#CAM model_input=%ldx%ld classes=%u dual_core=%d preview=%d preview_fps=%d "
-      "sensor=%s sensor_quality=%d xclk_mhz=%d constants_in_psram=%d\n",
-      static_cast<long>(input.width),
-      static_cast<long>(input.height),
-      static_cast<unsigned>(output.bytes),
-      options.dual_core ? 1 : 0,
+      "#CAM model_input=%ldx%ld classes=%u runtime=executorch delegates=%u "
+      "delegate_arena=%u planned=%u dual_core=%d preview=%d preview_fps=%d "
+      "sensor=%s sensor_quality=%d xclk_mhz=%d\n",
+      static_cast<long>(info.input_width),
+      static_cast<long>(info.input_height),
+      static_cast<unsigned>(info.classes),
+      static_cast<unsigned>(info.delegates),
+      static_cast<unsigned>(info.delegate_arena_bytes),
+      static_cast<unsigned>(info.planned_bytes),
+      DUAL_CORE ? 1 : 0,
       PREVIEW ? 1 : 0,
       PREVIEW_MAX_FPS,
       SENSOR_JPEG ? "jpeg" : "rgb565",
       SENSOR_JPEG_QUALITY,
-      CONFIG_CAMERA_STREAM_XCLK_MHZ,
-      interpreter->constants_copied() ? 1 : 0);
+      CONFIG_CAMERA_STREAM_XCLK_MHZ);
   std::printf(
       "Internal RAM free %u (largest %u), PSRAM free %u\n",
       static_cast<unsigned>(
