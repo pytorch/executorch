@@ -3602,7 +3602,8 @@ struct PyMethod final {
     // ATen swaps the data pointer of the output's storage in place, so an
     // output returned earlier would read the bound tensor, or freed memory once
     // it is rebound.
-    throw std::runtime_error("set_output is not supported by the ATen bindings");
+    throw std::runtime_error(
+        "set_output is not supported by the ATen bindings");
 #else
     if (!is_torch_tensor(tensor)) {
       throw py::type_error("Output storage must be a torch tensor");
@@ -3652,8 +3653,8 @@ struct PyMethod final {
       throw py::value_error(
           "output " + std::to_string(index) + " is " +
           runtime::toString(meta->scalar_type()) + " on " + name(device) +
-          ", but the bound tensor is " +
-          runtime::toString(view.scalar_type()) + " on " + name(view.device()));
+          ", but the bound tensor is " + runtime::toString(view.scalar_type()) +
+          " on " + name(view.device()));
     }
     const auto dim_order = meta->dim_order();
     for (size_t d = 0; d < dim_order.size(); ++d) {
@@ -4001,8 +4002,7 @@ struct PyMethod final {
 
   static std::string aliased_input_message(size_t output, size_t input) {
     return "output " + std::to_string(output) + " is input " +
-        std::to_string(input) +
-        ", which the method already writes in place";
+        std::to_string(input) + ", which the method already writes in place";
   }
 #ifndef USE_ATEN_LIB
   std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs_;
