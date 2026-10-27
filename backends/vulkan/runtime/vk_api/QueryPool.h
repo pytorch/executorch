@@ -20,7 +20,7 @@
 #include <functional>
 
 #ifndef VULKAN_QUERY_POOL_SIZE
-#define VULKAN_QUERY_POOL_SIZE 4096u
+#define VULKAN_QUERY_POOL_SIZE 65536u
 #endif
 
 namespace vkcompute {
