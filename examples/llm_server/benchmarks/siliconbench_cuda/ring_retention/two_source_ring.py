@@ -22,6 +22,8 @@ def _attention(Q, KH, VH, KN, VN, Info, Out,
                W: tl.constexpr, D: tl.constexpr, GROUPS: tl.constexpr,
                INFO: tl.constexpr, SEGMENTS: tl.constexpr,
                BM: tl.constexpr, BN: tl.constexpr):
+    # Inductor can pass the Python scalar as FP64; keep attention math FP32.
+    scale = scale.to(tl.float32)
     tile = tl.program_id(0)
     head = tl.program_id(1)
     segs = tl.arange(0, triton.next_power_of_2(SEGMENTS))
@@ -133,6 +135,7 @@ def _decode(
     BLOCK_G: tl.constexpr,
 ):
     sm_scale = sm_scale.to(tl.float32)
+    scale = scale.to(tl.float32)
     t = tl.program_id(0)
     h_kv = tl.program_id(1)
     split = tl.program_id(2)
