@@ -8,6 +8,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--lock',type=Path,required=True)
+    p.add_argument('--reference-tiles',action='store_true',help='One bounded comparison against prior ET generic attention tile/stage choices')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     pkg=Path(__file__).resolve().parent
     manifest=json.loads((pkg/'source-manifest.json').read_text())
@@ -25,12 +26,14 @@ def main():
         with a.lock.open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-            for mode in ['compiled','eager']:
+            for mode in (['compiled'] if a.reference_tiles else ['compiled','eager']):
                 for model in ['Gemma','MG']:
                     case=a.output/(model+'-'+mode)
                     cache=a.output/(model+'-'+mode+'-inductor-cache')
                     case_env=dict(env,TORCHINDUCTOR_CACHE_DIR=str(cache),TRITON_CACHE_DIR=str(a.output/(model+'-'+mode+'-triton-cache')))
                     argv=[sys.executable,'-B','-u',str(pkg/'probe_ring_journal_compile.py'),'--model',model,'--baseline',str(pkg/('baseline_'+model+'_sdpa.py')),'--output',str(case),'--baseline-execution',mode,'--candidate-execution',mode]
+                    if a.reference_tiles:
+                        argv+=['--generic-bm','32' if model=='Gemma' else '64','--generic-bn','32' if model=='Gemma' else '64','--generic-stages','2' if model=='Gemma' else '3']
                     state('running-balanced-ring-comparison',case=str(case),argv=argv)
                     with (a.output/(case.name+'.log')).open('x') as log:
                         subprocess.run(argv,env=case_env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1200)

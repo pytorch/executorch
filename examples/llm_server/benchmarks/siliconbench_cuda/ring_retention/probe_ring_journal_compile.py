@@ -12,6 +12,9 @@ p.add_argument('--baseline',type=Path,required=True)
 p.add_argument('--output',type=Path,required=True)
 p.add_argument('--baseline-execution',choices=['eager','compiled'],default='eager')
 p.add_argument('--candidate-execution',choices=['eager','compiled'],default='compiled')
+p.add_argument('--generic-bm',type=int,default=0)
+p.add_argument('--generic-bn',type=int,default=0)
+p.add_argument('--generic-stages',type=int,default=0)
 a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 assert torch.cuda.is_available()
 torch.manual_seed(49027)
@@ -25,7 +28,7 @@ results=[]
 
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def record(status,**extra):
- v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
+ v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,generic_tile=dict(block_m=a.generic_bm,block_n=a.generic_bn,pipeline_stages=a.generic_stages),kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
  (a.output/'progress.json').write_text(json.dumps(v,indent=2)+'\n')
 
 
@@ -92,7 +95,7 @@ def baseline(f):
 
 
 def compiled_tensor_step(q,sk,sv,k,v,info,stage):
- out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE)
+ out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE,a.generic_bm,a.generic_bn,a.generic_stages)
  ring_commit_journal(sk,sv,k,v,info,W,stage,1)
  return out
 compiled_step=torch.compile(compiled_tensor_step,fullgraph=True,dynamic=False) if a.candidate_execution=='compiled' else compiled_tensor_step

@@ -13,6 +13,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ['origin','source','artifact','python','benchmark-python','output','lock']:p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--phase',choices=['collect','serve','profile'],default='collect');p.add_argument('--port',type=int,default=19627)
+ p.add_argument('--case-set',choices=['scaling','chat-prefix-off'],default='scaling')
  a=p.parse_args();pkg=Path(__file__).resolve().parent.parent
  if a.phase=='collect':a.output.mkdir(exist_ok=False,parents=True)
  def state(s,**kw):
@@ -49,9 +50,9 @@ def main():
  completed=[]
  try:
   state('checking-current-runtime-and-artifact')
-  common=['--origin',str(a.origin),'--source',str(a.source),'--artifact',str(a.artifact),'--python',str(a.python),'--benchmark-python',str(a.benchmark_python),'--output',str(a.output),'--lock',str(a.lock),'--port',str(a.port)]
+  common=['--origin',str(a.origin),'--source',str(a.source),'--artifact',str(a.artifact),'--python',str(a.python),'--benchmark-python',str(a.benchmark_python),'--output',str(a.output),'--lock',str(a.lock),'--port',str(a.port),'--case-set',a.case_set]
   for profile in [False,True]:
-   for split,prefix in [('chat','on'),('agent','off')]:
+   for split,prefix in ([('chat','off')] if a.case_set=='chat-prefix-off' else [('chat','on'),('agent','off')]):
     for c in [8,16]:
      case=a.output/(('profile-' if profile else 'unprofiled-')+split+'-'+prefix+'-c'+str(c))
      wrapper=a.output/(case.name+'-serve.sh')

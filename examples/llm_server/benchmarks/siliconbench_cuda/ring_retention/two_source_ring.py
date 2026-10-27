@@ -341,7 +341,8 @@ def _commit(KH, VH, KN, VN, Info, Journal,
 def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
                       history_value: torch.Tensor, current_key: torch.Tensor,
                       current_value: torch.Tensor, seq_info: torch.Tensor,
-                      window: int, scale: float) -> torch.Tensor:
+                      window: int, scale: float, block_m: int = 0,
+                      block_n: int = 0, pipeline_stages: int = 0) -> torch.Tensor:
     heads, total, dim = query.shape[1:]
     kvheads = current_key.shape[1]
     groups = heads // kvheads
@@ -369,8 +370,8 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
     # Native cache allocations can be smaller than declared tensor shapes.
     # Runtime columns in seq_info define the actual pitch for history reads.
     out = torch.zeros_like(query)
-    bm = 64 if dim <= 128 else 16
-    bn = 64 if dim <= 128 else 32
+    bm = block_m or (64 if dim <= 128 else 16)
+    bn = block_n or (64 if dim <= 128 else 32)
     tiles = triton.cdiv(total * groups, bm) + seq_info.shape[0]
     wrap_triton(_attention)[(tiles, kvheads)](
         query, history_key, history_value, current_key, current_value, seq_info, out,
@@ -380,7 +381,7 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         out.stride(1), out.stride(2), scale,
         window, dim, groups, seq_info.shape[1], seq_info.shape[0], bm, bn,
-        num_warps=4, num_stages=2 if dim <= 128 else 1)
+        num_warps=4, num_stages=pipeline_stages or (2 if dim <= 128 else 1))
     return out
 
 
