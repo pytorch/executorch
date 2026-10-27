@@ -147,6 +147,8 @@ def collect(a):
     manifest,q,env,query=binding(a)
     a.output.mkdir(parents=True,exist_ok=False)
     package=Path(__file__).resolve().parent
+    benchmark_python=str(a.benchmark_python or Path(sys.executable))
+    assert Path(benchmark_python).is_file()
     def state(status,**values):
         pending=a.output/'progress.pending.json'
         pending.write_text(json.dumps(dict(status=status,UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -180,11 +182,11 @@ def collect(a):
                 for prefix in ['off','on']:
                     for concurrency in ([16,1] if mode=='correctness' else [16,1,8,4,2]):
                         case=a.output/(mode+'-'+split+'-prefix-'+prefix+'-c'+str(concurrency))
-                        argv=[sys.executable,'-B',str(package/'run_case_24h.py'),
+                        argv=[benchmark_python,'-B',str(package/'run_case_24h.py'),
                             '--wrapper',str(wrapper),'--backend','executorch','--model','gemma4-12b-it',
                             '--variant','independent-session-KV-migrated-identical-runtime','--prefix-cache',prefix,
                             '--client',str(package/'benchmark_gemma.py'),'--prompts',str(a.destination/'inputs'/(split+'_benchmark_prompts.json')),
-                            '--correctness-root',str(a.destination/'inputs/correctness'),'--python',sys.executable,
+                            '--correctness-root',str(a.destination/'inputs/correctness'),'--python',benchmark_python,
                             '--concurrency',str(concurrency),'--port',str(a.port),'--output',str(case),
                             '--lock',str(a.lock),'--mode',mode,'--split',split]
                         if mode=='correctness':argv+=['--quality-scope','smoke','--correctness-rounds','1']
@@ -237,6 +239,7 @@ def main():
     p.add_argument('--destination',type=Path,required=True)
     p.add_argument('--manifest',type=Path);p.add_argument('--reuse-weights',type=Path)
     p.add_argument('--source',type=Path);p.add_argument('--expected-GPU-UUID')
+    p.add_argument('--benchmark-python',type=Path)
     p.add_argument('--output',type=Path);p.add_argument('--lock',type=Path);p.add_argument('--port',type=int,default=19962)
     a=p.parse_args()
     if a.phase=='receive':assert a.manifest and a.reuse_weights;receive(a)

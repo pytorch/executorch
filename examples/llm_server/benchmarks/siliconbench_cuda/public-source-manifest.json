@@ -1196,8 +1196,8 @@
       "bytes": 8173
     },
     "run_migrated_Gemma_main.py": {
-      "sha256": "7c25a71d987b6bb8a789437ce9934ca67dc6bdc6fd325ebf2aa2a9b57e22de27",
-      "bytes": 16254
+      "sha256": "c78d6bf2dd05c3a8e471fbfb6694f48541f057714aa6dcc436d6897f2b442056",
+      "bytes": 16422
     },
     "run_native_allocator_stage_diagnostic.py": {
       "sha256": "bad76d2e51f5faee1bc70ce38eccf59dff680f86cb919359d1b6d57684013929",
