@@ -1622,6 +1622,12 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         if all(dtype in self.supported_dtypes for dtype in input_dtypes):
             return True
 
+        if node.target in {
+            exir_ops.edge.aten.eq.Tensor,
+            exir_ops.edge.aten.ne.Tensor,
+        } and all(dtype == torch.bool for dtype in input_dtypes):
+            return True
+
         if node.target in self.comparison_ops and all(
             dtype in self.castable_comparison_dtypes for dtype in input_dtypes
         ):
