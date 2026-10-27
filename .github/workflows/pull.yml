@@ -1680,7 +1680,7 @@ jobs:
         -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"  --editable true
+        .ci/scripts/setup-linux.sh --build-tool "cmake" --editable true
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
