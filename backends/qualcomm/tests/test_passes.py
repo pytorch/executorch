@@ -783,6 +783,83 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def _assert_cpu_conv_keeps_its_weight_dequantize(
+        self, quant_dtype, use_fp16, skip_node_id_set=None, emit=True
+    ):
+        """A quantized conv kept off QNN must take its per-channel weight dequantize
+        with it. FoldQDQ force-passes that dequantize, so it used to be lowered alone
+        as a QNN Dequantize, which rejects per-channel encodings and fails context
+        binary generation (#19908)."""
+
+        class ConvDepthwiseConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.pw1 = torch.nn.Conv2d(8, 16, 1)
+                self.dw = torch.nn.Conv2d(16, 16, 3, padding=1, groups=16)
+                self.pw2 = torch.nn.Conv2d(16, 8, 1)
+
+            def forward(self, x):
+                return self.pw2(torch.relu(self.dw(torch.relu(self.pw1(x)))))
+
+        sample_input = (torch.randn(1, 8, 16, 16),)
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(
+            quant_dtype=quant_dtype, is_conv_per_channel=True
+        )
+        prepared = prepare_pt2e(
+            torch.export.export(ConvDepthwiseConv().eval(), sample_input).module(),
+            quantizer,
+        )
+        prepared(*sample_input)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
+        )
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                convert_pt2e(prepared),
+                sample_input,
+                compiler_specs,
+                skip_node_id_set=skip_node_id_set,
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        # inspected before to_executorch(), which swaps in out-variant ops
+        def cpu_nodes(target):
+            return [
+                node
+                for node in edge.exported_program().graph.nodes
+                if node.op == "call_function" and node.target == target
+            ]
+
+        convs = cpu_nodes(exir_ops.edge.aten.convolution.default)
+        self.assertEqual([conv.name for conv in convs], ["aten_convolution_default_1"])
+        dequants = cpu_nodes(
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
+        )
+        self.assertTrue(dequants)
+        for dequant in dequants:
+            self.assertEqual(list(dequant.users), convs)
+        if emit:
+            edge.to_executorch()
+
+    def test_skipped_conv_keeps_its_weight_dequantize_on_cpu(self):
+        self._assert_cpu_conv_keeps_its_weight_dequantize(
+            QuantDtype.use_16a8w,
+            use_fp16=False,
+            skip_node_id_set={"aten_convolution_default_1"},
+        )
+
+    def test_rejected_conv_keeps_its_weight_dequantize_on_cpu(self):
+        # the HTP rejects fp16-activation/int8-weight depthwise conv. Not emitted:
+        # InsertCastForFpActQuantizedWeight casts the CPU conv's bias meta to fp16.
+        self._assert_cpu_conv_keeps_its_weight_dequantize(
+            QuantDtype.use_fp16a8w, use_fp16=True, emit=False
+        )
+
     def test_lowering_accepts_exported_program_without_reexport(self):
         """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
         ExportedProgram as captured, never re-exporting it.
