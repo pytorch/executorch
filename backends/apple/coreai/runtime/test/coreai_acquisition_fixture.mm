@@ -152,8 +152,6 @@ ParallelAcquisitionObservation parallel_acquisitions(ScopedFakeBridgeState& brid
   return observation;
 }
 
-void set_acquisition_test_executable(const char* path) { set_bookmark_test_executable(path); }
-
 ::testing::AssertionResult spawn_acquisition_crash(BookmarkChild& child, NSURL* root,
                                                    StorageOperation boundary,
                                                    NSDictionary* manifest) {
@@ -161,7 +159,7 @@ void set_acquisition_test_executable(const char* path) { set_bookmark_test_execu
   NSData* payload = encode(@{@"boundary" : @(static_cast<int>(boundary)), @"manifest" : manifest});
   if (payload == nil) return ::testing::AssertionFailure() << "Cannot encode crash child input";
   NSString* argument = [[NSString alloc] initWithData:payload encoding:NSUTF8StringEncoding];
-  return child.spawn(@"--bookmark-crash", root.path, argument);
+  return child.spawn(@"--acquisition-crash", root.path, argument);
 }
 
 ::testing::AssertionResult spawn_parallel_acquisition(BookmarkChild& child, NSURL* root,
@@ -217,7 +215,7 @@ namespace {
 
 int acquisition_child_mode(int argc, char** argv) {
   if (argc < 2) return -1;
-  const bool crash = std::strcmp(argv[1], "--bookmark-crash") == 0;
+  const bool crash = std::strcmp(argv[1], "--acquisition-crash") == 0;
   const bool parallel = std::strcmp(argv[1], "--acquisition-parallel") == 0;
   if (!crash && !parallel) return -1;
   if (argc != 5) return 1;

@@ -7,6 +7,7 @@
 import argparse
 import json
 import shutil
+import uuid
 from pathlib import Path
 
 import torch
@@ -28,14 +29,24 @@ class Arithmetic(torch.nn.Module):
         return left + right, left - right
 
 
-def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
-    """Export into a dedicated fixture directory, replacing its contents."""
-    size = torch.export.Dim("size", min=1, max=8)
-    exported = torch.export.export(
-        Arithmetic().eval(),
-        (torch.ones(2), torch.ones(2)),
-        dynamic_shapes=({0: size}, {0: size}) if dynamic else None,
-    )
+class WeightedArithmetic(torch.nn.Module):
+    def __init__(self, first: float, second: float):
+        super().__init__()
+        self.first = first
+        self.second = second
+        self.network = torch.nn.Sequential(
+            torch.nn.Linear(2, 4096), torch.nn.ReLU(), torch.nn.Linear(4096, 2)
+        )
+
+    def forward(self, left, right):
+        return (
+            self.network(left + right) + self.first,
+            self.network(left - right) + self.second,
+        )
+
+
+def _export_model(model, inputs, output_dir: Path, *, dynamic_shapes=None) -> dict:
+    exported = torch.export.export(model, inputs, dynamic_shapes=dynamic_shapes)
     lowered = to_edge_transform_and_lower(
         exported,
         transform_passes=get_default_passes(),
@@ -56,6 +67,38 @@ def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(store.buffers[entry.buffer_index])
     (output_dir / "manifest.json").write_bytes(manifest_bytes)
+    return manifest
+
+
+def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
+    """Export into a dedicated fixture directory, replacing its contents."""
+    size = torch.export.Dim("size", min=1, max=8)
+    _export_model(
+        Arithmetic().eval(), (torch.ones(2), torch.ones(2)), output_dir,
+        dynamic_shapes=({0: size}, {0: size}) if dynamic else None,
+    )
+
+
+def export_weighted_fixture(output_dir: Path) -> None:
+    # Unique model contents keep cleanup from evicting another test's SDK entry.
+    seed = uuid.uuid4().int
+    model = WeightedArithmetic(
+        (seed & 0xFFFFFF) / 2**24, ((seed >> 24) & 0xFFFFFF) / 2**24
+    ).eval()
+    inputs = (torch.tensor([5.0, 9.0]), torch.tensor([1.0, 2.0]))
+    manifest = _export_model(model, inputs, output_dir)
+    with torch.no_grad():
+        expected = [tensor.tolist() for tensor in model(*inputs)]
+    (output_dir / "fixture.json").write_text(
+        json.dumps(
+            {
+                "function": manifest["function"],
+                "inputs": manifest["input_names"],
+                "outputs": manifest["output_names"],
+                "expected": expected,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

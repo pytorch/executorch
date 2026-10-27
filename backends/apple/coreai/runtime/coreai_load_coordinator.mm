@@ -89,7 +89,7 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
                            "Core AI specialization returned no model");
   ET_CHECK_OK_OR_RETURN_ERROR(
       write_bookmark(*locked.get(), [model.get() copyBookmarkData]));
-  // SDK pins do not prove source independence; leave staged sources in place.
+  ET_CHECK_OK_OR_RETURN_ERROR(remove_bookmark_staging(*locked.get()));
   return model;
 }
 

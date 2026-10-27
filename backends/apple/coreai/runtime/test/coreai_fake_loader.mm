@@ -154,9 +154,7 @@ dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 
       }
       BookmarkFakeModel* model = [[BookmarkFakeModel alloc] initWithContext:self.context];
       model.owner = self;
-      model.bookmark = self.specializationBookmark != nil
-                           ? self.specializationBookmark
-                           : [NSUUID.UUID.UUIDString dataUsingEncoding:NSUTF8StringEncoding];
+      model.bookmark = [NSUUID.UUID.UUIDString dataUsingEncoding:NSUTF8StringEncoding];
       self.models[model.bookmark] = model;
       self.lastAcquired = model;
       completion(ETCoreAIAcquisitionStatusHit, model, nil);
@@ -166,20 +164,11 @@ dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 
 - (void)evictModelWithBookmark:(NSData*)bookmark completion:(void (^)(NSError*))completion {
   ++evictions;
   run_async(self.context, ^{
-    if (self.onEvict != nil) {
-      self.onEvict(bookmark);
-    }
-    @synchronized(self) {
-      if (self.evictError == nil) {
-        [self.models removeObjectForKey:bookmark];
-      }
-      completion(self.evictError);
-    }
+    completion(fake_error(ETCoreAIErrorUnsupported));
   });
 }
 - (void)clearRetainedState {
   self.onSpecialize = nil;
-  self.onEvict = nil;
   self.lastAcquired = nil;
   [self.models removeAllObjects];
 }

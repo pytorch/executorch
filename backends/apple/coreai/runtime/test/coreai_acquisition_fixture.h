@@ -41,8 +41,6 @@ ParallelAcquisitionObservation parallel_acquisitions(
     TestData& data,
     bool same_key);
 
-// Uses the existing bounded, scoped child process owner.
-void set_acquisition_test_executable(const char* path);
 ::testing::AssertionResult spawn_acquisition_crash(
     BookmarkChild& child,
     NSURL* root,
@@ -54,8 +52,7 @@ void set_acquisition_test_executable(const char* path);
     NSDictionary* first,
     NSDictionary* second,
     bool same_key);
-// Dispatch before bookmark_child_mode and InitGoogleTest. Unrelated modes
-// return -1.
+// Dispatch before InitGoogleTest. Unrelated modes return -1.
 int acquisition_child_mode(int argc, char** argv);
 
 } // namespace executorch::backends::coreai::testing

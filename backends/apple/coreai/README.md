@@ -146,11 +146,21 @@ There is no PTE-wide bookmark list or serialized lifecycle record.
 A healthy bookmark hit does not inspect staging or consult NDS; the acquired SDK
 model is retained through function binding. On a missing bookmark or confirmed
 SDK miss, the runtime materializes the source, specializes it and atomically
-writes the returned bookmark bytes. There is no secondary source-URL cache
-lookup. SDK errors, unreadable bookmarks and publication failures fail loading
-without automatic cache deletion. If publication fails after specialization, the
-SDK entry and source remain; the next load retries the ordinary flow. The
-backend does not track historical or unrecorded SDK entries.
+writes the returned bookmark bytes. After durable publication, it removes the
+entire keyed staging directory while holding the per-key lock. Persistent SDK
+caching supports inference and bookmark restoration without that extracted copy.
+Keep the packaged named data available: a later SDK cache miss requires source
+materialization again. There is no secondary source-URL cache lookup.
+
+SDK errors, unreadable bookmarks and publication failures fail loading without
+automatic cache deletion. If publication fails after specialization, the SDK
+entry and source remain. If staged-source cleanup fails, loading reports the
+error but retains the durable bookmark and any remaining staged files. Neither
+failure triggers automatic retries, SDK eviction or source repair. A subsequent
+bookmark hit can load without inspecting or retrying staging cleanup. A partial
+cleanup followed by an SDK miss fails on the damaged staged entry until it is
+explicitly cleared. The backend does not track historical or unrecorded SDK
+entries.
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.
@@ -197,6 +207,8 @@ types and substitute fake entry points.
 `EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI and is registered with CTest only
 when the macOS host meets the configured Core AI deployment target.
 The test build exports static- and dynamic-shape models for real session tests.
+The SDK source-lifetime regression checks live inference and fresh-process
+bookmark restoration after removing disposable portable and AOT source copies.
 CMake's `PYTHON_EXECUTABLE` must use the Python environment with the pinned Core
 AI requirements above. Backend Python changes regenerate the dedicated fixture
 directory, replacing previous contents. CTest supplies its location to XCTest;
@@ -218,9 +230,11 @@ covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
 registers the standalone `coreai_host_test` executable with CTest. It tests
-manifest parsing, AOT asset selection, cache identity, bookmark I/O, lock
-contention, and filesystem storage using Foundation, without Swift or CoreAI SDK
-calls. The host test target is omitted for Apple cross-builds.
+manifest parsing, AOT asset selection, cache identity, bookmark I/O, acquisition
+coordination, lock contention, and filesystem storage using Foundation, without
+Swift or CoreAI SDK calls. Acquisition contention tests run two threads inside a
+bounded child process; bookmark lock tests separately cover contention between
+processes. The host test target is omitted for Apple cross-builds.
 
 CI builds and runs these tests on macOS 27. To use the same configuration from
 the repository root:

@@ -15,14 +15,12 @@
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
   @autoreleasepool {
-    executorch::backends::coreai::testing::set_acquisition_test_executable(
+    executorch::backends::coreai::testing::set_bookmark_test_executable(
         argv[0]);
     const int acquisition_result =
         executorch::backends::coreai::testing::acquisition_child_mode(argc, argv);
     if (acquisition_result >= 0)
       return acquisition_result;
-    executorch::backends::coreai::testing::set_bookmark_test_executable(
-        argv[0]);
     const int child_result =
         executorch::backends::coreai::testing::bookmark_child_mode(argc, argv);
     if (child_result >= 0)

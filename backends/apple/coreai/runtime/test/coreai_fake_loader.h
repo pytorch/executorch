@@ -61,12 +61,9 @@ class ScopedFakeBridgeState final {
     NSMutableDictionary<NSData*, BookmarkFakeModel*>* models;
 @property(nonatomic, strong) NSError* restoreError;
 @property(nonatomic, strong) NSError* specializeError;
-@property(nonatomic, strong) NSError* evictError;
 @property(nonatomic) BOOL restoreMiss;
 @property(nonatomic) BOOL emptyBookmark;
-@property(nonatomic, copy) NSData* specializationBookmark;
 @property(nonatomic, copy) void (^onSpecialize)(NSURL*);
-@property(nonatomic, copy) void (^onEvict)(NSData*);
 @property(nonatomic, strong) BookmarkFakeModel* lastAcquired;
 @property(nonatomic, copy) NSString* lastSpecializeURL;
 // Call only after workers/callbacks finish and caller-owned handles are
