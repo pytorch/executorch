@@ -78,6 +78,7 @@ class EthosUCompileSpec(ArmCompileSpec):
     _MAX_SCRATCH_SIZE_KEY = "max_scratch_size"
     _DELEGATE_MUTABLE_BUFFERS_KEY = "delegate_mutable_buffers"
     _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
+    _PLACE_NAMED_DATA_INLINE_KEY = "place_named_data_inline"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -150,10 +151,16 @@ class EthosUCompileSpec(ArmCompileSpec):
         config_ini: str | None = "Arm/vela.ini",
         external_block_placements: VelaExternalBlockPlacements | None = None,
         max_scratch_size: int | None = None,
+        place_named_data_inline: bool = False,
     ):
         self.target = target
         self.max_scratch_size = max_scratch_size
         self.delegate_mutable_buffers = False
+        # When True, blocks selected via external_block_placements are emitted as
+        # deduplicated named data inline in the .pte (resolved on-device by the
+        # program's PteDataMap) instead of a separate external .ptd file. Lets
+        # multiple methods share one weight buffer in a single self-contained .pte.
+        self.place_named_data_inline = place_named_data_inline
         self.external_block_placements = (
             VelaExternalBlockPlacements()
             if external_block_placements is None
@@ -216,6 +223,10 @@ class EthosUCompileSpec(ArmCompileSpec):
                     self._MAX_SCRATCH_SIZE_KEY, str(self.max_scratch_size).encode()
                 )
             )
+        if self.place_named_data_inline:
+            compile_specs.append(
+                CompileSpec(self._PLACE_NAMED_DATA_INLINE_KEY, b"1")
+            )
         block_placements = self.external_block_placements.to_block_placements()
         if block_placements:
             # CompileSpec values are bytes, so use deterministic JSON to
@@ -242,6 +253,9 @@ class EthosUCompileSpec(ArmCompileSpec):
         max_scratch_size = specs.get(cls._MAX_SCRATCH_SIZE_KEY)
         compile_spec.max_scratch_size = (
             int(max_scratch_size) if max_scratch_size is not None else None
+        )
+        compile_spec.place_named_data_inline = (
+            specs.get(cls._PLACE_NAMED_DATA_INLINE_KEY) == "1"
         )
         serialized_placements = specs.get(cls._EXTERNAL_BLOCK_PLACEMENTS_KEY)
         if serialized_placements is None:

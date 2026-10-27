@@ -121,12 +121,16 @@ class EthosUBackend(BackendDetails):
             return PreprocessResult(processed_bytes=compile_result.processed_bytes)
 
         data_store = NamedDataStore()
+        # When placing inline, register the blocks as .pte named data (external_tag
+        # None) so they are deduplicated into the program's own segments and
+        # resolved on-device via PteDataMap -- no separate .ptd file needed.
+        inline = compile_spec.place_named_data_inline
         for external_block in compile_result.external_blocks:
             data_store.add_named_data(
                 external_block.key,
                 external_block.payload,
                 alignment=external_block.alignment,
-                external_tag=external_block.placement,
+                external_tag=None if inline else external_block.placement,
             )
         return PreprocessResult(
             processed_bytes=compile_result.processed_bytes,
