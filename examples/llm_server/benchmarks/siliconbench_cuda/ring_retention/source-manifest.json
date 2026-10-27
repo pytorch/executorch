@@ -2,12 +2,12 @@
   "scope": "Open-source kernel prerequisite only. Mini ET model/native four-condition qualification is still required.",
   "sources": {
     "baseline_MG_sdpa.py": "727df52b527420362bade0a9dc1f638e8c13850d7035e006e27cff8659d40df8",
-    "probe_two_source_ring.py": "c1a1768ae0bd3caa4d18cb8792d4eb395853e97ddc4f17e309d4015299d09f66",
+    "probe_two_source_ring.py": "20e03df16c877c9bb12c8701de51053bb859bb0230150cc24ead5d312dae5d2c",
     "baseline_Gemma_sdpa.py": "db8233510aeae0c0bfdc07d7b6bc44942767b1ea7a1946468f401951b0bb8b59",
-    "two_source_ring.py": "2fd2ed89a6ea40b6839f58081df9cf7581436dd97d5890e7fc2cb29a883ac51d"
+    "two_source_ring.py": "64c5e29f1a5ac4856ff66806254fd82e78c1b35d28a83b6045f3cb9b5e90bd61"
   },
   "MG_model_scale": 0.34206290539921874,
   "MG_qheads": 32,
   "Gemma_ring_qheads": 16,
-  "timing": "4 rounds discard1; restore identical history outside events; baseline also uses one combined scatter before its existing SDPA."
+  "timing": "4 rounds discard1; captured external event nodes measure only forward+commit, restore occurs before the timing event in each graph."
 }

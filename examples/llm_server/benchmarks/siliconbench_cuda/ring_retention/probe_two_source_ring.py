@@ -107,19 +107,31 @@ def check_commit(f):
 
 
 def timing(f):
- # Restore outside CUDA-event timing, so every forward sees the same valid
- # pre-step state. This is a microbenchmark, not end-to-end model latency.
+ # Captured event nodes exclude Python/JIT dispatch and state restore from
+ # the measured device-forward interval. History restore stays in the graph
+ # before its timing event so each replay is the same valid forward.
  saved=f['initial']
- samples={x:[] for x in ['baseline','candidate']}
+ graphs={};events={};samples={x:[] for x in ['baseline','candidate']}
+ for name,fn,keys in [('baseline',baseline,['bk','bv']),('candidate',candidate,['sk','sv'])]:
+  for _ in range(3):
+   for key in keys:f[key].copy_(saved[key])
+   fn(f)
+  torch.cuda.synchronize()
+  g=torch.cuda.CUDAGraph()
+  begin=torch.cuda.Event(enable_timing=True,external=True)
+  finish=torch.cuda.Event(enable_timing=True,external=True)
+  with torch.cuda.graph(g):
+   for key in keys:f[key].copy_(saved[key])
+   begin.record();output=fn(f);finish.record()
+  graphs[name]=g;events[name]=(begin,finish,output)
  for rnd in range(4):
-  for name,fn,keys in [('baseline',baseline,['bk','bv']),('candidate',candidate,['sk','sv'])]:
-   times=[]
+  for name in ['baseline','candidate']:
+   vals=[]
    for _ in range(12):
-    for key in keys:f[key].copy_(saved[key])
-    begin=torch.cuda.Event(enable_timing=True);end=torch.cuda.Event(enable_timing=True)
-    begin.record();out=fn(f);end.record();end.synchronize();times.append(begin.elapsed_time(end))
-   samples[name].append(statistics.mean(times[2:]))
- return {name:dict(round_means_ms=vals,discarded_round=1,retained_mean_ms=statistics.mean(vals[1:]),sample_SD_ms=statistics.stdev(vals[1:])) for name,vals in samples.items()}
+    graphs[name].replay();torch.cuda.synchronize()
+    vals.append(events[name][0].elapsed_time(events[name][1]))
+   samples[name].append(statistics.mean(vals[2:]))
+ return {name:dict(round_means_ms=vals,discarded_round=1,retained_mean_ms=statistics.mean(vals[1:]),sample_SD_ms=statistics.stdev(vals[1:]),CUDA_graph=True,state_restore_excluded=True,external_event_nodes=True) for name,vals in samples.items()}
 
 cases=[('empty-d1',[1],[0],0),('history-d1',[1],[W*3+7],0),('d8',[1]*8,[W*2+i*13 for i in range(8)],0),('d16',[1]*16,[W*3+i*31 for i in range(16)],0),('p64',[64],[W*2+37],0),('p512',[512],[W*3+11],0),('max-prefill',[P],[W*2+17],0),('mixed64',[1]*8+[64],[W*3+i*11 for i in range(9)],0),('mixed512',[1]*8+[512],[W*2+i*7 for i in range(9)],0),('unequal-tail-pad',[1,3,17],[0,W-1,W+7],43)]
 try:

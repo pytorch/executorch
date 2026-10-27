@@ -123,8 +123,8 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
     # Native cache allocations can be smaller than declared tensor shapes.
     # Runtime columns in seq_info define the actual pitch for history reads.
     out = torch.zeros_like(query)
-    bm = 16 if dim <= 256 else 8
-    bn = 64
+    bm = 64 if dim <= 128 else 16
+    bn = 64 if dim <= 128 else 32
     tiles = triton.cdiv(total * groups, bm) + seq_info.shape[0]
     wrap_triton(_attention)[(tiles, kvheads)](
         query, history_key, history_value, current_key, current_value, seq_info, out,
@@ -134,7 +134,7 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         out.stride(1), out.stride(2), scale,
         window, dim, groups, seq_info.shape[1], seq_info.shape[0], bm, bn,
-        num_warps=4)
+        num_warps=4, num_stages=2 if dim <= 128 else 1)
     return out
 
 
