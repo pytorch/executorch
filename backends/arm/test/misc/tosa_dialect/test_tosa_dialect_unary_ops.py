@@ -392,3 +392,29 @@ def test_logical_not_rejects_non_bool() -> None:
     ), FakeTensorMode() as mode:
         with pytest.raises(TosaValueError, match="requires bool inputs"):
             exir_ops.backend.tosa.LOGICAL_NOT.default(mode.from_tensor(sample_input))
+
+
+@pytest.mark.parametrize("op_name", ["ABS", "NEGATE", "BITWISE_NOT"])
+@pytest.mark.parametrize(
+    ("spec", "accepted"), [("TOSA-1.1+INT+int64", True), ("TOSA-1.1+INT", False)]
+)
+def test_unary_ops_take_int64_only_with_the_extension(
+    op_name: str, spec: str, accepted: bool
+) -> None:
+    input_tensor = torch.randint(1, 16, (2, 3), dtype=torch.int64)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string(spec)
+    ), FakeTensorMode() as mode:
+        if not accepted:
+            with pytest.raises(TosaValueError):
+                getattr(exir_ops.backend.tosa, op_name).default(
+                    mode.from_tensor(input_tensor)
+                )
+            return
+        output = getattr(exir_ops.backend.tosa, op_name).default(
+            mode.from_tensor(input_tensor)
+        )
+
+    assert output.dtype == torch.int64
+    assert tuple(output.shape) == (2, 3)

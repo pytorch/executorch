@@ -385,3 +385,41 @@ def test_extrema_ops_reject_int32_on_fp_profile(op_name: str) -> None:
             getattr(exir_ops.backend.tosa, op_name).default(
                 *_to_fake(mode, input1, input2)
             )
+
+
+_INT64_BINARY_OPS = [
+    "ADD",
+    "SUB",
+    "MUL",
+    "MAXIMUM",
+    "MINIMUM",
+    "BITWISE_OR",
+    "BITWISE_XOR",
+]
+
+
+@pytest.mark.parametrize("op_name", _INT64_BINARY_OPS)
+@pytest.mark.parametrize(
+    ("spec", "accepted"), [("TOSA-1.1+INT+int64", True), ("TOSA-1.1+INT", False)]
+)
+def test_binary_ops_take_int64_only_with_the_extension(
+    op_name: str, spec: str, accepted: bool
+) -> None:
+    input1 = torch.randint(1, 16, (2, 1, 3), dtype=torch.int64)
+    input2 = torch.randint(1, 8, (1, 4, 3), dtype=torch.int64)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string(spec)
+    ), FakeTensorMode() as mode:
+        if not accepted:
+            with pytest.raises(TosaValueError):
+                getattr(exir_ops.backend.tosa, op_name).default(
+                    *_to_fake(mode, input1, input2)
+                )
+            return
+        output = getattr(exir_ops.backend.tosa, op_name).default(
+            *_to_fake(mode, input1, input2)
+        )
+
+    assert output.dtype == torch.int64
+    assert tuple(output.shape) == (2, 4, 3)
