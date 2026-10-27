@@ -63,19 +63,22 @@ jobs:
 
         echo "::group::Install ExecuTorch and Core AI requirements"
         ${CONDA_RUN} python install_executorch.py --editable > /dev/null
-        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt "cmake>=3.31,<4" ninja
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt "cmake>=3.31,<4" ninja clang-format==18.1.3
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
-        echo "::group::Check Core AI formatting configuration"
+        echo "::group::Check Core AI formatting"
         ${CONDA_RUN} python - <<'PY'
         from pathlib import Path
+        import subprocess
         import yaml
 
         root = yaml.safe_load(Path(".clang-format").read_text())
         coreai = yaml.safe_load(Path("backends/apple/coreai/.clang-format").read_text())
         root.pop("Language")
         assert coreai == root, "Sync the Core AI clang-format configuration with the root style (without Language)"
+        sources = sorted(Path("backends/apple/coreai").rglob("*.mm"))
+        subprocess.run(["clang-format", "--dry-run", "--Werror", *map(str, sources)], check=True)
         PY
         echo "::endgroup::"
 

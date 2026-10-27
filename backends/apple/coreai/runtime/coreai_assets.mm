@@ -67,6 +67,9 @@ Error validate_files(
       "Core AI manifest requires asset file sizes");
   NSSet<NSString*>* files = [NSSet setWithArray:filenames.allKeys];
   NSMutableSet<NSString*>* populated = [NSMutableSet set];
+  NSMutableDictionary<NSString*, NSString*>* spellings =
+      [NSMutableDictionary dictionary];
+  NSLocale* locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
   for (NSString* file in filenames) {
     ET_CHECK_OR_RETURN_ERROR(
         relative_path(file) && file_size(filenames[file]) &&
@@ -77,13 +80,24 @@ Error validate_files(
         InvalidProgram,
         "Invalid Core AI asset path or size");
     [populated addObject:[file componentsSeparatedByString:@"/"].firstObject];
-    NSString* parent = file.stringByDeletingLastPathComponent;
-    while (parent.length > 0) {
+    // Aliased parent directories also merge otherwise distinct file paths.
+    NSString* path = file;
+    while (path.length > 0) {
+      NSString* identity =
+          [path stringByFoldingWithOptions:NSCaseInsensitiveSearch
+                                    locale:locale]
+              .decomposedStringWithCanonicalMapping;
+      NSString* previous = spellings[identity];
       ET_CHECK_OR_RETURN_ERROR(
-          ![files containsObject:parent],
+          previous == nil || [previous isEqualToString:path],
+          InvalidProgram,
+          "Case or Unicode alias in Core AI asset paths");
+      spellings[identity] = path;
+      path = path.stringByDeletingLastPathComponent;
+      ET_CHECK_OR_RETURN_ERROR(
+          ![files containsObject:path],
           InvalidProgram,
           "Conflicting Core AI asset paths");
-      parent = parent.stringByDeletingLastPathComponent;
     }
   }
   ET_CHECK_OR_RETURN_ERROR(
@@ -124,6 +138,8 @@ bool parse_version(id value, NSOperatingSystemVersion& version) {
 } // namespace
 
 Result<Manifest> parse_manifest(NSData* data) {
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nil, InvalidProgram, "Missing Core AI manifest JSON");
   NSError* error = nil;
   id object = [NSJSONSerialization JSONObjectWithData:data
                                               options:0
@@ -249,7 +265,7 @@ Result<Manifest> select_assets(
       "Core AI AOT target platform %s does not match runtime platform %s; "
       "re-export the model for this platform",
       manifest.platform.UTF8String,
-      platform.UTF8String);
+      platform == nil ? "nil" : platform.UTF8String);
   NSArray<NSString*>* architectures = [manifest.archs.allKeys
       sortedArrayUsingComparator:^NSComparisonResult(NSString* a, NSString* b) {
         return [a compare:b options:NSLiteralSearch];

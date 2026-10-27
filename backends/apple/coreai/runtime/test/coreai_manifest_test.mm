@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "coreai_manifest_fixture.h"
 #include <limits>
+#include "coreai_manifest_fixture.h"
 
 using namespace executorch::runtime;
 using namespace executorch::backends::coreai;
@@ -15,8 +15,11 @@ using namespace executorch::backends::coreai::testing;
 
 TEST(CoreAIManifestTest, AcceptsInlineAndRejectsInvalidJson) {
   EXPECT_TRUE(parse_manifest(encode(manifest_dict())).ok());
-  EXPECT_FALSE(parse_manifest([@"[]" dataUsingEncoding:NSUTF8StringEncoding]).ok());
-  EXPECT_FALSE(parse_manifest([@"garbage" dataUsingEncoding:NSUTF8StringEncoding]).ok());
+  EXPECT_EQ(parse_manifest(nil).error(), Error::InvalidProgram);
+  EXPECT_FALSE(
+      parse_manifest([@"[]" dataUsingEncoding:NSUTF8StringEncoding]).ok());
+  EXPECT_FALSE(
+      parse_manifest([@"garbage" dataUsingEncoding:NSUTF8StringEncoding]).ok());
 }
 
 TEST(CoreAIManifestTest, RejectsUnknownPackaging) {
@@ -27,7 +30,9 @@ TEST(CoreAIManifestTest, RejectsUnknownPackaging) {
 
 TEST(CoreAIManifestTest, RejectsUnsafeSourcePaths) {
   for (NSString* path in @[
-         @"../model.aimodel", @"/ab/model.aimodel", @"ab/../model.aimodel",
+         @"../model.aimodel",
+         @"/ab/model.aimodel",
+         @"ab/../model.aimodel",
          @"xx/model.aimodel"
        ]) {
     SCOPED_TRACE(path.UTF8String);
@@ -39,11 +44,15 @@ TEST(CoreAIManifestTest, RejectsUnsafeSourcePaths) {
 
 TEST(CoreAIManifestTest, RejectsInvalidFileMaps) {
   for (id files in @[
-         @[], @{}, NSNull.null, @"files",
+         @[],
+         @{},
+         NSNull.null,
+         @"files",
          @{@"model.aimodel/../escape" : @1},
          @{@"model.aimodel/bad\\name" : @1},
          @{@"/tmp/file" : @1},
-         @{@"model.aimodel/one" : @1, @"model.aimodel/one/two" : @2}
+         @{@"model.aimodel/one" : @1,
+           @"model.aimodel/one/two" : @2}
        ]) {
     SCOPED_TRACE([files description].UTF8String);
     auto dict = manifest_dict();
@@ -53,7 +62,8 @@ TEST(CoreAIManifestTest, RejectsInvalidFileMaps) {
 }
 
 TEST(CoreAIManifestTest, RejectsInvalidInputNames) {
-  for (id names in @[ @[ @"same", @"same" ], @[ @1 ], @[ @"" ], @"input", NSNull.null ]) {
+  for (id names in
+       @[ @[ @"same", @"same" ], @[ @1 ], @[ @"" ], @"input", NSNull.null ]) {
     SCOPED_TRACE([names description].UTF8String);
     auto dict = manifest_dict();
     dict[@"input_names"] = names;
@@ -71,6 +81,27 @@ TEST(CoreAIManifestTest, ValidatesDeploymentFloor) {
   auto dict = manifest_dict();
   dict[@"min_deployment_version"] = NSNull.null;
   EXPECT_TRUE(parse_manifest(encode(dict)).ok());
+}
+
+TEST(CoreAIManifestTest, ParsesDeploymentVersionComponents) {
+  const struct {
+    id value;
+    NSOperatingSystemVersion expected;
+  } rows[] = {
+      {@"26", {26, 0, 0}},
+      {@"26.4", {26, 4, 0}},
+      {@"26.4.2", {26, 4, 2}},
+      {NSNull.null, {0, 0, 0}}};
+  for (const auto& row : rows) {
+    SCOPED_TRACE([row.value description].UTF8String);
+    auto dict = manifest_dict();
+    dict[@"min_deployment_version"] = row.value;
+    auto parsed = parse_manifest(encode(dict));
+    ASSERT_TRUE(parsed.ok());
+    EXPECT_EQ(parsed->minimum_version.majorVersion, row.expected.majorVersion);
+    EXPECT_EQ(parsed->minimum_version.minorVersion, row.expected.minorVersion);
+    EXPECT_EQ(parsed->minimum_version.patchVersion, row.expected.patchVersion);
+  }
 }
 
 TEST(CoreAIManifestTest, RequiresMetadataMaps) {
@@ -106,7 +137,8 @@ TEST(CoreAIManifestTest, AcceptsIntegralFileSizes) {
 
 TEST(CoreAIManifestTest, RequiresExactLowercaseDigests) {
   for (NSString* digest in @[
-         [fixture_identity('a') substringFromIndex:1], fixture_identity('a').uppercaseString,
+         [fixture_identity('a') substringFromIndex:1],
+         fixture_identity('a').uppercaseString,
          [@"g" stringByPaddingToLength:64 withString:@"g" startingAtIndex:0]
        ]) {
     SCOPED_TRACE(digest.UTF8String);
@@ -122,9 +154,80 @@ class CoreAIManifestMetadataTest : public ::testing::TestWithParam<bool> {
     return GetParam() ? aot_manifest_dict() : manifest_dict();
   }
   NSString* file() {
-    return GetParam() ? @"model.arch_b.aimodelc/graph.bin" : @"model.aimodel/graph.bin";
+    return GetParam() ? @"model.arch_b.aimodelc/graph.bin"
+                      : @"model.aimodel/graph.bin";
   }
 };
+
+TEST_P(CoreAIManifestMetadataTest, ReturnsManifestFieldsAndNameOrder) {
+  auto dict = manifest();
+  dict[@"function"] = @"predict";
+  dict[@"input_names"] = @[ @"input_1", @"input_0" ];
+  dict[@"output_names"] = @[ @"output_2", @"output_0", @"output_1" ];
+  dict[@"min_deployment_version"] = @"26.4.2";
+  auto parsed = parse_manifest(encode(dict));
+  ASSERT_TRUE(parsed.ok());
+  EXPECT_EQ(parsed->aot_compiled, GetParam());
+  EXPECT_TRUE([parsed->hash isEqual:dict[@"hash"]]);
+  EXPECT_TRUE([parsed->function isEqual:dict[@"function"]]);
+  EXPECT_TRUE([parsed->inputs isEqual:dict[@"input_names"]]);
+  EXPECT_TRUE([parsed->outputs isEqual:dict[@"output_names"]]);
+  EXPECT_TRUE([parsed->files isEqual:dict[@"files"]]);
+  EXPECT_TRUE([parsed->bundle_digests isEqual:dict[@"bundle_digests"]]);
+  EXPECT_EQ(parsed->minimum_version.majorVersion, 26);
+  EXPECT_EQ(parsed->minimum_version.minorVersion, 4);
+  EXPECT_EQ(parsed->minimum_version.patchVersion, 2);
+  if (GetParam()) {
+    EXPECT_EQ(parsed->path, nil);
+    EXPECT_TRUE([parsed->platform isEqual:dict[@"platform"]]);
+    EXPECT_TRUE([parsed->archs isEqual:dict[@"archs"]]);
+  } else {
+    EXPECT_TRUE([parsed->path isEqual:dict[@"path"]]);
+    EXPECT_EQ(parsed->platform, nil);
+    EXPECT_EQ(parsed->archs, nil);
+  }
+}
+
+TEST_P(CoreAIManifestMetadataTest, RejectsFilesystemAliases) {
+  NSString* composed = [NSString stringWithFormat:@"caf%C", 0x00e9];
+  NSString* decomposed = composed.decomposedStringWithCanonicalMapping;
+  for (NSArray<NSString*>* pair in @[
+         @[ @"One", @"one" ],
+         @[ @"One", @"one/two" ],
+         @[ @"Dir/a", @"dir/b" ],
+         @[ composed, decomposed ],
+         @[ composed, [decomposed stringByAppendingPathComponent:@"child"] ],
+         @[
+           [composed stringByAppendingPathComponent:@"a"],
+           [decomposed stringByAppendingPathComponent:@"b"]
+         ],
+         @[ composed.uppercaseString, decomposed ]
+       ]) {
+    SCOPED_TRACE(pair.description.UTF8String);
+    auto dict = manifest();
+    NSMutableDictionary* files = [dict[@"files"] mutableCopy];
+    NSString* bundle = file().stringByDeletingLastPathComponent;
+    files[[bundle stringByAppendingPathComponent:pair[0]]] = @1;
+    files[[bundle stringByAppendingPathComponent:pair[1]]] = @2;
+    dict[@"files"] = files;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
+TEST_P(CoreAIManifestMetadataTest, PreservesDistinctUnicodePaths) {
+  auto dict = manifest();
+  NSMutableDictionary* files = [dict[@"files"] mutableCopy];
+  NSString* bundle = file().stringByDeletingLastPathComponent;
+  NSString* composed = [NSString stringWithFormat:@"caf%C", 0x00e9];
+  for (NSString* name in
+       @[ composed, @"same/one", @"same/two", @"other/ONE" ]) {
+    files[[bundle stringByAppendingPathComponent:name]] = @1;
+  }
+  dict[@"files"] = files;
+  auto parsed = parse_manifest(encode(dict));
+  ASSERT_TRUE(parsed.ok());
+  EXPECT_TRUE([parsed->files isEqual:files]);
+}
 
 TEST_P(CoreAIManifestMetadataTest, RequiresExactBundleCoverage) {
   for (bool extra : {false, true}) {
@@ -222,6 +325,31 @@ TEST(CoreAIManifestTest, RejectsUnsafeAotArchitectureNames) {
   }
 }
 
+TEST(CoreAIManifestTest, RejectsAliasedAotBundles) {
+  NSString* composed = [NSString stringWithFormat:@"arch_%C", 0x00e9];
+  for (NSArray<NSString*>* pair in @[
+         @[ @"arch_a", @"ARCH_A" ],
+         @[ composed, composed.decomposedStringWithCanonicalMapping ]
+       ]) {
+    SCOPED_TRACE(pair.description.UTF8String);
+    auto dict = aot_manifest_dict();
+    NSMutableDictionary* archs = [NSMutableDictionary dictionary];
+    NSMutableDictionary* files = [NSMutableDictionary dictionary];
+    NSMutableDictionary* digests = [NSMutableDictionary dictionary];
+    for (NSString* arch in pair) {
+      NSString* bundle = [NSString stringWithFormat:@"model.%@.aimodelc", arch];
+      archs[arch] = [@"ab" stringByAppendingPathComponent:bundle];
+      files[[bundle stringByAppendingPathComponent:@"graph.bin"]] = @1;
+      digests[bundle] = fixture_identity('a');
+    }
+    ASSERT_EQ(archs.count, 2);
+    dict[@"archs"] = archs;
+    dict[@"files"] = files;
+    dict[@"bundle_digests"] = digests;
+    EXPECT_EQ(parse_manifest(encode(dict)).error(), Error::InvalidProgram);
+  }
+}
+
 TEST(CoreAIManifestTest, RejectsInvalidAotBundlePaths) {
   for (id path in @[
          @"",
@@ -244,7 +372,9 @@ TEST(CoreAIManifestTest, RejectsInvalidAotBundlePaths) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Delivery, CoreAIManifestMetadataTest, ::testing::Bool(),
+    Delivery,
+    CoreAIManifestMetadataTest,
+    ::testing::Bool(),
     [](const ::testing::TestParamInfo<bool>& info) {
       return info.param ? "Aot" : "Source";
     });
@@ -262,7 +392,8 @@ TEST(CoreAIManifestTest, SelectsAotArchitectureWithoutMutatingManifest) {
     EXPECT_TRUE([selected->path isEqualToString:dict[@"archs"][arch]]);
     EXPECT_EQ(selected->files.count, 2);
     NSString* bundle = selected->path.lastPathComponent;
-    EXPECT_TRUE(([selected->bundle_digests isEqual:@{bundle : dict[@"bundle_digests"][bundle]}]));
+    EXPECT_TRUE(([selected->bundle_digests
+        isEqual:@{bundle : dict[@"bundle_digests"][bundle]}]));
     EXPECT_TRUE(([selected->files isEqual:@{
       [bundle stringByAppendingPathComponent:@"graph.bin"] : @14,
       [bundle stringByAppendingPathComponent:@"nested/weights.bin"] : @7
@@ -279,11 +410,17 @@ TEST(CoreAIManifestTest, RejectsMismatchedAotPlatformAndArchitecture) {
   EXPECT_TRUE(select_assets(parsed_ios.get(), @"arch_b", @"iOS").ok());
   auto parsed = parse_manifest(encode(aot_manifest_dict()));
   ASSERT_TRUE(parsed.ok());
-  EXPECT_EQ(select_assets(parsed.get(), @"arch_b", @"iOS").error(),
-            Error::DelegateInvalidCompatibility);
+  EXPECT_EQ(
+      select_assets(parsed.get(), @"arch_b", @"iOS").error(),
+      Error::DelegateInvalidCompatibility);
+  EXPECT_EQ(
+      select_assets(parsed.get(), @"arch_b", nil).error(),
+      Error::DelegateInvalidCompatibility);
   for (id arch in @[ @"missing", @"ARCH_B", @"", NSNull.null ]) {
     SCOPED_TRACE([arch description].UTF8String);
-    EXPECT_EQ(select_assets(parsed.get(), arch == NSNull.null ? nil : arch, @"macOS").error(),
-              Error::DelegateInvalidCompatibility);
+    EXPECT_EQ(
+        select_assets(parsed.get(), arch == NSNull.null ? nil : arch, @"macOS")
+            .error(),
+        Error::DelegateInvalidCompatibility);
   }
 }

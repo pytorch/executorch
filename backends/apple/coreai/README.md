@@ -32,7 +32,9 @@ The delegate manifest describes `.aimodel` source bundles, which require
 `input_names` and `output_names` matching the converter's bindings. Dictionary
 iteration order is not a binding contract. The `files` object maps relative
 filenames to byte sizes; `bundle_digests` maps each bundle basename to its
-export-time SHA-256 digest.
+export-time SHA-256 digest. Asset paths, including bundle and directory names,
+must remain distinct under case-insensitive, canonically normalized Unicode
+comparison. Accepted names are preserved, not rewritten.
 
 ### AOT architecture selection
 
