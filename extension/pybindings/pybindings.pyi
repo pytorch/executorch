@@ -145,9 +145,10 @@ class ExecuTorchMethod:
     ``alloc_graph_input=False``) is used in place, so a mutation of it is
     written into the tensor passed in for it. When such an input is also an
     output (e.g. the write-back of a mutated input, or an input returned
-    unchanged), that output is a clone like any other by default, and is the
-    tensor passed in only with ``clone_outputs=False``. A memory planned input
-    is copied into the method, so the tensor passed in for it is not updated.
+    unchanged), that output is a clone like any other by default, and shares
+    the storage of the tensor passed in with ``clone_outputs=False``. A memory
+    planned input is copied into the method, so the tensor passed in for it is
+    not updated.
 
     .. warning::
 

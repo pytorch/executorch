@@ -18,6 +18,7 @@ from io import StringIO
 
 import numpy as np
 import torch
+
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.passes import MemoryPlanningPass
@@ -1498,7 +1499,7 @@ print("CUDA DLPack roundtrip preserved device storage")
                 gc.collect()
                 self.assertIsNone(value_ref())
 
-    def test_unplanned_input_output_preserves_caller_identity(self):
+    def test_borrowed_external_output_does_not_retain_previous_outputs(self):
         if self.kernel_mode != "portable":
             self.skipTest("only portable bindings retain Python tensor owners")
 
@@ -1528,15 +1529,15 @@ print("CUDA DLPack roundtrip preserved device storage")
                 strides = value.stride()
                 offset = value.storage_offset()
                 for _ in range(32):
-                    previous = output
+                    previous = weakref.ref(output)
                     output = method(output, clone_outputs=False)[0]
                     method.set_inputs(output)
                     gc.collect()
-                    self.assertIs(output, previous)
+                    self.assertIsNone(previous())
                     self.assertEqual(output.data_ptr(), address)
                     self.assertEqual(output.stride(), strides)
                     self.assertEqual(output.storage_offset(), offset)
-                    self.assertTrue(output.requires_grad)
+                    self.assertFalse(output.requires_grad)
                 del value, method
                 torch.testing.assert_close(output, expected)
 

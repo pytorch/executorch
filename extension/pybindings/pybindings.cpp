@@ -3406,7 +3406,6 @@ struct PyMethod final {
     input_tensors.reserve(inputs_size);
 #endif
 
-    std::vector<py::object> fed_inputs(inputs_size);
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
@@ -3429,7 +3428,6 @@ struct PyMethod final {
             at_tensor.scalar_type(),
             tensor_sizes);
         borrowed_inputs.emplace_back(i, python_input);
-        fed_inputs[i] = py::reinterpret_borrow<py::object>(python_input);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
@@ -3453,8 +3451,6 @@ struct PyMethod final {
         // Watch the tensor the method reads: after a layout conversion that
         // is the copy, which an output aliasing the input can expose.
         borrowed_inputs.emplace_back(i, view->owner());
-        // An output aliasing this input returns the tensor the method writes.
-        fed_inputs[i] = view->owner();
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -3592,7 +3588,6 @@ struct PyMethod final {
     torch_inputs_ = std::move(torch_inputs);
     torch_tensor_ptrs_ = std::move(input_tensors);
 #endif
-    fed_inputs_ = std::move(fed_inputs);
     find_inputs_aliased_by_outputs();
   }
 
@@ -3739,8 +3734,7 @@ struct PyMethod final {
       // An output that is an unplanned input (e.g. the write-back of a mutated
       // input) already points at the tensor fed for it. Giving it storage
       // would repoint the input too.
-      if (const auto input = aliased_input(i)) {
-        caller_outputs_[i] = fed_inputs_[*input];
+      if (aliased_input(i)) {
         continue;
       }
       const auto& device_buffer = storage_->device_output_storages[i];
@@ -3798,47 +3792,20 @@ struct PyMethod final {
 
     // An output bound with set_output() already lives in the caller's tensor,
     // so it is returned as that tensor and taken out of `result` before it
-    // could be cloned. An output that is an input lives in the tensor passed
-    // in for it, which is returned only with clone_outputs=False: by default
-    // it is cloned like any other output. A dynamic bound output may have
-    // been resized smaller than its (contiguous) tensor, so view it at its
-    // written size. An input keeps the sizes it was fed with, and may be
-    // channels-last.
+    // could be cloned. A dynamic bound output may have been resized smaller
+    // than its (contiguous) tensor, so view it at its written size. An output
+    // that is an input is returned like any other: cloned by default, and as
+    // an alias of the caller's tensor with clone_outputs=False.
     std::vector<py::object> caller_backed(result.size());
     for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
-      if (!caller_outputs_[i] || !result[i].isTensor() ||
-          (clone_outputs && !is_bound_output(i))) {
+      if (!caller_outputs_[i] || !result[i].isTensor()) {
         continue;
       }
-#ifndef USE_ATEN_LIB
-      if (!is_bound_output(i) &&
-          portable_tensor_output() != PortableTensorOutput::Torch) {
-        continue;
-      }
-#endif
       const auto& caller = caller_outputs_[i];
       const auto& written = result[i].toTensor();
-#ifndef USE_ATEN_LIB
-      if (!is_bound_output(i)) {
-        auto alias = aliased_torch_output(written);
-        const std::vector<int64_t> sizes(
-            written.sizes().begin(), written.sizes().end());
-        const std::vector<int64_t> strides(
-            written.strides().begin(), written.strides().end());
-        if (caller.attr("shape").cast<std::vector<int64_t>>() != sizes ||
-            caller.attr("stride")().cast<std::vector<int64_t>>() != strides) {
-          if (!alias.is_none()) {
-            caller_backed[i] = std::move(alias);
-            result[i] = EValue();
-          }
-          continue;
-        }
-      }
-#endif
       std::vector<int64_t> sizes(
           written.sizes().begin(), written.sizes().end());
-      if (!is_bound_output(i) ||
-          caller.attr("shape").cast<std::vector<int64_t>>() == sizes) {
+      if (caller.attr("shape").cast<std::vector<int64_t>>() == sizes) {
         caller_backed[i] = caller;
       } else {
         caller_backed[i] = caller.attr("view")(-1)
@@ -3946,10 +3913,6 @@ struct PyMethod final {
   std::vector<BorrowedInput> borrowed_inputs_;
   // Caller tensors bound as output storage with set_output(), by output index.
   std::vector<py::object> bound_outputs_;
-  // The tensors passed to the last set_inputs(), by input index. They stay
-  // alive until the next set_inputs(), even if the caller drops them (e.g. a
-  // large KV cache).
-  std::vector<py::object> fed_inputs_;
   // Per output of the last execute(), the caller tensor it lives in, if any.
   std::vector<py::object> caller_outputs_;
   // Per output, the unplanned input it is, if any. Empty until the first
@@ -4011,7 +3974,7 @@ struct PyMethod final {
   static std::string aliased_input_message(size_t output, size_t input) {
     return "output " + std::to_string(output) + " is input " +
         std::to_string(input) +
-        ", which is returned as the tensor passed in for it";
+        ", which the method already writes in place";
   }
 #ifndef USE_ATEN_LIB
   std::vector<std::shared_ptr<DLPackTensorView>> dlpack_inputs_;
