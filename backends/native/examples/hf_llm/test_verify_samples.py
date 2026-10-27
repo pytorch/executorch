@@ -53,7 +53,9 @@ def _forced(wrapper: LastTokenLM, prompt: list[int], forced: list[int]) -> Sampl
             if token is not None:
                 input_ids = torch.tensor([[token]])
                 positions = positions[-1:] + 1
-            calls.append(Call([input_ids, positions], [wrapper(input_ids, positions)]))
+            calls.append(
+                Call("forward", [input_ids, positions], [wrapper(input_ids, positions)])
+            )
     wrapper.cache.reset()
     return Sample(calls)
 
@@ -84,14 +86,14 @@ class VerifySamplesTest(unittest.TestCase):
         cls.path = os.path.join(cls._tmp.name, "m.ptn")
         to_native(ep).save(cls.path)
         cls.golden = golden_samples(cls.wrapper, [[3, 4, 5, 6, 7, 8], [9, 10]], 3)
-        write_samples(cls.path, "forward", "golden", cls.golden)
+        write_samples(cls.path, "golden", cls.golden)
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
 
     def _verify(self, name: str, samples: SampleSet) -> subprocess.CompletedProcess:
-        write_samples(self.path, "forward", name, samples)
+        write_samples(self.path, name, samples)
         return subprocess.run(
             [
                 os.environ["RUN_HF_LLM"],
@@ -113,7 +115,7 @@ class VerifySamplesTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count(" ok\n"), 8)
-        self.assertIn("forward/replay, 0 calls failed", result.stdout)
+        self.assertIn("verify:    replay, 0 calls failed", result.stdout)
 
     def test_forces_recorded_tokens_over_its_own_choice(self) -> None:
         forced = [17, 42, 99]
@@ -134,7 +136,7 @@ class VerifySamplesTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertRegex(result.stdout, r"sample 0 call 1: max_abs_error=1 .* FAIL")
-        self.assertIn("forward/wrong, 1 calls failed", result.stdout)
+        self.assertIn("verify:    wrong, 1 calls failed", result.stdout)
 
     def test_rejects_samples_it_cannot_replay(self) -> None:
         def out_of_vocabulary(calls: list[Call]) -> None:
@@ -143,9 +145,13 @@ class VerifySamplesTest(unittest.TestCase):
         def wrong_position(calls: list[Call]) -> None:
             calls[1].inputs[1] = torch.tensor([99])
 
+        def other_method(calls: list[Call]) -> None:
+            calls[1].method = "decode"
+
         cases = [
             (self._modified_golden(out_of_vocabulary), "outside the vocabulary"),
             (self._modified_golden(wrong_position), "not a prefill or the next decode"),
+            (self._modified_golden(other_method), "call 1 runs method decode"),
             (
                 golden_samples(self.wrapper, [list(range(_MAX_TOKENS + 1))], 0),
                 "prefill exceeds",

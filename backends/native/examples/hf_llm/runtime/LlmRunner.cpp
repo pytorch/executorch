@@ -60,8 +60,9 @@ DEFINE_bool(
 DEFINE_string(
     verify_samples,
     "",
-    "Replay this sample set of --method instead of --prompt, comparing each "
-    "call's logits and forcing the sample's next token; exits 1 on mismatch.");
+    "Replay this sample set, whose calls must all run --method, instead of "
+    "--prompt, comparing each call's logits and forcing the sample's next "
+    "token; exits 1 on mismatch.");
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -411,9 +412,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
             "dump_first_logits");
       }
       const ptn::SampleSet set = ptn::read_sample_set(
-          ptn::ZipReader::open(FLAGS_package),
-          method_name,
-          FLAGS_verify_samples);
+          ptn::ZipReader::open(FLAGS_package), FLAGS_verify_samples);
       size_t failed_calls = 0;
       for (size_t i = 0; i < set.samples.size(); ++i) {
         const std::vector<ptn::SampleCall>& calls = set.samples[i].calls;
@@ -428,6 +427,12 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         std::vector<uint64_t> prompt;
         std::vector<uint64_t> forced;
         for (size_t j = 0; j < calls.size(); ++j) {
+          if (calls[j].method != method_name) {
+            throw std::runtime_error(
+                "sample " + std::to_string(i) + " call " + std::to_string(j) +
+                " runs method " + calls[j].method +
+                ", but the runner replays only " + method_name);
+          }
           if (calls[j].inputs.size() != 2 || !calls[j].outputs ||
               calls[j].outputs->size() <= logits_output ||
               (*calls[j].outputs)[logits_output].dtype != ptn::kFloat ||
@@ -531,8 +536,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         std::printf("%s", report.c_str());
       }
       std::printf(
-          "verify:    %s/%s, %zu calls failed\n",
-          method_name.c_str(),
+          "verify:    %s, %zu calls failed\n",
           FLAGS_verify_samples.c_str(),
           failed_calls);
       return failed_calls == 0 ? 0 : 1;

@@ -31,6 +31,7 @@ struct Tolerance {
 };
 
 struct SampleCall {
+  std::string method;
   std::vector<SampleTensor> inputs;
   // Absent when the producer recorded no outputs.
   std::optional<std::vector<SampleTensor>> outputs;
@@ -50,12 +51,9 @@ struct SampleSet {
   std::vector<Sample> samples;
 };
 
-// Reads samples/<method>/<set>/, specified in backends/native/README.md. Every
-// in and out value must be a tensor; scalar and list values are not supported.
-// Throws std::runtime_error if the set is absent or violates the format.
-SampleSet read_sample_set(
-    const ZipReader& zip,
-    const std::string& method,
-    const std::string& set);
+// Reads samples/<set>/, specified in backends/native/README.md. Every in and
+// out value must be a tensor; scalar and list values are not supported. Throws
+// std::runtime_error if the set is absent or violates the format.
+SampleSet read_sample_set(const ZipReader& zip, const std::string& set);
 
 } // namespace ptn
