@@ -41,6 +41,11 @@ def _attention(Q, KH, VH, KN, VN, Info, Out,
     skhr = columns * skhc
     svhr = columns * svhc
     first_new = end - qlen
+    segment_columns = tl.load(Info + segs * INFO + 2, segs < SEGMENTS, other=-1)
+    segment_ends = tl.load(Info + segs * INFO + 3, segs < SEGMENTS, other=0)
+    segment_starts = tl.load(Info + segs * INFO, segs < SEGMENTS, other=0)
+    segment_first = segment_ends - lengths
+    owner_first = tl.min(tl.where((segment_columns == col) & (lengths > 0), segment_first, 2147483647))
     flat = qb * BM + tl.arange(0, BM)
     qr = flat // GROUPS
     qhead = head * GROUPS + flat % GROUPS
@@ -59,9 +64,12 @@ def _attention(Q, KH, VH, KN, VN, Info, Out,
     acc = tl.zeros((BM, D), tl.float32)
     for n0 in tl.range(lo, hi, BN):
         n = n0 + tl.arange(0, BN)
-        new = n >= first_new
+        new = n >= owner_first
         nvalid = n < hi
         current_t = qstart + n - first_new
+        if owner_first != first_new:
+            belongs = (segment_columns[None, :] == col) & (lengths[None, :] > 0) & (n[:, None] >= segment_first[None, :]) & (n[:, None] < segment_ends[None, :])
+            current_t = tl.sum(tl.where(belongs, segment_starts[None, :] + n[:, None] - segment_first[None, :], 0), 1)
         hp = KH + col * skhc + head * skhh + (n % W)[:, None] * skhr + ds[None, :]
         np = KN + head * sknh + current_t[:, None] * sknt + ds[None, :]
         k = tl.load(tl.where(new[:, None], np, hp), nvalid[:, None], other=0)
@@ -167,6 +175,13 @@ def _decode(
     )
 
     first_new = kv_end - q_len
+    slots = tl.arange(0, triton.next_power_of_2(NUM_SEGMENTS))
+    sc = tl.load(Info_ptr + slots * INFO_WIDTH + 2, slots < NUM_SEGMENTS, other=-1)
+    sl = tl.load(Info_ptr + slots * INFO_WIDTH + 1, slots < NUM_SEGMENTS, other=0)
+    se = tl.load(Info_ptr + slots * INFO_WIDTH + 3, slots < NUM_SEGMENTS, other=0)
+    ss = tl.load(Info_ptr + slots * INFO_WIDTH, slots < NUM_SEGMENTS, other=0)
+    sf = se - sl
+    owner_first = tl.min(tl.where((sc == col) & (sl > 0), sf, 2147483647))
     pos = first_new + t - q_start
     lo = tl.maximum(0, pos - WINDOW + 1)
     hi = pos + 1
@@ -184,8 +199,11 @@ def _decode(
         offs_n = n0 + tl.arange(0, BLOCK_N)
         physical_n = offs_n % RING if RING > 0 else offs_n
         n_valid = offs_n < stop
-        use_new = offs_n >= first_new
+        use_new = offs_n >= owner_first
         current_t = q_start + offs_n - first_new
+        if owner_first != first_new:
+            belongs = (sc[None, :] == col) & (sl[None, :] > 0) & (offs_n[:, None] >= sf[None, :]) & (offs_n[:, None] < se[None, :])
+            current_t = tl.sum(tl.where(belongs, ss[None, :] + offs_n[:, None] - sf[None, :], 0), 1)
         k = tl.load(
             tl.where(use_new[:, None], KN_ptr + h_kv * stride_knh + current_t[:, None] * stride_knt + offs_d[None, :],
                      k_base + physical_n[:, None] * stride_kr + offs_d[None, :]),
@@ -276,7 +294,8 @@ def _reduce(
 
 
 @triton.jit
-def _commit(KH, VH, KN, VN, Info,
+def _commit(KH, VH, KN, VN, Info, KJ, VJ,
+            JOURNAL: tl.constexpr,
             skhc, skhh, svhc, svhh, sknh, sknt, svnh, svnt,
             T: tl.constexpr, W: tl.constexpr, D: tl.constexpr,
             INFO: tl.constexpr, SEGMENTS: tl.constexpr):
@@ -291,11 +310,21 @@ def _commit(KH, VH, KN, VN, Info,
     seg = tl.sum(tl.where(match, segs, 0))
     qstart = tl.load(Info + seg * INFO)
     qlen = tl.load(Info + seg * INFO + 1)
+    ds = tl.arange(0, D)
+    if JOURNAL:
+        # One packed staging row per real token, shared by all session owners.
+        k = tl.load(KN + head * sknh + t * sknt + ds)
+        v = tl.load(VN + head * svnh + t * svnt + ds)
+        tl.store(KJ + (t * tl.num_programs(1) + head) * D + ds, k)
+        tl.store(VJ + (t * tl.num_programs(1) + head) * D + ds, v)
     # Only the last W writes can survive. Earlier writes may alias these rows.
-    if t < qstart + tl.maximum(qlen - W, 0):
-        return
     col = tl.load(Info + seg * INFO + 2).to(tl.int64)
     end = tl.load(Info + seg * INFO + 3)
+    columns_of_segments = tl.load(Info + segs * INFO + 2, segs < SEGMENTS, other=-1)
+    ends_of_segments = tl.load(Info + segs * INFO + 3, segs < SEGMENTS, other=0)
+    final_end = tl.max(tl.where((columns_of_segments == col) & (lens > 0), ends_of_segments, 0))
+    if end - qlen + t - qstart < final_end - W:
+        return
     columns = tl.load(Info + seg * INFO + 4).to(tl.int64)
     pos = end - qlen + t - qstart
     ds = tl.arange(0, D)
@@ -329,8 +358,8 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
             query.stride(1), query.stride(2), history_key.stride(0), history_key.stride(1), history_key.stride(2),
             history_value.stride(0), history_value.stride(1), history_value.stride(2), out.stride(1), out.stride(2),
             scale, window, seq_info.shape[0], seq_info.shape[1], splits, True, False,
-            window, window, 128, dim, groups, triton.next_power_of_2(groups),
-            num_warps=4, num_stages=2)
+            window, window, 128 if dim <= 128 else 64, dim, groups, triton.next_power_of_2(groups),
+            num_warps=4, num_stages=2 if dim <= 128 else 1)
         wrap_triton(_reduce)[(heads * total,)](partial, maximum, normalizer, out, heads, total,
             out.stride(1), out.stride(2), splits, triton.next_power_of_2(splits), dim, num_warps=4)
         return out
@@ -357,7 +386,23 @@ def ring_commit_current(history_key: torch.Tensor, history_value: torch.Tensor,
                         current_key: torch.Tensor, current_value: torch.Tensor,
                         seq_info: torch.Tensor, window: int) -> None:
     wrap_triton(_commit)[(current_key.shape[2], current_key.shape[1])](
-        history_key, history_value, current_key, current_value, seq_info,
+        history_key, history_value, current_key, current_value, seq_info, history_key, history_value, False,
+        history_key.stride(1), history_key.stride(2), history_value.stride(1), history_value.stride(2),
+        current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
+        current_key.shape[2], window, current_key.shape[3], seq_info.shape[1], seq_info.shape[0],
+        num_warps=4)
+
+
+@triton_op('triton::ring_commit_journal', mutates_args={'history_key', 'history_value', 'staging'})
+def ring_commit_journal(history_key: torch.Tensor, history_value: torch.Tensor,
+                        current_key: torch.Tensor, current_value: torch.Tensor,
+                        seq_info: torch.Tensor, window: int,
+                        staging: torch.Tensor, ring_layer: int) -> None:
+    # staging is [ring_layer, K_or_V, max_write, kv_heads, head_dim].
+    stage_key = staging[ring_layer, 0]
+    stage_value = staging[ring_layer, 1]
+    wrap_triton(_commit)[(current_key.shape[2], current_key.shape[1])](
+        history_key, history_value, current_key, current_value, seq_info, stage_key, stage_value, True,
         history_key.stride(1), history_key.stride(2), history_value.stride(1), history_value.stride(2),
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         current_key.shape[2], window, current_key.shape[3], seq_info.shape[1], seq_info.shape[0],

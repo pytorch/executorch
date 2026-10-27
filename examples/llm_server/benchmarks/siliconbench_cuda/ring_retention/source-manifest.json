@@ -2,12 +2,16 @@
   "scope": "Open-source kernel prerequisite only. Mini ET model/native four-condition qualification is still required.",
   "sources": {
     "baseline_MG_sdpa.py": "727df52b527420362bade0a9dc1f638e8c13850d7035e006e27cff8659d40df8",
-    "probe_two_source_ring.py": "20e03df16c877c9bb12c8701de51053bb859bb0230150cc24ead5d312dae5d2c",
+    "probe_two_source_ring.py": "5db7f632550b21ae7c4b7950c92a2d97d1abeafdaae7f9e3b30469a28a23ce92",
     "baseline_Gemma_sdpa.py": "db8233510aeae0c0bfdc07d7b6bc44942767b1ea7a1946468f401951b0bb8b59",
-    "two_source_ring.py": "3cbe76f859e6c7ad63221161ffeff5dc2ad311fdb875f81bb93cc0214d668888"
+    "two_source_ring.py": "21118526ab2363020d9b447057447038c5e7f621181c8a2815683ebca001f542"
   },
   "MG_model_scale": 0.34206290539921874,
   "MG_qheads": 32,
   "Gemma_ring_qheads": 16,
-  "timing": "4 rounds discard1; captured external event nodes measure only forward+commit, restore occurs before the timing event in each graph."
+  "timing": "4 rounds discard1; captured external event nodes measure only forward+commit, restore occurs before the timing event in each graph.",
+  "native_candidate_sources": {
+    "apply_ring_retention_candidate.py": "c6c3159abfbc5f19f7ebde4f3b43d5ddb03690a84648d194d56d69c10d4aed1d",
+    "ring_host_journal.inc": "0f46ef5cd35f465212c17d66070cdddd1f56ea97217317291d7ed97c911d4956"
+  }
 }
