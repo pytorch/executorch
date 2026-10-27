@@ -3175,6 +3175,115 @@ class TestPasses(unittest.TestCase):
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
 
+    def test_convert_constant_dim_order_parameter(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts a parameter
+        outside the allowed dim orders to contiguous, keeps it a parameter, and
+        leaves a channels-last parameter as it is.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self, weight: torch.Tensor):
+                super().__init__()
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, x):
+                return x + self.weight
+
+        weights = {
+            "transposed": (torch.randn(5, 4).t(), True),
+            "channels_last": (
+                torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last),
+                False,
+            ),
+        }
+        for description, (weight, converted) in weights.items():
+            with self.subTest(description=description):
+                inputs = (torch.randn(weight.shape),)
+                ep = torch.export.export(AddParameter(weight), inputs)
+                logs = (
+                    self.assertLogs(convert_constant_dim_order_pass.logger, "WARNING")
+                    if converted
+                    else self.assertNoLogs(convert_constant_dim_order_pass.logger)
+                )
+                with logs as captured:
+                    modified_ep = (
+                        convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                            copy.deepcopy(ep)
+                        )
+                    )
+                if converted:
+                    self.assertIn(
+                        "Parameter 'weight' has strides (1, 4)", captured.output[0]
+                    )
+
+                torch.testing.assert_close(
+                    ep.module()(*inputs), modified_ep.module()(*inputs)
+                )
+                param = modified_ep.state_dict["weight"]
+                self.assertIsInstance(param, torch.nn.Parameter)
+                self.assertEqual(param.is_contiguous(), converted)
+                placeholder = next(
+                    n for n in modified_ep.graph.nodes if n.name == "p_weight"
+                )
+                self.assertEqual(placeholder.meta["val"].stride(), param.stride())
+
+    def test_to_edge_makes_transposed_parameter_contiguous(self):
+        """
+        Verify that to_edge stores a transposed parameter contiguous with and
+        without _skip_dim_order, so a partitioner sees the stored layout.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return self.weight + x
+
+        model = AddParameter()
+        inputs = (torch.randn(4, 5),)
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                with self.assertLogs(
+                    convert_constant_dim_order_pass.logger, "WARNING"
+                ) as captured:
+                    ep = to_edge(
+                        torch.export.export(model, inputs),
+                        compile_config=EdgeCompileConfig(
+                            _skip_dim_order=skip_dim_order
+                        ),
+                    ).exported_program()
+                # Only one run of the pass converts: the first, or with
+                # _skip_dim_order the only one.
+                self.assertEqual(len(captured.output), 1)
+                self.assertIn("Parameter 'weight'", captured.output[0])
+                self.assertTrue(ep.state_dict["weight"].is_contiguous())
+                placeholder = next(n for n in ep.graph.nodes if n.name == "p_weight")
+                self.assertTrue(placeholder.meta["val"].is_contiguous())
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_convert_constant_dim_order_missing_placeholder(self):
+        """
+        Verify that the convert_constant_dim_order_pass names the placeholder it
+        cannot find for a lifted tensor it converts.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return x + self.weight
+
+        ep = torch.export.export(AddParameter(), (torch.randn(4, 5),))
+        spec = next(s for s in ep.graph_signature.input_specs if s.target == "weight")
+        spec.arg = TensorArgument(name="missing")
+        with self.assertRaisesRegex(RuntimeError, "Missing placeholder for missing"):
+            convert_constant_dim_order_pass.convert_constant_dim_order_pass(ep)
+
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
     """
