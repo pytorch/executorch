@@ -18,7 +18,8 @@
 namespace executorch::backends::coreai {
 
 struct CoreAIPteData {
-  // Borrowed inline data and segment descriptors must die before the program.
+  // Member order keeps program_storage alive until processed's inline borrows
+  // die.
   runtime::FreeableBuffer program_storage;
   std::vector<runtime::FreeableBuffer> processed;
 

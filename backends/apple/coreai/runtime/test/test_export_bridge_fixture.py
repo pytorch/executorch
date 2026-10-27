@@ -16,7 +16,8 @@ from executorch.backends.apple.coreai.runtime.test import (
 
 
 @pytest.mark.parametrize("dynamic", [False, True])
-def test_export_replaces_stale_fixture_files(tmp_path, dynamic):
+@pytest.mark.parametrize("include_pte", [False, True])
+def test_export_replaces_stale_fixture_files(tmp_path, dynamic, include_pte):
     """Re-exports must not retain stale assets or freeze dynamic extents."""
     output = tmp_path / "fixture"
     bundle = output / "model.aimodel"
@@ -35,7 +36,7 @@ def test_export_replaces_stale_fixture_files(tmp_path, dynamic):
         ),
     )
     with (
-        patch.object(fixture, "to_edge_transform_and_lower"),
+        patch.object(fixture, "to_edge_transform_and_lower") as lower,
         patch.object(fixture, "get_lowered_backend_modules", return_value=[delegate]),
         patch.object(fixture, "get_default_passes", return_value=[]),
         patch.object(fixture, "get_default_compile_config"),
@@ -44,7 +45,13 @@ def test_export_replaces_stale_fixture_files(tmp_path, dynamic):
             fixture.torch.export, "export", wraps=fixture.torch.export.export
         ) as export,
     ):
-        fixture.export_fixture(output, dynamic=dynamic)
+        lower.return_value.to_executorch.return_value.buffer = b"serialized-pte"
+        fixture.export_fixture(output, dynamic=dynamic, include_pte=include_pte)
+        if include_pte:
+            lower.return_value.to_executorch.assert_called_once_with()
+            assert (output / "model.pte").read_bytes() == b"serialized-pte"
+        else:
+            lower.return_value.to_executorch.assert_not_called()
 
     assert (output / "manifest.json").read_bytes() == manifest_bytes
     assert (bundle / "graph.bin").read_bytes() == b"abc"
@@ -53,7 +60,9 @@ def test_export_replaces_stale_fixture_files(tmp_path, dynamic):
     ) == [
         "manifest.json",
         "model.aimodel/graph.bin",
-    ]
+    ] + (
+        ["model.pte"] if include_pte else []
+    )
     shapes = export.call_args.kwargs["dynamic_shapes"]
     if dynamic:
         assert shapes[0][0] is shapes[1][0]

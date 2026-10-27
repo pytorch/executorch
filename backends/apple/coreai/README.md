@@ -343,20 +343,26 @@ model inference. Do not execute SDK27 binaries on an older host.
 
 The private `inspect_coreai_pte(DataLoader&)` reader extracts Core AI processed
 buffers without loading methods, external assets, or SDK models. Inspection does
-not derive cache keys or mutate cache state.
+not derive cache keys or mutate cache state. It verifies FlatBuffer structure
+and program semantics, skips delegates without a matching backend ID, and
+returns `NotFound` for absent segments or out-of-range references. Legacy
+headers may omit the segment extent; selected segment bounds are still checked.
 
 ## Host Tests
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
 registers the standalone `coreai_host_test` executable with CTest. It tests
-manifest parsing, AOT asset selection, cache identity, bookmark I/O, acquisition
-coordination, lock contention, filesystem storage, and delegate initialization
-and execution against a fake bridge. It uses Foundation without Swift or CoreAI
-SDK calls. Acquisition contention tests run two threads inside a bounded child
-process; bookmark lock tests separately cover contention between processes. The
-host test target is omitted for Apple cross-builds. On supported macOS hosts,
-CTest also runs the Swift bridge tests, source-lifetime probes, and
+manifest parsing, PTE inspection, AOT asset selection, cache identity, bookmark
+I/O, acquisition coordination, lock contention, filesystem storage, and delegate
+initialization and execution against a fake bridge. It uses Foundation without
+Swift or CoreAI SDK calls. Acquisition contention tests run two threads inside a
+bounded child process; bookmark lock tests separately cover contention between
+processes. The host test target is omitted for Apple cross-builds. On supported
+macOS hosts, CTest also runs the Swift bridge tests, source-lifetime probes, and
 `coreai_runtime_smoke`, which link Swift and the Core AI framework.
+`coreai_pte_export_test` compares inspected metadata with the manifest from an
+actual exported PTE. It uses the generated bridge fixture without loading SDK
+models.
 
 CI builds and runs these tests on macOS 27. To use the same configuration from
 the repository root:

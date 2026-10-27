@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 #import "ETCoreAIBridge.h"
+#include "coreai_backend_id.h"
 #import "coreai_cache_root.h"
 #import "coreai_error.h"
 #import "coreai_load_coordinator.h"
@@ -155,6 +156,6 @@ class CoreAIBackend final : public BackendInterface {
 
 CoreAIBackend backend;
 [[maybe_unused]] const auto registration =
-    register_backend({"CoreAIBackend", &backend});
+    register_backend({kCoreAIBackendId, &backend});
 } // namespace
 } // namespace executorch::backends::coreai

@@ -38,7 +38,8 @@ FBSyntheticPTE::FBSyntheticPTE(
       segment_bytes.push_back(0);
     }
     const size_t index = segments.size();
-    segments.push_back(fb::CreateDataSegment(builder, segment_bytes.size(), data.length));
+    segments.push_back(
+        fb::CreateDataSegment(builder, segment_bytes.size(), data.length));
     const auto* begin = static_cast<const uint8_t*>(data.bytes);
     if (data.length != 0) {
       segment_bytes.insert(segment_bytes.end(), begin, begin + data.length);
@@ -56,24 +57,30 @@ FBSyntheticPTE::FBSyntheticPTE(
       } else {
         index = static_cast<uint32_t>(inline_data.size());
         inline_data.push_back(fb::CreateBackendDelegateInlineData(
-            builder, builder.CreateVector(static_cast<const uint8_t*>(delegate.data.bytes),
-                                          delegate.data.length)));
+            builder,
+            builder.CreateVector(
+                static_cast<const uint8_t*>(delegate.data.bytes),
+                delegate.data.length)));
       }
       if (delegate.index_override >= 0) {
         index = static_cast<uint32_t>(delegate.index_override);
       }
       auto reference = delegate.missing_processed
-                           ? flatbuffers::Offset<fb::BackendDelegateDataReference>{}
-                           : fb::CreateBackendDelegateDataReference(builder, location, index);
+          ? flatbuffers::Offset<fb::BackendDelegateDataReference>{}
+          : fb::CreateBackendDelegateDataReference(builder, location, index);
       auto name = delegate.backend == nullptr
-                      ? flatbuffers::Offset<flatbuffers::String>{}
-                      : builder.CreateString(delegate.backend, delegate.backend_length.value_or(
-                                                                   std::strlen(delegate.backend)));
+          ? flatbuffers::Offset<flatbuffers::String>{}
+          : builder.CreateString(
+                delegate.backend,
+                delegate.backend_length.value_or(
+                    std::strlen(delegate.backend)));
       delegates.push_back(fb::CreateBackendDelegate(builder, name, reference));
     }
-    auto name = method.name == nullptr ? flatbuffers::Offset<flatbuffers::String>{}
-                                       : builder.CreateString(method.name);
-    auto values = builder.CreateVector(std::vector<flatbuffers::Offset<fb::EValue>>{});
+    auto name = method.name == nullptr
+        ? flatbuffers::Offset<flatbuffers::String>{}
+        : builder.CreateString(method.name);
+    auto values =
+        builder.CreateVector(std::vector<flatbuffers::Offset<fb::EValue>>{});
     auto inputs = builder.CreateVector(std::vector<int32_t>{});
     auto outputs = builder.CreateVector(std::vector<int32_t>{});
     auto backends = builder.CreateVector(delegates);
@@ -88,13 +95,16 @@ FBSyntheticPTE::FBSyntheticPTE(
     plans.push_back(plan.Finish());
   }
   // Delegate metadata access must not request named asset payloads.
-  uint32_t asset_segment =
-      append_segment([@"unread named asset" dataUsingEncoding:NSUTF8StringEncoding]);
+  uint32_t asset_segment = append_segment(
+      [@"unread named asset" dataUsingEncoding:NSUTF8StringEncoding]);
   auto named = fb::CreateNamedData(
-      builder, builder.CreateString("coreai/ab/model.aimodel/graph.bin"), asset_segment);
-  auto names = builder.CreateVector(std::vector<flatbuffers::Offset<fb::NamedData>>{named});
-  auto constants =
-      fb::CreateSubsegmentOffsets(builder, 0, builder.CreateVector(std::vector<uint64_t>{0}));
+      builder,
+      builder.CreateString("coreai/ab/model.aimodel/graph.bin"),
+      asset_segment);
+  auto names = builder.CreateVector(
+      std::vector<flatbuffers::Offset<fb::NamedData>>{named});
+  auto constants = fb::CreateSubsegmentOffsets(
+      builder, 0, builder.CreateVector(std::vector<uint64_t>{0}));
   auto plan_vector = builder.CreateVector(plans);
   auto inline_vector = builder.CreateVector(inline_data);
   auto segment_vector = builder.CreateVector(segments);
@@ -107,7 +117,9 @@ FBSyntheticPTE::FBSyntheticPTE(
   program.add_named_data(names);
   fb::FinishProgramBuffer(builder, program.Finish());
   if (!extended_header) {
-    bytes.assign(builder.GetBufferPointer(), builder.GetBufferPointer() + builder.GetSize());
+    bytes.assign(
+        builder.GetBufferPointer(),
+        builder.GetBufferPointer() + builder.GetSize());
     return;
   }
   // Preserve flatbuffer alignment when inserting the extended header.
@@ -115,18 +127,24 @@ FBSyntheticPTE::FBSyntheticPTE(
   const size_t program_size = builder.GetSize() + extra;
   const size_t segment_base = (program_size + 15) & ~size_t(15);
   bytes.resize(segment_base + segment_bytes.size());
-  std::memcpy(bytes.data(), builder.GetBufferPointer(), ExtendedHeader::kHeaderOffset);
-  std::memcpy(bytes.data() + ExtendedHeader::kHeaderOffset + extra,
-              builder.GetBufferPointer() + ExtendedHeader::kHeaderOffset,
-              builder.GetSize() - ExtendedHeader::kHeaderOffset);
-  auto root_offset = flatbuffers::ReadScalar<flatbuffers::uoffset_t>(bytes.data());
-  flatbuffers::WriteScalar<flatbuffers::uoffset_t>(bytes.data(), root_offset + extra);
-  std::memcpy(bytes.data() + 8, ExtendedHeader::kMagic, ExtendedHeader::kMagicSize);
+  std::memcpy(
+      bytes.data(), builder.GetBufferPointer(), ExtendedHeader::kHeaderOffset);
+  std::memcpy(
+      bytes.data() + ExtendedHeader::kHeaderOffset + extra,
+      builder.GetBufferPointer() + ExtendedHeader::kHeaderOffset,
+      builder.GetSize() - ExtendedHeader::kHeaderOffset);
+  auto root_offset =
+      flatbuffers::ReadScalar<flatbuffers::uoffset_t>(bytes.data());
+  flatbuffers::WriteScalar<flatbuffers::uoffset_t>(
+      bytes.data(), root_offset + extra);
+  std::memcpy(
+      bytes.data() + 8, ExtendedHeader::kMagic, ExtendedHeader::kMagicSize);
   flatbuffers::WriteScalar<uint32_t>(bytes.data() + 12, extra);
   flatbuffers::WriteScalar<uint64_t>(bytes.data() + 16, program_size);
   flatbuffers::WriteScalar<uint64_t>(bytes.data() + 24, segment_base);
   flatbuffers::WriteScalar<uint64_t>(bytes.data() + 32, segment_bytes.size());
-  std::memcpy(bytes.data() + segment_base, segment_bytes.data(), segment_bytes.size());
+  std::memcpy(
+      bytes.data() + segment_base, segment_bytes.data(), segment_bytes.size());
 }
 
 Result<size_t> FBSyntheticPTE::size() const {
@@ -136,11 +154,17 @@ Result<size_t> FBSyntheticPTE::size() const {
   return bytes.size();
 }
 
-Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
-                                            const SegmentInfo& info) const {
+Result<FreeableBuffer> FBSyntheticPTE::load(
+    size_t offset,
+    size_t size,
+    const SegmentInfo& info) const {
   const size_t call = requests.size();
-  requests.push_back({offset, size, info.segment_type, info.segment_index,
-                      info.descriptor == nullptr ? "" : info.descriptor});
+  requests.push_back(
+      {offset,
+       size,
+       info.segment_type,
+       info.segment_index,
+       info.descriptor == nullptr ? "" : info.descriptor});
   const bool fault = static_cast<int>(call) == fault_call;
   if (fault && load_fault == LoadFault::Error) {
     return load_error;
@@ -150,7 +174,8 @@ Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
   }
   if (info.segment_type != SegmentInfo::Type::Program &&
       info.segment_type != SegmentInfo::Type::Backend) {
-    ADD_FAILURE() << "Unexpected segment type: " << static_cast<int>(info.segment_type);
+    ADD_FAILURE() << "Unexpected segment type: "
+                  << static_cast<int>(info.segment_type);
     return Error::InvalidArgument;
   }
   const bool backend = info.segment_type == SegmentInfo::Type::Backend;
@@ -206,8 +231,9 @@ Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
         } else {
           ++loader->program_releases;
         }
-        loader->release_order.push_back(context->backend ? SegmentInfo::Type::Backend
-                                                         : SegmentInfo::Type::Program);
+        loader->release_order.push_back(
+            context->backend ? SegmentInfo::Type::Backend
+                             : SegmentInfo::Type::Program);
         std::free(context->base);
         delete context;
       },
@@ -219,8 +245,10 @@ Result<FreeableBuffer> FBSyntheticPTE::load(size_t offset, size_t size,
     return ::testing::AssertionSuccess();
   }
   return ::testing::AssertionFailure()
-         << "Program loads/releases: " << program_loads.load() << "/" << program_releases.load()
-         << "; backend loads/releases: " << backend_loads.load() << "/" << backend_releases.load();
+      << "Program loads/releases: " << program_loads.load() << "/"
+      << program_releases.load()
+      << "; backend loads/releases: " << backend_loads.load() << "/"
+      << backend_releases.load();
 }
 
-}  // namespace executorch::backends::coreai::testing
+} // namespace executorch::backends::coreai::testing

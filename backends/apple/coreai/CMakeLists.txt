@@ -332,6 +332,7 @@ if(EXECUTORCH_BUILD_TESTS
   add_custom_command(
     OUTPUT "${_coreai_fixture_dir}/manifest.json"
            "${_coreai_fixture_dir}/dynamic/manifest.json"
+           "${_coreai_fixture_dir}/model.pte"
     BYPRODUCTS "${_coreai_fixture_dir}/model.aimodel/main.hash"
                "${_coreai_fixture_dir}/model.aimodel/main.mlirb"
                "${_coreai_fixture_dir}/model.aimodel/metadata.json"
@@ -351,9 +352,27 @@ if(EXECUTORCH_BUILD_TESTS
     coreai_bridge_fixture
     DEPENDS "${_coreai_fixture_dir}/manifest.json"
             "${_coreai_fixture_dir}/dynamic/manifest.json"
+            "${_coreai_fixture_dir}/model.pte"
   )
   add_dependencies(coreai_swift_bridge_test coreai_bridge_fixture)
+  add_executable(
+    coreai_pte_export_test runtime/test/coreai_pte_export_test.cpp
+                           runtime/coreai_pte.cpp
+  )
+  coreai_configure_objc_target(coreai_pte_export_test)
+  target_link_libraries(
+    coreai_pte_export_test PRIVATE ${_coreai_host_runtime} program_schema
+  )
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(coreai_pte_export_test PRIVATE extension_data_loader)
+  endif()
+  add_dependencies(coreai_pte_export_test coreai_bridge_fixture)
   if(_coreai_run_sdk_tests)
+    add_test(NAME coreai_pte_export_test
+             COMMAND coreai_pte_export_test "${_coreai_fixture_dir}/model.pte"
+                     "${_coreai_fixture_dir}/manifest.json"
+    )
+    set_tests_properties(coreai_pte_export_test PROPERTIES TIMEOUT 30)
     add_test(NAME coreai_swift_bridge_test
              COMMAND xcrun xctest
                      "$<TARGET_BUNDLE_DIR:coreai_swift_bridge_test>"
@@ -400,8 +419,8 @@ coreai_require_os27(coreaidelegate)
 target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
 add_dependencies(coreaidelegate coreai_swift)
 target_link_libraries(
-  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime}
-                         program_schema executorch::coreai_dependencies
+  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} program_schema
+                         executorch::coreai_dependencies
 )
 executorch_target_link_options_shared_lib(coreaidelegate)
 if(EXECUTORCH_BUILD_SHARED)

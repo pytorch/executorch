@@ -49,7 +49,9 @@ class WeightedArithmetic(torch.nn.Module):
         )
 
 
-def _export_model(model, inputs, output_dir: Path, *, dynamic_shapes=None) -> dict:
+def _export_model(
+    model, inputs, output_dir: Path, *, dynamic_shapes=None, include_pte=False
+) -> dict:
     exported = torch.export.export(model, inputs, dynamic_shapes=dynamic_shapes)
     lowered = to_edge_transform_and_lower(
         exported,
@@ -71,10 +73,14 @@ def _export_model(model, inputs, output_dir: Path, *, dynamic_shapes=None) -> di
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(store.buffers[entry.buffer_index])
     (output_dir / "manifest.json").write_bytes(manifest_bytes)
+    if include_pte:
+        (output_dir / "model.pte").write_bytes(lowered.to_executorch().buffer)
     return manifest
 
 
-def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
+def export_fixture(
+    output_dir: Path, *, dynamic: bool = False, include_pte: bool = False
+) -> None:
     """Export into a dedicated fixture directory, replacing its contents."""
     size = torch.export.Dim("size", min=1, max=8)
     _export_model(
@@ -82,6 +88,7 @@ def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
         (torch.ones(2), torch.ones(2)),
         output_dir,
         dynamic_shapes=({0: size}, {0: size}) if dynamic else None,
+        include_pte=include_pte,
     )
 
 
@@ -114,5 +121,5 @@ if __name__ == "__main__":
         "output_dir", type=Path, help="Dedicated fixture directory, replaced on export"
     )
     output_dir = parser.parse_args().output_dir
-    export_fixture(output_dir)
+    export_fixture(output_dir, include_pte=True)
     export_fixture(output_dir / "dynamic", dynamic=True)

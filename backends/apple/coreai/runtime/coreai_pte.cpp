@@ -7,6 +7,7 @@
  */
 
 #include "coreai_pte.h"
+#include "coreai_backend_id.h"
 
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/program_validation.h>
@@ -74,13 +75,10 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
         return Error::InvalidProgram;
       }
       program_size = static_cast<size_t>(header.program_size);
-      if (header.segment_base_offset != 0 &&
-          (header.segment_base_offset < program_size ||
-           header.segment_base_offset > file_size)) {
-        return Error::InvalidProgram;
-      }
+      // Legacy headers do not specify the segment extent.
       if (header.segment_data_size != 0 &&
-          (header.segment_base_offset == 0 ||
+          (header.segment_base_offset < program_size ||
+           header.segment_base_offset > file_size ||
            header.segment_data_size > file_size - header.segment_base_offset)) {
         return Error::InvalidProgram;
       }
@@ -122,12 +120,11 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
     }
     for (const auto* delegate : *plan->delegates()) {
       if (delegate->id() == nullptr) {
-        return Error::InvalidProgram;
+        continue;
       }
-      constexpr std::string_view backend = "CoreAIBackend";
       const std::string_view id(
           delegate->id()->c_str(), delegate->id()->size());
-      if (id != backend) {
+      if (id != kCoreAIBackendId) {
         continue;
       }
       const auto* reference = delegate->processed();
@@ -137,8 +134,11 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
       const uint32_t index = reference->index();
       if (reference->location() == fb::DataLocation::INLINE) {
         const auto* buffers = program->backend_delegate_data();
-        if (buffers == nullptr || index >= buffers->size()) {
+        if (buffers == nullptr) {
           return Error::InvalidProgram;
+        }
+        if (index >= buffers->size()) {
+          return Error::NotFound;
         }
         const auto* bytes = buffers->Get(index)->data();
         if (bytes == nullptr) {
@@ -148,9 +148,14 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
             bytes->data(), bytes->size(), nullptr, nullptr);
       } else if (reference->location() == fb::DataLocation::SEGMENT) {
         const auto* segments = program->segments();
-        if (!has_header || header.segment_base_offset == 0 ||
-            segments == nullptr || index >= segments->size()) {
+        if (!has_header || header.segment_base_offset == 0) {
+          return Error::NotFound;
+        }
+        if (segments == nullptr) {
           return Error::InvalidProgram;
+        }
+        if (index >= segments->size()) {
+          return Error::NotFound;
         }
         const auto* segment = segments->Get(index);
         if (segment->offset() > std::numeric_limits<size_t>::max() ||
@@ -160,7 +165,8 @@ Result<CoreAIPteData> inspect_coreai_pte(DataLoader& loader) {
         const size_t base = static_cast<size_t>(header.segment_base_offset);
         const size_t offset = static_cast<size_t>(segment->offset());
         const size_t size = static_cast<size_t>(segment->size());
-        if (offset > file_size - base || size > file_size - base - offset ||
+        if (base > file_size || offset > file_size - base ||
+            size > file_size - base - offset ||
             (header.segment_data_size != 0 &&
              (offset > header.segment_data_size ||
               size > header.segment_data_size - offset))) {

@@ -10,6 +10,7 @@
 
 #include <executorch/backends/apple/coreai/runtime/coreai_pte.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/extended_header.h>
 #include <gtest/gtest.h>
@@ -189,6 +190,7 @@ TEST_F(CoreAIPteTest, MatchesCompleteBackendIdentifier) {
         {{"CoreAIBackendSuffix", payload(), true, 999},
          {"CoreAIBacken", payload(), true, 999},
          {"", payload(), true, 999},
+         {nullptr, payload(), true, 999, true},
          nul_id,
          {"CoreAIBackend", payload("yes")}}}});
   {
@@ -311,7 +313,8 @@ TEST_F(CoreAIPteTest, RejectsMissingAndOutOfRangeCoreAIReferences) {
       delegate.missing_processed = missing;
       delegate.index_override = 999;
       FBSyntheticPTE pte({{"forward", {delegate}}});
-      ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
+      ASSERT_NO_FATAL_FAILURE(expect_invalid(
+          pte, missing ? Error::InvalidProgram : Error::NotFound));
       EXPECT_EQ(pte.backend_loads, 0);
       EXPECT_EQ(pte.requests.size(), 2);
     }
@@ -321,7 +324,7 @@ TEST_F(CoreAIPteTest, RejectsMissingAndOutOfRangeCoreAIReferences) {
 TEST_F(CoreAIPteTest, RejectsSegmentsWithoutExtendedHeader) {
   FBSyntheticPTE pte(
       {{"forward", {{"CoreAIBackend", payload(), true}}}}, false);
-  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
+  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte, Error::NotFound));
   EXPECT_EQ(pte.backend_loads, 0);
   EXPECT_EQ(pte.requests.size(), 2);
 }
@@ -366,21 +369,18 @@ TEST_F(CoreAIPteTest, RejectsInvalidSelectedSegmentBounds) {
     ASSERT_TRUE(header.ok());
     const auto* segment = fb::GetProgram(pte.bytes.data())->segments()->Get(0);
     if (fault == 0) {
-      ASSERT_NO_FATAL_FAILURE(
-          set_field<uint64_t>(
-              segment,
-              fb::DataSegment::VT_OFFSET,
-              std::numeric_limits<uint64_t>::max()));
+      ASSERT_NO_FATAL_FAILURE(set_field<uint64_t>(
+          segment,
+          fb::DataSegment::VT_OFFSET,
+          std::numeric_limits<uint64_t>::max()));
     } else if (fault == 1) {
-      ASSERT_NO_FATAL_FAILURE(
-          set_field<uint64_t>(
-              segment,
-              fb::DataSegment::VT_SIZE,
-              std::numeric_limits<uint64_t>::max()));
+      ASSERT_NO_FATAL_FAILURE(set_field<uint64_t>(
+          segment,
+          fb::DataSegment::VT_SIZE,
+          std::numeric_limits<uint64_t>::max()));
     } else if (fault == 2) {
-      ASSERT_NO_FATAL_FAILURE(
-          set_field<uint64_t>(
-              segment, fb::DataSegment::VT_OFFSET, header->segment_data_size));
+      ASSERT_NO_FATAL_FAILURE(set_field<uint64_t>(
+          segment, fb::DataSegment::VT_OFFSET, header->segment_data_size));
     } else {
       flatbuffers::WriteScalar<uint64_t>(
           pte.bytes.data() + 32, segment->size() - 1);
@@ -417,17 +417,82 @@ TEST_F(CoreAIPteTest, RejectsMalformedFlatbufferAndUnsupportedVersion) {
     SCOPED_TRACE(version ? "unsupported version" : "bad identifier");
     FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload()}}}}, false);
     if (version) {
-      ASSERT_NO_FATAL_FAILURE(
-          set_field<uint32_t>(
-              fb::GetProgram(pte.bytes.data()),
-              fb::Program::VT_VERSION,
-              Program::kMaxSupportedSchemaVersion + 1));
+      ASSERT_NO_FATAL_FAILURE(set_field<uint32_t>(
+          fb::GetProgram(pte.bytes.data()),
+          fb::Program::VT_VERSION,
+          Program::kMaxSupportedSchemaVersion + 1));
     } else {
       pte.bytes[4] = 'X';
     }
     ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
     EXPECT_EQ(pte.backend_loads, 0);
   }
+}
+
+TEST_F(CoreAIPteTest, RejectsSemanticallyInvalidVerifiedProgram) {
+  FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload()}}}});
+  const auto* program = fb::GetProgram(pte.bytes.data());
+  ASSERT_NO_FATAL_FAILURE(clear_field(
+      program->execution_plan()->Get(0), fb::ExecutionPlan::VT_VALUES));
+  flatbuffers::Verifier verifier(pte.bytes.data(), pte.bytes.size());
+  ASSERT_TRUE(fb::VerifyProgramBuffer(verifier));
+  EXPECT_EQ(runtime::validate_program(program), Error::InvalidProgram);
+  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
+  EXPECT_EQ(pte.backend_loads, 0);
+}
+
+TEST_F(CoreAIPteTest, RejectsUnknownProcessedDataLocation) {
+  FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload()}}}});
+  const auto* reference = fb::GetProgram(pte.bytes.data())
+                              ->execution_plan()
+                              ->Get(0)
+                              ->delegates()
+                              ->Get(0)
+                              ->processed();
+  ASSERT_NO_FATAL_FAILURE(set_field<uint8_t>(
+      reference, fb::BackendDelegateDataReference::VT_LOCATION, 255));
+  flatbuffers::Verifier verifier(pte.bytes.data(), pte.bytes.size());
+  ASSERT_TRUE(fb::VerifyProgramBuffer(verifier));
+  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
+  EXPECT_EQ(pte.backend_loads, 0);
+}
+
+TEST_F(CoreAIPteTest, AcceptsLegacyHeaderWithUnusedSegmentBase) {
+  for (uint64_t base : {uint64_t(1), std::numeric_limits<uint64_t>::max()}) {
+    SCOPED_TRACE(base);
+    FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload()}}}});
+    flatbuffers::WriteScalar<uint64_t>(pte.bytes.data() + 24, base);
+    flatbuffers::WriteScalar<uint64_t>(pte.bytes.data() + 32, 0);
+    {
+      auto program =
+          Program::load(&pte, Program::Verification::InternalConsistency);
+      ASSERT_TRUE(program.ok());
+      auto result = inspect_coreai_pte(pte);
+      ASSERT_TRUE(result.ok());
+      ASSERT_EQ(result->processed.size(), 1);
+      ASSERT_NO_FATAL_FAILURE(expect_payload(result->processed[0], payload()));
+      EXPECT_EQ(pte.backend_loads, 0);
+    }
+    EXPECT_TRUE(pte.check_released());
+  }
+}
+
+TEST_F(CoreAIPteTest, ChecksSelectedLegacySegmentBaseBeforeSubtracting) {
+  FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload(), true}}}});
+  flatbuffers::WriteScalar<uint64_t>(
+      pte.bytes.data() + 24, std::numeric_limits<uint64_t>::max());
+  flatbuffers::WriteScalar<uint64_t>(pte.bytes.data() + 32, 0);
+  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte));
+  EXPECT_EQ(pte.requests.size(), 2);
+  EXPECT_EQ(pte.backend_loads, 0);
+}
+
+TEST_F(CoreAIPteTest, RejectsSegmentsWithZeroBase) {
+  FBSyntheticPTE pte({{"forward", {{"CoreAIBackend", payload(), true}}}});
+  flatbuffers::WriteScalar<uint64_t>(pte.bytes.data() + 24, 0);
+  flatbuffers::WriteScalar<uint64_t>(pte.bytes.data() + 32, 0);
+  ASSERT_NO_FATAL_FAILURE(expect_invalid(pte, Error::NotFound));
+  EXPECT_EQ(pte.backend_loads, 0);
 }
 
 TEST_F(CoreAIPteTest, PropagatesLoadErrorsFromEveryPhase) {
