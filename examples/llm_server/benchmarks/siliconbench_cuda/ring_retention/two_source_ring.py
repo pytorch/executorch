@@ -409,9 +409,15 @@ def ring_commit_journal(history_key: torch.Tensor, history_value: torch.Tensor,
     # The ABI and the K/V journal offsets remain unchanged.
     key_offset = ring_layer * staging.stride(0)
     value_offset = key_offset + staging.stride(1)
+    if history_key.ndim == 1:
+        key_column_stride = value_column_stride = current_key.shape[1] * current_key.shape[3]
+        key_head_stride = value_head_stride = current_key.shape[3]
+    else:
+        key_column_stride, key_head_stride = history_key.stride(1), history_key.stride(2)
+        value_column_stride, value_head_stride = history_value.stride(1), history_value.stride(2)
     wrap_triton(_commit)[(current_key.shape[2], current_key.shape[1])](
         history_key, history_value, current_key, current_value, seq_info, staging, True, key_offset, value_offset,
-        history_key.stride(1), history_key.stride(2), history_value.stride(1), history_value.stride(2),
+        key_column_stride, key_head_stride, value_column_stride, value_head_stride,
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         current_key.shape[2], window, current_key.shape[3], seq_info.shape[1], seq_info.shape[0],
         num_warps=4)

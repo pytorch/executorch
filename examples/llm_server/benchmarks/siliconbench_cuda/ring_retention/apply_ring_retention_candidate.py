@@ -172,7 +172,7 @@ def patch_python(p):
                 kh = ks.view(rows, columns, heads, dim)
                 vh = vs.view(rows, columns, heads, dim)
                 out = sdpa_ring_current(q,kh,vh,k,v,info,window,scale)
-                ring_commit_journal(kh,vh,k,v,info,window,stage,ring_index)
+                ring_commit_journal(ks,vs,k,v,info,window,stage,ring_index)
                 return out.to(out_dtype)
             fn = split_ring_fn
         return fn, call_args, example_args

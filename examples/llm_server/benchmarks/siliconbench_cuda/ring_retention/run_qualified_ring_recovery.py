@@ -22,7 +22,7 @@ def main():
         with a.lock.open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             assert not subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-            argv=[sys.executable,'-B','-u',str(pkg/'probe_ring_journal_compile.py'),'--model',a.model,'--baseline',str(pkg/('baseline_'+a.model+'_sdpa.py')),'--output',str(a.output/'compiled-probe'),'--baseline-execution','compiled','--candidate-execution','compiled']
+            argv=[sys.executable,'-B','-u',str(pkg/'probe_ring_journal_compile.py'),'--model',a.model,'--baseline',str(pkg/('baseline_'+a.model+'_sdpa.py')),'--output',str(a.output/'compiled-probe'),'--baseline-execution','compiled','--candidate-execution','compiled','--flat-history-bindings']
             with (a.output/'compiled-probe.log').open('x') as log:
                 subprocess.run(argv,env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=1200)
         state('exporting-and-measuring-real-mini')

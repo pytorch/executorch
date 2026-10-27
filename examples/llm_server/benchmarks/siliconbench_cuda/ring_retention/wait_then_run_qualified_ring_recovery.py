@@ -29,6 +29,7 @@ def main():
     p.add_argument("--wait-process", action="append", required=True, help="PID:start_ticks")
     p.add_argument("--model", choices=["MG", "Gemma"], required=True)
     p.add_argument("--wait-hours", type=float, default=3)
+    p.add_argument("--cache-root", type=Path)
     a = p.parse_args()
     assert 0 < a.wait_hours <= 6
     watched = {int(value.split(":")[0]): value.split(":")[1] for value in a.wait_process}
@@ -77,6 +78,8 @@ def main():
         for name in ["native-preparation", "baseline-audit", "gguf", "lock"]:
             argv += ["--" + name, str(getattr(a, name.replace("-", "_")))]
         argv += ["--output", str(a.output / "qualification")]
+        if a.cache_root:
+            argv += ["--cache-root", str(a.cache_root)]
         env = dict(os.environ)
         env.pop("CUDA_LAUNCH_BLOCKING", None)
         with (a.output / "qualification.log").open("x") as log:

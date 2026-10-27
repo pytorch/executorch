@@ -17,6 +17,7 @@ p.add_argument('--generic-bn',type=int,default=0)
 p.add_argument('--generic-stages',type=int,default=0)
 p.add_argument('--decode-max-tokens',type=int,default=0)
 p.add_argument('--include-d8',action='store_true')
+p.add_argument('--flat-history-bindings',action='store_true')
 a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 assert torch.cuda.is_available()
 torch.manual_seed(49027)
@@ -30,7 +31,7 @@ results=[]
 
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def record(status,**extra):
- v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,generic_tile=dict(block_m=a.generic_bm,block_n=a.generic_bn,pipeline_stages=a.generic_stages),decode_max_tokens=a.decode_max_tokens,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
+ v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,generic_tile=dict(block_m=a.generic_bm,block_n=a.generic_bn,pipeline_stages=a.generic_stages),decode_max_tokens=a.decode_max_tokens,flat_history_bindings=a.flat_history_bindings,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
  (a.output/'progress.json').write_text(json.dumps(v,indent=2)+'\n')
 
 
@@ -97,14 +98,18 @@ def baseline(f):
 
 
 def compiled_tensor_step(q,sk,sv,k,v,info,stage):
- out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE,a.generic_bm,a.generic_bn,a.generic_stages,a.decode_max_tokens)
+ kh=sk.view(W,22,HK,D) if a.flat_history_bindings else sk
+ vh=sv.view(W,22,HK,D) if a.flat_history_bindings else sv
+ out=sdpa_ring_current(q,kh,vh,k,v,info,W,1*SCALE,a.generic_bm,a.generic_bn,a.generic_stages,a.decode_max_tokens)
  ring_commit_journal(sk,sv,k,v,info,W,stage,1)
  return out
 compiled_step=torch.compile(compiled_tensor_step,fullgraph=True,dynamic=False) if a.candidate_execution=='compiled' else compiled_tensor_step
 
 def candidate(f,commit=True):
  assert commit
- return compiled_step(f['q'],f['sk'],f['sv'],f['k'],f['v'],f['info'],f['stage'])
+ sk=f['sk'].view(-1) if a.flat_history_bindings else f['sk']
+ sv=f['sv'].view(-1) if a.flat_history_bindings else f['sv']
+ return compiled_step(f['q'],sk,sv,f['k'],f['v'],f['info'],f['stage'])
 
 
 def errors(x,y,total):

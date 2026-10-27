@@ -20,6 +20,7 @@ def main():
    assert q['status']!='failed-kernel-prerequisite',q.get('error')
    assert time.monotonic()<deadline;time.sleep(20)
   assert q['compiled_journal_gate'] and len(q['results'])==6
+  assert q['flat_history_bindings']
   assert q['kernel_source_SHA256']==sha(pkg/'two_source_ring.py')
   oldgate=json.loads((a.native_preparation/'native-gate.json').read_text());oldsource=Path(oldgate['export_source'])
   state('preparing-isolated-export-source-with-kernel-fix')
@@ -32,8 +33,17 @@ def main():
   for hashes in maps:
    assert hashes[name]==before,'Original audited ring source differs from copied source'
    hashes[name]=sha(target)
+  lower_name='backends/cuda/passes/lower_offgraph_kv.py';lower=source/lower_name;lower_before=sha(lower)
+  lower_maps=[audit[k] for k in ['candidate_SHA256','additional_candidate_SHA256'] if lower_name in audit.get(k,{})]
+  assert lower_maps and all(hashes[lower_name]==lower_before for hashes in lower_maps)
+  text=lower.read_text();old_call='ring_commit_journal(kh,vh,k,v,info,window,stage,ring_index)';new_call='ring_commit_journal(ks,vs,k,v,info,window,stage,ring_index)'
+  if old_call in text:
+   assert text.count(old_call)==1;lower.write_text(text.replace(old_call,new_call))
+  else:assert text.count(new_call)==1
+  for hashes in lower_maps:hashes[lower_name]=sha(lower)
   audit['candidate']=str(source)
   audit['compiled_scale_recovery']=dict(before_SHA256=before,after_SHA256=sha(target),prior_audit_SHA256=prior,compiled_gate_SHA256=sha(a.compiled_probe),original_source_unchanged=True,native_runtime_unchanged=True)
+  audit['raw_history_binding_recovery']=dict(before_lowering_SHA256=lower_before,after_lowering_SHA256=sha(lower),history_views_read_only=True,commit_mutates_original_flat_buffers=True,real_native_qualification_pending=True)
   auditfile.write_text(json.dumps(audit,indent=2)+'\n')
   prep=a.output/'native-preparation';prep.mkdir();gate=dict(oldgate,export_source=str(source),source_only_kernel_recovery=True,reused_native_gate=str(a.native_preparation/'native-gate.json'),reused_native_gate_SHA256=sha(a.native_preparation/'native-gate.json'),compiled_kernel_gate_SHA256=sha(a.compiled_probe),export_source_audit_SHA256=sha(auditfile))
   (prep/'native-gate.json').write_text(json.dumps(gate,indent=2)+'\n')
