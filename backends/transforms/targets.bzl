@@ -129,7 +129,21 @@ def define_common_targets():
             ":utils",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_batch_norm_with_linear",
+        srcs = ["fuse_batch_norm_with_linear.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
     )
