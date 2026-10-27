@@ -4,7 +4,8 @@ The receipt must qualify the mini storage mechanism and cold/steady performance;
 this script refuses an unresolved regression or missing gate. Full-model export
 is only preparation for full numerics, reclaim, same-GPU performance and F1.
 Original GGUF, all48 layers, quantization, BF16 operands/KV, output64,
-static1..64,512-token prefill and128K logical context remain unchanged.
+static1..64 and128K logical context remain unchanged. The prefill ceiling is
+explicitly selected; 512 retains the existing export and 2048 restores upstream.
 """
 import argparse
 import datetime
@@ -44,6 +45,7 @@ def main():
     parser.add_argument('--runtime-native-job',type=Path,required=True)
     parser.add_argument('--layout',choices=['independent','global'],default='independent',
         help='Use global rows only for a separately retained same-GPU full baseline')
+    parser.add_argument('--max-step-tokens',type=int,choices=[512,2048],default=512)
     parser.add_argument('--reuse-failed-job', type=Path,
         help='Copy compiler caches from a confirmed terminal attempt; preserve its records')
     parser.add_argument('--owned-GPU-child', action='store_true', help=argparse.SUPPRESS)
@@ -219,7 +221,7 @@ def main():
         convert_quantized_tensors_for_cuda(model)
         cuda_source_transformations(model, use_turboquant=False)
         model = PackedGemma4(model).eval()
-        export_cuda_batching(model, str(artifact), max_step_tokens=512, max_kv_seqs=21,
+        export_cuda_batching(model, str(artifact), max_step_tokens=args.max_step_tokens, max_kv_seqs=21,
             forward_sizes=(1, 2, 4, 8, 16, 32, 64), suppressed_token_ids=(258882, 258883),
             runtime_kv_columns=True, independent_capacity=arm == 'independent')
         del model
@@ -234,7 +236,7 @@ def main():
                 if isinstance(value, Int): metadata[name] = value.int_val
                 elif isinstance(value, String): metadata[name] = value.string_val
         assert metadata['get_n_caches'] == 48 and metadata['get_vocab_size'] == 262144
-        assert metadata['get_max_context_len'] == 131072 and metadata['get_max_prefill_chunk'] == 512
+        assert metadata['get_max_context_len'] == 131072 and metadata['get_max_prefill_chunk'] == args.max_step_tokens
         assert metadata['get_offgraph_kv_sequence_info_abi'] == (3 if arm == 'independent' else 2)
         forwards = {f'forward_{m}' for m in (1, 2, 4, 8, 16, 32, 64)} | {'forward_others'}
         assert forwards | {'sample', 'sample_argmax'} <= set(methods)
@@ -249,7 +251,7 @@ def main():
                     manifest = json.loads(bytes(record.value))
                     assert manifest.get('independent_capacity', False) == (arm == 'independent')
                     assert manifest['runtime_columns'] and manifest['max_seqs'] == 21
-                    assert manifest['max_write'] == 512 and manifest['maximum_capacity'] == 131072
+                    assert manifest['max_write'] == args.max_step_tokens and manifest['maximum_capacity'] == 131072
                     assert len(manifest['layers']) == 48
                     assert sum(layer['policy'] == 'ring' for layer in manifest['layers']) == 40
                     assert all(layer['window'] == 1024 for layer in manifest['layers'] if layer['policy'] == 'ring')
@@ -266,7 +268,8 @@ def main():
             runtime_native_source=str(args.runtime_native_job/'executorch'),
             Gemma_source_preparation_SHA256=digest(receipt_path),
             GGUF_sha256=GGUF_SHA256, precision_kernel_sha256=PRECISION_SHA256,
-            logical_context=131072, initial_runtime_KV=512, safe_ring_rows=1535,
+            logical_context=131072, initial_runtime_KV=512, safe_ring_rows=1024+args.max_step_tokens-1,
+            max_step_tokens=args.max_step_tokens,
             declared_owner_limit=21, static_forwards=[1, 2, 4, 8, 16, 32, 64],
             metadata=metadata, offgraph_manifests=manifests, selected_logit_limit=64,
             prefill_fusion=prefill, bulk_prefill_A16_original_native_decode=True,

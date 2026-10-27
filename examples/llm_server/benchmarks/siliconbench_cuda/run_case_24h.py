@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
     parser.add_argument('--correctness-rounds', type=int, default=1)
+    parser.add_argument('--performance-rounds', type=int, choices=[1,4], default=4)
     parser.add_argument('--mode', choices=['performance', 'correctness'], required=True)
     parser.add_argument('--split',choices=['chat','agent'],default='agent',
                         help='Silicon Bench workload split; F1 correctness remains agent')
@@ -147,9 +148,9 @@ def main():
                         concurrency=args.concurrency, prefix_cache=args.prefix_cache == 'on',
                         mode=args.mode, quality_scope=args.quality_scope,
                         split=args.split,
-                        performance_rounds=4 if args.mode=='performance' else 0,
-                        discarded=[1] if args.mode=='performance' else [],
-                        averaged=[2,3,4] if args.mode=='performance' else [], warmup_each_round=3,
+                        performance_rounds=args.performance_rounds if args.mode=='performance' else 0,
+                        discarded=[1] if args.mode=='performance' and args.performance_rounds==4 else [],
+                        averaged=([2,3,4] if args.performance_rounds==4 else [1]) if args.mode=='performance' else [], warmup_each_round=3,
                         correctness_repetition_policy='One full 0/5-shot pass at c1 and c16; fixed balanced sample at c2/c4/c8',
                         correctness_rounds=args.correctness_rounds if args.mode=='correctness' else 0, correctness_items=expected_items, shots=[0,5],
                         source_rows=data_audit['source_rows'], excluded_source_rows=data_audit['excluded_source_rows'],
@@ -161,7 +162,7 @@ def main():
                                                      '--format=csv,noheader'], text=True).strip(),
                         source_code_patches_by_driver=False,
                         metric='server output tokens / complete HTTP workload wall time',
-                        memory_repetition_policy='Peak sampled during each performance round, mean/sample SD over rounds 2-4',
+                        memory_repetition_policy=('Peak sampled during each performance round, mean/sample SD over rounds 2-4' if args.performance_rounds==4 else 'Single measured round; no discarded round or repetition SD'),
                         memory='sampled total device memory and server process-tree RSS; not allocator allocated/reserved')
         if args.mode == 'correctness':
             template_kwargs = dict(enable_thinking=False)
@@ -201,7 +202,7 @@ def main():
         stop_sampler.wait(2)
         if args.mode == 'performance':
             rounds = []
-            for repetition in [1,2,3,4]:
+            for repetition in range(1,args.performance_rounds+1):
                 performance_round = repetition
                 phase = 'performance'
                 progress('running-performance', round=repetition, server_pid=server.pid)
@@ -219,9 +220,10 @@ def main():
                 rounds.append(metrics)
             keys = ['output_throughput_tps', 'wall_time_s', 'total_output_tokens', 'total_input_tokens',
                     'ttft_avg_ms', 'latency_avg_s', 'successful', 'failed']
-            aggregate = {key:dict(mean=statistics.mean(row[key] for row in rounds[1:]),
-                                  sample_stddev=statistics.stdev(row[key] for row in rounds[1:]),
-                                  first_discarded=rounds[0][key], values=[row[key] for row in rounds[1:]])
+            measured = rounds[1:] if args.performance_rounds==4 else rounds
+            aggregate = {key:dict(mean=statistics.mean(row[key] for row in measured),
+                                  sample_stddev=statistics.stdev(row[key] for row in measured) if len(measured)>1 else None,
+                                  first_discarded=rounds[0][key] if args.performance_rounds==4 else None, values=[row[key] for row in measured])
                          for key in keys if key in rounds[0]}
             (args.output/'performance-aggregate.json').write_text(json.dumps(aggregate, indent=2)+'\n')
         phase = 'post-performance-idle'
@@ -229,15 +231,16 @@ def main():
         stop_sampler.wait(2)
         if args.mode == 'performance':
             memory_by_round = []
-            for repetition in [1,2,3,4]:
+            for repetition in range(1,args.performance_rounds+1):
                 samples = [row for row in memory if row.get('performance_round')==repetition and 'GPU_used_MiB' in row]
                 assert samples, 'Each performance round needs observed memory samples'
                 memory_by_round.append(dict(round=repetition, samples=len(samples),
                     GPU_peak_MiB=max(row['GPU_used_MiB'] for row in samples),
                     host_RSS_peak_KiB=max(row['server_tree_host_RSS_KiB'] for row in samples)))
-            memory_aggregate = {key: dict(mean=statistics.mean(row[key] for row in memory_by_round[1:]),
-                       sample_stddev=statistics.stdev(row[key] for row in memory_by_round[1:]),
-                       first_discarded=memory_by_round[0][key], values=[row[key] for row in memory_by_round[1:]])
+            measured_memory=memory_by_round[1:] if args.performance_rounds==4 else memory_by_round
+            memory_aggregate = {key: dict(mean=statistics.mean(row[key] for row in measured_memory),
+                       sample_stddev=statistics.stdev(row[key] for row in measured_memory) if len(measured_memory)>1 else None,
+                       first_discarded=memory_by_round[0][key] if args.performance_rounds==4 else None, values=[row[key] for row in measured_memory])
                        for key in ['GPU_peak_MiB','host_RSS_peak_KiB']}
             memory_aggregate['rounds'] = memory_by_round
             (args.output/'performance-memory-aggregate.json').write_text(json.dumps(memory_aggregate, indent=2)+'\n')
@@ -301,7 +304,7 @@ def main():
             (args.output/'correctness-aggregate.json').write_text(json.dumps(correctness_aggregate, indent=2)+'\n')
         phase = 'final-idle'
         stop_sampler.wait(2)
-        progress('completed', performance_requests=400 if args.mode=='performance' else 0,
+        progress('completed', performance_requests=100*args.performance_rounds if args.mode=='performance' else 0,
                  correctness_requests=args.correctness_rounds*2*expected_items if args.mode=='correctness' else 0,
                  model_quality_outliers_require_review=True)
     except Exception as exc:

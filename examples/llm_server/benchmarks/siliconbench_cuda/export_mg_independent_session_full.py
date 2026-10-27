@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--job-dir', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True)
+    parser.add_argument('--max-step-tokens', type=int, choices=[2048, 4096], default=2048)
     parser.add_argument('--owned-GPU-child', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.role='full-independent'
@@ -148,7 +149,7 @@ def main():
     independent = True
     runtime_columns = True
     exporter.export_cuda_batching(
-        model, config, str(args.output), max_step_tokens=2048, max_cells=65536,
+        model, config, str(args.output), max_step_tokens=args.max_step_tokens, max_cells=65536,
         forward_sizes=[1, 2, 4, 8, 16, 32, 64], device_sampling=True,
         kv_layout='sequence', max_kv_seqs=21, runtime_kv_columns=True,
         independent_capacity=independent)
@@ -169,7 +170,7 @@ def main():
     assert metadata['get_offgraph_kv_max_seqs'] == 21
     assert metadata['get_max_context_len'] == 131072
     assert metadata['get_n_caches'] == config.n_layers
-    assert metadata['get_max_prefill_chunk'] == 2048
+    assert metadata['get_max_prefill_chunk'] == args.max_step_tokens
     assert metadata.get('get_offgraph_kv_sequence_info_abi', 1) == (3 if independent else 2)
     selected_output = methods['forward_others'].values[
         methods['forward_others'].outputs[0]].val
@@ -184,7 +185,7 @@ def main():
                 assert manifest['layout'] == 'batched-sequence'
                 assert manifest['maximum_capacity'] == 131072
                 assert manifest['max_seqs'] == 21 and manifest['max_segments'] == 42
-                assert manifest['max_write'] == 2048 and len(manifest['layers']) == config.n_layers
+                assert manifest['max_write'] == args.max_step_tokens and len(manifest['layers']) == config.n_layers
                 assert manifest['version'] == (3 if independent else 2)
                 assert manifest.get('runtime_columns', False) == runtime_columns
                 assert manifest.get('independent_capacity', False) == independent
@@ -201,6 +202,7 @@ def main():
                  mini_is_not_full_model=False,
                  unchanged_quant_source=build['unchanged_controls'],
                  logical_context=131072, initial_runtime_KV=512, declared_owner_limit=21,
+                 max_step_tokens=args.max_step_tokens,
                  static_forwards=[1, 2, 4, 8, 16, 32, 64], runtime_columns=runtime_columns,
                  metadata=metadata, methods=sorted(methods),
                  selected_logit_limit=selected_output.sizes[0], offgraph_manifests=manifests,
