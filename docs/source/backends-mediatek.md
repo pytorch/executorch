@@ -33,8 +33,8 @@ The MediaTek backend enables acceleration of PyTorch models on edge devices with
 
 To export and lower a model for the MediaTek backend, use the provided shell script:
 ```bash
-cd executorch
-./examples/mediatek/shell_scripts/export_oss.sh mobilenetv3
+cd executorch/examples/mediatek/
+./shell_scripts/export_oss.sh mobilenetv3
 ```
 The exported `.pte` file is saved in a directory named after the model.
 

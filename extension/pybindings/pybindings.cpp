@@ -65,14 +65,15 @@
 #include <torch/python.h>
 #endif
 
-/// Throws a runtime_error with the provided message if `error` is not `Ok`.
+/// Throws a runtime_error with the provided message if `error` is not `Ok`,
+/// followed by the errors the runtime logged during this call.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
     if ((error) != Error::Ok) {                                   \
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::runtime_error(msg_buf);                          \
+      throw std::runtime_error(with_runtime_errors(msg_buf));     \
     }                                                             \
   })
 
@@ -82,7 +83,7 @@
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
-      throw std::out_of_range(msg_buf);                           \
+      throw std::out_of_range(with_runtime_errors(msg_buf));      \
     }                                                             \
   })
 
@@ -125,6 +126,44 @@ namespace extension {
 namespace pybindings {
 
 namespace {
+
+// The errors the runtime logged on this thread, which RuntimeErrorScope
+// limits to the current binding call. The runtime explains a failure only in
+// its log and returns a bare error code, so the exceptions raised here carry
+// these lines too. Plain arrays, because a log can arrive while thread_local
+// objects with destructors are already destroyed at exit.
+constexpr size_t kRuntimeErrorsCapacity = 1024;
+thread_local char runtime_errors[kRuntimeErrorsCapacity];
+thread_local size_t runtime_errors_size = 0;
+// How many binding calls are running on this thread. Lines logged outside
+// any, such as on worker threads, are not kept, so they never linger.
+thread_local size_t runtime_error_scopes = 0;
+
+std::string with_runtime_errors(const char* message) {
+  std::string result(message);
+  if (runtime_errors_size != 0) {
+    result.append(": ").append(runtime_errors, runtime_errors_size);
+    runtime_errors_size = 0;
+  }
+  return result;
+}
+
+// Starts every binding call with no runtime errors recorded, and gives an
+// outer call its own back when a nested call returns.
+struct RuntimeErrorScope final {
+  RuntimeErrorScope() : outer_(runtime_errors, runtime_errors_size) {
+    runtime_errors_size = 0;
+    ++runtime_error_scopes;
+  }
+  ~RuntimeErrorScope() {
+    --runtime_error_scopes;
+    std::memcpy(runtime_errors, outer_.data(), outer_.size());
+    runtime_errors_size = outer_.size();
+  }
+
+ private:
+  std::string outer_;
+};
 
 #ifndef USE_ATEN_LIB
 constexpr char kTensorOutputEnvironmentVariable[] =
@@ -1579,8 +1618,8 @@ bool prefer_dlpack_input(const py::handle& value) {
     return true;
   }
   // A result of these bindings always takes the DLPack path, which keeps its
-  // real dtype, shape, and strides. A bfloat16 result exports flat bytes
-  // instead, which the buffer path would read in the method's layout.
+  // real dtype, shape, and strides. Its buffer view of a dtype such as bfloat16
+  // is an unsigned integer, which a bfloat16 input would refuse.
   if (py::isinstance<PyExecuTorchResult>(value)) {
     return true;
   }
@@ -1777,7 +1816,7 @@ inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
       path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      "Failed to create MmapDataLoader from file %s, error: 0x%" PRIx32,
       path.c_str(),
       static_cast<uint32_t>(res.error()));
 
@@ -2092,6 +2131,10 @@ struct PyTensorInfo final {
         info_.scalar_type());
   }
 
+  const char* dtype_name() const {
+    return python_dtype(info_.scalar_type()).torch_name;
+  }
+
   bool is_memory_planned() const {
     return info_.is_memory_planned();
   }
@@ -2125,8 +2168,7 @@ struct PyTensorInfo final {
       size_str.pop_back();
     }
     size_str.append("]");
-    return "TensorInfo(sizes=" + size_str + ", dtype=" +
-        std::string(executorch::runtime::toString(info_.scalar_type())) +
+    return "TensorInfo(sizes=" + size_str + ", dtype=" + dtype_name() +
         ", is_memory_planned=" +
         (info_.is_memory_planned() ? "True" : "False") +
         ", nbytes=" + std::to_string(info_.nbytes()) + ", device=" + device() +
@@ -2415,6 +2457,10 @@ struct PyModule final {
     py::object torch;
 #endif
     std::optional<BorrowedInput> validation;
+    // Set for a memory-planned input. A run may give that memory to other
+    // values or write the input in place, so a later call that omits the
+    // input installs it again from here.
+    TensorPtr planned;
   };
 
   py::object native_output_owner() {
@@ -2515,9 +2561,7 @@ struct PyModule final {
             method_meta, i, at_tensor.scalar_type(), tensor_sizes);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
-          new_input_owners[i].validation.emplace(i, python_input);
-        }
+        new_input_owners[i].validation.emplace(i, python_input);
 #else
         torch_inputs.push_back(read_input(method_meta, i, [&] {
           return std::make_shared<TorchTensorView>(python_input, i);
@@ -2547,9 +2591,7 @@ struct PyModule final {
             tensor->device().type(),
             tensor->device().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned()) {
-          new_input_owners[i].validation.emplace(i, tensor->owner());
-        }
+        new_input_owners[i].validation.emplace(i, tensor->owner());
 #endif
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
@@ -2609,8 +2651,7 @@ struct PyModule final {
             buffer->nbytes());
 #endif
         validate_buffer_input(method_meta, i, *buffer);
-        if (!method_meta.input_tensor_meta(i)->is_memory_planned() &&
-            buffer->borrows_data()) {
+        if (buffer->borrows_data()) {
           new_input_owners[i].validation.emplace(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -2647,6 +2688,22 @@ struct PyModule final {
       }
     }
 
+    for (size_t i = 0; i < inputs_size; ++i) {
+      if (!cpp_inputs[i].isTensor()) {
+        continue;
+      }
+      const auto input_meta = method_meta.input_tensor_meta(i);
+      if (input_meta.ok() && input_meta->is_memory_planned()) {
+#ifdef USE_ATEN_LIB
+        // Shares the caller's tensor, because the aliasing make_tensor_ptr
+        // aborts on the non-dense layouts an ATen input may have.
+        new_input_owners[i].planned =
+            std::make_shared<at::Tensor>(cpp_inputs[i].toTensor());
+#else
+        new_input_owners[i].planned = make_tensor_ptr(cpp_inputs[i].toTensor());
+#endif
+      }
+    }
     // Module keeps installed inputs for calls with an omitted or partial
     // input list, so their owners stay alive with it. A call that fails while
     // installing keeps nothing: it may have installed a prefix, but later
@@ -2681,6 +2738,22 @@ struct PyModule final {
     // calls installed, since the runtime does not roll back a prefix.
     for (size_t i = 0; i < inputs_size; ++i) {
       const auto status = module_->set_input(method_name, cpp_inputs[i], i);
+      if (status != Error::Ok) {
+        failed_methods_.insert(method_name);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set input %zu of method %s, error: 0x%" PRIx32,
+            i,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
+    for (size_t i = inputs_size; i < retained.size(); ++i) {
+      if (!retained[i].planned) {
+        continue;
+      }
+      const auto status =
+          module_->set_input(method_name, retained[i].planned, i);
       if (status != Error::Ok) {
         failed_methods_.insert(method_name);
         THROW_IF_ERROR(
@@ -3042,7 +3115,7 @@ inline std::shared_ptr<ProgramState> load_program(
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
-      "Failed to load program, error: 0x:%" PRIx32,
+      "Failed to load program, error: 0x%" PRIx32,
       static_cast<uint32_t>(res.error()));
   // A program whose weights live outside the pte names them through a data
   // map. The CUDA delegate emits exactly that: a pte holding the compiled
@@ -3057,7 +3130,7 @@ inline std::shared_ptr<ProgramState> load_program(
         FlatTensorDataMap::load(data_map_loader.get());
     THROW_IF_ERROR(
         map_res.error(),
-        "Failed to load data map from %s, error: 0x:%" PRIx32,
+        "Failed to load data map from %s, error: 0x%" PRIx32,
         data_path.value().c_str(),
         static_cast<uint32_t>(map_res.error()));
     data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
@@ -3289,6 +3362,12 @@ struct PyMethod final {
             std::move(state),
             std::move(method))) {
     inputs_set_ = storage_->method->inputs_size() == 0;
+    const auto& meta = storage_->method->method_meta();
+    for (size_t i = 0; i < meta.num_inputs(); ++i) {
+      const auto tag = meta.input_tag(i);
+      has_planned_inputs_ |= tag.ok() && tag.get() == Tag::Tensor &&
+          meta.input_tensor_meta(i)->is_memory_planned();
+    }
   }
 
   void set_inputs(const py::object& python_inputs) {
@@ -3348,11 +3427,7 @@ struct PyMethod final {
             i,
             at_tensor.scalar_type(),
             tensor_sizes);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_input);
-        }
+        borrowed_inputs.emplace_back(i, python_input);
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
@@ -3373,13 +3448,9 @@ struct PyMethod final {
                                .input_tensor_meta(i)
                                ->dim_order());
         });
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
-          // Watch the tensor the method reads: after a layout conversion that
-          // is the copy, which an output aliasing the input can expose.
-          borrowed_inputs.emplace_back(i, view->owner());
-        }
+        // Watch the tensor the method reads: after a layout conversion that
+        // is the copy, which an output aliasing the input can expose.
+        borrowed_inputs.emplace_back(i, view->owner());
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -3410,11 +3481,7 @@ struct PyMethod final {
             at_tensor.scalar_type(),
             std::vector<int>(
                 at_tensor.sizes().begin(), at_tensor.sizes().end()));
-        if (!storage_->method->method_meta()
-                 .input_tensor_meta(i)
-                 ->is_memory_planned()) {
-          borrowed_inputs.emplace_back(i, python_tensor);
-        }
+        borrowed_inputs.emplace_back(i, python_tensor);
         cpp_inputs.emplace_back(at_tensor);
 #else
         dlpack_inputs.push_back(
@@ -3458,10 +3525,7 @@ struct PyMethod final {
             buffer->nbytes());
 #endif
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
-        const auto input_meta =
-            storage_->method->method_meta().input_tensor_meta(i);
-        if (input_meta.ok() && !input_meta->is_memory_planned() &&
-            buffer->borrows_data()) {
+        if (buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -3511,6 +3575,7 @@ struct PyMethod final {
     }
     inputs_failed_ = false;
     inputs_set_ = true;
+    inputs_ = std::move(cpp_inputs);
     // An output can share memory with an input, by value or through memory
     // planning, so it would now show data no execute() produced.
     outputs_valid_ = false;
@@ -3526,6 +3591,10 @@ struct PyMethod final {
   }
 
   void execute() {
+    execute_installed(/*inputs_just_installed=*/false);
+  }
+
+  void execute_installed(bool inputs_just_installed) {
     ObjectLock lock(mutex_);
     // The output setup below reads inputs through Method::get_input(), which
     // marks them as set and so hides the runtime's own check for unset inputs.
@@ -3546,6 +3615,21 @@ struct PyMethod final {
     handed_outputs_.clear();
     for (const auto& input : borrowed_inputs_) {
       input.validate(storage_->method->method_meta().name());
+    }
+    // Each run reads the caller's inputs, like inputs that are not memory
+    // planned, since an earlier run may have reused or written their planned
+    // copy.
+    if (has_planned_inputs_ && !inputs_just_installed) {
+      const Error status = storage_->method->set_inputs(
+          executorch::aten::ArrayRef<EValue>(inputs_.data(), inputs_.size()));
+      if (status != Error::Ok) {
+        inputs_failed_ = true;
+        THROW_IF_ERROR(
+            status,
+            "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
+            storage_->method->method_meta().name(),
+            static_cast<uint32_t>(status));
+      }
     }
     const auto num_outputs = storage_->method->outputs_size();
     allocate_output_storages();
@@ -3611,7 +3695,7 @@ struct PyMethod final {
   py::list call(const py::object& inputs, bool clone_outputs = true) {
     ObjectLock lock(mutex_);
     set_inputs(inputs);
-    execute();
+    execute_installed(/*inputs_just_installed=*/true);
     return get_outputs(clone_outputs);
   }
 
@@ -3621,7 +3705,7 @@ struct PyMethod final {
         storage_->method->get_attribute(name);
     THROW_IF_ERROR(
         attr.error(),
-        "Failed to get attribute '%s' for method '%s', error: 0x:%" PRIx32,
+        "Failed to get attribute '%s' for method '%s', error: 0x%" PRIx32,
         name.c_str(),
         storage_->method->method_meta().name(),
         static_cast<uint32_t>(attr.error()));
@@ -3665,6 +3749,12 @@ struct PyMethod final {
   bool inputs_failed_ = false;
   // True only after the last execute() succeeded.
   bool outputs_valid_ = false;
+  // True if any input is memory planned, so its planned memory holds a copy
+  // that each run installs again from inputs_.
+  bool has_planned_inputs_ = false;
+  // What the last successful set_inputs() installed. The tensors point at
+  // memory the members below keep alive.
+  std::vector<EValue> inputs_;
   // Borrowed results retain native storage without retaining this wrapper's
   // Python input owners, which could point back to those same results.
   struct Storage final {
@@ -4152,7 +4242,7 @@ struct PyProgram final {
     Result<const char*> res = state_->program_->get_method_name(method_index);
     THROW_IF_ERROR(
         res.error(),
-        "Failed get method name, error: 0x:%" PRIx32,
+        "Failed get method name, error: 0x%" PRIx32,
         static_cast<uint32_t>(res.error()));
     return std::string(res.get());
   }
@@ -4162,7 +4252,7 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         meta.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(meta.error()));
     // Device memory is claimed here rather than at program load so that one
@@ -4179,7 +4269,7 @@ struct PyProgram final {
         &state_->backend_options_);
     THROW_IF_ERROR(
         res.error(),
-        "Failed to load method %s, error: 0x:%" PRIx32,
+        "Failed to load method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethod>(
@@ -4197,7 +4287,7 @@ struct PyProgram final {
         state_->program_->method_meta(method_name.c_str());
     THROW_IF_ERROR(
         res.error(),
-        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        "Failed to get method meta for method %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethodMeta>(state_, std::move(res.get()));
@@ -4317,9 +4407,11 @@ py::dict get_option(const std::string& backend_name, const py::dict& options) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // scoped_ostream_redirect mutates process-wide stream buffers and is not
-  // thread-safe when Python operations inside a binding release the GIL.
-  auto call_guard = py::call_guard<>();
+  // Gives each call its own record of runtime errors for its exceptions.
+  // Runtime logs reach Python through emit_log_message below rather than
+  // scoped_ostream_redirect, which mutates process-wide stream buffers and is
+  // not thread-safe when Python operations inside a binding release the GIL.
+  auto call_guard = py::call_guard<RuntimeErrorScope>();
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
@@ -4349,12 +4441,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly(
           "dtype",
           &PyExecuTorchResult::dtype,
-          "NumPy dtype. Raises for dtypes NumPy lacks, such as bfloat16.")
-      .def_property_readonly(
-          "dtype_name",
-          &PyExecuTorchResult::torch_dtype_name,
-          "Name of the dtype, such as \"bfloat16\", including dtypes NumPy "
-          "lacks.")
+          "Name of the dtype, such as \"float32\" or \"bfloat16\", as "
+          "torch spells it.")
       .def_property_readonly(
           "nbytes", &PyExecuTorchResult::nbytes, "Size of the data in bytes.")
       .def_property_readonly(
@@ -4614,6 +4702,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyTensorInfo>(m, "TensorInfo", py::module_local())
       .def("sizes", &PyTensorInfo::sizes, call_guard)
       .def("dtype", &PyTensorInfo::dtype, call_guard)
+      .def("dtype_name", &PyTensorInfo::dtype_name, call_guard)
       .def("is_memory_planned", &PyTensorInfo::is_memory_planned, call_guard)
       .def("nbytes", &PyTensorInfo::nbytes, call_guard)
       .def("device", &PyTensorInfo::device, call_guard)
@@ -4718,7 +4807,7 @@ namespace {
 // stream buffer.
 void emit_log_message(
     ET_UNUSED et_timestamp_t timestamp,
-    ET_UNUSED et_pal_log_level_t level,
+    et_pal_log_level_t level,
     const char* filename,
     ET_UNUSED const char* function,
     size_t line,
@@ -4726,6 +4815,19 @@ void emit_log_message(
     size_t length) {
   const std::string formatted_message = "[" + std::string(filename) + ":" +
       std::to_string(line) + "] " + std::string(message, length) + "\n";
+  if (level == kError && runtime_error_scopes != 0) {
+    // Keeps the first lines, which usually name the cause.
+    const char separator[] = "; ";
+    const size_t prefix = runtime_errors_size == 0 ? 0 : sizeof(separator) - 1;
+    const size_t room = kRuntimeErrorsCapacity - runtime_errors_size;
+    if (room > prefix) {
+      std::memcpy(runtime_errors + runtime_errors_size, separator, prefix);
+      const size_t copied = std::min(length, room - prefix);
+      std::memcpy(
+          runtime_errors + runtime_errors_size + prefix, message, copied);
+      runtime_errors_size += prefix + copied;
+    }
+  }
   if (Py_IsInitialized() && PyGILState_Check()) {
     try {
       py::gil_scoped_acquire gil;

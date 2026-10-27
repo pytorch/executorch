@@ -273,7 +273,8 @@ Without it the delegate still registers and the program still links, and the fai
 when the model is loaded.
 
 For now the openvino extra installs no runtime on Python 3.15, or on Linux aarch64 with
-Python 3.14, because the OpenVINO versions it supports publish no build there.
+Python 3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python
+3.14 need glibc 2.35 or newer.
 
 The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
 file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
@@ -423,7 +424,8 @@ event tracer.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 13.2 and 13.4, so pick the index
+On Linux, the package on PyPI is the CUDA build, for the same CUDA version as the `torch` package
+there. Releases also cover CUDA 13.2 and 13.4 on their own indexes, so you can pick the one
 matching the CUDA version you have (`cu132` or `cu134`). For CUDA 13.2:
 
 ```
