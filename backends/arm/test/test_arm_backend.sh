@@ -74,6 +74,12 @@ enable_vgf_vulkan_validation() {
     export VK_KHRONOS_VALIDATION_LOG_FILENAME="stdout"
     export VK_KHRONOS_VALIDATION_DEBUG_ACTION="VK_DBG_LAYER_ACTION_LOG_MSG"
 
+    # Keep object-lifetime and core validation explicit. They are enabled by
+    # default by current VVL releases, but VGF lifetime coverage should not
+    # depend on an implicit SDK default.
+    export VK_LAYER_OBJECT_LIFETIME="1"
+    export VK_LAYER_VALIDATE_CORE="1"
+
     # Temporary workarounds for known VKML / Model Converter validation
     # defects. Keep validation enabled, but mute only these tracked VUIDs.
     #
@@ -334,6 +340,38 @@ test_minimal_classic_ml_ethos_u55() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_minimal_classic_ml_cortex_m55() {
+    echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Cortex-M55"
+
+    local build_dir="${et_root_dir}/arm_test/minimal_classic_ml_cortex_m55"
+    local pte_path="${build_dir}/add.pte"
+    local fvp_log="${build_dir}/run_fvp.log"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=add \
+        --target=cortex-m55 \
+        --intermediates="${build_dir}" \
+        --output="${pte_path}"
+
+    cmake \
+        -S examples/arm/minimal_classic_ml \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}"
+    cmake --build "${build_dir}" --target arm_classic_ml_runner -j"$(nproc)"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${build_dir}/arm_classic_ml_runner" \
+        --target=cortex-m55 | tee "${fvp_log}"
+    local fvp_status="${PIPESTATUS[0]}"
+    [[ "${fvp_status}" -eq 0 ]]
+    grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # ----------------------------------------------
 # -------- Arm Ethos-U85 specific tests --------
 # ----------------------------------------------
@@ -454,6 +492,60 @@ test_pytest_vgf_smoke() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_runtime_vgf() {
+    echo "${TEST_SUITE_NAME}: Run VGF C++ unit tests"
+
+    # Keep this separate from the executor_runner build. The normal VKML runner
+    # intentionally does not enable EXECUTORCH_BUILD_TESTS.
+    local ctest_build_dir="${et_root_dir}/arm_test/vgf_runtime_tests"
+    local python_executable="${PYTHON_EXECUTABLE:-}"
+
+    if [[ -z "${python_executable}" ]]; then
+        if command -v python3 >/dev/null 2>&1; then
+            python_executable="$(command -v python3)"
+        elif command -v python >/dev/null 2>&1; then
+            python_executable="$(command -v python)"
+        else
+            echo "Python is required to configure the VGF build."
+            return 1
+        fi
+    fi
+
+    # Always configure a clean tree so stale CMake cache values cannot make CI
+    # silently skip EXECUTORCH_BUILD_TESTS or EXECUTORCH_BUILD_VGF.
+    rm -rf "${ctest_build_dir}"
+
+    cmake \
+        -S "${et_root_dir}" \
+        -B "${ctest_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_TESTS=ON \
+        -DEXECUTORCH_BUILD_VGF=ON \
+        -DEXECUTORCH_BUILD_VULKAN=OFF \
+        -DPYTHON_EXECUTABLE="${python_executable}"         -DPython3_EXECUTABLE="${python_executable}"
+
+    # Build the VGF tests explicitly. This makes a missing/renamed target fail
+    # the job instead of being hidden among unrelated C++ tests.
+    cmake --build "${ctest_build_dir}" \
+    --target \
+        vgf_neural_statistics_test \
+        vgf_shape_utils_test \
+        vgf_vulkan_features_test \
+        vgf_zero_copy_test \
+        vgf_execution_stats_enabled_test \
+        vgf_execution_stats_disabled_test \
+    --parallel
+
+    # --no-tests=error is intentional: discovering zero VGF tests must fail CI.
+    ctest \
+        --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -R '^vgf_'
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # --------------------------------------
 # -------- Out-of-the-box tests --------
 # --------------------------------------
@@ -478,6 +570,12 @@ test_ootb_tests_vgf() {
 test_deit_e2e_ethos_u() {
     echo "${TEST_SUITE_NAME}: Run DEiT end-to-end test for Arm Ethos-U"
     backends/arm/test/test_arm_ootb.sh run_deit_e2e_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_person_detection_e2e_cortex_m() {
+    echo "${TEST_SUITE_NAME}: Run person-detection Cortex-M end-to-end test"
+    backends/arm/test/test_arm_ootb.sh run_person_detection_e2e_cortex_m
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

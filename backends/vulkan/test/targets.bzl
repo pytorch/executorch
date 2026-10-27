@@ -22,10 +22,41 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:convert_dtype_pass",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
                 "//executorch/exir:lib",
                 "//executorch/extension/pybindings:portable_lib",  # @manual
                 "//executorch/extension/pytree:pylib",
                 "//executorch/kernels/portable:custom_ops_generated_lib",
+                "//pytorch/ao:torchao",  # @manual
+            ],
+        )
+
+        python_unittest(
+            name = "test_vulkan_dynamic",
+            srcs = ["test_vulkan_dynamic.py"],
+            env = {"ETVK_USING_SWIFTSHADER": "1"},
+            preload_deps = [
+                "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+                "//executorch/backends/vulkan:vulkan_backend_lib",
+                "//executorch/kernels/portable:custom_ops_generated_lib",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/exir:lib",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+            ],
+        )
+
+        python_unittest(
+            name = "test_vulkan_graph_builder",
+            srcs = ["test_vulkan_graph_builder.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/vulkan:vulkan_preprocess",
+                "//executorch/exir:lib",
             ],
         )
 
@@ -37,8 +68,11 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+                "//executorch/exir:lib",
                 "//pytorch/ao:torchao",  # @manual
             ]
         )
@@ -64,6 +98,16 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
                 "//executorch/exir/_serialize:lib",
                 "//executorch/exir:lib",
+            ],
+        )
+
+        python_unittest(
+            name = "test_gen_vulkan_spv",
+            srcs = [
+                "spv_codegen/test_gen_vulkan_spv.py",
+            ],
+            deps = [
+                "//executorch/backends/vulkan:gen_vulkan_spv_lib",
             ],
         )
 
@@ -133,7 +177,7 @@ def define_common_targets(is_fbcode = False):
         fb_native.filegroup(
             name = "test_shaders",
             srcs = glob([
-                "glsl/*",
+                "glsl/**/*",
             ]),
             visibility = [
                 "PUBLIC",

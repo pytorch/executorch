@@ -10,11 +10,12 @@ The pass matches Edge-dialect graphs equivalent to::
     grid = permute(base_grid + flow[:, i:i + 2], [0, 2, 3, 1])
     output = grid_sample(image, grid, bilinear, border, align_corners=True)
 
-The base grid may pass through an identity dequantize/quantize pair. Images
-must have shape ``[1, 3|4, H, W]``, flow must have shape ``[1, 4, H, W]``,
-and ``i`` must be zero or two. Image and output quantization ranges must be
-``[-127, 127]`` because the custom shader stores them in SNORM images. The
-flow tensor may use the full int8 range because the shader reads it directly.
+The base grid may be direct or pass through an identity dequantize/quantize
+pair. Images must have shape ``[1, 3|4, H, W]``, flow must have shape
+``[1, 4, H, W]``, and ``i`` must be zero or two. Image and output
+quantization ranges must be ``[-127, 127]`` because the custom shader stores
+them in SNORM images. The flow tensor may use the full int8 range because the
+shader reads it directly.
 
 """
 
@@ -133,17 +134,43 @@ def _is_identity_requantization(
     return True
 
 
-def _unwrap_quantized_base_grid(node: Node) -> Node | None:
-    """Unwrap an identity dequantize-quantize pair around a base grid.
+def _has_identity_qparams(node: Node) -> bool:
+    """Return whether a node preserves one quantization representation.
 
     Args:
-        node (Node): Candidate quantize node.
+        node (Node): Candidate node with folded quantization metadata.
 
     Returns:
-        Node | None: Unwrapped base-grid node, or ``None`` when the wrapper
-        changes integer values or has an unsupported form.
+        bool: Whether every input and output qparam is identical.
 
     """
+    try:
+        input_qparams = get_input_qparams(node)
+        output_qparams = get_output_qparams(node)
+    except ValueError:
+        return False
+    return all(
+        input_qparam == output_qparam
+        for input_qparam in input_qparams.values()
+        for output_qparam in output_qparams.values()
+    )
+
+
+def _unwrap_quantized_base_grid(node: Node) -> Node | None:
+    """Return a direct base grid or unwrap an identity Q/DQ pair.
+
+    Args:
+        node (Node): Candidate base-grid or quantize node.
+
+    Returns:
+        Node | None: Base-grid node, or ``None`` when the wrapper changes
+        integer values or has an unsupported form.
+
+    """
+    # The exir FoldRedundantDequantizeQuantizePass has removed a DQ/Q pair after
+    # the cat. Ensure the cat has the same input & output qparams before returning.
+    if _target_is(node, "aten.cat.default") and _has_identity_qparams(node):
+        return node
     if not _target_is(node, "quantized_decomposed.quantize_per_tensor.default"):
         return None
     dequantize = node.args[0]

@@ -8,142 +8,964 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
-#include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "MLXCache.h" // AttendSpec, MLXCache
-#include "MLXExecutor.h" // resolve_dtype
-#include "MLXPool.h" // Pool
+#include "MLXCache.h"
 
 #include <executorch/extension/llm/cache/cache.h>
-#include <executorch/extension/llm/cache/sequence_cache.h>
 
-namespace executorch {
-namespace backends {
-namespace mlx {
+namespace executorch::backends::mlx {
+
+class MLXSequenceCache;
 
 namespace cache = ::executorch::extension::llm::cache;
+namespace sequence {
 
-// Bool mask [1, 1, T, S] for T queries over a span of S keys, where each query
-// attends at most `window` keys ending at itself. The span is right-aligned
-// (the newest key belongs to the last query), so query i spans keys
-// j - i <= S - T -- the same bound MLX's "causal" applies -- and the window
-// adds the lower bound j - i > S - T - window.
-inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
-  using namespace ::mlx::core;
-  Tensor diff = subtract(
-      reshape(arange(S, int32, s), Shape{1, S}, s),
-      reshape(arange(T, int32, s), Shape{T, 1}, s),
-      s);
-  const int hi = S - T;
-  Tensor band = logical_and(
-      less_equal(diff, array(hi), s),
-      greater_equal(diff, array(hi - window + 1), s),
-      s);
-  return reshape(band, Shape{1, 1, T, S}, s);
+struct KV {
+  Tensor k;
+  Tensor v;
+};
+
+namespace detail {
+
+class KVAttentionLayer;
+
+inline void require(bool condition, const char* message) {
+  if (!condition) {
+    throw std::invalid_argument(message);
+  }
 }
 
-// The MLX byte layer behind the neutral SequenceCache: one Pool per layer for K
-// and one for V, sized from that layer's own policy. update_and_fetch plans the
-// step (integer runs), writes the new K/V, reads the retained window, and
-// declares the mask; the op handler owns q/scale and calls SDPA.
+inline bool floating(::mlx::core::Dtype dtype) {
+  return dtype == ::mlx::core::float16 || dtype == ::mlx::core::bfloat16 ||
+      dtype == ::mlx::core::float32;
+}
+
+inline Tensor
+cast_if_needed(const Tensor& t, ::mlx::core::Dtype dtype, StreamOrDevice s) {
+  return t.dtype() == dtype ? t : ::mlx::core::astype(t, dtype, s);
+}
+
+inline int count(const std::optional<KV>& kv) {
+  return kv ? kv->k.shape(2) : 0;
+}
+
+inline Tensor tokens(const Tensor& t, int start, int length, StreamOrDevice s) {
+  return ::mlx::core::slice(
+      t, {0, 0, start, 0}, {1, t.shape(1), start + length, t.shape(3)}, s);
+}
+
+struct Segments {
+  std::optional<KV> head;
+  std::optional<KV> tail;
+};
+
+// One cache-owned mask, shared across layers but never owned by a policy.
+struct CachedMask {
+  int T, S, window;
+  Tensor mask;
+  ::mlx::core::Stream stream;
+};
+
+} // namespace detail
+
+// Bound attention behavior and mutable per-sequence state. KV is the raw input
+// pair, not a constraint on the layer's persistent representation.
+class AttentionLayer {
+ public:
+  struct QuerySpan {
+    int begin;
+    int count;
+  };
+  struct UpdateInfo {
+    int end;
+    bool overwrite;
+  };
+
+  virtual ~AttentionLayer() = default;
+  virtual int length() const = 0;
+  virtual QuerySpan query_span(int kv_tokens) const = 0;
+  virtual std::optional<int> admission(int position, int kv_tokens) const = 0;
+  // n is logical persistent growth, not a raw input K/V count.
+  virtual bool can_extend(int n) const = 0;
+  virtual bool can_rewind(int position) const = 0;
+  // Zero must reset even unfinished state; other targets are preflighted.
+  virtual void rewind(int position) = 0;
+  virtual void clear() = 0;
+  virtual std::unique_ptr<AttentionLayer> clone(int keep) const = 0;
+  virtual UpdateInfo validate(
+      int position,
+      int complete_prefix,
+      const Tensor& q,
+      const KV& incoming,
+      float scale) const = 0;
+  // Transactional: failure preserves this layer's state; success publishes the
+  // validated logical end (or preserves the later suffix for an overwrite).
+  virtual Tensor update_and_attend(
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      const UpdateInfo& update,
+      StreamOrDevice s,
+      std::optional<detail::CachedMask>& mask) = 0;
+};
+
+// Immutable shared factory for attention layers. Invoke the hook on the owner
+// passed to it so implementations can safely retain typed factory ownership.
+class AttentionLayerFactory {
+ public:
+  virtual ~AttentionLayerFactory() = default;
+
+ private:
+  friend class ::executorch::backends::mlx::MLXSequenceCache;
+
+  static std::unique_ptr<AttentionLayer> create(
+      std::shared_ptr<const AttentionLayerFactory> owner,
+      const cache::LayerGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    detail::require(owner != nullptr, "sequence: null layer factory");
+    auto layer = owner->create_layer(owner, geometry, cfg);
+    detail::require(layer != nullptr, "sequence: null attention layer");
+    detail::require(
+        layer->length() == 0, "sequence: initial layer must be empty");
+    return layer;
+  }
+
+  virtual std::unique_ptr<AttentionLayer> create_layer(
+      const std::shared_ptr<const AttentionLayerFactory>& owner,
+      const cache::LayerGeometry& geometry,
+      const cache::CacheConfig& cfg) const = 0;
+};
+
+namespace detail {
+
+// Integer layout and storage only: attention intervals and masks belong to
+// policies. Copies share functional arrays during graph construction. Publish
+// the new roots before caller-side execution so old owners do not block
+// donation.
+class Storage {
+ public:
+  Storage(const cache::LayerGeometry& geometry, const cache::CacheConfig& cfg)
+      : capacity_(cfg.capacity),
+        ring_(geometry.policy.kind == cache::LayerPolicy::Kind::Ring),
+        heads_(geometry.n_kv_heads),
+        head_dim_(geometry.head_dim),
+        dtype_(::mlx::core::float32) {
+    detail::require(
+        cache::valid(cfg) && heads_ > 0 && head_dim_ > 0 &&
+            ((ring_ && geometry.policy.window > 0) ||
+             (geometry.policy.kind == cache::LayerPolicy::Kind::Flat &&
+              geometry.policy.window == 0)),
+        "storage: invalid geometry/config");
+    detail::require(
+        cfg.kv_dtype == static_cast<int>(ScalarType::Half) ||
+            cfg.kv_dtype == static_cast<int>(ScalarType::BFloat16) ||
+            cfg.kv_dtype == static_cast<int>(ScalarType::Float),
+        "storage: dtype must be float16, bfloat16 or float32");
+    dtype_ = resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
+    max_write_ =
+        cfg.max_write.value_or(ring_ ? geometry.policy.window : capacity_);
+    const int64_t slots =
+        ring_ ? int64_t{geometry.policy.window} + max_write_ - 1 : capacity_;
+    detail::require(
+        slots > 0 && slots <= std::numeric_limits<int>::max(),
+        "storage: physical storage exceeds integer bounds");
+    slots_ = static_cast<int>(slots);
+    initial_slots_ = ring_ ? slots_ : std::min(cfg.initial_capacity, slots_);
+    check_allocation_bounded(
+        {1, heads_, slots_, head_dim_}, dtype_, "sequence storage");
+  }
+
+  int capacity() const {
+    return capacity_;
+  }
+  int length() const {
+    return length_;
+  }
+  int highwater() const {
+    return highwater_;
+  }
+  int max_write() const {
+    return max_write_;
+  }
+  int slots() const {
+    return slots_;
+  }
+  // Addressable slots in the current view, not the backing allocation size.
+  int buffer_slots() const {
+    return buffers_ ? buffers_->k.shape(2) : 0;
+  }
+  int heads() const {
+    return heads_;
+  }
+  int head_dim() const {
+    return head_dim_;
+  }
+
+  bool retains(int begin, int end) const {
+    const int oldest = ring_ ? std::max(0, highwater_ - slots_) : 0;
+    return begin >= oldest && begin <= end && end <= length_;
+  }
+
+  bool can_rewind(int position, int required_begin) const {
+    return position == 0 ||
+        (position > 0 && position <= length_ &&
+         retains(required_begin, position));
+  }
+
+  void rewind(int position, int required_begin) {
+    detail::require(
+        can_rewind(position, required_begin), "storage: unavailable rewind");
+    length_ = position;
+    // Only a full logical reset can forget the previous eviction boundary.
+    if (position == 0) {
+      highwater_ = 0;
+    }
+  }
+
+  void clear() {
+    buffers_.reset();
+    length_ = highwater_ = 0;
+  }
+
+  Storage clone(int keep, int required_begin, StreamOrDevice s = {}) const {
+    detail::require(
+        keep == length_ || can_rewind(keep, required_begin),
+        "storage: unavailable clone");
+    Storage result = *this;
+    if (keep == 0) {
+      result.clear();
+      return result;
+    }
+    result.length_ = keep;
+    // Rings are already bounded. Keep their mapping and eviction boundary;
+    // functional updates preserve the shared snapshot when either owner writes.
+    if (ring_) {
+      return result;
+    }
+    // Keep existing slack unless the next append needs a smaller buffer.
+    // The first check also bounds keep + 1 by slots_.
+    if (keep >= buffer_slots() ||
+        growth_target(keep, keep + 1) >= buffer_slots()) {
+      return result;
+    }
+    const int target = growth_target(keep, keep);
+    // Share the source allocation. The smaller view bounds future copies
+    // without materializing an intermediate compact buffer.
+    result.buffers_ =
+        KV{detail::tokens(buffers_->k, 0, target, s),
+           detail::tokens(buffers_->v, 0, target, s)};
+    return result;
+  }
+
+  // Cache has already validated tensor ranks, geometry, dtypes and paired
+  // lengths. Check storage invariants, then write every supplied K/V token.
+  // Updates may overlap retained history but never truncate its later suffix.
+  void update(int position, const std::optional<KV>& kv, StreamOrDevice s) {
+    const int n = detail::count(kv);
+    detail::require(
+        position >= 0 && position <= length_ && n >= 0 && n <= max_write_ &&
+            n <= slots_ && n <= capacity_ - position,
+        "storage: update must be dense and within capacity/max_write");
+    detail::require(
+        retains(position, position), "storage: update start has been evicted");
+    if (!kv) {
+      return;
+    }
+    detail::require(n > 0, "storage: use nullopt for empty K/V");
+    const int end = position + n;
+    grow(ring_ ? slots_ : end, s);
+    const int offset = ring_ ? position % slots_ : position;
+    write(buffers_->k, kv->k, offset, s);
+    write(buffers_->v, kv->v, offset, s);
+    length_ = std::max(length_, end);
+    highwater_ = std::max(highwater_, length_);
+  }
+
+  // Slice views in logical order, without joining a wrapped interval.
+  detail::Segments read_segments(int begin, int end, StreamOrDevice s) const {
+    detail::require(
+        retains(begin, end), "storage: requested interval is unavailable");
+    if (begin == end) {
+      return {};
+    }
+    const int offset = ring_ ? begin % slots_ : begin;
+    const int n = end - begin;
+    const int first = std::min(n, slots_ - offset);
+    detail::Segments segments{
+        KV{detail::tokens(buffers_->k, offset, first, s),
+           detail::tokens(buffers_->v, offset, first, s)},
+        std::nullopt};
+    if (first < n) {
+      segments.tail =
+          KV{detail::tokens(buffers_->k, 0, n - first, s),
+             detail::tokens(buffers_->v, 0, n - first, s)};
+    }
+    return segments;
+  }
+
+  // Reads [begin, end) in logical token order, joining wrapped slices only
+  // when necessary. Views and joins remain lazy.
+  std::optional<KV> read(int begin, int end, StreamOrDevice s) const {
+    auto segments = read_segments(begin, end, s);
+    if (!segments.tail) {
+      return segments.head;
+    }
+    return KV{
+        ::mlx::core::concatenate({segments.head->k, segments.tail->k}, 2, s),
+        ::mlx::core::concatenate({segments.head->v, segments.tail->v}, 2, s)};
+  }
+
+ private:
+  int growth_target(int current, int needed) const {
+    detail::require(
+        needed >= 0 && needed <= slots_, "storage: allocation exceeds storage");
+    int target = std::max(current, std::max(initial_slots_, 1));
+    while (target < needed) {
+      // Saturate before adding so doubling cannot overflow.
+      target += std::min(target, slots_ - target);
+    }
+    return target;
+  }
+
+  void grow(int needed, StreamOrDevice s) {
+    const int current = buffer_slots();
+    const int target = growth_target(current, needed);
+    if (needed <= current) {
+      return;
+    }
+    const ::mlx::core::Shape shape{1, heads_, target - current, head_dim_};
+    if (!buffers_) {
+      // Separate bases permit independent donation on the initial write.
+      buffers_ =
+          KV{::mlx::core::zeros(shape, dtype_, s),
+             ::mlx::core::zeros(shape, dtype_, s)};
+    } else {
+      const Tensor pad = ::mlx::core::zeros(shape, dtype_, s);
+      buffers_ =
+          KV{::mlx::core::concatenate({buffers_->k, pad}, 2, s),
+             ::mlx::core::concatenate({buffers_->v, pad}, 2, s)};
+    }
+  }
+
+  // Writes all input tokens starting at physical slot offset, converting to
+  // the storage object's dtype. Any tokens past the end wrap to slot 0.
+  // Replaces buffer with the lazy update result; does not execute or
+  // synchronize.
+  void write(Tensor& buffer, const Tensor& input, int offset, StreamOrDevice s)
+      const {
+    using namespace ::mlx::core;
+    const int n = input.shape(2);
+    const int first = std::min(n, slots_ - offset);
+    const Tensor stored = detail::cast_if_needed(input, dtype_, s);
+    buffer = slice_update(
+        buffer,
+        detail::tokens(stored, 0, first, s),
+        {0, 0, offset, 0},
+        {1, heads_, offset + first, head_dim_},
+        s);
+    const int rest = n - first;
+    if (rest > 0) {
+      buffer = slice_update(
+          buffer,
+          detail::tokens(stored, first, rest, s),
+          {0, 0, 0, 0},
+          {1, heads_, rest, head_dim_},
+          s);
+    }
+  }
+
+  int capacity_, max_write_, slots_;
+  bool ring_;
+  int initial_slots_, heads_, head_dim_;
+  ::mlx::core::Dtype dtype_;
+  std::optional<KV> buffers_;
+  int length_ = 0, highwater_ = 0;
+};
+
+// K/V attention behavior and factory for KVAttentionLayer. Counts describe raw
+// Q/K/V before staging; policies own splitting, retention and direct attention.
+class KVAttentionPolicy : public AttentionLayerFactory {
+ private:
+  friend class detail::KVAttentionLayer;
+
+  const bool is_causal;
+  // Historical update permission is independent of attention causality.
+  const bool allows_history_updates;
+  virtual int query_tokens(int kv_tokens) const {
+    return kv_tokens;
+  }
+  virtual int persistent_tokens(int kv_tokens) const {
+    return kv_tokens;
+  }
+  virtual int required_history_begin(int position) const = 0;
+  virtual int64_t required_slots(int capacity, int max_write) const = 0;
+
+  // Check that the configured storage can satisfy this policy's retention.
+  virtual void validate(const Storage& storage) const {
+    detail::require(
+        storage.slots() >=
+            required_slots(storage.capacity(), storage.max_write()),
+        "sequence: storage cannot cover policy history/write span");
+  }
+
+  // Read-only count/storage checks shared by append admission and updates.
+  // A successful result is persistent growth, excluding temporary block tokens.
+  virtual std::optional<int>
+  admission(const Storage& storage, int position, int kv_tokens) const {
+    if (kv_tokens <= 0 || position < 0 || position > storage.length()) {
+      return std::nullopt;
+    }
+    const int queries = query_tokens(kv_tokens);
+    const int persistent = persistent_tokens(kv_tokens);
+    if (queries <= 0 || queries > kv_tokens ||
+        (is_causal && queries != kv_tokens) || persistent < 0 ||
+        persistent > kv_tokens || persistent > storage.max_write() ||
+        persistent > storage.slots() ||
+        int64_t{position} + persistent > storage.capacity() ||
+        int64_t{position} + kv_tokens > std::numeric_limits<int>::max() ||
+        !storage.retains(required_history_begin(position), position)) {
+      return std::nullopt;
+    }
+    return persistent;
+  }
+
+  // Validate without mutation and return the persistent token count.
+  // complete_prefix is the cache's last fully constructed multi-layer prefix.
+  virtual int validate(
+      const Storage& storage,
+      int position,
+      int complete_prefix,
+      const Tensor& q,
+      const KV& incoming,
+      float scale) const {
+    using detail::require;
+    if (allows_history_updates) {
+      require(
+          position >= 0 && position <= storage.length(),
+          "sequence: aligned update must not leave a hole");
+    } else {
+      require(
+          position >= 0 && position == complete_prefix,
+          "sequence: update must start at complete prefix");
+    }
+    require(
+        q.ndim() == 4 && q.shape(0) == 1 && q.shape(1) > 0 &&
+            q.shape(1) % storage.heads() == 0 && q.shape(2) > 0 &&
+            q.shape(3) == storage.head_dim() && detail::floating(q.dtype()) &&
+            std::isfinite(scale),
+        "sequence: invalid query geometry, dtype or scale");
+    for (const Tensor* t : {&incoming.k, &incoming.v}) {
+      require(
+          t->ndim() == 4 && t->shape(0) == 1 &&
+              t->shape(1) == storage.heads() &&
+              t->shape(3) == storage.head_dim() && t->shape(2) > 0 &&
+              t->dtype() == q.dtype(),
+          "sequence: invalid K/V geometry or dtype");
+    }
+    const int n = incoming.k.shape(2);
+    require(
+        incoming.v.shape(2) == n && q.shape(2) == query_tokens(n),
+        "sequence: K/V or policy query counts differ");
+    const auto persistent = admission(storage, position, n);
+    require(
+        persistent.has_value(),
+        "sequence: invalid policy counts, capacity/write limits, positions "
+        "or retained prefix");
+    return *persistent;
+  }
+
+  virtual Tensor update_and_attend(
+      Storage& storage,
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      StreamOrDevice s,
+      std::optional<detail::CachedMask>& mask) const = 0;
+
+ protected:
+  explicit KVAttentionPolicy(bool causal, bool history_updates = false)
+      : is_causal(causal), allows_history_updates(history_updates) {}
+
+ private:
+  std::unique_ptr<AttentionLayer> create_layer(
+      const std::shared_ptr<const AttentionLayerFactory>& owner,
+      const cache::LayerGeometry& geometry,
+      const cache::CacheConfig& cfg) const final;
+};
+
+class Full final : public KVAttentionPolicy {
+ public:
+  Full() : KVAttentionPolicy(true, true) {}
+
+ private:
+  int required_history_begin(int /*position*/) const override {
+    return 0;
+  }
+  int64_t required_slots(int capacity, int /*max_write*/) const override {
+    return capacity;
+  }
+  Tensor update_and_attend(
+      Storage& storage,
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      StreamOrDevice s,
+      std::optional<detail::CachedMask>& /*mask*/) const override {
+    storage.update(position, incoming, s);
+    const int end = position + incoming.k.shape(2);
+    const KV kv = *storage.read(0, end, s);
+    return ::mlx::core::fast::scaled_dot_product_attention(
+        q,
+        detail::cast_if_needed(kv.k, q.dtype(), s),
+        detail::cast_if_needed(kv.v, q.dtype(), s),
+        scale,
+        "causal",
+        std::nullopt,
+        std::nullopt,
+        false,
+        s);
+  }
+};
+
+class SWA final : public KVAttentionPolicy {
+ public:
+  explicit SWA(int window) : KVAttentionPolicy(true, true), window_(window) {
+    detail::require(window > 0, "SWA: window must be positive");
+  }
+
+ private:
+  int required_history_begin(int position) const override {
+    return std::max(0, position - window_ + 1);
+  }
+  int64_t required_slots(int capacity, int max_write) const override {
+    return std::min<int64_t>(capacity, int64_t{window_} + max_write - 1);
+  }
+  Tensor update_and_attend(
+      Storage& storage,
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      StreamOrDevice s,
+      std::optional<detail::CachedMask>& cached_mask) const override {
+    using namespace ::mlx::core;
+    const int begin = required_history_begin(position);
+    storage.update(position, incoming, s);
+    const int end = position + incoming.k.shape(2);
+    const KV kv = *storage.read(begin, end, s);
+    const int T = q.shape(2), S = kv.k.shape(2);
+    const bool windowed = T > 1 && window_ < S;
+    std::optional<Tensor> mask;
+    if (windowed) {
+      const Stream stream = to_stream(s);
+      if (!cached_mask || cached_mask->T != T || cached_mask->S != S ||
+          cached_mask->window != window_ || !(cached_mask->stream == stream)) {
+        check_allocation_bounded({T, S}, int32, "SWA mask");
+        // Lower-right causal alignment, additionally bounded on the left.
+        Tensor diff = subtract(
+            reshape(arange(S, int32, stream), {1, S}, stream),
+            reshape(arange(T, int32, stream), {T, 1}, stream),
+            stream);
+        Tensor built = reshape(
+            logical_and(
+                less_equal(diff, array(S - T), stream),
+                greater_equal(diff, array(S - T - window_ + 1), stream),
+                stream),
+            {1, 1, T, S},
+            stream);
+        cached_mask =
+            detail::CachedMask{T, S, window_, std::move(built), stream};
+      }
+      mask = cached_mask->mask;
+    }
+    return fast::scaled_dot_product_attention(
+        q,
+        detail::cast_if_needed(kv.k, q.dtype(), s),
+        detail::cast_if_needed(kv.v, q.dtype(), s),
+        scale,
+        T == 1 || windowed ? "" : "causal",
+        mask,
+        std::nullopt,
+        false,
+        s);
+  }
+
+  const int window_;
+};
+
+// Incoming K/V are [new context, block]. Positive blocks require exactly
+// dflash_block_size queries; zero persists all K/V with one dummy query.
+// Block size comes from shared cache geometry; retention is layer-specific.
+class DFlash final : public KVAttentionPolicy {
+ public:
+  explicit DFlash(
+      const cache::CacheGeometry& geometry,
+      std::optional<int> window = std::nullopt)
+      : KVAttentionPolicy(false),
+        block_size_(geometry.dflash_block_size.value_or(-1)),
+        window_(window) {
+    detail::require(
+        block_size_ >= 0,
+        "DFlash: geometry must specify a nonnegative block size");
+    detail::require(
+        !window_ || *window_ > 0, "DFlash: window must be positive");
+  }
+
+ private:
+  int query_tokens(int /*kv_tokens*/) const override {
+    return block_size_ > 0 ? block_size_ : 1;
+  }
+  int persistent_tokens(int kv_tokens) const override {
+    return kv_tokens - block_size_;
+  }
+  int required_history_begin(int position) const override {
+    return window_ ? std::max(0, position - *window_) : 0;
+  }
+  int64_t required_slots(int capacity, int /*max_write*/) const override {
+    return window_ ? std::min(capacity, *window_) : capacity;
+  }
+  Tensor update_and_attend(
+      Storage& storage,
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      StreamOrDevice s,
+      std::optional<detail::CachedMask>& /*mask*/) const override {
+    const int context = persistent_tokens(incoming.k.shape(2));
+    std::optional<KV> prefix;
+    if (context > 0) {
+      prefix = block_size_ == 0 ? incoming
+                                : KV{detail::tokens(incoming.k, 0, context, s),
+                                     detail::tokens(incoming.v, 0, context, s)};
+    }
+    storage.update(position, prefix, s);
+    const std::optional<KV> block = block_size_ > 0
+        ? std::optional<KV>(
+              KV{detail::tokens(incoming.k, context, block_size_, s),
+                 detail::tokens(incoming.v, context, block_size_, s)})
+        : std::nullopt;
+    const int end = position + context;
+    const auto segments =
+        storage.read_segments(required_history_begin(end), end, s);
+    const KV kv = [&]() -> KV {
+      if (!segments.tail && !(segments.head && block)) {
+        const auto& part = segments.head ? segments.head : block;
+        detail::require(part.has_value(), "DFlash: empty attention interval");
+        return KV{
+            detail::cast_if_needed(part->k, q.dtype(), s),
+            detail::cast_if_needed(part->v, q.dtype(), s)};
+      }
+      std::vector<Tensor> keys, values;
+      keys.reserve(3);
+      values.reserve(3);
+      // Cast every history segment and the block before the single join.
+      for (const auto* part : {&segments.head, &segments.tail, &block}) {
+        if (*part) {
+          keys.push_back(detail::cast_if_needed((*part)->k, q.dtype(), s));
+          values.push_back(detail::cast_if_needed((*part)->v, q.dtype(), s));
+        }
+      }
+      return KV{
+          ::mlx::core::concatenate(keys, 2, s),
+          ::mlx::core::concatenate(values, 2, s)};
+    }();
+    return ::mlx::core::fast::scaled_dot_product_attention(
+        q, kv.k, kv.v, scale, "", std::nullopt, std::nullopt, false, s);
+  }
+
+  const int block_size_;
+  const std::optional<int> window_;
+};
+
+class KVAttentionLayer final : public AttentionLayer {
+ public:
+  KVAttentionLayer(
+      std::shared_ptr<const KVAttentionPolicy> policy,
+      const cache::LayerGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : policy_(std::move(policy)), storage_(geometry, cfg) {
+    require(policy_ != nullptr, "sequence: null KV policy");
+    policy_->validate(storage_);
+  }
+
+ private:
+  int length() const override {
+    return storage_.length();
+  }
+  QuerySpan query_span(int kv_tokens) const override {
+    require(kv_tokens > 0, "sequence: query span needs positive K/V count");
+    const int count = policy_->query_tokens(kv_tokens);
+    require(
+        count > 0 && count <= kv_tokens &&
+            (!policy_->is_causal || count == kv_tokens),
+        "sequence: invalid policy query span");
+    return {kv_tokens - count, count};
+  }
+  std::optional<int> admission(int position, int kv_tokens) const override {
+    return policy_->admission(storage_, position, kv_tokens);
+  }
+  bool can_extend(int n) const override {
+    return n >= 0 && n <= storage_.capacity() - length() &&
+        storage_.retains(policy_->required_history_begin(length()), length());
+  }
+  bool can_rewind(int position) const override {
+    if (position < 0 || position > length()) {
+      return false;
+    }
+    return storage_.can_rewind(
+        position,
+        position == 0 ? 0 : policy_->required_history_begin(position));
+  }
+  void rewind(int position) override {
+    storage_.rewind(
+        position,
+        position == 0 ? 0 : policy_->required_history_begin(position));
+  }
+  void clear() override {
+    storage_.clear();
+  }
+  std::unique_ptr<AttentionLayer> clone(int keep) const override {
+    auto result = std::make_unique<KVAttentionLayer>(*this);
+    result->storage_ = storage_.clone(
+        keep, keep == 0 ? 0 : policy_->required_history_begin(keep));
+    return result;
+  }
+  UpdateInfo validate(
+      int position,
+      int complete_prefix,
+      const Tensor& q,
+      const KV& incoming,
+      float scale) const override {
+    const int persistent = policy_->validate(
+        storage_, position, complete_prefix, q, incoming, scale);
+    require(
+        position >= 0 && persistent >= 0 &&
+            int64_t{position} + persistent <= storage_.capacity(),
+        "sequence: invalid KV update end");
+    const int end = position + persistent;
+    return {end, policy_->allows_history_updates && end <= length()};
+  }
+  Tensor update_and_attend(
+      int position,
+      const Tensor& q,
+      const KV& incoming,
+      float scale,
+      const UpdateInfo& update,
+      StreamOrDevice s,
+      std::optional<CachedMask>& mask) override {
+    Storage staged = storage_;
+    Tensor output = policy_->update_and_attend(
+        staged, position, q, incoming, scale, s, mask);
+    require(
+        staged.length() == std::max(length(), update.end),
+        "sequence: policy changed persistent growth");
+    static_assert(std::is_nothrow_move_assignable_v<Storage>);
+    storage_ = std::move(staged);
+    return output;
+  }
+
+  std::shared_ptr<const KVAttentionPolicy> policy_;
+  Storage storage_;
+};
+
+struct LayerEntry {
+  std::unique_ptr<AttentionLayer> attention;
+  bool visited = false;
+};
+
+inline std::unique_ptr<AttentionLayer> KVAttentionPolicy::create_layer(
+    const std::shared_ptr<const AttentionLayerFactory>& owner,
+    const cache::LayerGeometry& geometry,
+    const cache::CacheConfig& cfg) const {
+  return std::make_unique<detail::KVAttentionLayer>(
+      std::shared_ptr<const KVAttentionPolicy>(owner, this), geometry, cfg);
+}
+
+} // namespace detail
+} // namespace sequence
+
+// Single-sequence implementation used by MLXBatchedCache.
+// Capacity limits persistent logical length per sequence, not temporary blocks.
+// Example (one layer, flat storage, four-token draft block):
+//   geometry.dflash_block_size = 4;
+//   MLXSequenceCache c(geometry, cfg);
+//   Tensor out = c.attend(0, positions, q, k, v, scale, stream);
+// K/V contain [new context, block]; positions cover both, and Q covers the
+// block.
 //
-// Flat and ring layers can be mixed (gemma4 alternates them): the planner emits
-// physical runs either way, so they differ here only in how many slots the pool
-// holds and whether a step's runs wrap.
-class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
+// A layer ID selects independently owned state. Full/SWA allow retained
+// overwrites, writing supplied K/V and preserving later cached values;
+// attention is bounded by the call's persistent end, excluding that later
+// suffix. Overwrites do not change forward bookkeeping. A forward advances each
+// state once, in any order, to an identical persistent end. DFlash keeps one
+// visit per forward even with zero growth. Mixed policies require aligned
+// logical growth. Updating other layers after a semantic prefix change is the
+// caller's duty. length() reports the last fully constructed forward, not GPU
+// completion. Graph-construction failures preserve the failing layer, not
+// earlier layers. Execution failures cannot roll back published state;
+// clear() drops its roots.
+//
+// Inputs must use MLX-managed storage, not non-owning external-memory wrappers.
+// Graphs retain the storage they need. Execution and synchronization belong to
+// the caller; neither attend() nor clear() executes work or waits.
+// Calls and lifecycle controls must be externally serialized.
+class MLXSequenceCache final : public cache::Cache,
+                               public MLXCache,
+                               public cache::SequenceControl {
  public:
   MLXSequenceCache(
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg)
-      : cache::SequenceCache(checked(geometry, cfg), cfg) {
-    const ::mlx::core::Dtype dt =
-        resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(geometry.layers.size());
-    vpool_.reserve(geometry.layers.size());
-    window_.reserve(geometry.layers.size());
-    for (const cache::LayerGeometry& lc : geometry.layers) {
-      const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
-      window_.push_back(ring ? lc.policy.window : 0);
-      // Flat retains all history, so its pool may reach the full cap and starts
-      // small. A ring layer recycles a fixed window + max_write - 1 slots.
-      const int max_slots = ring ? lc.policy.window +
-              (cfg.max_write ? *cfg.max_write : lc.policy.window) - 1
-                                 : cfg.capacity;
-      const int initial = ring ? max_slots : cfg.initial_capacity;
-      kpool_.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
-      vpool_.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
-    }
-  }
+      : MLXSequenceCache(geometry, cfg, make_factories(geometry)) {}
 
-  // A fork at an earlier position. Flat layers take a pool holding just the
-  // prefix; ring layers share the source's, whose wrapped slot mapping must
-  // not change. Precondition: other.can_rewind(upto), which seq_clone checks.
   MLXSequenceCache(
-      const MLXSequenceCache& other,
-      int upto,
-      ::mlx::core::Stream s)
-      : cache::SequenceCache(other), window_(other.window_) {
-    if (upto <= 0 || !rewind(upto)) {
-      throw std::runtime_error("fork: position is not one this can rewind to");
-    }
-    kpool_.reserve(other.kpool_.size());
-    vpool_.reserve(other.vpool_.size());
-    for (size_t l = 0; l < window_.size(); ++l) {
-      const bool flat = window_[l] == 0;
-      kpool_.push_back(
-          flat ? other.kpool_[l].clone_prefix(upto, s) : other.kpool_[l]);
-      vpool_.push_back(
-          flat ? other.vpool_[l].clone_prefix(upto, s) : other.vpool_[l]);
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg,
+      std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
+          factories)
+      : capacity_(cfg.capacity) {
+    using sequence::detail::require;
+    require(cache::valid(cfg), "sequence: invalid config");
+    require(!geometry.layers.empty(), "sequence: no layers");
+    require(
+        factories.size() == geometry.layers.size(), "sequence: factory count");
+    layers_.reserve(geometry.layers.size());
+    for (size_t l = 0; l < geometry.layers.size(); ++l) {
+      auto attention = sequence::AttentionLayerFactory::create(
+          std::move(factories[l]), geometry.layers[l], cfg);
+      layers_.push_back({std::move(attention)});
     }
   }
 
-  AttendSpec update_and_fetch(
-      int layer,
-      const std::vector<int32_t>& positions,
-      const Tensor& k,
-      const Tensor& v,
-      StreamOrDevice s) {
-    if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
-      throw std::out_of_range("update_and_fetch: layer out of range");
+  // Lazy, independently writable fork with prefix-aware per-layer storage.
+  MLXSequenceCache(const MLXSequenceCache& source, int keep)
+      : capacity_(source.capacity_) {
+    using sequence::detail::require;
+    require(source.can_fork(keep), "sequence: unavailable fork");
+    cached_mask_ = source.cached_mask_;
+    layers_.reserve(source.layers_.size());
+    for (const auto& layer : source.layers_) {
+      auto attention = layer.attention->clone(keep);
+      require(
+          attention != nullptr && attention->length() == keep,
+          "sequence: invalid cloned layer");
+      layers_.push_back({std::move(attention)});
     }
-    const int T = static_cast<int>(k.shape(2)); // BHSD: seq axis is 2
+    reset_forward(keep);
+  }
 
-    std::optional<cache::SeqStepPlan> p =
-        this->plan(layer, run_start(positions, T), T);
-    if (!p) {
-      throw std::runtime_error(
-          "update_and_fetch: step exceeds capacity or invalid layer");
-    }
-    const size_t l = static_cast<size_t>(layer);
-    write_runs(kpool_[l], p->write, p->n_write, k, s);
-    write_runs(vpool_[l], p->write, p->n_write, v, s);
-    Tensor K = read_runs(kpool_[l], p->read, p->n_read, s);
-    Tensor V = read_runs(vpool_[l], p->read, p->n_read, s);
-    this->commit(*p);
+  MLXSequenceCache(const MLXSequenceCache&) = delete;
+  MLXSequenceCache& operator=(const MLXSequenceCache&) = delete;
 
-    // A single decode token needs no mask -- its span is exactly what it may
-    // attend, on a ring layer as much as a flat one.
-    if (T == 1) {
-      return AttendSpec{K, V, AttendSpec::Mask::None, std::nullopt};
+  // Maximum persistent logical length of this sequence.
+  int capacity() const override {
+    return capacity_;
+  }
+  int length() const {
+    return length_;
+  }
+  // Includes persistent growth in a partially constructed forward.
+  int reserved_length() const {
+    return pending_end_.value_or(length_);
+  }
+  using QuerySpan = sequence::AttentionLayer::QuerySpan;
+
+  // Layout only: valid for placed overwrites and unfinished forwards too.
+  QuerySpan query_span(int layer, int kv_tokens) const {
+    using sequence::detail::require;
+    const auto& attention = layers_[checked_layer(layer)].attention;
+    require(kv_tokens > 0, "sequence: query span needs positive K/V count");
+    const auto span = attention->query_span(kv_tokens);
+    require(
+        span.begin >= 0 && span.count > 0 &&
+            int64_t{span.begin} + span.count <= kv_tokens,
+        "sequence: invalid layer query span");
+    return span;
+  }
+
+  // Append preflight only; no tensors are constructed or evaluated.
+  // Temporary block tokens do not consume this sequence's persistent capacity.
+  std::optional<int> admission_growth(int kv_tokens) const {
+    if (kv_tokens <= 0 || pending_end_ ||
+        int64_t{length_} + kv_tokens > std::numeric_limits<int>::max()) {
+      return std::nullopt;
     }
-    // A ring layer bounds each query to its own window. That only bites when
-    // the window is narrower than the span (a multi-token step reads the union
-    // of its queries' windows, window + T - 1 cells); otherwise plain causal is
-    // exact and MLX applies it fused, with no mask tensor.
-    const int S = static_cast<int>(K.shape(2));
-    if (window_[l] > 0 && window_[l] < S) {
-      return AttendSpec{
-          K,
-          V,
-          AttendSpec::Mask::Explicit,
-          window_causal_mask(T, S, window_[l], s)};
+    std::optional<int> growth;
+    for (const auto& layer : layers_) {
+      const auto admitted = layer.attention->admission(length_, kv_tokens);
+      if (!admitted || *admitted < 0 || *admitted > kv_tokens ||
+          *admitted > capacity_ - length_ || (growth && *growth != *admitted)) {
+        return std::nullopt;
+      }
+      growth = admitted;
     }
-    // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
-    // both correct with the new tokens at the tail.
-    return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+    return growth;
+  }
+
+  bool can_admit(int kv_tokens) const {
+    return admission_growth(kv_tokens).has_value();
+  }
+
+  bool can_extend(int n = 1) const override {
+    if (pending_end_ || n < 0 || n > capacity_ - length_) {
+      return false;
+    }
+    for (const auto& layer : layers_) {
+      if (!layer.attention->can_extend(n)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  bool can_fork(int keep) const {
+    return !pending_end_ && keep >= 0 && keep <= length_ &&
+        (keep == length_ || can_rewind(keep));
+  }
+  bool can_rewind(int position) const {
+    if (position == 0) {
+      return true;
+    }
+    if (pending_end_ || position < 0 || position > length_) {
+      return false;
+    }
+    for (const auto& layer : layers_) {
+      if (!layer.attention->can_rewind(position)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  // Zero resets all states even in an unfinished forward.
+  bool rewind(int position) override {
+    if (!can_rewind(position)) {
+      return false;
+    }
+    for (auto& layer : layers_) {
+      layer.attention->rewind(position);
+    }
+    reset_forward(position);
+    return true;
+  }
+  void clear() override {
+    for (auto& layer : layers_) {
+      layer.attention->clear();
+    }
+    cached_mask_.reset();
+    reset_forward(0);
   }
 
   Tensor attend(
@@ -154,99 +976,114 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
       const Tensor& v,
       float scale,
       StreamOrDevice s) override {
-    return ::executorch::backends::mlx::attend(
-        update_and_fetch(layer, positions, k, v, s), q, scale, s);
+    using sequence::detail::require;
+    const size_t l = checked_layer(layer);
+    require(!positions.empty(), "sequence: positions must not be empty");
+    const sequence::KV incoming{k, v};
+    require(
+        k.ndim() > 2 && k.shape(2) > 0 &&
+            positions.size() == static_cast<size_t>(k.shape(2)),
+        "sequence: expected one position per incoming K/V token");
+    require(
+        positions.front() >= 0 &&
+            int64_t{positions.front()} + k.shape(2) <=
+                std::numeric_limits<int>::max(),
+        "sequence: incoming K/V positions exceed integer bounds");
+    for (size_t i = 0; i < positions.size(); ++i) {
+      require(
+          int64_t{positions[i]} ==
+              int64_t{positions.front()} + static_cast<int64_t>(i),
+          "sequence: positions must be contiguous and dense");
+    }
+    const auto update = layers_[l].attention->validate(
+        positions.front(), length_, q, incoming, scale);
+    return attend_validated(
+        l, positions.front(), q, incoming, update, scale, s);
   }
 
  protected:
   void* face(cache::FaceId id) override {
-    if (void* p = cache::SequenceCache::face(id)) {
-      return p;
-    }
-    return cache::expose<MLXCache>(this, id);
+    return cache::expose<cache::SequenceControl, MLXCache>(this, id);
   }
 
  private:
-  // A sequence cache holds one run of one sequence, so the step is described by
-  // where it starts; the remaining positions carry no information beyond
-  // confirming that. A step this cache cannot represent is refused rather than
-  // silently stored at the wrong positions.
-  static int run_start(const std::vector<int32_t>& positions, int T) {
-    if (static_cast<int>(positions.size()) != T) {
-      throw std::runtime_error(
-          "update_and_fetch: one position per key/value token expected");
-    }
-    for (int i = 1; i < T; ++i) {
-      if (positions[i] != positions[0] + i) {
-        throw std::runtime_error(
-            "update_and_fetch: sequence cache needs a contiguous run");
+  static std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
+  make_factories(const cache::CacheGeometry& geometry) {
+    std::vector<std::shared_ptr<const sequence::AttentionLayerFactory>>
+        factories;
+    factories.reserve(geometry.layers.size());
+    for (const auto& layer : geometry.layers) {
+      const bool windowed = layer.policy.kind == cache::LayerPolicy::Kind::Ring;
+      if (geometry.dflash_block_size.has_value()) {
+        factories.push_back(std::make_shared<sequence::detail::DFlash>(
+            geometry,
+            windowed ? std::optional<int>(layer.policy.window) : std::nullopt));
+      } else if (windowed) {
+        factories.push_back(
+            std::make_shared<sequence::detail::SWA>(layer.policy.window));
+      } else {
+        factories.push_back(std::make_shared<sequence::detail::Full>());
       }
     }
-    return positions[0];
+    return factories;
   }
 
-  // Scatter `update` across the step's runs. Runs are in logical order, so
-  // consecutive slices of `update` map to consecutive runs. A flat step is one
-  // run; a ring step splits in two when it wraps the pool.
-  static void write_runs(
-      Pool& pool,
-      const cache::Run* runs,
-      int n,
-      const Tensor& update,
+  void reset_forward(int length) noexcept {
+    length_ = length;
+    pending_end_.reset();
+    visited_count_ = 0;
+    for (auto& layer : layers_) {
+      layer.visited = false;
+    }
+  }
+
+  Tensor attend_validated(
+      size_t l,
+      int position,
+      const Tensor& q,
+      const sequence::KV& incoming,
+      const sequence::AttentionLayer::UpdateInfo& update,
+      float scale,
       StreamOrDevice s) {
-    if (n == 1) {
-      pool.write(runs[0].start, runs[0].len, update, s);
-      return;
+    using sequence::detail::require;
+    auto& layer = layers_[l];
+    require(
+        update.end >= position && update.end <= capacity_ &&
+            int64_t{update.end} - position <= incoming.k.shape(2) &&
+            (update.overwrite ? update.end <= layer.attention->length()
+                              : update.end >= length_),
+        "sequence: invalid layer update end");
+    if (!update.overwrite) {
+      require(!layer.visited, "sequence: repeated layer within forward");
+      require(
+          !pending_end_ || *pending_end_ == update.end,
+          "sequence: unequal persistent ends");
     }
-    const int H = static_cast<int>(update.shape(1));
-    const int D = static_cast<int>(update.shape(3));
-    int off = 0;
-    for (int i = 0; i < n; ++i) {
-      pool.write(
-          runs[i].start,
-          runs[i].len,
-          ::mlx::core::slice(
-              update,
-              ::mlx::core::Shape{0, 0, off, 0},
-              ::mlx::core::Shape{1, H, off + runs[i].len, D},
-              ::mlx::core::Shape{1, 1, 1, 1},
-              s),
-          s);
-      off += runs[i].len;
+    Tensor output = layer.attention->update_and_attend(
+        position, q, incoming, scale, update, s, cached_mask_);
+    if (!update.overwrite) {
+      pending_end_ = update.end;
+      layer.visited = true;
+      if (++visited_count_ == layers_.size()) {
+        reset_forward(update.end);
+      }
     }
+    return output;
   }
 
-  // Gather the step's runs into the retained window, oldest -> newest.
-  static Tensor
-  read_runs(const Pool& pool, const cache::Run* runs, int n, StreamOrDevice s) {
-    if (n == 1) {
-      return pool.read(runs[0].start, runs[0].len, s);
+  size_t checked_layer(int layer) const {
+    if (layer < 0 || static_cast<size_t>(layer) >= layers_.size()) {
+      throw std::out_of_range("sequence: layer out of range");
     }
-    std::vector<Tensor> parts;
-    parts.reserve(static_cast<size_t>(n));
-    for (int i = 0; i < n; ++i) {
-      parts.push_back(pool.read(runs[i].start, runs[i].len, s));
-    }
-    return ::mlx::core::concatenate(parts, 2, s);
+    return static_cast<size_t>(layer);
   }
 
-  // Enforce the neutral contract as an exception, the failure mode this layer
-  // already uses. Runs as the base initializer's argument because
-  // SequenceCache's constructor reads the geometry before this body runs.
-  static const cache::CacheGeometry& checked(
-      const cache::CacheGeometry& geometry,
-      const cache::CacheConfig& cfg) {
-    if (!cache::valid(geometry, cfg)) {
-      throw std::runtime_error("MLXSequenceCache: invalid geometry or config");
-    }
-    return geometry;
-  }
-
-  std::vector<Pool> kpool_;
-  std::vector<Pool> vpool_;
-  std::vector<int> window_; // per layer; 0 = flat (unbounded history)
+  int capacity_;
+  std::vector<sequence::detail::LayerEntry> layers_;
+  std::optional<sequence::detail::CachedMask> cached_mask_;
+  size_t visited_count_ = 0;
+  int length_ = 0;
+  std::optional<int> pending_end_;
 };
 
-} // namespace mlx
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::mlx

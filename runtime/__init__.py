@@ -114,9 +114,10 @@ from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
-    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]  # noqa: F401
         ExecuTorchMethod,
         ExecuTorchProgram,
+        ExecuTorchResult,
         MethodMeta,
         Verification,
     )
@@ -135,16 +136,24 @@ class Method:
     def __init__(self, method: ExecuTorchMethod) -> None:
         self._method = method
 
-    def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
+    def execute(
+        self, inputs: Sequence[Any], clone_outputs: bool = True
+    ) -> Sequence[Any]:
         """Executes the method with the given inputs.
 
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
+                Without PyTorch, pass NumPy arrays, other buffers such as
+                memoryview, DLPack objects such as CuPy arrays, or
+                ExecuTorchResult values. Scalar inputs take Python numbers.
+            clone_outputs: If False, the outputs share the method's memory and
+                a later execution may overwrite them, which avoids a copy.
 
         Returns:
-            A list of output values, typically torch.Tensor objects.
+            A list of output values, typically torch.Tensor objects. Without
+            PyTorch, tensor outputs are ExecuTorchResult objects.
         """
-        return self._method(inputs)
+        return self._method(inputs, clone_outputs=clone_outputs)
 
     @property
     def metadata(self) -> MethodMeta:
@@ -187,9 +196,11 @@ class Program:
         program placed them. A method whose buffers are all on the host shares
         one set of arenas with every other host-only method of this program,
         sized to the largest of them, so two such methods overwrite each
-        other's intermediate values. Outputs are copied out on every call, so
-        that sharing does not change what execute returns. A method with any
-        buffer placed on an accelerator gets its own arenas instead, claimed
+        other's intermediate values. By default execute copies its outputs out,
+        so that sharing does not change what it returns. With
+        ``clone_outputs=False`` the outputs share that memory, so the next
+        execution of any method of this program may overwrite them. A method
+        with any buffer placed on an accelerator gets its own arenas instead, claimed
         when that method is first loaded and owned by that method until the
         method itself is released. This program caches every method it loads,
         so in normal use those arenas live as long as the program does. A
@@ -263,6 +274,20 @@ class BackendRegistry:
         """
         return self._legacy_module._is_available(backend_name)
 
+    def set_option(
+        self, backend_name: str, options: Dict[str, Union[bool, int, str]]
+    ) -> None:
+        """Sets process-wide options of a backend, for example
+        ``set_option("XnnpackBackend", {"weight_cache_enabled": True})``."""
+        self._legacy_module._set_option(backend_name, options)
+
+    def get_option(
+        self, backend_name: str, options: Dict[str, Union[bool, int, str]]
+    ) -> Dict[str, Union[bool, int, str]]:
+        """Returns the backend's current values for the keys of ``options``,
+        whose values set the expected types."""
+        return self._legacy_module._get_option(backend_name, options)
+
 
 class OperatorRegistry:
     """The registry of operators that are available to the runtime."""
@@ -311,6 +336,7 @@ class Runtime:
         enable_etdump: bool = False,
         debug_buffer_size: int = 0,
         data_path: Optional[Union[Path, str]] = None,
+        backend_options: Optional[Dict[str, Dict[str, Union[bool, int, str]]]] = None,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
@@ -325,6 +351,8 @@ class Runtime:
                 Only used when enable_etdump=True. Default is 0.
             data_path: Path to a .ptd file holding data the program keeps outside the PTE,
                 such as the weights a CUDA export writes to a separate file.
+            backend_options: Load-time options for each backend, keyed by backend name,
+                used by every method loaded from this program.
 
         Returns:
             The loaded Program instance.
@@ -336,6 +364,7 @@ class Runtime:
                 debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
                 data_path=str(data_path) if data_path is not None else None,
+                backend_options=backend_options or {},
             )
             return Program(p, data=None)
         elif isinstance(data, bytes):
@@ -355,6 +384,7 @@ class Runtime:
             debug_buffer_size=debug_buffer_size,
             program_verification=verification,
             data_path=str(data_path) if data_path is not None else None,
+            backend_options=backend_options or {},
         )
 
         return Program(p, data=data_bytes)

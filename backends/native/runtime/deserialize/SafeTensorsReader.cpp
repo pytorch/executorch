@@ -8,14 +8,14 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
-#include <cstring>
 #include <limits>
-#include <numeric>
 #include <stdexcept>
 #include <string_view>
 
+#include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 #include <executorch/backends/native/runtime/deserialize/Json.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 
 namespace ptn {
 namespace {
@@ -77,17 +77,22 @@ std::vector<int64_t> read_sizes(const Json& shape, const std::string& name) {
     throw std::runtime_error(
         "safetensors: entry '" + name + "' shape is not an array");
   }
+  if (shape.size() > detail::kMaxTensorRank) {
+    throw ResourceLimitError(
+        "safetensors: entry '" + name + "' exceeds tensor rank limit");
+  }
   std::vector<int64_t> sizes;
+  sizes.reserve(shape.size());
   for (const Json& dim : shape) {
     if (!dim.is_number_unsigned()) {
       throw std::runtime_error(
           "safetensors: entry '" + name +
-          "' has a non-negative integer dimension");
+          "' has a dimension that is not a non-negative integer");
     }
     const uint64_t value = dim.get<uint64_t>();
-    if (value > static_cast<uint64_t>(INT64_MAX)) {
-      throw std::runtime_error(
-          "safetensors: entry '" + name + "' has an out-of-range dimension");
+    if (value > detail::kMaxTensorDimension) {
+      throw ResourceLimitError(
+          "safetensors: entry '" + name + "' exceeds dimension limit");
     }
     sizes.push_back(static_cast<int64_t>(value));
   }
@@ -103,12 +108,10 @@ size_t numel_of(const std::vector<int64_t>& sizes, const std::string& name) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' has a negative dimension");
     }
-    const size_t d = static_cast<size_t>(dim);
-    if (d != 0 && numel > SIZE_MAX / d) {
-      throw std::runtime_error(
+    if (!detail::checked_mul(numel, static_cast<size_t>(dim), numel)) {
+      throw ResourceLimitError(
           "safetensors: entry '" + name + "' element count overflows");
     }
-    numel *= d;
   }
   return numel;
 }
@@ -116,15 +119,14 @@ size_t numel_of(const std::vector<int64_t>& sizes, const std::string& name) {
 } // namespace
 
 size_t SafeTensorsReader::header_size(ByteSpan prefix) {
-  static_assert(
-      std::endian::native == std::endian::little,
-      "the length prefix is little-endian; a big-endian host needs a swap");
   if (prefix.size() < kLengthPrefixSize) {
     throw std::runtime_error(
         "safetensors: blob is shorter than its length prefix");
   }
   uint64_t size = 0;
-  std::memcpy(&size, prefix.data(), kLengthPrefixSize);
+  for (size_t i = 0; i < kLengthPrefixSize; ++i) {
+    size |= static_cast<uint64_t>(prefix[i]) << (8 * i);
+  }
   if (size > std::numeric_limits<size_t>::max()) {
     throw std::runtime_error("safetensors: header is too large");
   }
@@ -133,6 +135,9 @@ size_t SafeTensorsReader::header_size(ByteSpan prefix) {
 
 SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
   const size_t header_len = header_size(blob);
+  if (header_len > detail::kMaxJsonBytes) {
+    throw ResourceLimitError("safetensors: header exceeds size limit");
+  }
   if (header_len > blob.size() - kLengthPrefixSize) {
     throw std::runtime_error("safetensors: header length exceeds the blob");
   }
@@ -146,11 +151,14 @@ SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
 SafeTensorsReader SafeTensorsReader::open_header(
     ByteSpan header_bytes,
     size_t data_size) {
+  if (header_bytes.size() > detail::kMaxJsonBytes) {
+    throw ResourceLimitError("safetensors: header exceeds size limit");
+  }
   const std::string_view header_text(
       reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
   Json header;
   try {
-    header = Json::parse(header_text);
+    header = parse_json(header_text);
   } catch (const Json::exception& error) {
     throw std::runtime_error(
         "safetensors: invalid JSON header: " + std::string(error.what()));
@@ -158,8 +166,13 @@ SafeTensorsReader SafeTensorsReader::open_header(
   if (!header.is_object()) {
     throw std::runtime_error("safetensors: header is not a JSON object");
   }
+  if (header.size() > detail::kMaxTensorCount) {
+    throw ResourceLimitError("safetensors: tensor count exceeds limit");
+  }
 
   SafeTensorsReader out;
+  std::vector<std::pair<size_t, size_t>> ranges;
+  ranges.reserve(header.size());
 
   for (auto member = header.begin(); member != header.end(); ++member) {
     const std::string& name = member.key();
@@ -193,7 +206,7 @@ SafeTensorsReader SafeTensorsReader::open_header(
     if (!range[0].is_number_unsigned() || !range[1].is_number_unsigned()) {
       throw std::runtime_error(
           "safetensors: entry '" + name +
-          "' data_offsets contains a non-negative integer");
+          "' data_offsets contains a value that is not a non-negative integer");
     }
     const uint64_t begin = range[0].get<uint64_t>();
     const uint64_t end = range[1].get<uint64_t>();
@@ -209,13 +222,14 @@ SafeTensorsReader SafeTensorsReader::open_header(
     // The payload must be exactly as large as its dtype and shape imply.
     // Without this, a short entry becomes an out-of-bounds read in whatever
     // consumes it, sized from the metadata rather than the bytes.
-    const size_t numel = numel_of(parsed.sizes, name);
-    const size_t element_bytes = element_size(parsed.dtype);
-    if (element_bytes != 0 && numel > SIZE_MAX / element_bytes) {
-      throw std::runtime_error(
+    size_t expected = 0;
+    if (!detail::checked_mul(
+            numel_of(parsed.sizes, name),
+            element_size(parsed.dtype),
+            expected)) {
+      throw ResourceLimitError(
           "safetensors: entry '" + name + "' byte size overflows");
     }
-    const size_t expected = numel * element_bytes;
     if (parsed.nbytes != expected) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' holds " +
@@ -223,10 +237,27 @@ SafeTensorsReader SafeTensorsReader::open_header(
           " bytes but its dtype and shape need " + std::to_string(expected));
     }
 
-    if (!out.entries_.emplace(name, std::move(parsed)).second) {
+    const auto [it, inserted] = out.entries_.emplace(name, std::move(parsed));
+    if (!inserted) {
       throw std::runtime_error("safetensors: duplicate entry: " + name);
     }
+    const TensorEntry& entry_info = it->second;
+    ranges.emplace_back(entry_info.offset, static_cast<size_t>(end));
+    if (!detail::checked_add(
+            out.total_bytes_, entry_info.nbytes, out.total_bytes_)) {
+      throw ResourceLimitError("safetensors: total payload size overflows");
+    }
+    if (out.total_bytes_ > detail::kMaxConstantBytes) {
+      throw ResourceLimitError("safetensors: total payload exceeds size limit");
+    }
     out.names_.push_back(name);
+  }
+
+  std::sort(ranges.begin(), ranges.end());
+  for (size_t i = 1; i < ranges.size(); ++i) {
+    if (ranges[i - 1].second > ranges[i].first) {
+      throw std::runtime_error("safetensors: tensor byte ranges overlap");
+    }
   }
 
   return out;
@@ -238,13 +269,7 @@ const TensorEntry* SafeTensorsReader::find(const std::string& name) const {
 }
 
 size_t SafeTensorsReader::total_bytes() const {
-  return std::accumulate(
-      entries_.begin(),
-      entries_.end(),
-      size_t{0},
-      [](size_t total, const auto& entry) {
-        return total + entry.second.nbytes;
-      });
+  return total_bytes_;
 }
 
 } // namespace ptn

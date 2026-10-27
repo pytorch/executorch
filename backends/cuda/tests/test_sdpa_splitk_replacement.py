@@ -4,13 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Test ReplaceEdgeOpWithTritonOpPass split-K SDPA kernel selection.
+"""Test which SDPA calls ReplaceEdgeOpWithTritonOpPass replaces, and with which kernel.
 
-Exports a minimal model containing F.scaled_dot_product_attention through the
-CUDA backend and verifies that CUDA routes eligible decode shapes to split-K,
-while ROCm and other shapes use standard SDPA.
+Exports minimal models containing F.scaled_dot_product_attention through the
+CUDA backend. CUDA routes eligible decode shapes to split-K, ROCm and other
+shapes use standard SDPA, and calls neither kernel accepts stay with the
+regular lowering.
 """
 
+import importlib.util
 import logging
 import unittest
 
@@ -22,6 +24,19 @@ import torch.nn.functional as F
 def _require_cuda(tc: unittest.TestCase) -> None:
     if not torch.cuda.is_available():
         tc.skipTest("CUDA required")
+
+
+def _require_splitk(tc: unittest.TestCase) -> None:
+    if torch.version.hip is not None:
+        tc.skipTest("split-K is off on ROCm")
+
+
+def _require_regular_lowering_on_rocm(tc: unittest.TestCase) -> None:
+    # On ROCm, AOTInductor's C++ wrapper fails to compile the regular lowering of
+    # some SDPA calls: a generated kernel's argument types and names differ.
+    # TODO: remove once https://github.com/pytorch/pytorch/issues/199619 is fixed.
+    if torch.version.hip is not None:
+        tc.skipTest("AOTInductor cannot lower this SDPA call on ROCm")
 
 
 class SDPAModule(nn.Module):
@@ -197,6 +212,157 @@ class TestSplitKReplacement(unittest.TestCase):
 
         splitk = [m for m in msgs if "split-K" in m]
         self.assertEqual(len(splitk), 0, f"Expected no split-K for D=96. Got: {splitk}")
+
+
+class MaskedSDPAModule(nn.Module):
+    def __init__(self, is_causal=False, dropout_p=0.0):
+        super().__init__()
+        self.is_causal = is_causal
+        self.dropout_p = dropout_p
+
+    def forward(self, q, k, v, mask=None):
+        return F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=self.dropout_p,
+            is_causal=self.is_causal,
+        )
+
+
+def _bf16(*shape):
+    return torch.randn(*shape, dtype=torch.bfloat16)
+
+
+class TestUnsupportedSDPAStaysWithRegularLowering(unittest.TestCase):
+    """SDPA calls the Triton kernels do not accept are left to the regular lowering."""
+
+    def setUp(self):
+        _require_cuda(self)
+
+    def _logs(self, q, k, v, mask=None, **kwargs):
+        model = MaskedSDPAModule(**kwargs)
+        args = (q, k, v) if mask is None else (q, k, v, mask)
+        _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
+        return msgs
+
+    def assertStays(self, msgs, reason):
+        self.assertTrue(any(reason in m for m in msgs), msgs)
+        self.assertTrue(any("Replaced 0 nodes" in m for m in msgs), msgs)
+
+    def test_float_mask_is_not_replaced(self):
+        _require_regular_lowering_on_rocm(self)
+        q = _bf16(1, 2, 8, 16)
+        mask = torch.zeros(1, 1, 8, 8, dtype=torch.bfloat16)
+        self.assertStays(self._logs(q, q, q, mask), "attn_mask must have dtype")
+
+    def test_float32_inputs_are_not_replaced(self):
+        q = torch.randn(1, 2, 8, 16)
+        self.assertStays(self._logs(q, q, q), "Expected bfloat16 inputs")
+
+    def test_broadcast_bool_mask_is_not_replaced(self):
+        q = _bf16(1, 2, 8, 16)
+        mask = torch.ones(1, 1, 1, 8, dtype=torch.bool)
+        self.assertStays(self._logs(q, q, q, mask), "attn_mask shape mismatch")
+
+    def test_batch_1_mask_under_batch_2_is_not_replaced(self):
+        q = _bf16(2, 2, 8, 16)
+        mask = torch.ones(1, 1, 8, 8, dtype=torch.bool)
+        self.assertStays(self._logs(q, q, q, mask), "attn_mask shape mismatch")
+
+    def test_value_head_size_other_than_query_is_not_replaced(self):
+        q, v = _bf16(1, 2, 1, 16), _bf16(1, 2, 256, 32)
+        self.assertStays(self._logs(q, _bf16(1, 2, 256, 16), v), "Head dimension")
+
+    def test_key_value_batch_1_under_batch_2_is_not_replaced(self):
+        q, kv = _bf16(2, 2, 1, 16), _bf16(1, 2, 256, 16)
+        self.assertStays(self._logs(q, kv, kv), "Batch dimension must match")
+
+    def test_shared_key_value_head_without_gqa_is_not_replaced(self):
+        q, kv = _bf16(1, 4, 8, 16), _bf16(1, 1, 8, 16)
+        self.assertStays(self._logs(q, kv, kv), "Head counts must match")
+
+    def test_causal_with_other_lengths_is_not_replaced(self):
+        q, kv = _bf16(1, 2, 4, 16), _bf16(1, 2, 8, 16)
+        self.assertStays(self._logs(q, kv, kv, is_causal=True), "Causal masking")
+
+    def test_dropout_is_not_replaced(self):
+        _require_regular_lowering_on_rocm(self)
+        q = _bf16(1, 2, 8, 16)
+        self.assertStays(self._logs(q, q, q, dropout_p=0.1), "dropout_p must be 0.0")
+
+    def test_bool_mask_is_still_replaced(self):
+        q = _bf16(1, 2, 8, 16)
+        mask = torch.ones(1, 1, 8, 8, dtype=torch.bool)
+        msgs = self._logs(q, q, q, mask)
+        self.assertTrue(any("Replaced 1 nodes" in m for m in msgs), msgs)
+
+    def assertSplitK(self, msgs):
+        self.assertTrue(any("Using split-K decode SDPA" in m for m in msgs), msgs)
+        self.assertTrue(any("Replaced 1 nodes" in m for m in msgs), msgs)
+
+    def test_masked_decode_still_uses_splitk(self):
+        _require_splitk(self)
+        q, kv = _bf16(1, 4, 1, 64), _bf16(1, 4, 512, 64)
+        mask = torch.ones(1, 1, 1, 512, dtype=torch.bool)
+        self.assertSplitK(self._logs(q, kv, kv, mask))
+
+    def test_causal_decode_still_uses_splitk(self):
+        _require_splitk(self)
+        q, kv = _bf16(1, 4, 1, 64), _bf16(1, 4, 512, 64)
+        self.assertSplitK(self._logs(q, kv, kv, is_causal=True))
+
+    def test_decode_with_a_shared_key_value_head_still_uses_splitk(self):
+        _require_splitk(self)
+        q, kv = _bf16(1, 4, 1, 64), _bf16(1, 1, 512, 64)
+        self.assertSplitK(self._logs(q, kv, kv))
+
+
+class TestSDPAKernelSupportCheck(unittest.TestCase):
+    """Calls that cannot be exported end to end, on hand-built graphs."""
+
+    def setUp(self):
+        if importlib.util.find_spec("triton") is None:
+            self.skipTest("Triton required")
+
+    def _sdpa_node(self, shape, dropout_p=0.0):
+        from executorch.exir.dialects._ops import ops as exir_ops
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        graph = torch.fx.Graph()
+        with FakeTensorMode():
+            q = torch.empty(*shape, dtype=torch.bfloat16, device="cuda")
+        inputs = []
+        for name in ("q", "k", "v"):
+            node = graph.placeholder(name)
+            node.meta["val"] = q
+            inputs.append(node)
+        return graph.call_function(
+            exir_ops.edge.aten.scaled_dot_product_attention.default,
+            (*inputs, None, dropout_p),
+        )
+
+    def test_2d_inputs_are_not_supported(self):
+        # The regular lowering of a 2D SDPA fails later in Inductor, so this
+        # case cannot be exported end to end.
+        from executorch.backends.cuda.triton.replacement_pass import (
+            ReplaceEdgeOpWithTritonOpPass,
+        )
+
+        node = self._sdpa_node((8, 16))
+        self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
+
+    def test_named_inputs_are_not_supported(self):
+        from executorch.backends.cuda.triton.replacement_pass import (
+            ReplaceEdgeOpWithTritonOpPass,
+        )
+
+        node = self._sdpa_node((1, 2, 8, 16))
+        query, key, value = node.args[:3]
+        node.args = ()
+        node.kwargs = {"query": query, "key": key, "value": value}
+        self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
 
 
 if __name__ == "__main__":

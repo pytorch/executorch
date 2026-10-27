@@ -149,7 +149,6 @@ run_core_tests () {
 
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
-  "$PIPBIN" install "$WHEEL_FILE"
   TORCH_VERSION=$(
   "$PYBIN" - <<'PY'
 import runpy
@@ -176,6 +175,9 @@ PY
   export USE_CPP=0
   "$PIPBIN" install . --no-build-isolation
   popd > /dev/null
+
+  # Install pinned dependencies first: the wheel may require unreleased torchao.
+  "$PIPBIN" install "$WHEEL_FILE"
 
   # Install qualcomm backend dependencies  
   "$PIPBIN" install -r "$REPO_ROOT/backends/qualcomm/requirements.txt"

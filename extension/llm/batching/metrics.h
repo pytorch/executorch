@@ -70,7 +70,12 @@ struct ET_EXPERIMENTAL GenerationMetrics {
   MetricsTime t_first_token{};
   MetricsTime t_end{};
 
+  // Input counts are decoder positions, which may include expanded image rows.
   std::int64_t n_prompt_tokens = 0;
+  // Successfully executed initial-input tokens, including a carried pending
+  // token, excluding reused context and later generated-token inputs. Counts
+  // physical work even when cancellation or shutdown discards its result.
+  std::int64_t n_prefilled_tokens = 0;
   std::int64_t n_generated_tokens = 0;
   std::int32_t n_prefill_steps = 0;
   std::int32_t n_decode_steps = 0;

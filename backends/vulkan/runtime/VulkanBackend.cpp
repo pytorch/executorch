@@ -679,6 +679,28 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
+    if (!compute_graph->context()
+             ->adapter_ptr()
+             ->supports_8bit_storage_buffers()) {
+      for (const auto* value : *flatbuffer_graph->values()) {
+        const auto* tensor = value->value_as_VkTensor();
+        // Constants become CPU TensorRefs; their prepack destinations are
+        // separate GPU tensors checked here.
+        if (tensor == nullptr || tensor->constant_id() >= 0 ||
+            tensor->datatype() != vkgraph::VkDataType::BOOL) {
+          continue;
+        }
+        const auto storage =
+            tensor->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+            ? compute_graph->suggested_storage_type()
+            : get_storage_type(tensor->storage_type());
+        ET_CHECK_OR_RETURN_ERROR(
+            storage != utils::kBuffer,
+            NotSupported,
+            "Vulkan bool buffer tensors require 8-bit storage buffer support");
+      }
+    }
+
     GraphBuilder builder(
         compute_graph,
         flatbuffer_graph,
@@ -700,70 +722,83 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override {
-    if (processed == nullptr || context.get_runtime_allocator() == nullptr) {
-      return Error::InvalidArgument;
-    }
-    struct ProcessedGuard final {
-      FreeableBuffer* buffer;
-      ~ProcessedGuard() {
-        buffer->Free();
-      }
-    } processed_guard{processed};
-    try {
-      auto adapter = resolve_vulkan_shared_adapter(context);
-      if (!adapter.ok()) {
-        return adapter.error();
-      }
-      auto* handle = context.get_runtime_allocator()
-                         ->allocateInstance<VulkanDelegateHandle>();
-      if (handle == nullptr) {
-        return Error::MemoryAllocationFailed;
-      }
-      new (handle) VulkanDelegateHandle();
-      // The arena owns storage, so the guard invokes only the destructor.
-      auto destroy_handle = [](VulkanDelegateHandle* value) {
-        value->~VulkanDelegateHandle();
-      };
-      std::unique_ptr<VulkanDelegateHandle, decltype(destroy_handle)> guard(
-          handle, destroy_handle);
-      handle->shared_adapter = std::move(adapter.get());
-      auto* graph_storage =
-          context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
-      if (graph_storage == nullptr) {
-        return Error::MemoryAllocationFailed;
-      }
-      GraphConfig graph_config = get_graph_config(compile_specs);
-      graph_config.external_adapter = handle->shared_adapter
-          ? handle->shared_adapter.get()
-          : vkapi::set_and_get_external_adapter();
-      // Assign only after construction succeeds: a throwing constructor must
-      // not be followed by an explicit destructor on unconstructed storage.
-      handle->compute_graph = new (graph_storage) ComputeGraph(graph_config);
-      const Error error = compileModel(
-          processed->data(),
-          processed->size(),
-          handle->compute_graph,
-          context.get_named_data_map());
-      if (error != Error::Ok) {
-        return error;
-      }
-      return static_cast<DelegateHandle*>(guard.release());
-    } catch (const std::bad_alloc&) {
-      return Error::MemoryAllocationFailed;
-    } catch (const vkapi::ShaderNotSupportedError& error) {
-      ET_LOG(Error, "Vulkan shader compatibility error: %s", error.what());
-      return Error::DelegateInvalidCompatibility;
-    } catch (const std::exception& error) {
-      ET_LOG(Error, "Vulkan initialization failed: %s", error.what());
-      return Error::Internal;
-    } catch (...) {
-      return Error::Internal;
-    }
+    BackendInitContext& context,
+    FreeableBuffer* processed,
+    ArrayRef<CompileSpec> compile_specs) const override {
+  if (processed == nullptr || context.get_runtime_allocator() == nullptr) {
+    return Error::InvalidArgument;
   }
 
+  struct ProcessedGuard final {
+    FreeableBuffer* buffer;
+    ~ProcessedGuard() {
+      buffer->Free();
+    }
+  } processed_guard{processed};
+
+  try {
+    auto adapter = resolve_vulkan_shared_adapter(context);
+    if (!adapter.ok()) {
+      return adapter.error();
+    }
+
+    auto* handle = context.get_runtime_allocator()
+                       ->allocateInstance<VulkanDelegateHandle>();
+    if (handle == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
+    new (handle) VulkanDelegateHandle();
+
+    // The arena owns storage, so the guard invokes only the destructor.
+    auto destroy_handle = [](VulkanDelegateHandle* value) {
+      value->~VulkanDelegateHandle();
+    };
+
+    std::unique_ptr<VulkanDelegateHandle, decltype(destroy_handle)> guard(
+        handle, destroy_handle);
+
+    handle->shared_adapter = std::move(adapter.get());
+
+    auto* graph_storage =
+        context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
+    if (graph_storage == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
+    GraphConfig graph_config = get_graph_config(compile_specs);
+    graph_config.external_adapter = handle->shared_adapter
+        ? handle->shared_adapter.get()
+        : vkapi::set_and_get_external_adapter();
+
+    // Assign only after construction succeeds.
+    handle->compute_graph = new (graph_storage) ComputeGraph(graph_config);
+
+    const Error error = compileModel(
+        processed->data(),
+        processed->size(),
+        handle->compute_graph,
+        context.get_named_data_map());
+
+    if (error != Error::Ok) {
+      return error;
+    }
+
+    return static_cast<DelegateHandle*>(guard.release());
+
+  } catch (const std::bad_alloc&) {
+    return Error::MemoryAllocationFailed;
+  } catch (const vkapi::ShaderNotSupportedError& error) {
+    ET_LOG(Error, "Vulkan shader compatibility error: %s", error.what());
+    return Error::DelegateInvalidCompatibility;
+  } catch (const std::exception& error) {
+    ET_LOG(Error, "Vulkan initialization failed: %s", error.what());
+    return Error::Internal;
+  } catch (...) {
+    return Error::Internal;
+  }
+}
+  
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
@@ -890,7 +925,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name = "{" + r.kernel_name +
-          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) + "}";
+          ", \"dispatch_id\": " + std::to_string(r.dispatch_id) +
+          ", \"global_workgroup\": [" + std::to_string(r.metadata.gwg[0]) +
+          ", " + std::to_string(r.metadata.gwg[1]) + ", " +
+          std::to_string(r.metadata.gwg[2]) + "], \"local_workgroup\": [" +
+          std::to_string(r.metadata.lwg[0]) + ", " +
+          std::to_string(r.metadata.lwg[1]) + ", " +
+          std::to_string(r.metadata.lwg[2]) + "]}";
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),

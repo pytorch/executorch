@@ -13,6 +13,11 @@ This pass replaces ATen operators with optimized Triton kernels in the graph.
 import logging
 
 import torch
+from executorch.backends.cuda.triton.kernels.sdpa import (
+    _prepare_mask_params,
+    _validate_qkv_shapes,
+    _validate_sdpa_inputs,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx import GraphModule, Node
@@ -114,7 +119,6 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             and D > 0
             and (D & (D - 1)) == 0  # power of 2
         ):
-            logger.info(f"Using split-K decode SDPA (L_kv={L_kv}, D={D})")
             return triton.sdpa_decode_splitk
 
         return triton.sdpa
@@ -145,6 +149,44 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
                 logger.info(f"Skipping topk replacement: N={N} > {self._TOPK_MAX_N}")
                 return False
 
+        if node.target == exir_ops.edge.aten.scaled_dot_product_attention.default:
+            return self._sdpa_kernel_supports(node)
+
+        return True
+
+    @classmethod
+    def _sdpa_kernel_supports(cls, node: Node) -> bool:
+        """Whether the Triton SDPA kernel the pass would pick accepts this call.
+
+        Runs the kernels' own input checks on the fake tensors, so calls they
+        reject stay with the regular lowering instead of failing the export.
+        """
+        # The kernel picker reads query and key by position.
+        if len(node.args) < 3:
+            return False
+        names = ("attn_mask", "dropout_p", "is_causal", "scale", "enable_gqa")
+        defaults = (None, 0.0, False, None, False)
+        attn_mask, dropout_p, is_causal, _, enable_gqa = (
+            node.args[3 + i] if 3 + i < len(node.args) else node.kwargs.get(name, d)
+            for i, (name, d) in enumerate(zip(names, defaults))
+        )
+        query, key, value = (arg.meta["val"] for arg in node.args[:3])
+        try:
+            _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
+            splitk = cls._pick_sdpa_kernel(node) is triton.sdpa_decode_splitk
+            # Split-K groups query heads over key/value heads on its own.
+            B, _, _, L_q, L_kv, _, _ = _validate_qkv_shapes(
+                query, key, value, enable_gqa or splitk
+            )
+            if is_causal and L_q != L_kv and not splitk:
+                raise RuntimeError(
+                    f"Causal masking requires L_q == L_kv; got L_q={L_q}, L_kv={L_kv}."
+                )
+            mask = None if attn_mask is None else attn_mask.meta["val"]
+            _prepare_mask_params(mask, B, L_q, L_kv)
+        except RuntimeError as e:
+            logger.info(f"Skipping SDPA replacement: {e}")
+            return False
         return True
 
     def _replace_node_with_triton(self, graph_module: GraphModule, node: Node) -> None:
@@ -166,6 +208,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
 
         if target == exir_ops.edge.aten.scaled_dot_product_attention.default:
             triton_kernel_fn = self._pick_sdpa_kernel(node)
+            if triton_kernel_fn is triton.sdpa_decode_splitk:
+                L_kv, D = node.args[1].meta["val"].shape[2:]
+                logger.info(f"Using split-K decode SDPA (L_kv={L_kv}, D={D})")
 
         # Create a new node with the Triton kernel
         with graph_module.graph.inserting_before(node):

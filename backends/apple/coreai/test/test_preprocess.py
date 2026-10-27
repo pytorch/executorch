@@ -6,15 +6,14 @@
 
 """Tests for ``CoreAIBackend.preprocess`` and its AOT-compile config.
 
-Covers all four asset-delivery combinations: portable ``.aimodel`` vs
-AOT-compiled ``.aimodelc``, each either inline (embedded in the .pte) or as a
-sidecar, plus ``AOTCompileConfig`` parsing. The compiled-delivery cases mock
+Covers both asset formats, portable ``.aimodel`` and AOT-compiled
+``.aimodelc``, embedded in the .pte, plus ``AOTCompileConfig`` parsing. The
+compiled-delivery cases mock
 ``coreai-build`` so they run without the Metal Toolchain; the real-toolchain
 integration is in :class:`CoreAIAOTCompileTest` (gated on ``coreai-build``).
 """
 
 import json
-import os
 import subprocess
 import tempfile
 import unittest
@@ -26,9 +25,9 @@ import torch.nn as nn
 
 from executorch.backends.apple.coreai.compiler.preprocess import (
     _aot_compile_options,
+    _asset_metadata,
     AOTCompileConfig,
     COMPILE_SPEC_KEYS,
-    coreai_sidecar_dir,
     CoreAIBackend,
 )
 from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
@@ -83,7 +82,6 @@ def _aot_spec(config: dict) -> CompileSpec:
     )
 
 
-_SIDECAR_SPEC = CompileSpec(COMPILE_SPEC_KEYS.USES_SIDECAR.value, b"1")
 _MOCK_BUILD = "executorch.backends.apple.coreai.compiler.preprocess._run_coreai_build"
 
 
@@ -150,10 +148,9 @@ class PortablePreprocessTest(unittest.TestCase):
         self.assertEqual(out.external_data, {})  # nothing external for inline
 
     def test_inline_keys_keep_the_bundle_directory(self):
-        """Embedded keys must reconstruct to the shape sidecar writes on disk.
+        """The bundle name has to survive flattening into NamedDataStore keys.
 
-        The bundle name has to survive flattening, otherwise unpacking cannot
-        tell that these files belong to a ``.aimodel``.
+        Otherwise unpacking cannot tell that these files belong to a ``.aimodel``.
         """
         manifest = json.loads(
             CoreAIBackend.preprocess(_edge_program(), []).processed_bytes
@@ -163,79 +160,52 @@ class PortablePreprocessTest(unittest.TestCase):
             manifest["files"],
         )
 
-    def test_sidecar_writes_bundle_and_does_not_embed(self):
+
+class ManifestBindingsTest(unittest.TestCase):
+    def test_names_follow_boundary_order_past_single_digits(self):
+        class ManyInputs(nn.Module):
+            def forward(self, *args):
+                return tuple(x - float(i) for i, x in enumerate(args))
+
+        edge = to_edge(
+            torch.export.export(ManyInputs(), tuple(torch.ones(2) for _ in range(12)))
+        ).exported_program()
+        manifest = json.loads(CoreAIBackend.preprocess(edge, []).processed_bytes)
+        self.assertEqual(manifest["function"], "main")
+        self.assertEqual(manifest["input_names"], [f"input_{i}" for i in range(12)])
+        self.assertEqual(manifest["output_names"], [f"output_{i}" for i in range(12)])
+
+
+class AssetMetadataTest(unittest.TestCase):
+    @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
+    def test_sizes_and_digests_cover_every_delivered_file(self, _build):
+        aot = _aot_spec({"platform": "iOS", "architectures": ["h15g", "h16"]})
+        for specs, bundles in (
+            ([], {"model.aimodel"}),
+            ([aot], {"model.h15g.aimodelc", "model.h16.aimodelc"}),
+        ):
+            with self.subTest(aot=bool(specs)):
+                result = CoreAIBackend.preprocess(_edge_program(), specs)
+                manifest = json.loads(result.processed_bytes)
+                out = result.data_store_output
+                prefix = f"coreai/{manifest['hash']}/"
+                embedded = {
+                    key[len(prefix) :]: len(out.buffers[entry.buffer_index])
+                    for key, entry in out.pte_data.items()
+                }
+                self.assertEqual(manifest["files"], embedded)
+                self.assertEqual(set(manifest["bundle_digests"]), bundles)
+
+    def test_digest_changes_with_file_contents(self):
         with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                result = CoreAIBackend.preprocess(_edge_program(), [_SIDECAR_SPEC])
-            manifest = json.loads(result.processed_bytes)
-            self.assertEqual(manifest["packaging"], "sidecar")
-            # Only the relative, hash-keyed path is referenced (no build path).
-            self.assertEqual(manifest["path"], f"{manifest['hash']}/model.aimodel")
-            self.assertNotIn(d, result.processed_bytes.decode())
-            bundle = Path(d) / manifest["path"]
-            self.assertTrue(bundle.is_dir())
-            self.assertTrue((bundle / "main.mlirb").exists())
-            self.assertIsNone(result.data_store_output)  # nothing embedded
-
-    def test_sidecar_without_env_var_raises(self):
-        # uses_sidecar set but COREAI_SIDECAR_DIR unset -> fail fast.
-        env = {k: v for k, v in os.environ.items() if k != "COREAI_SIDECAR_DIR"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with self.assertRaises(ValueError):
-                CoreAIBackend.preprocess(_edge_program(), [_SIDECAR_SPEC])
-
-    def test_inline_with_env_var_warns(self):
-        # Env var set but delegate is inline -> soft warning, not an error.
-        import executorch.backends.apple.coreai.compiler.preprocess as cp
-
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                cp._WARNED_SIDECAR_ENV_IGNORED = False  # allow the once-warning
-                with self.assertLogs(cp.logger, level="WARNING") as cm:
-                    result = CoreAIBackend.preprocess(_edge_program(), [])
-        self.assertEqual(json.loads(result.processed_bytes)["packaging"], "inline")
-        self.assertTrue(any("uses_sidecar=True" in m for m in cm.output))
-
-    def test_sidecar_dir_rejects_a_file(self):
-        with tempfile.TemporaryDirectory() as d:
-            path = Path(d) / "notadir"
-            path.write_text("x")
-            with self.assertRaisesRegex(RuntimeError, "not a directory"):
-                with coreai_sidecar_dir(str(path)):
-                    pass
-
-    def test_sidecar_dir_ignores_loose_files(self):
-        """Only asset directories conflict; ``.DS_Store`` must not block a build."""
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / ".DS_Store").write_bytes(b"\x00")
-            with coreai_sidecar_dir(d):
-                result = CoreAIBackend.preprocess(_edge_program(), [_SIDECAR_SPEC])
-            self.assertEqual(json.loads(result.processed_bytes)["packaging"], "sidecar")
-
-    def test_sidecar_dir_rejects_existing_assets(self):
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                CoreAIBackend.preprocess(_edge_program(), [_SIDECAR_SPEC])
-            with self.assertRaisesRegex(RuntimeError, "already holds assets"):
-                with coreai_sidecar_dir(d):
-                    pass
-
-    def test_coreai_sidecar_dir_sets_and_restores_env(self):
-        self.assertNotIn("COREAI_SIDECAR_DIR", os.environ)
-        with coreai_sidecar_dir("/tmp/scoped"):
-            self.assertEqual(os.environ["COREAI_SIDECAR_DIR"], "/tmp/scoped")
-        self.assertNotIn("COREAI_SIDECAR_DIR", os.environ)  # restored on exit
-
-    def test_end_to_end_sidecar(self):
-        with tempfile.TemporaryDirectory() as d:
-            ep = torch.export.export(nn.Linear(8, 8).eval(), (torch.randn(2, 8),))
-            with coreai_sidecar_dir(d):
-                to_edge_transform_and_lower(
-                    ep, partitioner=[CoreAIPartitioner(uses_sidecar=True)]
-                )
-            bundles = list(Path(d).glob("*/model.aimodel"))
-            self.assertEqual(len(bundles), 1)
-            self.assertTrue((bundles[0] / "main.mlirb").exists())
+            weights = Path(d) / "model.aimodel" / "weights.bin"
+            weights.parent.mkdir()
+            weights.write_bytes(b"\x00\x01")
+            before = _asset_metadata(Path(d))
+            weights.write_bytes(b"\x01\x00")
+            after = _asset_metadata(Path(d))
+        self.assertEqual(before["files"], after["files"])
+        self.assertNotEqual(before["bundle_digests"], after["bundle_digests"])
 
 
 def _lower_with_break(partitioner):
@@ -348,55 +318,14 @@ class CompiledPreprocessTest(unittest.TestCase):
         self.assertIsNotNone(result.data_store_output)
 
     @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_sidecar_writes_compiled_bundles(self, _build):
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                result = CoreAIBackend.preprocess(
-                    _edge_program(),
-                    [_aot_spec({"architectures": ["h15g"]}), _SIDECAR_SPEC],
-                )
-            manifest = json.loads(result.processed_bytes)
-            self.assertEqual(manifest["packaging"], "aot_compiled_sidecar")
-            self.assertEqual(list(manifest["archs"]), ["h15g"])
-            self.assertIsNone(result.data_store_output)  # bundles on disk only
-            self.assertNotIn(d, result.processed_bytes.decode())
-            for rel in manifest["archs"].values():
-                bundle = Path(d) / rel
-                self.assertTrue(bundle.is_dir())
-                self.assertTrue(str(bundle).endswith(".aimodelc"))
-
-    @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_archs_map_is_the_same_inline_and_sidecar(self, _build):
-        """One shape for ``archs``, whatever the delivery.
-
-        Inline could derive paths from the hash, but emitting the same map means
-        a consumer never has to branch on ``packaging`` to read it. For inline
-        the value is the key under ``coreai/``; for sidecar it is relative to
-        the sidecar dir.
-        """
+    def test_archs_map_points_at_embedded_bundles(self, _build):
+        """Each ``archs`` value is the bundle's key under ``coreai/``."""
         config = {"platform": "iOS", "architectures": ["h15g", "h16"]}
-        inline = json.loads(
-            CoreAIBackend.preprocess(
-                _edge_program(), [_aot_spec(config)]
-            ).processed_bytes
-        )
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                sidecar = json.loads(
-                    CoreAIBackend.preprocess(
-                        _edge_program(), [_aot_spec(config), _SIDECAR_SPEC]
-                    ).processed_bytes
-                )
-        self.assertIsInstance(inline["archs"], dict)
-        self.assertEqual(inline["archs"], sidecar["archs"])
-        for arch, rel in inline["archs"].items():
-            self.assertEqual(rel, f"{inline['hash']}/model.{arch}.aimodelc")
-            self.assertIn(
-                f"coreai/{rel}/model.mil",
-                CoreAIBackend.preprocess(
-                    _edge_program(), [_aot_spec(config)]
-                ).data_store_output.pte_data,
-            )
+        result = CoreAIBackend.preprocess(_edge_program(), [_aot_spec(config)])
+        manifest = json.loads(result.processed_bytes)
+        for arch, rel in manifest["archs"].items():
+            self.assertEqual(rel, f"{manifest['hash']}/model.{arch}.aimodelc")
+            self.assertIn(f"coreai/{rel}/model.mil", result.data_store_output.pte_data)
 
     @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
     def test_defaults_to_all_architectures(self, _build):
@@ -408,82 +337,19 @@ class CompiledPreprocessTest(unittest.TestCase):
         self.assertTrue(manifest["archs"])
 
     @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_sidecar_rebuild_with_new_options_is_rejected(self, _build):
-        """A second build must not quietly inherit the first one's bundles.
-
-        The asset directory is keyed on the .aimodel hash, which does not cover
-        platform, OS floor or compute preference, so a rebuild with different
-        options lands on the same path.
-        """
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                CoreAIBackend.preprocess(
-                    _edge_program(),
-                    [
-                        _aot_spec({"platform": "iOS", "architectures": ["h15g"]}),
-                        _SIDECAR_SPEC,
-                    ],
-                )
-                with self.assertRaisesRegex(RuntimeError, "already exists"):
-                    CoreAIBackend.preprocess(
-                        _edge_program(),
-                        [
-                            _aot_spec({"platform": "macOS", "architectures": ["h15g"]}),
-                            _SIDECAR_SPEC,
-                        ],
-                    )
-
-    @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_failed_write_leaves_no_asset_directory(self, _build):
-        """A half-written asset dir would block every later build.
-
-        ``_reject_existing_asset_dir`` hard-fails on an existing directory, so
-        the write is staged and renamed; a failure partway must clean up.
-        """
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                with mock.patch(
-                    "executorch.backends.apple.coreai.compiler.preprocess"
-                    ".shutil.move",
-                    side_effect=OSError("no space left on device"),
-                ):
-                    with self.assertRaises(OSError):
-                        CoreAIBackend.preprocess(
-                            _edge_program(),
-                            [_aot_spec({"architectures": ["h15g"]}), _SIDECAR_SPEC],
-                        )
-                # Nothing left behind, so the retry below is not blocked.
-                self.assertEqual(list(Path(d).iterdir()), [])
-                result = CoreAIBackend.preprocess(
-                    _edge_program(),
-                    [_aot_spec({"architectures": ["h15g"]}), _SIDECAR_SPEC],
-                )
-            manifest = json.loads(result.processed_bytes)
-            bundle = Path(d) / next(iter(manifest["archs"].values()))
-            self.assertTrue(bundle.is_dir())
-
-    @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
-    def test_two_delegates_write_separate_asset_dirs(self, _build):
-        """A graph break gives two delegates, which must not collide.
-
-        They share one sidecar directory but differ in hash, so the
-        already-exists guard has to stay quiet here.
-        """
-        with tempfile.TemporaryDirectory() as d:
-            with coreai_sidecar_dir(d):
-                lowered = _lower_with_break(
-                    CoreAIPartitioner(
-                        uses_sidecar=True,
-                        aot_compile_config=AOTCompileConfig(
-                            platform="iOS", architectures=["h15g"]
-                        ),
-                    )
-                )
-            lbms = get_lowered_backend_modules(lowered.exported_program().graph_module)
-            self.assertEqual(len(lbms), 2)
-            hashes = {json.loads(bytes(lbm.processed_bytes))["hash"] for lbm in lbms}
-            self.assertEqual(len(hashes), 2)
-            self.assertEqual(len(list(Path(d).iterdir())), 2)
+    def test_two_delegates_get_separate_asset_keys(self, _build):
+        """A graph break gives two delegates, whose assets must not collide."""
+        lowered = _lower_with_break(
+            CoreAIPartitioner(
+                aot_compile_config=AOTCompileConfig(
+                    platform="iOS", architectures=["h15g"]
+                ),
+            )
+        )
+        lbms = get_lowered_backend_modules(lowered.exported_program().graph_module)
+        self.assertEqual(len(lbms), 2)
+        hashes = {json.loads(bytes(lbm.processed_bytes))["hash"] for lbm in lbms}
+        self.assertEqual(len(hashes), 2)
 
 
 def _lower_linear(partitioner):
@@ -516,28 +382,6 @@ class CoreAIAOTCompileTest(unittest.TestCase):
         self.assertTrue(any(".aimodelc/" in f for f in manifest["files"]))
         self.assertIsNotNone(lbm.named_data_store_output)
         self.assertGreater(len(bytes(lowered.to_executorch().buffer)), 0)
-
-    def test_aot_sidecar_writes_aimodelc_and_keeps_pte_small(self):
-        with tempfile.TemporaryDirectory() as sidecar:
-            with coreai_sidecar_dir(sidecar):
-                lowered = _lower_linear(
-                    CoreAIPartitioner(
-                        aot_compile_config=AOTCompileConfig(platform="macOS"),
-                        uses_sidecar=True,
-                    )
-                )
-                lbm, manifest = _lowered_manifest(lowered)
-                pte = bytes(lowered.to_executorch().buffer)
-
-            self.assertEqual(manifest["packaging"], "aot_compiled_sidecar")
-            self.assertGreaterEqual(len(manifest["archs"]), 1)
-            # Sidecar: compiled bundle *contents* must not be embedded in the .pte.
-            self.assertIsNone(lbm.named_data_store_output)
-            self.assertNotIn(b"mpsExecutable", pte)
-            for rel in manifest["archs"].values():
-                bundle = os.path.join(sidecar, rel)
-                self.assertTrue(os.path.isdir(bundle), bundle)
-                self.assertTrue(bundle.endswith(".aimodelc"))
 
     def test_delegates_present(self):
         lowered = _lower_linear(

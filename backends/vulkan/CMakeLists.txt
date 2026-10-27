@@ -59,10 +59,19 @@ if(NOT EXISTS "${VOLK_PATH}/volk.c"
   )
 endif()
 
+# Install the vendored Vulkan headers under ExecuTorch's include namespace so
+# they cannot clobber or shadow a system or SDK copy in a shared prefix.
+set(_vulkan_third_party_install_dir
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/vulkan/third-party
+)
+
 set(COMMON_INCLUDES
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
     $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
-    $<BUILD_INTERFACE:${VOLK_PATH}> $<BUILD_INTERFACE:${VMA_PATH}>
+    $<BUILD_INTERFACE:${VOLK_PATH}>
+    $<BUILD_INTERFACE:${VMA_PATH}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${_vulkan_third_party_install_dir}>
 )
 
 # Compile settings
@@ -72,21 +81,52 @@ set(COMMON_INCLUDES
 # exceptions via /EHsc instead, so select the flag per compiler.
 set(VULKAN_CXX_FLAGS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>")
 list(APPEND VULKAN_CXX_FLAGS "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
-list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
-list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
 # vulkan API files
 
-file(GLOB_RECURSE vulkan_api_cpp ${RUNTIME_PATH}/api/*)
-file(GLOB_RECURSE vulkan_vkapi_cpp ${RUNTIME_PATH}/vk_api/*)
+file(GLOB_RECURSE vulkan_api_cpp CONFIGURE_DEPENDS ${RUNTIME_PATH}/api/*.cpp)
+file(GLOB_RECURSE vulkan_vkapi_cpp CONFIGURE_DEPENDS
+     ${RUNTIME_PATH}/vk_api/*.cpp
+)
 list(APPEND vulkan_api_cpp ${vulkan_vkapi_cpp})
 list(APPEND vulkan_api_cpp ${RUNTIME_PATH}/SharedContext.cpp)
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
+file(GLOB_RECURSE vulkan_runtime_utils_cpp CONFIGURE_DEPENDS
+     ${RUNTIME_PATH}/utils/*.cpp
+)
+
+find_package(Threads REQUIRED)
+add_library(vulkan_compute_api ${vulkan_api_cpp} ${vulkan_runtime_utils_cpp})
+add_library(executorch::vulkan_compute_api ALIAS vulkan_compute_api)
+target_include_directories(vulkan_compute_api PUBLIC ${COMMON_INCLUDES})
+target_compile_features(vulkan_compute_api PUBLIC cxx_std_17)
+target_compile_definitions(
+  vulkan_compute_api PUBLIC USE_VULKAN_WRAPPER USE_VULKAN_VOLK
+)
+target_compile_options(vulkan_compute_api PRIVATE ${VULKAN_CXX_FLAGS})
+target_link_libraries(
+  vulkan_compute_api
+  PUBLIC executorch_core
+  PRIVATE Threads::Threads ${CMAKE_DL_LIBS}
+)
+
+find_package(Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line)
+if(TARGET Boost::stacktrace_basic AND TARGET Boost::stacktrace_addr2line)
+  target_include_directories(vulkan_compute_api PRIVATE ${Boost_INCLUDE_DIRS})
+  target_link_libraries(
+    vulkan_compute_api PRIVATE ${Boost_STACKTRACE_BASIC_LIBRARY}
+                               ${Boost_STACKTRACE_ADDR2LINE_LIBRARY}
+  )
+  target_compile_definitions(
+    vulkan_compute_api PRIVATE ETVK_BOOST_STACKTRACE_AVAILABLE
+  )
+endif()
 
 # vulkan ComputeGraph files
 
-file(GLOB_RECURSE vulkan_graph_cpp ${RUNTIME_PATH}/graph/*)
-list(APPEND vulkan_graph_cpp ${vulkan_api_cpp})
+file(GLOB_RECURSE vulkan_graph_cpp CONFIGURE_DEPENDS
+     ${RUNTIME_PATH}/graph/*.cpp
+)
 
 # Standard GLSL shader library
 
@@ -94,7 +134,42 @@ set(VULKAN_GRAPH_SHADERS_PATH ${RUNTIME_PATH}/graph/ops/glsl/)
 # Generates a spv.cpp file containing compiled GLSL shaders
 gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH})
 # Save the path of the generated cpp file
-set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
+set(_vulkan_standard_shaders_cpp ${generated_spv_cpp})
+
+add_library(
+  vulkan_graph_runtime ${vulkan_graph_cpp} ${_vulkan_standard_shaders_cpp}
+)
+add_library(executorch::vulkan_graph_runtime ALIAS vulkan_graph_runtime)
+target_link_libraries(vulkan_graph_runtime PUBLIC vulkan_compute_api)
+target_compile_options(vulkan_graph_runtime PRIVATE ${VULKAN_CXX_FLAGS})
+executorch_target_link_options_shared_lib(vulkan_graph_runtime)
+
+install(
+  TARGETS vulkan_compute_api vulkan_graph_runtime
+  EXPORT ExecuTorchTargets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(
+  DIRECTORY ${RUNTIME_PATH}/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/vulkan/runtime
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(DIRECTORY ${VULKAN_HEADERS_PATH}/include/
+        DESTINATION ${_vulkan_third_party_install_dir}
+)
+install(FILES ${VOLK_PATH}/volk.h
+        DESTINATION ${_vulkan_third_party_install_dir}
+)
+install(FILES ${VMA_PATH}/include/vk_mem_alloc.h
+        DESTINATION ${_vulkan_third_party_install_dir}/include
+)
+
+if(NOT EXECUTORCH_BUILD_VULKAN AND NOT EXECUTORCH_BUILD_WEBGPU)
+  return()
+endif()
 
 # Generate Vulkan Delegate Schema Files from flatc
 
@@ -104,6 +179,10 @@ set(GENERATED_HEADER
     ${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/schema_generated.h
 )
 
+list(TRANSFORM _vulkan_schema__srcs
+     PREPEND "${EXECUTORCH_ROOT}/" OUTPUT_VARIABLE _vulkan_schema_abs_srcs
+)
+
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
@@ -111,7 +190,7 @@ add_custom_command(
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/"
     ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-  DEPENDS flatc
+  DEPENDS flatc ${_vulkan_schema_abs_srcs}
   COMMENT "Generating vulkan_schema headers"
   VERBATIM
 )
@@ -128,40 +207,21 @@ target_include_directories(
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
-# vulkan runtime utils files
-
-file(GLOB_RECURSE vulkan_runtime_utils_cpp ${RUNTIME_PATH}/utils/*.cpp)
-
 # vulkan_backend
 
-# Try to find boost to log stack traces when throwing exceptions
-find_package(Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line)
+if(NOT EXECUTORCH_BUILD_VULKAN)
+  install(TARGETS vulkan_schema EXPORT ExecuTorchTargets)
+  return()
+endif()
 
-file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
-list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
-list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
-list(APPEND vulkan_backend_cpp ${vulkan_runtime_utils_cpp})
+file(GLOB vulkan_backend_cpp CONFIGURE_DEPENDS ${RUNTIME_PATH}/*.cpp)
 
 add_library(vulkan_backend ${vulkan_backend_cpp})
-target_include_directories(
-  vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
-)
-# volk (bundled into this library) calls dlopen/dlsym/dlclose to load libvulkan
-# at runtime. On glibc < 2.34 those live in libdl, so consumers linking an
-# executable against libvulkan_backend.a need -ldl; CMAKE_DL_LIBS provides it
-# (and is harmless where dlopen is already in libc). Matches the other backends.
 target_link_libraries(
-  vulkan_backend PRIVATE vulkan_schema executorch_core
-                         executorch_vulkan_shared_runtime ${CMAKE_DL_LIBS}
+  vulkan_backend
+  PUBLIC vulkan_graph_runtime
+  PRIVATE vulkan_schema executorch_vulkan_shared_runtime
 )
-# Optionally link boost for stacktraces if boost is available
-if(DEFINED Boost_STACKTRACE_BASIC_LIBRARY)
-  target_link_libraries(
-    vulkan_backend PRIVATE ${Boost_STACKTRACE_LIBRARY}
-                           ${Boost_STACKTRACE_ADDR2LINE_LIBRARY}
-  )
-  list(APPEND VULKAN_CXX_FLAGS "-DETVK_BOOST_STACKTRACE_AVAILABLE")
-endif()
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
 executorch_target_link_options_shared_lib(vulkan_backend)
@@ -176,7 +236,7 @@ endif()
 install(
   TARGETS vulkan_backend vulkan_schema
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  INCLUDES
-  DESTINATION ${COMMON_INCLUDES}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

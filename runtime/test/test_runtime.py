@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import io
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +22,25 @@ from executorch.runtime import Runtime, Verification
 
 
 class RuntimeTest(unittest.TestCase):
+    def test_runtime_import_does_not_load_the_exporter(self):
+        # A fresh interpreter, since this process has already imported exir.
+        probe = (
+            "import sys; import executorch.runtime; "
+            "print(sorted(m for m in ('executorch.exir', 'torch._dynamo') if m in sys.modules))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(result.stdout.strip(), "[]")
+
+    def test_runtime_exports_the_result_type(self):
+        import executorch.runtime
+        from executorch.extension.pybindings import portable_lib
+
+        self.assertIs(
+            executorch.runtime.ExecuTorchResult, portable_lib.ExecuTorchResult
+        )
+
     def test_smoke(self):
         ep, inputs = create_program(ModuleAdd())
         runtime = Runtime.get()
@@ -30,6 +51,23 @@ class RuntimeTest(unittest.TestCase):
         method = program.load_method("forward")
         outputs = method.execute(inputs)
         self.assertTrue(torch.allclose(outputs[0], inputs[0] + inputs[1]))
+
+    def test_execute_can_borrow_outputs(self):
+        ep, inputs = create_program(ModuleAdd())
+        method = Runtime.get().load_program(ep.buffer).load_method("forward")
+
+        def address(output):
+            return torch.from_dlpack(output).data_ptr()
+
+        # Borrowed outputs are views of the method's own memory, so each
+        # execution writes the same place. Cloned outputs are copies.
+        borrowed = [method.execute(inputs, clone_outputs=False)[0] for _ in range(2)]
+        self.assertEqual(address(borrowed[0]), address(borrowed[1]))
+        cloned = [method.execute(inputs)[0] for _ in range(2)]
+        self.assertNotEqual(address(cloned[0]), address(cloned[1]))
+        torch.testing.assert_close(
+            torch.from_dlpack(borrowed[1]), inputs[0] + inputs[1]
+        )
 
     def test_module_with_multiple_method_names(self):
         ep, inputs = create_program(ModuleMulti())
