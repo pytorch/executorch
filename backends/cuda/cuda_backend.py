@@ -51,6 +51,8 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
+from torch._inductor.utils import pad_listlike
+from torch._prims_common import suggest_memory_format
 from torch.nn.attention import SDPBackend
 
 # ---------------------------------------------------------------------------
@@ -459,6 +461,50 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     return value == "ON"
 
 
+def _depthwise_conv2d(
+    x, weight, bias=None, stride=(1, 1), padding=(0, 0), dilation=(1, 1), groups=1
+):
+    # Inductor's Triton conv template spends a whole tile on each one-channel
+    # group, while this sum of shifted slices lowers to pointwise kernels.
+    # Channels-last convs keep the template: a graph can capture their
+    # channels-last strides (in as_strided, say), and this result is contiguous.
+    if (
+        x.dim() != 4
+        or groups == 1
+        or not (x.shape[1] == weight.shape[0] == groups)
+        or torch.channels_last
+        in (suggest_memory_format(x), suggest_memory_format(weight))
+    ):
+        return NotImplemented
+    (stride_h, stride_w), (pad_h, pad_w), (dilation_h, dilation_w) = (
+        pad_listlike(v, 2) for v in (stride, padding, dilation)
+    )
+    # Accumulate in fp32 so half precision rounds once, like a conv kernel.
+    acc_dtype = torch.promote_types(x.dtype, torch.float32)
+    x_padded = torch.ops.aten.constant_pad_nd.default(
+        x, [pad_w, pad_w, pad_h, pad_h]
+    ).to(acc_dtype)
+    kernel_h, kernel_w = weight.shape[2:]
+    taps = weight.to(acc_dtype).permute(2, 3, 0, 1)[..., None]
+    span_h = x_padded.shape[2] - dilation_h * (kernel_h - 1)
+    span_w = x_padded.shape[3] - dilation_w * (kernel_w - 1)
+    out = sum(
+        x_padded[
+            :,
+            :,
+            i * dilation_h : i * dilation_h + span_h : stride_h,
+            j * dilation_w : j * dilation_w + span_w : stride_w,
+        ]
+        * taps[i, j]
+        for i in range(kernel_h)
+        for j in range(kernel_w)
+    )
+    if bias is not None:
+        out = out + bias.to(acc_dtype)[:, None, None]
+    # The conv returns a contiguous result; zero padding would keep odd strides.
+    return out.to(x.dtype).contiguous()
+
+
 CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
 
 # The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
@@ -779,6 +825,7 @@ class CudaBackend(AotiBackend, BackendDetails):
     def get_decomposition_table(cls) -> Dict[Any, Any]:
         return {
             torch.ops.aten.conv1d.default: conv1d_to_conv2d,
+            torch.ops.aten.conv2d.default: _depthwise_conv2d,
         }
 
     @classmethod

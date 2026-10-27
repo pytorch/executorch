@@ -520,6 +520,47 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")
 
+    def test_depthwise_conv2d_decomposition(self):
+        """Depthwise conv2d is decomposed and accurate; other convs are kept."""
+        table = CudaBackend.get_decomposition_table()
+        conv2d = torch.ops.aten.conv2d.default
+        depthwise = torch.nn.Conv2d(
+            16, 16, 3, stride=(2, 1), padding=(1, 2), dilation=(1, 2), groups=16
+        ).cuda()
+        x = torch.randn(2, 16, 17, 19, device="cuda")
+        # Half precision is compared with fp32 math on the same values, which a
+        # sum rounded after every tap would not match.
+        for dtype, rtol in (
+            (torch.float32, 1e-5),
+            (torch.float16, 1e-3),
+            (torch.bfloat16, 8e-3),
+        ):
+            depthwise.to(dtype)
+            program = export(depthwise, (x.to(dtype),)).run_decompositions(table)
+            self.assertNotIn(conv2d, [node.target for node in program.graph.nodes])
+            with torch.no_grad(), torch.backends.cudnn.flags(
+                enabled=True, allow_tf32=False
+            ):
+                actual = program.module()(x.to(dtype)).float()
+                expected = depthwise.float()(x.to(dtype).float())
+            torch.testing.assert_close(actual, expected, atol=1e-5, rtol=rtol)
+
+        # One-element arguments are valid, zero padding must not leak odd input
+        # strides into the output, and channels-last or regular convs are kept.
+        conv = torch.nn.Conv2d(8, 8, 3, padding=(0,), groups=8).cuda()
+        x = torch.randn(2, 8, 19, 17, device="cuda").transpose(2, 3)
+        with torch.no_grad():
+            program = export(conv, (x,)).run_decompositions(table)
+            self.assertTrue(program.module()(x).is_contiguous())
+            channels_last = torch.nn.Conv2d(8, 8, 3, groups=8).cuda()
+            for kept, inputs in (
+                (conv, x.contiguous(memory_format=torch.channels_last)),
+                (channels_last.to(memory_format=torch.channels_last), x),
+                (torch.nn.Conv2d(8, 8, 1).cuda(), x),
+            ):
+                program = export(kept, (inputs,)).run_decompositions(table)
+                self.assertIn(conv2d, [node.target for node in program.graph.nodes])
+
     def test_sdpa_single_kernel(self):
         """
         Test CUDA export for model containing single SDPA kernel.
