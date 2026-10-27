@@ -15,6 +15,8 @@
     "ring_host_journal.inc": "231a6d1580b2a264bf764ce50353e1bb5fa6e78d520d239549db56d7dfdd046d",
     "ring_retention_native_tests.inc": "bca7bef9f2425238d025fbb0a63878aa77cdeabacd8072b081e66d53059ca1d1",
     "prepare_native_mini_candidate.py": "90e93b2bc5a2f509276a0c43809e37621111d41de00acfcb24e0e883ae696bf7",
-    "export_real_mini_pair.py": "ccacf3ef6b3837976c7c0697c3e1d5028caeb1b887b63fe8d576fcf86cd75d5f"
+    "export_real_mini_pair.py": "ccacf3ef6b3837976c7c0697c3e1d5028caeb1b887b63fe8d576fcf86cd75d5f",
+    "run_real_mini_four_arms.py": "fcda5bcbd266790421ca0b432d555dfa84b46c251db971b6ad0cc932f73e4ac7",
+    "run_real_mini_controller.py": "1cb489024c5957673a15dc72825832e137f2c728f1f1a9a0f3596e7874611c6e"
   }
 }
