@@ -515,6 +515,10 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
             partitioner=[MLXPartitioner()],
         ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
         plan = program.executorch_program.execution_plan[0]
         self.assertEqual(plan.outputs[0], plan.inputs[0])
 
@@ -558,6 +562,10 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                     export(model, (cache.clone(), indices, update), strict=False),
                     partitioner=[MLXPartitioner()],
                 ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+                graph = program.exported_program().graph
+                self.assertFalse(
+                    any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+                )
                 plan = program.executorch_program.execution_plan[0]
                 self.assertEqual(plan.outputs[0], plan.inputs[0])
 

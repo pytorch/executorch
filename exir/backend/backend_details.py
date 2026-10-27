@@ -95,9 +95,13 @@ class BackendDetails(ABC):
     """
 
     # Whether the runtime backend computes its outputs correctly when the method
-    # passes it the same tensor as one of its inputs and one of its outputs.
+    # passes it the same EValue as one of its inputs and one of its outputs.
     # With run_reinplace_pass, an input the delegate mutates is then written in
-    # place, instead of copied back after the delegate returns.
+    # place, instead of copied back after the delegate returns. Opting in means
+    # the backend reads that input before writing the aliased output, and keeps
+    # the contents of any other output whose storage overlaps it. EXIR still only
+    # aliases a mutated placeholder that nothing reads between the delegate and
+    # its write-back, and that the delegate doesn't also take through an alias.
     writes_mutated_inputs_in_place: bool = False
 
     def __init_subclass__(cls, **kwargs):

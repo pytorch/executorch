@@ -591,12 +591,14 @@ def reinplace_delegate_input_mutations(
         if backend is None or not backend.writes_mutated_inputs_in_place:
             continue
         # The input now changes while the delegate runs, not at the copy, so
-        # nothing in between may read it, directly or through an alias.
+        # nothing in between may read it, directly or through an alias, and the
+        # delegate may not also take it through an alias.
+        aliases = _storage_aliases(mutated)
         if any(
             position[delegate] < position[user] < position[node]
-            for alias in _storage_aliases(mutated)
+            for alias in aliases
             for user in alias.users
-        ):
+        ) or any(alias is not mutated and alias in delegate.args for alias in aliases):
             continue
         # The emitter takes the delegate's outputs from its own specs.
         delegate_specs = list(delegate.meta["spec"])

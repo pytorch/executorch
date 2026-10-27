@@ -121,7 +121,9 @@ class ExecutorchBackendConfig:
     # If set to true, we run quant fusion and constant propagation passes
     do_quant_fusion_and_const_prop: bool = False
 
-    # Experimental: If set to true, we run a pass to reinplace ops in the graph.
+    # Experimental: If set to true, we run a pass to reinplace ops in the graph,
+    # and let a delegate whose backend sets writes_mutated_inputs_in_place
+    # write a mutated input in place instead of copying it back.
     run_reinplace_pass: bool = False
 
     # When True, memory planning partitions specs by device and runs the
