@@ -207,19 +207,6 @@ Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
   return model;
 }
 
-Error evict_bookmark_model(NSString* root, NSString* key,
-                           id<ETCoreAIModelLoading> loader) {
-  ET_CHECK_OR_RETURN_ERROR(loader != nil, InvalidArgument,
-                           "Missing Core AI model loader");
-  auto locked = lock_bookmark(root, key);
-  if (!locked.ok()) return locked.error();
-  auto bookmark = read_bookmark(*locked.get());
-  if (!bookmark.ok()) return bookmark.error();
-  if (bookmark.get() == nil) return Error::Ok;
-  ET_CHECK_OK_OR_RETURN_ERROR(evict_one(loader, bookmark.get()));
-  return remove_bookmark(*locked.get());
-}
-
 Error clear_bookmark_assets(NSString* root, NSString* key,
                             id<ETCoreAIModelLoading> loader) {
   auto locked = lock_bookmark(root, key, false);

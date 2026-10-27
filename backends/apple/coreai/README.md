@@ -234,30 +234,25 @@ and maintenance to stop.
 The public C++ maintenance APIs are in `executorch::backends::coreai`:
 
 ```cpp
-runtime::Error clear_cache(const char* coreai_assets_dir);
+runtime::Error clear_cache(const char* coreai_assets_dir = nullptr);
 runtime::Error clear_cache_for_pte(
     runtime::DataLoader& pte, const char* coreai_assets_dir = nullptr);
 runtime::Error clear_cache_for_pte(
     const char* pte_path, const char* coreai_assets_dir = nullptr);
 ```
 
-`clear_cache` requires an explicit absolute assets root. The PTE overloads use
-user-domain `NSCachesDirectory` plus `executorch_coreai` when the directory is
-omitted or null, just like backend initialization. An invalid supplied path is
-an error. If loading used a custom root, pass that same root when clearing;
-the PTE does not store runtime directory overrides.
+All three APIs use the same default assets directory as backend initialization
+when the directory is omitted or null. A supplied path must be absolute; invalid
+paths fail without falling back to the default. If loading used a custom root,
+pass that same root when clearing; the PTE does not store runtime overrides.
 
 Root-wide clearing visits keyed bookmarks and staged directories. PTE clearing
 selects and deduplicates keys for all Core AI delegates in every method, using
 the current platform, SDK architecture and default specialization configuration.
-Both public `clear_cache_for_pte` overloads use the private `inspect_coreai_pte`
-reader and retain its `CoreAIPteData`, including the verified program image and
-selected processed buffers, through `clear_keys`. Discovery does not load a
-Program or initialize a Method, load SDK models, bind functions, extract Core AI
-assets or specialize. All selected manifests are validated before any key is
-cleared; root-wide clearing remains
-available for existing keyed entries. Backend-local structural and semantic
-verification is mandatory even with `ET_ENABLE_PROGRAM_VERIFICATION=0`.
+All selected manifests must be valid and compatible before any entry is cleared.
+Incompatible delegates are not silently skipped. Root-wide clearing remains
+available independently of the PTE. Discovery does not load models or materialize
+assets.
 
 These synchronous calls require callers to unload affected models and prevent
 concurrent loads, inference and maintenance across processes. Per-key locks are

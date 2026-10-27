@@ -187,7 +187,8 @@ TEST_F(CoreAIEvictionTest, ConfirmedMissRecoveryEvictsOnlyCurrentBookmark) {
     ASSERT_NE(saved, nil);
     EXPECT_FALSE([saved isEqual:original]);
     EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
-    ASSERT_EQ(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+    ASSERT_EQ(
+        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_NE(fake.loader.models[original], nil);
     EXPECT_EQ(fake.loader.models[saved], nil);
     EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
@@ -216,9 +217,17 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
     auto key_result = test_bookmark_key(selected.get());
     ASSERT_TRUE(key_result.ok());
     NSString* key = key_result.get();
-    EXPECT_EQ(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+    EXPECT_EQ(
+        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
     EXPECT_EQ(fake.loader->evictions.load(), 0);
-    ASSERT_EQ(initialize_and_destroy(manifest_dict(), &data, root.url.path), Error::Ok);
+    // Retain staging after publication to exercise clearing's failure paths.
+    {
+      StorageFaultScope fault(StorageOperation::Remove);
+      ASSERT_EQ(
+          initialize_and_destroy(manifest_dict(), &data, root.url.path),
+          Error::AccessFailed);
+      EXPECT_EQ(fault.hits, 1);
+    }
     auto saved_result = saved_bookmark(root.url, key);
     ASSERT_TRUE(saved_result.ok());
     NSData* saved = saved_result.get();
@@ -226,29 +235,34 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
     NSURL* source_url =
         [[[root.url URLByAppendingPathComponent:@"staging"] URLByAppendingPathComponent:key]
             URLByAppendingPathComponent:selected->path.lastPathComponent];
-    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+    EXPECT_TRUE(
+        [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     for (bool probe_error : {false, true}) {
       SCOPED_TRACE(probe_error ? "unknown restore failure" : "restore hit/busy");
       fake.loader.evictError = bookmark_test_error(EBUSY);
       fake.loader.restoreError = probe_error ? bookmark_test_error() : nil;
-      EXPECT_NE(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+      EXPECT_NE(
+          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
       auto retained = saved_bookmark(root.url, key);
       ASSERT_TRUE(retained.ok());
       EXPECT_TRUE([retained.get() isEqual:saved]);
-      EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
+      EXPECT_TRUE(
+          [NSFileManager.defaultManager fileExistsAtPath:source_url.path]);
     }
     fake.loader.restoreError = nil;
     fake.loader.evictError = nil;
     {
       StorageFaultScope fault(StorageOperation::AfterEvict);
-      EXPECT_NE(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+      EXPECT_NE(
+          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
     }
     auto retained = saved_bookmark(root.url, key);
     ASSERT_TRUE(retained.ok());
     EXPECT_TRUE([retained.get() isEqual:saved]);
     fake.loader.evictError = bookmark_test_error(ENOENT);
-    ASSERT_EQ(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+    ASSERT_EQ(
+        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
     auto absent = saved_bookmark(root.url, key);
     ASSERT_TRUE(absent.ok());
     EXPECT_EQ(absent.get(), nil);
@@ -257,13 +271,15 @@ TEST_F(CoreAIEvictionTest, BusyAndUnknownEvictionRetainBookmarkUntilConfirmedAbs
     ASSERT_EQ(initialize_and_destroy(manifest_dict(), &data, root.url.path), Error::Ok);
     {
       StorageFaultScope fault(StorageOperation::Remove);
-      EXPECT_NE(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+      EXPECT_NE(
+          clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
       EXPECT_EQ(fault.hits, 1);
       auto before_remove = saved_bookmark(root.url, key);
       ASSERT_TRUE(before_remove.ok());
       EXPECT_NE(before_remove.get(), nil);
     }
-    ASSERT_EQ(evict_bookmark_model(root.url.path, key, fake.loader), Error::Ok);
+    ASSERT_EQ(
+        clear_bookmark_assets(root.url.path, key, fake.loader), Error::Ok);
     auto removed = saved_bookmark(root.url, key);
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
@@ -292,14 +308,14 @@ TEST_F(CoreAIEvictionTest, PreparedPinsBlockEvictionWithoutRetainedCompletionLea
           acquire_bookmark_model(selected.get(), &data, root.url.path, @"macOS", @"arch_b", loader);
       ASSERT_TRUE(pinned.ok());
       EXPECT_NE(loader.temporary, nil);
-      EXPECT_NE(evict_bookmark_model(root.url.path, key, loader), Error::Ok);
+      EXPECT_NE(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
       auto saved = saved_bookmark(root.url, key);
       ASSERT_TRUE(saved.ok());
       EXPECT_NE(saved.get(), nil);
     }
     EXPECT_EQ(loader.temporary, nil);
     EXPECT_NE(loader.retainedCompletion, nil);
-    ASSERT_EQ(evict_bookmark_model(root.url.path, key, loader), Error::Ok);
+    ASSERT_EQ(clear_bookmark_assets(root.url.path, key, loader), Error::Ok);
     auto removed = saved_bookmark(root.url, key);
     ASSERT_TRUE(removed.ok());
     EXPECT_EQ(removed.get(), nil);
@@ -340,7 +356,7 @@ TEST_F(CoreAIEvictionTest, LoadContendsOnActualKeyLockUntilEvictionFinishes) {
     bool load_ok = false;
     auto evict = [&] {
       @autoreleasepool {
-        eviction_error = evict_bookmark_model(root.url.path, key, fake.loader);
+        eviction_error = clear_bookmark_assets(root.url.path, key, fake.loader);
       }
       dispatch_semaphore_signal(eviction_done);
     };

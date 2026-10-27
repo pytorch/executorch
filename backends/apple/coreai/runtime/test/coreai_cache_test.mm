@@ -160,7 +160,8 @@ TEST_F(CoreAICacheTest, ValidatesExplicitRootsAndPtePaths) {
     FBSyntheticPTE empty({{"forward", {}}});
     EXPECT_EQ(clear_cache("relative"), Error::InvalidArgument);
     EXPECT_EQ(clear_cache_for_pte(empty, "relative"), Error::InvalidArgument);
-    EXPECT_EQ(clear_cache(nullptr), Error::InvalidArgument);
+    EXPECT_EQ(clear_cache(""), Error::InvalidArgument);
+    EXPECT_EQ(clear_cache("\xff"), Error::InvalidArgument);
     EXPECT_EQ(clear_cache_for_pte(static_cast<const char*>(nullptr), root.url.path.UTF8String),
               Error::InvalidArgument);
     EXPECT_TRUE(empty.check_released());
@@ -255,8 +256,13 @@ TEST_F(CoreAICacheTest, FilePathOverloadClearsReferencedEntry) {
 
 TEST_F(CoreAICacheTest, RejectsInvalidLaterDelegatesBeforeMutation) {
   @autoreleasepool {
-    const char* rows[] = {"malformed manifest", "wrong AOT platform", "backend load failure"};
-    for (int row = 0; row < 3; ++row) {
+    const char* rows[] = {
+        "malformed manifest",
+        "wrong AOT platform",
+        "backend load failure",
+        "newer OS",
+        "missing architecture"};
+    for (int row = 0; row < 5; ++row) {
       SCOPED_TRACE(rows[row]);
       BookmarkDirectory root;
       BookmarkLoaderScope fake;
@@ -271,6 +277,13 @@ TEST_F(CoreAICacheTest, RejectsInvalidLaterDelegatesBeforeMutation) {
         dict[@"platform"] = @"iOS";
         later.data = encode(dict);
       }
+      if (row == 3) {
+        auto dict = aot_manifest_dict();
+        dict[@"min_deployment_version"] = @"999999.0";
+        later.data = encode(dict);
+      }
+      if (row == 4)
+        bridge.state().device_architecture = @"missing_arch";
       FBSyntheticPTE pte(
           {{"first", {{"CoreAIBackend", encode(manifest_dict())}}}, {"later", {later}}});
       if (row == 2) {
@@ -283,6 +296,8 @@ TEST_F(CoreAICacheTest, RejectsInvalidLaterDelegatesBeforeMutation) {
       drain_callbacks();
       EXPECT_NE(error, Error::Ok);
       if (row == 2) EXPECT_EQ(error, Error::AccessFailed);
+      if (row == 1 || row >= 3)
+        EXPECT_EQ(error, Error::DelegateInvalidCompatibility);
       EXPECT_EQ(fake.loader->evictions.load(), 0);
       EXPECT_EQ(fake.loader->specializations.load(), 0);
       EXPECT_EQ(fake.loader->bindings.load(), 0);

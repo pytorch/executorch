@@ -29,12 +29,6 @@ runtime::Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
     NSString* root,
     id<ETCoreAIModelLoading> loader);
 
-// Deletes only the saved current SDK entry, not historical entries or sources.
-runtime::Error evict_bookmark_model(
-    NSString* root,
-    NSString* key,
-    id<ETCoreAIModelLoading> loader);
-
 // Callers must keep affected loads and sessions quiescent across processes.
 runtime::Error clear_bookmark_assets(
     NSString* root,

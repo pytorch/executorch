@@ -12,7 +12,6 @@
 #include "coreai_pte.h"
 #import "coreai_storage.h"
 
-#include <TargetConditionals.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 
 namespace executorch::backends::coreai {
@@ -20,8 +19,16 @@ namespace {
 using runtime::Error;
 using runtime::Result;
 
-Result<NSString*> explicit_root(const char* path) {
-  NSString* root = path == nullptr ? nil : [NSString stringWithUTF8String:path];
+Result<NSString*> cache_root(const char* path) {
+  NSString* root = nil;
+  if (path == nullptr) {
+    auto default_root = default_coreai_assets_root();
+    if (!default_root.ok())
+      return default_root.error();
+    root = default_root.get();
+  } else {
+    root = [NSString stringWithUTF8String:path];
+  }
   return resolve_bookmark_root(root, false);
 }
 
@@ -46,13 +53,6 @@ Error clear_pte(runtime::DataLoader& loader, NSString* root) {
   if (!pte.ok()) return pte.error();
   NSMutableArray<NSString*>* keys = [NSMutableArray array];
   NSString* architecture = nil;
-#if TARGET_OS_OSX
-  NSString* platform = @"macOS";
-#elif TARGET_OS_IOS
-  NSString* platform = @"iOS";
-#else
-  NSString* platform = @"unsupported";
-#endif
   for (const auto& buffer : pte->processed) {
     auto data = buffer.data_safe();
     if (!data.ok()) return data.error();
@@ -63,19 +63,11 @@ Error clear_pte(runtime::DataLoader& loader, NSString* root) {
                                  freeWhenDone:NO];
     auto manifest = parse_manifest(bytes);
     if (!manifest.ok()) return manifest.error();
-    ET_CHECK_OR_RETURN_ERROR(
-        [NSProcessInfo.processInfo
-            isOperatingSystemAtLeastVersion:manifest->minimum_version],
-        DelegateInvalidCompatibility,
-        "Core AI model requires a newer operating system");
-    if (architecture == nil) {
-      ET_CHECK_OR_RETURN_ERROR(ETCoreAIIsAvailable(), NotSupported,
-                               "Core AI requires macOS 27 or iOS 27");
-      architecture = ETCoreAIDeviceArchitectureName();
-    }
-    auto selected = select_assets(manifest.get(), architecture, platform);
+    auto selected = select_runtime_assets(manifest.get(), architecture);
     if (!selected.ok()) return selected.error();
-    auto key = bookmark_key(selected.get(), platform, architecture);
+    architecture = selected->architecture;
+    auto key =
+        bookmark_key(selected->manifest, selected->platform, architecture);
     if (!key.ok()) return key.error();
     [keys addObject:key.get()];
   }
@@ -85,7 +77,7 @@ Error clear_pte(runtime::DataLoader& loader, NSString* root) {
 
 Error clear_cache(const char* coreai_assets_dir) {
   @autoreleasepool {
-    auto root = explicit_root(coreai_assets_dir);
+    auto root = cache_root(coreai_assets_dir);
     if (!root.ok()) return root.error();
     auto keys = inventory_bookmark_keys(root.get());
     if (!keys.ok()) return keys.error();
@@ -96,14 +88,7 @@ Error clear_cache(const char* coreai_assets_dir) {
 Error clear_cache_for_pte(runtime::DataLoader& loader,
                           const char* coreai_assets_dir) {
   @autoreleasepool {
-    if (coreai_assets_dir != nullptr) {
-      auto root = explicit_root(coreai_assets_dir);
-      if (!root.ok()) return root.error();
-      return clear_pte(loader, root.get());
-    }
-    auto default_root = default_coreai_assets_root();
-    if (!default_root.ok()) return default_root.error();
-    auto root = resolve_bookmark_root(default_root.get(), false);
+    auto root = cache_root(coreai_assets_dir);
     if (!root.ok()) return root.error();
     return clear_pte(loader, root.get());
   }
