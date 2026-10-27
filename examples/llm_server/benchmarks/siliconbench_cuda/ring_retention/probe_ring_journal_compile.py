@@ -10,6 +10,8 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--model',choices=['MG','Gemma'],required=True)
 p.add_argument('--baseline',type=Path,required=True)
 p.add_argument('--output',type=Path,required=True)
+p.add_argument('--baseline-execution',choices=['eager','compiled'],default='eager')
+p.add_argument('--candidate-execution',choices=['eager','compiled'],default='compiled')
 a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 assert torch.cuda.is_available()
 torch.manual_seed(49027)
@@ -23,7 +25,7 @@ results=[]
 
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def record(status,**extra):
- v=dict(status=status,model=a.model,profile=profile,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
+ v=dict(status=status,model=a.model,profile=profile,baseline_execution=a.baseline_execution,candidate_execution=a.candidate_execution,kernel_source_SHA256=sha(Path(__file__).with_name('two_source_ring.py')),baseline_source_SHA256=sha(a.baseline),results=results,**extra)
  (a.output/'progress.json').write_text(json.dumps(v,indent=2)+'\n')
 
 
@@ -81,16 +83,19 @@ def old_write(f):
  ring_commit_current(f['bk'],f['bv'],f['k'],f['v'],f['info'],W+P-1)
 
 
+def baseline_tensor_step(q,bk,bv,k,v,info):
+ ring_commit_current(bk,bv,k,v,info,W+P-1)
+ return mod.sdpa_varlen(q,bk,bv,info,1*SCALE,True,W,W+P-1)
+baseline_step=torch.compile(baseline_tensor_step,fullgraph=True,dynamic=False) if a.baseline_execution=='compiled' else baseline_tensor_step
 def baseline(f):
- old_write(f)
- return mod.sdpa_varlen(f['q'],f['bk'],f['bv'],f['info'],1*SCALE,True,W,W+P-1)
+ return baseline_step(f['q'],f['bk'],f['bv'],f['k'],f['v'],f['info'])
 
 
 def compiled_tensor_step(q,sk,sv,k,v,info,stage):
  out=sdpa_ring_current(q,sk,sv,k,v,info,W,1*SCALE)
  ring_commit_journal(sk,sv,k,v,info,W,stage,1)
  return out
-compiled_step=torch.compile(compiled_tensor_step,fullgraph=True,dynamic=False)
+compiled_step=torch.compile(compiled_tensor_step,fullgraph=True,dynamic=False) if a.candidate_execution=='compiled' else compiled_tensor_step
 
 def candidate(f,commit=True):
  assert commit
@@ -183,7 +188,7 @@ try:
   print(json.dumps({'case':name,'candidate_RMS':ne['normalized_RMS'],'baseline_ms':t['baseline']['retained_mean_ms'],'candidate_ms':t['candidate']['retained_mean_ms']}),flush=True)
   del f,ref,old,new
   torch.cuda.empty_cache()
- record('kernel-prerequisite-collected',kernel_numerical_gate_passed=True,compiled_journal_gate=True,ET_mini_model_qualified=False,allocator_policy_qualified=False,graph_dynamic_metadata_qualified=True,native_ring_storage_qualified=False,scope='Actual CUDA kernel prerequisites only; four-condition mini model/native qualification remains required.')
+ record('kernel-prerequisite-collected',kernel_numerical_gate_passed=True,compiled_journal_gate=a.candidate_execution=='compiled',ET_mini_model_qualified=False,allocator_policy_qualified=False,graph_dynamic_metadata_qualified=True,native_ring_storage_qualified=False,scope='Actual CUDA kernel prerequisites only; four-condition mini model/native qualification remains required.')
  (a.output/'result.json').write_text((a.output/'progress.json').read_text())
 except BaseException as e:
  record('failed-kernel-prerequisite',error=repr(e),traceback=traceback.format_exc());raise

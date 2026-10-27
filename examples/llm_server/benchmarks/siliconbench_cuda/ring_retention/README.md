@@ -28,3 +28,10 @@ required subsequent tests. Do not publish the kernel probe as an ET speedup.
 
 Source hashes are in `source-manifest.json`. No model, benchmark request,
 experiment response, log or result is included in this source package.
+
+`run_ring_compilation_screen.py` compares eager with eager and compiled with
+compiled, using the same captured-event timing and numerical checks. The journal
+kernel receives its original staging storage and explicit K/V offsets; it avoids
+overlapping Python tensor views whose functionalization added full-buffer copies.
+Generated call bodies are audited after each run. This is a kernel diagnostic;
+the real mini model and native four-condition qualification remain required.

@@ -298,6 +298,7 @@ def _reduce(
 @triton.jit
 def _commit(KH, VH, KN, VN, Info, KJ, VJ,
             JOURNAL: tl.constexpr,
+            KJ_OFFSET: tl.constexpr, VJ_OFFSET: tl.constexpr,
             skhc, skhh, svhc, svhh, sknh, sknt, svnh, svnt,
             T: tl.constexpr, W: tl.constexpr, D: tl.constexpr,
             INFO: tl.constexpr, SEGMENTS: tl.constexpr):
@@ -317,8 +318,8 @@ def _commit(KH, VH, KN, VN, Info, KJ, VJ,
         # One packed staging row per real token, shared by all session owners.
         k = tl.load(KN + head * sknh + t * sknt + ds)
         v = tl.load(VN + head * svnh + t * svnt + ds)
-        tl.store(KJ + (t * tl.num_programs(1) + head) * D + ds, k)
-        tl.store(VJ + (t * tl.num_programs(1) + head) * D + ds, v)
+        tl.store(KJ + KJ_OFFSET + (t * tl.num_programs(1) + head) * D + ds, k)
+        tl.store(VJ + VJ_OFFSET + (t * tl.num_programs(1) + head) * D + ds, v)
     # Only the last W writes can survive. Earlier writes may alias these rows.
     col = tl.load(Info + seg * INFO + 2).to(tl.int64)
     end = tl.load(Info + seg * INFO + 3)
@@ -388,7 +389,7 @@ def ring_commit_current(history_key: torch.Tensor, history_value: torch.Tensor,
                         current_key: torch.Tensor, current_value: torch.Tensor,
                         seq_info: torch.Tensor, window: int) -> None:
     wrap_triton(_commit)[(current_key.shape[2], current_key.shape[1])](
-        history_key, history_value, current_key, current_value, seq_info, history_key, history_value, False,
+        history_key, history_value, current_key, current_value, seq_info, history_key, history_value, False, 0, 0,
         history_key.stride(1), history_key.stride(2), history_value.stride(1), history_value.stride(2),
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         current_key.shape[2], window, current_key.shape[3], seq_info.shape[1], seq_info.shape[0],
@@ -401,10 +402,13 @@ def ring_commit_journal(history_key: torch.Tensor, history_value: torch.Tensor,
                         seq_info: torch.Tensor, window: int,
                         staging: torch.Tensor, ring_layer: int) -> None:
     # staging is [ring_layer, K_or_V, max_write, kv_heads, head_dim].
-    stage_key = staging[ring_layer, 0]
-    stage_value = staging[ring_layer, 1]
+    # Pass the original storage, without two overlapping views of it. PyTorch
+    # functionalization otherwise clones and merges those views on every step.
+    # The ABI and the K/V journal offsets remain unchanged.
+    key_offset = ring_layer * staging.stride(0)
+    value_offset = key_offset + staging.stride(1)
     wrap_triton(_commit)[(current_key.shape[2], current_key.shape[1])](
-        history_key, history_value, current_key, current_value, seq_info, stage_key, stage_value, True,
+        history_key, history_value, current_key, current_value, seq_info, staging, staging, True, key_offset, value_offset,
         history_key.stride(1), history_key.stride(2), history_value.stride(1), history_value.stride(2),
         current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
         current_key.shape[2], window, current_key.shape[3], seq_info.shape[1], seq_info.shape[0],
