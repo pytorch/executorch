@@ -67,7 +67,7 @@ class CPUExecution {
       ET_CHECK_OR_RETURN_ERROR(
           spec.kind == ptn::OutputKind::UserOutput,
           NotSupported,
-          "CpuBackend static FP32 delegate does not support mutation");
+          "CpuBackend static delegate does not support mutation");
     }
     buffers_.resize(graph.values.size());
     bytes_.reserve(graph.values.size());
@@ -171,7 +171,8 @@ class CPUExecution {
       const auto& tensor = args[index]->toTensor();
       const auto& expected = method_->graph.value(id).tensor_meta();
       ET_CHECK_OR_RETURN_ERROR(
-          tensor.scalar_type() == aten::ScalarType::Float &&
+          tensor.scalar_type() ==
+                  static_cast<aten::ScalarType>(expected.dtype) &&
               tensor.dim() == expected.sizes.size() &&
               std::equal(
                   expected.sizes.begin(),

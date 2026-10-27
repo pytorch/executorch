@@ -274,7 +274,7 @@ class CPUAOTTest(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(
                     ValueError,
-                    f"CpuBackend requires FP32 CPU constant weight, "
+                    f"CpuBackend requires supported CPU constant weight, "
                     f"got dtype {dtype} on {device}",
                 ):
                     CpuBackend.preprocess(
@@ -404,7 +404,7 @@ class CPUAOTTest(unittest.TestCase):
         node.meta["val"] = producer.meta["val"][0]
         support = CPUSemanticOperators()
         self.assertTrue(support.is_node_supported({}, node))
-        for val in (None, 1, (), torch.ones(2, dtype=torch.int32)):
+        for val in (None, 1, (), torch.ones(2, dtype=torch.float64)):
             with self.subTest(val=val):
                 node.meta["val"] = val
                 self.assertFalse(support.is_node_supported({}, node))
@@ -414,7 +414,7 @@ class CPUAOTTest(unittest.TestCase):
             def forward(self, x):
                 return x + x
 
-        ep = torch.export.export(Add(), (torch.ones(2, dtype=torch.int32),))
+        ep = torch.export.export(Add(), (torch.ones(2, dtype=torch.float64),))
         edge = to_edge_transform_and_lower(ep, partitioner=[CPUPartitioner()])
         self.assertEqual(
             len(edge.to_executorch().executorch_program.execution_plan[0].delegates), 0
