@@ -43,7 +43,7 @@ def patch_native(p):
     s=s[:idx]+code+s[idx:];(p/n).write_text(s)
     n='backends/cuda/runtime/cuda_kv_cache.cpp';s=(p/n).read_text()
     # Restrict changes to the batched sequence class, leaving other layouts alone.
-    a=s.index('class CudaBatchedSequenceCache');b=s.index('std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache')
+    a=s.index('class CudaBatchedSequenceCache');b=s.index('\n};',a)+len('\n};')
     before,t,after=s[:a],s[a:b],s[b:]
     t=once(t,'side_specs(cfg),','side_specs(geometry, cfg),')
     t=once(t,'      layer_rows_.push_back(rows_of(layer, cfg));\n    }',
@@ -112,7 +112,7 @@ def patch_native(p):
     t=once(t,'static_cast<int64_t>(layer.policy.window) + *cfg.max_write - 1);',
         'static_cast<int64_t>(layer.policy.window) + (cfg.split_ring_history ? 0 : *cfg.max_write - 1));')
     # Full-cache clone remains original; the ring is restored from the undo archive.
-    t=once(t,'      if (is_ring(layer)) {','      if (is_ring(layer)) {\n        if (cfg_.split_ring_history && !copy_current_ring) continue;')
+    t=once(t,'      const cache::LayerGeometry& layer = geometry_.layers[index];\n      const size_t slot', '      const cache::LayerGeometry& layer = geometry_.layers[index];\n      if (cfg_.split_ring_history && is_ring(layer) && !copy_current_ring) continue;\n      const size_t slot')
     t=once(t,'Error copy_column(int from, int to, int keep)', 'Error copy_column(int from, int to, int keep, bool copy_current_ring = false)')
     insertion='''  bool previous_step_prefill_ = false;
   uint64_t allocator_phase_trims_ = 0;
