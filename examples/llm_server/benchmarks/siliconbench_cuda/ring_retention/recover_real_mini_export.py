@@ -26,7 +26,13 @@ def main():
   source=a.output/'export-source/executorch'
   shutil.copytree(oldsource,source,symlinks=True,ignore=shutil.ignore_patterns('.git','build','cmake-out','__pycache__','*.pte','*.ptd','*.gguf','*.log'))
   target=source/'backends/cuda/triton/kernels/two_source_ring.py';before=sha(target);shutil.copy2(pkg/'two_source_ring.py',target)
-  auditfile=source/'ring-retention-source-audit.json';audit=json.loads(auditfile.read_text());prior=sha(auditfile);assert 'backends/cuda/triton/kernels/two_source_ring.py' in audit['candidate_SHA256'];audit['candidate_SHA256']['backends/cuda/triton/kernels/two_source_ring.py']=sha(target)
+  auditfile=source/'ring-retention-source-audit.json';audit=json.loads(auditfile.read_text());prior=sha(auditfile)
+  name='backends/cuda/triton/kernels/two_source_ring.py';maps=[audit[k] for k in ['candidate_SHA256','additional_candidate_SHA256'] if name in audit.get(k,{})]
+  assert maps,'Ring kernel is missing from original source audit'
+  for hashes in maps:
+   assert hashes[name]==before,'Original audited ring source differs from copied source'
+   hashes[name]=sha(target)
+  audit['candidate']=str(source)
   audit['compiled_scale_recovery']=dict(before_SHA256=before,after_SHA256=sha(target),prior_audit_SHA256=prior,compiled_gate_SHA256=sha(a.compiled_probe),original_source_unchanged=True,native_runtime_unchanged=True)
   auditfile.write_text(json.dumps(audit,indent=2)+'\n')
   prep=a.output/'native-preparation';prep.mkdir();gate=dict(oldgate,export_source=str(source),source_only_kernel_recovery=True,reused_native_gate=str(a.native_preparation/'native-gate.json'),reused_native_gate_SHA256=sha(a.native_preparation/'native-gate.json'),compiled_kernel_gate_SHA256=sha(a.compiled_probe),export_source_audit_SHA256=sha(auditfile))
