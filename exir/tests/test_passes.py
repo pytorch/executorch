@@ -2902,6 +2902,26 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_detaches_folded_parameters(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                # `to` with the same dtype returns the parameter itself.
+                return x + self.w.t() + self.w.to(torch.float32)
+
+        m = M()
+        x = torch.randn(4, 4)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertNotIn(torch.ops.aten.t.default, targets)
+        self.assertNotIn(torch.ops.aten.to.dtype, targets)
+        self.assertTrue(torch.allclose(new_ep.module()(x), m(x)))
+        copy.deepcopy(to_edge(new_ep).exported_program())
+
     def test_constant_prop_pass_keeps_scalar_read_at_runtime(self) -> None:
         """
         A non-tensor value cannot become a constant placeholder. When a node
