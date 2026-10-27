@@ -8,6 +8,7 @@
 
 
 import argparse
+import re
 from itertools import islice
 from typing import Any, Dict, Iterator, Optional, Tuple
 
@@ -89,12 +90,25 @@ def lower_to_openvino(
             sample = transform_fn(sample)
             return pad_to_target(sample, target_input_dims)
 
+        # Keep the one-to-one Detect head in FP32: ignore everything from the
+        # first node of each of its branches to the output. Newer ultralytics no
+        # longer puts detach nodes in front of these branches, so find them by module.
+        model = aten_dialect.module()
+        head_inputs = {}
+        for node in model.graph.nodes:
+            for path, _ in node.meta.get("nn_module_stack", {}).values():
+                if node.op == "call_function" and re.fullmatch(
+                    r".+\.one2one_cv[23]\.\d+", path
+                ):
+                    head_inputs.setdefault(path, node.name)
+        if not head_inputs:
+            raise RuntimeError("Could not find the one-to-one Detect head branches.")
         quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_MIXED)
         quantizer.set_ignored_scope(
-            subgraphs=[(["detach", "detach_1", "detach_2"], ["output"])]
+            subgraphs=[(list(head_inputs.values()), ["output"])]
         )
         quantized_model = quantize_pt2e(
-            aten_dialect.module(),
+            model,
             quantizer,
             nncf.Dataset(calibration_dataset, ext_transform_fn),
             subset_size=subset_size,
