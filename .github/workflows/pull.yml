@@ -729,12 +729,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="118000" # GCC 15.2 baseline: 115868 bytes, 2026-05-13
+          threshold="34000" # GCC 15.2, minimal PAL + nano baseline: 33372 bytes, 2026-10-27
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="136020" # 136 KiB
+          threshold="57000" # Zephyr SDK 1.0.1, minimal PAL baseline: 55800 bytes, 2026-10-27
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Unsupported OS selection: ${{ matrix.os }}"
@@ -752,11 +752,17 @@ jobs:
         # Setup cmake target to desired toolchain
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
-        # Build and run size test
+        # Measure the embedded runtime with minimal PAL.
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
-          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+          # Use nano libc and libstdc++ without exception support.
+          bash test/build_size_test.sh \
+            "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}" \
+            -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+            -DEXECUTORCH_PAL_DEFAULT=minimal \
+            -DCMAKE_C_FLAGS_INIT=--specs=nano.specs \
+            -DCMAKE_CXX_FLAGS_INIT=--specs=nano.specs
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
-          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_PAL_DEFAULT=minimal -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
           CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_SIZE_TEST_NO_OS_LINK=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
