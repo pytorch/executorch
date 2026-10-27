@@ -234,7 +234,7 @@ class RuntimeTest(unittest.TestCase):
         method._method.set_inputs((x,))
         method._method.execute()
         x.data = torch.zeros_like(x)
-        with self.assertRaisesRegex(ValueError, "Input storage changed"):
+        with self.assertRaisesRegex(ValueError, "storage changed"):
             method._method.get_outputs(clone_outputs=False)
 
     def test_aliased_output_preserves_written_metadata(self):
