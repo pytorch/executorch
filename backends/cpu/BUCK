@@ -33,6 +33,43 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_library,
+    name = "export_torchvision_lib",
+    srcs = [
+        "workflows/__init__.py",
+        "workflows/export.py",
+    ],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/export:lib",
+        "//pytorch/ao:torchao",
+        "//pytorch/vision:torchvision", # @manual
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "export_torchvision",
+    par_style = "xar",
+    main_module = "executorch.backends.cpu.workflows.export",
+    deps = [":export_torchvision_lib"],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_export_torchvision",
+    srcs = ["test/test_export_torchvision.py"],
+    deps = [
+        ":export_torchvision_lib",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_test,
     name = "test_aot",
     srcs = ["test/test_aot.py"],
