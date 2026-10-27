@@ -16,6 +16,8 @@ def main():
         p.add_argument('--'+name, type=Path, required=True)
     p.add_argument('--reuse-runtime-cache', action='store_true',
                    help='Reuse existing task-owned compiler caches without changing framework code')
+    p.add_argument('--prefill-budget',type=int,choices=[2048,4096,8192],default=8192)
+    p.add_argument('--use-default-memory-budget',action='store_true')
     a = p.parse_args()
     assert not a.output.exists()
     assert a.task_root.is_dir() if a.reuse_runtime_cache else not a.task_root.exists()
@@ -68,6 +70,11 @@ case "$backend" in
   *) exit 2 ;;
 esac
 '''.replace('ASSIGNMENTS', assignments)
+    script=script.replace('--chunked-prefill-size 8192 --max-prefill-tokens 8192',
+                          f'--chunked-prefill-size {a.prefill_budget} --max-prefill-tokens {a.prefill_budget}')
+    script=script.replace('--max-num-batched-tokens 8192',f'--max-num-batched-tokens {a.prefill_budget}')
+    if a.use_default_memory_budget:
+        script=script.replace('--mem-fraction-static 0.85','').replace('--gpu-memory-utilization 0.85','')
     a.output.parent.mkdir(parents=True,exist_ok=True)
     a.output.write_text(script)
     subprocess.run(['bash','-n',str(a.output)],check=True)
