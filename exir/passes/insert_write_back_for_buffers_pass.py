@@ -284,13 +284,13 @@ def _insert_copy(
     outputs = pytree.tree_flatten(output_node.args)[0]
     assert len(outputs) == len(mutated_outputs)
 
-    # Pair up the returns with the nodes they mutate.
-    copies: List[Tuple[torch.fx.Node, torch.fx.Node]] = []
-    user_output_nodes = []
-    for return_node, mutated_node_name in zip(outputs, mutated_outputs):
-        # User output, leave alone
+    # Pair up the returns with the nodes they mutate, by output position.
+    copies: List[Tuple[int, torch.fx.Node, torch.fx.Node]] = []
+    for position, (return_node, mutated_node_name) in enumerate(
+        zip(outputs, mutated_outputs)
+    ):
+        # User output, or a mutation already done in place: leave alone
         if mutated_node_name is None:
-            user_output_nodes.append(return_node)
             continue
 
         # Mutable buffer grab the node
@@ -300,10 +300,10 @@ def _insert_copy(
             raise RuntimeError(
                 f"Could not find {mutated_node_name} in either buffer or input nodes"
             )
-        copies.append((mutated_node, return_node))
+        copies.append((position, mutated_node, return_node))
 
-    # insert the copies
-    buffer_output_nodes: List[torch.fx.Node] = []
+    # insert the copies, each one replacing the output it writes back
+    new_outputs: List[torch.fx.Node] = list(outputs)
     # The alias analysis is only needed to place copies, so graphs with no
     # write-backs (the common case for models without mutable state) skip its
     # cost entirely.
@@ -325,7 +325,7 @@ def _insert_copy(
         if len(copies) > 1:
             mutated_aliases: Set[torch.fx.Node] = set()
             return_aliases: Set[torch.fx.Node] = set()
-            for mutated_node, return_node in copies:
+            for _, mutated_node, return_node in copies:
                 mutated_alias = alias_index.aliases(mutated_node)
                 return_alias = alias_index.aliases(return_node)
                 if (
@@ -340,7 +340,7 @@ def _insert_copy(
                 mutated_aliases |= mutated_alias
                 return_aliases |= return_alias
 
-        for mutated_node, return_node in copies:
+        for position, mutated_node, return_node in copies:
             if independent:
                 insert_after = _insertion_point(
                     mutated_node, return_node, node_order, last_placeholder, alias_index
@@ -349,19 +349,16 @@ def _insert_copy(
             else:
                 insertion = gm.graph.inserting_before(output_node)
             with insertion:
-                buffer_output = gm.graph.call_function(
+                new_outputs[position] = gm.graph.call_function(
                     torch.ops.aten.copy_.default, (mutated_node, return_node)
                 )
-                # add output of copy to graph outputs
-                buffer_output_nodes.append(buffer_output)
 
     with gm.graph.inserting_before(output_node):
-        buffer_output_nodes.extend(user_output_nodes)
         # Remove old outputs
-        new_output = gm.graph.output(tuple(buffer_output_nodes))
+        new_output = gm.graph.output(tuple(new_outputs))
         output_node.replace_all_uses_with(new_output)
         gm.graph.erase_node(output_node)
-    return buffer_output_nodes
+    return new_outputs
 
 
 def _is_inplace_node(node: torch.fx.Node) -> bool:
@@ -456,21 +453,19 @@ def insert_write_back_for_buffers_pass(
             mutated_outputs.append(None)
 
     # insert the copy ops and update the outputs
-    buffer_output_nodes = _insert_copy(gm, mutated_outputs, input_name_to_node)
+    new_outputs = _insert_copy(gm, mutated_outputs, input_name_to_node)
     gm.graph.lint()
     gm.graph.eliminate_dead_code()
     gm.recompile()
 
     # patch the output signature to point to the new updated outputs
     new_output_specs: List[OutputSpec] = []
-    i = 0
-    for output_spec in ep.graph_signature.output_specs:
+    for output_spec, new_output in zip(ep.graph_signature.output_specs, new_outputs):
         if output_spec.kind in (
             OutputKind.BUFFER_MUTATION,
             OutputKind.USER_INPUT_MUTATION,
         ):
-            output_spec.arg.name = buffer_output_nodes[i].name
-            i += 1
+            output_spec.arg.name = new_output.name
         new_output_specs.append(output_spec)
 
     signature = ExportGraphSignature(

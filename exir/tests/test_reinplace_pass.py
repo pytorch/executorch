@@ -817,10 +817,10 @@ class TestReinplacePass(unittest.TestCase):
         """A static KV cache passed in as an input and updated with
         ``index_copy_`` is updated in place, with no copy of the cache.
 
-        ``to_edge_transform_and_lower`` functionalizes before decomposing,
-        which turns the update into ``index_put`` followed by no-op ``copy``
-        nodes into the cache. Those must be removed for the reinplace pass to
-        see that ``index_put`` is the last use of the cache.
+        Each ``run_decompositions`` in ``to_edge_transform_and_lower`` writes
+        the mutated cache back with a ``copy`` of the ``index_put`` result into
+        the cache. Those copies must be removed for the reinplace pass to see
+        that ``index_put`` is the last use of the cache.
         """
 
         class CacheUpdate(torch.nn.Module):
@@ -850,6 +850,33 @@ class TestReinplacePass(unittest.TestCase):
         )
         self.assertTrue(torch.equal(outputs[0], expected_cache))
         self.assertTrue(torch.equal(outputs[1], expected_cache.sum(-1)))
+
+    def test_reinplaced_and_written_back_inputs_keep_their_outputs(self) -> None:
+        """With one mutated input updated in place and another written back,
+        each mutation output stays in its position and names its own input."""
+
+        class TwoMutations(torch.nn.Module):
+            def forward(
+                self, a: torch.Tensor, b: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                a.index_copy_(0, pos, torch.ones(1, 4))
+                b.add_(1)
+                return a.sum() + b.sum()
+
+        a, b, pos = torch.zeros(3, 4), torch.zeros(2), torch.tensor([1])
+        program = to_edge_transform_and_lower(
+            export(TwoMutations(), (a, b, pos), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        specs = program.exported_program().graph_signature.output_specs
+        self.assertEqual([spec.target for spec in specs[:2]], ["a", "b"])
+
+        expected_a = a.clone().index_copy_(0, pos, torch.ones(1, 4))
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward(
+            (a, b, pos)
+        )
+        self.assertTrue(torch.equal(outputs[0], expected_a))
+        self.assertTrue(torch.equal(outputs[1], torch.ones(2)))
+        self.assertTrue(torch.equal(outputs[2], expected_a.sum() + 2))
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in
