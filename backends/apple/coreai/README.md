@@ -75,7 +75,9 @@ and raw asset bytes are unchanged.
 
 When source recovery is needed, existing bundles are checked for the expected
 file set, sizes, entry types and directory structure without reading asset
-contents or requesting NDS payloads.
+contents or requesting NDS payloads. Unicode paths are compared in canonical
+decomposed form; NDS keys and bytes remain unchanged. Reuse fully flushes the
+source root, including after a previous publication's final flush failed.
 Missing bundles are written to a staging directory and published with an
 exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and

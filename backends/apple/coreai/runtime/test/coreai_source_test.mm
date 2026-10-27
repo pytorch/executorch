@@ -8,6 +8,7 @@
 
 #include <dispatch/dispatch.h>
 #include <pthread.h>
+#include <sys/stat.h>
 #include "coreai_bookmarks.h"
 #include "coreai_fault_scope.h"
 #include "coreai_source_fixture.h"
@@ -18,18 +19,94 @@ using runtime::Result;
 
 namespace {
 Result<Manifest> source_manifest(bool aot = false) {
-  auto parsed = parse_manifest(encode(aot ? aot_manifest_dict() : manifest_dict()));
-  if (!parsed.ok()) return parsed.error();
+  auto parsed =
+      parse_manifest(encode(aot ? aot_manifest_dict() : manifest_dict()));
+  if (!parsed.ok())
+    return parsed.error();
   return select_assets(parsed.get(), @"arch_b", @"macOS");
 }
-}  // namespace
+} // namespace
 
 TEST_F(CoreAISourceTest, RejectsUnselectedAotSource) {
   auto parsed = parse_manifest(encode(aot_manifest_dict()));
   ASSERT_TRUE(parsed.ok());
   ASSERT_TRUE(parsed->aot_compiled);
   ASSERT_EQ(parsed->path, nil);
-  EXPECT_FALSE(prepare_source_bundle(parsed.get(), nullptr, nil).ok());
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  TestData data;
+  EXPECT_EQ(
+      executorch::backends::coreai::prepare_source_bundle(
+          parsed.get(), &data, storage.url.path, fixture_identity('a'))
+          .error(),
+      Error::InvalidProgram);
+  EXPECT_EQ(data.attempts, 0);
+}
+
+TEST_F(CoreAISourceTest, UnicodePathsMaterializeAndReuse) {
+  NSString* composed = [NSString stringWithFormat:@"caf%C", 0x00e9];
+  for (NSString* name in
+       @[ composed, composed.decomposedStringWithCanonicalMapping ]) {
+    SCOPED_TRACE(name.UTF8String);
+    TestDirectory storage;
+    ASSERT_NE(storage.url, nil);
+    TestData data;
+    data.files.clear();
+    NSString* relative = [NSString stringWithFormat:@"%@/%@.bin", name, name];
+    NSString* file = [@"model.aimodel" stringByAppendingPathComponent:relative];
+    auto dict = manifest_dict();
+    dict[@"files"] = @{file : @7};
+    data.files[[NSString stringWithFormat:@"coreai/ab/%@", file].UTF8String] =
+        "unicode";
+    auto manifest = parse_manifest(encode(dict));
+    ASSERT_TRUE(manifest.ok());
+    auto source =
+        prepare_source_bundle(manifest.get(), &data, storage.url.path);
+    ASSERT_TRUE(source.ok());
+    NSData* bytes = [NSData
+        dataWithContentsOfURL:[source.get()
+                                  URLByAppendingPathComponent:relative]];
+    EXPECT_TRUE([bytes isEqual:[NSData dataWithBytes:"unicode" length:7]]);
+    auto reused =
+        prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
+    ASSERT_TRUE(reused.ok());
+    EXPECT_TRUE([reused.get() isEqual:source.get()]);
+    EXPECT_EQ(data.attempts, 1);
+    EXPECT_EQ(data.requests, data.releases);
+  }
+}
+
+TEST_F(CoreAISourceTest, RejectsAliasedPathsBeforeReadingOrWritingAssets) {
+  NSString* composed = [NSString stringWithFormat:@"caf%C", 0x00e9];
+  NSString* decomposed = composed.decomposedStringWithCanonicalMapping;
+  for (NSArray<NSString*>* pair in @[
+         @[ @"A.bin", @"a.bin" ],
+         @[ @"Dir/x", @"dir/y" ],
+         @[ @"Dir", @"dir/x" ],
+         @[ composed, decomposed ],
+         @[
+           [composed stringByAppendingPathComponent:@"x"],
+           [decomposed stringByAppendingPathComponent:@"y"]
+         ]
+       ]) {
+    SCOPED_TRACE(pair.description.UTF8String);
+    TestDirectory storage;
+    ASSERT_NE(storage.url, nil);
+    TestData data;
+    auto manifest = source_manifest();
+    ASSERT_TRUE(manifest.ok());
+    manifest->files = @{
+      [@"model.aimodel" stringByAppendingPathComponent:pair[0]] : @1,
+      [@"model.aimodel" stringByAppendingPathComponent:pair[1]] : @1
+    };
+    NSDictionary* snapshot = nil;
+    ASSERT_TRUE(asset_tree_snapshot(storage.url, snapshot));
+    EXPECT_EQ(
+        prepare_source_bundle(manifest.get(), &data, storage.url.path).error(),
+        Error::InvalidProgram);
+    EXPECT_EQ(data.attempts, 0);
+    EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
+  }
 }
 
 TEST_F(CoreAISourceTest, AotMaterializesOnlySelectedArchitecture) {
@@ -48,31 +125,40 @@ TEST_F(CoreAISourceTest, AotMaterializesOnlySelectedArchitecture) {
     EXPECT_EQ(data.attempts, 2);
     EXPECT_EQ(data.requests, 2);
     NSURL* url = first.get();
-    EXPECT_TRUE([url.lastPathComponent isEqualToString:selected->path.lastPathComponent]);
-    NSData* contents = [NSData dataWithContentsOfURL:[url URLByAppendingPathComponent:@"graph.bin"]];
-    ASSERT_TRUE([contents isEqual:[NSData dataWithBytes:"compiled\0graph" length:14]]);
+    EXPECT_TRUE([url.lastPathComponent
+        isEqualToString:selected->path.lastPathComponent]);
+    NSData* contents = [NSData
+        dataWithContentsOfURL:[url URLByAppendingPathComponent:@"graph.bin"]];
+    ASSERT_TRUE([contents isEqual:[NSData dataWithBytes:"compiled\0graph"
+                                                 length:14]]);
 
-    NSString* other_arch = [arch isEqualToString:@"arch_a"] ? @"arch_b" : @"arch_a";
-    NSString* other_key =
-        [NSString stringWithFormat:@"coreai/ab/model.%@.aimodelc/graph.bin", other_arch];
+    NSString* other_arch =
+        [arch isEqualToString:@"arch_a"] ? @"arch_b" : @"arch_a";
+    NSString* other_key = [NSString
+        stringWithFormat:@"coreai/ab/model.%@.aimodelc/graph.bin", other_arch];
     data.files[other_key.UTF8String] = "must not affect identity";
-    auto reused = prepare_source_bundle(selected.get(), &data, storage.url.path);
+    auto reused =
+        prepare_source_bundle(selected.get(), &data, storage.url.path);
     ASSERT_TRUE(reused.ok());
     EXPECT_TRUE([reused.get() isEqual:url]);
     EXPECT_EQ(data.attempts, 2);
 
     auto unselected_changed = aot_manifest_dict();
-    NSMutableDictionary* digests = [unselected_changed[@"bundle_digests"] mutableCopy];
-    digests[[NSString stringWithFormat:@"model.%@.aimodelc", other_arch]] = fixture_identity('f');
+    NSMutableDictionary* digests =
+        [unselected_changed[@"bundle_digests"] mutableCopy];
+    digests[[NSString stringWithFormat:@"model.%@.aimodelc", other_arch]] =
+        fixture_identity('f');
     unselected_changed[@"bundle_digests"] = digests;
     NSMutableDictionary* files = [unselected_changed[@"files"] mutableCopy];
-    files[[NSString stringWithFormat:@"model.%@.aimodelc/extra", other_arch]] = @0;
+    files[[NSString stringWithFormat:@"model.%@.aimodelc/extra", other_arch]] =
+        @0;
     unselected_changed[@"files"] = files;
     auto changed_parsed = parse_manifest(encode(unselected_changed));
     ASSERT_TRUE(changed_parsed.ok());
     auto unchanged = select_assets(changed_parsed.get(), arch, @"macOS");
     ASSERT_TRUE(unchanged.ok());
-    auto unchanged_source = prepare_source_bundle(unchanged.get(), &data, storage.url.path);
+    auto unchanged_source =
+        prepare_source_bundle(unchanged.get(), &data, storage.url.path);
     ASSERT_TRUE(unchanged_source.ok());
     EXPECT_TRUE([unchanged_source.get() isEqual:url]);
     EXPECT_EQ(data.attempts, 2);
@@ -111,27 +197,34 @@ void CoreAISourceTest::check_concurrent_source() {
       worker.root = storage.url.path;
       worker.start = start;
       launch_error = pthread_create(
-          &threads[launched], nullptr,
+          &threads[launched],
+          nullptr,
           [](void* context) -> void* {
             auto& worker = *static_cast<Worker*>(context);
             @autoreleasepool {
               worker.started =
-                  dispatch_semaphore_wait(worker.start,
-                                          dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0;
-              if (!worker.started) return nullptr;
-              auto assets =
-                  worker.fixture->prepare_source_bundle(*worker.manifest, worker.data, worker.root);
+                  dispatch_semaphore_wait(
+                      worker.start,
+                      dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0;
+              if (!worker.started)
+                return nullptr;
+              auto assets = worker.fixture->prepare_source_bundle(
+                  *worker.manifest, worker.data, worker.root);
               worker.error = assets.error();
-              if (assets.ok()) worker.path = assets.get().path.UTF8String;
+              if (assets.ok())
+                worker.path = assets.get().path.UTF8String;
             }
             return nullptr;
           },
           &worker);
-      if (launch_error != 0) break;
+      if (launch_error != 0)
+        break;
     }
-    for (size_t i = 0; i < launched; ++i) dispatch_semaphore_signal(start);
+    for (size_t i = 0; i < launched; ++i)
+      dispatch_semaphore_signal(start);
     int join_errors[4] = {};
-    for (size_t i = 0; i < launched; ++i) join_errors[i] = pthread_join(threads[i], nullptr);
+    for (size_t i = 0; i < launched; ++i)
+      join_errors[i] = pthread_join(threads[i], nullptr);
     ASSERT_EQ(launch_error, 0);
     for (size_t i = 0; i < 4; ++i) {
       SCOPED_TRACE(i);
@@ -144,13 +237,15 @@ void CoreAISourceTest::check_concurrent_source() {
     EXPECT_EQ(data.requests, 1);
     EXPECT_EQ(data.requests, data.releases);
     EXPECT_EQ(data.metadata_requests, 0);
-    EXPECT_EQ([NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path error:nil]
-                  .count,
-              1u);
+    EXPECT_EQ(
+        [NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path
+                                                          error:nil]
+            .count,
+        1u);
   }
 }
 
-TEST_F(CoreAISourceTest, ConcurrentColdAndWarmSource) {
+TEST_F(CoreAISourceTest, PerKeyLockSerializesColdAndWarmPreparation) {
   check_concurrent_source();
 }
 
@@ -163,24 +258,32 @@ TEST_F(CoreAISourceTest, RejectsInvalidKeysAndMissingSourceInputs) {
     TestDirectory invalid_storage;
     ASSERT_NE(invalid_storage.url, nil);
     TestData invalid_data;
-    EXPECT_EQ(executorch::backends::coreai::prepare_source_bundle(
-                  manifest.get(), &invalid_data, invalid_storage.url.path, key)
-                  .error(),
-              Error::InvalidArgument);
+    EXPECT_EQ(
+        executorch::backends::coreai::prepare_source_bundle(
+            manifest.get(), &invalid_data, invalid_storage.url.path, key)
+            .error(),
+        Error::InvalidArgument);
     EXPECT_EQ(invalid_data.attempts, 0);
   }
 
   TestData data;
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
-  EXPECT_FALSE(prepare_source_bundle(manifest.get(), nullptr, storage.url.path).ok());
+  EXPECT_EQ(
+      prepare_source_bundle(manifest.get(), nullptr, storage.url.path).error(),
+      Error::InvalidProgram);
   NSURL* absent = [storage.url URLByAppendingPathComponent:@"absent"];
-  EXPECT_FALSE(prepare_source_bundle(manifest.get(), &data, absent.path).ok());
+  EXPECT_EQ(
+      prepare_source_bundle(manifest.get(), &data, absent.path).error(),
+      Error::InvalidArgument);
   EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:absent.path]);
-  auto recovered = prepare_source_bundle(manifest.get(), &data, storage.url.path);
+  auto recovered =
+      prepare_source_bundle(manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(recovered.ok());
   EXPECT_EQ(
-      [NSData dataWithContentsOfURL:[recovered.get() URLByAppendingPathComponent:@"graph.bin"]]
+      [NSData
+          dataWithContentsOfURL:[recovered.get()
+                                    URLByAppendingPathComponent:@"graph.bin"]]
           .length,
       11u);
   EXPECT_EQ(data.requests, data.releases);
@@ -194,16 +297,21 @@ TEST_F(CoreAISourceTest, PublishedSourceOutlivesResult) {
   ASSERT_TRUE(manifest.ok());
   NSURL* first_url = nil;
   {
-    auto assets = prepare_source_bundle(manifest.get(), &data, storage.url.path);
+    auto assets =
+        prepare_source_bundle(manifest.get(), &data, storage.url.path);
     ASSERT_TRUE(assets.ok());
     EXPECT_EQ(data.releases, data.requests);
     first_url = assets.get();
     EXPECT_EQ(
-        [NSData dataWithContentsOfURL:[first_url URLByAppendingPathComponent:@"graph.bin"]].length,
+        [NSData
+            dataWithContentsOfURL:[first_url
+                                      URLByAppendingPathComponent:@"graph.bin"]]
+            .length,
         11u);
   }
   EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:first_url.path]);
-  auto reused = prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
+  auto reused =
+      prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
   ASSERT_TRUE(reused.ok());
   EXPECT_TRUE([reused.get() isEqual:first_url]);
 }
@@ -213,7 +321,10 @@ TEST_F(CoreAISourceTest, PersistentIdentityTracksDigestNotFileOrder) {
   ASSERT_NE(storage.url, nil);
   TestData data;
   auto dict = manifest_dict();
-  dict[@"files"] = @{@"model.aimodel/graph.bin" : @11, @"model.aimodel/nested/weights.bin" : @7};
+  dict[@"files"] = @{
+    @"model.aimodel/graph.bin" : @11,
+    @"model.aimodel/nested/weights.bin" : @7
+  };
   dict[@"bundle_digests"] = @{@"model.aimodel" : fixture_identity('2')};
   data.files["coreai/ab/model.aimodel/nested/weights.bin"] = "weights";
   auto manifest = parse_manifest(encode(dict));
@@ -221,21 +332,27 @@ TEST_F(CoreAISourceTest, PersistentIdentityTracksDigestNotFileOrder) {
   auto first = prepare_source_bundle(manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(first.ok());
   NSURL* first_url = first.get();
-  dict[@"files"] = @{@"model.aimodel/nested/weights.bin" : @7, @"model.aimodel/graph.bin" : @11};
+  dict[@"files"] = @{
+    @"model.aimodel/nested/weights.bin" : @7,
+    @"model.aimodel/graph.bin" : @11
+  };
   auto reordered_manifest = parse_manifest(encode(dict));
   ASSERT_TRUE(reordered_manifest.ok());
-  auto reordered = prepare_source_bundle(reordered_manifest.get(), &data, storage.url.path);
+  auto reordered =
+      prepare_source_bundle(reordered_manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(reordered.ok());
   EXPECT_TRUE([reordered.get() isEqual:first_url]);
   data.files["coreai/ab/model.aimodel/nested/weights.bin"] = "changed";
   dict[@"bundle_digests"] = @{@"model.aimodel" : fixture_identity('3')};
   auto changed_manifest = parse_manifest(encode(dict));
   ASSERT_TRUE(changed_manifest.ok());
-  auto changed = prepare_source_bundle(changed_manifest.get(), &data, storage.url.path);
+  auto changed =
+      prepare_source_bundle(changed_manifest.get(), &data, storage.url.path);
   ASSERT_TRUE(changed.ok());
   EXPECT_FALSE([changed.get() isEqual:first_url]);
   EXPECT_TRUE(
-      [[NSData dataWithContentsOfURL:[first_url URLByAppendingPathComponent:@"nested/weights.bin"]]
+      [[NSData dataWithContentsOfURL:[first_url URLByAppendingPathComponent:
+                                                    @"nested/weights.bin"]]
           isEqual:[@"weights" dataUsingEncoding:NSUTF8StringEncoding]]);
   EXPECT_EQ(data.releases, data.requests);
 }
@@ -245,7 +362,10 @@ TEST_F(CoreAISourceTest, PartialMaterializationCleansStagingAndCanRetry) {
   ASSERT_NE(storage.url, nil);
   TestData data;
   auto dict = manifest_dict();
-  dict[@"files"] = @{@"model.aimodel/graph.bin" : @11, @"model.aimodel/nested/weights.bin" : @7};
+  dict[@"files"] = @{
+    @"model.aimodel/graph.bin" : @11,
+    @"model.aimodel/nested/weights.bin" : @7
+  };
   dict[@"bundle_digests"] = @{@"model.aimodel" : fixture_identity('2')};
   data.files["coreai/ab/model.aimodel/nested/weights.bin"] = "weights";
   auto manifest = parse_manifest(encode(dict));
@@ -256,17 +376,24 @@ TEST_F(CoreAISourceTest, PartialMaterializationCleansStagingAndCanRetry) {
       Error::AccessFailed);
   EXPECT_EQ(data.attempts, 2);
   EXPECT_EQ(
-      [NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path error:nil].count,
+      [NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path
+                                                        error:nil]
+          .count,
       0u);
   EXPECT_EQ(data.releases, data.requests);
   data.fail_at = 0;
-  EXPECT_TRUE(prepare_source_bundle(manifest.get(), &data, storage.url.path).ok());
+  EXPECT_TRUE(
+      prepare_source_bundle(manifest.get(), &data, storage.url.path).ok());
   EXPECT_EQ(
-      [NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path error:nil].count,
+      [NSFileManager.defaultManager contentsOfDirectoryAtPath:storage.url.path
+                                                        error:nil]
+          .count,
       1u);
 }
 
-TEST_F(CoreAISourceTest, NestedEmptyAndLargeFilesMaterializeAndReuseWithoutNamedData) {
+TEST_F(
+    CoreAISourceTest,
+    NestedEmptyAndLargeFilesMaterializeAndReuseWithoutNamedData) {
   TestDirectory storage;
   ASSERT_NE(storage.url, nil);
   TestData data;
@@ -278,7 +405,8 @@ TEST_F(CoreAISourceTest, NestedEmptyAndLargeFilesMaterializeAndReuseWithoutNamed
     @"model.aimodel/nested/deeper/large.bin" : @(large_size)
   };
   data.files["coreai/ab/model.aimodel/nested/empty"] = "";
-  data.files["coreai/ab/model.aimodel/nested/deeper/large.bin"] = std::string(large_size, 'x');
+  data.files["coreai/ab/model.aimodel/nested/deeper/large.bin"] =
+      std::string(large_size, 'x');
   auto manifest = parse_manifest(encode(dict));
   ASSERT_TRUE(manifest.ok());
   auto first = prepare_source_bundle(manifest.get(), &data, storage.url.path);
@@ -286,18 +414,21 @@ TEST_F(CoreAISourceTest, NestedEmptyAndLargeFilesMaterializeAndReuseWithoutNamed
   EXPECT_EQ(data.attempts, 3);
   EXPECT_EQ(data.requests, data.releases);
   NSData* empty = [NSData
-      dataWithContentsOfURL:[first.get() URLByAppendingPathComponent:@"nested/empty"]];
+      dataWithContentsOfURL:[first.get()
+                                URLByAppendingPathComponent:@"nested/empty"]];
   ASSERT_NE(empty, nil);
   EXPECT_EQ(empty.length, 0u);
   NSData* large = [NSData
-      dataWithContentsOfURL:[first.get() URLByAppendingPathComponent:@"nested/deeper/large.bin"]];
+      dataWithContentsOfURL:
+          [first.get() URLByAppendingPathComponent:@"nested/deeper/large.bin"]];
   ASSERT_NE(large, nil);
   EXPECT_EQ(large.length, large_size);
 
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(storage.url, snapshot));
   const int attempts = data.attempts;
-  auto reused = prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
+  auto reused =
+      prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
   ASSERT_TRUE(reused.ok());
   EXPECT_TRUE([reused.get() isEqual:first.get()]);
   EXPECT_EQ(data.attempts, attempts);
@@ -306,8 +437,10 @@ TEST_F(CoreAISourceTest, NestedEmptyAndLargeFilesMaterializeAndReuseWithoutNamed
   EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
 }
 
-TEST_F(CoreAISourceTest, ExplicitStagingKeyReusesSourceWithoutWritesOrRepublication) {
-  BookmarkDirectory directory;
+TEST_F(
+    CoreAISourceTest,
+    ExplicitStagingKeyReusesSourceWithoutWritesOrRepublication) {
+  TestDirectory directory;
   ASSERT_NE(directory.url, nil);
   TestData data;
   auto manifest = source_manifest();
@@ -319,21 +452,23 @@ TEST_F(CoreAISourceTest, ExplicitStagingKeyReusesSourceWithoutWritesOrRepublicat
   ASSERT_TRUE(lock.ok());
   auto staging = prepare_bookmark_staging(*lock.get());
   ASSERT_TRUE(staging.ok());
-  auto first = executorch::backends::coreai::prepare_source_bundle(manifest.get(), &data,
-                                                                   staging.get(), key);
+  auto first = executorch::backends::coreai::prepare_source_bundle(
+      manifest.get(), &data, staging.get(), key);
   ASSERT_TRUE(first.ok());
   EXPECT_EQ(data.attempts, 1);
   EXPECT_TRUE(([first.get().path
       isEqualToString:[root.get()
                           stringByAppendingPathComponent:
-                              [NSString stringWithFormat:@"staging/%@/model.aimodel", key]]]));
+                              [NSString
+                                  stringWithFormat:@"staging/%@/model.aimodel",
+                                                   key]]]));
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(directory.url, snapshot));
   const int attempts = data.attempts;
   const int requests = data.requests;
   data.files.clear();
-  auto reused = executorch::backends::coreai::prepare_source_bundle(manifest.get(), &data,
-                                                                    staging.get(), key);
+  auto reused = executorch::backends::coreai::prepare_source_bundle(
+      manifest.get(), &data, staging.get(), key);
   ASSERT_TRUE(reused.ok());
   EXPECT_TRUE([reused.get() isEqual:first.get()]);
   EXPECT_EQ(data.attempts, attempts);
@@ -413,6 +548,34 @@ TEST_F(CoreAISourceTest, RejectsMalformedStoredBundlesWithoutReplacement) {
       EXPECT_TRUE(snapshot_matches(target.url, target_snapshot));
       EXPECT_EQ(staging_directories(storage.url).count, 0u);
     }
+  }
+}
+
+TEST_F(CoreAISourceTest, PermissionErrorsRemainDistinctFromCorruptEntries) {
+  if (geteuid() == 0) {
+    GTEST_SKIP() << "Root can bypass directory read permissions";
+  }
+  TestDirectory storage;
+  ASSERT_NE(storage.url, nil);
+  TestData data;
+  auto manifest = source_manifest();
+  ASSERT_TRUE(manifest.ok());
+  auto source = prepare_source_bundle(manifest.get(), &data, storage.url.path);
+  ASSERT_TRUE(source.ok());
+  NSDictionary* snapshot = nil;
+  ASSERT_TRUE(asset_tree_snapshot(storage.url, snapshot));
+  for (NSURL* directory in
+       @[ source.get().URLByDeletingLastPathComponent, source.get() ]) {
+    SCOPED_TRACE(directory.path.UTF8String);
+    ASSERT_EQ(chmod(directory.fileSystemRepresentation, 0000), 0);
+    auto denied =
+        prepare_source_bundle(manifest.get(), &data, storage.url.path);
+    EXPECT_EQ(chmod(directory.fileSystemRepresentation, 0700), 0);
+    EXPECT_EQ(denied.error(), Error::AccessFailed);
+    EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
+    EXPECT_EQ(data.attempts, 1);
+    EXPECT_TRUE(
+        prepare_source_bundle(manifest.get(), nullptr, storage.url.path).ok());
   }
 }
 
@@ -527,8 +690,11 @@ TEST_F(CoreAISourceTest, FullyFlushesSourceBeforeAndAfterPublication) {
 
 TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
   for (auto operation :
-       {StorageOperation::Write,
+       {StorageOperation::CreateStagingDirectory,
+        StorageOperation::OpenStagingDirectory,
+        StorageOperation::Write,
         StorageOperation::SyncFile,
+        StorageOperation::SyncDirectory,
         StorageOperation::FullSync,
         StorageOperation::Rename}) {
     SCOPED_TRACE(static_cast<int>(operation));
@@ -549,14 +715,44 @@ TEST_F(CoreAISourceTest, PublicationFailuresCleanStagingWithoutAutomaticRetry) {
       EXPECT_EQ(fault.matches, 1);
       EXPECT_EQ(fault.hits, 1);
     }
-    EXPECT_EQ(data.attempts, 1);
+    const int attempts =
+        operation == StorageOperation::CreateStagingDirectory ||
+            operation == StorageOperation::OpenStagingDirectory
+        ? 0
+        : 1;
+    EXPECT_EQ(data.attempts, attempts);
     EXPECT_EQ(data.requests, data.releases);
     EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:final.path]);
     EXPECT_EQ(staging_directories(storage.url).count, 0u);
     auto retried =
         prepare_source_bundle(manifest.get(), &data, storage.url.path);
     ASSERT_TRUE(retried.ok());
-    EXPECT_EQ(data.attempts, 2);
+    EXPECT_EQ(data.attempts, attempts + 1);
+  }
+}
+
+TEST_F(CoreAISourceTest, RetriesInterruptedStagingAndPublicationCalls) {
+  for (auto operation :
+       {StorageOperation::CreateStagingDirectory,
+        StorageOperation::OpenStagingDirectory,
+        StorageOperation::SyncDirectory,
+        StorageOperation::Rename}) {
+    SCOPED_TRACE(static_cast<int>(operation));
+    TestDirectory storage;
+    ASSERT_NE(storage.url, nil);
+    TestData data;
+    auto manifest = source_manifest();
+    ASSERT_TRUE(manifest.ok());
+    StorageFaultScope fault(operation);
+    fault.error = EINTR;
+    auto source =
+        prepare_source_bundle(manifest.get(), &data, storage.url.path);
+    ASSERT_TRUE(source.ok());
+    EXPECT_EQ(fault.hits, 1);
+    EXPECT_GE(fault.matches, 2);
+    EXPECT_EQ(data.attempts, 1);
+    EXPECT_EQ(data.requests, data.releases);
+    EXPECT_EQ(staging_directories(storage.url).count, 0u);
   }
 }
 
@@ -586,9 +782,22 @@ TEST_F(CoreAISourceTest, PostRenameFlushFailureLeavesCompleteSourceVisible) {
       isEqual:[NSData dataWithBytes:"model data" length:11]]));
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(storage.url, snapshot));
+  {
+    StorageFaultScope fault(StorageOperation::FullSync);
+    EXPECT_EQ(
+        prepare_source_bundle(manifest.get(), nullptr, storage.url.path)
+            .error(),
+        Error::AccessFailed);
+    EXPECT_EQ(fault.hits, 1);
+    EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
+  }
+  StorageFaultScope flush(StorageOperation::FullSync);
+  flush.error = EINTR;
   auto reused =
       prepare_source_bundle(manifest.get(), nullptr, storage.url.path);
   ASSERT_TRUE(reused.ok());
+  EXPECT_EQ(flush.hits, 1);
+  EXPECT_EQ(flush.matches, 2);
   EXPECT_TRUE(snapshot_matches(storage.url, snapshot));
   EXPECT_EQ(data.attempts, 1);
 }
@@ -641,7 +850,9 @@ TEST_F(CoreAISourceTest, IncompleteConcurrentWinnerFailsWithoutReplacement) {
   EXPECT_TRUE(snapshot_matches(final, snapshot));
 }
 
-TEST_F(CoreAISourceTest, ExclusivePublicationValidatesWinnerAndRemovesLosingStaging) {
+TEST_F(
+    CoreAISourceTest,
+    ExclusivePublicationValidatesWinnerAndRemovesLosingStaging) {
   TestDirectory storage;
   TestDirectory winner_storage;
   ASSERT_NE(storage.url, nil);
@@ -650,32 +861,41 @@ TEST_F(CoreAISourceTest, ExclusivePublicationValidatesWinnerAndRemovesLosingStag
   TestData winner_data;
   auto manifest = source_manifest();
   ASSERT_TRUE(manifest.ok());
-  auto winner = prepare_source_bundle(manifest.get(), &winner_data, winner_storage.url.path);
+  auto winner = prepare_source_bundle(
+      manifest.get(), &winner_data, winner_storage.url.path);
   ASSERT_TRUE(winner.ok());
   NSURL* winner_entry = winner.get().URLByDeletingLastPathComponent;
   NSDictionary* snapshot = nil;
   ASSERT_TRUE(asset_tree_snapshot(winner_entry, snapshot));
   NSURL* root = storage.url;
   NSURL* final =
-      [root URLByAppendingPathComponent:manifest->bundle_digests[manifest->path.lastPathComponent]];
+      [root URLByAppendingPathComponent:manifest->bundle_digests
+                                            [manifest->path.lastPathComponent]];
   __block int publications = 0;
   __block bool callback_ok = true;
   {
-    StorageFaultScope fault(StorageOperation::Rename);
-    fault.armed = false;
+    StorageFaultScope fault(StorageOperation::FullSync);
+    fault.match_index = 2;
+    fault.error = EINTR;
     fault.observe = ^(StorageOperation operation) {
-      if (operation != StorageOperation::Rename) return;
+      if (operation != StorageOperation::Rename)
+        return;
       ++publications;
       callback_ok &= staging_directories(root).count == 1;
-      callback_ok &= [NSFileManager.defaultManager moveItemAtURL:winner_entry toURL:final error:nil];
+      callback_ok &= [NSFileManager.defaultManager moveItemAtURL:winner_entry
+                                                           toURL:final
+                                                           error:nil];
     };
-    auto result = prepare_source_bundle(manifest.get(), &data, storage.url.path);
+    auto result =
+        prepare_source_bundle(manifest.get(), &data, storage.url.path);
     EXPECT_TRUE(callback_ok);
     ASSERT_TRUE(result.ok());
-    EXPECT_TRUE(
-        [result.get() isEqual:[final URLByAppendingPathComponent:manifest->path.lastPathComponent]]);
+    EXPECT_TRUE([result.get()
+        isEqual:[final URLByAppendingPathComponent:manifest->path
+                                                       .lastPathComponent]]);
     EXPECT_EQ(publications, 1);
-    EXPECT_EQ(fault.hits, 0);
+    EXPECT_EQ(fault.hits, 1);
+    EXPECT_EQ(fault.matches, 3);
   }
   EXPECT_EQ(data.attempts, manifest->files.count);
   EXPECT_EQ(data.requests, data.releases);
@@ -683,4 +903,4 @@ TEST_F(CoreAISourceTest, ExclusivePublicationValidatesWinnerAndRemovesLosingStag
   EXPECT_TRUE(snapshot_matches(final, snapshot));
 }
 
-}  // namespace executorch::backends::coreai::testing
+} // namespace executorch::backends::coreai::testing

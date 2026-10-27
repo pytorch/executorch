@@ -45,7 +45,7 @@ class CoreAISourceTest : public ::testing::Test {
   runtime::Result<NSURL*> prepare_source_bundle(
       const Manifest& manifest,
       const runtime::NamedDataMap* data,
-      NSString* staging_root);
+      NSString* source_root);
 
  private:
   TestDirectory locks_;
