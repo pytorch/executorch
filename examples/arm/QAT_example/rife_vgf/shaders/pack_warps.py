@@ -10,15 +10,17 @@ from . import _compile_shader_source
 OPERATOR_NAME = "rife.warp_pack_concat"
 
 
-def build_packed_warp_payload(payloads, timestep):
+def build_packed_warp_payload(payloads, timestep, *, fuse_block0_tail=False):
     """Compile four compatible samplers with a direct C32 concat output.
 
     Args:
         payloads (list[dict]): Validated original sampler descriptors and qparams.
         timestep (int): Constant signed INT8 timestep code.
+        fuse_block0_tail (bool): Read the block0 phase tensor and pack its
+            resized state into C32.
 
     Returns:
-        dict: Vulkan shader payload with four images and three state inputs.
+        dict: Vulkan shader payload with separate state or fused block0 input.
 
     """
     source = Path(__file__).with_name("pack_warps.glsl").read_text()
@@ -34,6 +36,7 @@ def build_packed_warp_payload(payloads, timestep):
             "@" + key.upper() + "@", format(payloads[0][key], ".9g")
         )
     source = source.replace("@TIMESTEP@", str(timestep))
+    source = source.replace("@FUSE_BLOCK0_TAIL@", str(int(fuse_block0_tail)))
     payload = {
         "entry_point": "main",
         "shader_language": "SPIR-V",
@@ -46,17 +49,25 @@ def build_packed_warp_payload(payloads, timestep):
                 payload[key.replace("input_0_", f"input_{index}_")] = (
                     index if key.endswith("_binding") else value
                 )
-    for index in range(4, 8):
-        prefix = f"{'input' if index < 7 else 'output'}_{index if index < 7 else 0}"
+    bindings = (
+        [
+            ("input_4", 4, "Tensor", "R8_SINT"),
+            ("output_0", 5, "Buffer", "R8_SINT"),
+        ]
+        if fuse_block0_tail
+        else [(f"input_{i}", i, "Tensor", "R8_SINT") for i in range(4, 7)]
+        + [("output_0", 7, "Buffer", "R8_SINT")]
+    )
+    for prefix, binding, kind, vk_format in bindings:
         payload.update(
             {
-                f"{prefix}_binding": index,
+                f"{prefix}_binding": binding,
                 f"{prefix}_descriptorset": 0,
-                f"{prefix}_type": "Tensor" if index < 7 else "Buffer",
-                f"{prefix}_vkformat": "VK_FORMAT_R8_SINT",
+                f"{prefix}_type": kind,
+                f"{prefix}_vkformat": f"VK_FORMAT_{vk_format}",
                 f"{prefix}_vkdescriptortype": (
                     "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
-                    if index < 7
+                    if kind == "Tensor"
                     else "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
                 ),
             }

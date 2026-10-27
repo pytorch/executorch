@@ -207,10 +207,159 @@ def _packed_fake(inputs, operator_name, domain_name, implementation_attrs):
     return [inputs[0].new_empty((*inputs[0].shape[:-1], 32))]
 
 
+def _match_pixel_shuffle(slices, height, width):
+    mask, features, flow = slices
+    nodes = set(slices)
+    if not _is_op(mask, TOSA.RESHAPE.default, 2):
+        raise ValueError("Expected the original mask reshape.")
+    mask = mask.args[0]
+    nodes.add(mask)
+    for node, start, size in (
+        (mask, [0, 4, 0, 0], [1, 1, height // 2, width // 2]),
+        (features, [0, 0, 0, 5], [1, height // 2, width // 2, 8]),
+        (flow, [0, 0, 0, 0], [1, height // 2, width // 2, 4]),
+    ):
+        if (
+            not _is_op(node, TOSA.SLICE.default, 3)
+            or _shape_values(node.args[1]) != start
+            or _shape_values(node.args[2]) != size
+        ):
+            raise ValueError("Expected the original flow/mask/feature slices.")
+    nhwc = flow.args[0]
+    if features.args[0] is not nhwc or not _is_op(nhwc, TOSA.TRANSPOSE.default, 2):
+        raise ValueError("Expected one shared PixelShuffle output.")
+    nchw = nhwc.args[0]
+    if mask.args[0] is not nchw or not _is_op(nchw, TOSA.RESHAPE.default, 2):
+        raise ValueError("Expected the original NCHW PixelShuffle view.")
+    transpose = nchw.args[0]
+    if not _is_op(transpose, TOSA.TRANSPOSE.default, 2):
+        raise ValueError("Expected the PixelShuffle phase transpose.")
+    reshape = transpose.args[0]
+    if not _is_op(reshape, TOSA.RESHAPE.default, 2):
+        raise ValueError("Expected the PixelShuffle phase reshape.")
+    phase = reshape.args[0]
+    if (
+        _tensor_shape(phase) != (1, height // 4, width // 4, 52)
+        or phase.meta["val"].dtype != torch.int8
+        or _shape_values(reshape.args[1]) != [1, height // 4, width // 4, 13, 2, 2]
+        or _shape_values(transpose.args[1]) != [0, 3, 1, 4, 2, 5]
+        or _shape_values(nchw.args[1]) != [1, 13, height // 2, width // 2]
+        or _shape_values(nhwc.args[1]) != [0, 2, 3, 1]
+    ):
+        raise ValueError("Expected the original C52 PixelShuffle layout.")
+    nodes.update((nhwc, nchw, transpose, reshape))
+    return phase, nodes
+
+
+def _match_block0_tail(concat, customs):
+    _, height, width, _ = _tensor_shape(concat)
+    if height % 4 or width % 4:
+        raise ValueError("Expected dimensions divisible by four.")
+    nodes = set()
+    slices = []
+    for rescale, channels in zip(concat.args[0][5:], (1, 8, 4)):
+        if (
+            not _is_op(rescale, TOSA.RESCALE.default, 5)
+            or rescale.args[1:] != (torch.int8, [0.0625], 0, 0)
+            or any(rescale.kwargs.values())
+        ):
+            raise ValueError("Expected the original signed 1/16 state rescale.")
+        resize = rescale.args[0]
+        if (
+            not _is_op(resize, TOSA.RESIZE.default, 4)
+            or [_shape_values(v) for v in resize.args[1:]]
+            != [[4, 2, 4, 2], [-1, -1], [1, 1]]
+            or resize.kwargs != {"resize_mode": "bilinear"}
+            or resize.meta["val"].dtype != torch.int32
+        ):
+            raise ValueError("Expected the original integer 2x state resize.")
+        source = resize.args[0]
+        if _tensor_shape(source) != (1, height // 2, width // 2, channels):
+            raise ValueError("Expected half-size state tensors.")
+        nodes.update((rescale, resize, source))
+        slices.append(source)
+    phase, shuffle_nodes = _match_pixel_shuffle(slices, height, width)
+    nodes.update(shuffle_nodes)
+    flow_transpose = customs[0].args[0][1]
+    residuals = [n for n in flow_transpose.users if n not in customs]
+    if len(residuals) != 1 or not _is_op(residuals[0], TOSA.RESCALE.default, 5):
+        raise ValueError("Expected one previous-flow rescale.")
+    residual = residuals[0]
+    if (
+        residual.args[1] != torch.int32
+        or len(residual.args[2]) != 1
+        or residual.args[4] != 0
+        or any(residual.kwargs.values())
+    ):
+        raise ValueError("Expected a signed per-tensor INT32 previous-flow rescale.")
+    nodes.add(flow_transpose)
+    allowed = nodes | set(customs) | {concat, residual}
+    if any(user not in allowed for node in nodes for user in node.users):
+        raise ValueError("The block0 tail has additional consumers.")
+    positions = {node: i for i, node in enumerate(concat.graph.nodes)}
+    if any(positions[user] <= positions[concat] for user in residual.users):
+        raise ValueError("Previous flow is needed before the packed shader.")
+    return phase, residual
+
+
+def _phase_major_parameters(program, phase):
+    channels = _tensor_shape(phase)[-1]
+    if channels not in (20, 52):
+        raise ValueError("Expected a C20 or C52 PixelShuffle input.")
+    if not _is_op(phase, TOSA.RESCALE.default, 5) or len(phase.users) != 1:
+        raise ValueError("Expected a private PixelShuffle output rescale.")
+    producer = phase.args[0]
+    if (
+        not _is_op(producer, TOSA.TRANSPOSE_CONV2D.default, 5)
+        or set(producer.users) != {phase}
+        or producer.meta["val"].dtype != torch.int32
+        or phase.args[1] != torch.int8
+        or len(phase.args[2]) not in (1, channels)
+    ):
+        raise ValueError("Expected a private PixelShuffle transpose convolution.")
+    _symmetric_weight(producer)
+    weight = _constant_tensor(program, producer.args[1])
+    bias = _constant_tensor(program, producer.args[2])
+    if (
+        weight.ndim != 4
+        or weight.shape[0] != channels
+        or weight.dtype != torch.int8
+        or bias.shape != (channels,)
+        or bias.dtype != torch.int32
+    ):
+        raise ValueError("Expected native PixelShuffle convolution weights and bias.")
+    # Make each PixelShuffle phase contiguous at the producer.
+    order = torch.arange(channels).reshape(channels // 4, 4).t().reshape(-1)
+    scales = phase.args[2]
+    if len(scales) == channels:
+        scales = [scales[i] for i in order.tolist()]
+    return producer, weight[order], bias[order], scales
+
+
+def _reorder_pixel_shuffle_output(program, phase, parameters):
+    producer, weight, bias, scales = parameters
+    graph = phase.graph
+    constants = []
+    for suffix, value in (("weight", weight), ("bias", bias)):
+        name = f"{producer.name}_phase_major_{suffix}"
+        while any(n.name == name for n in graph.nodes):
+            name += "_new"
+        with graph.inserting_before(next(iter(graph.nodes))):
+            constants.append(
+                create_constant_placeholder(
+                    program, graph, name, InputKind.CONSTANT_TENSOR, value
+                )
+            )
+    producer.args = (producer.args[0], *constants, *producer.args[3:])
+    phase.args = (*phase.args[:2], scales, *phase.args[3:])
+
+
 class PackRifeWarpsAndConcatPass(ArmPass):
     """Pack four private RIFE warps and their C28 concat into one C32 shader.
 
-    Keep the original state preparation and sampling quantization boundaries.
+    Fuse a compatible block0 PixelShuffle and state preparation into the shader.
+    Reorder block0 output channels during export so each PixelShuffle read
+    accesses 13 contiguous channels. Keep sampling quantization boundaries.
     Four zero weight columns make the following convolution ignore padding.
     Unsupported graphs are left unchanged.
 
@@ -295,7 +444,15 @@ class PackRifeWarpsAndConcatPass(ArmPass):
         weight = _constant_tensor(self.exported_program, conv.args[1])
         if weight.dtype != torch.int8 or weight.ndim != 4 or weight.shape[-1] != 28:
             raise ValueError("Expected signed INT8 C28 convolution weights.")
-        return concat, images, payloads, int(timestep.flatten()[0]), conv, weight
+        return (
+            concat,
+            images,
+            payloads,
+            int(timestep.flatten()[0]),
+            conv,
+            weight,
+            customs,
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         """Replace compatible warps after TOSA lowering and rescale insertion.
@@ -313,12 +470,29 @@ class PackRifeWarpsAndConcatPass(ArmPass):
                 "PackRifeWarpsAndConcatPass requires an ExportedProgram."
             )
         try:
-            concat, images, payloads, timestep, conv, weight = self._match(graph_module)
+            concat, images, payloads, timestep, conv, weight, customs = self._match(
+                graph_module
+            )
         except ValueError as error:
             logger.debug("Skipping packed RIFE warps: %s", error)
             return PassResult(graph_module, False)
 
-        payload = build_packed_warp_payload(payloads, timestep)
+        phase_parameters = None
+        try:
+            tail = _match_block0_tail(concat, customs)
+            phase_parameters = _phase_major_parameters(exported_program, tail[0])
+        except ValueError as error:
+            logger.debug("Keeping the original PixelShuffle layout: %s", error)
+            tail = None
+        if tail is None:
+            payload = build_packed_warp_payload(payloads, timestep)
+            shader_inputs = [*images, *concat.args[0][5:]]
+        else:
+            payload = build_packed_warp_payload(
+                payloads, timestep, fuse_block0_tail=True
+            )
+            shader_inputs = [*images, tail[0]]
+            _reorder_pixel_shuffle_output(exported_program, tail[0], phase_parameters)
         graph = graph_module.graph
         extended = torch.zeros((*weight.shape[:-1], 32), dtype=torch.int8)
         extended[..., :28] = weight
@@ -333,7 +507,7 @@ class PackRifeWarpsAndConcatPass(ArmPass):
         with graph.inserting_before(concat):
             custom = graph.call_function(
                 TOSA.CUSTOM.default,
-                ([*images, *concat.args[0][5:]],),
+                (shader_inputs,),
                 {
                     "operator_name": OPERATOR_NAME,
                     "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
@@ -354,6 +528,39 @@ class PackRifeWarpsAndConcatPass(ArmPass):
             "val": value,
             "tensor_meta": _extract_tensor_metadata(value),
         }
+        if tail is not None:
+            residual = tail[1]
+            flow_value = residual.args[0].meta["val"]
+            shape = [*value.shape[:-1], 4]
+            with graph.inserting_after(concat):
+                starts = graph.call_function(TOSA.CONST_SHAPE.default, ([0, 0, 0, 24],))
+            with graph.inserting_after(starts):
+                sizes = graph.call_function(TOSA.CONST_SHAPE.default, (shape,))
+            for node in (starts, sizes):
+                node.meta = {
+                    "val": node.args[0],
+                    TosaSpecialDtype.meta_key(): TosaSpecialDtype.SHAPE,
+                }
+            with graph.inserting_after(sizes):
+                flow_slice = graph.call_function(
+                    TOSA.SLICE.default, (concat, starts, sizes)
+                )
+            sliced_value = value.new_empty(shape)
+            flow_slice.meta = {
+                "val": sliced_value,
+                "tensor_meta": _extract_tensor_metadata(sliced_value),
+            }
+            with graph.inserting_after(flow_slice):
+                flow = graph.call_function(
+                    TOSA.TRANSPOSE.default, (flow_slice, [0, 3, 1, 2])
+                )
+            flow.meta = {
+                **residual.args[0].meta,
+                "val": flow_value,
+                "tensor_meta": _extract_tensor_metadata(flow_value),
+            }
+            residual.args = (flow, *residual.args[1:])
+            flow.append(residual)
         graph.eliminate_dead_code()
         graph.lint()
         graph_module.recompile()

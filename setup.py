@@ -1154,15 +1154,11 @@ def _base_dependencies() -> List[str]:
     project's runtime needs.
     """
     return [
-        "expecttest",
         "flatbuffers",
-        "hypothesis",
-        "kgb",
         "mpmath==1.3.0",
         "numpy>=2.0.0; python_version >= '3.10'",
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
-        "parameterized",
         # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
         # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
         # Fetching an SDK additionally needs requests, which its downloader imports at module

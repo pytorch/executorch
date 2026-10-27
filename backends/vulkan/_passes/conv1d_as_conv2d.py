@@ -15,6 +15,7 @@ from executorch.backends.transforms.utils import (
     is_param_node,
     set_param_tensor,
 )
+from executorch.backends.vulkan.utils import conv1d_transposed_is_rewritable
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -38,7 +39,8 @@ def _reshape_fake(val: torch.Tensor, sizes: List[int]) -> torch.Tensor:
 class Conv1dAsConv2dPass(ExportPass):
     """
     Rewrite eligible 1-D convolutions into a 2-D convolution over a singleton
-    height dimension.
+    height dimension. Transposed 1-D convolutions, which have no shader of their
+    own, are rewritten onto the conv2d transposed path.
 
     conv1d.glsl computes one output element per invocation with no tiling and no
     reuse between invocations, and its global work grid packs texels along the
@@ -80,7 +82,11 @@ class Conv1dAsConv2dPass(ExportPass):
         if len(weight_node.users) != 1:
             return False
         transposed, groups = node.args[6], node.args[8]
-        if transposed or groups != 1:
+        if transposed:
+            # No transposed conv1d shader exists, so there is no 1-D path to
+            # keep: the partitioner accepts exactly the ones rewritable here.
+            return conv1d_transposed_is_rewritable(node)
+        if groups != 1:
             return False
         # conv2d does not support batched input at all, so a rewrite there
         # would turn a working conv1d into a throw.
