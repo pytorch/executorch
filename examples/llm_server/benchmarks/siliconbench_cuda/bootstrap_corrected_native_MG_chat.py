@@ -151,16 +151,15 @@ def main():
             '--model-path', a.model_path, '--tokenizer-path', a.output / 'canonical-tokenizer/tokenizer',
             '--vllm-bin', a.native_venv / 'bin/vllm' if a.backend == 'vllm' else native,
             '--sglang-python', native, '--task-root', a.output / 'runtime-cache', '--output', wrapper], 120)
-        # AF_UNIX paths in stock SGLang must fit its native limit. Only change
-        # the exposed TMPDIR storage path, as in the validated stock recipe.
-        if a.backend == 'sglang':
-            short = Path('/tmp') / ('sb-MG-chat-' + str(os.getpid()))
-            short.mkdir(exist_ok=False)
-            text = wrapper.read_text()
-            old = 'TMPDIR="$task/tmp"'
-            assert text.count(old) == 1
-            import shlex
-            wrapper.write_text(text.replace(old, 'TMPDIR=' + shlex.quote(str(short))))
+        # Both stock runtimes create AF_UNIX endpoints. Keep their exposed
+        # TMPDIR short; this changes no model code or compute/scheduler setting.
+        short = Path('/tmp') / ('sb-MG-chat-' + str(os.getpid()))
+        short.mkdir(exist_ok=False)
+        text = wrapper.read_text()
+        old = 'TMPDIR="$task/tmp"'
+        assert text.count(old) == 1
+        import shlex
+        wrapper.write_text(text.replace(old, 'TMPDIR=' + shlex.quote(str(short))))
         run('wrapper-syntax', ['bash', '-n', wrapper], 30)
         provenance = dict(GPU=GPU, power_before=before, model_proof=model_proof,
             repo=REPO, revision=REVISION, framework=a.backend, native_python=str(native),
