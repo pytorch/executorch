@@ -16,7 +16,7 @@ def main():
  try:
   # Isolated gguf Python package only; parent vLLM/torch installation remains read only.
   target=a.output/'python-dependencies';target.mkdir()
-  with (a.output/'dependency-install.log').open('x') as f:subprocess.run([str(a.python),'-m','pip','install','--target',str(target),'--no-deps','gguf==0.17.1'],stdout=f,stderr=subprocess.STDOUT,check=True,timeout=300)
+  with (a.output/'dependency-install.log').open('x') as f:subprocess.run(['uv','pip','install','--python',str(a.python),'--target',str(target),'--no-deps','gguf==0.17.1'],stdout=f,stderr=subprocess.STDOUT,check=True,timeout=300)
   env=dict(os.environ,PYTHONPATH=str(target)+os.pathsep+os.environ.get('PYTHONPATH',''),OMP_NUM_THREADS='2')
   directory=a.output/'public-GGUF';directory.mkdir()
   for model,repo,rev,filename,expected in MODELS:

@@ -4,7 +4,7 @@
     "benchmark_original_marlin.py": "b458ce541e357c0f997b6e056b152bbfaf485ea97a52260dde852d29f20089ee",
     "run_gemma_scaling.py": "11e038df7b9c37b296a42968df64a948b584bdf2a5b86a2ef578e65fa1382c89",
     "README.md": "a2a323ccba8497befa82d52b03360d42593d8b8228d346afba24dc483c93de0a",
-    "run_marlin_campaign.py": "d171a5c11a9ae91dc5d64755908a669e6d5278175ab428fd1c66031c12f24e16"
+    "run_marlin_campaign.py": "694f4fb3b51dcb1c965fbdb196d388bbb38a0437ecb6740b968109027b2c426c"
   },
   "contains_weights_requests_logs_results": false
 }
