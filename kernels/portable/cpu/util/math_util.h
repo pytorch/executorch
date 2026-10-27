@@ -41,6 +41,23 @@ INT_T floor_divide(INT_T a, INT_T b) {
   return rem ? quot - 1 : quot;
 }
 
+/**
+ * std::fmod for integers, without rounding through double. Like std::fmod, %
+ * keeps the sign of a. a % -1 overflows for the most negative signed value,
+ * and the result is 0 for every a.
+ */
+template <
+    typename INT_T,
+    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
+INT_T integer_fmod(INT_T a, INT_T b) {
+  if constexpr (std::is_signed<INT_T>::value) {
+    if (b == -1) {
+      return 0;
+    }
+  }
+  return static_cast<INT_T>(a % b);
+}
+
 template <
     typename FLOAT_T,
     typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::

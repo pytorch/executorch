@@ -150,7 +150,11 @@ Tensor& div_out_mode(
           }
           CTYPE_COMPUTE value = val_a / val_b;
           if (mode_is_trunc) {
-            value = std::trunc(value);
+            // Integer division already truncates, and std::trunc would round
+            // int64 values through double.
+            if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
+              value = std::trunc(value);
+            }
           } else {
             // We established above that the mode is either trunc or floor, so
             // it must be floor.
@@ -276,7 +280,9 @@ Tensor& div_scalar_mode_out(
         [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
           CTYPE_COMPUTE value = val_a / val_b;
           if (mode_is_trunc) {
-            value = std::trunc(value);
+            if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
+              value = std::trunc(value);
+            }
           } else {
             value = utils::floor_divide(val_a, val_b);
           }

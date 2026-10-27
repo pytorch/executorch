@@ -10,6 +10,7 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -45,40 +46,54 @@ Tensor& fmod_Tensor_out(
 
   // Compute Dtype
   ScalarType compute_type = utils::get_compute_type(common_type);
-  if (compute_type != ScalarType::Float) {
-    compute_type = ScalarType::Double;
-  }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   ET_DEFINE_OPERATOR_NAME(op_name, "fmod.Tensor_out");
 
   bool div_by_zero_error = false;
 
-  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBF16>(
-        [&div_by_zero_error](
-            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable?
-          CTYPE_COMPUTE value = 0;
-          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
+  // Integers are computed as integers: going through double rounds int64
+  // values above 2^53.
+  if (executorch::runtime::isIntegralType(
+          compute_type, /*includeBool=*/false)) {
+    ET_SWITCH_INT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBF16>(
+          [&div_by_zero_error](
+              const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
             if (val_b == 0) {
               div_by_zero_error = true;
-              return value;
+              return static_cast<CTYPE_COMPUTE>(0);
             }
-          }
-          value = std::fmod(val_a, val_b);
-          return value;
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out);
-  });
+            return utils::integer_fmod(val_a, val_b);
+          },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+  } else {
+    ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBF16>(
+          [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+            // TODO: rewrite this to be vectorization-capable?
+            return std::fmod(val_a, val_b);
+          },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+  }
 
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -125,12 +140,28 @@ Tensor& fmod_Scalar_out(
 
   // Compute Dtype
   ScalarType compute_type = utils::get_compute_type(common_type);
-  if (compute_type != ScalarType::Float) {
-    compute_type = ScalarType::Double;
-  }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   ET_DEFINE_OPERATOR_NAME(op_name, "fmod.Scalar_out");
+
+  if (executorch::runtime::isIntegralType(
+          compute_type, /*includeBool=*/false)) {
+    ET_SWITCH_INT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+      utils::apply_unitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBF16>(
+          [val_b](const CTYPE_COMPUTE val_a) {
+            return utils::integer_fmod(val_a, val_b);
+          },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+    return out;
+  }
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
