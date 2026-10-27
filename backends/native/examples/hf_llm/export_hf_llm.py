@@ -261,7 +261,7 @@ def golden_samples(
             calls = []
             for _ in range(decode_steps + 1):
                 logits = wrapper(input_ids, positions)
-                calls.append(Call([input_ids, positions], [logits]))
+                calls.append(Call("forward", [input_ids, positions], [logits]))
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
             samples.append(Sample(calls))
@@ -389,5 +389,5 @@ def main() -> None:
         print(f"saved {args.output}")
     if prompts:
         samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
-        write_samples(args.output, "forward", "golden", samples)
+        write_samples(args.output, "golden", samples)
         print(f"wrote {len(prompts)} golden samples")
