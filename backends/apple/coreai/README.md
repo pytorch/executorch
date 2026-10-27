@@ -65,7 +65,9 @@ internal copies.
 
 After an execution error, do not use the outputs as inference results. Output
 shapes may already have changed, but no result bytes are copied unless every
-output passes validation and resizing.
+output passes validation and resizing. Malformed SDK outputs return `Internal`.
+Output dtype/rank mismatches and incompatible shapes or capacity return
+`InvalidArgument`.
 
 ### Calling from Swift
 
@@ -312,7 +314,8 @@ artifact. The durable-save message confirms local bookmark publication,
 including its final directory flush, not independent verification of SDK-private
 artifact storage. Failed operations do not emit their success messages.
 
-Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for inference consumers.
+The delegate does not require `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER`.
+Enable it for consumers such as `Module` that load program data.
 Link the CMake target `coreaidelegate`, not just its archive filename. Its
 transitive dependencies supply Swift and Foundation/CoreAI linkage, and its
 link interface retains static backend registration. With
@@ -326,20 +329,25 @@ SwiftPM and XCFramework distribution are not integrated yet.
 
 The `coreai_runtime_smoke` target checks final linkage of a C++ consumer,
 including Swift dependencies and backend registration retention. With
-`EXECUTORCH_BUILD_TESTS=ON` it is built and
-registered with CTest; otherwise it is excluded from the default build. On OS 27,
-running it checks registration and availability; it does not perform model
-inference. Do not execute SDK27 binaries on an older host.
+`EXECUTORCH_BUILD_TESTS=ON` it is built; otherwise it is excluded from the
+default build. SDK-linked tests are registered with CTest only for native macOS
+builds when the host meets the target's deployment minimum (at least 27.0).
+Cross-builds and older hosts can build these tests without registering them.
+Running the smoke test checks registration and availability; it does not perform
+model inference. Do not execute SDK27 binaries on an older host.
 
 ## Host Tests
 
 On macOS, `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON`
 registers the standalone `coreai_host_test` executable with CTest. It tests
 manifest parsing, AOT asset selection, cache identity, bookmark I/O, acquisition
-coordination, lock contention, and filesystem storage using Foundation, without
-Swift or CoreAI SDK calls. Acquisition contention tests run two threads inside a
-bounded child process; bookmark lock tests separately cover contention between
-processes. The host test target is omitted for Apple cross-builds.
+coordination, lock contention, filesystem storage, and delegate initialization
+and execution against a fake bridge. It uses Foundation without Swift or CoreAI
+SDK calls. Acquisition contention tests run two threads inside a bounded child
+process; bookmark lock tests separately cover contention between processes. The
+host test target is omitted for Apple cross-builds. On supported macOS hosts,
+CTest also runs the Swift bridge tests, source-lifetime probes, and
+`coreai_runtime_smoke`, which link Swift and the Core AI framework.
 
 CI builds and runs these tests on macOS 27. To use the same configuration from
 the repository root:

@@ -113,8 +113,7 @@ Error validate_arguments(
     size_t input_count,
     size_t output_count) {
   ET_CHECK_OR_RETURN_ERROR(
-      args.size() >= input_count &&
-          args.size() - input_count == output_count,
+      args.size() >= input_count && args.size() - input_count == output_count,
       InvalidArgument,
       "Core AI argument count mismatch");
   for (EValue* arg : args) {
@@ -150,12 +149,12 @@ Result<NSArray<ETCoreAIInputTensor*>*> borrow_inputs(
     for (auto size : tensor.sizes()) {
       [shape addObject:@(size)];
     }
-    [inputs addObject:[[ETCoreAIInputTensor alloc]
-                          initWithBytes:tensor.const_data_ptr()
-                              byteCount:tensor.nbytes()
-                                  shape:shape
-                             scalarType:scalar_type(tensor.scalar_type())
-                                            .get()]];
+    [inputs
+        addObject:[[ETCoreAIInputTensor alloc]
+                      initWithBytes:tensor.const_data_ptr()
+                          byteCount:tensor.nbytes()
+                              shape:shape
+                         scalarType:scalar_type(tensor.scalar_type()).get()]];
   }
   return inputs;
 }
@@ -210,8 +209,11 @@ Error copy_outputs(
   // Validate all resized outputs before copying; shapes may change on failure.
   for (size_t i = 0; i < output_count; ++i) {
     auto& tensor = args[input_count + i]->toTensor();
-    ET_CHECK_OK_OR_RETURN_ERROR(resize_tensor(
-        tensor, ArrayRef<SizesType>(shapes[i].data(), shapes[i].size())));
+    const auto resized = resize_tensor(
+        tensor, ArrayRef<SizesType>(shapes[i].data(), shapes[i].size()));
+    if (resized != Error::Ok) {
+      return resized == Error::NotSupported ? Error::InvalidArgument : resized;
+    }
     auto bytes = tensor_bytes(tensor);
     if (!bytes.ok()) {
       return bytes.error();
@@ -255,7 +257,9 @@ Result<NSString*> path_option(BackendInitContext& context, const char* key) {
 
 class CoreAIBackend final : public BackendInterface {
  public:
-  bool is_available() const override { return ETCoreAIIsAvailable(); }
+  bool is_available() const override {
+    return ETCoreAIIsAvailable();
+  }
 
   Result<DelegateHandle*> init(
       BackendInitContext& context,
@@ -396,5 +400,5 @@ class CoreAIBackend final : public BackendInterface {
 CoreAIBackend backend;
 [[maybe_unused]] const auto registration =
     register_backend({"CoreAIBackend", &backend});
-}  // namespace
-}  // namespace executorch::backends::coreai
+} // namespace
+} // namespace executorch::backends::coreai

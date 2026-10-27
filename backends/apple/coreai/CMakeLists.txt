@@ -354,24 +354,26 @@ if(EXECUTORCH_BUILD_TESTS
       PROPERTIES TIMEOUT 600 ENVIRONMENT
                  "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
     )
-    add_executable(
-      coreai_sdk_source_lifetime_test
-      runtime/test/SDKSourceLifetimeTest.swift runtime/ETCoreAIModel.swift
-      runtime/ETCoreAITensor.mm
-    )
-    set_target_properties(
-      coreai_sdk_source_lifetime_test PROPERTIES Swift_LANGUAGE_VERSION 6
-    )
-    coreai_configure_objc_target(coreai_sdk_source_lifetime_test)
-    coreai_require_os27(coreai_sdk_source_lifetime_test)
-    target_compile_options(
-      coreai_sdk_source_lifetime_test
-      PRIVATE
-        "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library;-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h>"
-    )
-    target_link_libraries(
-      coreai_sdk_source_lifetime_test PRIVATE executorch::coreai_dependencies
-    )
+  endif()
+  add_executable(
+    coreai_sdk_source_lifetime_test
+    runtime/test/SDKSourceLifetimeTest.swift runtime/ETCoreAIModel.swift
+    runtime/ETCoreAITensor.mm
+  )
+  set_target_properties(
+    coreai_sdk_source_lifetime_test PROPERTIES Swift_LANGUAGE_VERSION 6
+  )
+  coreai_configure_objc_target(coreai_sdk_source_lifetime_test)
+  coreai_require_os27(coreai_sdk_source_lifetime_test)
+  target_compile_options(
+    coreai_sdk_source_lifetime_test
+    PRIVATE
+      "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library;-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h>"
+  )
+  target_link_libraries(
+    coreai_sdk_source_lifetime_test PRIVATE executorch::coreai_dependencies
+  )
+  if(_coreai_run_sdk_tests)
     add_test(
       NAME coreai_sdk_source_lifetime_test
       COMMAND
@@ -386,11 +388,9 @@ endif()
 if(EXECUTORCH_BUILD_SHARED)
   set(_coreai_library_type SHARED)
   set(_coreai_runtime executorch_shared)
-  set(_coreai_data_loader "")
 else()
   set(_coreai_library_type STATIC)
   set(_coreai_runtime executorch)
-  set(_coreai_data_loader extension_data_loader)
 endif()
 add_library(
   coreaidelegate ${_coreai_library_type} ${_coreai_runtime_sources}
@@ -403,7 +403,7 @@ coreai_require_os27(coreaidelegate)
 target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
 add_dependencies(coreaidelegate coreai_swift)
 target_link_libraries(
-  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} ${_coreai_data_loader}
+  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime}
                          executorch::coreai_dependencies
 )
 executorch_target_link_options_shared_lib(coreaidelegate)
@@ -417,9 +417,10 @@ endif()
 
 # A consumer is necessary to check Swift linkage and registration retention.
 add_executable(coreai_runtime_smoke runtime/test/runtime_smoke.cpp)
-if(EXECUTORCH_BUILD_TESTS)
+if(_coreai_run_sdk_tests)
   add_test(NAME coreai_runtime_smoke COMMAND coreai_runtime_smoke)
-else()
+endif()
+if(NOT EXECUTORCH_BUILD_TESTS)
   set_target_properties(coreai_runtime_smoke PROPERTIES EXCLUDE_FROM_ALL TRUE)
 endif()
 coreai_require_os27(coreai_runtime_smoke)

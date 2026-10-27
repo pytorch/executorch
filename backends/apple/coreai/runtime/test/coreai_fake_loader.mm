@@ -34,8 +34,11 @@ NSError* fake_error(ETCoreAIErrorCode code) {
   return [NSError errorWithDomain:ETCoreAIErrorDomain code:code userInfo:nil];
 }
 
-bool valid_binding(CoreAIFakeBridgeContext* context, NSString* function, NSArray<NSString*>* inputs,
-                   NSArray<NSString*>* outputs) {
+bool valid_binding(
+    CoreAIFakeBridgeContext* context,
+    NSString* function,
+    NSArray<NSString*>* inputs,
+    NSArray<NSString*>* outputs) {
   // Reversed names make accidental sorting observable in multi-I/O tests.
   NSArray<NSString*>* expected_inputs = context->state.multiple_io
       ? @[ @"input_1", @"input_0" ]
@@ -105,7 +108,8 @@ dispatch_time_t cleanup_deadline() {
   }
 }
 - (void)executeInputs:(NSArray<ETCoreAIInputTensor*>*)inputs
-           completion:(void (^)(NSArray<ETCoreAITensor*>*, NSError*))completion {
+           completion:
+               (void (^)(NSArray<ETCoreAITensor*>*, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
   ++context->state.executions;
   const bool should_fail = context->state.fail_execute;
@@ -118,24 +122,27 @@ dispatch_time_t cleanup_deadline() {
     context->state.last_input_byte_count = input.byteCount;
     if (ready != nil) {
       dispatch_semaphore_signal(ready);
-      if (proceed == nil || dispatch_semaphore_wait(proceed, cleanup_deadline()) != 0) {
+      if (proceed == nil ||
+          dispatch_semaphore_wait(proceed, cleanup_deadline()) != 0) {
         ++context->state.input_wait_timeouts;
         completion(nil, fake_error(ETCoreAIErrorRuntime));
         return;
       }
     }
     if (input.byteCount > 0) {
-      context->state.last_input_first_byte = static_cast<const unsigned char*>(input.bytes)[0];
+      context->state.last_input_first_byte =
+          static_cast<const unsigned char*>(input.bytes)[0];
     }
     if (should_fail) {
       completion(nil, fake_error(ETCoreAIErrorRuntime));
       return;
     }
     if (malformed) {
-      completion(@[ [[ETCoreAITensor alloc] initWithData:[NSData data]
-                                                   shape:@[ @2 ]
-                                              scalarType:ETCoreAIScalarTypeFloat32] ],
-                 nil);
+      completion(
+          @[ [[ETCoreAITensor alloc] initWithData:[NSData data]
+                                            shape:@[ @2 ]
+                                       scalarType:ETCoreAIScalarTypeFloat32] ],
+          nil);
       return;
     }
     NSMutableArray<ETCoreAITensor*>* outputs =
@@ -184,7 +191,8 @@ dispatch_time_t cleanup_deadline() {
               outputNames:(NSArray<NSString*>*)outputNames
                completion:(void (^)(id<ETCoreAISession>, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
-  if (!valid_binding(context, functionName, inputNames, outputNames) || context->state.fail_load) {
+  if (!valid_binding(context, functionName, inputNames, outputNames) ||
+      context->state.fail_load) {
     completion(nil, fake_error(ETCoreAIErrorInvalidModel));
     return;
   }
@@ -216,24 +224,31 @@ dispatch_time_t cleanup_deadline() {
 }
 - (void)restoreModelFromBookmark:(NSData*)bookmark
                       completion:(ETCoreAIAcquisitionCompletion)completion {
-  FakePreparedModel* model = [[FakePreparedModel alloc] initWithContext:self.context];
+  FakePreparedModel* model =
+      [[FakePreparedModel alloc] initWithContext:self.context];
   model.bookmark = bookmark;
-  _context->state.last_bundle = [[NSString alloc] initWithData:bookmark
-                                                      encoding:NSUTF8StringEncoding];
+  _context->state.last_bundle =
+      [[NSString alloc] initWithData:bookmark encoding:NSUTF8StringEncoding];
   completion(ETCoreAIAcquisitionStatusHit, model, nil);
 }
-- (void)specializeModelAtURL:(NSURL*)url completion:(ETCoreAIAcquisitionCompletion)completion {
+- (void)specializeModelAtURL:(NSURL*)url
+                  completion:(ETCoreAIAcquisitionCompletion)completion {
   if (![NSFileManager.defaultManager fileExistsAtPath:url.path]) {
     ++_context->state.missing_bundles;
-    completion(ETCoreAIAcquisitionStatusError, nil, fake_error(ETCoreAIErrorInvalidModel));
+    completion(
+        ETCoreAIAcquisitionStatusError,
+        nil,
+        fake_error(ETCoreAIErrorInvalidModel));
     return;
   }
   _context->state.last_bundle = url.path;
-  FakePreparedModel* model = [[FakePreparedModel alloc] initWithContext:self.context];
+  FakePreparedModel* model =
+      [[FakePreparedModel alloc] initWithContext:self.context];
   model.bookmark = [url.path dataUsingEncoding:NSUTF8StringEncoding];
   completion(ETCoreAIAcquisitionStatusHit, model, nil);
 }
-- (void)evictModelWithBookmark:(NSData*)bookmark completion:(void (^)(NSError*))completion {
+- (void)evictModelWithBookmark:(NSData*)bookmark
+                    completion:(void (^)(NSError*))completion {
   completion(nil);
 }
 @end
@@ -275,7 +290,8 @@ dispatch_time_t cleanup_deadline() {
                completion:(void (^)(id<ETCoreAISession>, NSError*))completion {
   CoreAIFakeBridgeContext* context = self.context;
   BookmarkFakeLoader* owner = self.owner;
-  if (!valid_binding(context, functionName, inputNames, outputNames) || owner == nil) {
+  if (!valid_binding(context, functionName, inputNames, outputNames) ||
+      owner == nil) {
     completion(nil, fake_error(ETCoreAIErrorInvalidModel));
     return;
   }
