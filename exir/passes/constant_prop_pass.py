@@ -184,6 +184,15 @@ def get_propagated_const_tensor_dict(
                 prop_constant_tensor = prop_constant_tensor.contiguous()
         const_node_to_tensor[node] = prop_constant_tensor
 
+    # Only tensors can be lifted into placeholders. A non-tensor value read by
+    # a node outside the fold stays a runtime op, together with the non-tensor
+    # values it is computed from.
+    for node in reversed(list(const_node_to_tensor)):
+        if not isinstance(const_node_to_tensor[node], torch.Tensor) and any(
+            user not in const_node_to_tensor for user in node.users
+        ):
+            del const_node_to_tensor[node]
+
     return const_node_to_tensor
 
 
