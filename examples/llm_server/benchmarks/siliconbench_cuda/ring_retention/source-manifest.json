@@ -4,7 +4,7 @@
     "baseline_MG_sdpa.py": "727df52b527420362bade0a9dc1f638e8c13850d7035e006e27cff8659d40df8",
     "probe_two_source_ring.py": "20e03df16c877c9bb12c8701de51053bb859bb0230150cc24ead5d312dae5d2c",
     "baseline_Gemma_sdpa.py": "db8233510aeae0c0bfdc07d7b6bc44942767b1ea7a1946468f401951b0bb8b59",
-    "two_source_ring.py": "64c5e29f1a5ac4856ff66806254fd82e78c1b35d28a83b6045f3cb9b5e90bd61"
+    "two_source_ring.py": "3cbe76f859e6c7ad63221161ffeff5dc2ad311fdb875f81bb93cc0214d668888"
   },
   "MG_model_scale": 0.34206290539921874,
   "MG_qheads": 32,

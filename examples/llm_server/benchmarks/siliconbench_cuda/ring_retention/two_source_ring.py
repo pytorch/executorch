@@ -83,6 +83,199 @@ def _attention(Q, KH, VH, KN, VN, Info, Out,
 
 
 @triton.jit
+def _decode(
+    Q_ptr,
+    K_ptr,
+    V_ptr,
+    KN_ptr,
+    VN_ptr,
+    stride_knh,
+    stride_knt,
+    stride_vnh,
+    stride_vnt,
+    O_ptr,
+    O_part_ptr,
+    M_part_ptr,
+    L_part_ptr,
+    Info_ptr,
+    Hq,
+    T,
+    stride_qh,
+    stride_qt,
+    stride_kr,
+    stride_kc,
+    stride_kh,
+    stride_vr,
+    stride_vc,
+    stride_vh,
+    stride_oh,
+    stride_ot,
+    sm_scale,
+    rows_available,
+    NUM_SEGMENTS: tl.constexpr,
+    INFO_WIDTH: tl.constexpr,
+    NUM_SPLITS: tl.constexpr,
+    IS_CAUSAL: tl.constexpr,
+    CONTEXT_WINDOW: tl.constexpr,
+    WINDOW: tl.constexpr,
+    RING: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    NUM_GROUPS: tl.constexpr,
+    BLOCK_G: tl.constexpr,
+):
+    sm_scale = sm_scale.to(tl.float32)
+    t = tl.program_id(0)
+    h_kv = tl.program_id(1)
+    split = tl.program_id(2)
+
+    owned = False
+    q_start = 0
+    q_len = 0
+    col = 0
+    kv_end = 0
+    for seg in range(NUM_SEGMENTS):
+        seg_q_start = tl.load(Info_ptr + seg * INFO_WIDTH)
+        seg_q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+        take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
+        owned |= take
+        q_start = tl.where(take, seg_q_start, q_start)
+        q_len = tl.where(take, seg_q_len, q_len)
+        if INFO_WIDTH == 7 and RING == 0:
+            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 5), col)
+        else:
+            col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
+        kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
+    if INFO_WIDTH >= 5:
+        columns = tl.load(Info_ptr + 4).to(tl.int64)
+        stride_kr = columns * stride_kc
+        stride_vr = columns * stride_vc
+
+    if INFO_WIDTH == 7 and RING == 0:
+        rows_available = kv_end
+        stride_kr = stride_kc
+        stride_vr = stride_vc
+    offs_g = tl.arange(0, BLOCK_G)
+    offs_d = tl.arange(0, HEAD_DIM)
+    g_valid = offs_g < NUM_GROUPS
+    row_valid = owned & g_valid
+    h_q = h_kv * NUM_GROUPS + offs_g
+    q = tl.load(
+        Q_ptr + h_q[:, None] * stride_qh + t * stride_qt + offs_d[None, :],
+        mask=row_valid[:, None],
+        other=0.0,
+    )
+
+    first_new = kv_end - q_len
+    pos = first_new + t - q_start
+    lo = tl.maximum(0, pos - WINDOW + 1)
+    hi = pos + 1
+    span = tl.maximum(hi - lo, 0)
+    chunk = tl.cdiv(tl.cdiv(span, NUM_SPLITS), BLOCK_N) * BLOCK_N
+    start = lo + split * chunk
+    stop = tl.minimum(start + chunk, hi)
+
+    m_i = tl.full([BLOCK_G], -float("inf"), dtype=tl.float32)
+    l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
+    acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
+    k_base = K_ptr + col * stride_kc + h_kv * stride_kh
+    v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+    for n0 in tl.range(start, stop, BLOCK_N):
+        offs_n = n0 + tl.arange(0, BLOCK_N)
+        physical_n = offs_n % RING if RING > 0 else offs_n
+        n_valid = offs_n < stop
+        use_new = offs_n >= first_new
+        current_t = q_start + offs_n - first_new
+        k = tl.load(
+            tl.where(use_new[:, None], KN_ptr + h_kv * stride_knh + current_t[:, None] * stride_knt + offs_d[None, :],
+                     k_base + physical_n[:, None] * stride_kr + offs_d[None, :]),
+            mask=n_valid[:, None] & owned,
+            other=0.0,
+        )
+        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
+        kv_pos = offs_n
+        visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
+        if IS_CAUSAL:
+            visible &= kv_pos[None, :] <= pos
+        else:
+            visible &= kv_pos[None, :] < kv_end
+        if WINDOW > 0:
+            if CONTEXT_WINDOW:
+                visible &= kv_pos[None, :] >= kv_end - q_len - WINDOW
+            else:
+                visible &= kv_pos[None, :] > pos - WINDOW
+        qk = tl.where(visible, qk, -float("inf"))
+
+        m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
+        p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
+        alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
+        v = tl.load(
+            tl.where(use_new[:, None], VN_ptr + h_kv * stride_vnh + current_t[:, None] * stride_vnt + offs_d[None, :],
+                     v_base + physical_n[:, None] * stride_vr + offs_d[None, :]),
+            mask=n_valid[:, None] & owned,
+            other=0.0,
+        )
+        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
+        l_i = l_i * alpha + tl.sum(p, axis=1)
+        m_i = m_ij
+
+    if NUM_SPLITS == 1:
+        out = acc * tl.where(l_i > 0, 1.0 / l_i, 0.0)[:, None]
+        tl.store(
+            O_ptr + h_q[:, None] * stride_oh + t * stride_ot + offs_d[None, :],
+            out.to(O_ptr.dtype.element_ty),
+            mask=g_valid[:, None],
+        )
+    else:
+        part = (split * Hq + h_q) * T + t
+        tl.store(
+            O_part_ptr + part[:, None] * HEAD_DIM + offs_d[None, :],
+            acc,
+            mask=g_valid[:, None],
+        )
+        tl.store(M_part_ptr + part, m_i, mask=g_valid)
+        tl.store(L_part_ptr + part, l_i, mask=g_valid)
+
+
+@triton.jit
+def _reduce(
+    O_part_ptr,
+    M_part_ptr,
+    L_part_ptr,
+    O_ptr,
+    Hq,
+    T,
+    stride_oh,
+    stride_ot,
+    NUM_SPLITS: tl.constexpr,
+    BLOCK_S: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    h_q = pid // T
+    t = pid % T
+    offs_s = tl.arange(0, BLOCK_S)
+    s_valid = offs_s < NUM_SPLITS
+    part = (offs_s * Hq + h_q) * T + t
+    m = tl.load(M_part_ptr + part, mask=s_valid, other=-float("inf"))
+    m_max = tl.max(m, axis=0)
+    alpha = tl.where(s_valid & (m > -float("inf")), tl.exp(m - m_max), 0.0)
+    l_sum = tl.sum(tl.load(L_part_ptr + part, mask=s_valid, other=0.0) * alpha, 0)
+    offs_d = tl.arange(0, HEAD_DIM)
+    o = tl.load(
+        O_part_ptr + part[:, None] * HEAD_DIM + offs_d[None, :],
+        mask=s_valid[:, None],
+        other=0.0,
+    )
+    out = tl.sum(o * alpha[:, None], axis=0) * tl.where(l_sum > 0, 1.0 / l_sum, 0.0)
+    tl.store(
+        O_ptr + h_q * stride_oh + t * stride_ot + offs_d,
+        out.to(O_ptr.dtype.element_ty),
+    )
+
+
+
+@triton.jit
 def _commit(KH, VH, KN, VN, Info,
             skhc, skhh, svhc, svhh, sknh, sknt, svnh, svnt,
             T: tl.constexpr, W: tl.constexpr, D: tl.constexpr,
@@ -120,6 +313,27 @@ def sdpa_ring_current(query: torch.Tensor, history_key: torch.Tensor,
     heads, total, dim = query.shape[1:]
     kvheads = current_key.shape[1]
     groups = heads // kvheads
+    # Keep the existing row-complete split-K route for native small decode.
+    # The wrapper uses only static shapes; graph replay still reads device metadata.
+    use_decode = isinstance(total, int) and total <= (16 if dim <= 128 else 4)
+    if use_decode:
+        splits = min(16, triton.cdiv(window, 256))
+        out = torch.empty_like(query)
+        partial = torch.empty((splits, heads, total, dim), device=query.device, dtype=torch.float32)
+        maximum = torch.empty((splits, heads, total), device=query.device, dtype=torch.float32)
+        normalizer = torch.empty_like(maximum)
+        wrap_triton(_decode)[(total, kvheads, splits)](
+            query, history_key, history_value, current_key, current_value,
+            current_key.stride(1), current_key.stride(2), current_value.stride(1), current_value.stride(2),
+            out, partial, maximum, normalizer, seq_info, heads, total,
+            query.stride(1), query.stride(2), history_key.stride(0), history_key.stride(1), history_key.stride(2),
+            history_value.stride(0), history_value.stride(1), history_value.stride(2), out.stride(1), out.stride(2),
+            scale, window, seq_info.shape[0], seq_info.shape[1], splits, True, False,
+            window, window, 128, dim, groups, triton.next_power_of_2(groups),
+            num_warps=4, num_stages=2)
+        wrap_triton(_reduce)[(heads * total,)](partial, maximum, normalizer, out, heads, total,
+            out.stride(1), out.stride(2), splits, triton.next_power_of_2(splits), dim, num_warps=4)
+        return out
     # Native cache allocations can be smaller than declared tensor shapes.
     # Runtime columns in seq_info define the actual pitch for history reads.
     out = torch.zeros_like(query)
