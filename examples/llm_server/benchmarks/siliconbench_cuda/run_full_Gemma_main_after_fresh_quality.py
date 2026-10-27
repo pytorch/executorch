@@ -13,7 +13,9 @@ def main():
  for n in ('quality-follower-job','full-controls-job','native-job','mini-qualification','memory-worker-proof','Gemma-source-preparation-job','http-python-dependencies-job','tokenizer','server-python','public-inputs','lock','output'):p.add_argument('--'+n,type=Path,required=True)
  p.add_argument('--port',type=int,required=True)
  p.add_argument('--matched-confirmation-job',type=Path)
+ p.add_argument('--performance-acceptance',type=Path)
  a=p.parse_args();assert 1024<=a.port<=65535 and not a.output.exists();a.output.mkdir(parents=True)
+ assert not a.performance_acceptance or a.matched_confirmation_job
  package=Path(__file__).resolve().parent
  def state(status,**kw):
   f=a.output/'progress.pending.json';f.write_text(json.dumps(dict(status=status,UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),controller_pid=os.getpid(),full_model_qualified=False,main_candidate_accepted=False,**kw),indent=2)+'\n');f.replace(a.output/'progress.json')
@@ -48,6 +50,7 @@ def main():
   common=[]
   for n in ('native-job','mini-qualification','memory-worker-proof','Gemma-source-preparation-job','http-python-dependencies-job','tokenizer','public-inputs'):common+=['--'+n,getattr(a,n.replace('-','_'))]
   confirmation_args=['--matched-confirmation-job',a.matched_confirmation_job] if a.matched_confirmation_job else []
+  if a.performance_acceptance:confirmation_args+=['--performance-acceptance',a.performance_acceptance]
   state('rechecking-complete-full-Gemma-qualification')
   run('full-qualification','write_Gemma_full_independent_KV_qualification.py',['--package',package,*common,'--full-controls-job',a.full_controls_job,'--quality-follower-job',a.quality_follower_job,'--output',a.output/'full-qualification',*confirmation_args],4*3600)
   receipt=a.output/'full-qualification/full-qualification.json';qualified=json.loads(receipt.read_text())

@@ -112,8 +112,9 @@ def main():
             assert a.full_qualification_receipt
             qualification=json.loads(a.full_qualification_receipt.read_text())
             for key in ('full_model_correctness_pass','full_task_F1_independently_reviewed',
-                        'full_fixed_token_performance_pass','full_storage_rewind_graph_pass','full_HTTP_memory_pass'):
+                        'full_storage_rewind_graph_pass','full_HTTP_memory_pass'):
                 assert qualification[key],key
+            assert qualification['full_fixed_token_performance_pass'] or (gemma and qualification.get('full_fixed_token_performance_accepted_by_user'))
             assert qualification['full_profile']==a.full_model_profile
             assert qualification['artifact_SHA256']==artifact_SHA
             assert qualification['native_runtime_gate_SHA256']==sha(a.native_job/'native-gate.json')

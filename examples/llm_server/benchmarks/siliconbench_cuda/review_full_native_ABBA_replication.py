@@ -4,11 +4,43 @@ Every study still has four rounds and discards its first round. Keep the
 original signal; use the unchanged three-standard-error rule on all retained
 samples. This review cannot qualify a model without the other full gates.
 """
-import argparse,datetime,json,math,statistics,subprocess,sys
+import argparse,datetime,hashlib,json,math,statistics,subprocess,sys
 from pathlib import Path
 from independent_session_full_native_binding import sha
 
 METRICS=('cold_first_four_seconds','mean_stable_native_ms')
+
+
+def cells_SHA256(cells):
+    return hashlib.sha256(json.dumps(cells,sort_keys=True,allow_nan=False).encode()).hexdigest()
+
+
+def verify_user_performance_acceptance(path,report):
+    """Accept only explicitly approved, unchanged performance evidence.
+
+    This does not change a statistical result or any correctness requirement.
+    The decision file belongs to the experiment, not the public checkout.
+    """
+    decision=json.loads(Path(path).read_text())
+    assert decision['schema']==1 and decision['explicit_user_acceptance'] is True
+    assert decision['decision']=='accept_current_Gemma_full_native_performance_for_main_collection'
+    assert decision['full_profile']=='gemma4-48layers'
+    assert decision['correctness_exceptions_allowed'] is False
+    assert decision['user_instruction'] and decision['UTC']
+    assert decision['GPU_UUID']==report['qualification_GPU_UUID']
+    assert decision['accepted_cells_SHA256']==cells_SHA256(report['cells'])
+    assert decision['accepted_signals']==report['positive_performance_signals']
+    assert decision['accepted_signals']==[dict(arm='independent',case='decode8',metric='mean_stable_native_ms')]
+    assert decision['study_result_SHA256']==report['study_result_SHA256']
+    for item in report['study_result_SHA256']:assert sha(item['path'])==item['SHA256']
+    reviews=[json.loads(Path(p).read_text()) for p in report['recomputed_reviews']]
+    for reviewed in reviews:
+        assert decision['native_gate_SHA256']==reviewed['native_gate_SHA256'][1]
+        assert decision['artifacts']==reviewed['artifacts']
+        assert reviewed['native_change_preserves_observed_model_numerics']
+        assert reviewed['full_saved_FP32_tensors_equal']==9
+        assert reviewed['selected_argmax_values_equal']==3672
+    return decision
 
 
 def pool(reviews):
@@ -38,13 +70,19 @@ def verify_report(path,package,UUID):
     for name,expected in d['evidence_files_SHA256'].items():assert sha(name)==expected,name
     reviews=[json.loads(Path(name).read_text()) for name in d['recomputed_reviews']]
     assert pool(reviews)==d['cells']
-    assert not [dict(arm=c['arm'],case=c['case'],metric=m) for c in d['cells'] for m in METRICS if c[m]['positive_signal']]
+    signals=[dict(arm=c['arm'],case=c['case'],metric=m) for c in d['cells'] for m in METRICS if c[m]['positive_signal']]
+    assert signals==d['positive_performance_signals']
+    if signals:
+        assert d.get('performance_accepted_by_user') and not d['strict_statistical_performance_pass']
+        assert sha(d['performance_acceptance'])==d['performance_acceptance_SHA256']
+        verify_user_performance_acceptance(d['performance_acceptance'],d)
     return d
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for n in ('original-job','confirmation-job','package','output'):p.add_argument('--'+n,type=Path,required=True)
+    p.add_argument('--performance-acceptance',type=Path)
     a=p.parse_args();assert a.original_job.resolve()!=a.confirmation_job.resolve() and not a.output.exists();a.output.mkdir(parents=True)
     from write_MG_full_independent_KV_qualification import current_GPU_UUID
     UUID=current_GPU_UUID();documents=[];reviews=[];evidence={};paths=[]
@@ -76,12 +114,21 @@ def main():
             result.append((row['round'],row['native'],argv))
         return result
     assert signature(documents[0])==signature(documents[1])
+    assert not set(r['result'] for r in documents[0]['actual_child_results']) & set(r['result'] for r in documents[1]['actual_child_results'])
     cells=pool(reviews);signals=[dict(arm=c['arm'],case=c['case'],metric=m) for c in cells for m in METRICS if c[m]['positive_signal']]
     report=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),producer_source_SHA256=sha(Path(__file__)),qualification_GPU_UUID=UUID,recomputed_reviews=paths,cells=cells,positive_performance_signals=signals,original_matched_signals=documents[0]['positive_performance_signals'],confirmation_matched_signals=documents[1]['positive_performance_signals'],retained_values_each_native=6,each_study_four_rounds_discard_first=True,original_gate_preserved=True,statistical_rule_changed=False,no_capture_or_stable_waiver=True,evidence_files_SHA256=evidence)
+    report['study_result_SHA256']=[dict(path=str((root/'result.json').resolve()),SHA256=sha(root/'result.json')) for root in (a.original_job,a.confirmation_job)]
+    report['strict_statistical_performance_pass']=not signals
+    report['performance_accepted_by_user']=False
+    if a.performance_acceptance:
+        assert signals,'Explicit exception must refer to the measured signal'
+        verify_user_performance_acceptance(a.performance_acceptance,report)
+        report.update(performance_accepted_by_user=True,performance_acceptance=str(a.performance_acceptance.resolve()),performance_acceptance_SHA256=sha(a.performance_acceptance))
+        evidence[str(a.performance_acceptance.resolve())]=sha(a.performance_acceptance)
     (a.output/'replication-review.json').write_text(json.dumps(report,indent=2)+'\n')
-    assert not signals,'Actual pooled full native timing still has signals; preserve raw and do not qualify'
+    assert not signals or report['performance_accepted_by_user'],'Actual pooled full native timing still has signals; preserve raw and do not qualify'
     verify_report(a.output/'replication-review.json',a.package,UUID)
-    print(json.dumps(dict(actual_two_study_full_ABBA_pass=True,original_gate_preserved=True)))
+    print(json.dumps(dict(actual_two_study_full_ABBA_pass=not signals,performance_accepted_by_user=report['performance_accepted_by_user'],original_gate_preserved=True)))
 
 
 if __name__=='__main__':main()
