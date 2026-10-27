@@ -301,6 +301,9 @@ EXTRA_SHARED_QPARAM_TARGETS = (
     torch.ops.aten.upsample_bilinear2d.default,
     torch.ops.aten.constant_pad_nd.default,
     torch.ops.aten.pad.default,
+    torch.ops.aten.dropout.default,
+    torch.ops.aten.dropout_.default,
+    torch.ops.aten.alias.default,
 )
 
 SPLIT_TARGETS = (

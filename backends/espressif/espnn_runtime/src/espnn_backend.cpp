@@ -50,6 +50,12 @@ namespace {
 
 DelegateStats g_stats{};
 
+constexpr float kHalfEvenRoundingBias = 12582912.0f;
+
+float round_half_even_below_2p22(float value) {
+  return (value + kHalfEvenRoundingBias) - kHalfEvenRoundingBias;
+}
+
 int8_t quantize(float value, float inverse_scale, int32_t zero_point) {
   const float scaled = value * inverse_scale;
   if (!std::isfinite(scaled))
@@ -58,7 +64,8 @@ int8_t quantize(float value, float inverse_scale, int32_t zero_point) {
     return 127;
   if (scaled < -1.0e6f)
     return -128;
-  int32_t q = static_cast<int32_t>(std::nearbyintf(scaled)) + zero_point;
+  int32_t q =
+      static_cast<int32_t>(round_half_even_below_2p22(scaled)) + zero_point;
   if (q < -128)
     q = -128;
   if (q > 127)
@@ -98,8 +105,8 @@ bool load_input(
         destination[i] = quantize(source[i], inverse, info.zero_point);
       return true;
     }
-    for (size_t c = 0; c < channels; ++c) {
-      for (size_t p = 0; p < plane; ++p) {
+    for (size_t p = 0; p < plane; ++p) {
+      for (size_t c = 0; c < channels; ++c) {
         destination[p * channels + c] =
             quantize(source[c * plane + p], inverse, info.zero_point);
       }

@@ -34,8 +34,10 @@ from executorch.backends.espressif.quantizer.espnn_quantizer import (  # noqa: E
     EspNNQuantizer,
     fused_activation_kind,
 )
+from executorch.backends.espressif.reference import ProgramEmulator  # noqa: E402
 from executorch.backends.espressif.serialization.xts3 import (  # noqa: E402
     build_graph,
+    check_dataflow,
     check_runtime_limits,
     MAX_GRAPH_IO,
     MAX_GRAPH_OPERATIONS,
@@ -171,3 +173,54 @@ def test_runtime_limits_reject_misaligned_int32_constants():
     ]
     with pytest.raises(ValueError, match="4-byte aligned"):
         check_runtime_limits(dataclasses.replace(graph, tensors=tensors))
+
+
+class DropoutClassifier(nn.Module):
+    """MobileNetV3's classifier: Linear, Hardswish, in-place Dropout, Linear."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = nn.Sequential(
+            nn.Linear(16, 32),
+            nn.Hardswish(inplace=True),
+            nn.Dropout(0.2, inplace=True),
+            nn.Linear(32, 10),
+        )
+
+    def forward(self, x):
+        return self.head(x)
+
+
+def test_dropout_between_quantized_ops_reads_the_producer():
+    converted, program = quantize(DropoutClassifier(), [(1, 16)])
+    graph = build_graph(program)
+    check_dataflow(graph)
+    last = graph.operations[-1]
+    assert last.opcode == XTS3OpCode.LINEAR
+    assert last.inputs[0] in graph.operations[-2].outputs
+
+    edge, report = to_espnn_edge(program, allow_cpu_fallback=False)
+    assert report["partitions"] == 1
+    x = torch.randn(1, 16)
+    expected = converted(x)
+    actual = ProgramEmulator(edge.exported_program())(x).to(torch.float32)
+    assert torch.allclose(actual, expected, atol=0.2)
+
+
+def test_dataflow_rejects_reading_an_unwritten_activation():
+    graph = _small_graph()
+    unwritten = dataclasses.replace(
+        graph.tensors[graph.operations[-1].inputs[0]],
+        tensor_id=len(graph.tensors),
+    )
+    last = dataclasses.replace(
+        graph.operations[-1],
+        inputs=[unwritten.tensor_id, *graph.operations[-1].inputs[1:]],
+    )
+    broken = dataclasses.replace(
+        graph,
+        tensors=[*graph.tensors, unwritten],
+        operations=[*graph.operations[:-1], last],
+    )
+    with pytest.raises(ValueError, match="nothing writes"):
+        check_dataflow(broken)

@@ -611,8 +611,23 @@ class TensorRegistry:
                         quantized_node, float(node.args[1]), int(node.args[2])
                     )
                 return self._constant_int8(node)
+            source = quantized_node.args[0]
+            if getattr(
+                source, "op", None
+            ) == "call_function" and "dequantize_per_tensor" in str(source.target):
+                # q(dq(x)) is left behind where an identity op (such as an
+                # eval-mode dropout) was decomposed away.
+                if (float(source.args[1]), int(source.args[2])) != (
+                    float(node.args[1]),
+                    int(node.args[2]),
+                ):
+                    raise ValueError(
+                        f"{quantized_node.name} requantizes {source.name}; "
+                        "back-to-back requantization is not supported"
+                    )
+                return self._get_or_create_int8(source, filter_layout)
             return self._new_int8_activation(
-                quantized_node.args[0],
+                source,
                 float(node.args[1]),
                 int(node.args[2]),
             )
@@ -1917,9 +1932,35 @@ def check_runtime_limits(graph: XTS3Graph) -> None:
             raise ValueError(f"int32 constant {tensor.tensor_id} is not 4-byte aligned")
 
 
+def check_dataflow(graph: XTS3Graph) -> None:
+    """
+    Raise ValueError when an operation or graph output reads an activation
+    that is neither a graph input nor written by an earlier operation. The
+    device would read whatever its arena holds there.
+    """
+    ready = set(graph.inputs)
+    ready.update(
+        tensor.tensor_id
+        for tensor in graph.tensors
+        if tensor.flags & TENSOR_FLAG_CONSTANT
+    )
+    for index, operation in enumerate(graph.operations):
+        for tensor_id in operation.inputs:
+            if tensor_id >= 0 and tensor_id not in ready:
+                raise ValueError(
+                    f"Operation {index} ({XTS3OpCode(operation.opcode).name}) "
+                    f"reads tensor {tensor_id}, which nothing writes before it"
+                )
+        ready.update(operation.outputs)
+    for tensor_id in graph.outputs:
+        if tensor_id not in ready:
+            raise ValueError(f"Graph output {tensor_id} is never written")
+
+
 def serialize_graph(graph: XTS3Graph) -> bytes:
     """Serialize to the XTS3 wire format; constants start 16-byte aligned."""
     check_runtime_limits(graph)
+    check_dataflow(graph)
     tensor_data = b"".join(_serialize_tensor(tensor) for tensor in graph.tensors)
     parameter_data = bytearray()
     operation_data = bytearray()
