@@ -39,7 +39,11 @@ from executorch.backends.espressif.serialization.xts3 import (
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
-torch.set_grad_enabled(False)
+@pytest.fixture(autouse=True)
+def disable_grad():
+    with torch.no_grad():
+        yield
+
 
 INT32_MIN = -(1 << 31)
 INT32_MAX = (1 << 31) - 1

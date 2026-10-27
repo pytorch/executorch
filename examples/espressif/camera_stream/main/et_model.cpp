@@ -46,12 +46,12 @@ namespace {
 constexpr size_t METHOD_POOL_BYTES = 256 * 1024;
 constexpr size_t TEMP_POOL_BYTES = 128 * 1024;
 
-uint8_t* psram_alloc(size_t bytes) {
+void* psram_alloc(size_t bytes) {
   void* pointer =
       heap_caps_aligned_alloc(16, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (pointer == nullptr)
     pointer = heap_caps_aligned_alloc(16, bytes, MALLOC_CAP_8BIT);
-  return static_cast<uint8_t*>(pointer);
+  return pointer;
 }
 
 bool float_tensor(Result<::executorch::runtime::TensorInfo> meta, size_t rank) {
@@ -90,8 +90,8 @@ bool EtModel::load(const uint8_t* data, size_t size) {
     return false;
   }
 
-  uint8_t* method_pool = psram_alloc(METHOD_POOL_BYTES);
-  uint8_t* temp_pool = psram_alloc(TEMP_POOL_BYTES);
+  auto* method_pool = static_cast<uint8_t*>(psram_alloc(METHOD_POOL_BYTES));
+  auto* temp_pool = static_cast<uint8_t*>(psram_alloc(TEMP_POOL_BYTES));
   const size_t planned_count = meta->num_memory_planned_buffers();
   auto* planned_spans = new (std::nothrow) Span<uint8_t>[planned_count + 1];
   if (method_pool == nullptr || temp_pool == nullptr ||
@@ -104,7 +104,8 @@ bool EtModel::load(const uint8_t* data, size_t size) {
     Result<int64_t> bytes = meta->memory_planned_buffer_size(i);
     if (!bytes.ok() || *bytes < 0)
       return false;
-    uint8_t* buffer = psram_alloc(static_cast<size_t>(*bytes));
+    auto* buffer =
+        static_cast<uint8_t*>(psram_alloc(static_cast<size_t>(*bytes)));
     if (buffer == nullptr) {
       std::printf(
           "#ERR planned buffer %u (%lld bytes) could not be allocated\n",
@@ -150,7 +151,7 @@ bool EtModel::load(const uint8_t* data, size_t size) {
 
   const size_t pixels =
       static_cast<size_t>(info_.input_width) * info_.input_height;
-  input_ = reinterpret_cast<float*>(psram_alloc(sizeof(float) * pixels * 3));
+  input_ = static_cast<float*>(psram_alloc(sizeof(float) * pixels * 3));
   if (input_ == nullptr)
     return false;
   sizes_[0] = 1;

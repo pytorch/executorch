@@ -29,6 +29,10 @@ to `models/mobilenet_v3_small_224.ops.txt` for `EXECUTORCH_SELECT_OPS_LIST`.
 MobileNetV3-Small lowers to one delegate with no CPU operators, so any
 selection works.
 
+The exporter leaves input allocation to the camera application. The runtime
+shares the normalized image buffer, avoiding a second float input buffer and
+a copy on each inference. Re-export existing models to use this memory plan.
+
 The board captures JPEG frames from the sensor, decodes and center-crops
 them, runs the model on core 1, and streams results, the model's input image
 and a preview of about 12 fps on core 0.

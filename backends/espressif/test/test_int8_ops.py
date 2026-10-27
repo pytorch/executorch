@@ -37,7 +37,10 @@ from executorch.backends.espressif.serialization.xts3 import (
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
-torch.set_grad_enabled(False)
+@pytest.fixture(autouse=True)
+def disable_grad():
+    with torch.no_grad():
+        yield
 
 
 def quantize(model: nn.Module, shapes, samples: int = 24, seed: int = 0):

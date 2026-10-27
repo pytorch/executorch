@@ -33,6 +33,8 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.espressif import EspNNQuantizer, to_espnn_edge
 from executorch.backends.espressif.reference import ProgramEmulator
+from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes import MemoryPlanningPass
 from torchao.quantization.pt2e import (
     disable_observer,
     move_exported_model_to_eval,
@@ -194,7 +196,11 @@ def main() -> int:
             f"int8 program {device_correct}, agreement {agree}"
         )
 
-    program = edge.to_executorch()
+    program = edge.to_executorch(
+        ExecutorchBackendConfig(
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+        )
+    )
     plan = program.executorch_program.execution_plan[0]
     operators = sorted(
         f"{op.name}.{op.overload}"

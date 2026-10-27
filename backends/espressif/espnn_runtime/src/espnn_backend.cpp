@@ -278,7 +278,7 @@ bool g_registered = executorch::runtime::register_backend(
 
 } // namespace
 
-bool register_espnn_backend() {
+[[maybe_unused]] bool register_espnn_backend() {
   if (!g_registered) {
     g_registered = executorch::runtime::register_backend(
                        Backend{kEspNNBackendId, &g_backend}) == Error::Ok;
@@ -290,7 +290,7 @@ DelegateStats delegate_stats() {
   return g_stats;
 }
 
-void reset_delegate_stats() {
+[[maybe_unused]] void reset_delegate_stats() {
   g_stats = {};
 }
 

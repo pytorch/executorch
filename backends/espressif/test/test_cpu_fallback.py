@@ -29,7 +29,10 @@ from executorch.backends.espressif.test.test_int8_ops import quantize
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 
 
-torch.set_grad_enabled(False)
+@pytest.fixture(autouse=True)
+def disable_grad():
+    with torch.no_grad():
+        yield
 
 
 def sqnr_db(reference: torch.Tensor, actual: torch.Tensor) -> float:
