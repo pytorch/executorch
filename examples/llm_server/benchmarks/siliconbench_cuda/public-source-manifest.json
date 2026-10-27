@@ -116,8 +116,8 @@
       "bytes": 11061
     },
     "bootstrap_corrected_native_MG_chat.py": {
-      "sha256": "4f25e8b581e9dcb9cd43fa32b7f110176204991f1a96975eadeec375df5b0460",
-      "bytes": 13237
+      "sha256": "dedbb110f004fa605fb526e96ff2d0a3cbcc45682be4317ad580308118d03a8a",
+      "bytes": 13826
     },
     "bootstrap_cpp_shard.py": {
       "sha256": "e558590f50210e65f8d1dbcb6f324352fe524e3d009dd9dbb23e99e9a07f6295",
@@ -640,8 +640,8 @@
       "bytes": 8149
     },
     "make_mg_stock_quality_wrapper.py": {
-      "sha256": "164388402b6bb409a7c1a357f64d949d9d3719fbc7804344028d8e042338be90",
-      "bytes": 3652
+      "sha256": "b025801f0d7e5e1e42ca09593d16bd5c6ddc1267f7343ad11aafa86ebfcbd4b3",
+      "bytes": 3948
     },
     "make_wrapper.py": {
       "sha256": "bb550a39903ad70348bfdc2fbfa6473ac3e6a27be7ecd859fb90eaf338cc3234",

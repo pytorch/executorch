@@ -14,13 +14,16 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ['model-path', 'tokenizer-path', 'vllm-bin', 'sglang-python', 'task-root', 'output']:
         p.add_argument('--'+name, type=Path, required=True)
+    p.add_argument('--reuse-runtime-cache', action='store_true',
+                   help='Reuse existing task-owned compiler caches without changing framework code')
     a = p.parse_args()
-    assert not a.output.exists() and not a.task_root.exists()
+    assert not a.output.exists()
+    assert a.task_root.is_dir() if a.reuse_runtime_cache else not a.task_root.exists()
     assert (a.model_path/'download-audit.json').is_file()
     assert (a.tokenizer_path/'chat_template.jinja').is_file()
     assert a.vllm_bin.is_file() and a.sglang_python.is_file()
     for name in ['triton', 'inductor', 'flashinfer', 'hf', 'xdg', 'cuda', 'tmp']:
-        (a.task_root/name).mkdir(parents=True)
+        (a.task_root/name).mkdir(parents=True, exist_ok=a.reuse_runtime_cache)
     assignments = '\n'.join(name+'='+shlex.quote(str(value)) for name,value in [
         ('model',a.model_path),('tokenizer',a.tokenizer_path),('vl',a.vllm_bin),
         ('sg',a.sglang_python),('task',a.task_root)])
@@ -59,6 +62,7 @@ case "$backend" in
       --host 127.0.0.1 --port "$port" --max-model-len 131072 --max-num-seqs 16 \
       --gpu-memory-utilization 0.85 --max-num-batched-tokens 8192 "${vl_cache_args[@]}" \
       --generation-config auto --chat-template-content-format string \
+      --reasoning-parser muse_glimmer \
       --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[1,2,4,8,16]}'
     ;;
   *) exit 2 ;;

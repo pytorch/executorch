@@ -92,6 +92,8 @@ def main():
     p.add_argument('--target-power-W', type=int, default=575)
     p.add_argument('--reuse-prepared-native', action='store_true')
     p.add_argument('--reuse-verified-model', action='store_true')
+    p.add_argument('--reuse-runtime-cache-path', type=Path,
+                   help='Existing task-owned compiler cache; model and compute settings stay unchanged')
     a = p.parse_args()
     assert not a.output.exists()
     assert a.native_venv.is_dir() if a.reuse_prepared_native else not a.native_venv.exists()
@@ -147,10 +149,15 @@ def main():
         assert sha(package / 'benchmark_mg.py') == '3a748babe2fc62d9f10c08892de65b57954d9661bd0689988ac3d6d5cbabf982'
         assert (inputs / '.venv/bin/python').is_file()
         wrapper = a.output / 'serve-stock-group32.sh'
-        run('stock-wrapper', [sys.executable, '-B', package / 'make_mg_stock_quality_wrapper.py',
+        cache_path = a.reuse_runtime_cache_path or a.output / 'runtime-cache'
+        wrapper_argv = [sys.executable, '-B', package / 'make_mg_stock_quality_wrapper.py',
             '--model-path', a.model_path, '--tokenizer-path', a.output / 'canonical-tokenizer/tokenizer',
             '--vllm-bin', a.native_venv / 'bin/vllm' if a.backend == 'vllm' else native,
-            '--sglang-python', native, '--task-root', a.output / 'runtime-cache', '--output', wrapper], 120)
+            '--sglang-python', native, '--task-root', cache_path, '--output', wrapper]
+        if a.reuse_runtime_cache_path:
+            assert cache_path.is_dir()
+            wrapper_argv += ['--reuse-runtime-cache']
+        run('stock-wrapper', wrapper_argv, 120)
         # Both stock runtimes create AF_UNIX endpoints. Keep their exposed
         # TMPDIR short; this changes no model code or compute/scheduler setting.
         short = Path('/tmp') / ('sb-MG-chat-' + str(os.getpid()))
@@ -165,6 +172,8 @@ def main():
             repo=REPO, revision=REVISION, framework=a.backend, native_python=str(native),
             package_freeze_SHA256=sha(a.output / 'official-package-freeze.log'),
             wrapper_SHA256=sha(wrapper), client_SHA256=sha(package / 'benchmark_mg.py'),
+            official_reasoning_parser='muse_glimmer' if a.backend == 'vllm' else 'muse',
+            compiler_cache_path=str(cache_path), compiler_cache_reused=bool(a.reuse_runtime_cache_path),
             prompt_SHA256=sha(inputs / 'chat_benchmark_prompts.json'), stock_runtime_code_unmodified=True,
             W4A16_BF16_KV=True, native_prefill_budget=8192, active_decode_limit=16, logical_context=131072,
             original_complete_agent_F1_and_performance_reused_separately=True,
