@@ -8,8 +8,10 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 
@@ -47,11 +49,19 @@ def main():
     for task in cfg['tasks']:
         before=Path(task['wrapper']);wrapper=job/before.name
         text=before.read_text();assert str(original/'llama-server') in text
-        wrapper.write_text(text.replace(str(original/'llama-server'),str(binary/'llama-server')))
+        text=text.replace(str(original/'llama-server'),str(binary/'llama-server'))
+        assert text.count('\nexec ')==1
+        text=text.replace('\nexec ','\nexport LD_LIBRARY_PATH='+shlex.quote(str(binary))+
+            '"${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec ',1)
+        wrapper.write_text(text)
         subprocess.run(['bash','-n',str(wrapper)],check=True)
         task['wrapper']=str(wrapper)
     (job/'inputs').symlink_to(old/'inputs',target_is_directory=True)
     config=job/'matrix-config.json';config.write_text(json.dumps(cfg,indent=2)+'\n')
+    env=dict(os.environ,LD_LIBRARY_PATH=str(binary)+os.pathsep+os.environ.get('LD_LIBRARY_PATH',''))
+    linked=subprocess.check_output(['ldd',str(binary/'llama-server')],env=env,text=True)
+    assert str(original) not in linked and 'not found' not in linked
+    (job/'copied-library-resolution.log').write_text(linked)
     package=Path(__file__).resolve().parent
     command=[sys.executable,'-B','-u',str(package/'run_default_chunk_single_matrix.py'),
         '--config',str(config),'--output',str(job/'matrix')]
