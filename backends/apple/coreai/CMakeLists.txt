@@ -347,15 +347,19 @@ if(EXECUTORCH_BUILD_TESTS
                  "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
     )
     add_executable(
-      coreai_sdk_source_lifetime_test runtime/test/SDKSourceLifetimeTest.swift
+      coreai_sdk_source_lifetime_test
+      runtime/test/SDKSourceLifetimeTest.swift runtime/ETCoreAIModel.swift
+      runtime/ETCoreAITensor.mm
     )
     set_target_properties(
       coreai_sdk_source_lifetime_test PROPERTIES Swift_LANGUAGE_VERSION 6
     )
+    coreai_configure_objc_target(coreai_sdk_source_lifetime_test)
     coreai_require_os27(coreai_sdk_source_lifetime_test)
     target_compile_options(
       coreai_sdk_source_lifetime_test
-      PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library>"
+      PRIVATE
+        "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library;-import-objc-header;${CMAKE_CURRENT_SOURCE_DIR}/runtime/ETCoreAIBridge.h>"
     )
     target_link_libraries(
       coreai_sdk_source_lifetime_test PRIVATE executorch::coreai_dependencies
@@ -364,7 +368,7 @@ if(EXECUTORCH_BUILD_TESTS
       NAME coreai_sdk_source_lifetime_test
       COMMAND
         "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/test_sdk_source_lifetime.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/run_sdk_source_lifetime.py"
         "$<TARGET_FILE:coreai_sdk_source_lifetime_test>"
     )
     set_tests_properties(coreai_sdk_source_lifetime_test PROPERTIES TIMEOUT 240)

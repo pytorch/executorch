@@ -18,7 +18,8 @@ int main(int argc, char** argv) {
     executorch::backends::coreai::testing::set_bookmark_test_executable(
         argv[0]);
     const int acquisition_result =
-        executorch::backends::coreai::testing::acquisition_child_mode(argc, argv);
+        executorch::backends::coreai::testing::acquisition_child_mode(
+            argc, argv);
     if (acquisition_result >= 0)
       return acquisition_result;
     const int child_result =

@@ -48,16 +48,19 @@ void run_async(CoreAIFakeBridgeContext* context, void (^work)()) {
   });
 }
 
-::testing::AssertionResult wait_for_callbacks(CoreAIFakeBridgeContext* context,
-                                              dispatch_time_t deadline) {
+::testing::AssertionResult wait_for_callbacks(
+    CoreAIFakeBridgeContext* context,
+    dispatch_time_t deadline) {
   if (dispatch_group_wait(context.callbacks, deadline) != 0) {
     return ::testing::AssertionFailure() << "Fake SDK callbacks did not finish";
   }
   return ::testing::AssertionSuccess();
 }
 
-dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC); }
-}  // namespace
+dispatch_time_t cleanup_deadline() {
+  return dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC);
+}
+} // namespace
 
 @interface BookmarkFakeModel ()
 @property(nonatomic, strong) CoreAIFakeBridgeContext* context;
@@ -130,12 +133,16 @@ dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 
       }
       BookmarkFakeModel* model = self.restoreMiss ? nil : self.models[bookmark];
       self.lastAcquired = model;
-      completion(model == nil ? ETCoreAIAcquisitionStatusMiss : ETCoreAIAcquisitionStatusHit, model,
-                 nil);
+      completion(
+          model == nil ? ETCoreAIAcquisitionStatusMiss
+                       : ETCoreAIAcquisitionStatusHit,
+          model,
+          nil);
     }
   });
 }
-- (void)specializeModelAtURL:(NSURL*)url completion:(ETCoreAIAcquisitionCompletion)completion {
+- (void)specializeModelAtURL:(NSURL*)url
+                  completion:(ETCoreAIAcquisitionCompletion)completion {
   ++specializations;
   run_async(self.context, ^{
     if (self.onSpecialize != nil) {
@@ -149,19 +156,25 @@ dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 
       }
       if (![NSFileManager.defaultManager fileExistsAtPath:url.path]) {
         ++self.context->state.missing_bundles;
-        completion(ETCoreAIAcquisitionStatusError, nil, fake_error(ETCoreAIErrorInvalidModel));
+        completion(
+            ETCoreAIAcquisitionStatusError,
+            nil,
+            fake_error(ETCoreAIErrorInvalidModel));
         return;
       }
-      BookmarkFakeModel* model = [[BookmarkFakeModel alloc] initWithContext:self.context];
+      BookmarkFakeModel* model =
+          [[BookmarkFakeModel alloc] initWithContext:self.context];
       model.owner = self;
-      model.bookmark = [NSUUID.UUID.UUIDString dataUsingEncoding:NSUTF8StringEncoding];
+      model.bookmark =
+          [NSUUID.UUID.UUIDString dataUsingEncoding:NSUTF8StringEncoding];
       self.models[model.bookmark] = model;
       self.lastAcquired = model;
       completion(ETCoreAIAcquisitionStatusHit, model, nil);
     }
   });
 }
-- (void)evictModelWithBookmark:(NSData*)bookmark completion:(void (^)(NSError*))completion {
+- (void)evictModelWithBookmark:(NSData*)bookmark
+                    completion:(void (^)(NSError*))completion {
   ++evictions;
   run_async(self.context, ^{
     completion(fake_error(ETCoreAIErrorUnsupported));
@@ -177,7 +190,8 @@ dispatch_time_t cleanup_deadline() { return dispatch_time(DISPATCH_TIME_NOW, 10 
 namespace executorch::backends::coreai::testing {
 
 ScopedFakeBridgeState::ScopedFakeBridgeState()
-    : context_([[CoreAIFakeBridgeContext alloc] init]), previous_(current_context) {
+    : context_([[CoreAIFakeBridgeContext alloc] init]),
+      previous_(current_context) {
   current_context = context_;
 }
 
@@ -199,16 +213,20 @@ ScopedFakeBridgeState::~ScopedFakeBridgeState() {
   current_context = previous_;
 }
 
-FakeBridgeState& ScopedFakeBridgeState::state() { return context_->state; }
+FakeBridgeState& ScopedFakeBridgeState::state() {
+  return context_->state;
+}
 
-::testing::AssertionResult ScopedFakeBridgeState::wait_for_callbacks(dispatch_time_t deadline) {
+::testing::AssertionResult ScopedFakeBridgeState::wait_for_callbacks(
+    dispatch_time_t deadline) {
   return ::wait_for_callbacks(context_, deadline);
 }
 
 BookmarkLoaderScope::BookmarkLoaderScope()
     : context_(current_context),
       previous_(context_ == nil ? nil : context_->state.bookmark_loader) {
-  EXPECT_NE(context_, nil) << "BookmarkLoaderScope requires ScopedFakeBridgeState";
+  EXPECT_NE(context_, nil)
+      << "BookmarkLoaderScope requires ScopedFakeBridgeState";
   if (context_ != nil) {
     loader = [[BookmarkFakeLoader alloc] init];
     context_->state.bookmark_loader = loader;
@@ -229,4 +247,4 @@ BookmarkLoaderScope::~BookmarkLoaderScope() {
   loader = nil;
 }
 
-}  // namespace executorch::backends::coreai::testing
+} // namespace executorch::backends::coreai::testing

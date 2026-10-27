@@ -62,10 +62,10 @@ architectures=["h17p"])` requests that compiler architecture; omitting the list
 lets the compiler emit its supported architectures for the target platform.
 These are Core AI architecture names, not CPU names such as `arm64`.
 
-Both formats can require device specialization. Every load first attempts SDK
-bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
-to source materialization and persistent specialization, then binds the requested
-function and ordered I/O on that same acquired model.
+Both formats can require device specialization. The acquisition coordinator
+first attempts SDK bookmark restoration. A missing bookmark or SDK-confirmed
+cache miss falls back to source materialization and persistent specialization.
+It returns the acquired model; function binding is the caller's responsibility.
 
 ### Asset storage
 
@@ -99,14 +99,13 @@ Missing bundles are written to a staging directory and published with an
 exclusive rename; each selected NDS payload is fetched once and checked for size
 before writing. If another loader publishes first, its bundle is validated and
 used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
-normal loading without replacement, since an SDK model may still be using them.
-A cache-maintenance caller holding the same entry lock can explicitly replace a
-damaged bundle. Replacement preflights the full descriptor-bound tree, then
-revalidates entries while removing them without following links. Only
-interrupted system calls are retried; other failures are returned to the caller
-without automatic retries or repair. Temporary bundles are removed on ordinary
-failures before publication; a caller can explicitly retry after addressing the
-failure.
+normal source preparation without replacement, since an SDK model may still be
+using them. The acquisition coordinator can explicitly replace a damaged bundle
+under the same entry lock and rebuild it from available named data. Replacement
+preflights the full descriptor-bound tree, then revalidates entries while
+removing them without following links. Named-data and SDK failures are not
+retried. Temporary bundles are removed on ordinary failures before publication;
+a caller can explicitly retry after addressing the failure.
 
 These are completeness checks, not full content-integrity verification. Same-size
 content changes are not detected, and a complete stored bundle does not cause its
@@ -143,24 +142,22 @@ runtime. Each variant key determines a raw bookmark in `bookmarks`, a bundle
 directory in `staging`, and one of 256 shared coordination files in `locks`.
 There is no PTE-wide bookmark list or serialized lifecycle record.
 
-A healthy bookmark hit does not inspect staging or consult NDS; the acquired SDK
-model is retained through function binding. On a missing bookmark or confirmed
-SDK miss, the runtime materializes the source, specializes it and atomically
-writes the returned bookmark bytes. After durable publication, it removes the
-entire keyed staging directory while holding the per-key lock. Persistent SDK
-caching supports inference and bookmark restoration without that extracted copy.
+A healthy bookmark hit does not consult NDS and attempts to clean leftover
+staging. On a missing bookmark or confirmed SDK miss, the coordinator prepares
+the source, specializes it and atomically writes the returned bookmark bytes.
+After durable publication, it attempts to remove the entire keyed staging
+directory while holding the per-key lock. Persistent SDK caching supports
+inference and bookmark restoration without that extracted copy.
 Keep the packaged named data available: a later SDK cache miss requires source
 materialization again. There is no secondary source-URL cache lookup.
 
 SDK errors, unreadable bookmarks and publication failures fail loading without
 automatic cache deletion. If publication fails after specialization, the SDK
-entry and source remain. If staged-source cleanup fails, loading reports the
-error but retains the durable bookmark and any remaining staged files. Neither
-failure triggers automatic retries, SDK eviction or source repair. A subsequent
-bookmark hit can load without inspecting or retrying staging cleanup. A partial
-cleanup followed by an SDK miss fails on the damaged staged entry until it is
-explicitly cleared. The backend does not track historical or unrecorded SDK
-entries.
+entry and source remain. Cleanup after a bookmark hit or durable publication is
+best-effort: failures are logged without discarding the usable model or bookmark.
+A later load can finish cleanup or rebuild a partially removed source after an
+SDK miss. No cleanup failure triggers SDK eviction or retries within that load.
+The backend does not track historical or unrecorded SDK entries.
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.
@@ -208,7 +205,10 @@ types and substitute fake entry points.
 when the macOS host meets the configured Core AI deployment target.
 The test build exports static- and dynamic-shape models for real session tests.
 The SDK source-lifetime regression checks live inference and fresh-process
-bookmark restoration after removing disposable portable and AOT source copies.
+bookmark restoration through the bridge after removing disposable portable and
+AOT source copies. The AOT case is skipped when the SDK cannot identify the
+device architecture. A killed probe can leave an SDK entry if it dies before
+saving its bookmark; cleanup never purges unrelated default-cache entries.
 CMake's `PYTHON_EXECUTABLE` must use the Python environment with the pinned Core
 AI requirements above. Backend Python changes regenerate the dedicated fixture
 directory, replacing previous contents. CTest supplies its location to XCTest;

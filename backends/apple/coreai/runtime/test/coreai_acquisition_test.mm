@@ -43,7 +43,7 @@ class CoreAIAcquisitionTest : public ::testing::Test {
  protected:
   // Declared first so each case's loader, models and data die before it.
   ScopedFakeBridgeState bridge;
-  BookmarkDirectory root;
+  TestDirectory root;
   TestData data;
   Manifest manifest;
   NSString* key = nil;
@@ -60,9 +60,10 @@ class CoreAIAcquisitionTest : public ::testing::Test {
 
   Error acquire(BookmarkFakeLoader* loader, const NamedDataMap* named_data) {
     @autoreleasepool {
-      auto model =
-          acquire_bookmark_model(manifest, named_data, root.url.path, @"macOS", @"arch_b", loader);
-      if (!model.ok()) return model.error();
+      auto model = acquire_bookmark_model(
+          manifest, named_data, root.url.path, @"macOS", @"arch_b", loader);
+      if (!model.ok())
+        return model.error();
       return model.get() != nil ? Error::Ok : Error::Internal;
     }
   }
@@ -130,7 +131,9 @@ TEST_F(CoreAIAcquisitionTest, RestoreErrorFailsClosedWithoutSourceFallback) {
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   NSData* original = saved();
   const int attempts = data.attempts;
-  fake.loader.restoreError = [NSError errorWithDomain:NSPOSIXErrorDomain code:EIO userInfo:nil];
+  fake.loader.restoreError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                 code:EIO
+                                             userInfo:nil];
   EXPECT_EQ(acquire(fake.loader, &data), Error::Internal);
   EXPECT_EQ(fake.loader->specializations.load(), 1);
   EXPECT_EQ(fake.loader->evictions.load(), 0);
@@ -138,7 +141,9 @@ TEST_F(CoreAIAcquisitionTest, RestoreErrorFailsClosedWithoutSourceFallback) {
   EXPECT_TRUE([saved() isEqual:original]);
 }
 
-TEST_F(CoreAIAcquisitionTest, RestoreMissRespecializesStagedSourceAndReplacesBookmark) {
+TEST_F(
+    CoreAIAcquisitionTest,
+    RestoreMissRespecializesStagedSourceAndReplacesBookmark) {
   BookmarkLoaderScope fake;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   NSData* original = saved();
@@ -393,7 +398,7 @@ TEST_F(
   {
     StorageFaultScope fault(StorageOperation::Remove);
     fault.match_index = 1;
-    EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
+    EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
     bookmark = saved();
     ASSERT_NE(bookmark, nil);
@@ -412,7 +417,7 @@ TEST_F(
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_FALSE(staging_key_exists());
 }
 
 TEST_F(
@@ -424,7 +429,7 @@ TEST_F(
   {
     StorageFaultScope fault(StorageOperation::Remove);
     fault.match_index = 2;
-    EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
+    EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(fault.hits, 1);
     bookmark = saved();
     ASSERT_NE(bookmark, nil);
@@ -442,7 +447,7 @@ TEST_F(
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
-  EXPECT_TRUE(staging_key_exists());
+  EXPECT_FALSE(staging_key_exists());
 }
 
 TEST_F(
@@ -459,7 +464,7 @@ TEST_F(
       if (operation == StorageOperation::Remove)
         arming->armed = true;
     };
-    EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
+    EXPECT_EQ(acquire(fake.loader, &data), Error::Ok);
     EXPECT_EQ(scope.hits, 1);
     bookmark = saved();
     ASSERT_NE(bookmark, nil);
@@ -476,6 +481,87 @@ TEST_F(
   EXPECT_EQ(fake.loader->restores.load(), restores + 1);
   EXPECT_EQ(data.attempts.load(), attempts);
   EXPECT_TRUE([saved() isEqual:bookmark]);
+  EXPECT_FALSE(staging_key_exists());
+}
+
+TEST_F(CoreAIAcquisitionTest, WarmHitCleanupFailureStillReturnsModel) {
+  BookmarkLoaderScope fake;
+  {
+    StorageFaultScope fault(StorageOperation::Remove);
+    ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  }
+  NSData* original = saved();
+  StorageFaultScope fault(StorageOperation::Remove);
+  EXPECT_EQ(acquire(fake.loader, nullptr), Error::Ok);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_EQ(fake.loader->restores.load(), 1);
+  EXPECT_EQ(fake.loader->specializations.load(), 1);
+  EXPECT_EQ(fake.loader->evictions.load(), 0);
+  EXPECT_EQ(data.attempts.load(), 1);
+  EXPECT_TRUE([saved() isEqual:original]);
+}
+
+TEST_F(CoreAIAcquisitionTest, PartialCleanupThenMissRebuildsSource) {
+  BookmarkLoaderScope fake;
+  {
+    StorageFaultScope fault(StorageOperation::Remove);
+    fault.match_index = 2;
+    ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+    EXPECT_EQ(fault.hits, 1);
+  }
+  ASSERT_TRUE(staging_key_exists());
+  NSData* original = saved();
+  fake.loader.restoreMiss = YES;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  EXPECT_EQ(fake.loader->restores.load(), 1);
+  EXPECT_EQ(fake.loader->specializations.load(), 2);
+  EXPECT_EQ(fake.loader->evictions.load(), 0);
+  EXPECT_EQ(data.attempts.load(), 2);
+  EXPECT_FALSE([saved() isEqual:original]);
+  EXPECT_FALSE(staging_key_exists());
+}
+
+TEST_F(
+    CoreAIAcquisitionTest,
+    DamagedSourceCleanupFailureDoesNotReadOrSpecialize) {
+  BookmarkLoaderScope fake;
+  {
+    StorageFaultScope fault(StorageOperation::Remove);
+    fault.match_index = 2;
+    ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  }
+  NSData* original = saved();
+  fake.loader.restoreMiss = YES;
+  {
+    StorageFaultScope fault(StorageOperation::Remove);
+    EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
+    EXPECT_EQ(fault.hits, 1);
+  }
+  EXPECT_EQ(data.attempts.load(), 1);
+  EXPECT_EQ(fake.loader->specializations.load(), 1);
+  EXPECT_EQ(fake.loader->evictions.load(), 0);
+  EXPECT_TRUE([saved() isEqual:original]);
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  EXPECT_FALSE(staging_key_exists());
+}
+
+TEST_F(CoreAIAcquisitionTest, MissingNamedDataIsNotRetried) {
+  BookmarkLoaderScope fake;
+  data.files.clear();
+  EXPECT_EQ(acquire(fake.loader, &data), Error::InvalidExternalData);
+  EXPECT_EQ(data.attempts.load(), 1);
+  EXPECT_EQ(fake.loader->specializations.load(), 0);
+  EXPECT_EQ(saved(), nil);
+}
+
+TEST_F(CoreAIAcquisitionTest, BeforeSdkFaultNeverInvokesLoader) {
+  BookmarkLoaderScope fake;
+  StorageFaultScope fault(StorageOperation::BeforeSDK);
+  EXPECT_EQ(acquire(fake.loader, &data), Error::AccessFailed);
+  EXPECT_EQ(fake.loader->specializations.load(), 0);
+  EXPECT_EQ(fake.loader->restores.load(), 0);
+  EXPECT_EQ(fault.hits, 1);
+  EXPECT_EQ(saved(), nil);
 }
 
 TEST_F(CoreAIAcquisitionTest, KeyLockIdentitySurvivesSuccessfulAcquisition) {
@@ -487,8 +573,9 @@ TEST_F(CoreAIAcquisitionTest, KeyLockIdentitySurvivesSuccessfulAcquisition) {
   EXPECT_EQ(lock_inode(), first);
 }
 
-class CoreAIAcquisitionSaveFailureTest : public CoreAIAcquisitionTest,
-                                         public ::testing::WithParamInterface<bool> {};
+class CoreAIAcquisitionSaveFailureTest
+    : public CoreAIAcquisitionTest,
+      public ::testing::WithParamInterface<bool> {};
 TEST_P(CoreAIAcquisitionSaveFailureTest, PreservesBookmarkAndRetries) {
   const bool prior = GetParam();
   BookmarkLoaderScope fake;
@@ -510,29 +597,36 @@ TEST_P(CoreAIAcquisitionSaveFailureTest, PreservesBookmarkAndRetries) {
     EXPECT_EQ(fault.hits, 1);
   }
   EXPECT_TRUE(original == nil ? saved() == nil : [saved() isEqual:original]);
-  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:fake.loader.lastSpecializeURL]);
+  EXPECT_TRUE([NSFileManager.defaultManager
+      fileExistsAtPath:fake.loader.lastSpecializeURL]);
   const int calls = fake.loader->specializations;
   fake.loader.restoreMiss = NO;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), calls + (prior ? 0 : 1));
-  EXPECT_EQ(staging_key_exists(), prior);
+  EXPECT_FALSE(staging_key_exists());
 }
-INSTANTIATE_TEST_SUITE_P(Boundaries, CoreAIAcquisitionSaveFailureTest, ::testing::Bool(),
-                         [](const ::testing::TestParamInfo<bool>& info) {
-                           return info.param ? "PriorBookmark" : "Cold";
-                         });
+INSTANTIATE_TEST_SUITE_P(
+    Boundaries,
+    CoreAIAcquisitionSaveFailureTest,
+    ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "PriorBookmark" : "Cold";
+    });
 
 class CoreAIAcquisitionProcessTest : public CoreAIAcquisitionTest {
  protected:
   void expect_parallel(bool same_key) {
     NSMutableDictionary* first = manifest_dict();
     NSMutableDictionary* second = [first mutableCopy];
-    if (!same_key) second[@"bundle_digests"] = @{@"model.aimodel" : fixture_identity('2')};
+    if (!same_key)
+      second[@"bundle_digests"] = @{@"model.aimodel" : fixture_identity('2')};
     BookmarkChild child;
-    ASSERT_TRUE(spawn_parallel_acquisition(child, root.url, first, second, same_key));
+    ASSERT_TRUE(
+        spawn_parallel_acquisition(child, root.url, first, second, same_key));
     ASSERT_TRUE(child.receive('C'));
     ASSERT_TRUE(child.receive(1)) << "harness completed without timeouts";
-    ASSERT_TRUE(child.receive(1)) << "second acquisition blocked or entered as expected";
+    ASSERT_TRUE(child.receive(1))
+        << "second acquisition blocked or entered as expected";
     ASSERT_TRUE(child.receive(1)) << "both acquisitions succeeded";
     ASSERT_TRUE(child.receive(same_key ? 1 : 2)) << "specializations";
     ASSERT_TRUE(child.receive(same_key ? 1 : 2)) << "named-data attempts";
@@ -550,15 +644,32 @@ TEST_F(CoreAIAcquisitionProcessTest, IndependentKeysSpecializeInParallel) {
   expect_parallel(false);
 }
 
+TEST_F(CoreAIAcquisitionProcessTest, CrashBeforeSdkRetainsStagingAndRetries) {
+  BookmarkChild child;
+  ASSERT_TRUE(spawn_acquisition_crash(
+      child, root.url, StorageOperation::BeforeSDK, manifest_dict()));
+  ASSERT_TRUE(child.receive('C'));
+  ASSERT_TRUE(child.expect_exit(73));
+  EXPECT_EQ(saved(), nil);
+  EXPECT_TRUE(staging_key_exists());
+  BookmarkLoaderScope fake;
+  ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
+  EXPECT_EQ(fake.loader->specializations.load(), 1);
+  EXPECT_EQ(data.attempts.load(), 0);
+  EXPECT_FALSE(staging_key_exists());
+}
+
 TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
   BookmarkChild child;
-  ASSERT_TRUE(spawn_acquisition_crash(child, root.url, StorageOperation::AfterSDK, manifest_dict()));
+  ASSERT_TRUE(spawn_acquisition_crash(
+      child, root.url, StorageOperation::AfterSDK, manifest_dict()));
   ASSERT_TRUE(child.receive('C'));
   ASSERT_TRUE(child.expect_exit(73));
   EXPECT_EQ(saved(), nil);
   auto staged = acquisition_staged_url(root.url, manifest);
   ASSERT_TRUE(staged.ok());
-  EXPECT_TRUE([NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
+  EXPECT_TRUE(
+      [NSFileManager.defaultManager fileExistsAtPath:staged.get().path]);
   BookmarkLoaderScope fake;
   ASSERT_EQ(acquire(fake.loader, &data), Error::Ok);
   EXPECT_EQ(fake.loader->specializations.load(), 1);
@@ -568,4 +679,4 @@ TEST_F(CoreAIAcquisitionProcessTest, CrashAfterSdkRetainsStagingAndRetries) {
   EXPECT_FALSE(staging_key_exists());
 }
 
-}  // namespace
+} // namespace

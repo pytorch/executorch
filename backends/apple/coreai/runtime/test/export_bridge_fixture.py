@@ -30,7 +30,10 @@ class Arithmetic(torch.nn.Module):
 
 
 class WeightedArithmetic(torch.nn.Module):
+    """External weights expose any dependency on removed source files."""
+
     def __init__(self, first: float, second: float):
+        """Build a weighted model with distinguishable output offsets."""
         super().__init__()
         self.first = first
         self.second = second
@@ -39,6 +42,7 @@ class WeightedArithmetic(torch.nn.Module):
         )
 
     def forward(self, left, right):
+        """Apply the shared network to two distinct input combinations."""
         return (
             self.network(left + right) + self.first,
             self.network(left - right) + self.second,
@@ -74,12 +78,15 @@ def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
     """Export into a dedicated fixture directory, replacing its contents."""
     size = torch.export.Dim("size", min=1, max=8)
     _export_model(
-        Arithmetic().eval(), (torch.ones(2), torch.ones(2)), output_dir,
+        Arithmetic().eval(),
+        (torch.ones(2), torch.ones(2)),
+        output_dir,
         dynamic_shapes=({0: size}, {0: size}) if dynamic else None,
     )
 
 
 def export_weighted_fixture(output_dir: Path) -> None:
+    """Export isolated SDK cache contents and their expected output values."""
     # Unique model contents keep cleanup from evicting another test's SDK entry.
     seed = uuid.uuid4().int
     model = WeightedArithmetic(

@@ -13,6 +13,7 @@
 namespace executorch::backends::coreai {
 
 // The key lock outlives all SDK callbacks and raw bookmark publication.
+// Cleanup after a restore hit or durable publication is best-effort.
 runtime::Result<id<ETCoreAIPreparedModel>> acquire_bookmark_model(
     const Manifest& selected,
     const runtime::NamedDataMap* named_data,
