@@ -34,7 +34,7 @@ def main():
     for name in ('package', 'baseline-native-job', 'python', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--source-variant', choices=('MG-empty-owner-reuse', 'Gemma-empty-owner-reuse', 'growth-only'), required=True)
-    parser.add_argument('--allocator-policy', choices=('coalesced', 'pool-only', 'workspace-preserving', 'isolated-KV', 'isolated-KV-growth-slack', 'paired-KV-storage'), default='coalesced')
+    parser.add_argument('--allocator-policy', choices=('coalesced', 'pool-only', 'workspace-preserving', 'isolated-KV', 'isolated-KV-growth-slack', 'paired-KV-storage', 'workspace-preserving-contraction'), default='coalesced')
     parser.add_argument('--mini-preparation-job', type=Path)
     parser.add_argument('--mini-profile', choices=('muse-glimmer-first4', 'gemma4-first6'), required=True)
     parser.add_argument('--jobs', type=int, choices=(1, 2, 4), default=2)
@@ -61,6 +61,10 @@ def main():
     if args.allocator_policy == 'paired-KV-storage':
         policy = 'independent_session_paired_KV_storage'
         policy_key = 'paired_KV_storage_spec_SHA256'
+    if args.allocator_policy == 'workspace-preserving-contraction':
+        policy = 'independent_session_workspace_preserving_contraction'
+        policy_key = 'workspace_preserving_contraction_spec_SHA256'
+        assert baseline.get('isolated_KV_pool_spec_SHA256'), 'Require the already verified private KV allocator'
     fix_path = resources / (policy + '_source.json')
     fix = json.loads(fix_path.read_text())
     patch = resources / (policy + '.patch')

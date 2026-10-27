@@ -23,6 +23,7 @@ def main():
   help='Retained four-round matched-probe ABBA control resolving a consecutive-native signal; thresholds stay unchanged')
  p.add_argument('--additional-matched-layout-control-job',type=Path,help='Second real four-round identical-artifact ABBA confirmation; pool both retained triplicates without changing 3SE rule or overwriting the original gate')
  p.add_argument('--preserved-native-controls-job',type=Path,help='Exact completed paired-mini controls reused without GPU recollection; hash all original raw evidence')
+ p.add_argument('--preserved-native-controls-kind',choices=['paired-KV-storage','workspace-preserving-contraction'],default='paired-KV-storage')
  a=p.parse_args();assert not a.output.exists();a.output.mkdir(parents=True)
  package=Path(__file__).resolve().parent
  current=load(a.mini_job/'progress.json')
@@ -153,10 +154,15 @@ def main():
  preserved_roots=()
  if a.preserved_native_controls_job:
   preserved=a.preserved_native_controls_job
-  assert load(preserved/'progress.json')['status']=='paired-KV-storage-mini-diagnostic-collected'
+  assert load(preserved/'progress.json')['status']==a.preserved_native_controls_kind+'-mini-diagnostic-collected'
   prior=load(preserved/'result.json')
-  assert prior['paired_KV_single_backing_candidate'] and prior['observed_storage_and_graph_correctness_pass']
-  assert prior['compared_to_original_native_mini_SDK'] and prior['initial_KV_capacity']==512
+  assert prior['observed_storage_and_graph_correctness_pass'] and prior['initial_KV_capacity']==512
+  if a.preserved_native_controls_kind=='workspace-preserving-contraction':
+   assert prior['workspace_preserving_contraction_candidate'] and prior['compared_to_previous_qualified_private_KV_runtime']
+   assert prior['private_KV_growth_slack_policy_unchanged'] and prior['private_KV_contraction_trim_policy_unchanged']
+   assert g['workspace_preserving_contraction_spec_SHA256']==sha(package/'independent_session_workspace_preserving_contraction_source.json')
+  else:
+   assert prior['paired_KV_single_backing_candidate'] and prior['compared_to_original_native_mini_SDK']
   for name,value in prior['raw_reviews_SHA256'].items():assert sha(name)==value,name
   assert a.matched_native_control_job and a.matched_native_control_job.resolve()==(preserved/'matched-control').resolve()
   for name,target in (('model-latency','matched-control/after'),('capacity-control','capacity-control'),

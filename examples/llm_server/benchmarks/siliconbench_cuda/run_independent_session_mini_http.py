@@ -131,6 +131,23 @@ def verified_allocator_policy_suffix(gate, package, changes, expected_pool, vari
             assert record['paired_private_KV_allocation_only']
             assert record['weights_math_PTE_ABI_owner_capacity_sliding_copy_and_graph_invalidation_unchanged']
         changes = dict(patches=changes['patches'] + records)
+    if gate.get('workspace_preserving_contraction_spec_SHA256'):
+        assert gate.get('isolated_KV_pool_spec_SHA256')
+        policy = 'independent_session_workspace_preserving_contraction'
+        spec_path = package/(policy + '_source.json'); spec = json.loads(spec_path.read_text())
+        assert digest(spec_path) == gate['workspace_preserving_contraction_spec_SHA256']
+        assert digest(package/(policy + '.patch')) == spec['patch_SHA256']
+        records = spec['variants'][variant]
+        assert len(records)==1 and records[0]['file']==pool_file
+        record=records[0]
+        assert record['before_SHA256']==expected_pool and record['patch_SHA256']==spec['patch_SHA256']
+        assert record['private_KV_contraction_preserves_shared_workspace_cache_only']
+        assert record['independent_owner_512_growth_compaction_and_private_trim_unchanged']
+        assert record['weights_math_PTE_ABI_sliding_and_graph_invalidation_unchanged']
+        assert spec['only_skip_shared_allocator_cache_release_when_private_sequence_pool_exists']
+        assert spec['private_sequence_pool_contraction_trim_zero_slack_unchanged']
+        changes = dict(patches=changes['patches'] + records)
+        expected_pool = record['after_SHA256']
     return changes, expected_pool
 
 

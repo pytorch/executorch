@@ -1,0 +1,13 @@
+--- a/backends/cuda/runtime/session_capacity_pool.inc
++++ b/backends/cuda/runtime/session_capacity_pool.inc
+@@ -142,7 +142,9 @@
+     if (cudaStreamSynchronize(stream) != cudaSuccess) {
+       return Error::Internal;
+     }
+-    if (trim_reclaimed_storage) {
++    // KV pages are reclaimed by the private sequence pool below.
++    // Keep shared model workspaces and graph caches across owner changes.
++    if (trim_reclaimed_storage && sequence_memory_pool_ == nullptr) {
+       CudaAllocator::release_cached_memory(device_);
+     }
+     return Error::Ok;

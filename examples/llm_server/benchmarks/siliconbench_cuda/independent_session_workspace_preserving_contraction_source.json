@@ -1,0 +1,40 @@
+{
+  "patch_SHA256": "85ae53076990c76b68be2dcdcea026fe37f87b42bc3c9b3922e467e487531c27",
+  "variants": {
+    "Gemma-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "236e650c043e6f5d8186a7b1586117e978871336104880a8e17a9860087715d3",
+        "after_SHA256": "575ecd9321dcea81cfdd17ff019fafbdd311bbdafd4d3783e9063f456c429f9b",
+        "private_KV_contraction_preserves_shared_workspace_cache_only": true,
+        "independent_owner_512_growth_compaction_and_private_trim_unchanged": true,
+        "weights_math_PTE_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "85ae53076990c76b68be2dcdcea026fe37f87b42bc3c9b3922e467e487531c27"
+      }
+    ],
+    "MG-empty-owner-reuse": [
+      {
+        "file": "backends/cuda/runtime/session_capacity_pool.inc",
+        "before_SHA256": "496be5d85f6e003071bf970cfbeef3692dc4d978c8a97777b9617155b1c2b05b",
+        "after_SHA256": "d84d5d712de480b556a332feddc90a2e4349ec9e901103900700a1b7cd711eb4",
+        "private_KV_contraction_preserves_shared_workspace_cache_only": true,
+        "independent_owner_512_growth_compaction_and_private_trim_unchanged": true,
+        "weights_math_PTE_ABI_sliding_and_graph_invalidation_unchanged": true,
+        "qualified": false,
+        "patch_SHA256": "85ae53076990c76b68be2dcdcea026fe37f87b42bc3c9b3922e467e487531c27"
+      }
+    ]
+  },
+  "only_skip_shared_allocator_cache_release_when_private_sequence_pool_exists": true,
+  "private_sequence_pool_contraction_trim_zero_slack_unchanged": true,
+  "private_sequence_pool_growth_slack_unchanged": true,
+  "runtime_active_session_and_per_owner_full_capacity_shrink_unchanged": true,
+  "sliding_storage_writes_and_attention_unchanged": true,
+  "no_model_reexport_or_kernel_change": true,
+  "native_tests_count_required": 74,
+  "independent_tests_count_required": 7,
+  "full_model_qualification_not_authorized": true,
+  "qualified": false,
+  "hypothesis": "Per-layer contraction fences evict the shared AOTI workspace and device graph caches even though the reclaimed KV pages belong to a separate private pool. Actual performance and memory require native/mini/HTTP validation."
+}

@@ -24,12 +24,18 @@ def main():
     parser.add_argument('--Gemma-source-preparation-job',type=Path)
     parser.add_argument('--http-python-dependencies-job',type=Path)
     parser.add_argument('--port',type=int,required=True)
+    parser.add_argument('--parent-kind',choices=['paired-KV-storage','workspace-preserving-contraction'],
+                        default='paired-KV-storage')
     args = parser.parse_args()
     gemma = args.mini_profile == 'gemma4-first6'
     assert 1024 <= args.port <= 65535
     assert not gemma or (args.Gemma_source_preparation_job and args.http_python_dependencies_job)
     assert not args.output.exists(); args.output.mkdir(parents=True)
     package = Path(__file__).resolve().parent
+    contraction = args.parent_kind=='workspace-preserving-contraction'
+    parent_script = ('run_workspace_preserving_contraction_mini_diagnostic.py' if contraction
+                     else 'run_paired_KV_storage_mini_diagnostic.py')
+    parent_completed = args.parent_kind+'-mini-diagnostic-collected'
 
     def state(status,**extra):
         path = args.output/'progress.pending.json'
@@ -55,7 +61,7 @@ def main():
                 launch=json.loads(parent.with_name(parent.name+'-deployment.json').read_text())
                 handle=Path('/proc')/str(launch['controller_pid'])/'cmdline'
                 actual=handle.read_bytes().split(bytes([0])) if handle.is_file() else []
-                assert any(Path(v.decode()).name=='run_paired_KV_storage_mini_diagnostic.py' for v in actual if v)
+                assert any(Path(v.decode()).name==parent_script for v in actual if v)
                 assert b'--output' in actual and actual[actual.index(b'--output')+1]==os.fsencode(parent)
                 assert b'--native-job' in actual and actual[actual.index(b'--native-job')+1]==os.fsencode(args.native_job)
                 assert time.monotonic()<until,'Preserve confirmed-live native preflight after observation timeout'
@@ -63,22 +69,27 @@ def main():
                 time.sleep(20)
                 continue
             progress = json.loads((parent/'progress.json').read_text())
-            if progress['status']=='paired-KV-storage-mini-diagnostic-collected':break
+            if progress['status']==parent_completed:break
             assert progress['status']!='failed',progress
             handle = Path('/proc')/str(progress['controller_pid'])/'cmdline'
             actual = handle.read_bytes().split(bytes([0])) if handle.is_file() else []
             if not actual:
                 refreshed = json.loads((parent/'progress.json').read_text())
-                if refreshed['status']=='paired-KV-storage-mini-diagnostic-collected':break
-            assert any(Path(v.decode()).name=='run_paired_KV_storage_mini_diagnostic.py' for v in actual if v)
+                if refreshed['status']==parent_completed:break
+            assert any(Path(v.decode()).name==parent_script for v in actual if v)
             assert b'--output' in actual and actual[actual.index(b'--output')+1]==os.fsencode(parent)
             assert time.monotonic()<until,'Preserve verified-live mini after observation timeout'
             state('waiting-confirmed-live-paired-mini',parent_PID=progress['controller_pid'],parent_status=progress['status'])
             time.sleep(20)
         result_path=parent/'result.json';parent_hash=sha(result_path)
         diagnostic=json.loads(result_path.read_text())
-        assert diagnostic['paired_KV_single_backing_candidate'] and diagnostic['observed_storage_and_graph_correctness_pass']
-        assert diagnostic['compared_to_original_native_mini_SDK'] and diagnostic['initial_KV_capacity']==512
+        if contraction:
+            assert diagnostic['workspace_preserving_contraction_candidate']
+            assert diagnostic['compared_to_previous_qualified_private_KV_runtime']
+            assert diagnostic['private_KV_growth_slack_policy_unchanged'] and diagnostic['private_KV_contraction_trim_policy_unchanged']
+        else:
+            assert diagnostic['paired_KV_single_backing_candidate'] and diagnostic['compared_to_original_native_mini_SDK']
+        assert diagnostic['observed_storage_and_graph_correctness_pass'] and diagnostic['initial_KV_capacity']==512
         assert diagnostic['mini_profile']==args.mini_profile
         for path,expected in diagnostic['raw_reviews_SHA256'].items():assert sha(path)==expected,path
         if diagnostic['positive_performance_signals']:
@@ -88,7 +99,10 @@ def main():
             state('mini-performance-gate-not-passed')
             return
         native=verify_runtime(args.native_job,package)
-        assert native['paired_KV_storage_spec_SHA256']==sha(package/'independent_session_paired_KV_storage_source.json')
+        if contraction:
+            assert native['workspace_preserving_contraction_spec_SHA256']==sha(package/'independent_session_workspace_preserving_contraction_source.json')
+        else:
+            assert native['paired_KV_storage_spec_SHA256']==sha(package/'independent_session_paired_KV_storage_source.json')
         # Memory worker preparation expects the completed native controller.
         n=json.loads((args.native_job/'progress.json').read_text())
         assert n['status']=='native-GPU-tests-passed'
@@ -136,7 +150,8 @@ def main():
         tail=['--mini-job',controls,'--native-job',args.native_job,
               '--previous-latency-job',parent/'matched-control/before',
               '--matched-native-control-job',parent/'matched-control',
-              '--preserved-native-controls-job',parent,'--profile',args.mini_profile,
+              '--preserved-native-controls-job',parent,'--preserved-native-controls-kind',args.parent_kind,
+              '--profile',args.mini_profile,
               '--output',args.output/'mini-reviews']
         if gemma:tail+=['--Gemma-source-preparation-job',args.Gemma_source_preparation_job]
         run('qualification','qualify_independent_session_mini_for_full.py',tail)
