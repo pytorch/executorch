@@ -17,7 +17,10 @@ import traceback
 
 
 def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    h=hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda:stream.read(16*1024*1024),b''):h.update(block)
+    return h.hexdigest()
 
 
 def main():
@@ -62,7 +65,7 @@ def main():
                     continue
                 record=json.loads(progress.read_text())
                 assert record['status']!='failed',record
-                if record['status']=='full-artifact-ready-pending-full-model-qualification':break
+                if record['status'] in ('full-artifact-ready-pending-full-model-qualification','artifact-exported-and-audited'):break
                 proc=Path('/proc')/str(record['controller_pid'])/'cmdline'
                 assert proc.is_file() and str(root.parent).encode() in proc.read_bytes()
                 state('waiting-confirmed-live-export',export_PID=record['controller_pid'],export_status=record['status'])
