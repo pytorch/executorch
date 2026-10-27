@@ -208,6 +208,29 @@ Do not pass a dict to `skip_h2d_for_method_inputs` itself. The pass reads that f
 truthiness, so any non-empty dict enables the skip for every method regardless of the values
 inside it.
 
+**Some copies stay even with the skip flags.** In the cases below, `to_executorch` keeps a copy
+that runs on every call and logs a warning. To remove the copy, have the partitioner put more of
+the graph in the delegate.
+
+- An input stays on the device of the first delegate that reads it. Other readers, such as an
+  operator outside the delegate, a delegate on another device, or the method output without
+  `skip_d2h_for_method_outputs`, read a copy in host memory. A delegate on another device then
+  gets a second copy, from the host.
+- A constant, such as a weight, that a delegate reads from outside is copied to each device that
+  reads it.
+- A returned output that an operator outside the delegate writes in place, such as a mutable
+  custom operator left on the host, is copied to the host and returned there. The method
+  metadata gives the device of each output.
+
+Add `error_on_per_call_copies=True` to `PropagateDeviceConfig` to make `to_executorch` fail
+instead of warning. It fails only on a copy that one of the skip flags you set was meant to remove.
+
+**`skip_h2d_for_method_inputs` refuses inputs that the method changes.** `to_executorch` fails if
+the method changes an input, even when the delegate makes the change. This includes a mutable
+buffer, such as a KV cache, even though the caller does not pass it. For a buffer, put it and every
+operator that uses it in the delegate. The CUDA partitioner already moves the buffer in, with
+`tag_mutated_buffer`, once those operators are there.
+
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not
 something the runtime corrects, so the two are not interchangeable at run time.
