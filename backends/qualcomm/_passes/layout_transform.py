@@ -167,16 +167,18 @@ class LayoutTransform(ExportPass):
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:
         if isinstance(node.meta["val"], (tuple, list)):
-            getitem_node = list(node.users.keys())[0]
-            if getitem_node.target.__name__ != "getitem":
-                raise AssertionError(
-                    f"Expected tuple-output node {node.name} ({node.target}) to have a "
-                    f"getitem user, got {getitem_node.target.__name__}"
-                )
-            index = getitem_node.args[1]
-            node.meta[self.transformed_tag] = self.get_axis_order(
-                eval_shape(node.meta["val"][index].shape)
-            )
+            for getitem_node in node.users:
+                if getitem_node.target.__name__ != "getitem":
+                    raise AssertionError(
+                        f"Expected tuple-output node {node.name} ({node.target}) to have a "
+                        f"getitem user, got {getitem_node.target.__name__}"
+                    )
+                tensor = node.meta["val"][getitem_node.args[1]]
+                if tensor is not None:
+                    node.meta[self.transformed_tag] = self.get_axis_order(
+                        eval_shape(tensor.shape)
+                    )
+                    return
         else:
             node.meta[self.transformed_tag] = self.get_axis_order(
                 eval_shape(node.meta["val"].shape)
@@ -235,12 +237,14 @@ class LayoutTransform(ExportPass):
         if layout_node is None:
             layout_node = node
         if isinstance(node.meta["val"], tuple):
-            for getitem_node in node.users:
+            getitem_nodes = list(node.users)
+            for getitem_node in getitem_nodes:
                 if getitem_node.target.__name__ != "getitem":
                     raise AssertionError(
                         f"Expected tuple-output node {node.name} ({node.target}) to have a "
                         f"getitem user, got {getitem_node.target.__name__}"
                     )
+            for getitem_node in getitem_nodes:
                 tensor = node.meta["val"][getitem_node.args[1]]
                 if tensor is not None:
                     self.insert_node(
@@ -265,7 +269,7 @@ class LayoutTransform(ExportPass):
                 ),
             )
             permute.meta["val"] = tensor
-            permute.meta[QCOM_QUANT_ATTRS] = layout_node.meta.get(QCOM_QUANT_ATTRS)
+            permute.meta[QCOM_QUANT_ATTRS] = permute_input.meta.get(QCOM_QUANT_ATTRS)
             # we need this to check the annotation boundary
             permute.meta[QCOM_INSERTED_PERMUTE] = True
 
@@ -300,7 +304,12 @@ class LayoutTransform(ExportPass):
         )
 
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
-        for arg in node.args:
+        for index, arg in enumerate(node.args):
+            if (
+                node.target == exir_ops.edge.aten.convolution_backward.default
+                and index == 1
+            ):
+                continue
             if isinstance(arg, list):
                 for arg_node in arg:
                     self.annotate_layout(arg_node, graph_module, revert_layout=False)

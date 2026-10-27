@@ -41,6 +41,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -113,24 +114,41 @@ class QnnOperatorSupport(OperatorSupportBase):
             for soc_model in target_socs
         ]
 
-    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
-        if node.op != "call_function" or node.target in not_supported_operator:
-            return False
+    def _passes_backend_capability_checks(self, node: torch.fx.Node) -> bool:
+        # Scoped to HTP: other backends reusing this checker have no htp_arch.
+        if (
+            self.backend_type != QnnExecuTorchBackendType.kHtpBackend
+            or self.soc_info.htp_info.htp_arch >= HtpArch.V69
+        ):
+            return True
 
         # Per-channel-group lowers to blockwise expansion (the encoding LPBQ
         # uses), which requires HTP >= V69. Pre-quantized weights bypass the
         # quantizer's validate_lpbq_support check, so gate the delegation here.
-        # Scoped to HTP: other backends reusing this checker have no htp_arch.
-        if (
-            node.target in PER_CHANNEL_GROUP_ENCODING
-            and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
-            and self.soc_info.htp_info.htp_arch < HtpArch.V69
-        ):
+        if node.target in PER_CHANNEL_GROUP_ENCODING:
             logger.warning(
                 f"[{self.phase}] {node.target.__name__} | Skipped: blockwise "
                 f"(per-channel-group) encoding requires HTP arch >= V69, got "
                 f"{self.soc_info.htp_info.htp_arch!r}"
             )
+            return False
+
+        # TransposeConv2d generated for convolution_backward is unsupported by
+        # the V68 compiler despite passing the QNN op-support query.
+        if node.target == exir_ops.edge.aten.convolution_backward.default:
+            logger.warning(
+                f"[{self.phase}] {node.target.__name__} | Skipped: requires HTP "
+                f"arch >= V69, got {self.soc_info.htp_info.htp_arch!r}"
+            )
+            return False
+
+        return True
+
+    def is_node_supported(self, _, node: torch.fx.Node) -> bool:
+        if node.op != "call_function" or node.target in not_supported_operator:
+            return False
+
+        if not self._passes_backend_capability_checks(node):
             return False
 
         if node.target in to_be_implemented_operator:
