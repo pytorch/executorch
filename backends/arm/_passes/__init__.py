@@ -206,6 +206,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
 )
 from .resolve_view_copy_inferred_dim_pass import ResolveViewCopyInferredDimPass  # noqa
 from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
+from .rewrite_argmax_pass import RewriteArgmaxPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
     RewriteBoolBitwiseToLogicalPass,

@@ -143,11 +143,15 @@ class Method:
 
         Args:
             inputs: A sequence of input values, typically torch.Tensor objects.
+                Without PyTorch, pass NumPy arrays, other buffers such as
+                memoryview, DLPack objects such as CuPy arrays, or
+                ExecuTorchResult values. Scalar inputs take Python numbers.
             clone_outputs: If False, the outputs share the method's memory and
                 a later execution may overwrite them, which avoids a copy.
 
         Returns:
-            A list of output values, typically torch.Tensor objects.
+            A list of output values, typically torch.Tensor objects. Without
+            PyTorch, tensor outputs are ExecuTorchResult objects.
         """
         return self._method(inputs, clone_outputs=clone_outputs)
 
