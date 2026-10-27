@@ -135,7 +135,6 @@ def _decode(
     BLOCK_G: tl.constexpr,
 ):
     sm_scale = sm_scale.to(tl.float32)
-    scale = scale.to(tl.float32)
     t = tl.program_id(0)
     h_kv = tl.program_id(1)
     split = tl.program_id(2)
