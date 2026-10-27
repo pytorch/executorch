@@ -106,6 +106,7 @@ constexpr auto kKernels = std::to_array<KernelSpec>({
      nullptr,
      false,
      "56"},
+    {"torch.ops.aten._neg_view_copy.default", "aten::neg.out", 1, 1, nullptr},
     {"torch.ops.aten._pdist_forward.default",
      "aten::_pdist_forward.out",
      2,
@@ -1020,6 +1021,20 @@ class ReferenceExecutable final : public Executable {
             node.target.c_str(),
             reason.data());
         return Error::NotSupported;
+      }
+      if (node.target == "torch.ops.aten._neg_view_copy.default" &&
+          tensor_bytes(context_.graph.value(node.inputs[0].arg.as_tensor().id))
+                  .get() == 0) {
+        const auto& input =
+            context_.graph.value(node.inputs[0].arg.as_tensor().id)
+                .tensor_meta();
+        const auto& output =
+            context_.graph.value(node.outputs[0].value_id).tensor_meta();
+        ET_CHECK_OR_RETURN_ERROR(
+            input.dtype == output.dtype && input.sizes == output.sizes,
+            InvalidProgram,
+            "Empty negative view copy requires matching input/output metadata");
+        continue;
       }
       auto instruction = std::make_unique<Instruction>();
       instruction->node = &node;
