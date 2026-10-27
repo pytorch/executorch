@@ -207,7 +207,7 @@ def main():
     package=Path(__file__).parent
     baseline_files=['extension/llm/cache/cache.h','backends/cuda/batching/cuda_executor.cpp','backends/cuda/runtime/cuda_kv_cache.cpp','backends/cuda/runtime/cuda_kv_pool.cpp','backends/cuda/runtime/cuda_kv_pool.h','backends/cuda/passes/lower_offgraph_kv.py','examples/models/muse-glimmer/export/export_solo.py']
     before={n:sha(args.baseline/n) for n in baseline_files}
-    shutil.copytree(args.baseline,args.output,symlinks=True,ignore=shutil.ignore_patterns('.git','cmake-out','build','__pycache__','.pytest_cache','*.o','*.a','*.so'))
+    shutil.copytree(args.baseline,args.output,symlinks=True,ignore=shutil.ignore_patterns('.git','cmake-out','__pycache__','.pytest_cache','*.pte','*.ptd','*.gguf','*.log','*.nsys-rep'))
     if args.role in ('native','combined'):patch_native(args.output)
     if args.role in ('export','combined'):patch_python(args.output)
     for name,dest in [('two_source_ring.py','backends/cuda/triton/kernels/two_source_ring.py'),('ring_host_journal.inc','backends/cuda/runtime/ring_host_journal.inc')]:
@@ -223,6 +223,7 @@ def main():
     (args.output/'ring-retention-source-audit.json').write_text(json.dumps(dict(
         baseline=str(args.baseline),candidate=str(args.output),baseline_SHA256=before,
         candidate_SHA256={n:sha(args.output/n) for n in baseline_files},
+        additional_candidate_SHA256={n:sha(args.output/n) for n in ["backends/cuda/triton/kernels/two_source_ring.py","backends/cuda/runtime/ring_host_journal.inc","examples/models/gemma4_31b/export_batching.py"] if (args.output/n).exists()},
         old_source_unchanged=True,ABI4_window_only_history=True,host_undo_archive_preserves_max_write_rewind=True,
         no_model_exported=True,performance_accepted=False,mini_model_qualification_pending=True),indent=2)+'\n')
 if __name__=='__main__':main()
