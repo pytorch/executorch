@@ -78,14 +78,14 @@ def main():
             timing={name:[] for name in funcs}
             for number in range(4):
                 for name in (list(funcs) if number%2==0 else list(funcs)[::-1]):
-                    timing[name].append(float(triton.testing.do_bench(funcs[name],warmup=20,rep=60)))
+                    timing[name].append(float(triton.testing.do_bench_cudagraph(funcs[name],rep=60)))
             row=dict(width=width,owners=count,total_tokens=total,numerics=numeric,
                      timing={name:dict(mean_ms=statistics.mean(v[1:]),sample_SD_ms=statistics.stdev(v[1:]),rounds=v) for name,v in timing.items()})
             rows.append(row);print(json.dumps(row),flush=True)
             (args.output/'partial.json').write_text(json.dumps(rows,indent=2)+'\n')
         result=dict(rows=rows,baseline_source_SHA256=hashlib.sha256(args.baseline_kernel.read_bytes()).hexdigest(),candidate_source_SHA256=hashlib.sha256(candidate.read_bytes()).hexdigest(),
                     synthetic_only=True,model_logits_qualified=False,exported_dynamic_shape_qualified=False,
-                    torch=torch.__version__,triton=triton.__version__,GPU=torch.cuda.get_device_name())
+                    torch=torch.__version__,triton=triton.__version__,GPU=torch.cuda.get_device_name(),timing_mode='CUDA graph replay excludes Python submission gaps')
         (args.output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
 
 if __name__=='__main__':main()
