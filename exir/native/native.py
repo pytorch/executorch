@@ -325,11 +325,11 @@ def _validate_merged_program(
 def _normalize_programs(
     programs: "ExportedProgram | dict[str, ExportedProgram]",
 ) -> dict[str, ExportedProgram]:
-    """Validate and normalize the public input before starting expensive lowering."""
+    """Validate the public input, then functionalize each method for lowering."""
     from torch.export import ExportedProgram as TorchExportedProgram
 
     if isinstance(programs, TorchExportedProgram):
-        return {"forward": programs}
+        programs = {"forward": programs}
     if not isinstance(programs, dict):
         raise TypeError(
             "to_native: programs must be an ExportedProgram or a dict mapping "
@@ -352,7 +352,8 @@ def _normalize_programs(
                 f"to_native: method {method_name!r} must map to an "
                 f"ExportedProgram, got {type(program).__name__}."
             )
-        method_programs[method_name] = program
+        # Functionalize so each method's buffer writes appear in its signature.
+        method_programs[method_name] = program.run_decompositions({})
     return method_programs
 
 
@@ -394,9 +395,18 @@ def to_native(
         get_lowered_submodules,
     )
 
+    # Methods in a package share mutable buffers, so a buffer one method writes
+    # is not constant in the others. Passes that fold buffer values into weights
+    # must skip any buffer written by any method, not just their own.
+    mutable_buffers = {
+        buffer
+        for program in method_programs.values()
+        for buffer in program.graph_signature.buffers_to_mutate.values()
+    }
+
     edge = to_edge_transform_and_lower(
         method_programs,
-        transform_passes=get_default_passes(),
+        transform_passes=get_default_passes(mutable_buffers=mutable_buffers),
         partitioner=[
             NativePartitioner(external_constants_tag=None, _serialize_as_ptn=True)
         ],
