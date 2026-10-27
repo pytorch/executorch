@@ -54,6 +54,7 @@ def define_arm_tests():
 
     # Modules
     test_files += [
+        "modules/test_moe.py",
         "modules/test_qwen_delta_gate.py",
     ]
 
@@ -179,6 +180,11 @@ def define_arm_tests():
             ] if runtime.is_oss else []) + ([
                 "//executorch/backends/arm/scripts/docgen:generate_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
+                "//executorch/examples/models/llama:llama_transformer",
+                "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/transformers:transformers",
+                "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+            ] if test_file == "modules/test_moe.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
             ] if test_file == "misc/test_version_xfail.py" else []) + ([
@@ -194,6 +200,7 @@ def define_arm_tests():
             "//executorch/backends/arm/runtime:vela_bin_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
