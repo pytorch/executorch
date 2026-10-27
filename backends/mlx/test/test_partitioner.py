@@ -25,6 +25,7 @@ from executorch.exir import (
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.runtime import Runtime
 from torch.export import export
 
@@ -532,6 +533,74 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.allclose(before, expected_before, atol=1e-5))
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
+
+    def test_unplanned_input_written_in_place_with_reinplace(self):
+        # An unplanned input is passed to MLX without a copy when its memory can
+        # be wrapped, so the update lands in the caller's own tensor. A large
+        # cache is page-aligned, which wrapping without a copy may require.
+        model = self.IndexCopyInput(0).eval()
+        cache = torch.zeros(1024, 1024)
+        program = to_edge_transform_and_lower(
+            export(
+                model,
+                (cache.clone(), torch.tensor([1]), torch.randn(1, 1024)),
+                strict=False,
+            ),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                run_reinplace_pass=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            )
+        )
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 700):
+            indices, update = torch.tensor([row]), torch.randn(1, 1024)
+            expected.index_copy_(0, indices, update)
+            _, summed = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-3))
+
+    class TwoCaches(nn.Module):
+        def forward(self, k_cache, v_cache, indices, k, v):
+            k_cache.index_copy_(0, indices, k)
+            v_cache.index_copy_(0, indices, v)
+            return k_cache.sum(0) + v_cache.sum(0)
+
+    def test_two_inputs_written_in_place_with_reinplace(self):
+        # Two caches mutated by one delegate are both written in place.
+        model = self.TwoCaches().eval()
+        k_cache, v_cache = torch.zeros(16, 8), torch.zeros(16, 8)
+        example = (
+            k_cache,
+            v_cache,
+            torch.tensor([1]),
+            torch.randn(1, 8),
+            torch.randn(1, 8),
+        )
+        program = to_edge_transform_and_lower(
+            export(model, tuple(t.clone() for t in example), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[:2], plan.inputs[:2])
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected_k, expected_v = k_cache.clone(), v_cache.clone()
+        for row in (3, 7):
+            indices, k, v = torch.tensor([row]), torch.randn(1, 8), torch.randn(1, 8)
+            expected_k.index_copy_(0, indices, k)
+            expected_v.index_copy_(0, indices, v)
+            k_cache, v_cache, summed = method.execute([k_cache, v_cache, indices, k, v])
+            self.assertTrue(torch.equal(k_cache, expected_k))
+            self.assertTrue(torch.equal(v_cache, expected_v))
+            expected = expected_k.sum(0) + expected_v.sum(0)
+            self.assertTrue(torch.allclose(summed, expected, atol=1e-5))
 
     class SnapshotBeforeMutation(nn.Module):
         def forward(self, cache, indices, update):
