@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <functional>
 #include <limits>
@@ -24,6 +25,8 @@
 #include <executorch/backends/native/examples/runner_utils/runner_utils.h>
 #include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
+#include <executorch/backends/native/runtime/deserialize/Samples.h>
+#include <executorch/backends/native/runtime/deserialize/ZipReader.h>
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
@@ -54,6 +57,11 @@ DEFINE_bool(
     warmup_prefill,
     false,
     "Replay the identical prompt once before timing prefill (benchmark only).");
+DEFINE_string(
+    verify_samples,
+    "",
+    "Replay this sample set of --method instead of --prompt, comparing each "
+    "call's logits and forcing the sample's next token; exits 1 on mismatch.");
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -84,6 +92,27 @@ size_t kv_cache_length(const ptn::Method& method) {
     }
   }
   return length;
+}
+
+// The values of an [n] or [1, n] Int or Long sample tensor.
+std::vector<int64_t> integer_values(const ptn::SampleTensor& tensor) {
+  const bool row = tensor.sizes.size() == 1 ||
+      (tensor.sizes.size() == 2 && tensor.sizes[0] == 1);
+  if ((tensor.dtype != ptn::kLong && tensor.dtype != ptn::kInt) || !row) {
+    throw std::runtime_error(
+        "sample token and position inputs must be [n] or [1, n] Int or Long");
+  }
+  std::vector<int64_t> values(static_cast<size_t>(tensor.sizes.back()));
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (tensor.dtype == ptn::kLong) {
+      std::memcpy(&values[i], tensor.bytes.data() + 8 * i, 8);
+    } else {
+      int32_t value = 0;
+      std::memcpy(&value, tensor.bytes.data() + 4 * i, 4);
+      values[i] = value;
+    }
+  }
+  return values;
 }
 
 // Chooses the token after a logits output whose last dimension is the
@@ -317,11 +346,11 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         method.graph.output_ids.size(), user_outputs);
 
     const std::unique_ptr<ptn::EngineHost> host = make_host();
-    const std::unique_ptr<ptn::EngineContext> context =
+    std::unique_ptr<ptn::EngineContext> context =
         host->create_context(program, package);
     const Clock::time_point load_end = Clock::now();
     const Clock::time_point compile_start = Clock::now();
-    const std::unique_ptr<ptn::EngineExecutable> executable =
+    std::unique_ptr<ptn::EngineExecutable> executable =
         context->compile(method_name);
     const Clock::time_point compile_end = Clock::now();
 
@@ -375,6 +404,140 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
           "logits must be Float or Half, got " +
           std::string(ptn::scalar_type_name(output_dtype)));
     }
+    if (!FLAGS_verify_samples.empty()) {
+      if (FLAGS_warmup_prefill || !FLAGS_dump_first_logits.empty()) {
+        throw std::invalid_argument(
+            "verify_samples cannot be combined with warmup_prefill or "
+            "dump_first_logits");
+      }
+      const ptn::SampleSet set = ptn::read_sample_set(
+          ptn::ZipReader::open(FLAGS_package),
+          method_name,
+          FLAGS_verify_samples);
+      size_t failed_calls = 0;
+      for (size_t i = 0; i < set.samples.size(); ++i) {
+        const std::vector<ptn::SampleCall>& calls = set.samples[i].calls;
+        // Mutable state lives in the context, so a fresh one is the program's
+        // initial state.
+        if (i > 0) {
+          executable.reset();
+          context.reset();
+          context = host->create_context(program, package);
+          executable = context->compile(method_name);
+        }
+        std::vector<uint64_t> prompt;
+        std::vector<uint64_t> forced;
+        for (size_t j = 0; j < calls.size(); ++j) {
+          if (calls[j].inputs.size() != 2 || !calls[j].outputs ||
+              calls[j].outputs->size() <= logits_output ||
+              (*calls[j].outputs)[logits_output].dtype != ptn::kFloat ||
+              (*calls[j].outputs)[logits_output].sizes.empty() ||
+              calls[j].inputs[0].sizes.size() != 2 ||
+              calls[j].inputs[1].sizes.size() != 1) {
+            throw std::runtime_error(
+                "sample calls need [1, n] tokens, [n] positions and Float logits");
+          }
+          const std::vector<int64_t> ids = integer_values(calls[j].inputs[0]);
+          const int64_t vocabulary_size =
+              (*calls[j].outputs)[logits_output].sizes.back();
+          if (std::any_of(ids.begin(), ids.end(), [&](int64_t id) {
+                return id < 0 || id >= vocabulary_size;
+              })) {
+            throw std::runtime_error(
+                "sample " + std::to_string(i) + " call " + std::to_string(j) +
+                " has a token outside the vocabulary");
+          }
+          // The runner sends what generate() would: the prompt from 0, then one
+          // token per call.
+          const size_t count = j == 0 ? ids.size() : 1;
+          const int64_t start =
+              static_cast<int64_t>(j == 0 ? 0 : prompt.size() + j - 1);
+          std::vector<int64_t> positions(per_token_positions ? count : 1);
+          std::iota(positions.begin(), positions.end(), start);
+          if (ids.empty() || (j > 0 && ids.size() != 1) ||
+              integer_values(calls[j].inputs[1]) != positions) {
+            throw std::runtime_error(
+                "sample " + std::to_string(i) + " call " + std::to_string(j) +
+                " is not a prefill or the next decode step");
+          }
+          if (ids.size() > static_cast<size_t>(token_shape[1])) {
+            throw std::runtime_error(
+                "sample " + std::to_string(i) +
+                " prefill exceeds the method's " +
+                std::to_string(token_shape[1]) + " token input");
+          }
+          if (j == 0) {
+            prompt.assign(ids.begin(), ids.end());
+          } else {
+            forced.push_back(static_cast<uint64_t>(ids[0]));
+          }
+        }
+        // generate() runs one call per generated token.
+        if (ptn::generation_limit(
+                prompt.size(),
+                calls.size(),
+                static_cast<size_t>(FLAGS_max_seq_length),
+                kv_cache_length(method),
+                static_cast<size_t>(token_shape[1])) < calls.size()) {
+          throw std::runtime_error(
+              "sample " + std::to_string(i) + " does not fit the method");
+        }
+        size_t call = 0;
+        std::string report;
+        const NextToken check_then_force = [&](const std::vector<float>& logits,
+                                               size_t vocabulary_size) {
+          const ptn::SampleTensor& want = (*calls[call].outputs)[logits_output];
+          if (want.bytes.size() != logits.size() * sizeof(float)) {
+            throw std::runtime_error("sample logits have a different size");
+          }
+          std::vector<float> want_logits(logits.size());
+          std::memcpy(want_logits.data(), want.bytes.data(), want.bytes.size());
+          const ptn::Tolerance tol = calls[call].tol.value_or(ptn::Tolerance{});
+          const ptn::Closeness result = ptn::compare_close(
+              logits.data(),
+              want_logits.data(),
+              logits.size(),
+              tol.atol,
+              tol.rtol);
+          failed_calls += result.close ? 0 : 1;
+          char line[160];
+          std::snprintf(
+              line,
+              sizeof(line),
+              "sample %zu call %zu: max_abs_error=%.6g nan=%zu (atol %g, rtol %g) "
+              "%s\n",
+              i,
+              call,
+              result.max_abs_error,
+              result.nan_count,
+              tol.atol,
+              tol.rtol,
+              result.close ? "ok" : "FAIL");
+          report += line;
+          ++call;
+          return call < calls.size()
+              ? forced[call - 1]
+              : ptn::greedy_argmax_last_row(logits, vocabulary_size);
+        };
+        generate(
+            *executable,
+            logits_output,
+            per_token_positions,
+            *tokenizer,
+            prompt,
+            calls.size(),
+            {},
+            check_then_force);
+        std::printf("%s", report.c_str());
+      }
+      std::printf(
+          "verify:    %s/%s, %zu calls failed\n",
+          method_name.c_str(),
+          FLAGS_verify_samples.c_str(),
+          failed_calls);
+      return failed_calls == 0 ? 0 : 1;
+    }
+
     const size_t limit = ptn::generation_limit(
         prompt_tokens.size(),
         static_cast<size_t>(FLAGS_max_new_tokens),
