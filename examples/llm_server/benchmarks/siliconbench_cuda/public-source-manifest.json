@@ -115,6 +115,10 @@
       "sha256": "397388e89ff14447b61573aa0e48cf912fa56fa904cdc8989742545e143653f8",
       "bytes": 11061
     },
+    "bootstrap_corrected_native_MG_chat.py": {
+      "sha256": "2ccdc95c96819db6aa9e77c3323e899c586de246343840043d093f3f13e2a391",
+      "bytes": 12225
+    },
     "bootstrap_cpp_shard.py": {
       "sha256": "e558590f50210e65f8d1dbcb6f324352fe524e3d009dd9dbb23e99e9a07f6295",
       "bytes": 9705
