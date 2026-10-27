@@ -149,20 +149,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "fuse_batch_norm_with_linear",
-        srcs = ["fuse_batch_norm_with_linear.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "fuse_conv_with_clamp",
         srcs = ["fuse_conv_with_clamp.py"],
         visibility = [
