@@ -82,6 +82,44 @@ TEST_F(OpAvgPool1DOutTest, CeilPartialWindow) {
   EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 2}, {-5.5, -4.0}));
 }
 
+TEST_F(OpAvgPool1DOutTest, CeilKernelLargerThanPaddedInputIncludePadding) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.make({1, 1, 3}, {-6.0, -5.0, -4.0});
+  auto out = tf.zeros({1, 1, 1});
+  pool(in, {6}, {2}, {1}, true, true, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {-3.0}));
+}
+
+TEST_F(OpAvgPool1DOutTest, CeilKernelLargerThanPaddedInputExcludePadding) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.make({1, 1, 3}, {-6.0, -5.0, -4.0});
+  auto out = tf.zeros({1, 1, 1});
+  pool(in, {6}, {2}, {1}, true, false, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {-5.0}));
+}
+
+TEST_F(OpAvgPool1DOutTest, CeilKernelLargerThanPaddedInputDefaultStride) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.make({1, 1, 3}, {-6.0, -5.0, -4.0});
+  auto out = tf.zeros({1, 1, 1});
+  pool(in, {6}, {}, {1}, true, true, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {-3.0}));
+}
+
+TEST_F(OpAvgPool1DOutTest, FloorKernelLargerThanPaddedInput) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.ones({1, 1, 3});
+  auto out = tf.zeros({1, 1, 1});
+  ET_EXPECT_KERNEL_FAILURE(context_, pool(in, {6}, {2}, {1}, false, true, out));
+}
+
+TEST_F(OpAvgPool1DOutTest, CeilKernelTooLarge) {
+  TensorFactory<ScalarType::Float> tf;
+  auto in = tf.ones({1, 1, 3});
+  auto out = tf.zeros({1, 1, 1});
+  ET_EXPECT_KERNEL_FAILURE(context_, pool(in, {7}, {2}, {1}, true, true, out));
+}
+
 TEST_F(OpAvgPool1DOutTest, CeilSkipsPaddingOnly) {
   TensorFactory<ScalarType::Float> tf;
   auto in = tf.make({1, 1, 2}, {-6.0, -5.0});

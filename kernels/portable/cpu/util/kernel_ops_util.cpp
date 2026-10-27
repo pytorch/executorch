@@ -316,6 +316,7 @@ bool check_avg_pool1d_args(
     const IntArrayRef kernel_size,
     const IntArrayRef stride,
     const IntArrayRef padding,
+    const bool ceil_mode,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(in, out));
@@ -337,11 +338,11 @@ bool check_avg_pool1d_args(
   // Guarantees a non-negative numerator in _kernel_output_size_helper, whose
   // truncating division would otherwise round up instead of down.
   const int64_t padded_len = in.size(in.dim() - 1) + 2 * padding[0];
+  const int64_t effective_stride =
+      val_at(stride, 0, /*default_value=*/kernel_size[0]);
   ET_CHECK_OR_RETURN_FALSE(
-      kernel_size[0] <= padded_len,
-      "kernel_size %" PRId64 " exceeds padded input length %" PRId64,
-      kernel_size[0],
-      padded_len);
+      padded_len - kernel_size[0] + (ceil_mode ? effective_stride - 1 : 0) >= 0,
+      "Pooling parameters produce a non-positive output length");
 
   return true;
 }

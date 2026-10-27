@@ -467,6 +467,7 @@ bool check_avg_pool1d_args(
     const IntArrayRef kernel_size,
     const IntArrayRef stride,
     const IntArrayRef padding,
+    const bool ceil_mode,
     const Tensor& out);
 
 void get_avg_pool1d_out_target_size(

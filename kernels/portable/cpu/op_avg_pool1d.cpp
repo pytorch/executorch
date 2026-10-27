@@ -30,7 +30,7 @@ Tensor& avg_pool1d_out(
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
-      check_avg_pool1d_args(in, kernel_size, stride, padding, out),
+      check_avg_pool1d_args(in, kernel_size, stride, padding, ceil_mode, out),
       InvalidArgument,
       out);
 
