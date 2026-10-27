@@ -39,9 +39,14 @@ def main():
         for delegate in plan.delegates:
             if delegate.id!='CudaBackend':continue
             assert delegate.processed.location==DataLocation.INLINE
-            keys=pte.program.backend_delegate_data[delegate.processed.index].data.decode().splitlines()
-            assert len(keys)==2 and keys[0].endswith('_so_blob') and keys[1].endswith('_weights_blob')
-            key=keys[0];entry=pte.named_data.pte_data[key]
+            payload=pte.program.backend_delegate_data[delegate.processed.index].data
+            # Older ETCUDAFQN0 containers keep length-prefixed keys alongside
+            # binary kernel metadata; newer descriptors use two text lines.
+            # Inspect the hash-bound named library, not the rest of that ABI.
+            keys=[key for key in pte.named_data.pte_data if key.endswith('_so_blob') and key.encode() in payload]
+            assert len(keys)==1
+            key=keys[0];assert payload.count(key.encode())==1
+            entry=pte.named_data.pte_data[key]
             data=bytes(pte.named_data.buffers[entry.buffer_index])
             assert data.startswith(b'\x7fELF') and key==sha(data)+'_so_blob'
             if key in libraries:assert libraries[key]==data
