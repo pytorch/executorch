@@ -11,8 +11,8 @@ Optional recorded method calls stored inside a .ptn package.
 
 Each set lives under its own prefix, so adding one only appends members:
 
-    samples/<method>/<set>/index.json         which tensors and scalars each call used
-    samples/<method>/<set>/data.safetensors   those tensors, aligned like constants
+    samples/<set>/index.json         each call's method, tensors and scalars
+    samples/<set>/data.safetensors   those tensors, aligned like constants
 
 Program loaders ignore these members. The format is specified in
 backends/native/README.md; read_samples enforces it.
@@ -58,6 +58,7 @@ _LOOSE_TOL = 1e-3
 class Call:
     """One call of a method: positional inputs, and optionally what it produced."""
 
+    method: str
     inputs: list[Value]
     outputs: list[Value] | None = None
     intermediates: dict[str, torch.Tensor] | None = None
@@ -137,7 +138,12 @@ def _encode_call(
                 f"write_samples: {at} {field} must be a list, "
                 f"got {type(values).__name__}"
             )
-    entry: dict[str, object] = {"in": _encode(call.inputs, f"{at}.in", tensors)}
+    if not isinstance(call.method, str) or not call.method:
+        raise ValueError(f"write_samples: {at} method must be a non-empty string")
+    entry: dict[str, object] = {
+        "method": call.method,
+        "in": _encode(call.inputs, f"{at}.in", tensors),
+    }
     if call.outputs is not None:
         entry["out"] = _encode(call.outputs, f"{at}.out", tensors)
     if call.intermediates is not None:
@@ -187,7 +193,7 @@ def _encode_set(
     return index
 
 
-def write_samples(path: str, method: str, name: str, samples: SampleSet) -> None:
+def write_samples(path: str, name: str, samples: SampleSet) -> None:
     """Append a sample set to an existing .ptn without touching its other members.
 
     The package is replaced only once the new set is complete, so a failure
@@ -196,25 +202,22 @@ def write_samples(path: str, method: str, name: str, samples: SampleSet) -> None
     Warns when a tolerance's atol or rtol is above 1e-3.
 
     Raises:
-        ValueError: If a name is invalid, a set or sample is empty, the set
-            already exists, the package has no program, or a scalar or tolerance
-            is out of range.
+        ValueError: If the set name or a method name is invalid, a set or sample
+            is empty, the set already exists, the package has no program, or a
+            scalar or tolerance is out of range.
         KeyError: If a tensor has a dtype safetensors cannot represent.
         TypeError: If a value is not a tensor, scalar or list, or a call's inputs
             or outputs are not a list.
     """
-    for label, value in (("method", method), ("set", name)):
-        if not _NAME.fullmatch(value):
-            raise ValueError(
-                f"write_samples: {label} name {value!r} must match {_NAME.pattern}"
-            )
+    if not _NAME.fullmatch(name):
+        raise ValueError(f"write_samples: set name {name!r} must match {_NAME.pattern}")
     if not samples.samples:
         raise ValueError("write_samples: a set needs at least one sample")
 
     tensors: dict[str, torch.Tensor] = {}
     encoded = json.dumps(_encode_set(samples, tensors), indent=1, allow_nan=False)
 
-    prefix = f"{_SAMPLES_DIR}{method}/{name}/"
+    prefix = f"{_SAMPLES_DIR}{name}/"
     with zipfile.ZipFile(path) as pkg:
         names = pkg.namelist()
     if PTG_ENTRY not in names:
@@ -293,9 +296,13 @@ class _SetDecoder:
     def call(self, entry: object, at: str) -> Call:
         if not isinstance(entry, dict) or not isinstance(entry.get("in"), list):
             raise self.fail(f"{at} must be an object with an 'in' list")
+        method = entry.get("method")
+        if not isinstance(method, str) or not method:
+            raise self.fail(f"{at}.method must be a non-empty string")
         if "out" in entry and not isinstance(entry["out"], list):
             raise self.fail(f"{at}.out must be a list")
         return Call(
+            method=method,
             inputs=self.values(entry["in"], f"{at}.in"),
             outputs=self.values(entry["out"], f"{at}.out") if "out" in entry else None,
             intermediates=(
@@ -345,8 +352,8 @@ def _decode_set(
     )
 
 
-def read_samples(path: str) -> dict[tuple[str, str], SampleSet]:
-    """Every sample set in a .ptn, keyed by (method, set), validated as read.
+def read_samples(path: str) -> dict[str, SampleSet]:
+    """Every sample set in a .ptn, keyed by set name, validated as read.
 
     A package without samples returns an empty dict.
 
@@ -356,25 +363,25 @@ def read_samples(path: str) -> dict[tuple[str, str], SampleSet]:
     from safetensors import SafetensorError
     from safetensors.torch import load as safetensors_load
 
-    sets: dict[tuple[str, str], SampleSet] = {}
+    sets: dict[str, SampleSet] = {}
     with zipfile.ZipFile(path) as pkg:
-        found: dict[tuple[str, str], dict[str, zipfile.ZipInfo]] = {}
+        found: dict[str, dict[str, zipfile.ZipInfo]] = {}
         for info in pkg.infolist():
             if not info.filename.startswith(_SAMPLES_DIR):
                 continue
             parts = info.filename[len(_SAMPLES_DIR) :].split("/")
             if (
-                len(parts) != 3
-                or not all(_NAME.fullmatch(p) for p in parts[:2])
-                or parts[2] not in (_INDEX_ENTRY, _DATA_ENTRY)
+                len(parts) != 2
+                or not _NAME.fullmatch(parts[0])
+                or parts[1] not in (_INDEX_ENTRY, _DATA_ENTRY)
             ):
                 raise ValueError(f"read_samples: unexpected member {info.filename!r}")
             if info.compress_type != zipfile.ZIP_STORED:
                 raise ValueError(f"read_samples: {info.filename!r} is compressed")
-            found.setdefault((parts[0], parts[1]), {})[parts[2]] = info
+            found.setdefault(parts[0], {})[parts[1]] = info
 
-        for (method, name), members in sorted(found.items()):
-            where = f"read_samples: {_SAMPLES_DIR}{method}/{name}"
+        for name, members in sorted(found.items()):
+            where = f"read_samples: {_SAMPLES_DIR}{name}"
             for entry in (_INDEX_ENTRY, _DATA_ENTRY):
                 if entry not in members:
                     raise ValueError(f"{where}: missing {entry}")
@@ -390,7 +397,7 @@ def read_samples(path: str) -> dict[tuple[str, str], SampleSet]:
                 tensors = safetensors_load(data)
             except (ValueError, RecursionError, SafetensorError) as e:
                 raise ValueError(f"{where}: {e}") from e
-            sets[(method, name)] = _decode_set(index, tensors, where)
+            sets[name] = _decode_set(index, tensors, where)
     return sets
 
 
