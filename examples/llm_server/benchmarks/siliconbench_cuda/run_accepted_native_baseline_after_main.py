@@ -42,19 +42,24 @@ def main():
         argv=[str(b['server_python']),'-B',str(b['serve_script']),
             '--worker-bin',str(b['worker']),'--model-path',str(b['PTE']),'--data-path',str(b['PTD']),
             '--tokenizer-path',str(b['tokenizer']/'tokenizer.json'),'--hf-tokenizer',str(b['tokenizer']),
-            '--model-id',config['model'],'--max-context','131072','--initial-kv-capacity','512',
+            '--model-id',config['model'],'--max-context','131072',
             '--max-sessions','16','--max-decode-sequences','16','--max-inflight-requests','16',
             '--prefix-cache-entries',('1' if gemma else '4') if prefix=='on' else '0',
             '--prefix-checkpoint-interval','512' if gemma and prefix=='on' else '0',
             '--host','127.0.0.1','--port',os.environ['SB_PORT']]
         argv+=['--raw-tool-text','--tool-parser','none'] if gemma else ['--backend','cuda']
+        # The preserved MG server/factory has no initial-capacity argument.
+        # Keep its original native/artifact defaults instead of changing it.
+        if gemma:argv+=['--initial-kv-capacity','512']
         env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',CUDA_VISIBLE_DEVICES='0',
             PYTHONPATH=str(b['dependency_path'])+os.pathsep+str(b['python_source'].parent),
             LD_LIBRARY_PATH=os.pathsep.join(config['LD_library_paths']))
         env.pop('ET_CUDA_BENCH_MEMORY_TRACE',None)
         print('ACCEPTED_NATIVE_BASELINE_BINDING:'+json.dumps(dict(argv=argv,config_SHA256=sha(a.config),
             same_current_HTTP_dependency_source=True,exact_historical_Python_reproduction=False,
-            original_worker_and_PTE=True,original_PTD_SHA256=config['old_PTD_SHA256'])),flush=True)
+            original_worker_and_PTE=True,original_PTD_SHA256=config['old_PTD_SHA256'],
+            initial_KV_capacity_override=512 if gemma else None,
+            MG_initial_KV_preserves_original_native_artifact_defaults=not gemma)),flush=True)
         os.execvpe(argv[0],argv,env)
     assert not a.output.exists();a.output.mkdir(parents=True)
     def state(status,**extra):
