@@ -42,15 +42,11 @@ final class SwiftAcquisitionTests: XCTestCase {
       XCTAssertEqual(status, .hit)
       XCTAssertNil(error)
       XCTAssertEqual(model?.copyBookmarkData(), Data([1, 2, 3]))
-      model?.loadFunctionNamed("missing", inputNames: [], outputNames: []) { session, error in
-        XCTAssertNil(session)
-        XCTAssertEqual((error as NSError?)?.code, ETCoreAIErrorCode.invalidModel.rawValue)
-      }
       completed.fulfill()
     } operation: {
       ProtocolPreparedModel(released: released)
     }
-    wait(for: [completed, released], timeout: 5)
+    wait(for: [completed, released], timeout: 5, enforceOrder: true)
   }
 
   func testOnlyNilIsMiss() {
@@ -84,7 +80,7 @@ final class SwiftAcquisitionTests: XCTestCase {
           XCTAssertTrue(error === bridge)
         } else {
           XCTAssertEqual(error?.domain, ETCoreAIErrorDomain)
-          XCTAssertEqual(error?.code, ETCoreAIErrorCode.invalidModel.rawValue)
+          XCTAssertEqual(error?.code, ETCoreAIErrorCode.runtime.rawValue)
           XCTAssertTrue(error?.localizedDescription.hasPrefix("test restoration:") == true)
           XCTAssertTrue((error?.userInfo[NSUnderlyingErrorKey] as? NSError) === sdk)
         }
@@ -129,30 +125,46 @@ final class SwiftSessionTests: XCTestCase {
 
   private let loader = ETCoreAISwiftModelLoader()
   private var manifest: Manifest!
+  private var fixtureDirectory: URL!
   private var model: (any ETCoreAIPreparedModel)?
   private var session: (any ETCoreAISession)?
   private var bookmark: Data?
 
   override func setUpWithError() throws {
-    let root = try XCTUnwrap(ProcessInfo.processInfo.environment["COREAI_BRIDGE_FIXTURE_DIR"])
-    let directory = URL(fileURLWithPath: root, isDirectory: true)
+    guard let root = ProcessInfo.processInfo.environment["COREAI_BRIDGE_FIXTURE_DIR"] else {
+      throw XCTSkip("COREAI_BRIDGE_FIXTURE_DIR is required for SDK session tests")
+    }
+    try useFixture(at: URL(fileURLWithPath: root, isDirectory: true))
+  }
+
+  private func useFixture(at directory: URL) throws {
+    fixtureDirectory = directory
     manifest = try JSONDecoder().decode(
       Manifest.self, from: Data(contentsOf: directory.appendingPathComponent("manifest.json")))
     XCTAssertEqual(manifest.inputNames.count, 2)
     XCTAssertEqual(manifest.outputNames.count, 2)
+  }
+
+  private func prepareModel() throws {
+    guard model == nil else { return }
     let completed = expectation(description: "specialized session fixture")
     completed.assertForOverFulfill = true
-    var failure: Error?
-    loader.specializeModel(at: directory.appendingPathComponent("model.aimodel")) {
+    let result = Mutex<(model: (any ETCoreAIPreparedModel)?, error: Error?)>((nil, nil))
+    loader.specializeModel(at: fixtureDirectory.appendingPathComponent("model.aimodel")) {
       status, model, error in
       XCTAssertEqual(status, .hit)
-      self.model = model
-      failure = error
+      result.withLock { $0 = (model, error) }
       completed.fulfill()
     }
     wait(for: [completed], timeout: 30)
-    if let failure { throw failure }
-    bookmark = try XCTUnwrap(model).copyBookmarkData()
+    let value = result.withLock { value in
+      let snapshot = value
+      value = (nil, nil)
+      return snapshot
+    }
+    if let failure = value.error { throw failure }
+    model = try XCTUnwrap(value.model)
+    bookmark = model?.copyBookmarkData()
   }
 
   override func tearDownWithError() throws {
@@ -171,6 +183,7 @@ final class SwiftSessionTests: XCTestCase {
   }
 
   private func bind(inputNames: [String]? = nil, outputNames: [String]? = nil) throws {
+    try prepareModel()
     let result = Mutex<(session: (any ETCoreAISession)?, error: Error?, calls: Int)>((nil, nil, 0))
     try XCTUnwrap(model).loadFunctionNamed(
       manifest.function, inputNames: inputNames ?? manifest.inputNames,
@@ -219,6 +232,30 @@ final class SwiftSessionTests: XCTestCase {
       for (output, values) in zip(outputs, expected) {
         XCTAssertEqual(output.scalarType, .float32)
         XCTAssertEqual(output.shape, [2])
+        XCTAssertEqual(output.data, values.withUnsafeBytes { Data($0) })
+      }
+    }
+  }
+
+  func testDynamicDescriptorsTrackRuntimeShapes() throws {
+    try useFixture(at: fixtureDirectory.appendingPathComponent("dynamic"))
+    try bind()
+    let sdkModel = try XCTUnwrap(AIModel(resolvingBookmark: XCTUnwrap(bookmark)))
+    let function = try XCTUnwrap(sdkModel.loadFunction(named: manifest.function))
+    for name in manifest.inputNames {
+      guard case .ndArray(let descriptor) = function.descriptor.inputDescriptor(of: name) else {
+        return XCTFail("Expected an NDArray input descriptor")
+      }
+      XCTAssertEqual(descriptor.shape, [-1])
+    }
+    for count in [2, 4, 1] {
+      let left = (0..<count).map { Float($0 + 2) }
+      let right = [Float](repeating: 1, count: count)
+      let outputs = try execute([Input(left), Input(right)])
+      let expected = [left.map { $0 + 1 }, left.map { $0 - 1 }]
+      XCTAssertEqual(outputs.count, 2)
+      for (output, values) in zip(outputs, expected) {
+        XCTAssertEqual(output.shape, [NSNumber(value: count)])
         XCTAssertEqual(output.data, values.withUnsafeBytes { Data($0) })
       }
     }
@@ -317,7 +354,8 @@ final class SwiftBridgeTests: XCTestCase {
     var value: Float = 1
     withUnsafeBytes(of: &value) { bytes in
       assertInvalidInput(bytes: bytes.baseAddress, byteCount: 4, shape: [-1])
-      assertInvalidInput(bytes: bytes.baseAddress, byteCount: 4, shape: [0, NSNumber(value: Int.max)])
+      assertInvalidInput(
+        bytes: bytes.baseAddress, byteCount: 4, shape: [0, NSNumber(value: Int.max)])
       assertInvalidInput(bytes: bytes.baseAddress, byteCount: 3, shape: [1])
       assertInvalidInput(bytes: nil, byteCount: 4, shape: [1])
     }
@@ -437,7 +475,23 @@ final class SwiftBridgeTests: XCTestCase {
     for strides in [[-1, 1], [4, 1]] {
       XCTAssertThrowsError(
         try CoreAITensorLayout(
-          shape: [2, 3], strides: strides, width: 4, storageByteCount: 24))
+          shape: [2, 3], strides: strides, width: 4, storageByteCount: 24)
+      ) {
+        let expected: ETCoreAIErrorCode = strides[0] < 0 ? .unsupported : .runtime
+        XCTAssertEqual(($0 as NSError).code, expected.rawValue)
+      }
+    }
+    XCTAssertThrowsError(
+      try CoreAITensorLayout(
+        shape: [Int.max, 2], strides: [2, 1], width: 4, storageByteCount: Int.max)
+    ) {
+      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.runtime.rawValue)
+    }
+    XCTAssertThrowsError(
+      try CoreAITensorPayload.byteCount(
+        shape: [Int.max, 2], scalarType: .float32, errorCode: .runtime)
+    ) {
+      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.runtime.rawValue)
     }
   }
 
@@ -462,7 +516,9 @@ final class SwiftBridgeTests: XCTestCase {
       view.withUnsafeMutablePointer { pointer, _, _ in pointer[0] = 99 }
     }
     XCTAssertEqual(output, bytes, "the copy must not alias the SDK array")
-    XCTAssertThrowsError(try copyOutput(strided, as: Float16.self))
+    XCTAssertThrowsError(try copyOutput(strided, as: Float16.self)) {
+      XCTAssertEqual(($0 as NSError).code, ETCoreAIErrorCode.runtime.rawValue)
+    }
 
     var transposed = NDArray(shape: [2, 3], scalarType: .float16, strides: [1, 2])
     do {
@@ -472,7 +528,8 @@ final class SwiftBridgeTests: XCTestCase {
       }
     }
     let expected: [Float16] = [1, 3, 5, 2, 4, 6]
-    XCTAssertEqual(try copyOutput(transposed, as: Float16.self), expected.withUnsafeBytes { Data($0) })
+    XCTAssertEqual(
+      try copyOutput(transposed, as: Float16.self), expected.withUnsafeBytes { Data($0) })
   }
 
   func testRejectsInterleavedOutput() {

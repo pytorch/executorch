@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import torch
@@ -20,12 +21,21 @@ from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 
 
 class Arithmetic(torch.nn.Module):
+    """Distinct outputs make reordered bindings observable."""
+
     def forward(self, left, right):
+        """Return the elementwise sum and difference, in that order."""
         return left + right, left - right
 
 
-def export_fixture(output_dir: Path) -> None:
-    exported = torch.export.export(Arithmetic().eval(), (torch.ones(2), torch.ones(2)))
+def export_fixture(output_dir: Path, *, dynamic: bool = False) -> None:
+    """Export into a dedicated fixture directory, replacing its contents."""
+    size = torch.export.Dim("size", min=1, max=8)
+    exported = torch.export.export(
+        Arithmetic().eval(),
+        (torch.ones(2), torch.ones(2)),
+        dynamic_shapes=({0: size}, {0: size}) if dynamic else None,
+    )
     lowered = to_edge_transform_and_lower(
         exported,
         transform_passes=get_default_passes(),
@@ -38,6 +48,8 @@ def export_fixture(output_dir: Path) -> None:
     manifest = json.loads(manifest_bytes)
     store = delegates[0].named_data_store_output
     assert store is not None
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     for relative_path in manifest["files"]:
         entry = store.pte_data[f"coreai/{manifest['hash']}/{relative_path}"]
         destination = output_dir / relative_path
@@ -48,5 +60,9 @@ def export_fixture(output_dir: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("output_dir", type=Path)
-    export_fixture(parser.parse_args().output_dir)
+    parser.add_argument(
+        "output_dir", type=Path, help="Dedicated fixture directory, replaced on export"
+    )
+    output_dir = parser.parse_args().output_dir
+    export_fixture(output_dir)
+    export_fixture(output_dir / "dynamic", dynamic=True)

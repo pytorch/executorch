@@ -170,14 +170,17 @@ padded or transposed outputs fall back to strided copies. Only FP16 and FP32
 NDArrays are supported.
 
 The Objective-C half of the bridge builds as the private `coreai_bridge_obj`
-object library, which production delegate targets absorb. Host tests substitute
-a fake bridge instead.
+object library for integration with the production delegate. The separate entry
+points allow delegate tests to substitute a fake bridge.
 
 `coreai_swift_bridge_test` runs the bridge's XCTests under `xctest` with
 `EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI, so it runs only on macOS 27.
-The test build exports a small portable model for real session tests. CMake's
-`Python3_EXECUTABLE` must use the Python environment with the pinned Core AI
-requirements above. CTest supplies the generated fixture location to XCTest.
+The test build exports static- and dynamic-shape models for real session tests.
+CMake's `PYTHON_EXECUTABLE` must use the Python environment with the pinned Core
+AI requirements above. Backend Python changes regenerate the dedicated fixture
+directory, replacing previous contents. CTest supplies its location to XCTest;
+direct XCTest runs without it skip the session tests. Building only
+`coreai_host_test` does not export fixtures or build the Swift test bundle.
 
 ## Building
 

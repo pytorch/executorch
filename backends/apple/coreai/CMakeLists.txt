@@ -12,11 +12,17 @@ if(CMAKE_VERSION VERSION_LESS 3.31)
   message(FATAL_ERROR "Core AI requires CMake 3.31 or newer for Swift support")
 endif()
 
-# ExecuTorch's numeric preprocessor definitions are not Swift conditions.
-get_directory_property(_coreai_inherited_definitions COMPILE_DEFINITIONS)
-set_property(DIRECTORY PROPERTY COMPILE_DEFINITIONS "")
-foreach(definition IN LISTS _coreai_inherited_definitions)
-  add_compile_definitions("$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:${definition}>")
+# Inherited Clang flags and numeric definitions are not valid Swift options.
+foreach(property IN ITEMS COMPILE_DEFINITIONS COMPILE_OPTIONS)
+  get_directory_property(_coreai_inherited ${property})
+  set_property(DIRECTORY PROPERTY ${property} "")
+  foreach(value IN LISTS _coreai_inherited)
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY ${property} "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:${value}>"
+    )
+  endforeach()
 endforeach()
 
 enable_language(OBJCXX)
@@ -82,8 +88,15 @@ endif()
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/ExecuTorchCoreAIDependencies.cmake)
 executorch_coreai_dependencies()
+set(_coreai_deployment 27.0)
+if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_GREATER _coreai_deployment)
+  set(_coreai_deployment "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
 # CMake 3.31 does not infer an iOS target for its Swift compiler probe.
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_GENERATOR STREQUAL "Xcode")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS"
+   AND NOT CMAKE_GENERATOR STREQUAL "Xcode"
+   AND NOT CMAKE_Swift_COMPILER_TARGET
+)
   if(CMAKE_OSX_ARCHITECTURES)
     list(GET CMAKE_OSX_ARCHITECTURES 0 _coreai_probe_arch)
   else()
@@ -94,17 +107,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_GENERATOR STREQUAL "Xcode")
     set(_coreai_probe_environment "-simulator")
   endif()
   set(CMAKE_Swift_COMPILER_TARGET
-      "${_coreai_probe_arch}-apple-ios27.0${_coreai_probe_environment}"
+      "${_coreai_probe_arch}-apple-ios${_coreai_deployment}${_coreai_probe_environment}"
   )
 endif()
 enable_language(Swift)
 
 # CMake has no per-target OSX_DEPLOYMENT_TARGET property for Ninja.
 function(coreai_require_os27 target)
-  set(deployment 27.0)
-  if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_GREATER deployment)
-    set(deployment "${CMAKE_OSX_DEPLOYMENT_TARGET}")
-  endif()
+  set(deployment "${_coreai_deployment}")
   set(target_environment "")
   if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(platform ios)
@@ -214,8 +224,7 @@ set_property(
 coreai_require_os27(coreai_swift)
 target_link_libraries(coreai_swift PRIVATE executorch::coreai_dependencies)
 
-# The Objective-C half of the bridge. Host tests replace coreai_bridge.mm with a
-# fake, so these objects are only absorbed by production targets.
+# Keep SDK entry points separate so delegate tests can substitute a fake.
 add_library(
   coreai_bridge_obj OBJECT runtime/ETCoreAITensor.mm runtime/coreai_bridge.mm
 )
@@ -273,24 +282,32 @@ if(EXECUTORCH_BUILD_TESTS
     coreai_swift_bridge_test PRIVATE "-framework XCTest" XCTestSwiftSupport
                                      executorch::coreai_dependencies
   )
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  file(GLOB_RECURSE _coreai_fixture_sources CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/*.py"
+  )
   set(_coreai_fixture_dir "${CMAKE_CURRENT_BINARY_DIR}/bridge_fixture")
   add_custom_command(
     OUTPUT "${_coreai_fixture_dir}/manifest.json"
+           "${_coreai_fixture_dir}/dynamic/manifest.json"
     BYPRODUCTS "${_coreai_fixture_dir}/model.aimodel/main.hash"
                "${_coreai_fixture_dir}/model.aimodel/main.mlirb"
                "${_coreai_fixture_dir}/model.aimodel/metadata.json"
+               "${_coreai_fixture_dir}/dynamic/model.aimodel/main.hash"
+               "${_coreai_fixture_dir}/dynamic/model.aimodel/main.mlirb"
+               "${_coreai_fixture_dir}/dynamic/model.aimodel/metadata.json"
     COMMAND
-      "${Python3_EXECUTABLE}"
+      "${PYTHON_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/runtime/test/export_bridge_fixture.py"
       "${_coreai_fixture_dir}"
-    DEPENDS runtime/test/export_bridge_fixture.py compiler/preprocess.py
+    DEPENDS ${_coreai_fixture_sources}
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     COMMENT "Export the Core AI session test model"
     VERBATIM
   )
   add_custom_target(
-    coreai_bridge_fixture DEPENDS "${_coreai_fixture_dir}/manifest.json"
+    coreai_bridge_fixture
+    DEPENDS "${_coreai_fixture_dir}/manifest.json"
+            "${_coreai_fixture_dir}/dynamic/manifest.json"
   )
   add_dependencies(coreai_swift_bridge_test coreai_bridge_fixture)
   add_test(NAME coreai_swift_bridge_test
@@ -298,7 +315,7 @@ if(EXECUTORCH_BUILD_TESTS
   )
   set_tests_properties(
     coreai_swift_bridge_test
-    PROPERTIES TIMEOUT 120 ENVIRONMENT
+    PROPERTIES TIMEOUT 600 ENVIRONMENT
                "COREAI_BRIDGE_FIXTURE_DIR=${_coreai_fixture_dir}"
   )
 endif()

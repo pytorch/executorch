@@ -20,9 +20,14 @@ typedef NS_ENUM(NSInteger, ETCoreAIScalarType) {
 };
 
 typedef NS_ENUM(NSInteger, ETCoreAIErrorCode) {
+  // Invalid model descriptors, functions or bindings.
   ETCoreAIErrorInvalidModel = 1,
+  // Unsupported tensor types, layouts or model features.
   ETCoreAIErrorUnsupported = 2,
+  // Invalid caller arguments or input tensor payloads.
   ETCoreAIErrorInvalidArgument = 3,
+  // SDK/system failures or inconsistent SDK outputs, not evidence of
+  // corruption.
   ETCoreAIErrorRuntime = 4,
 };
 
@@ -34,10 +39,13 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 @property(nonatomic, readonly) NSUInteger byteCount;
 @property(nonatomic, readonly, copy) NSArray<NSNumber*>* shape;
 @property(nonatomic, readonly) ETCoreAIScalarType scalarType;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
 - (instancetype)initWithBytes:(const void* _Nullable)bytes
                     byteCount:(NSUInteger)byteCount
                         shape:(NSArray<NSNumber*>*)shape
-                   scalarType:(ETCoreAIScalarType)scalarType;
+                   scalarType:(ETCoreAIScalarType)scalarType
+    NS_DESIGNATED_INITIALIZER;
 @end
 
 // Outputs own densely packed bytes, independent of the executor's storage.
@@ -45,9 +53,12 @@ FOUNDATION_EXPORT NSErrorDomain const ETCoreAIErrorDomain;
 @property(nonatomic, readonly, copy) NSData* data;
 @property(nonatomic, readonly, copy) NSArray<NSNumber*>* shape;
 @property(nonatomic, readonly) ETCoreAIScalarType scalarType;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
 - (instancetype)initWithData:(NSData*)data
                        shape:(NSArray<NSNumber*>*)shape
-                  scalarType:(ETCoreAIScalarType)scalarType;
+                  scalarType:(ETCoreAIScalarType)scalarType
+    NS_DESIGNATED_INITIALIZER;
 @end
 
 // The caller keeps inputs valid and unmodified until completion. All session

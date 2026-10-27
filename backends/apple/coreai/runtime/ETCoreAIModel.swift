@@ -44,7 +44,7 @@ func acquireCoreAIModel(
         callback.call(.miss, nil, nil)
       }
     } catch {
-      callback.call(.error, nil, mappedError(error, code: .invalidModel, context: context))
+      callback.call(.error, nil, mappedError(error, code: .runtime, context: context))
     }
   }
 }
@@ -76,7 +76,10 @@ struct CoreAITensorPayload: @unchecked Sendable {
     }
   }
 
-  static func byteCount(shape: [Int], scalarType: ETCoreAIScalarType) throws -> Int {
+  static func byteCount(
+    shape: [Int], scalarType: ETCoreAIScalarType,
+    errorCode: ETCoreAIErrorCode = .invalidArgument
+  ) throws -> Int {
     let width: Int
     switch scalarType {
     case .float16: width = 2
@@ -84,14 +87,14 @@ struct CoreAITensorPayload: @unchecked Sendable {
     default: throw bridgeError(.unsupported, "Only FP16 and FP32 tensors are supported")
     }
     guard shape.allSatisfy({ $0 >= 0 }) else {
-      throw bridgeError(.invalidArgument, "Negative tensor dimension")
+      throw bridgeError(errorCode, "Negative tensor dimension")
     }
     // Check suffix products too: SDK dense-stride construction must not overflow on empty tensors.
     var count = width
     for dimension in shape.reversed() {
       let (next, overflow) = count.multipliedReportingOverflow(by: max(dimension, 1))
       guard !overflow else {
-        throw bridgeError(.invalidArgument, "Tensor byte count overflows Int")
+        throw bridgeError(errorCode, "Tensor byte count overflows Int")
       }
       count = next
     }
@@ -125,13 +128,16 @@ private func tensorDescriptor(_ value: InferenceValue.Descriptor?) throws -> NDA
 }
 
 @available(macOS 27.0, iOS 27.0, *)
-private func validateShape(_ shape: [Int], descriptor: NDArrayDescriptor) throws {
+private func validateShape(
+  _ shape: [Int], descriptor: NDArrayDescriptor,
+  errorCode: ETCoreAIErrorCode = .invalidArgument
+) throws {
   guard shape.count == descriptor.shape.count,
     zip(shape, descriptor.shape).allSatisfy({ actual, expected in
       actual >= 0 && (expected == -1 || actual == expected)
     })
   else {
-    throw bridgeError(.invalidArgument, "Tensor shape does not match the function descriptor")
+    throw bridgeError(errorCode, "Tensor shape does not match the function descriptor")
   }
 }
 
@@ -156,7 +162,7 @@ struct CoreAITensorLayout {
       let (extent, extentOverflow) = max(dimension - 1, 0).multipliedReportingOverflow(by: stride)
       let (offset, offsetOverflow) = maximumOffset.addingReportingOverflow(extent)
       guard !countOverflow, !extentOverflow, !offsetOverflow else {
-        throw bridgeError(.invalidArgument, "NDArray layout overflows Int")
+        throw bridgeError(.runtime, "NDArray layout overflows Int")
       }
       count = next
       maximumOffset = offset
@@ -173,7 +179,7 @@ struct CoreAITensorLayout {
       let (span, spanOverflow) = maximumOffset.addingReportingOverflow(1)
       let (bytes, byteOverflow) = span.multipliedReportingOverflow(by: width)
       guard !spanOverflow, !byteOverflow, bytes <= storageByteCount else {
-        throw bridgeError(.invalidArgument, "NDArray layout exceeds its storage")
+        throw bridgeError(.runtime, "NDArray layout exceeds its storage")
       }
     }
   }
@@ -194,9 +200,10 @@ func copyOutput<T: BitwiseCopyable>(_ array: NDArray, as: T.Type) throws -> Data
   let type = try bridgeScalarType(array.scalarType)
   guard (T.self == Float.self && type == .float32) || (T.self == Float16.self && type == .float16)
   else {
-    throw bridgeError(.invalidArgument, "Output copy dtype mismatch")
+    throw bridgeError(.runtime, "Output copy dtype mismatch")
   }
-  let byteCount = try CoreAITensorPayload.byteCount(shape: array.shape, scalarType: type)
+  let byteCount = try CoreAITensorPayload.byteCount(
+    shape: array.shape, scalarType: type, errorCode: .runtime)
   guard array.interleaveLayout == nil else {
     throw bridgeError(.unsupported, "Interleaved output storage is not supported")
   }
@@ -322,7 +329,7 @@ private final class CoreAISwiftSession: NSObject, ETCoreAISession, Sendable {
             throw bridgeError(.unsupported, "Inference returned an image output")
           }
           let descriptor = outputDescriptors[index]
-          try validateShape(array.shape, descriptor: descriptor)
+          try validateShape(array.shape, descriptor: descriptor, errorCode: .runtime)
           guard array.scalarType == descriptor.scalarType else {
             throw bridgeError(.runtime, "Output dtype does not match the function descriptor")
           }
@@ -381,7 +388,7 @@ private final class CoreAISwiftPreparedModel: NSObject, ETCoreAIPreparedModel, S
           outputNames: outputNames), nil)
     } catch {
       completion(
-        nil, mappedError(error, code: .invalidModel, context: "Core AI function binding failed"))
+        nil, mappedError(error, code: .runtime, context: "Core AI function binding failed"))
     }
   }
 }
