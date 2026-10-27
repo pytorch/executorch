@@ -35,13 +35,17 @@ For more information on the supported hardware, please refer to [OpenVINO System
 
 ## Instructions for Building OpenVINO Backend
 
-### Quick Start (pip wheel, Linux)
+### Quick Start (pip wheel, Linux and Windows)
 
 The easiest way to use the OpenVINO backend is via the prebuilt pip wheel:
 
 ```bash
 pip install executorch[openvino]
 ```
+
+For now the extra installs no runtime on Python 3.15, or on Linux aarch64 with Python
+3.14. OpenVINO publishes no build for Python 3.15, and its aarch64 builds for Python 3.14
+need glibc 2.35 or newer.
 
 The backend automatically discovers the OpenVINO C library from the pip-installed
 package — no environment variable setup is needed.
@@ -57,7 +61,7 @@ If you need a custom build (different platform, custom configuration, etc.), fol
 Before you begin, ensure you have the OpenVINO runtime installed and configured on your system. For most users, we recommend installing it via pip:
 
 ```bash
-pip install "openvino>=2025.1.0,<2026.0.0"
+pip install "openvino>=2025.1.0,<2027.0.0"
 ```
 
 Alternatively, you can build OpenVINO from source or follow the official [OpenVINO installation guide](https://docs.openvino.ai/2025/get-started/install-openvino.html) for platform-specific options:

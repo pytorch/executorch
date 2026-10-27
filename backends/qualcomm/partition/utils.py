@@ -148,6 +148,19 @@ def filter_fn(node: torch.fx.Node) -> bool:
         torch.int64,
     ]:
         return False
+    # QNN Stft only produces the real-valued spectrum and has no normalization.
+    # ConvertComplexStft rewrites the supported complex cases into this form.
+    # Without a window, QNN's rectangular default spans n_fft rather than
+    # win_length.
+    if node.target == torch.ops.aten.stft.default:
+        args = list(node.args) + [None] * (8 - len(node.args))
+        n_fft, win_length, window, normalized = args[1], args[3], args[4], args[5]
+        return (
+            not node.meta["val"].is_complex()
+            and node.args[0].meta["val"].is_floating_point()
+            and not normalized
+            and (window is not None or win_length in (None, n_fft))
+        )
     return True
 
 
@@ -176,6 +189,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.scatter_add.default,
         torch.ops.aten.scatter_reduce.two,
         torch.ops.aten.stack.default,
+        torch.ops.aten.stft.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,

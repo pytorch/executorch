@@ -47,6 +47,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
+    DecomposeBoolEqualityPass,
     DecomposeChooseQParamsSymmetricPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
@@ -167,6 +168,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     ReplaceScalarWithTensorByProfilePass,
     ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
+    RewriteArgmaxPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
@@ -669,6 +671,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 DecomposeNotEqualPass(),
+                DecomposeBoolEqualityPass(),
                 NormalizeIndexPutNoneIndicesPass(),
                 NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
@@ -720,6 +723,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteConvPass(exported_program),
                 RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
+                RewriteArgmaxPass(),
                 RewriteMatmulPass(),
                 FuseViewCopyTransformPass(),
                 PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
