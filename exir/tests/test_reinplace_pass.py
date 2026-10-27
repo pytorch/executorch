@@ -871,9 +871,7 @@ class TestReinplacePass(unittest.TestCase):
         self.assertEqual([spec.target for spec in specs[:2]], ["a", "b"])
 
         expected_a = a.clone().index_copy_(0, pos, torch.ones(1, 4))
-        outputs = _load_for_executorch_from_buffer(program.buffer).forward(
-            (a, b, pos)
-        )
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward((a, b, pos))
         self.assertTrue(torch.equal(outputs[0], expected_a))
         self.assertTrue(torch.equal(outputs[1], torch.ones(2)))
         self.assertTrue(torch.equal(outputs[2], expected_a.sum() + 2))
