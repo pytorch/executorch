@@ -57,3 +57,16 @@ fbcode_target(
         "//executorch/extension/pybindings:portable_lib", # @manual
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_runtime",
+    srcs = ["test/test_runtime.py"],
+    preload_deps = [":cpu_backend"],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
