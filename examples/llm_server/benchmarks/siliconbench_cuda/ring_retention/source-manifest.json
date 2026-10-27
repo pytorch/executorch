@@ -9,7 +9,8 @@
     "export_real_mini_pair.py": "4c9bb5342d4547fff34034ad0ccb9e652d81aee1dad1e993d48c4d19c6fac87e",
     "recover_real_mini_export.py": "80a5f054801325614cf09fd0dcc2657d06dd76317daabf716e1d5deb7bde5bff",
     "run_ring_compilation_screen.py": "0de58648d6ff64d55e1194fa1fef7f38e614c1ae8f7b541508b441a56c047e59",
-    "README.md": "4f5c7e75bc913979e7094dccfdd4396b308e4cd80d887d3adb9d6348a902aa22"
+    "README.md": "4f5c7e75bc913979e7094dccfdd4396b308e4cd80d887d3adb9d6348a902aa22",
+    "run_qualified_ring_recovery.py": "9f450c26f70d37146d6a7c2848f6f31663d43ec8e24616028cbcdc65031b2d76"
   },
   "MG_model_scale": 0.34206290539921874,
   "MG_qheads": 32,
