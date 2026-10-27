@@ -2098,6 +2098,42 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(external_map["c0"], 0)
         self.assertEqual(external_map["c1"], 0)
 
+    def test_constant_tagged_tensor_same_name_different_data(self) -> None:
+        """
+        The external constant map is keyed by name and shared by the methods
+        of a program. Two methods that write different data under one name
+        would otherwise both load whichever was written last.
+        """
+
+        class Scale(nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.register_buffer("c", torch.full((3,), value), persistent=True)
+
+            def forward(self, x):
+                return x + self.c
+
+        x = torch.ones(1, 3)
+        programs = {
+            "a": export(Scale(1.0), (x,), strict=True),
+            "b": export(Scale(2.0), (x,), strict=True),
+        }
+        with self.assertRaisesRegex(
+            InternalError, "'c' in '_default_external_constant'"
+        ):
+            to_edge(programs).to_executorch(
+                config=ExecutorchBackendConfig(external_constants=True)
+            )
+
+        programs["b"] = export(Scale(1.0), (x,), strict=True)
+        model = to_edge(programs).to_executorch(
+            config=ExecutorchBackendConfig(external_constants=True)
+        )
+        external_map = model._emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map, {"c": 0})
+
     def test_constant_tagged_tensor_dedup_2(self) -> None:
         class ConstantModule(nn.Module):
             def __init__(self):
