@@ -283,6 +283,8 @@ def serialize_constant_tensors(
         ):
             vk_graph.constants.append(VkBytes(current_offset, 0))
         elif isinstance(tensor, torch.Tensor):
+            # The bytes are read from the start of the storage in memory order.
+            tensor = tensor.clone(memory_format=torch.contiguous_format)
             array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
             array = ctypes.cast(
                 tensor.untyped_storage().data_ptr(),
