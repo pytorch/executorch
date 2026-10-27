@@ -24,6 +24,7 @@ def main():
     for name in ('output','native-venv','MG-model','Gemma-model','lock'):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--inputs',type=Path)
+    parser.add_argument('--after-performance',type=Path)
     parser.add_argument('--reuse-native',action='store_true')
     parser.add_argument('--reuse-MG-model',action='store_true')
     parser.add_argument('--port',type=int,required=True)
@@ -99,6 +100,7 @@ def main():
                 stock_framework_code_unmodified=True))
         config=args.output/'matrix-config.json'
         config.write_text(json.dumps(dict(tasks=tasks,port=args.port,lock=str(args.lock),
+            performance_after_performance=str(args.after_performance) if args.after_performance else None,
             native_environment_freeze_SHA256=sha(args.output/'package-freeze.log')),indent=2)+'\n')
         state('running-single-round-matrix-before-deferred-quality',matrix_config=str(config))
         run('matrix',[sys.executable,'-B','-u',package/'run_default_chunk_single_matrix.py',

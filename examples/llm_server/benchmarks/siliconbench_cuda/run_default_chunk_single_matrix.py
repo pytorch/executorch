@@ -88,6 +88,11 @@ def main():
             driver_SHA256=sha(__file__),runner_SHA256=sha(package/'run_case_24h.py'),
             performance_rounds=1,discarded_rounds=[],repetition_SD=None),indent=2)+'\n')
         for mode in ('performance','correctness'):
+            dependency=cfg.get('quality_after_performance') if mode=='correctness' else cfg.get('performance_after_performance')
+            if dependency:
+                while not Path(dependency).is_file():
+                    state('waiting-other-performance-before-'+mode,dependency=dependency)
+                    time.sleep(20)
             for task in tasks:
                 if mode=='correctness' and task.get('quality_policy')=='reuse':continue
                 for split in (('chat','agent') if mode=='performance' else ('agent',)):
