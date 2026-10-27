@@ -44,6 +44,12 @@ across minor versions but not across major ones. There is no package for CUDA 12
 so on CUDA 12 use the `cpu` variant or build from source. On CUDA 13.0 or 13.1 no
 lower variant exists, so use `cu132`.
 
+Without `--index-url`, pip takes both packages from PyPI, which follows the same
+layout for both. On Linux they are the CUDA build, for the CUDA version PyTorch
+publishes there. On macOS and Windows they are the CPU build. The Linux packages
+also work on a machine without a GPU, but they download the CUDA libraries. Use
+the `cpu` variant to skip them.
+
 To get a change that has landed on the `main` branch but is not in a release
 yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front
 of the variant name, for example `nightly/cu132`, and add `--pre` to the

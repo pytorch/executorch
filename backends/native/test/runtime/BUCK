@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
@@ -6,3 +7,21 @@ oncall("executorch")
 non_fbcode_target(_kind = define_common_targets)
 
 fbcode_target(_kind = define_common_targets)
+
+# Engine-neutral PTN runner; each engine's runner binary adds make_engine_host().
+fbcode_target(
+    _kind = runtime.cxx_library,
+    name = "ptn_runner_main",
+    srcs = ["ptn_runner_main.cpp"],
+    exported_headers = ["PtnRunner.h"],
+    link_whole = True,
+    undefined_symbols = True,
+    visibility = ["//executorch/backends/native/test/..."],
+    exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
+    deps = [
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime/deserialize:package",
+        "//executorch/backends/native/runtime/graph:scalar_type",
+    ],
+    external_deps = ["gflags"],
+)
